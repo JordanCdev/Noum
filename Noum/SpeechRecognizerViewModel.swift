@@ -30,7 +30,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             return try? NSRegularExpression(pattern: pattern)
         }
     }()
-
     private let audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
