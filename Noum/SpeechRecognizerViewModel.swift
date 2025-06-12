@@ -50,12 +50,24 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         // Request microphone permission
-        AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                if granted {
-                    print("Microphone access granted.")
-                } else {
-                    print("Microphone access denied.")
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.shared.requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        print("Microphone access granted.")
+                    } else {
+                        print("Microphone access denied.")
+                    }
+                }
+            }
+        } else {
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        print("Microphone access granted.")
+                    } else {
+                        print("Microphone access denied.")
+                    }
                 }
             }
         }
