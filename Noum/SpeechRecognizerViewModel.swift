@@ -110,7 +110,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         if #available(iOS 13.0, *) {
             recognitionRequest.taskHint = .dictation
             recognitionRequest.requiresOnDeviceRecognition = false
-        }
         
         // 5. Create a new recognition task
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
