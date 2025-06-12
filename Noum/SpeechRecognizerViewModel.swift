@@ -100,15 +100,20 @@ class SpeechRecognizerViewModel: ObservableObject {
         
         // 4. Create a new recognition request
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = recognitionRequest else {
+        guard let request = recognitionRequest else {
             print("Unable to create SFSpeechAudioBufferRecognitionRequest.")
             return
         }
-        
-        recognitionRequest.shouldReportPartialResults = true
-        
+
+        request.shouldReportPartialResults = true
+        request.contextualStrings = fillerWords
+        if #available(iOS 13.0, *) {
+            request.taskHint = .dictation
+            request.requiresOnDeviceRecognition = false
+        }
+
         // 5. Create a new recognition task
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
             guard let self = self else { return }
             
             if let result = result {
@@ -136,7 +141,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
+            request.append(buffer)
         }
         
         // 7. Start the audio engine
@@ -175,7 +180,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         for filler in fillerWords {
             let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = "(?i)(?<!\\w)\(escaped)(?=\\b|[^\\w]|$)"
+            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
                 fillerWordCount += matches.count
@@ -190,4 +195,5 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Filler words found: \(fillerWordCount)")
     }
 }
+
 
