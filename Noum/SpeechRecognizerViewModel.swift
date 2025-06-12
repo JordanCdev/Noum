@@ -19,6 +19,15 @@ class SpeechRecognizerViewModel: ObservableObject {
     
     // List of filler words
     private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
+
+    // Precompiled regexes for fast filler word detection
+    private lazy var fillerWordRegexes: [NSRegularExpression] = {
+        fillerWords.compactMap { filler in
+            let escaped = NSRegularExpression.escapedPattern(for: filler)
+            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
+            return try? NSRegularExpression(pattern: pattern)
+        }
+    }()
     
     private let audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
@@ -178,15 +187,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = 0
         let attributed = NSMutableAttributedString(string: text)
 
-        for filler in fillerWords {
-            let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
-            if let regex = try? NSRegularExpression(pattern: pattern) {
-                let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-                fillerWordCount += matches.count
-                for match in matches {
-                    attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
-                }
+        for regex in fillerWordRegexes {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            fillerWordCount += matches.count
+            for match in matches {
+                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
             }
         }
 
