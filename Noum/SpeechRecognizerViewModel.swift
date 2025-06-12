@@ -18,7 +18,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var highlightedText: AttributedString = AttributedString("")
     
     // List of filler words
-    private let fillerWords = ["um", "uh", "like", "so", "you know", "er", "ah"]
+    private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
     
     private let audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
@@ -154,9 +154,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     func stopRecording() {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionTask?.cancel()
+        recognitionRequest?.endAudio()
         recognitionTask = nil
+        highlightAndCountFillerWords(in: transcribedText)
         print("Recording stopped.")
+        print("Final transcript: \(transcribedText)")
+        print("Total filler words: \(fillerWordCount)")
     }
     
     // MARK: - Update Transcription and Highlight Filler Words
@@ -171,8 +174,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         let attributed = NSMutableAttributedString(string: text)
 
         for filler in fillerWords {
-            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: filler))\\b"
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let escaped = NSRegularExpression.escapedPattern(for: filler)
+            let pattern = "(?i)(?<!\\w)\(escaped)(?=\\b|[^\\w]|$)"
+            if let regex = try? NSRegularExpression(pattern: pattern) {
                 let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
                 fillerWordCount += matches.count
                 for match in matches {
@@ -182,6 +186,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         highlightedText = AttributedString(attributed)
+        print("Transcript: \(text)")
+        print("Filler words found: \(fillerWordCount)")
+
+
     }
 }
 

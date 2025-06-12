@@ -26,6 +26,9 @@ struct ContentView: View {
                 }
                 Button("Stop") {
                     speechVM.stopRecording()
+                    print("Summary Transcript: \(speechVM.transcribedText)")
+                    print("Total filler words: \(speechVM.fillerWordCount)")
+
                     showSummary = true
                 }
             }

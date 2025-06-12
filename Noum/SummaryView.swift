@@ -13,7 +13,7 @@ struct SummaryView: View {
             }
             Text("Filler Words: \(fillerCount)")
                 .font(.headline)
-            Button("Close") {
+            Button("New Practice Session") {
                 dismiss()
             }
         }
