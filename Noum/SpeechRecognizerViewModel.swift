@@ -51,7 +51,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         // Request microphone permission
         if #available(iOS 17.0, *) {
-            AVAudioApplication.shared.requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { granted in
                 DispatchQueue.main.async {
                     if granted {
                         print("Microphone access granted.")
