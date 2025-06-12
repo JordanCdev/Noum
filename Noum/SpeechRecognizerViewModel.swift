@@ -188,6 +188,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         highlightedText = AttributedString(attributed)
         print("Transcript: \(text)")
         print("Filler words found: \(fillerWordCount)")
+
+
     }
 }
 
