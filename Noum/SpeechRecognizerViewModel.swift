@@ -112,6 +112,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             request.requiresOnDeviceRecognition = false
         }
 
+
         // 5. Create a new recognition task
         recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
             guard let self = self else { return }
