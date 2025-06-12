@@ -26,15 +26,15 @@ class SpeechRecognizerViewModel: ObservableObject {
     init() {
         // Use the desired locale (en-US as an example)
         self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        requestSpeechAuthorization()
+        requestSpeechAndRecordAuthorization()
     }
-    
+
     // MARK: - Request Authorization
-    
-    private func requestSpeechAuthorization() {
-        SFSpeechRecognizer.requestAuthorization { authStatus in
+    private func requestSpeechAndRecordAuthorization() {
+        // Request speech recognition permission
+        SFSpeechRecognizer.requestAuthorization { speechAuthStatus in
             DispatchQueue.main.async {
-                switch authStatus {
+                switch speechAuthStatus {
                 case .authorized:
                     print("Speech recognition authorized.")
                 case .denied:
@@ -45,6 +45,17 @@ class SpeechRecognizerViewModel: ObservableObject {
                     print("Speech recognition not determined.")
                 @unknown default:
                     print("Unknown speech recognition authorization state.")
+                }
+            }
+        }
+
+        // Request microphone permission
+        AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                if granted {
+                    print("Microphone access granted.")
+                } else {
+                    print("Microphone access denied.")
                 }
             }
         }
