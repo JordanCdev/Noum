@@ -106,6 +106,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         
         recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.contextualStrings = fillerWords
         
         // 5. Create a new recognition task
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
