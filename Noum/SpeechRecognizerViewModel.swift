@@ -1,8 +1,8 @@
 //
 //  SpeechRecognizerViewModel.swift
-//  YourApp
+//  Noum
 //
-//  Created by You on today's date.
+//  Created by Jordan Coaten on 25/01/2025.
 //
 
 import SwiftUI
