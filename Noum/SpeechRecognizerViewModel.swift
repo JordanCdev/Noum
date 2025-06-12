@@ -106,6 +106,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         
         recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.contextualStrings = fillerWords
+        if #available(iOS 13.0, *) {
+            recognitionRequest.taskHint = .dictation
+            recognitionRequest.requiresOnDeviceRecognition = false
+        }
         
         // 5. Create a new recognition task
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
@@ -175,7 +180,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         for filler in fillerWords {
             let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = "(?i)(?<!\\w)\(escaped)(?=\\b|[^\\w]|$)"
+            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
                 fillerWordCount += matches.count
@@ -190,4 +195,5 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Filler words found: \(fillerWordCount)")
     }
 }
+
 
