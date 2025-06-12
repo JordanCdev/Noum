@@ -10,12 +10,14 @@ import AVFoundation
 import Speech
 import Combine
 import UIKit
+import WhisperKit
 
 class SpeechRecognizerViewModel: ObservableObject {
     // Published properties to update the UI
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
+    @Published var useWhisper: Bool = false
     
     // List of filler words
     private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
@@ -28,16 +30,21 @@ class SpeechRecognizerViewModel: ObservableObject {
             return try? NSRegularExpression(pattern: pattern)
         }
     }()
-    
     private let audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var whisperKit: WhisperKit?
+    private var audioRecorder: AVAudioRecorder?
+    private var audioFileURL: URL?
     
     init() {
         // Use the desired locale (en-US as an example)
         self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         requestSpeechAndRecordAuthorization()
+        Task {
+            self.whisperKit = try? await WhisperKit()
+        }
     }
 
     // MARK: - Request Authorization
@@ -174,6 +181,56 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Recording stopped.")
         print("Final transcript: \(transcribedText)")
         print("Total filler words: \(fillerWordCount)")
+    }
+
+    // MARK: - Whisper Recording
+
+    func startWhisperRecording() {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
+            try audioSession.setActive(true)
+        } catch {
+            print("Audio session setup failed: \(error.localizedDescription)")
+            return
+        }
+
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("whisper-\(UUID().uuidString).m4a")
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 1
+        ]
+
+        do {
+            audioRecorder = try AVAudioRecorder(url: tempURL, settings: settings)
+            audioRecorder?.record()
+            audioFileURL = tempURL
+            print("Whisper recording started...")
+        } catch {
+            print("Audio recorder setup failed: \(error.localizedDescription)")
+        }
+    }
+
+    func stopWhisperRecording() {
+        audioRecorder?.stop()
+        guard let url = audioFileURL else { return }
+
+        Task {
+            do {
+                guard let whisper = whisperKit else {
+                    print("WhisperKit not initialized")
+                    return
+                }
+                let results = try await whisper.transcribe(audioPath: url.path)
+                let text = results.map { $0.text }.joined(separator: " ")
+                await MainActor.run {
+                    self.updateTranscription(with: text)
+                }
+            } catch {
+                print("Whisper transcription failed: \(error)")
+            }
+        }
     }
     
     // MARK: - Update Transcription and Highlight Filler Words

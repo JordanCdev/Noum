@@ -1,38 +1,14 @@
 # Noum
+This app demonstrates speech recognition with filler word highlighting.
+It supports Apple's `Speech` framework and optional transcription using the
+[WhisperKit](https://github.com/argmaxinc/WhisperKit) library for on-device
+Whisper models.
 
-Noum is a simple iOS app that highlights filler words in live speech. It uses
-`SpeechRecognizerViewModel` to transcribe audio and mark filler words in red so
-you can see and count them while practicing.
+## WhisperKit
 
-## Building the App
+To enable Whisper-based recognition, toggle **Use Whisper** in the UI. The first
+recording initializes `WhisperKit`, which will automatically download a
+compatible model for the device.
 
-1. Install Xcode 15 or later.
-2. Clone this repository and open `Noum.xcodeproj` in Xcode.
-3. Choose a simulator or your iOS device and press **Run** (⌘R).
-
-No additional dependencies are required.
-
-## How Filler‑Word Detection Works
-
-`SpeechRecognizerViewModel` listens to the microphone with `AVAudioEngine` and
-transcribes the audio using the `Speech` framework. After every update the
-method `highlightAndCountFillerWords(in:)` searches the transcript for any word
-in `fillerWords` and colors the matches red. The total number of matches is
-stored in `fillerWordCount`.
-
-## Modifying the `fillerWords` List
-
-Open `SpeechRecognizerViewModel.swift` and edit the array defined near the top
-of the file:
-
-```swift
-private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
-```
-
-Add or remove strings to customize which words are flagged as fillers.
-
-## Contextual Strings
-
-If you add support for `contextualStrings` on `SFSpeechAudioBufferRecognitionRequest`,
-you can supply additional hints to improve recognition accuracy. Insert your own
-strings when creating the request in `startRecording()`.
+Add `https://github.com/argmaxinc/WhisperKit.git` as a Swift Package dependency
+in Xcode to build with Whisper support.
