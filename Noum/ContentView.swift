@@ -9,11 +9,14 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @State private var showSummary = false
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Transcribed Text: \(speechVM.transcribedText)")
-                .padding()
+            ScrollView {
+                Text(speechVM.highlightedText)
+                    .padding()
+            }
 
             Text("Filler Words: \(speechVM.fillerWordCount)")
 
@@ -23,10 +26,16 @@ struct ContentView: View {
                 }
                 Button("Stop") {
                     speechVM.stopRecording()
+                    print("Summary Transcript: \(speechVM.transcribedText)")
+                    print("Total filler words: \(speechVM.fillerWordCount)")
+                    showSummary = true
                 }
             }
         }
         .padding()
+        .sheet(isPresented: $showSummary) {
+            SummaryView(transcript: speechVM.highlightedText, fillerCount: speechVM.fillerWordCount)
+        }
     }
 }
 
