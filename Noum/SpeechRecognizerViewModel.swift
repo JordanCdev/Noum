@@ -176,7 +176,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         for filler in fillerWords {
             let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = "(?i)(?<!\\w)\(escaped)(?=\\b|[^\\w]|$)"
+            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
                 fillerWordCount += matches.count
@@ -191,4 +191,5 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Filler words found: \(fillerWordCount)")
     }
 }
+
 
