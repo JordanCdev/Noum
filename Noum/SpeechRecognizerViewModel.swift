@@ -9,11 +9,13 @@ import SwiftUI
 import AVFoundation
 import Speech
 import Combine
+import UIKit
 
 class SpeechRecognizerViewModel: ObservableObject {
     // Published properties to update the UI
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
+    @Published var highlightedText: AttributedString = AttributedString("")
     
     // List of filler words
     private let fillerWords = ["um", "uh", "like", "so", "you know", "er", "ah"]
@@ -112,8 +114,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             if let result = result {
                 let bestString = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
-                    self.transcribedText = bestString
-                    self.countFillerWords(in: bestString)
+                    self.updateTranscription(with: bestString)
                 }
             }
             
@@ -158,19 +159,29 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Recording stopped.")
     }
     
-    // MARK: - Count Filler Words
-    
-    private func countFillerWords(in text: String) {
-        // Reset for this demonstration (or keep a rolling total)
+    // MARK: - Update Transcription and Highlight Filler Words
+
+    private func updateTranscription(with text: String) {
+        transcribedText = text
+        highlightAndCountFillerWords(in: text)
+    }
+
+    private func highlightAndCountFillerWords(in text: String) {
         fillerWordCount = 0
-        
-        let lowerText = text.lowercased()
+        let attributed = NSMutableAttributedString(string: text)
+
         for filler in fillerWords {
-            let occurrences = lowerText.components(separatedBy: filler).count - 1
-            if occurrences > 0 {
-                fillerWordCount += occurrences
+            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: filler))\\b"
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+                fillerWordCount += matches.count
+                for match in matches {
+                    attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+                }
             }
         }
+
+        highlightedText = AttributedString(attributed)
     }
 }
 
