@@ -4,9 +4,9 @@
 <dict>
     <!-- Replace with your AWS credentials -->
     <key>AWS_ACCESS_KEY_ID</key>
-    <string>AKIAWNEH4A2LMCYRM745</string>
+    <string>YOUR_ACCESS_KEY_ID</string>
     <key>AWS_SECRET_ACCESS_KEY</key>
-    <string>SWK2Jb6aFiZ5vG8pAudQ6CW26T338fTzkiwaMIny</string>
+    <string>YOUR_SECRET_ACCESS_KEY</string>
     <key>AWS_REGION</key>
     <string>eu-west-1</string>
     <!-- Optional session token if using temporary credentials -->
