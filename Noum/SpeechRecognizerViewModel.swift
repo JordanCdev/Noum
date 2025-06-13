@@ -15,7 +15,23 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// Completed practice sessions with transcript, filler count and duration.
     @Published var pastSessions: [PracticeSession] = []
 
-    private let apiKey = "efc3c337656d36be52e2c95e4859006a8d676cfc"  // <-- replace this
+    /// API key for authenticating with Deepgram.
+    ///
+    /// The key is loaded from the `DEEPGRAM_API_KEY` environment variable.
+    /// If that is not present, the view model looks for a `Deepgram.plist`
+    /// file in the main bundle containing the same key.  This allows the
+    /// key to be provided securely without hard coding it in source control.
+    private var apiKey: String? {
+        if let env = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"] {
+            return env
+        }
+        if let path = Bundle.main.path(forResource: "Deepgram", ofType: "plist"),
+           let dict = NSDictionary(contentsOfFile: path),
+           let key = dict["DEEPGRAM_API_KEY"] as? String {
+            return key
+        }
+        return nil
+    }
     private var audioEngine: AVAudioEngine?
     private var webSocketTask: URLSessionWebSocketTask?
 
@@ -56,6 +72,11 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func startRecording() {
         guard !isRecording else { return }
+        guard let key = apiKey, !key.isEmpty else {
+            print("Deepgram API key not found")
+            transcribedText = "Missing Deepgram API key."
+            return
+        }
         resetCurrentSession()
         isRecording = true
         sessionStart = Date()
@@ -67,7 +88,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             return
         }
         var request = URLRequest(url: url)
-        request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("Token \(key)", forHTTPHeaderField: "Authorization")
 
         webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
         webSocketTask?.resume()
