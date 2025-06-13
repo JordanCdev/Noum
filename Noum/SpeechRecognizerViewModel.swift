@@ -162,25 +162,33 @@ class SpeechRecognizerViewModel: ObservableObject {
         if message.type == "Results", let alt = message.channel?.alternatives.first {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
-                transcribedText += transcribedText.isEmpty ? snippet : " " + snippet
-                highlightAndCountFillerWords(in: transcribedText)
-            }
-        }
-    }
-
-    private func highlightAndCountFillerWords(in text: String) {
-        fillerWordCount = 0
-        let attributed = NSMutableAttributedString(string: text)
-        for regex in fillerWordRegexes {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            fillerWordCount += matches.count
-            for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+                DispatchQueue.main.async {
+                    self.transcribedText += self.transcribedText.isEmpty ? snippet : " " + snippet
+                    self.highlightAndCountFillerWords(in: self.transcribedText)
+                }
             }
         }
         highlightedText = AttributedString(attributed)
         print("Transcript: \(text)")
         print("Filler words found: \(fillerWordCount)")
+    }
+
+    private func highlightAndCountFillerWords(in text: String) {
+        var count = 0
+        let attributed = NSMutableAttributedString(string: text)
+        for regex in fillerWordRegexes {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            count += matches.count
+            for match in matches {
+                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+            }
+        }
+        DispatchQueue.main.async {
+            self.fillerWordCount = count
+            self.highlightedText = AttributedString(attributed)
+            print("Transcript: \(text)")
+            print("Filler words found: \(count)")
+        }
     }
 }
 
