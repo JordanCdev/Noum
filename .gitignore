@@ -3,6 +3,7 @@ DerivedData/
 build/
 xcuserdata/
 *.xcuserstate
+.build/
 
 # Local configuration files
 Noum/Deepgram.plist
