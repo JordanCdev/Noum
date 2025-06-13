@@ -8,15 +8,18 @@ Supply your AWS credentials via the `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN` environment variables
 or a `Transcribe.plist` file (see `Transcribe.plist.example`). The region
 defaults to `us-east-1` but can be overridden with an `AWS_REGION` key. The app
-will construct a SigV4-signed WebSocket request and stream audio to Transcribe.
+constructs a SigV4-signed WebSocket request and streams audio directly to
+Transcribe. This lightweight approach avoids additional dependencies, but you
+can replace it with the official AWS SDK (e.g. `aws-sdk-swift` or the iOS
+`AWSTranscribeStreaming` pod) if preferred.
 
 To use Amazon Transcribe instead, supply your AWS credentials via the
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional
 `AWS_SESSION_TOKEN` environment variables or a `Transcribe.plist` file
 (see `Transcribe.plist.example`). The region defaults to `us-east-1`
-but can be overridden with an `AWS_REGION` key. The app will construct
-a SigV4-signed WebSocket request and stream audio to Transcribe in the
-same manner as Deepgram.
+but can be overridden with an `AWS_REGION` key. The app uses the same
+signed WebSocket approach to stream audio to Transcribe in the same
+manner as Deepgram.
 
 Common disfluencies such as "umm" or "hmm" are detected using a regex so
 variants are matched dynamically.
