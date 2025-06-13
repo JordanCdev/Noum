@@ -77,9 +77,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     private func startAudioStream() {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
-        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+        let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
             let data = self.convertBufferToPCMData(buffer: buffer)
             self.sendPCMData(data)
         }
@@ -89,9 +89,26 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
     
     private func convertBufferToPCMData(buffer: AVAudioPCMBuffer) -> Data {
-        let channelData = buffer.int16ChannelData![0]
-        let data = Data(bytes: channelData, count: Int(buffer.frameLength * 2))
-        return data
+        let frameLength = Int(buffer.frameLength)
+        switch buffer.format.commonFormat {
+        case .pcmFormatInt16:
+            if let channelData = buffer.int16ChannelData?[0] {
+                return Data(bytes: channelData, count: frameLength * MemoryLayout<Int16>.size)
+            }
+        case .pcmFormatFloat32:
+            if let channelData = buffer.floatChannelData?[0] {
+                var pcmData = Data(capacity: frameLength * MemoryLayout<Int16>.size)
+                for i in 0..<frameLength {
+                    let clamped = max(-1.0, min(1.0, channelData[i]))
+                    var sample = Int16(clamped * Float(Int16.max))
+                    pcmData.append(UnsafeBufferPointer(start: &sample, count: 1))
+                }
+                return pcmData
+            }
+        default:
+            break
+        }
+        return Data()
     }
     
     private func sendPCMData(_ data: Data) {
