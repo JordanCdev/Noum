@@ -7,6 +7,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
     @Published var isRecording: Bool = false
+
     /// Duration of the last completed recording session.
     @Published var lastSessionDuration: TimeInterval = 0
 
