@@ -64,6 +64,9 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Most recent partial transcript returned by Deepgram.
     private var lastPartialSnippet: String = ""
+
+    /// Transcript built from finalized results so far.
+    private var finalTranscript: String = ""
     
     /// Common filler words that should always be highlighted.
     private let baseFillerWords: Set<String> = ["like", "so", "you know"]
@@ -110,7 +113,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionStart = Date()
         
         let sampleRate = AVAudioSession.sharedInstance().sampleRate
-        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
+        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
         guard let url = URL(string: urlString) else {
             print("Invalid Deepgram URL")
             return
@@ -232,32 +235,32 @@ class SpeechRecognizerViewModel: ObservableObject {
         
         if message.type == "Results", let alt = message.channel?.alternatives.first {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !snippet.isEmpty {
-                DispatchQueue.main.async {
-                    // Deepgram may send partial transcripts that grow and shrink
-                    // as speech is recognized. Track the last snippet so we can
-                    // append only the new portion and ignore backtracking.
-                    var addition = ""
-                    if snippet.hasPrefix(self.lastPartialSnippet) {
-                        let start = snippet.index(snippet.startIndex, offsetBy: self.lastPartialSnippet.count)
+            guard !snippet.isEmpty else { return }
+            DispatchQueue.main.async {
+                if message.isFinal == true {
+                    var addition: String
+                    if snippet.hasPrefix(self.finalTranscript) {
+                        let start = snippet.index(snippet.startIndex, offsetBy: self.finalTranscript.count)
                         addition = String(snippet[start...])
-                    } else if self.lastPartialSnippet.hasPrefix(snippet) {
-                        // The service sent a shorter snippet than before; this
-                        // usually means the transcript is still interim. Ignore.
-                        addition = ""
                     } else {
-                        let common = snippet.commonPrefix(with: self.lastPartialSnippet)
+                        let common = snippet.commonPrefix(with: self.finalTranscript)
                         let start = snippet.index(snippet.startIndex, offsetBy: common.count)
                         addition = String(snippet[start...])
                     }
                     if !addition.isEmpty {
-                        self.transcribedText += addition
+                        if !self.finalTranscript.isEmpty && !addition.hasPrefix(" ") {
+                            self.finalTranscript += " "
+                        }
+                        self.finalTranscript += addition
+                        self.transcribedText = self.finalTranscript
                         self.highlightAndCountFillerWords(in: self.transcribedText)
                     }
+                    self.lastPartialSnippet = ""
+                } else {
                     self.lastPartialSnippet = snippet
-                    print("Transcript: \(snippet)")
-                    print("Filler words found: \(self.fillerWordCount)")
                 }
+                print("Transcript: \(snippet)")
+                print("Filler words found: \(self.fillerWordCount)")
             }
         }
     }
@@ -297,6 +300,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         highlightedText = AttributedString("")
         fillerWordCount = 0
         lastPartialSnippet = ""
+        finalTranscript = ""
+
     }
 
     /// Persist the completed session to the history list.
@@ -318,6 +323,13 @@ class SpeechRecognizerViewModel: ObservableObject {
     struct DeepgramMessage: Codable {
         let type: String?
         let channel: Channel?
+        let isFinal: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case channel
+            case isFinal = "is_final"
+        }
 
     }
     
