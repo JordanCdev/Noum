@@ -21,8 +21,13 @@ struct ContentView: View {
                     Text(speechVM.highlightedText)
                         .padding()
                 }
-                
+
                 Text("Filler Words: \(speechVM.fillerWordCount)")
+
+                if let error = speechVM.connectionError {
+                    Text(error)
+                        .foregroundStyle(.red)
+                }
                 
                 HStack {
                     Button("Start") {
