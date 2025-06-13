@@ -591,4 +591,3 @@ class SpeechRecognizerViewModel: ObservableObject {
         let date: Date
     }
 }
-
