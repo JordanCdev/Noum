@@ -11,6 +11,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     private let apiKey = "efc3c337656d36be52e2c95e4859006a8d676cfc"  // <-- replace this
     private var audioEngine: AVAudioEngine?
     private var webSocketTask: URLSessionWebSocketTask?
+
     /// Common filler words that should always be highlighted.
     private let baseFillerWords: Set<String> = ["like", "so", "you know"]
 
@@ -180,14 +181,35 @@ class SpeechRecognizerViewModel: ObservableObject {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
                 DispatchQueue.main.async {
-                    self.transcribedText += self.transcribedText.isEmpty ? snippet : " " + snippet
-                    self.highlightAndCountFillerWords(in: self.transcribedText)
+                    // Deepgram streams the full transcript with each message,
+                    // so replace the text instead of appending to avoid
+                    // duplicates in the UI.
+                    self.transcribedText = snippet
+                    self.highlightAndCountFillerWords(in: snippet)
                 }
             }
         }
         highlightedText = AttributedString(attributed)
         print("Transcript: \(text)")
         print("Filler words found: \(fillerWordCount)")
+    }
+
+    private func highlightAndCountFillerWords(in text: String) {
+        var count = 0
+        let attributed = NSMutableAttributedString(string: text)
+        for regex in fillerWordRegexes {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            count += matches.count
+            for match in matches {
+                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+            }
+        }
+        DispatchQueue.main.async {
+            self.fillerWordCount = count
+            self.highlightedText = AttributedString(attributed)
+            print("Transcript: \(text)")
+            print("Filler words found: \(count)")
+        }
     }
 
     private func highlightAndCountFillerWords(in text: String) {
