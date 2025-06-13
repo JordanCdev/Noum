@@ -35,6 +35,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Invalid Deepgram URL")
             return
         }
+
         var request = URLRequest(url: url)
         request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
 
