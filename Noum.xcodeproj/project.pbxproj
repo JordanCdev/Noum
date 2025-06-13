@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-
-/* End PBXBuildFile section */
-
 /* Begin PBXContainerItemProxy section */
 		0B981F7D2D446110008F4158 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -55,8 +51,8 @@
 		0B981F692D44610E008F4158 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-                        files = (
-                        );
+			files = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0B981F792D446110008F4158 /* Frameworks */ = {
@@ -115,8 +111,8 @@
 				0B981F6E2D44610E008F4158 /* Noum */,
 			);
 			name = Noum;
-                        packageProductDependencies = (
-                        );
+			packageProductDependencies = (
+			);
 			productName = Noum;
 			productReference = 0B981F6C2D44610E008F4158 /* Noum.app */;
 			productType = "com.apple.product-type.application";
@@ -199,8 +195,8 @@
 			);
 			mainGroup = 0B981F632D44610E008F4158;
 			minimizedProjectReferenceProxies = 1;
-                        packageReferences = (
-                        );
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0B981F6D2D44610E008F4158 /* Products */;
 			projectDirPath = "";
@@ -568,12 +564,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0B981F642D44610E008F4158 /* Project object */;
 }
