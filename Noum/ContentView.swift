@@ -13,7 +13,7 @@ struct ContentView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel()
     @State private var showSummary = false
     @State private var showHistory = false
-
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
@@ -21,9 +21,9 @@ struct ContentView: View {
                     Text(speechVM.highlightedText)
                         .padding()
                 }
-
+                
                 Text("Filler Words: \(speechVM.fillerWordCount)")
-
+                
                 HStack {
                     Button("Start") {
                         speechVM.startRecording()
@@ -54,6 +54,7 @@ struct ContentView: View {
             SessionHistoryView(speechVM: speechVM)
         }
     }
+}
 #endif
 
 #if canImport(SwiftUI)

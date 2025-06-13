@@ -2,13 +2,12 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
-@available(iOS 17.0, macOS 12.0, *)
 #if canImport(SwiftUI)
 
 struct SessionHistoryView: View {
     @ObservedObject var speechVM: SpeechRecognizerViewModel
     @Environment(\.dismiss) private var dismiss
-
+    
     var body: some View {
         NavigationView {
             List(speechVM.pastSessions) { session in
@@ -27,6 +26,7 @@ struct SessionHistoryView: View {
             }
         }
     }
+}
 #endif
 
 #if canImport(SwiftUI)
