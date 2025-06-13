@@ -37,6 +37,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// Completed practice sessions with transcript, filler count and duration.
     @Published var pastSessions: [PracticeSession] = []
 
+    /// Last connection error if the WebSocket fails.
+    @Published var connectionError: String?
+
     /// Key used for persisting sessions to UserDefaults.
     private let sessionsKey = "practiceSessions"
     
@@ -180,6 +183,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         resetCurrentSession()
+        connectionError = nil
         isRecording = true
         sessionStart = Date()
 
@@ -218,6 +222,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         resetCurrentSession()
+        connectionError = nil
         isRecording = true
         sessionStart = Date()
 
@@ -322,6 +327,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         webSocketTask?.send(.data(data)) { error in
             if let error = error {
                 print("WebSocket send error: \(error)")
+                self.connectionError = "WebSocket send error: \(error.localizedDescription)"
+                self.stopRecording()
             }
         }
     }
@@ -438,6 +445,8 @@ class SpeechRecognizerViewModel: ObservableObject {
             switch result {
             case .failure(let error):
                 print("WebSocket receive error: \(error)")
+                self.connectionError = "WebSocket receive error: \(error.localizedDescription)"
+                self.stopRecording()
             case .success(let message):
                 Task { @MainActor in
                     switch message {
@@ -528,6 +537,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = 0
         finalTranscript = ""
         partialTranscript = ""
+        connectionError = nil
     }
 
     /// Persist the completed session to the history list.
