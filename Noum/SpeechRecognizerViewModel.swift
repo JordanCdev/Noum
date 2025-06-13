@@ -37,6 +37,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// Completed practice sessions with transcript, filler count and duration.
     @Published var pastSessions: [PracticeSession] = []
 
+    /// Last connection error if the WebSocket fails.
+    @Published var connectionError: String?
+
     /// Key used for persisting sessions to UserDefaults.
     private let sessionsKey = "practiceSessions"
     
@@ -180,6 +183,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         resetCurrentSession()
+        connectionError = nil
         isRecording = true
         sessionStart = Date()
 
@@ -218,6 +222,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         resetCurrentSession()
+        connectionError = nil
         isRecording = true
         sessionStart = Date()
 
@@ -319,9 +324,14 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
     
     private func sendPCMData(_ data: Data) {
-        webSocketTask?.send(.data(data)) { error in
+        webSocketTask?.send(.data(data)) { [weak self] error in
+            guard let self else { return }
             if let error = error {
                 print("WebSocket send error: \(error)")
+                Task { @MainActor in
+                    self.connectionError = "WebSocket send error: \(error.localizedDescription)"
+                    self.stopRecording()
+                }
             }
         }
     }
@@ -434,10 +444,14 @@ class SpeechRecognizerViewModel: ObservableObject {
     
     private func receiveAmazonMessages() {
         webSocketTask?.receive { [weak self] result in
-            guard let self = self else { return }
+            guard let self else { return }
             switch result {
             case .failure(let error):
                 print("WebSocket receive error: \(error)")
+                Task { @MainActor in
+                    self.connectionError = "WebSocket receive error: \(error.localizedDescription)"
+                    self.stopRecording()
+                }
             case .success(let message):
                 Task { @MainActor in
                     switch message {
@@ -528,6 +542,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = 0
         finalTranscript = ""
         partialTranscript = ""
+        connectionError = nil
     }
 
     /// Persist the completed session to the history list.
