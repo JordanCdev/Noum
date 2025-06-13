@@ -158,6 +158,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Failed to decode response")
             return
         }
+
         if message.type == "Results", let alt = message.channel?.alternatives.first {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
