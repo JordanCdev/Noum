@@ -253,27 +253,27 @@ class SpeechRecognizerViewModel: ObservableObject {
                 self.highlightedText = AttributedString(text)
             }
         }
-        
-        /// Clear current transcript and counters before a new session.
-        private func resetCurrentSession() {
-            transcribedText = ""
-            highlightedText = AttributedString("")
-            fillerWordCount = 0
-        }
-        
-        /// Persist the completed session to the history list.
-        private func saveCurrentSession() {
-            let duration = Date().timeIntervalSince(sessionStart ?? Date())
-            lastSessionDuration = duration
-            let session = PracticeSession(
-                transcript: transcribedText,
-                fillerWordCount: fillerWordCount,
-                duration: duration,
-                date: sessionStart ?? Date()
-            )
-            pastSessions.append(session)
-            sessionStart = nil
-        }
+    }
+
+    /// Clear current transcript and counters before a new session.
+    func resetCurrentSession() {
+        transcribedText = ""
+        highlightedText = AttributedString("")
+        fillerWordCount = 0
+    }
+
+    /// Persist the completed session to the history list.
+    private func saveCurrentSession() {
+        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        lastSessionDuration = duration
+        let session = PracticeSession(
+            transcript: transcribedText,
+            fillerWordCount: fillerWordCount,
+            duration: duration,
+            date: sessionStart ?? Date()
+        )
+        pastSessions.append(session)
+        sessionStart = nil
     }
     
     // MARK: - Deepgram Response Models
