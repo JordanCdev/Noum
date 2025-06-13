@@ -23,6 +23,13 @@ struct ContentView: View {
             Toggle("Use Whisper", isOn: $speechVM.useWhisper)
                 .padding(.horizontal)
                 .disabled(!speechVM.isWhisperReady)
+          
+            if let error = speechVM.whisperInitError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(.horizontal)
+            }
 
             HStack {
                 Button("Start") {
