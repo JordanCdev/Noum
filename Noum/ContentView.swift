@@ -20,10 +20,10 @@ struct ContentView: View {
 
             Text("Filler Words: \(speechVM.fillerWordCount)")
 
-            Toggle("Use Whisper", isOn: $speechVM.useWhisper)
-                .padding(.horizontal)
-                .disabled(!speechVM.isWhisperReady)
-          
+            if !speechVM.isWhisperReady {
+                ProgressView()
+                    .padding(.vertical)
+            }
             if let error = speechVM.whisperInitError {
                 Text(error)
                     .font(.caption)
@@ -33,22 +33,16 @@ struct ContentView: View {
 
             HStack {
                 Button("Start") {
-                    if speechVM.useWhisper {
-                        speechVM.startWhisperRecording()
-                    } else {
-                        speechVM.startRecording()
-                    }
+                    speechVM.startRecording()
                 }
+                .disabled(!speechVM.isWhisperReady)
                 Button("Stop") {
-                    if speechVM.useWhisper {
-                        speechVM.stopWhisperRecording()
-                    } else {
-                        speechVM.stopRecording()
-                    }
+                    speechVM.stopRecording()
                     print("Summary Transcript: \(speechVM.transcribedText)")
                     print("Total filler words: \(speechVM.fillerWordCount)")
                     showSummary = true
                 }
+                .disabled(!speechVM.isWhisperReady)
             }
         }
         .padding()
