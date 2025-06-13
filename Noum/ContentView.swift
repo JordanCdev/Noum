@@ -20,12 +20,23 @@ struct ContentView: View {
 
             Text("Filler Words: \(speechVM.fillerWordCount)")
 
+            Toggle("Use Whisper", isOn: $speechVM.useWhisper)
+                .padding(.horizontal)
+
             HStack {
                 Button("Start") {
-                    speechVM.startRecording()
+                    if speechVM.useWhisper {
+                        speechVM.startWhisperRecording()
+                    } else {
+                        speechVM.startRecording()
+                    }
                 }
                 Button("Stop") {
-                    speechVM.stopRecording()
+                    if speechVM.useWhisper {
+                        speechVM.stopWhisperRecording()
+                    } else {
+                        speechVM.stopRecording()
+                    }
                     print("Summary Transcript: \(speechVM.transcribedText)")
                     print("Total filler words: \(speechVM.fillerWordCount)")
                     showSummary = true
