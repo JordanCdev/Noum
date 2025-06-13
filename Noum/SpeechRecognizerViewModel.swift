@@ -28,6 +28,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         fillerWords.compactMap { filler in
             let escaped = NSRegularExpression.escapedPattern(for: filler)
+
             let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
             return try? NSRegularExpression(pattern: pattern)
         }
@@ -37,6 +38,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+
     #if canImport(WhisperKit)
     private var whisperKit: WhisperKit?
     private var audioRecorder: AVAudioRecorder?
@@ -47,6 +49,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         // Use the desired locale (en-US as an example)
         self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         requestSpeechAndRecordAuthorization()
+
         #if canImport(WhisperKit)
         Task {
             self.whisperKit = try? await WhisperKit()
@@ -222,6 +225,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 #endif
 
 #if canImport(WhisperKit)
+
     func stopWhisperRecording() {
         audioRecorder?.stop()
         guard let url = audioFileURL else { return }
