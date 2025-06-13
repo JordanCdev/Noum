@@ -12,7 +12,13 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Noum",
-            path: "Noum"
+            path: "Noum",
+            exclude: [
+                "ContentView.swift",
+                "NoumApp.swift",
+                "SessionHistoryView.swift",
+                "SummaryView.swift"
+            ]
         ),
         .testTarget(
             name: "NoumTests",

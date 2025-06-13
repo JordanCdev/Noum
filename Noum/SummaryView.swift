@@ -1,5 +1,9 @@
+import Foundation
+#if canImport(SwiftUI)
 import SwiftUI
+#endif
 @available(iOS 17.0, macOS 12.0, *)
+#if canImport(SwiftUI)
 
 struct SummaryView: View {
     let transcript: AttributedString
@@ -27,6 +31,10 @@ struct SummaryView: View {
     }
 }
 
+#endif
+
+#if canImport(SwiftUI)
 #Preview {
     SummaryView(transcript: AttributedString("Example"), fillerCount: 0, duration: 0)
 }
+#endif

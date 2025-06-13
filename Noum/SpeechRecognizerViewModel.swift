@@ -1,9 +1,27 @@
-import SwiftUI
-import AVFoundation
-import UIKit
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
+#if canImport(SwiftUI)
+import SwiftUI
+#else
+// Provide minimal stubs so the code builds on platforms without SwiftUI
+protocol ObservableObject {}
+@propertyWrapper struct Published<Value> { var wrappedValue: Value; init(wrappedValue: Value) { self.wrappedValue = wrappedValue } }
+#endif
+#if canImport(UIKit)
+import UIKit
+typealias PlatformColor = UIColor
+#elseif canImport(AppKit)
+import AppKit
+typealias PlatformColor = NSColor
+#endif
 
 @available(iOS 17.0, macOS 12.0, *)
+@MainActor
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
@@ -34,7 +52,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         return nil
     }
     
+    #if canImport(AVFoundation)
     private var audioEngine: AVAudioEngine?
+    #endif
     private var webSocketTask: URLSessionWebSocketTask?
     
     /// Start time for the current session to calculate duration.
@@ -68,10 +88,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         return regexes
     }()
     
+#if canImport(AVFoundation)
     init() {
         requestRecordAuthorization()
     }
-    
+
     func startRecording() {
         guard !isRecording else { return }
         guard let key = apiKey, !key.isEmpty else {
@@ -229,6 +250,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             }
         }
     }
+#endif // canImport(AVFoundation)
     
     /// Highlight any filler words found in `text` and update ``fillerWordCount``.
     ///
@@ -242,16 +264,23 @@ class SpeechRecognizerViewModel: ObservableObject {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             count += matches.count
             for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+#if canImport(UIKit) || canImport(AppKit)
+                attributed.addAttribute(.foregroundColor, value: PlatformColor.red, range: match.range)
+#endif
             }
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
+#if canImport(UIKit) || canImport(AppKit)
             if let converted = try? AttributedString(attributed) {
                 self.highlightedText = converted
             } else {
                 self.highlightedText = AttributedString(text)
             }
+#else
+            // Fallback: attributed string bridging not available
+            self.highlightedText = AttributedString(text)
+#endif
         }
     }
 
