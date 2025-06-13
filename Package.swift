@@ -15,7 +15,6 @@ let package = Package(
             path: "Noum",
             exclude: [
                 "ContentView.swift",
-                "NoumApp.swift",
                 "SessionHistoryView.swift",
                 "SummaryView.swift"
             ]
