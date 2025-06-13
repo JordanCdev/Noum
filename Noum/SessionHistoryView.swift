@@ -16,8 +16,9 @@ struct SessionHistoryView: View {
                         .font(.headline)
                     Text("Duration: \(Int(session.duration))s")
                     Text("Filler Words: \(session.fillerWordCount)")
-                    Text(session.transcript)
-                        .lineLimit(2)
+                    Text("Transcript: \(session.transcript)")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
             .navigationTitle("Practice History")
