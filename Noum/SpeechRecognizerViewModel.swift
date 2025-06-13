@@ -64,11 +64,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
-
-    /// Most recent partial transcript returned by Deepgram.
-    private var lastPartialSnippet: String = ""
-
-    /// Transcript built from finalized results so far.
+    /// Final transcript constructed from the last finalized result.
     private var finalTranscript: String = ""
     
     /// Common filler words that should always be highlighted.
@@ -161,7 +157,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         isRecording = false
         saveCurrentSession()
         print("Transcription stopped.")
-        print("Final transcript: \(transcribedText)")
+        print("Final transcript: \(finalTranscript)")
         print("Total filler words: \(fillerWordCount)")
     }
     
@@ -262,27 +258,10 @@ class SpeechRecognizerViewModel: ObservableObject {
             guard !snippet.isEmpty else { return }
             DispatchQueue.main.async {
                 if message.isFinal == true {
-                    var addition: String
-                    if snippet.hasPrefix(self.finalTranscript) {
-                        let start = snippet.index(snippet.startIndex, offsetBy: self.finalTranscript.count)
-                        addition = String(snippet[start...])
-                    } else {
-                        let common = snippet.commonPrefix(with: self.finalTranscript)
-                        let start = snippet.index(snippet.startIndex, offsetBy: common.count)
-                        addition = String(snippet[start...])
-                    }
-                    if !addition.isEmpty {
-                        if !self.finalTranscript.isEmpty && !addition.hasPrefix(" ") {
-                            self.finalTranscript += " "
-                        }
-                        self.finalTranscript += addition
-                        self.transcribedText = self.finalTranscript
-                        self.highlightAndCountFillerWords(in: self.transcribedText)
-                    }
-                    self.lastPartialSnippet = ""
-                } else {
-                    self.lastPartialSnippet = snippet
+                    self.finalTranscript = snippet
                 }
+                self.transcribedText = snippet
+                self.highlightAndCountFillerWords(in: self.transcribedText)
                 print("Transcript snippet: \(snippet)")
                 print("Current transcript on screen: \(self.transcribedText)")
                 print("Filler words found: \(self.fillerWordCount)")
@@ -324,7 +303,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcribedText = ""
         highlightedText = AttributedString("")
         fillerWordCount = 0
-        lastPartialSnippet = ""
         finalTranscript = ""
     }
 
