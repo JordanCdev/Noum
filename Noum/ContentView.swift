@@ -5,6 +5,7 @@
 //  Created by Jordan Coaten on 25/01/2025.
 //
 
+#if canImport(SwiftUI)
 import SwiftUI
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -53,9 +54,10 @@ struct ContentView: View {
             SessionHistoryView(speechVM: speechVM)
         }
     }
-}
+#endif
 
-
+#if canImport(SwiftUI)
 #Preview {
     ContentView()
 }
+#endif
