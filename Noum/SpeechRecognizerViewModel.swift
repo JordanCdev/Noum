@@ -7,10 +7,18 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
     @Published var isRecording: Bool = false
+    /// Duration of the last completed recording session.
+    @Published var lastSessionDuration: TimeInterval = 0
+
+    /// Completed practice sessions with transcript, filler count and duration.
+    @Published var pastSessions: [PracticeSession] = []
 
     private let apiKey = "efc3c337656d36be52e2c95e4859006a8d676cfc"  // <-- replace this
     private var audioEngine: AVAudioEngine?
     private var webSocketTask: URLSessionWebSocketTask?
+
+    /// Start time for the current session to calculate duration.
+    private var sessionStart: Date?
 
     /// Common filler words that should always be highlighted.
     private let baseFillerWords: Set<String> = ["like", "so", "you know"]
@@ -21,9 +29,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         var regexes: [NSRegularExpression] = []
 
-        // Regex for dynamic variants (e.g. "umm", "uhhh", "hmm").
+        // Regex for dynamic variants (e.g. "umm", "uhhh", "errr", "hmm").
         if let dynamic = try? NSRegularExpression(
-            pattern: #"(?i)(?<!\w)(?:u+m+|u+h+|e+r+|a+h+|e+h+|m+|h+m+)(?=\b|[^\w]|$)"#
+            pattern: #"(?i)(?<!\w)(?:u+h+|u+m+|er+|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
         ) {
             regexes.append(dynamic)
         }
@@ -46,7 +54,9 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func startRecording() {
         guard !isRecording else { return }
+        resetCurrentSession()
         isRecording = true
+        sessionStart = Date()
 
         let sampleRate = AVAudioSession.sharedInstance().sampleRate
         let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
@@ -72,6 +82,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine = nil
         webSocketTask?.cancel()
         isRecording = false
+        saveCurrentSession()
         print("Transcription stopped.")
     }
 
@@ -211,41 +222,26 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Filler words found: \(count)")
         }
     }
-
-    private func highlightAndCountFillerWords(in text: String) {
-        var count = 0
-        let attributed = NSMutableAttributedString(string: text)
-        for regex in fillerWordRegexes {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            count += matches.count
-            for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
-            }
-        }
-        DispatchQueue.main.async {
-            self.fillerWordCount = count
-            self.highlightedText = AttributedString(attributed)
-            print("Transcript: \(text)")
-            print("Filler words found: \(count)")
-        }
+  
+    /// Clear current transcript and counters before a new session.
+    func resetCurrentSession() {
+        transcribedText = ""
+        highlightedText = AttributedString("")
+        fillerWordCount = 0
     }
 
-    private func highlightAndCountFillerWords(in text: String) {
-        var count = 0
-        let attributed = NSMutableAttributedString(string: text)
-        for regex in fillerWordRegexes {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            count += matches.count
-            for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
-            }
-        }
-        DispatchQueue.main.async {
-            self.fillerWordCount = count
-            self.highlightedText = AttributedString(attributed)
-            print("Transcript: \(text)")
-            print("Filler words found: \(count)")
-        }
+    /// Persist the completed session to the history list.
+    private func saveCurrentSession() {
+        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        lastSessionDuration = duration
+        let session = PracticeSession(
+            transcript: transcribedText,
+            fillerWordCount: fillerWordCount,
+            duration: duration,
+            date: sessionStart ?? Date()
+        )
+        pastSessions.append(session)
+        sessionStart = nil
     }
 }
 
@@ -271,3 +267,12 @@ struct Word: Codable {
     let end: Double
 }
 
+// MARK: - Practice Session Model
+
+struct PracticeSession: Identifiable {
+    let id = UUID()
+    let transcript: String
+    let fillerWordCount: Int
+    let duration: TimeInterval
+    let date: Date
+}
