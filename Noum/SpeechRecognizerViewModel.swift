@@ -44,8 +44,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         if let env = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"] {
             return env
         }
-        if let path = Bundle.main.path(forResource: "Deepgram", ofType: "plist"),
-           let dict = NSDictionary(contentsOfFile: path),
+        if let url = Bundle.main.url(forResource: "Deepgram", withExtension: "plist"),
+           let data = try? Data(contentsOf: url),
+           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+           let dict = plist as? [String: Any],
            let key = dict["DEEPGRAM_API_KEY"] as? String {
             return key
         }
