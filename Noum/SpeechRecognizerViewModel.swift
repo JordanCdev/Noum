@@ -3,7 +3,7 @@ import AVFoundation
 import UIKit
 import Foundation
 
-@available(iOS 15.0, macOS 12.0, *)
+@available(iOS 17.0, macOS 12.0, *)
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
