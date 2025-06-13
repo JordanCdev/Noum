@@ -301,6 +301,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = 0
         lastPartialSnippet = ""
         finalTranscript = ""
+
     }
 
     /// Persist the completed session to the history list.
