@@ -14,7 +14,6 @@ import UIKit
 import WhisperKit
 #endif
 
-
 class SpeechRecognizerViewModel: ObservableObject {
     // Published properties to update the UI
     @Published var transcribedText: String = ""
@@ -29,10 +28,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         fillerWords.compactMap { filler in
             let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = "(?i)(?<!\\w)\(escaped)(?=\\b|[^\\w]|$)"
+
+            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
             return try? NSRegularExpression(pattern: pattern)
         }
     }()
+
     private let audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -48,7 +49,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         // Use the desired locale (en-US as an example)
         self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         requestSpeechAndRecordAuthorization()
-      
+
         #if canImport(WhisperKit)
         Task {
             self.whisperKit = try? await WhisperKit()
@@ -195,7 +196,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     // MARK: - Whisper Recording
 
 #if canImport(WhisperKit)
-
     func startWhisperRecording() {
         let audioSession = AVAudioSession.sharedInstance()
         do {
@@ -222,7 +222,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Audio recorder setup failed: \(error.localizedDescription)")
         }
     }
-
 #endif
 
 #if canImport(WhisperKit)
@@ -248,7 +247,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 #endif
-
     
     // MARK: - Update Transcription and Highlight Filler Words
 
