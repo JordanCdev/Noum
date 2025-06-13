@@ -58,9 +58,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var audioEngine: AVAudioEngine?
     #endif
     private var webSocketTask: URLSessionWebSocketTask?
-    
+
     /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
+
+    /// Most recent partial transcript returned by Deepgram.
+    private var lastPartialSnippet: String = ""
     
     /// Common filler words that should always be highlighted.
     private let baseFillerWords: Set<String> = ["like", "so", "you know"]
@@ -231,11 +234,27 @@ class SpeechRecognizerViewModel: ObservableObject {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
                 DispatchQueue.main.async {
-                    // Deepgram streams the full transcript with each message,
-                    // so replace the text instead of appending to avoid
-                    // duplicates in the UI.
-                    self.transcribedText = snippet
-                    self.highlightAndCountFillerWords(in: snippet)
+                    // Deepgram may send partial transcripts that grow and shrink
+                    // as speech is recognized. Track the last snippet so we can
+                    // append only the new portion and ignore backtracking.
+                    var addition = ""
+                    if snippet.hasPrefix(self.lastPartialSnippet) {
+                        let start = snippet.index(snippet.startIndex, offsetBy: self.lastPartialSnippet.count)
+                        addition = String(snippet[start...])
+                    } else if self.lastPartialSnippet.hasPrefix(snippet) {
+                        // The service sent a shorter snippet than before; this
+                        // usually means the transcript is still interim. Ignore.
+                        addition = ""
+                    } else {
+                        let common = snippet.commonPrefix(with: self.lastPartialSnippet)
+                        let start = snippet.index(snippet.startIndex, offsetBy: common.count)
+                        addition = String(snippet[start...])
+                    }
+                    if !addition.isEmpty {
+                        self.transcribedText += addition
+                        self.highlightAndCountFillerWords(in: self.transcribedText)
+                    }
+                    self.lastPartialSnippet = snippet
                     print("Transcript: \(snippet)")
                     print("Filler words found: \(self.fillerWordCount)")
                 }
@@ -277,6 +296,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcribedText = ""
         highlightedText = AttributedString("")
         fillerWordCount = 0
+        lastPartialSnippet = ""
     }
 
     /// Persist the completed session to the history list.
