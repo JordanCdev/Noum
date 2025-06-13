@@ -201,6 +201,9 @@ class SpeechRecognizerViewModel: ObservableObject {
                 }
             }
         }
+        highlightedText = AttributedString(attributed)
+        print("Transcript: \(text)")
+        print("Filler words found: \(fillerWordCount)")
     }
 
     private func highlightAndCountFillerWords(in text: String) {
@@ -220,7 +223,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Filler words found: \(count)")
         }
     }
-
+  
     /// Clear current transcript and counters before a new session.
     func resetCurrentSession() {
         transcribedText = ""
@@ -274,4 +277,3 @@ struct PracticeSession: Identifiable {
     let duration: TimeInterval
     let date: Date
 }
-
