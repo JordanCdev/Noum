@@ -1,9 +1,12 @@
 # Noum
 
 This app demonstrates speech recognition with filler word highlighting using
-the [WhisperKit](https://github.com/argmaxinc/WhisperKit) library for on-device
-transcription.
+the [Deepgram](https://deepgram.com/) streaming API.
 
-The first recording will initialize WhisperKit and download a compatible model
-if needed. Add `https://github.com/argmaxinc/WhisperKit.git` as a Swift Package
-dependency in Xcode to build the project.
+Update `SpeechRecognizerViewModel.swift` with your Deepgram API key. The app
+connects to Deepgram over WebSockets and streams audio from the microphone to
+get real-time transcripts. Filler words are counted and highlighted in the UI.
+Common disfluencies such as "umm" or "hmm" are detected using a regex so
+variants are matched dynamically.
+
+Add your API key and build the Xcode project to run the demo.
