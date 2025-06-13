@@ -231,7 +231,12 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Filler words found: \(fillerWordCount)")
     }
 
-    private func highlightAndCountFillerWords(in text: String) {
+    /// Highlight any filler words found in `text` and update ``fillerWordCount``.
+    ///
+    /// Made internal for unit testing so that tests can verify the filler word
+    /// detection logic without needing to record audio or parse a full
+    /// Deepgram response.
+    func highlightAndCountFillerWords(in text: String) {
         var count = 0
         let attributed = NSMutableAttributedString(string: text)
         for regex in fillerWordRegexes {
