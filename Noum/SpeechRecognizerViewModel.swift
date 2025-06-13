@@ -357,7 +357,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         let canonicalQuery = query
-            .map { ($0.key, $0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value) }
+            .map { ($0.key, $0.value.awsPercentEncoded()) }
             .sorted { $0.0 < $1.0 }
             .map { "\($0)=\($1)" }
             .joined(separator: "&")
@@ -591,3 +591,4 @@ class SpeechRecognizerViewModel: ObservableObject {
         let date: Date
     }
 }
+
