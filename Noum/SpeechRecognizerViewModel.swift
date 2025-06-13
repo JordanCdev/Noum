@@ -35,6 +35,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Invalid Deepgram URL")
             return
         }
+
         var request = URLRequest(url: url)
         request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -167,6 +168,9 @@ class SpeechRecognizerViewModel: ObservableObject {
                 }
             }
         }
+        highlightedText = AttributedString(attributed)
+        print("Transcript: \(text)")
+        print("Filler words found: \(fillerWordCount)")
     }
 
     private func highlightAndCountFillerWords(in text: String) {
