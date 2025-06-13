@@ -1,5 +1,9 @@
+import Foundation
+#if canImport(SwiftUI)
 import SwiftUI
+#endif
 @available(iOS 17.0, macOS 12.0, *)
+#if canImport(SwiftUI)
 
 struct SessionHistoryView: View {
     @ObservedObject var speechVM: SpeechRecognizerViewModel
@@ -23,8 +27,10 @@ struct SessionHistoryView: View {
             }
         }
     }
-}
+#endif
 
+#if canImport(SwiftUI)
 #Preview {
     SessionHistoryView(speechVM: SpeechRecognizerViewModel())
 }
+#endif
