@@ -33,6 +33,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     
     /// Completed practice sessions with transcript, filler count and duration.
     @Published var pastSessions: [PracticeSession] = []
+
+    /// Key used for persisting sessions to UserDefaults.
+    private let sessionsKey = "practiceSessions"
     
     /// API key for authenticating with Deepgram.
     ///
@@ -61,7 +64,6 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
-
     /// Final transcript built from all finalized Deepgram results.
     private var finalTranscript: String = ""
 
@@ -103,12 +105,31 @@ class SpeechRecognizerViewModel: ObservableObject {
         
         return regexes
     }()
-    
-#if canImport(AVFoundation)
-    init() {
-        requestRecordAuthorization()
+
+    /// Load any previously saved sessions from UserDefaults.
+    private func loadSessions() {
+        guard let data = UserDefaults.standard.data(forKey: sessionsKey),
+              let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else {
+            return
+        }
+        pastSessions = sessions
     }
 
+    /// Persist the current sessions array to UserDefaults.
+    private func saveSessions() {
+        if let data = try? JSONEncoder().encode(pastSessions) {
+            UserDefaults.standard.set(data, forKey: sessionsKey)
+        }
+    }
+
+    init() {
+        loadSessions()
+#if canImport(AVFoundation)
+        requestRecordAuthorization()
+#endif
+    }
+
+#if canImport(AVFoundation)
     func startRecording() {
         guard !isRecording else { return }
         guard let key = apiKey, !key.isEmpty else {
@@ -328,6 +349,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             date: sessionStart ?? Date()
         )
         pastSessions.append(session)
+        saveSessions()
         sessionStart = nil
     }
     
@@ -363,8 +385,8 @@ class SpeechRecognizerViewModel: ObservableObject {
     
     // MARK: - Practice Session Model
     
-    struct PracticeSession: Identifiable {
-        let id = UUID()
+    struct PracticeSession: Identifiable, Codable {
+        let id: UUID = UUID()
         let transcript: String
         let fillerWordCount: Int
         let duration: TimeInterval
