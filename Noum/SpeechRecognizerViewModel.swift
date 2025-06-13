@@ -275,7 +275,15 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         
         if message.type == "Results", let alt = message.channel?.alternatives.first {
-            let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            var snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Some filler words may be omitted from the transcript but appear
+            // in the `words` array. Build a fallback string from those words so
+            // detection doesn't miss them.
+            if snippet.isEmpty, let words = alt.words {
+                snippet = words.map { $0.word }.joined(separator: " ")
+            }
+
             guard !snippet.isEmpty else { return }
             DispatchQueue.main.async {
                 if message.isFinal == true {
