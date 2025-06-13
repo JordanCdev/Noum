@@ -19,7 +19,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var whisperInitError: String?
 #endif
 
-
     private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         fillerWords.compactMap { filler in
@@ -51,7 +50,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             }
         }
 #endif
-
     }
 
     private func requestRecordAuthorization() {
