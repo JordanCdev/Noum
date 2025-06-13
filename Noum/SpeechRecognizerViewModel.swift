@@ -231,11 +231,19 @@ class SpeechRecognizerViewModel: ObservableObject {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
                 DispatchQueue.main.async {
-                    // Deepgram streams the full transcript with each message,
-                    // so replace the text instead of appending to avoid
-                    // duplicates in the UI.
-                    self.transcribedText = snippet
-                    self.highlightAndCountFillerWords(in: snippet)
+                    // Deepgram often sends the entire transcript so far with
+                    // each message.  If the new snippet starts with the
+                    // existing text, append only the difference so we preserve
+                    // the full transcript without duplication.  Otherwise
+                    // replace the text to stay in sync with the stream.
+                    if snippet.hasPrefix(self.transcribedText) {
+                        let startIndex = snippet.index(snippet.startIndex, offsetBy: self.transcribedText.count)
+                        let addition = snippet[startIndex...]
+                        self.transcribedText += String(addition)
+                    } else {
+                        self.transcribedText = snippet
+                    }
+                    self.highlightAndCountFillerWords(in: self.transcribedText)
                     print("Transcript: \(snippet)")
                     print("Filler words found: \(self.fillerWordCount)")
                 }
