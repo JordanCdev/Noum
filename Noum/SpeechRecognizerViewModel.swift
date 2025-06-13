@@ -140,8 +140,15 @@ class SpeechRecognizerViewModel: ObservableObject {
         resetCurrentSession()
         isRecording = true
         sessionStart = Date()
-        
-        let sampleRate = AVAudioSession.sharedInstance().sampleRate
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to configure audio session: \(error)")
+        }
+
+        let sampleRate = audioSession.sampleRate
         let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
         guard let url = URL(string: urlString) else {
             print("Invalid Deepgram URL")
@@ -164,6 +171,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         guard isRecording else { return }
         audioEngine?.stop()
         audioEngine = nil
+        try? AVAudioSession.sharedInstance().setActive(false)
         webSocketTask?.cancel()
         isRecording = false
         // Append any remaining partial transcript before saving.
