@@ -11,12 +11,14 @@ struct SessionHistoryView: View {
     var body: some View {
         NavigationView {
             List(speechVM.pastSessions) { session in
-                VStack(alignment: .leading) {
-                    Text(session.date, style: .date)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.date.formatted(date: .abbreviated, time: .shortened))
                         .font(.headline)
-                    Text("Duration: \(Int(session.duration))s")
-                    Text("Filler Words: \(session.fillerWordCount)")
-                    Text("Transcript: \(session.transcript)")
+                    Text("Duration: \(Int(session.duration))s \u{2022} Filler Words: \(session.fillerWordCount)")
+                        .font(.subheadline)
+                    Text(session.transcript)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
