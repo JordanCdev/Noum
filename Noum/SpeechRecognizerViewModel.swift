@@ -71,7 +71,13 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var partialTranscript: String = ""
     
     /// Common filler words that should always be highlighted.
-    private let baseFillerWords: Set<String> = ["like", "so", "you know"]
+    ///
+    /// This includes short variants like "um" or "er" in addition to
+    /// conversational phrases such as "you know".
+    private let baseFillerWords: Set<String> = [
+        "uh", "um", "er", "erm", "ah", "eh", "huh",
+        "like", "so", "you know"
+    ]
     
     /// Regexes used to locate filler words in the transcript.  This includes
     /// patterns for common dynamic variants such as "ummm" or "hmmm" so we
@@ -79,9 +85,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         var regexes: [NSRegularExpression] = []
         
-        // Regex for dynamic variants (e.g. "umm", "uhhh", "errr", "hmm").
+        // Regex for dynamic variants with repeated letters like "ummm" or
+        // "erhh". These catch stuttered forms that may not match the base
+        // words exactly.
         if let dynamic = try? NSRegularExpression(
-            pattern: #"(?i)(?<!\w)(?:u+h+|u+m+|er+|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
+            pattern: #"(?i)(?<!\w)(?:u+h{2,}|u+m{2,}|hu+h+|er{2,}|er+m{2,}|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
         ) {
             regexes.append(dynamic)
         }
