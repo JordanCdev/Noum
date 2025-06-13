@@ -112,7 +112,7 @@ class SpeechRecognizerViewModel: ObservableObject {
               let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else {
             return
         }
-        pastSessions = sessions
+        pastSessions = sessions.sorted { $0.date > $1.date }
     }
 
     /// Persist the current sessions array to UserDefaults.
@@ -348,7 +348,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             duration: duration,
             date: sessionStart ?? Date()
         )
-        pastSessions.append(session)
+        pastSessions.insert(session, at: 0)
         saveSessions()
         sessionStart = nil
     }

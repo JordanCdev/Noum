@@ -42,7 +42,10 @@ struct ContentView: View {
                 Button("History") { showHistory = true }
             }
         }
-        .sheet(isPresented: $showSummary) {
+        .sheet(
+            isPresented: $showSummary,
+            onDismiss: { speechVM.resetCurrentSession() }
+        ) {
             SummaryView(
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
