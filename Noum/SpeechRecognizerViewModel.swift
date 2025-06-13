@@ -209,15 +209,17 @@ class SpeechRecognizerViewModel: ObservableObject {
             case .failure(let error):
                 print("WebSocket receive error: \(error)")
             case .success(let message):
-                switch message {
-                case .data(let data):
-                    self.handleDeepgramResponse(data: data)
-                case .string(let text):
-                    self.handleDeepgramResponse(text: text)
-                @unknown default:
-                    break
+                Task { @MainActor in
+                    switch message {
+                    case .data(let data):
+                        self.handleDeepgramResponse(data: data)
+                    case .string(let text):
+                        self.handleDeepgramResponse(text: text)
+                    @unknown default:
+                        break
+                    }
+                    self.receiveWebSocketMessages()  // keep listening
                 }
-                self.receiveWebSocketMessages()  // keep listening
             }
         }
     }
