@@ -8,7 +8,7 @@
     <key>AWS_SECRET_ACCESS_KEY</key>
     <string>YOUR_SECRET_ACCESS_KEY</string>
     <key>AWS_REGION</key>
-    <string>eu-west-1</string>
+    <string>eu-west-2</string>
     <!-- Optional session token if using temporary credentials -->
     <key>AWS_SESSION_TOKEN</key>
     <string></string>
