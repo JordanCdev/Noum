@@ -1,7 +1,8 @@
 # Noum
 
 This app demonstrates speech recognition with filler word highlighting using
-the [Deepgram](https://deepgram.com/) streaming API.
+the [Deepgram](https://deepgram.com/) streaming API or
+Amazon Transcribe for streaming speech recognition.
 
 Provide your Deepgram API key either by setting the `DEEPGRAM_API_KEY` environment
 variable in the run scheme, or by creating a `Deepgram.plist` file (see
@@ -10,6 +11,14 @@ to the Xcode target's **Copy Bundle Resources** build phase so
 `Bundle.main.url(forResource:)` can locate it at runtime. The app connects to
 Deepgram over WebSockets and streams audio from the microphone to get real-time
 transcripts. Filler words are counted and highlighted in the UI.
+
+To use Amazon Transcribe instead, supply your AWS credentials via the
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional
+`AWS_SESSION_TOKEN` environment variables or a `Transcribe.plist` file
+(see `Transcribe.plist.example`). The region defaults to `us-east-1`
+but can be overridden with an `AWS_REGION` key. The app will construct
+a SigV4-signed WebSocket request and stream audio to Transcribe in the
+same manner as Deepgram.
 
 Common disfluencies such as "umm" or "hmm" are detected using a regex so
 variants are matched dynamically.
