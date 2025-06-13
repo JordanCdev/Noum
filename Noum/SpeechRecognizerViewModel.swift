@@ -223,12 +223,11 @@ class SpeechRecognizerViewModel: ObservableObject {
                     // duplicates in the UI.
                     self.transcribedText = snippet
                     self.highlightAndCountFillerWords(in: snippet)
+                    print("Transcript: \(snippet)")
+                    print("Filler words found: \(self.fillerWordCount)")
                 }
             }
         }
-        highlightedText = AttributedString(attributed)
-        print("Transcript: \(text)")
-        print("Filler words found: \(fillerWordCount)")
     }
 
     /// Highlight any filler words found in `text` and update ``fillerWordCount``.
@@ -253,13 +252,11 @@ class SpeechRecognizerViewModel: ObservableObject {
             } else {
                 self.highlightedText = AttributedString(text)
             }
-            print("Transcript: \(text)")
-            print("Filler words found: \(count)")
         }
     }
 
     /// Clear current transcript and counters before a new session.
-    func resetCurrentSession() {
+    private func resetCurrentSession() {
         transcribedText = ""
         highlightedText = AttributedString("")
         fillerWordCount = 0
