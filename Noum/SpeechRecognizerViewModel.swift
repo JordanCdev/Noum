@@ -255,7 +255,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         
         /// Clear current transcript and counters before a new session.
-        func resetCurrentSession() {
+        private func resetCurrentSession() {
             transcribedText = ""
             highlightedText = AttributedString("")
             fillerWordCount = 0
@@ -281,6 +281,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     struct DeepgramMessage: Codable {
         let type: String?
         let channel: Channel?
+
     }
     
     struct Channel: Codable {
