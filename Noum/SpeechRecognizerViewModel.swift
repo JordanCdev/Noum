@@ -64,8 +64,11 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
-    /// Final transcript constructed from the last finalized result.
+    /// Final transcript built from all finalized Deepgram results.
     private var finalTranscript: String = ""
+
+    /// Latest partial snippet that has not yet been finalized.
+    private var partialTranscript: String = ""
     
     /// Common filler words that should always be highlighted.
     private let baseFillerWords: Set<String> = ["like", "so", "you know"]
@@ -155,6 +158,16 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine = nil
         webSocketTask?.cancel()
         isRecording = false
+        // Append any remaining partial transcript before saving.
+        if !partialTranscript.isEmpty {
+            if !finalTranscript.isEmpty {
+                finalTranscript += " "
+            }
+            finalTranscript += partialTranscript
+            partialTranscript = ""
+            transcribedText = finalTranscript
+            highlightAndCountFillerWords(in: finalTranscript)
+        }
         saveCurrentSession()
         print("Transcription stopped.")
         print("Final transcript: \(finalTranscript)")
@@ -258,12 +271,22 @@ class SpeechRecognizerViewModel: ObservableObject {
             guard !snippet.isEmpty else { return }
             DispatchQueue.main.async {
                 if message.isFinal == true {
-                    self.finalTranscript = snippet
+                    if !self.finalTranscript.isEmpty {
+                        self.finalTranscript += " "
+                    }
+                    self.finalTranscript += snippet
+                    self.partialTranscript = ""
+                } else {
+                    self.partialTranscript = snippet
                 }
-                self.transcribedText = snippet
-                self.highlightAndCountFillerWords(in: self.transcribedText)
+
+                let combined = [self.finalTranscript, self.partialTranscript]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                self.transcribedText = combined
+                self.highlightAndCountFillerWords(in: combined)
                 print("Transcript snippet: \(snippet)")
-                print("Current transcript on screen: \(self.transcribedText)")
+                print("Current transcript on screen: \(combined)")
                 print("Filler words found: \(self.fillerWordCount)")
             }
         }
@@ -304,6 +327,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         highlightedText = AttributedString("")
         fillerWordCount = 0
         finalTranscript = ""
+        partialTranscript = ""
     }
 
     /// Persist the completed session to the history list.
