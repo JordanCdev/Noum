@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0B3A91F92DFCF18700FFDA37 /* AWSCognitoIdentityProvider in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A91F82DFCF18700FFDA37 /* AWSCognitoIdentityProvider */; };
+		0B3A91FB2DFCF18700FFDA37 /* AWSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A91FA2DFCF18700FFDA37 /* AWSCore */; };
+		0B3A91FD2DFCF18700FFDA37 /* AWSTranscribeStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A91FC2DFCF18700FFDA37 /* AWSTranscribeStreaming */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		0B981F7D2D446110008F4158 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +58,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0B3A91F92DFCF18700FFDA37 /* AWSCognitoIdentityProvider in Frameworks */,
+				0B3A91FD2DFCF18700FFDA37 /* AWSTranscribeStreaming in Frameworks */,
+				0B3A91FB2DFCF18700FFDA37 /* AWSCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +121,9 @@
 			);
 			name = Noum;
 			packageProductDependencies = (
+				0B3A91F82DFCF18700FFDA37 /* AWSCognitoIdentityProvider */,
+				0B3A91FA2DFCF18700FFDA37 /* AWSCore */,
+				0B3A91FC2DFCF18700FFDA37 /* AWSTranscribeStreaming */,
 			);
 			productName = Noum;
 			productReference = 0B981F6C2D44610E008F4158 /* Noum.app */;
@@ -196,6 +208,7 @@
 			mainGroup = 0B981F632D44610E008F4158;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				0B3A91F72DFCF18700FFDA37 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0B981F6D2D44610E008F4158 /* Products */;
@@ -564,6 +577,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0B3A91F72DFCF18700FFDA37 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/aws-amplify/aws-sdk-ios-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.41.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0B3A91F82DFCF18700FFDA37 /* AWSCognitoIdentityProvider */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B3A91F72DFCF18700FFDA37 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */;
+			productName = AWSCognitoIdentityProvider;
+		};
+		0B3A91FA2DFCF18700FFDA37 /* AWSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B3A91F72DFCF18700FFDA37 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */;
+			productName = AWSCore;
+		};
+		0B3A91FC2DFCF18700FFDA37 /* AWSTranscribeStreaming */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B3A91F72DFCF18700FFDA37 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */;
+			productName = AWSTranscribeStreaming;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0B981F642D44610E008F4158 /* Project object */;
 }
