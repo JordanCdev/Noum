@@ -1,6 +1,8 @@
 import SwiftUI
 import AVFoundation
 import UIKit
+import Foundation
+
 
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
@@ -138,7 +140,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 for i in 0..<frameLength {
                     let clamped = max(-1.0, min(1.0, channelData[i]))
                     var sample = Int16(clamped * Float(Int16.max))
-                    pcmData.append(UnsafeBufferPointer(start: &sample, count: 1))
+                    withUnsafeBytes(of: &sample) { pcmData.append(contentsOf: $0) }
                 }
                 return pcmData
             }
@@ -218,7 +220,12 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
-            self.highlightedText = AttributedString(attributed)
+          
+            if let converted = try? AttributedString(attributed) {
+                self.highlightedText = converted
+            } else {
+                self.highlightedText = AttributedString(text)
+            }
             print("Transcript: \(text)")
             print("Filler words found: \(count)")
         }
