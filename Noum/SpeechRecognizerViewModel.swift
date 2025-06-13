@@ -35,6 +35,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Invalid Deepgram URL")
             return
         }
+
         var request = URLRequest(url: url)
         request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -157,7 +158,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Failed to decode response")
             return
         }
-
         if message.type == "Results", let alt = message.channel?.alternatives.first {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
