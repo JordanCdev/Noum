@@ -1,5 +1,6 @@
 # Noum
 
+
 This app demonstrates speech recognition with filler word highlighting.
 It supports Apple's `Speech` framework and optional transcription using the
 [WhisperKit](https://github.com/argmaxinc/WhisperKit) library for on-device
