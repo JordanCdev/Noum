@@ -454,42 +454,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func handleAmazonResponse(data: Data) {
-        if let text = String(data: data, encoding: .utf8) {
-            handleAmazonResponse(text: text)
-        }
-    }
-
-    private func handleAmazonResponse(text: String) {
-        guard let data = text.data(using: .utf8) else { return }
-        guard let message = try? JSONDecoder().decode(TranscribeMessage.self, from: data) else {
-            return
-        }
-
-        guard let result = message.transcript.results.first,
-              let alt = result.alternatives.first else { return }
-
-        let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !snippet.isEmpty else { return }
-
-        DispatchQueue.main.async {
-            if result.isPartial == false {
-                if !self.finalTranscript.isEmpty {
-                    self.finalTranscript += " "
-                }
-                self.finalTranscript += snippet
-                self.partialTranscript = ""
-            } else {
-                self.partialTranscript = snippet
-            }
-
-            let combined = [self.finalTranscript, self.partialTranscript]
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-            self.transcribedText = combined
-            self.highlightAndCountFillerWords(in: combined)
-        }
-    }
 
     private func handleAmazonResponse(data: Data) {
         if let text = String(data: data, encoding: .utf8) {
