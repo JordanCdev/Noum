@@ -30,4 +30,13 @@ struct NoumTests {
         let count2 = await vm.fillerWordCount
         #expect(count2 == 5)
     }
+
+    /// Ensure newer filler words such as "hmm" and "erm" are detected.
+    @Test func additionalFillerWords() async throws {
+        let vm = await SpeechRecognizerViewModel()
+        await vm.highlightAndCountFillerWords(in: "hmm erm mm")
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let count3 = await vm.fillerWordCount
+        #expect(count3 == 3)
+    }
 }
