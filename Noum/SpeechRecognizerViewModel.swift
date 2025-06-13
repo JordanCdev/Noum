@@ -616,42 +616,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             case transcript = "Transcript"
         }
     }
-
-    // MARK: - Amazon Transcribe Response Models
-
-    struct TranscribeMessage: Codable {
-        let transcript: Transcript
-
-        enum CodingKeys: String, CodingKey {
-            case transcript = "Transcript"
-        }
-    }
-
-    struct Transcript: Codable {
-        let results: [TranscriptResult]
-
-        enum CodingKeys: String, CodingKey {
-            case results = "Results"
-        }
-    }
-
-    struct TranscriptResult: Codable {
-        let alternatives: [TranscriptAlternative]
-        let isPartial: Bool
-
-        enum CodingKeys: String, CodingKey {
-            case alternatives = "Alternatives"
-            case isPartial = "IsPartial"
-        }
-    }
-
-    struct TranscriptAlternative: Codable {
-        let transcript: String
-
-        enum CodingKeys: String, CodingKey {
-            case transcript = "Transcript"
-        }
-    }
     
     // MARK: - Practice Session Model
     
