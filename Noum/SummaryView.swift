@@ -3,6 +3,8 @@ import SwiftUI
 struct SummaryView: View {
     let transcript: AttributedString
     let fillerCount: Int
+    let duration: TimeInterval
+    var onNewSession: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -13,7 +15,10 @@ struct SummaryView: View {
             }
             Text("Filler Words: \(fillerCount)")
                 .font(.headline)
+            Text("Duration: \(Int(duration))s")
+                .font(.subheadline)
             Button("New Practice Session") {
+                onNewSession()
                 dismiss()
             }
         }
@@ -22,5 +27,5 @@ struct SummaryView: View {
 }
 
 #Preview {
-    SummaryView(transcript: AttributedString("Example"), fillerCount: 0)
+    SummaryView(transcript: AttributedString("Example"), fillerCount: 0, duration: 0)
 }
