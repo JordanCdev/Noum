@@ -3,6 +3,7 @@ import AVFoundation
 import UIKit
 import Foundation
 
+
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
@@ -202,6 +203,9 @@ class SpeechRecognizerViewModel: ObservableObject {
                 }
             }
         }
+        highlightedText = AttributedString(attributed)
+        print("Transcript: \(text)")
+        print("Filler words found: \(fillerWordCount)")
     }
 
     private func highlightAndCountFillerWords(in text: String) {
@@ -216,6 +220,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
+          
             if let converted = try? AttributedString(attributed) {
                 self.highlightedText = converted
             } else {
@@ -225,7 +230,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Filler words found: \(count)")
         }
     }
-
+  
     /// Clear current transcript and counters before a new session.
     func resetCurrentSession() {
         transcribedText = ""
@@ -279,4 +284,3 @@ struct PracticeSession: Identifiable {
     let duration: TimeInterval
     let date: Date
 }
-
