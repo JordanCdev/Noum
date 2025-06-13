@@ -4,6 +4,6 @@
 <dict>
     <!-- Replace with your own Deepgram API key -->
     <key>DEEPGRAM_API_KEY</key>
-    <string>YOUR_API_KEY_HERE</string>
+    <string>efc3c337656d36be52e2c95e4859006a8d676cfc</string>
 </dict>
 </plist>
