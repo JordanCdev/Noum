@@ -28,7 +28,14 @@ class SpeechRecognizerViewModel: ObservableObject {
     func startRecording() {
         guard !isRecording else { return }
         isRecording = true
-        let url = URL(string: "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true")!
+
+        let sampleRate = AVAudioSession.sharedInstance().sampleRate
+        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
+        guard let url = URL(string: urlString) else {
+            print("Invalid Deepgram URL")
+            return
+        }
+
         var request = URLRequest(url: url)
         request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -146,13 +153,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
     
     private func handleDeepgramResponse(text: String) {
-        // Very simple decoding for this prototype
-        guard let response = try? JSONDecoder().decode(DeepgramResponse.self, from: text.data(using: .utf8)!) else {
+        guard let data = text.data(using: .utf8) else { return }
+        guard let message = try? JSONDecoder().decode(DeepgramMessage.self, from: data) else {
             print("Failed to decode response")
             return
         }
-
-        if let alt = response.channel.alternatives.first {
+        if message.type == "Results", let alt = message.channel?.alternatives.first {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             if !snippet.isEmpty {
                 transcribedText += transcribedText.isEmpty ? snippet : " " + snippet
@@ -179,22 +185,23 @@ class SpeechRecognizerViewModel: ObservableObject {
 
 // MARK: - Deepgram Response Models
 
-struct DeepgramResponse: Codable {
-    let channel: Channel
-    
-    struct Channel: Codable {
-        let alternatives: [Alternative]
-    }
-    
-    struct Alternative: Codable {
-        let transcript: String
-        let words: [Word]?
-    }
-    
-    struct Word: Codable {
-        let word: String
-        let start: Double
-        let end: Double
-    }
+struct DeepgramMessage: Codable {
+    let type: String?
+    let channel: Channel?
+}
+
+struct Channel: Codable {
+    let alternatives: [Alternative]
+}
+
+struct Alternative: Codable {
+    let transcript: String
+    let words: [Word]?
+}
+
+struct Word: Codable {
+    let word: String
+    let start: Double
+    let end: Double
 }
 
