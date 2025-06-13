@@ -1,10 +1,8 @@
 import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
-#endif
-@available(iOS 17.0, macOS 12.0, *)
-#if canImport(SwiftUI)
 
+@available(iOS 17.0, macOS 12.0, *)
 struct SummaryView: View {
     let transcript: AttributedString
     let fillerCount: Int
@@ -30,10 +28,6 @@ struct SummaryView: View {
         .padding()
     }
 }
-
-#endif
-
-#if canImport(SwiftUI)
 #Preview {
     SummaryView(transcript: AttributedString("Example"), fillerCount: 0, duration: 0)
 }

@@ -54,6 +54,7 @@ struct ContentView: View {
             SessionHistoryView(speechVM: speechVM)
         }
     }
+}
 #endif
 
 #if canImport(SwiftUI)
