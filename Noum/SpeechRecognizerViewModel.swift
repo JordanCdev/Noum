@@ -319,7 +319,16 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
     
     private func sendPCMData(_ data: Data) {
-        webSocketTask?.send(.data(data)) { error in
+        guard let task = webSocketTask else { return }
+
+        // Avoid spamming the log with errors when the connection is closed or
+        // failed to open due to network restrictions.
+        guard task.state == .running else {
+            print("WebSocket not connected; dropping audio chunk")
+            return
+        }
+
+        task.send(.data(data)) { error in
             if let error = error {
                 print("WebSocket send error: \(error)")
             }
