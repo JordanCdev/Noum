@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <!-- Replace with your own Deepgram API key -->
-    <key>DEEPGRAM_API_KEY</key>
-    <string>efc3c337656d36be52e2c95e4859006a8d676cfc</string>
-</dict>
-</plist>

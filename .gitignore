@@ -6,7 +6,5 @@ xcuserdata/
 .build/
 
 # Local configuration files
-Noum/Deepgram.plist
-Noum/Deepgram.plist.example
 Noum/Transcribe.plist
 Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme

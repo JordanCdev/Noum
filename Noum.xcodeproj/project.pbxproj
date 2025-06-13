@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0B67876D2DFBA24000FF3BBE /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0B67876C2DFBA24000FF3BBE /* WhisperKit */; };
-		0B67876F2DFBA24000FF3BBE /* whisperkit-cli in Frameworks */ = {isa = PBXBuildFile; productRef = 0B67876E2DFBA24000FF3BBE /* whisperkit-cli */; };
+
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,10 +55,8 @@
 		0B981F692D44610E008F4158 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = (
-				0B67876D2DFBA24000FF3BBE /* WhisperKit in Frameworks */,
-				0B67876F2DFBA24000FF3BBE /* whisperkit-cli in Frameworks */,
-			);
+                        files = (
+                        );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0B981F792D446110008F4158 /* Frameworks */ = {
@@ -118,10 +115,8 @@
 				0B981F6E2D44610E008F4158 /* Noum */,
 			);
 			name = Noum;
-			packageProductDependencies = (
-				0B67876C2DFBA24000FF3BBE /* WhisperKit */,
-				0B67876E2DFBA24000FF3BBE /* whisperkit-cli */,
-			);
+                        packageProductDependencies = (
+                        );
 			productName = Noum;
 			productReference = 0B981F6C2D44610E008F4158 /* Noum.app */;
 			productType = "com.apple.product-type.application";
@@ -204,9 +199,8 @@
 			);
 			mainGroup = 0B981F632D44610E008F4158;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				0B67876B2DFBA24000FF3BBE /* XCRemoteSwiftPackageReference "WhisperKit" */,
-			);
+                        packageReferences = (
+                        );
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0B981F6D2D44610E008F4158 /* Products */;
 			projectDirPath = "";
@@ -576,27 +570,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		0B67876B2DFBA24000FF3BBE /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/JordanCdev/WhisperKit";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0B67876C2DFBA24000FF3BBE /* WhisperKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0B67876B2DFBA24000FF3BBE /* XCRemoteSwiftPackageReference "WhisperKit" */;
-			productName = WhisperKit;
-		};
-		0B67876E2DFBA24000FF3BBE /* whisperkit-cli */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0B67876B2DFBA24000FF3BBE /* XCRemoteSwiftPackageReference "WhisperKit" */;
-			productName = "whisperkit-cli";
-		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0B981F642D44610E008F4158 /* Project object */;

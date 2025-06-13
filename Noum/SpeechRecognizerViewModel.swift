@@ -40,25 +40,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// Key used for persisting sessions to UserDefaults.
     private let sessionsKey = "practiceSessions"
     
-    /// API key for authenticating with Deepgram.
-    ///
-    /// The key is loaded from the `DEEPGRAM_API_KEY` environment variable.
-    /// If that is not present, the view model looks for a `Deepgram.plist`
-    /// file in the main bundle containing the same key.  This allows the
-    /// key to be provided securely without hard coding it in source control.
-    private var apiKey: String? {
-        if let env = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"] {
-            return env
-        }
-        if let url = Bundle.main.url(forResource: "Deepgram", withExtension: "plist"),
-           let data = try? Data(contentsOf: url),
-           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-           let dict = plist as? [String: Any],
-           let key = dict["DEEPGRAM_API_KEY"] as? String {
-            return key
-        }
-        return nil
-    }
 
     /// AWS credentials for authenticating with Amazon Transcribe.
     private var awsAccessKey: String? {
@@ -124,7 +105,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
-    /// Final transcript built from all finalized Deepgram results.
+    /// Final transcript built from all finalized recognition results.
     private var finalTranscript: String = ""
 
     /// Latest partial snippet that has not yet been finalized.
@@ -192,14 +173,16 @@ class SpeechRecognizerViewModel: ObservableObject {
 #if canImport(AVFoundation)
     func startRecording() {
         guard !isRecording else { return }
-        guard let key = apiKey, !key.isEmpty else {
-            print("Deepgram API key not found")
-            transcribedText = "Missing Deepgram API key."
+        guard let accessKey = awsAccessKey, let secretKey = awsSecretKey else {
+            print("AWS credentials not found")
+            transcribedText = "Missing AWS credentials."
             return
         }
+
         resetCurrentSession()
         isRecording = true
         sessionStart = Date()
+
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
@@ -208,24 +191,21 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Failed to configure audio session: \(error)")
         }
 
-        let sampleRate = audioSession.sampleRate
-        // Filler word detection requires using a Nova model according to Deepgram docs.
-        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&words=true&encoding=linear16&channels=1&model=nova-3&sample_rate=\(Int(sampleRate))"
-        guard let url = URL(string: urlString) else {
-            print("Invalid Deepgram URL")
+        let sampleRate = Int(audioSession.sampleRate)
+        guard let url = createTranscribeURL(sampleRate: sampleRate,
+                                            region: awsRegion,
+                                            accessKey: accessKey,
+                                            secretKey: secretKey,
+                                            sessionToken: awsSessionToken) else {
+            print("Failed to create Transcribe URL")
             return
         }
         var request = URLRequest(url: url)
-        
-        request.addValue("Token \(key)", forHTTPHeaderField: "Authorization")
-        
         webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
         webSocketTask?.resume()
-        receiveWebSocketMessages()
-        
+        receiveAmazonMessages()
         startAudioStream()
-        
-        print("Deepgram transcription started...")
+        print("Amazon Transcribe transcription started...")
     }
 
     /// Start recording using Amazon Transcribe instead of Deepgram.
@@ -452,28 +432,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         #endif
     }
     
-    private func receiveWebSocketMessages() {
-        webSocketTask?.receive { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .failure(let error):
-                print("WebSocket receive error: \(error)")
-            case .success(let message):
-                Task { @MainActor in
-                    switch message {
-                    case .data(let data):
-                        self.handleDeepgramResponse(data: data)
-                    case .string(let text):
-                        self.handleDeepgramResponse(text: text)
-                    @unknown default:
-                        break
-                    }
-                    self.receiveWebSocketMessages()  // keep listening
-                }
-            }
-        }
-    }
-
     private func receiveAmazonMessages() {
         webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
@@ -495,54 +453,41 @@ class SpeechRecognizerViewModel: ObservableObject {
             }
         }
     }
-    
-    private func handleDeepgramResponse(data: Data) {
+
+    private func handleAmazonResponse(data: Data) {
         if let text = String(data: data, encoding: .utf8) {
-            handleDeepgramResponse(text: text)
+            handleAmazonResponse(text: text)
         }
     }
-    
-    private func handleDeepgramResponse(text: String) {
+
+    private func handleAmazonResponse(text: String) {
         guard let data = text.data(using: .utf8) else { return }
-        guard let message = try? JSONDecoder().decode(DeepgramMessage.self, from: data) else {
-            print("Failed to decode response")
+        guard let message = try? JSONDecoder().decode(TranscribeMessage.self, from: data) else {
             return
         }
-        
-        if message.type == "Results", let alt = message.channel?.alternatives.first {
-            // Deepgram sometimes omits filler words from the transcript even
-            // when they are present in the ``words`` array. Always construct the
-            // snippet from the word list when available so filler detection sees
-            // the full text.
-            var snippet: String
-            if let words = alt.words, !words.isEmpty {
-                snippet = words.map { $0.word }.joined(separator: " ")
-            } else {
-                snippet = alt.transcript
-            }
-            snippet = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            guard !snippet.isEmpty else { return }
-            DispatchQueue.main.async {
-                if message.isFinal == true {
-                    if !self.finalTranscript.isEmpty {
-                        self.finalTranscript += " "
-                    }
-                    self.finalTranscript += snippet
-                    self.partialTranscript = ""
-                } else {
-                    self.partialTranscript = snippet
+        guard let result = message.transcript.results.first,
+              let alt = result.alternatives.first else { return }
+
+        let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { return }
+
+        DispatchQueue.main.async {
+            if result.isPartial == false {
+                if !self.finalTranscript.isEmpty {
+                    self.finalTranscript += " "
                 }
-
-                let combined = [self.finalTranscript, self.partialTranscript]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
-                self.transcribedText = combined
-                self.highlightAndCountFillerWords(in: combined)
-                print("Transcript snippet: \(snippet)")
-                print("Current transcript on screen: \(combined)")
-                print("Filler words found: \(self.fillerWordCount)")
+                self.finalTranscript += snippet
+                self.partialTranscript = ""
+            } else {
+                self.partialTranscript = snippet
             }
+
+            let combined = [self.finalTranscript, self.partialTranscript]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            self.transcribedText = combined
+            self.highlightAndCountFillerWords(in: combined)
         }
     }
 
@@ -588,7 +533,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     ///
     /// Made internal for unit testing so that tests can verify the filler word
     /// detection logic without needing to record audio or parse a full
-    /// Deepgram response.
+    /// service response.
     func highlightAndCountFillerWords(in text: String) {
         var count = 0
         let attributed = NSMutableAttributedString(string: text)
@@ -636,34 +581,40 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionStart = nil
     }
     
-    // MARK: - Deepgram Response Models
-    
-    struct DeepgramMessage: Codable {
-        let type: String?
-        let channel: Channel?
-        let isFinal: Bool?
+    // MARK: - Amazon Transcribe Response Models
 
-        private enum CodingKeys: String, CodingKey {
-            case type
-            case channel
-            case isFinal = "is_final"
+    struct TranscribeMessage: Codable {
+        let transcript: Transcript
+
+        enum CodingKeys: String, CodingKey {
+            case transcript = "Transcript"
         }
+    }
 
+    struct Transcript: Codable {
+        let results: [TranscriptResult]
+
+        enum CodingKeys: String, CodingKey {
+            case results = "Results"
+        }
     }
-    
-    struct Channel: Codable {
-        let alternatives: [Alternative]
+
+    struct TranscriptResult: Codable {
+        let alternatives: [TranscriptAlternative]
+        let isPartial: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case alternatives = "Alternatives"
+            case isPartial = "IsPartial"
+        }
     }
-    
-    struct Alternative: Codable {
+
+    struct TranscriptAlternative: Codable {
         let transcript: String
-        let words: [Word]?
-    }
-    
-    struct Word: Codable {
-        let word: String
-        let start: Double
-        let end: Double
+
+        enum CodingKeys: String, CodingKey {
+            case transcript = "Transcript"
+        }
     }
 
     // MARK: - Amazon Transcribe Response Models

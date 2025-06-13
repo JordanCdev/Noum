@@ -20,7 +20,6 @@ let package = Package(
                 // Resources only used by the Xcode project should not be
                 // included when building the Swift Package, otherwise SwiftPM
                 // emits warnings about unhandled files.
-                "Deepgram.plist.example",
                 "Assets.xcassets",
                 "Preview Content"
             ]
