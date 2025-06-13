@@ -207,6 +207,44 @@ class SpeechRecognizerViewModel: ObservableObject {
         startAudioStream()
         print("Amazon Transcribe transcription started...")
     }
+
+    /// Start recording using Amazon Transcribe instead of Deepgram.
+    func startAmazonRecording() {
+        guard !isRecording else { return }
+        guard let accessKey = awsAccessKey, let secretKey = awsSecretKey else {
+            print("AWS credentials not found")
+            transcribedText = "Missing AWS credentials."
+            return
+        }
+
+        resetCurrentSession()
+        isRecording = true
+        sessionStart = Date()
+
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to configure audio session: \(error)")
+        }
+
+        let sampleRate = Int(audioSession.sampleRate)
+        guard let url = createTranscribeURL(sampleRate: sampleRate,
+                                            region: awsRegion,
+                                            accessKey: accessKey,
+                                            secretKey: secretKey,
+                                            sessionToken: awsSessionToken) else {
+            print("Failed to create Transcribe URL")
+            return
+        }
+        var request = URLRequest(url: url)
+        webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
+        webSocketTask?.resume()
+        receiveAmazonMessages()
+        startAudioStream()
+        print("Amazon Transcribe transcription started...")
+    }
     
     func stopRecording() {
         guard isRecording else { return }
@@ -452,6 +490,43 @@ class SpeechRecognizerViewModel: ObservableObject {
             self.highlightAndCountFillerWords(in: combined)
         }
     }
+
+    private func handleAmazonResponse(data: Data) {
+        if let text = String(data: data, encoding: .utf8) {
+            handleAmazonResponse(text: text)
+        }
+    }
+
+    private func handleAmazonResponse(text: String) {
+        guard let data = text.data(using: .utf8) else { return }
+        guard let message = try? JSONDecoder().decode(TranscribeMessage.self, from: data) else {
+            return
+        }
+
+        guard let result = message.transcript.results.first,
+              let alt = result.alternatives.first else { return }
+
+        let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { return }
+
+        DispatchQueue.main.async {
+            if result.isPartial == false {
+                if !self.finalTranscript.isEmpty {
+                    self.finalTranscript += " "
+                }
+                self.finalTranscript += snippet
+                self.partialTranscript = ""
+            } else {
+                self.partialTranscript = snippet
+            }
+
+            let combined = [self.finalTranscript, self.partialTranscript]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            self.transcribedText = combined
+            self.highlightAndCountFillerWords(in: combined)
+        }
+    }
 #endif // canImport(AVFoundation)
     
     /// Highlight any filler words found in `text` and update ``fillerWordCount``.
@@ -506,6 +581,42 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionStart = nil
     }
     
+    // MARK: - Amazon Transcribe Response Models
+
+    struct TranscribeMessage: Codable {
+        let transcript: Transcript
+
+        enum CodingKeys: String, CodingKey {
+            case transcript = "Transcript"
+        }
+    }
+
+    struct Transcript: Codable {
+        let results: [TranscriptResult]
+
+        enum CodingKeys: String, CodingKey {
+            case results = "Results"
+        }
+    }
+
+    struct TranscriptResult: Codable {
+        let alternatives: [TranscriptAlternative]
+        let isPartial: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case alternatives = "Alternatives"
+            case isPartial = "IsPartial"
+        }
+    }
+
+    struct TranscriptAlternative: Codable {
+        let transcript: String
+
+        enum CodingKeys: String, CodingKey {
+            case transcript = "Transcript"
+        }
+    }
+
     // MARK: - Amazon Transcribe Response Models
 
     struct TranscribeMessage: Codable {
