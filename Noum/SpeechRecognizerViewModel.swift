@@ -10,20 +10,12 @@ import AVFoundation
 import Speech
 import Combine
 import UIKit
-#if canImport(WhisperKit)
-import WhisperKit
-#endif
 
 class SpeechRecognizerViewModel: ObservableObject {
     // Published properties to update the UI
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
-    @Published var useWhisper: Bool = false
-#if canImport(WhisperKit)
-    @Published var isWhisperReady: Bool = false
-    @Published var whisperInitError: String?
-#endif
     
     // List of filler words
     private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
@@ -43,31 +35,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
 
-    #if canImport(WhisperKit)
-    private var whisperKit: WhisperKit?
-    private var audioRecorder: AVAudioRecorder?
-    private var audioFileURL: URL?
-    #endif
     
     init() {
         // Use the desired locale (en-US as an example)
         self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         requestSpeechAndRecordAuthorization()
 
-        #if canImport(WhisperKit)
-        Task {
-            do {
-                self.whisperKit = try await WhisperKit()
-                await MainActor.run { self.isWhisperReady = true }
-            } catch {
-                print("WhisperKit initialization failed: \(error)")
-                await MainActor.run {
-                    self.whisperInitError = error.localizedDescription
-                    self.isWhisperReady = false
-                }
-            }
-        }
-        #endif
     }
 
     // MARK: - Request Authorization
@@ -206,68 +179,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         print("Total filler words: \(fillerWordCount)")
     }
 
-    // MARK: - Whisper Recording
-
-#if canImport(WhisperKit)
-    func startWhisperRecording() {
-        guard isWhisperReady else {
-            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
-            return
-        }
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
-            try audioSession.setActive(true)
-        } catch {
-            print("Audio session setup failed: \(error.localizedDescription)")
-            return
-        }
-
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("whisper-\(UUID().uuidString).m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 1
-        ]
-
-        do {
-            audioRecorder = try AVAudioRecorder(url: tempURL, settings: settings)
-            audioRecorder?.record()
-            audioFileURL = tempURL
-            print("Whisper recording started...")
-        } catch {
-            print("Audio recorder setup failed: \(error.localizedDescription)")
-        }
-    }
-#endif
-
-#if canImport(WhisperKit)
-
-    func stopWhisperRecording() {
-        audioRecorder?.stop()
-        guard isWhisperReady else {
-            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
-            return
-        }
-        guard let url = audioFileURL else { return }
-
-        Task {
-            do {
-                guard let whisper = whisperKit else {
-                    print("WhisperKit not initialized")
-                    return
-                }
-                let results = try await whisper.transcribe(audioPath: url.path)
-                let text = results.map { $0.text }.joined(separator: " ")
-                await MainActor.run {
-                    self.updateTranscription(with: text)
-                }
-            } catch {
-                print("Whisper transcription failed: \(error)")
-            }
-        }
-    }
-#endif
     
     // MARK: - Update Transcription and Highlight Filler Words
 
