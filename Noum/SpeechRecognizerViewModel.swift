@@ -20,6 +20,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
     @Published var useWhisper: Bool = false
+#if canImport(WhisperKit)
+    @Published var isWhisperReady: Bool = false
+    @Published var whisperInitError: String?
+#endif
     
     // List of filler words
     private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
@@ -52,7 +56,16 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         #if canImport(WhisperKit)
         Task {
-            self.whisperKit = try? await WhisperKit()
+            do {
+                self.whisperKit = try await WhisperKit()
+                await MainActor.run { self.isWhisperReady = true }
+            } catch {
+                print("WhisperKit initialization failed: \(error)")
+                await MainActor.run {
+                    self.whisperInitError = error.localizedDescription
+                    self.isWhisperReady = false
+                }
+            }
         }
         #endif
     }
@@ -197,6 +210,10 @@ class SpeechRecognizerViewModel: ObservableObject {
 
 #if canImport(WhisperKit)
     func startWhisperRecording() {
+        guard isWhisperReady else {
+            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
+            return
+        }
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
@@ -228,6 +245,10 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func stopWhisperRecording() {
         audioRecorder?.stop()
+        guard isWhisperReady else {
+            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
+            return
+        }
         guard let url = audioFileURL else { return }
 
         Task {
