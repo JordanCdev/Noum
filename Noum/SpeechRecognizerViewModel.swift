@@ -3,6 +3,7 @@ import AVFoundation
 import UIKit
 import Foundation
 
+@available(iOS 15.0, macOS 12.0, *)
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
@@ -32,6 +33,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         return nil
     }
+  
     private var audioEngine: AVAudioEngine?
     private var webSocketTask: URLSessionWebSocketTask?
 
@@ -88,6 +90,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             return
         }
         var request = URLRequest(url: url)
+
         request.addValue("Token \(key)", forHTTPHeaderField: "Authorization")
 
         webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
@@ -240,7 +243,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
-
             if let converted = try? AttributedString(attributed) {
                 self.highlightedText = converted
             } else {
@@ -250,6 +252,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Filler words found: \(count)")
         }
     }
+
     /// Clear current transcript and counters before a new session.
     func resetCurrentSession() {
         transcribedText = ""

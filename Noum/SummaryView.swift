@@ -1,4 +1,5 @@
 import SwiftUI
+@available(iOS 15.0, macOS 12.0, *)
 
 struct SummaryView: View {
     let transcript: AttributedString
