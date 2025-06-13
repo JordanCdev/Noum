@@ -10,44 +10,46 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel()
     @State private var showSummary = false
+    @State private var showHistory = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            ScrollView {
-                Text(speechVM.highlightedText)
-                    .padding()
-            }
-
-            Text("Filler Words: \(speechVM.fillerWordCount)")
-
-            if !speechVM.isWhisperReady {
-                ProgressView()
-                    .padding(.vertical)
-            }
-            if let error = speechVM.whisperInitError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.horizontal)
-            }
-
-            HStack {
-                Button("Start") {
-                    speechVM.startRecording()
+        NavigationView {
+            VStack(spacing: 20) {
+                ScrollView {
+                    Text(speechVM.highlightedText)
+                        .padding()
                 }
-                .disabled(!speechVM.isWhisperReady)
-                Button("Stop") {
-                    speechVM.stopRecording()
-                    print("Summary Transcript: \(speechVM.transcribedText)")
-                    print("Total filler words: \(speechVM.fillerWordCount)")
-                    showSummary = true
+
+                Text("Filler Words: \(speechVM.fillerWordCount)")
+
+                HStack {
+                    Button("Start") {
+                        speechVM.startRecording()
+                    }
+                    .disabled(speechVM.isRecording)
+                    Button("Stop") {
+                        speechVM.stopRecording()
+                        showSummary = true
+                    }
+                    .disabled(!speechVM.isRecording)
                 }
-                .disabled(!speechVM.isWhisperReady)
+            }
+            .padding()
+            .navigationTitle("Practice")
+            .toolbar {
+                Button("History") { showHistory = true }
             }
         }
-        .padding()
         .sheet(isPresented: $showSummary) {
-            SummaryView(transcript: speechVM.highlightedText, fillerCount: speechVM.fillerWordCount)
+            SummaryView(
+                transcript: speechVM.highlightedText,
+                fillerCount: speechVM.fillerWordCount,
+                duration: speechVM.lastSessionDuration,
+                onNewSession: { speechVM.resetCurrentSession() }
+            )
+        }
+        .sheet(isPresented: $showHistory) {
+            SessionHistoryView(speechVM: speechVM)
         }
     }
 }
