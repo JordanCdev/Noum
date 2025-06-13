@@ -275,7 +275,18 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         
         if message.type == "Results", let alt = message.channel?.alternatives.first {
-            let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Deepgram sometimes omits filler words from the transcript even
+            // when they are present in the ``words`` array. Always construct the
+            // snippet from the word list when available so filler detection sees
+            // the full text.
+            var snippet: String
+            if let words = alt.words, !words.isEmpty {
+                snippet = words.map { $0.word }.joined(separator: " ")
+            } else {
+                snippet = alt.transcript
+            }
+            snippet = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+
             guard !snippet.isEmpty else { return }
             DispatchQueue.main.async {
                 if message.isFinal == true {
