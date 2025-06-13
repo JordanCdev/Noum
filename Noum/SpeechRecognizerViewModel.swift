@@ -58,9 +58,15 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var audioEngine: AVAudioEngine?
     #endif
     private var webSocketTask: URLSessionWebSocketTask?
-    
+
     /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
+
+    /// Final transcript built from all finalized Deepgram results.
+    private var finalTranscript: String = ""
+
+    /// Latest partial snippet that has not yet been finalized.
+    private var partialTranscript: String = ""
     
     /// Common filler words that should always be highlighted.
     private let baseFillerWords: Set<String> = ["like", "so", "you know"]
@@ -107,7 +113,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionStart = Date()
         
         let sampleRate = AVAudioSession.sharedInstance().sampleRate
-        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
+        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
         guard let url = URL(string: urlString) else {
             print("Invalid Deepgram URL")
             return
@@ -131,8 +137,20 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine = nil
         webSocketTask?.cancel()
         isRecording = false
+        // Append any remaining partial transcript before saving.
+        if !partialTranscript.isEmpty {
+            if !finalTranscript.isEmpty {
+                finalTranscript += " "
+            }
+            finalTranscript += partialTranscript
+            partialTranscript = ""
+            transcribedText = finalTranscript
+            highlightAndCountFillerWords(in: finalTranscript)
+        }
         saveCurrentSession()
         print("Transcription stopped.")
+        print("Final transcript: \(finalTranscript)")
+        print("Total filler words: \(fillerWordCount)")
     }
     
     private func requestRecordAuthorization() {
@@ -229,16 +247,26 @@ class SpeechRecognizerViewModel: ObservableObject {
         
         if message.type == "Results", let alt = message.channel?.alternatives.first {
             let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !snippet.isEmpty {
-                DispatchQueue.main.async {
-                    // Deepgram streams the full transcript with each message,
-                    // so replace the text instead of appending to avoid
-                    // duplicates in the UI.
-                    self.transcribedText = snippet
-                    self.highlightAndCountFillerWords(in: snippet)
-                    print("Transcript: \(snippet)")
-                    print("Filler words found: \(self.fillerWordCount)")
+            guard !snippet.isEmpty else { return }
+            DispatchQueue.main.async {
+                if message.isFinal == true {
+                    if !self.finalTranscript.isEmpty {
+                        self.finalTranscript += " "
+                    }
+                    self.finalTranscript += snippet
+                    self.partialTranscript = ""
+                } else {
+                    self.partialTranscript = snippet
                 }
+
+                let combined = [self.finalTranscript, self.partialTranscript]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                self.transcribedText = combined
+                self.highlightAndCountFillerWords(in: combined)
+                print("Transcript snippet: \(snippet)")
+                print("Current transcript on screen: \(combined)")
+                print("Filler words found: \(self.fillerWordCount)")
             }
         }
     }
@@ -277,6 +305,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcribedText = ""
         highlightedText = AttributedString("")
         fillerWordCount = 0
+        finalTranscript = ""
+        partialTranscript = ""
     }
 
     /// Persist the completed session to the history list.
@@ -298,6 +328,13 @@ class SpeechRecognizerViewModel: ObservableObject {
     struct DeepgramMessage: Codable {
         let type: String?
         let channel: Channel?
+        let isFinal: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case channel
+            case isFinal = "is_final"
+        }
 
     }
     
