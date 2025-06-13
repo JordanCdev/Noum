@@ -22,6 +22,7 @@ struct ContentView: View {
 
             Toggle("Use Whisper", isOn: $speechVM.useWhisper)
                 .padding(.horizontal)
+                .disabled(!speechVM.isWhisperReady)
 
             HStack {
                 Button("Start") {
