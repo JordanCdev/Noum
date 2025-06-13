@@ -14,3 +14,9 @@ Each recording session is saved with the total filler count and duration. Use
 the **History** button to review previous sessions.
 
 Add your API key and build the Xcode project to run the demo.
+
+## Requirements
+
+Building Noum requires Xcode 15 or later with Swift 6.1 or newer. The package
+manifest uses tools version 6.0 for compatibility, but the app depends on
+SwiftUI which is only available on Apple platforms.
