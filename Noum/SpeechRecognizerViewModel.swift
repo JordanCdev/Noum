@@ -139,6 +139,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         isRecording = false
         saveCurrentSession()
         print("Transcription stopped.")
+        print("Final transcript: \(transcribedText)")
+        print("Total filler words: \(fillerWordCount)")
     }
     
     private func requestRecordAuthorization() {
@@ -259,7 +261,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 } else {
                     self.lastPartialSnippet = snippet
                 }
-                print("Transcript: \(snippet)")
+                print("Transcript snippet: \(snippet)")
+                print("Current transcript on screen: \(self.transcribedText)")
                 print("Filler words found: \(self.fillerWordCount)")
             }
         }
@@ -301,7 +304,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = 0
         lastPartialSnippet = ""
         finalTranscript = ""
-
     }
 
     /// Persist the completed session to the history list.
