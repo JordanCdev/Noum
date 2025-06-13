@@ -36,15 +36,6 @@
         "revision" : "8a83416cc00ab07a5de9991e6ad817a9b8588d20",
         "version" : "0.1.15"
       }
-    },
-    {
-      "identity" : "whisperkit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/JordanCdev/WhisperKit",
-      "state" : {
-        "branch" : "main",
-        "revision" : "cf0d29b5dc8f315e1a59f42ace3d3450f8c41238"
-      }
     }
   ],
   "version" : 3
