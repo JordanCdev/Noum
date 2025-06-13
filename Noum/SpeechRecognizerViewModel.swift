@@ -8,18 +8,17 @@
 import SwiftUI
 import AVFoundation
 import UIKit
-#if canImport(WhisperKit)
-import WhisperKit
-#endif
 
 class SpeechRecognizerViewModel: ObservableObject {
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
+
 #if canImport(WhisperKit)
     @Published var isWhisperReady: Bool = false
     @Published var whisperInitError: String?
 #endif
+
 
     private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
@@ -52,6 +51,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             }
         }
 #endif
+
     }
 
     private func requestRecordAuthorization() {
@@ -77,7 +77,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             }
         }
     }
-
     // MARK: - Recording
 
     func startRecording() {
