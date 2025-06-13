@@ -1,5 +1,5 @@
 import SwiftUI
-@available(iOS 15.0, macOS 12.0, *)
+@available(iOS 17.0, macOS 12.0, *)
 
 struct SessionHistoryView: View {
     @ObservedObject var speechVM: SpeechRecognizerViewModel

@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-@available(iOS 15.0, macOS 12.0, *)
+@available(iOS 17.0, macOS 12.0, *)
 struct ContentView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel()
     @State private var showSummary = false

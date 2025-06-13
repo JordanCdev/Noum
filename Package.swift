@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "Noum",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v13), .iOS(.v17)],
     products: [
         .executable(name: "NoumApp", targets: ["Noum"])
     ],
