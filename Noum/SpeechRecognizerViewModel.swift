@@ -7,63 +7,54 @@
 
 import SwiftUI
 import AVFoundation
-import Speech
-import Combine
 import UIKit
 
 class SpeechRecognizerViewModel: ObservableObject {
-    // Published properties to update the UI
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
-    
-    // List of filler words
-    private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
 
-    // Precompiled regexes for fast filler word detection
+#if canImport(WhisperKit)
+    @Published var isWhisperReady: Bool = false
+    @Published var whisperInitError: String?
+#endif
+
+
+    private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         fillerWords.compactMap { filler in
             let escaped = NSRegularExpression.escapedPattern(for: filler)
-
             let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
             return try? NSRegularExpression(pattern: pattern)
         }
     }()
 
-    private let audioEngine = AVAudioEngine()
-    private var speechRecognizer: SFSpeechRecognizer?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
+#if canImport(WhisperKit)
+    private var whisperKit: WhisperKit?
+    private var audioRecorder: AVAudioRecorder?
+    private var audioFileURL: URL?
+#endif
 
-    
     init() {
-        // Use the desired locale (en-US as an example)
-        self.speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        requestSpeechAndRecordAuthorization()
-
-    }
-
-    // MARK: - Request Authorization
-    private func requestSpeechAndRecordAuthorization() {
-        // Request speech recognition permission
-        SFSpeechRecognizer.requestAuthorization { speechAuthStatus in
-            DispatchQueue.main.async {
-                switch speechAuthStatus {
-                case .authorized:
-                    print("Speech recognition authorized.")
-                case .denied:
-                    print("Speech recognition authorization denied.")
-                case .restricted:
-                    print("Speech recognition restricted on this device.")
-                case .notDetermined:
-                    print("Speech recognition not determined.")
-                @unknown default:
-                    print("Unknown speech recognition authorization state.")
+        requestRecordAuthorization()
+#if canImport(WhisperKit)
+        Task {
+            do {
+                self.whisperKit = try await WhisperKit()
+                await MainActor.run { self.isWhisperReady = true }
+            } catch {
+                print("WhisperKit initialization failed: \(error)")
+                await MainActor.run {
+                    self.whisperInitError = error.localizedDescription
+                    self.isWhisperReady = false
                 }
             }
         }
+#endif
 
-        // Request microphone permission
+    }
+
+    private func requestRecordAuthorization() {
         if #available(iOS 17.0, *) {
             AVAudioApplication.requestRecordPermission { granted in
                 DispatchQueue.main.async {
@@ -86,101 +77,70 @@ class SpeechRecognizerViewModel: ObservableObject {
             }
         }
     }
-    
-    // MARK: - Start Recording
-    
+    // MARK: - Recording
+
     func startRecording() {
-        // 1. If audio engine is running, stop it and remove old tap
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
+#if canImport(WhisperKit)
+        guard isWhisperReady else {
+            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
+            return
         }
-        
-        // 2. Cancel any previous recognition task
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        
-        // 3. Configure audio session
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
+            try audioSession.setActive(true)
         } catch {
             print("Audio session setup failed: \(error.localizedDescription)")
             return
         }
-        
-        // 4. Create a new recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let request = recognitionRequest else {
-            print("Unable to create SFSpeechAudioBufferRecognitionRequest.")
+
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("whisper-\(UUID().uuidString).m4a")
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 1
+        ]
+
+        do {
+            audioRecorder = try AVAudioRecorder(url: tempURL, settings: settings)
+            audioRecorder?.record()
+            audioFileURL = tempURL
+            print("Whisper recording started...")
+        } catch {
+            print("Audio recorder setup failed: \(error.localizedDescription)")
+        }
+#endif
+    }
+
+    func stopRecording() {
+#if canImport(WhisperKit)
+        audioRecorder?.stop()
+        guard isWhisperReady else {
+            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
             return
         }
+        guard let url = audioFileURL else { return }
 
-        request.shouldReportPartialResults = true
-        request.contextualStrings = fillerWords
-        if #available(iOS 13.0, *) {
-            request.taskHint = .dictation
-            request.requiresOnDeviceRecognition = false
-        }
-
-        // 5. Create a new recognition task
-        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
-            guard let self = self else { return }
-            
-            if let result = result {
-                let bestString = result.bestTranscription.formattedString
-                DispatchQueue.main.async {
-                    self.updateTranscription(with: bestString)
+        Task {
+            do {
+                guard let whisper = whisperKit else {
+                    print("WhisperKit not initialized")
+                    return
                 }
-            }
-            
-            if let error = error {
-                print("Recognition error: \(error.localizedDescription)")
-            }
-            
-            if error != nil || (result?.isFinal ?? false) {
-                // Stop audio engine and remove tap
-                self.audioEngine.stop()
-                self.audioEngine.inputNode.removeTap(onBus: 0)
-                
-                self.recognitionRequest = nil
-                self.recognitionTask = nil
+                let results = try await whisper.transcribe(audioPath: url.path)
+                let text = results.map { $0.text }.joined(separator: " ")
+                await MainActor.run {
+                    self.updateTranscription(with: text)
+                }
+            } catch {
+                print("Whisper transcription failed: \(error)")
             }
         }
-        
-        // 6. Install a tap on the audio engine’s input node
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            request.append(buffer)
-        }
-        
-        // 7. Start the audio engine
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-            print("Recording started...")
-        } catch {
-            print("Audio engine couldn't start: \(error.localizedDescription)")
-        }
-    }
-    
-    // MARK: - Stop Recording
-    
-    func stopRecording() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
-        recognitionTask = nil
-        highlightAndCountFillerWords(in: transcribedText)
         print("Recording stopped.")
-        print("Final transcript: \(transcribedText)")
-        print("Total filler words: \(fillerWordCount)")
+#endif
     }
 
-    
-    // MARK: - Update Transcription and Highlight Filler Words
+    // MARK: - Highlighting
 
     private func updateTranscription(with text: String) {
         transcribedText = text
@@ -190,7 +150,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     private func highlightAndCountFillerWords(in text: String) {
         fillerWordCount = 0
         let attributed = NSMutableAttributedString(string: text)
-
         for regex in fillerWordRegexes {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             fillerWordCount += matches.count
@@ -198,11 +157,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
             }
         }
-
         highlightedText = AttributedString(attributed)
         print("Transcript: \(text)")
         print("Filler words found: \(fillerWordCount)")
     }
 }
-
-
