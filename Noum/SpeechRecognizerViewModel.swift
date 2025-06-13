@@ -1,162 +1,124 @@
-//
-//  SpeechRecognizerViewModel.swift
-//  Noum
-//
-//  Created by Jordan Coaten on 25/01/2025.
-//
-
-import SwiftUI
+import Foundation
 import AVFoundation
-import UIKit
 
 class SpeechRecognizerViewModel: ObservableObject {
-    @Published var transcribedText: String = ""
-    @Published var fillerWordCount: Int = 0
-    @Published var highlightedText: AttributedString = AttributedString("")
-
-#if canImport(WhisperKit)
-    @Published var isWhisperReady: Bool = false
-    @Published var whisperInitError: String?
-#endif
-
-    private let fillerWords = ["um", "uh", "er", "eh", "ah", "like", "so", "you know"]
-    private lazy var fillerWordRegexes: [NSRegularExpression] = {
-        fillerWords.compactMap { filler in
-            let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
-            return try? NSRegularExpression(pattern: pattern)
-        }
-    }()
-
-#if canImport(WhisperKit)
-    private var whisperKit: WhisperKit?
-    private var audioRecorder: AVAudioRecorder?
-    private var audioFileURL: URL?
-#endif
-
-    init() {
-        requestRecordAuthorization()
-#if canImport(WhisperKit)
-        Task {
-            do {
-                self.whisperKit = try await WhisperKit()
-                await MainActor.run { self.isWhisperReady = true }
-            } catch {
-                print("WhisperKit initialization failed: \(error)")
-                await MainActor.run {
-                    self.whisperInitError = error.localizedDescription
-                    self.isWhisperReady = false
-                }
-            }
-        }
-#endif
+    private let apiKey = "efc3c337656d36be52e2c95e4859006a8d676cfc"  // <-- replace this
+    private var audioEngine: AVAudioEngine?
+    private var webSocketTask: URLSessionWebSocketTask?
+    
+    private let fillerWords: Set<String> = ["um", "uh", "er", "ah", "eh", "like", "so", "you know"]
+    
+    func startTranscription() {
+        let url = URL(string: "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true")!
+        var request = URLRequest(url: url)
+        request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
+        webSocketTask?.resume()
+        receiveWebSocketMessages()
+        
+        startAudioStream()
+        
+        print("Deepgram transcription started...")
     }
+    
+    func stopTranscription() {
+        audioEngine?.stop()
+        audioEngine = nil
+        webSocketTask?.cancel()
+        print("Transcription stopped.")
+    }
+    
+    private func startAudioStream() {
+        audioEngine = AVAudioEngine()
+        let inputNode = audioEngine!.inputNode
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
 
-    private func requestRecordAuthorization() {
-        if #available(iOS 17.0, *) {
-            AVAudioApplication.requestRecordPermission { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        print("Microphone access granted.")
-                    } else {
-                        print("Microphone access denied.")
-                    }
-                }
-            }
-        } else {
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        print("Microphone access granted.")
-                    } else {
-                        print("Microphone access denied.")
-                    }
-                }
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            let data = self.convertBufferToPCMData(buffer: buffer)
+            self.sendPCMData(data)
+        }
+        
+        audioEngine!.prepare()
+        try? audioEngine!.start()
+    }
+    
+    private func convertBufferToPCMData(buffer: AVAudioPCMBuffer) -> Data {
+        let channelData = buffer.int16ChannelData![0]
+        let data = Data(bytes: channelData, count: Int(buffer.frameLength * 2))
+        return data
+    }
+    
+    private func sendPCMData(_ data: Data) {
+        webSocketTask?.send(.data(data)) { error in
+            if let error = error {
+                print("WebSocket send error: \(error)")
             }
         }
     }
-    // MARK: - Recording
-
-    func startRecording() {
-#if canImport(WhisperKit)
-        guard isWhisperReady else {
-            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
+    
+    private func receiveWebSocketMessages() {
+        webSocketTask?.receive { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .failure(let error):
+                print("WebSocket receive error: \(error)")
+            case .success(let message):
+                switch message {
+                case .data(let data):
+                    self.handleDeepgramResponse(data: data)
+                case .string(let text):
+                    self.handleDeepgramResponse(text: text)
+                @unknown default:
+                    break
+                }
+                self.receiveWebSocketMessages()  // keep listening
+            }
+        }
+    }
+    
+    private func handleDeepgramResponse(data: Data) {
+        if let text = String(data: data, encoding: .utf8) {
+            handleDeepgramResponse(text: text)
+        }
+    }
+    
+    private func handleDeepgramResponse(text: String) {
+        // Very simple decoding for this prototype
+        guard let transcript = try? JSONDecoder().decode(DeepgramResponse.self, from: text.data(using: .utf8)!) else {
+            print("Failed to decode response")
             return
         }
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.record, mode: .default, options: .duckOthers)
-            try audioSession.setActive(true)
-        } catch {
-            print("Audio session setup failed: \(error.localizedDescription)")
-            return
-        }
-
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("whisper-\(UUID().uuidString).m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 1
-        ]
-
-        do {
-            audioRecorder = try AVAudioRecorder(url: tempURL, settings: settings)
-            audioRecorder?.record()
-            audioFileURL = tempURL
-            print("Whisper recording started...")
-        } catch {
-            print("Audio recorder setup failed: \(error.localizedDescription)")
-        }
-#endif
-    }
-
-    func stopRecording() {
-#if canImport(WhisperKit)
-        audioRecorder?.stop()
-        guard isWhisperReady else {
-            print("WhisperKit not ready: \(whisperInitError ?? "unknown error")")
-            return
-        }
-        guard let url = audioFileURL else { return }
-
-        Task {
-            do {
-                guard let whisper = whisperKit else {
-                    print("WhisperKit not initialized")
-                    return
+        
+        if let words = transcript.channel.alternatives.first?.words {
+            for word in words {
+                if fillerWords.contains(word.word.lowercased()) {
+                    print("Detected filler word: \(word.word)")
+                    self.stopTranscription()
                 }
-                let results = try await whisper.transcribe(audioPath: url.path)
-                let text = results.map { $0.text }.joined(separator: " ")
-                await MainActor.run {
-                    self.updateTranscription(with: text)
-                }
-            } catch {
-                print("Whisper transcription failed: \(error)")
             }
         }
-        print("Recording stopped.")
-#endif
-    }
-
-    // MARK: - Highlighting
-
-    private func updateTranscription(with text: String) {
-        transcribedText = text
-        highlightAndCountFillerWords(in: text)
-    }
-
-    private func highlightAndCountFillerWords(in text: String) {
-        fillerWordCount = 0
-        let attributed = NSMutableAttributedString(string: text)
-        for regex in fillerWordRegexes {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            fillerWordCount += matches.count
-            for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
-            }
-        }
-        highlightedText = AttributedString(attributed)
-        print("Transcript: \(text)")
-        print("Filler words found: \(fillerWordCount)")
     }
 }
+
+// MARK: - Deepgram Response Models
+
+struct DeepgramResponse: Codable {
+    let channel: Channel
+    
+    struct Channel: Codable {
+        let alternatives: [Alternative]
+    }
+    
+    struct Alternative: Codable {
+        let transcript: String
+        let words: [Word]?
+    }
+    
+    struct Word: Codable {
+        let word: String
+        let start: Double
+        let end: Double
+    }
+}
+
