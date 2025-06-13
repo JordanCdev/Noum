@@ -149,7 +149,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         let sampleRate = audioSession.sampleRate
-        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&words=true&encoding=linear16&channels=1&sample_rate=\(Int(sampleRate))"
+        // Filler word detection requires using a Nova model according to Deepgram docs.
+        let urlString = "wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&filler_words=true&words=true&encoding=linear16&channels=1&model=nova-3&sample_rate=\(Int(sampleRate))"
         guard let url = URL(string: urlString) else {
             print("Invalid Deepgram URL")
             return
