@@ -134,24 +134,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
     
     private func requestRecordAuthorization() {
-        if #available(iOS 17.0, *) {
-            AVAudioApplication.requestRecordPermission { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        print("Microphone access granted.")
-                    } else {
-                        print("Microphone access denied.")
-                    }
-                }
-            }
-        } else {
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        print("Microphone access granted.")
-                    } else {
-                        print("Microphone access denied.")
-                    }
+        AVAudioApplication.requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                if granted {
+                    print("Microphone access granted.")
+                } else {
+                    print("Microphone access denied.")
                 }
             }
         }
@@ -273,16 +261,12 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
-#if canImport(UIKit) || canImport(AppKit)
-            if let converted = try? AttributedString(attributed) {
-                self.highlightedText = converted
-            } else {
-                self.highlightedText = AttributedString(text)
-            }
-#else
-            // Fallback: attributed string bridging not available
+
+        #if canImport(UIKit) || canImport(AppKit)
+            self.highlightedText = AttributedString(attributed)
+        #else
             self.highlightedText = AttributedString(text)
-#endif
+        #endif
         }
     }
 
