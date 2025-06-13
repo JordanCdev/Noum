@@ -11,14 +11,32 @@ class SpeechRecognizerViewModel: ObservableObject {
     private let apiKey = "efc3c337656d36be52e2c95e4859006a8d676cfc"  // <-- replace this
     private var audioEngine: AVAudioEngine?
     private var webSocketTask: URLSessionWebSocketTask?
+    /// Common filler words that should always be highlighted.
+    private let baseFillerWords: Set<String> = ["like", "so", "you know"]
 
-    private let fillerWords: Set<String> = ["um", "uh", "er", "ah", "eh", "like", "so", "you know"]
+    /// Regexes used to locate filler words in the transcript.  This includes
+    /// patterns for common dynamic variants such as "ummm" or "hmmm" so we
+    /// don't rely on an exhaustive static list.
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
-        fillerWords.compactMap { filler in
-            let escaped = NSRegularExpression.escapedPattern(for: filler)
-            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
-            return try? NSRegularExpression(pattern: pattern)
+        var regexes: [NSRegularExpression] = []
+
+        // Regex for dynamic variants (e.g. "umm", "uhhh", "hmm").
+        if let dynamic = try? NSRegularExpression(
+            pattern: #"(?i)(?<!\w)(?:u+m+|u+h+|e+r+|a+h+|e+h+|m+|h+m+)(?=\b|[^\w]|$)"#
+        ) {
+            regexes.append(dynamic)
         }
+
+        // Regexes for the base filler words.
+        for word in baseFillerWords {
+            let escaped = NSRegularExpression.escapedPattern(for: word)
+            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
+            if let r = try? NSRegularExpression(pattern: pattern) {
+                regexes.append(r)
+            }
+        }
+
+        return regexes
     }()
 
     init() {
@@ -35,7 +53,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Invalid Deepgram URL")
             return
         }
-
         var request = URLRequest(url: url)
         request.addValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -171,6 +188,24 @@ class SpeechRecognizerViewModel: ObservableObject {
         highlightedText = AttributedString(attributed)
         print("Transcript: \(text)")
         print("Filler words found: \(fillerWordCount)")
+    }
+
+    private func highlightAndCountFillerWords(in text: String) {
+        var count = 0
+        let attributed = NSMutableAttributedString(string: text)
+        for regex in fillerWordRegexes {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            count += matches.count
+            for match in matches {
+                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+            }
+        }
+        DispatchQueue.main.async {
+            self.fillerWordCount = count
+            self.highlightedText = AttributedString(attributed)
+            print("Transcript: \(text)")
+            print("Filler words found: \(count)")
+        }
     }
 
     private func highlightAndCountFillerWords(in text: String) {
