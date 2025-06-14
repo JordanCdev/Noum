@@ -22,11 +22,11 @@ struct AWSCredentials {
 /// Authentication manager that loads AWS credentials from environment variables
 /// or a bundled `Transcribe.plist` file. Google or Apple sign-in actions are
 /// stubbed so the code compiles on non-Apple platforms used for testing.
+
 @MainActor
 class AuthManager: NSObject, ObservableObject {
     static let shared = AuthManager()
     @Published var isSignedIn: Bool = false
-
     private var credentials: AWSCredentials?
 
     override private init() {
@@ -96,3 +96,4 @@ class AuthManager: NSObject, ObservableObject {
         isSignedIn = false
     }
 }
+

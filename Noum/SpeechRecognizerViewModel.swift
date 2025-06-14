@@ -22,6 +22,7 @@ typealias PlatformColor = NSColor
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
+import AWSCore
 
 @available(iOS 17.0, macOS 12.0, *)
 @MainActor
