@@ -128,10 +128,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         guard !isRecording else { return }
         Task {
             do {
-                let creds = try await authManager.currentCredentials()
-                startRecordingWith(accessKey: creds.accessKey,
-                                   secretKey: creds.secretKey,
-                                   sessionToken: creds.sessionToken)
+                try await authManager.currentCredentials()  // ensure AWS credentials are obtained
+                startRecordingWith()
             } catch {
                 print("Failed to fetch AWS credentials: \(error)")
                 await MainActor.run { self.transcribedText = "Failed to fetch AWS credentials." }
@@ -139,7 +137,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func startRecordingWith(accessKey: String, secretKey: String, sessionToken: String?) {
+    private func startRecordingWith() {
         resetCurrentSession()
         connectionError = nil
         isRecording = true
@@ -154,11 +152,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         let sampleRate = Int(audioSession.sampleRate)
-        guard let url = createTranscribeURL(sampleRate: sampleRate,
-                                            region: awsRegion,
-                                            accessKey: accessKey,
-                                            secretKey: secretKey,
-                                            sessionToken: sessionToken) else {
+        guard let url = createTranscribeURL(sampleRate: sampleRate) else {
             print("Failed to create Transcribe URL")
             return
         }
@@ -262,110 +256,42 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     // MARK: - Amazon Transcribe Helpers
 
-    private func createTranscribeURL(sampleRate: Int, region: String,
-                                     accessKey: String, secretKey: String,
-                                     sessionToken: String?) -> URL? {
-        let service = "transcribe"
-        let host = "transcribestreaming.\(region).amazonaws.com:8443"
-        let algorithm = "AWS4-HMAC-SHA256"
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        let amzDate = formatter.string(from: Date())
-        let dateStamp = String(amzDate.prefix(8))
-        let credentialScope = "\(dateStamp)/\(region)/\(service)/aws4_request"
-
-        var query: [String: String] = [
-            "X-Amz-Algorithm": algorithm,
-            "X-Amz-Credential": "\(accessKey)/\(credentialScope)",
-            "X-Amz-Date": amzDate,
-            "X-Amz-Expires": "300",
-            "X-Amz-SignedHeaders": "host",
+    private func createTranscribeURL(sampleRate: Int) -> URL? {
+        let regionName = awsRegion
+        let regionType = (regionName as NSString).aws_regionTypeValue()
+        guard let credentialsProvider = authManager.credentialsProvider else {
+            print("AWS credentials provider not configured")
+            return nil
+        }
+        // Base URL for Amazon Transcribe streaming (WebSocket API)
+        let baseURL = URL(string: "wss://transcribestreaming.\(regionName).amazonaws.com:8443/stream-transcription-websocket")!
+        // Set up the endpoint for signing (service: "transcribe")
+        let endpoint = AWSEndpoint(region: regionType, serviceName: "transcribe", url: baseURL)!
+        // Required query parameters for Transcribe WebSocket connection
+        let queryParams: [String: String] = [
             "language-code": "en-US",
             "media-encoding": "pcm",
             "sample-rate": String(sampleRate)
         ]
-        if let token = sessionToken, !token.isEmpty {
-            query["X-Amz-Security-Token"] = token
+        // Sign the URL using AWS SDK (Signature V4)
+        let headers = ["host": endpoint.hostName]
+        let task = AWSSignatureV4Signer.generateQueryStringForSignatureV4(
+            withCredentialProvider: credentialsProvider,
+            httpMethod: .GET,
+            expireDuration: 300,                // 5-minute expiration, matches X-Amz-Expires
+            endpoint: endpoint,
+            keyPath: "stream-transcription-websocket",
+            requestHeaders: headers,
+            requestParameters: queryParams,
+            signBody: false)
+        task.waitUntilFinished()
+        if let error = task.error {
+            print("Error signing Transcribe URL: \(error)")
+            return nil
         }
-
-        let canonicalQuery = query
-            .map { ($0.key, $0.value.awsPercentEncoded()) }
-            .sorted { $0.0 < $1.0 }
-            .map { "\($0)=\($1)" }
-            .joined(separator: "&")
-
-        let canonicalRequest = [
-            "GET",
-            "/stream-transcription-websocket",
-            canonicalQuery,
-            "host:\(host)\n",
-            "host",
-            "UNSIGNED-PAYLOAD"
-        ].joined(separator: "\n")
-
-        let hash = sha256Hex(canonicalRequest)
-        let stringToSign = [
-            algorithm,
-            amzDate,
-            credentialScope,
-            hash
-        ].joined(separator: "\n")
-
-        let signingKey = getSigningKey(secretKey: secretKey, dateStamp: dateStamp, regionName: region, serviceName: service)
-        let signature = hmacSHA256Hex(data: stringToSign, key: signingKey)
-
-        let finalQuery = canonicalQuery + "&X-Amz-Signature=" + signature
-        let urlString = "wss://\(host)/stream-transcription-websocket?" + finalQuery
-        return URL(string: urlString)
+        return task.result as? URL
     }
 
-    private func sha256Hex(_ string: String) -> String {
-        let data = Data(string.utf8)
-        #if canImport(CryptoKit)
-        return data.withUnsafeBytes { bytes in
-            let digest = SHA256.hash(data: bytes)
-            return digest.map { String(format: "%02x", $0) }.joined()
-        }
-        #else
-        return ""
-        #endif
-    }
-
-    private func hmacSHA256Hex(data: String, key: Data) -> String {
-        let dataBytes = Data(data.utf8)
-        #if canImport(CryptoKit)
-        let keySym = SymmetricKey(data: key)
-        let signature = HMAC<SHA256>.authenticationCode(for: dataBytes, using: keySym)
-        return Data(signature).map { String(format: "%02x", $0) }.joined()
-        #else
-        return ""
-        #endif
-    }
-
-    private func getSigningKey(secretKey: String, dateStamp: String, regionName: String, serviceName: String) -> Data {
-        let kDate = hmacSHA256(data: dateStamp, key: "AWS4" + secretKey)
-        let kRegion = hmacSHA256(data: regionName, keyData: kDate)
-        let kService = hmacSHA256(data: serviceName, keyData: kRegion)
-        return hmacSHA256(data: "aws4_request", keyData: kService)
-    }
-
-    private func hmacSHA256(data: String, key: String) -> Data {
-        return hmacSHA256(data: data, keyData: Data(key.utf8))
-    }
-
-    private func hmacSHA256(data: String, keyData: Data) -> Data {
-        let dataBytes = Data(data.utf8)
-        #if canImport(CryptoKit)
-        let keySym = SymmetricKey(data: keyData)
-        let signature = HMAC<SHA256>.authenticationCode(for: dataBytes, using: keySym)
-        return Data(signature)
-        #else
-        return Data()
-        #endif
-    }
-    
     private func receiveAmazonMessages() {
         webSocketTask?.receive { [weak self] result in
             guard let self else { return }
