@@ -274,7 +274,8 @@ class SpeechRecognizerViewModel: ObservableObject {
             "sample-rate": String(sampleRate)
         ]
         // Sign the URL using AWS SDK (Signature V4)
-        let headers = ["host": endpoint.hostName]
+        guard let host = endpoint.hostName else { return nil }
+        let headers: [String: String] = ["host": host]
         let task = AWSSignatureV4Signer.generateQueryStringForSignatureV4(
             withCredentialProvider: credentialsProvider,
             httpMethod: .GET,
