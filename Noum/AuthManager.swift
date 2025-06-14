@@ -12,10 +12,9 @@ import AuthenticationServices
 import GoogleSignIn
 #endif
 import AWSCore
-// ... inside AuthManager:
-private let regionType = (ProcessInfo.processInfo.environment["AWS_REGION"] ?? "eu-west-2" as NSString).aws_regionTypeValue()
+
+private let regionType = ((ProcessInfo.processInfo.environment["AWS_REGION"] ?? "eu-west-2") as NSString).aws_regionTypeValue()
 private let identityPoolId = ProcessInfo.processInfo.environment["AWS_IDENTITY_POOL_ID"] ?? "eu-west-2:b72cffc1-2949-4be0-80b5-df2713295f9e"
-private lazy var credentialsProvider = AWSCognitoCredentialsProvider(regionType: regionType, identityPoolId: identityPoolId)
 
 /// Authentication manager that loads AWS credentials from environment variables
 /// or a bundled `Transcribe.plist` file. Google or Apple sign-in actions are
@@ -25,6 +24,43 @@ private lazy var credentialsProvider = AWSCognitoCredentialsProvider(regionType:
 class AuthManager: NSObject, ObservableObject {
     static let shared = AuthManager()
     @Published var isSignedIn: Bool = false
+    private(set) var credentialsProvider: AWSCredentialsProvider?
+
+    private let cognitoProvider = AWSCognitoCredentialsProvider(regionType: regionType,
+                                                                identityPoolId: identityPoolId)
+
+    /// Load AWS credentials from environment variables or Transcribe.plist.
+    private func loadCredentials() {
+        let env = ProcessInfo.processInfo.environment
+        var accessKey = env["AWS_ACCESS_KEY_ID"]
+        var secretKey = env["AWS_SECRET_ACCESS_KEY"]
+        var token = env["AWS_SESSION_TOKEN"]
+
+        #if canImport(Foundation)
+        if (accessKey == nil || secretKey == nil),
+           let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
+           let data = try? Data(contentsOf: url),
+           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+            if accessKey == nil { accessKey = plist["AWS_ACCESS_KEY_ID"] as? String }
+            if secretKey == nil { secretKey = plist["AWS_SECRET_ACCESS_KEY"] as? String }
+            if token == nil { token = plist["AWS_SESSION_TOKEN"] as? String }
+        }
+        #endif
+
+        if let a = accessKey, let s = secretKey {
+            credentialsProvider = AWSStaticCredentialsProvider(accessKey: a, secretKey: s, sessionToken: token)
+            isSignedIn = true
+        }
+    }
+
+    /// Ensure credentials are loaded or throw an error.
+    func currentCredentials() async throws {
+        if credentialsProvider == nil { loadCredentials() }
+        if credentialsProvider == nil {
+            struct CredError: LocalizedError { var errorDescription: String? { "Missing AWS credentials" } }
+            throw CredError()
+        }
+    }
 
     override private init() {
         super.init()
@@ -39,28 +75,8 @@ class AuthManager: NSObject, ObservableObject {
     }
     #else
     func signInWithGoogle(presenting viewController: Any? = nil) {
-        GIDSignIn.sharedInstance.signIn(withPresenting: viewController) { result, error in
-            if let result = result, error == nil {
-                // Obtain the Google user’s ID token
-                guard let idToken = result.user.idToken?.tokenString else {
-                    print("Google sign-in succeeded but no ID token found")
-                    return
-                }
-                // Provide the token to AWS Cognito
-                self.credentialsProvider.logins = [ AWSCognitoLoginProviderKey.Google.rawValue: idToken ]
-                self.credentialsProvider.clearCredentials()  // clear old creds, if any
-                self.credentialsProvider.getIdentityId().continueWith { _ in
-                    // Optionally handle identity id fetch completion
-                    return
-                }
-                DispatchQueue.main.async {
-                    self.isSignedIn = true
-                }
-            } else {
-                print("Google sign-in failed: \(error?.localizedDescription ?? "Unknown error")")
-            }
-        }
-
+        // On platforms without GoogleSignIn simply load credentials from environment
+        loadCredentials()
     }
     #endif
 
@@ -79,9 +95,34 @@ class AuthManager: NSObject, ObservableObject {
     }
     
     func signOut() {
-        credentialsProvider.clearCredentials()
-        credentialsProvider.clearKeychain()
+        if let cognito = credentialsProvider as? AWSCognitoCredentialsProvider {
+            cognito.clearCredentials()
+            cognito.clearKeychain()
+        }
+        credentialsProvider = nil
         isSignedIn = false
     }
 }
+
+#if canImport(AuthenticationServices)
+extension AuthManager: ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        loadCredentials()
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        print("Apple sign-in failed: \(error.localizedDescription)")
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+#if canImport(UIKit)
+        return UIApplication.shared.windows.first ?? UIWindow()
+#elseif canImport(AppKit)
+        return NSApplication.shared.windows.first ?? NSWindow()
+#else
+        return ASPresentationAnchor()
+#endif
+    }
+}
+#endif
 
