@@ -2,15 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Replace with your AWS credentials -->
-    <key>AWS_ACCESS_KEY_ID</key>
-    <string>YOUR_ACCESS_KEY_ID</string>
-    <key>AWS_SECRET_ACCESS_KEY</key>
-    <string>YOUR_SECRET_ACCESS_KEY</string>
+    <!-- Replace with your Cognito Identity Pool ID -->
+    <key>COGNITO_IDENTITY_POOL_ID</key>
+    <string>YOUR_POOL_ID</string>
+    <!-- AWS Region (defaults to eu-west-2) -->
     <key>AWS_REGION</key>
     <string>eu-west-2</string>
-    <!-- Optional session token if using temporary credentials -->
-    <key>AWS_SESSION_TOKEN</key>
-    <string></string>
 </dict>
 </plist>

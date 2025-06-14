@@ -4,22 +4,17 @@ This app demonstrates speech recognition with filler word highlighting using
 
 Amazon Transcribe for streaming speech recognition.
 
-Supply your AWS credentials via the `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN` environment variables
-or a `Transcribe.plist` file (see `Transcribe.plist.example`). The region
-defaults to `us-east-1` but can be overridden with an `AWS_REGION` key. The app
-constructs a SigV4-signed WebSocket request and streams audio directly to
-Transcribe. This lightweight approach avoids additional dependencies, but you
-can replace it with the official AWS SDK (e.g. `aws-sdk-swift` or the iOS
-`AWSTranscribeStreaming` pod) if preferred.
+Configure the app with a Cognito Identity Pool using the
+`COGNITO_IDENTITY_POOL_ID` environment variable (or a matching value in a
+`Transcribe.plist` file) and optionally `AWS_REGION` to override the default
+`eu-west-2` region. The app authenticates via Cognito and supports Google or
+Apple sign‑in. Temporary credentials retrieved from Cognito are used to sign the
+WebSocket request to Amazon Transcribe.
 
-To use Amazon Transcribe instead, supply your AWS credentials via the
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional
-`AWS_SESSION_TOKEN` environment variables or a `Transcribe.plist` file
-(see `Transcribe.plist.example`). The region defaults to `us-east-1`
-but can be overridden with an `AWS_REGION` key. The app uses the same
-signed WebSocket approach to stream audio to Transcribe in the same
-manner as Deepgram.
+To use Amazon Transcribe you must configure an Amazon Cognito Identity Pool.
+Provide its ID using the `COGNITO_IDENTITY_POOL_ID` variable or
+`Transcribe.plist` file. Authentication is performed via Google or Apple login
+and the retrieved temporary credentials are used to sign the WebSocket request.
 
 Common disfluencies such as "umm" or "hmm" are detected using a regex so
 variants are matched dynamically.
