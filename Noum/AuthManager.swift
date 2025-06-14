@@ -48,7 +48,7 @@ class AuthManager: NSObject, ObservableObject {
         #endif
 
         if let a = accessKey, let s = secretKey {
-            credentialsProvider = AWSStaticCredentialsProvider(accessKey: a, secretKey: s, sessionToken: token)
+            credentialsProvider = AWSStaticCredentialsProvider(accessKey: a, secretKey: s)
             isSignedIn = true
         }
     }
