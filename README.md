@@ -4,17 +4,17 @@ This app demonstrates speech recognition with filler word highlighting using
 
 Amazon Transcribe for streaming speech recognition.
 
-Configure the app with a Cognito Identity Pool using the
-`COGNITO_IDENTITY_POOL_ID` environment variable (or a matching value in a
-`Transcribe.plist` file) and optionally `AWS_REGION` to override the default
-`eu-west-2` region. The app authenticates via Cognito and supports Google or
-Apple sign‑in. Temporary credentials retrieved from Cognito are used to sign the
-WebSocket request to Amazon Transcribe.
+Configure the app with AWS credentials using the environment variables
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` if
+you are using temporary credentials). A `Transcribe.plist` file can also provide
+these values when running on Apple platforms. The region defaults to
+`eu-west-2` but can be overridden with the `AWS_REGION` variable. Google and
+Apple sign‑in buttons simply trigger loading the credentials from these
+locations.
 
-To use Amazon Transcribe you must configure an Amazon Cognito Identity Pool.
-Provide its ID using the `COGNITO_IDENTITY_POOL_ID` variable or
-`Transcribe.plist` file. Authentication is performed via Google or Apple login
-and the retrieved temporary credentials are used to sign the WebSocket request.
+Supply AWS credentials either through environment variables or a matching
+`Transcribe.plist` file. These credentials are used to sign the WebSocket
+request to Amazon Transcribe.
 
 Common disfluencies such as "umm" or "hmm" are detected using a regex so
 variants are matched dynamically.
