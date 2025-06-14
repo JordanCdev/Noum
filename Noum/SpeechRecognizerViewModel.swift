@@ -42,63 +42,12 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Key used for persisting sessions to UserDefaults.
     private let sessionsKey = "practiceSessions"
-    
 
-    /// AWS credentials for authenticating with Amazon Transcribe.
-    private var awsAccessKey: String? {
-        if let env = ProcessInfo.processInfo.environment["AWS_ACCESS_KEY_ID"] {
-            return env
-        }
-        if let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
-           let data = try? Data(contentsOf: url),
-           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-           let dict = plist as? [String: Any],
-           let key = dict["AWS_ACCESS_KEY_ID"] as? String {
-            return key
-        }
-        return nil
-    }
-
-    private var awsSecretKey: String? {
-        if let env = ProcessInfo.processInfo.environment["AWS_SECRET_ACCESS_KEY"] {
-            return env
-        }
-        if let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
-           let data = try? Data(contentsOf: url),
-           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-           let dict = plist as? [String: Any],
-           let key = dict["AWS_SECRET_ACCESS_KEY"] as? String {
-            return key
-        }
-        return nil
-    }
-
-    private var awsSessionToken: String? {
-        if let env = ProcessInfo.processInfo.environment["AWS_SESSION_TOKEN"] {
-            return env
-        }
-        if let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
-           let data = try? Data(contentsOf: url),
-           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-           let dict = plist as? [String: Any],
-           let key = dict["AWS_SESSION_TOKEN"] as? String {
-            return key
-        }
-        return nil
-    }
+    /// Cognito authentication manager
+    private let authManager: AuthManager = .shared
 
     private var awsRegion: String {
-        if let env = ProcessInfo.processInfo.environment["AWS_REGION"] {
-            return env
-        }
-        if let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
-           let data = try? Data(contentsOf: url),
-           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-           let dict = plist as? [String: Any],
-           let key = dict["AWS_REGION"] as? String {
-            return key
-        }
-        return "us-east-1"
+        ProcessInfo.processInfo.environment["AWS_REGION"] ?? "eu-west-2"
     }
     
     #if canImport(AVFoundation)
@@ -176,12 +125,20 @@ class SpeechRecognizerViewModel: ObservableObject {
 #if canImport(AVFoundation)
     func startRecording() {
         guard !isRecording else { return }
-        guard let accessKey = awsAccessKey, let secretKey = awsSecretKey else {
-            print("AWS credentials not found")
-            transcribedText = "Missing AWS credentials."
-            return
+        Task {
+            do {
+                let creds = try await authManager.currentCredentials()
+                startRecordingWith(accessKey: creds.accessKey,
+                                   secretKey: creds.secretKey,
+                                   sessionToken: creds.sessionToken)
+            } catch {
+                print("Failed to fetch AWS credentials: \(error)")
+                await MainActor.run { self.transcribedText = "Failed to fetch AWS credentials." }
+            }
         }
+    }
 
+    private func startRecordingWith(accessKey: String, secretKey: String, sessionToken: String?) {
         resetCurrentSession()
         connectionError = nil
         isRecording = true
@@ -200,7 +157,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                                             region: awsRegion,
                                             accessKey: accessKey,
                                             secretKey: secretKey,
-                                            sessionToken: awsSessionToken) else {
+                                            sessionToken: sessionToken) else {
             print("Failed to create Transcribe URL")
             return
         }
@@ -214,41 +171,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     /// Start recording using Amazon Transcribe instead of Deepgram.
     func startAmazonRecording() {
-        guard !isRecording else { return }
-        guard let accessKey = awsAccessKey, let secretKey = awsSecretKey else {
-            print("AWS credentials not found")
-            transcribedText = "Missing AWS credentials."
-            return
-        }
-
-        resetCurrentSession()
-        connectionError = nil
-        isRecording = true
-        sessionStart = Date()
-
-        let audioSession = AVAudioSession.sharedInstance()
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try audioSession.setActive(true)
-        } catch {
-            print("Failed to configure audio session: \(error)")
-        }
-
-        let sampleRate = Int(audioSession.sampleRate)
-        guard let url = createTranscribeURL(sampleRate: sampleRate,
-                                            region: awsRegion,
-                                            accessKey: accessKey,
-                                            secretKey: secretKey,
-                                            sessionToken: awsSessionToken) else {
-            print("Failed to create Transcribe URL")
-            return
-        }
-        var request = URLRequest(url: url)
-        webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
-        webSocketTask?.resume()
-        receiveAmazonMessages()
-        startAudioStream()
-        print("Amazon Transcribe transcription started...")
+        startRecording()
     }
     
     func stopRecording() {

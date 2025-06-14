@@ -4,22 +4,17 @@ This app demonstrates speech recognition with filler word highlighting using
 
 Amazon Transcribe for streaming speech recognition.
 
-Supply your AWS credentials via the `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN` environment variables
-or a `Transcribe.plist` file (see `Transcribe.plist.example`). The region
-defaults to `us-east-1` but can be overridden with an `AWS_REGION` key. The app
-constructs a SigV4-signed WebSocket request and streams audio directly to
-Transcribe. This lightweight approach avoids additional dependencies, but you
-can replace it with the official AWS SDK (e.g. `aws-sdk-swift` or the iOS
-`AWSTranscribeStreaming` pod) if preferred.
+Configure the app with AWS credentials using the environment variables
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` if
+you are using temporary credentials). A `Transcribe.plist` file can also provide
+these values when running on Apple platforms. The region defaults to
+`eu-west-2` but can be overridden with the `AWS_REGION` variable. Google and
+Apple sign‑in buttons simply trigger loading the credentials from these
+locations.
 
-To use Amazon Transcribe instead, supply your AWS credentials via the
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional
-`AWS_SESSION_TOKEN` environment variables or a `Transcribe.plist` file
-(see `Transcribe.plist.example`). The region defaults to `us-east-1`
-but can be overridden with an `AWS_REGION` key. The app uses the same
-signed WebSocket approach to stream audio to Transcribe in the same
-manner as Deepgram.
+Supply AWS credentials either through environment variables or a matching
+`Transcribe.plist` file. These credentials are used to sign the WebSocket
+request to Amazon Transcribe.
 
 Common disfluencies such as "umm" or "hmm" are detected using a regex so
 variants are matched dynamically.
