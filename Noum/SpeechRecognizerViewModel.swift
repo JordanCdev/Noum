@@ -1,12 +1,16 @@
 import Foundation
+#if canImport(SwiftUI)
 import SwiftUI
+#endif
+#if canImport(AVFoundation)
 import AVFoundation
-import AWSCore
+#endif
+import AWSSDKIdentity
 import AWSTranscribeStreaming
 
+#if canImport(AVFoundation)
 @MainActor
 class SpeechRecognizerViewModel: ObservableObject {
-    
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
@@ -17,7 +21,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private let sessionsKey = "practiceSessions"
     private let authManager: AuthManager = .shared
-    
+
     private var audioEngine: AVAudioEngine?
     private var transcribeClient: TranscribeStreamingClient?
     private var streamConnection: TranscribeStreamingStartStreamTranscriptionOutputEventStream?
@@ -58,7 +62,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         guard !isRecording else { return }
         Task {
             do {
-                try await authManager.currentCredentials()
+                _ = try await authManager.currentCredentials()
                 await self.startRecordingWith()
             } catch {
                 print("Failed to fetch AWS credentials: \(error)")
@@ -79,19 +83,12 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Audio session error: \(error)")
         }
 
-        // Initialize AWS SDK v2 Transcribe client
         do {
-            let credentials = try await authManager.credentialsProvider.getCredentials().get()
-            let awsCredentials = try AWSCredentials(
-                accessKey: credentials.accessKey!,
-                secret: credentials.secretKey!,
-                sessionToken: credentials.sessionKey
+            let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+                region: authManager.region,
+                awsCredentialIdentityResolver: authManager.credentialResolver()
             )
-            let clientConfig = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                region: "eu-west-2",
-                credentialsProvider: StaticCredentialsProvider(awsCredentials)
-            )
-            transcribeClient = TranscribeStreamingClient(config: clientConfig)
+            transcribeClient = TranscribeStreamingClient(config: config)
         } catch {
             print("Failed to create AWS client: \(error)")
             return
@@ -248,6 +245,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 }
+#endif
 
 struct PracticeSession: Identifiable, Codable {
     let id: UUID = UUID()
@@ -256,4 +254,3 @@ struct PracticeSession: Identifiable, Codable {
     let duration: TimeInterval
     let date: Date
 }
-
