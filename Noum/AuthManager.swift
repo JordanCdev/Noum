@@ -40,7 +40,7 @@ class AuthManager: ObservableObject {
 
     func credentialResolver() -> any AWSCredentialIdentityResolver {
         if let cred = credentialIdentity {
-            return StaticAWSCredentialIdentityResolver(credentialIdentity: cred)
+            return StaticAWSCredentialIdentityResolver(cred)
         }
         return DefaultAWSCredentialIdentityResolverChain()
     }
