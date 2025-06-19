@@ -38,9 +38,9 @@ class AuthManager: ObservableObject {
         }
     }
 
-    func credentialResolver() -> any AWSCredentialIdentityResolver {
+    func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         if let cred = credentialIdentity {
-            return StaticAWSCredentialIdentityResolver(cred)
+            return try StaticAWSCredentialIdentityResolver(cred)
         }
         return DefaultAWSCredentialIdentityResolverChain()
     }
@@ -90,7 +90,7 @@ class AuthManager: ObservableObject {
 class AuthManager {
     static let shared = AuthManager()
     private(set) var region: String = "eu-west-2"
-    func credentialResolver() -> any AWSCredentialIdentityResolver {
+    func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         DefaultAWSCredentialIdentityResolverChain()
     }
     func currentCredentials() async throws -> AWSCredentialIdentity {
