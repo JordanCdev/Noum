@@ -1,94 +1,44 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-#if canImport(AVFoundation)
-import AVFoundation
-#endif
-#if canImport(SwiftUI)
 import SwiftUI
-#else
-// Provide minimal stubs so the code builds on platforms without SwiftUI
-protocol ObservableObject {}
-@propertyWrapper struct Published<Value> { var wrappedValue: Value; init(wrappedValue: Value) { self.wrappedValue = wrappedValue } }
-#endif
-#if canImport(UIKit)
-import UIKit
-typealias PlatformColor = UIColor
-#elseif canImport(AppKit)
-import AppKit
-typealias PlatformColor = NSColor
-#endif
-#if canImport(CryptoKit)
-import CryptoKit
-#endif
+import AVFoundation
 import AWSCore
+import AWSTranscribeStreaming
 
-@available(iOS 17.0, macOS 12.0, *)
 @MainActor
 class SpeechRecognizerViewModel: ObservableObject {
+    
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
     @Published var isRecording: Bool = false
-    
-    /// Duration of the last completed recording session.
     @Published var lastSessionDuration: TimeInterval = 0
-    
-    /// Completed practice sessions with transcript, filler count and duration.
     @Published var pastSessions: [PracticeSession] = []
-
-    /// Last connection error if the WebSocket fails.
     @Published var connectionError: String?
 
-    /// Key used for persisting sessions to UserDefaults.
     private let sessionsKey = "practiceSessions"
-
-    /// Cognito authentication manager
     private let authManager: AuthManager = .shared
-
-    private var awsRegion: String {
-        ProcessInfo.processInfo.environment["AWS_REGION"] ?? "eu-west-2"
-    }
     
-    #if canImport(AVFoundation)
     private var audioEngine: AVAudioEngine?
-    #endif
-    private var webSocketTask: URLSessionWebSocketTask?
+    private var transcribeClient: TranscribeStreamingClient?
+    private var streamConnection: TranscribeStreamingStartStreamTranscriptionOutputEventStream?
+    private var requestStream: TranscribeStreamingStartStreamTranscriptionInputStream?
 
-    /// Start time for the current session to calculate duration.
     private var sessionStart: Date?
-    /// Final transcript built from all finalized recognition results.
     private var finalTranscript: String = ""
-
-    /// Latest partial snippet that has not yet been finalized.
     private var partialTranscript: String = ""
-    
-    /// Common filler words that should always be highlighted.
-    ///
-    /// This includes short variants like "um" or "er" in addition to
-    /// conversational phrases such as "you know".
+
     private let baseFillerWords: Set<String> = [
         "uh", "um", "er", "erm", "ah", "eh", "huh",
         "like", "so", "you know"
     ]
-    
-    /// Regexes used to locate filler words in the transcript.  This includes
-    /// patterns for common dynamic variants such as "ummm" or "hmmm" so we
-    /// don't rely on an exhaustive static list.
+
     private lazy var fillerWordRegexes: [NSRegularExpression] = {
         var regexes: [NSRegularExpression] = []
-        
-        // Regex for dynamic variants with repeated letters like "ummm" or
-        // "erhh". These catch stuttered forms that may not match the base
-        // words exactly.
         if let dynamic = try? NSRegularExpression(
             pattern: #"(?i)(?<!\w)(?:u+h{2,}|u+m{2,}|hu+h+|er{2,}|er+m{2,}|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
         ) {
             regexes.append(dynamic)
         }
-        
-        // Regexes for the base filler words.
         for word in baseFillerWords {
             let escaped = NSRegularExpression.escapedPattern(for: word)
             let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
@@ -96,40 +46,20 @@ class SpeechRecognizerViewModel: ObservableObject {
                 regexes.append(r)
             }
         }
-        
         return regexes
     }()
 
-    /// Load any previously saved sessions from UserDefaults.
-    private func loadSessions() {
-        guard let data = UserDefaults.standard.data(forKey: sessionsKey),
-              let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else {
-            return
-        }
-        pastSessions = sessions.sorted { $0.date > $1.date }
-    }
-
-    /// Persist the current sessions array to UserDefaults.
-    private func saveSessions() {
-        if let data = try? JSONEncoder().encode(pastSessions) {
-            UserDefaults.standard.set(data, forKey: sessionsKey)
-        }
-    }
-
     init() {
         loadSessions()
-#if canImport(AVFoundation)
         requestRecordAuthorization()
-#endif
     }
 
-#if canImport(AVFoundation)
     func startRecording() {
         guard !isRecording else { return }
         Task {
             do {
-                try await authManager.currentCredentials()  // ensure AWS credentials are obtained
-                startRecordingWith()
+                try await authManager.currentCredentials()
+                await self.startRecordingWith()
             } catch {
                 print("Failed to fetch AWS credentials: \(error)")
                 await MainActor.run { self.transcribedText = "Failed to fetch AWS credentials." }
@@ -137,256 +67,157 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func startRecordingWith() {
+    private func startRecordingWith() async {
         resetCurrentSession()
-        connectionError = nil
         isRecording = true
         sessionStart = Date()
 
-        let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try audioSession.setActive(true)
+            try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Failed to configure audio session: \(error)")
+            print("Audio session error: \(error)")
         }
 
-        let sampleRate = Int(audioSession.sampleRate)
-        guard let url = createTranscribeURL(sampleRate: sampleRate) else {
-            print("Failed to create Transcribe URL")
+        // Initialize AWS SDK v2 Transcribe client
+        do {
+            let credentials = try await authManager.credentialsProvider.getCredentials().get()
+            let awsCredentials = try AWSCredentials(
+                accessKey: credentials.accessKey!,
+                secret: credentials.secretKey!,
+                sessionToken: credentials.sessionKey
+            )
+            let clientConfig = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+                region: "eu-west-2",
+                credentialsProvider: StaticCredentialsProvider(awsCredentials)
+            )
+            transcribeClient = TranscribeStreamingClient(config: clientConfig)
+        } catch {
+            print("Failed to create AWS client: \(error)")
             return
         }
-        var request = URLRequest(url: url)
-        webSocketTask = URLSession(configuration: .default).webSocketTask(with: request)
-        webSocketTask?.resume()
-        receiveAmazonMessages()
+
+        let request = StartStreamTranscriptionInput(
+            languageCode: .enUS,
+            mediaEncoding: .pcm,
+            mediaSampleRateHertz: 48000,
+            audioStream: .init()
+        )
+
+        self.requestStream = request.audioStream
+
+        Task {
+            do {
+                streamConnection = try await transcribeClient?.startStreamTranscription(input: request, onEvent: handleTranscribeEvent(_:))
+                print("Transcribe streaming started")
+            } catch {
+                print("Transcribe start failed: \(error)")
+                connectionError = "\(error)"
+                stopRecording()
+            }
+        }
+
         startAudioStream()
-        print("Amazon Transcribe transcription started...")
     }
 
-    /// Start recording using Amazon Transcribe instead of Deepgram.
-    func startAmazonRecording() {
-        startRecording()
-    }
-    
     func stopRecording() {
         guard isRecording else { return }
         audioEngine?.stop()
         audioEngine = nil
         try? AVAudioSession.sharedInstance().setActive(false)
-        webSocketTask?.cancel()
+        Task { await requestStream?.close() }
         isRecording = false
-        // Append any remaining partial transcript before saving.
+
         if !partialTranscript.isEmpty {
-            if !finalTranscript.isEmpty {
-                finalTranscript += " "
-            }
+            if !finalTranscript.isEmpty { finalTranscript += " " }
             finalTranscript += partialTranscript
             partialTranscript = ""
             transcribedText = finalTranscript
             highlightAndCountFillerWords(in: finalTranscript)
         }
         saveCurrentSession()
-        print("Transcription stopped.")
-        print("Final transcript: \(finalTranscript)")
-        print("Total filler words: \(fillerWordCount)")
     }
-    
+
     private func requestRecordAuthorization() {
         AVAudioApplication.requestRecordPermission { granted in
             DispatchQueue.main.async {
-                if granted {
-                    print("Microphone access granted.")
-                } else {
-                    print("Microphone access denied.")
-                }
+                if granted { print("Microphone access granted.") }
+                else { print("Microphone access denied.") }
             }
         }
     }
-    
+
     private func startAudioStream() {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
             let data = self.convertBufferToPCMData(buffer: buffer)
-            self.sendPCMData(data)
+            Task { await self.requestStream?.send(.audioEvent(.init(audioChunk: data))) }
         }
-        
+
         audioEngine!.prepare()
         try? audioEngine!.start()
     }
-    
+
     private func convertBufferToPCMData(buffer: AVAudioPCMBuffer) -> Data {
         let frameLength = Int(buffer.frameLength)
-        switch buffer.format.commonFormat {
-        case .pcmFormatInt16:
-            if let channelData = buffer.int16ChannelData?[0] {
-                return Data(bytes: channelData, count: frameLength * MemoryLayout<Int16>.size)
+        if let channelData = buffer.floatChannelData?[0] {
+            var pcmData = Data(capacity: frameLength * MemoryLayout<Int16>.size)
+            for i in 0..<frameLength {
+                let clamped = max(-1.0, min(1.0, channelData[i]))
+                var sample = Int16(clamped * Float(Int16.max))
+                withUnsafeBytes(of: &sample) { pcmData.append(contentsOf: $0) }
             }
-        case .pcmFormatFloat32:
-            if let channelData = buffer.floatChannelData?[0] {
-                var pcmData = Data(capacity: frameLength * MemoryLayout<Int16>.size)
-                for i in 0..<frameLength {
-                    let clamped = max(-1.0, min(1.0, channelData[i]))
-                    var sample = Int16(clamped * Float(Int16.max))
-                    withUnsafeBytes(of: &sample) { pcmData.append(contentsOf: $0) }
-                }
-                return pcmData
-            }
-        default:
-            break
+            return pcmData
         }
         return Data()
     }
-    
-    private func sendPCMData(_ data: Data) {
-        webSocketTask?.send(.data(data)) { [weak self] error in
-            guard let self else { return }
-            if let error = error {
-                print("WebSocket send error: \(error)")
-                Task { @MainActor in
-                    self.connectionError = "WebSocket send error: \(error.localizedDescription)"
-                    self.stopRecording()
-                }
-            }
-        }
-    }
 
-    // MARK: - Amazon Transcribe Helpers
+    private func handleTranscribeEvent(_ event: StartStreamTranscriptionOutputEventStream) async {
+        switch event {
+        case .transcriptEvent(let transcriptEvent):
+            for result in transcriptEvent.transcript?.results ?? [] {
+                guard let alternative = result.alternatives?.first,
+                      let snippet = alternative.transcript?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !snippet.isEmpty else { continue }
 
-    private func createTranscribeURL(sampleRate: Int) -> URL? {
-        let regionName = awsRegion
-        let regionType = (regionName as NSString).aws_regionTypeValue()
-        guard let credentialsProvider = authManager.credentialsProvider else {
-            print("AWS credentials provider not configured")
-            return nil
-        }
-        // Base URL for Amazon Transcribe streaming (WebSocket API)
-        let baseURL = URL(string: "wss://transcribestreaming.\(regionName).amazonaws.com:8443/stream-transcription-websocket")!
-        // Set up the endpoint for signing (service: "transcribe")
-        let endpoint = AWSEndpoint(region: regionType, serviceName: "transcribe", url: baseURL)!
-        // Required query parameters for Transcribe WebSocket connection
-        let queryParams: [String: String] = [
-            "language-code": "en-US",
-            "media-encoding": "pcm",
-            "sample-rate": String(sampleRate)
-        ]
-        // Sign the URL using AWS SDK (Signature V4)
-        guard let host = endpoint.hostName else { return nil }
-        let headers: [String: String] = ["host": host]
-        let task = AWSSignatureV4Signer.generateQueryStringForSignatureV4(
-            withCredentialProvider: credentialsProvider,
-            httpMethod: .GET,
-            expireDuration: 300,                // 5-minute expiration, matches X-Amz-Expires
-            endpoint: endpoint,
-            keyPath: "stream-transcription-websocket",
-            requestHeaders: headers,
-            requestParameters: queryParams,
-            signBody: false)
-        task.waitUntilFinished()
-        if let error = task.error {
-            print("Error signing Transcribe URL: \(error)")
-            return nil
-        }
-        return task.result as? URL
-    }
-
-    private func receiveAmazonMessages() {
-        webSocketTask?.receive { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .failure(let error):
-                print("WebSocket receive error: \(error)")
-                Task { @MainActor in
-                    self.connectionError = "WebSocket receive error: \(error.localizedDescription)"
-                    self.stopRecording()
-                }
-            case .success(let message):
-                Task { @MainActor in
-                    switch message {
-                    case .data(let data):
-                        self.handleAmazonResponse(data: data)
-                    case .string(let text):
-                        self.handleAmazonResponse(text: text)
-                    @unknown default:
-                        break
+                DispatchQueue.main.async {
+                    if result.isPartial == false {
+                        if !self.finalTranscript.isEmpty { self.finalTranscript += " " }
+                        self.finalTranscript += snippet
+                        self.partialTranscript = ""
+                    } else {
+                        self.partialTranscript = snippet
                     }
-                    self.receiveAmazonMessages()
+
+                    let combined = [self.finalTranscript, self.partialTranscript].filter { !$0.isEmpty }.joined(separator: " ")
+                    self.transcribedText = combined
+                    self.highlightAndCountFillerWords(in: combined)
                 }
             }
+        default: break
         }
     }
 
-
-    private func handleAmazonResponse(data: Data) {
-        if let text = String(data: data, encoding: .utf8) {
-            handleAmazonResponse(text: text)
-        }
-    }
-
-    private func handleAmazonResponse(text: String) {
-        guard let data = text.data(using: .utf8) else { return }
-        guard let message = try? JSONDecoder().decode(TranscribeMessage.self, from: data) else {
-            return
-        }
-
-        guard let result = message.transcript.results.first,
-              let alt = result.alternatives.first else { return }
-
-        let snippet = alt.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !snippet.isEmpty else { return }
-
-        DispatchQueue.main.async {
-            if result.isPartial == false {
-                if !self.finalTranscript.isEmpty {
-                    self.finalTranscript += " "
-                }
-                self.finalTranscript += snippet
-                self.partialTranscript = ""
-            } else {
-                self.partialTranscript = snippet
-            }
-
-            let combined = [self.finalTranscript, self.partialTranscript]
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-            self.transcribedText = combined
-            self.highlightAndCountFillerWords(in: combined)
-        }
-    }
-#endif // canImport(AVFoundation)
-    
-    /// Highlight any filler words found in `text` and update ``fillerWordCount``.
-    ///
-    /// Made internal for unit testing so that tests can verify the filler word
-    /// detection logic without needing to record audio or parse a full
-    /// service response.
-    func highlightAndCountFillerWords(in text: String) {
+    private func highlightAndCountFillerWords(in text: String) {
         var count = 0
         let attributed = NSMutableAttributedString(string: text)
         for regex in fillerWordRegexes {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             count += matches.count
             for match in matches {
-#if canImport(UIKit) || canImport(AppKit)
-                attributed.addAttribute(.foregroundColor, value: PlatformColor.red, range: match.range)
-#endif
+                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
             }
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
-
-        #if canImport(UIKit) || canImport(AppKit)
             self.highlightedText = AttributedString(attributed)
-        #else
-            self.highlightedText = AttributedString(text)
-        #endif
         }
     }
 
-    /// Clear current transcript and counters before a new session.
     func resetCurrentSession() {
         transcribedText = ""
         highlightedText = AttributedString("")
@@ -396,64 +227,33 @@ class SpeechRecognizerViewModel: ObservableObject {
         connectionError = nil
     }
 
-    /// Persist the completed session to the history list.
     private func saveCurrentSession() {
         let duration = Date().timeIntervalSince(sessionStart ?? Date())
         lastSessionDuration = duration
-        let session = PracticeSession(
-            transcript: transcribedText,
-            fillerWordCount: fillerWordCount,
-            duration: duration,
-            date: sessionStart ?? Date()
-        )
+        let session = PracticeSession(transcript: transcribedText, fillerWordCount: fillerWordCount, duration: duration, date: sessionStart ?? Date())
         pastSessions.insert(session, at: 0)
         saveSessions()
         sessionStart = nil
     }
-    
-    // MARK: - Amazon Transcribe Response Models
 
-    struct TranscribeMessage: Codable {
-        let transcript: Transcript
-
-        enum CodingKeys: String, CodingKey {
-            case transcript = "Transcript"
-        }
+    private func loadSessions() {
+        guard let data = UserDefaults.standard.data(forKey: sessionsKey),
+              let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else { return }
+        pastSessions = sessions.sorted { $0.date > $1.date }
     }
 
-    struct Transcript: Codable {
-        let results: [TranscriptResult]
-
-        enum CodingKeys: String, CodingKey {
-            case results = "Results"
+    private func saveSessions() {
+        if let data = try? JSONEncoder().encode(pastSessions) {
+            UserDefaults.standard.set(data, forKey: sessionsKey)
         }
-    }
-
-    struct TranscriptResult: Codable {
-        let alternatives: [TranscriptAlternative]
-        let isPartial: Bool
-
-        enum CodingKeys: String, CodingKey {
-            case alternatives = "Alternatives"
-            case isPartial = "IsPartial"
-        }
-    }
-
-    struct TranscriptAlternative: Codable {
-        let transcript: String
-
-        enum CodingKeys: String, CodingKey {
-            case transcript = "Transcript"
-        }
-    }
-    
-    // MARK: - Practice Session Model
-    
-    struct PracticeSession: Identifiable, Codable {
-        let id: UUID = UUID()
-        let transcript: String
-        let fillerWordCount: Int
-        let duration: TimeInterval
-        let date: Date
     }
 }
+
+struct PracticeSession: Identifiable, Codable {
+    let id: UUID = UUID()
+    let transcript: String
+    let fillerWordCount: Int
+    let duration: TimeInterval
+    let date: Date
+}
+

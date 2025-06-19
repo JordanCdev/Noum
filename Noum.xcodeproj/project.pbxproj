@@ -10,6 +10,7 @@
 		0B3A91F92DFCF18700FFDA37 /* AWSCognitoIdentityProvider in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A91F82DFCF18700FFDA37 /* AWSCognitoIdentityProvider */; };
 		0B3A91FB2DFCF18700FFDA37 /* AWSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A91FA2DFCF18700FFDA37 /* AWSCore */; };
 		0B3A91FD2DFCF18700FFDA37 /* AWSTranscribeStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A91FC2DFCF18700FFDA37 /* AWSTranscribeStreaming */; };
+		0B3A92012DFD0A5C00FFDA37 /* AWSTranscribe in Frameworks */ = {isa = PBXBuildFile; productRef = 0B3A92002DFD0A5C00FFDA37 /* AWSTranscribe */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +60,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0B3A91F92DFCF18700FFDA37 /* AWSCognitoIdentityProvider in Frameworks */,
+				0B3A92012DFD0A5C00FFDA37 /* AWSTranscribe in Frameworks */,
 				0B3A91FD2DFCF18700FFDA37 /* AWSTranscribeStreaming in Frameworks */,
 				0B3A91FB2DFCF18700FFDA37 /* AWSCore in Frameworks */,
 			);
@@ -124,6 +126,7 @@
 				0B3A91F82DFCF18700FFDA37 /* AWSCognitoIdentityProvider */,
 				0B3A91FA2DFCF18700FFDA37 /* AWSCore */,
 				0B3A91FC2DFCF18700FFDA37 /* AWSTranscribeStreaming */,
+				0B3A92002DFD0A5C00FFDA37 /* AWSTranscribe */,
 			);
 			productName = Noum;
 			productReference = 0B981F6C2D44610E008F4158 /* Noum.app */;
@@ -604,6 +607,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0B3A91F72DFCF18700FFDA37 /* XCRemoteSwiftPackageReference "aws-sdk-ios-spm" */;
 			productName = AWSTranscribeStreaming;
+		};
+		0B3A92002DFD0A5C00FFDA37 /* AWSTranscribe */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AWSTranscribe;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
