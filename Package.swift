@@ -21,9 +21,6 @@ let package = Package(
             ],
             path: "Noum",
             exclude: [
-                "ContentView.swift",
-                "SessionHistoryView.swift",
-                "SummaryView.swift",
                 // Resources only used by the Xcode project should not be
                 // included when building the Swift Package, otherwise SwiftPM
                 // emits warnings about unhandled files.
