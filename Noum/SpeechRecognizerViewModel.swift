@@ -63,7 +63,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         do {
-            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+            let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
                 awsCredentialIdentityResolver: authManager.credentialResolver(),
                 region: authManager.region
             )
