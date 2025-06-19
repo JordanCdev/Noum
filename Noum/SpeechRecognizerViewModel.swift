@@ -31,27 +31,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
 
-    private let baseFillerWords: Set<String> = [
-        "uh", "um", "er", "erm", "ah", "eh", "huh",
-        "like", "so", "you know"
-    ]
-
-    private lazy var fillerWordRegexes: [NSRegularExpression] = {
-        var regexes: [NSRegularExpression] = []
-        if let dynamic = try? NSRegularExpression(
-            pattern: #"(?i)(?<!\w)(?:u+h{2,}|u+m{2,}|hu+h+|er{2,}|er+m{2,}|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
-        ) {
-            regexes.append(dynamic)
-        }
-        for word in baseFillerWords {
-            let escaped = NSRegularExpression.escapedPattern(for: word)
-            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
-            if let r = try? NSRegularExpression(pattern: pattern) {
-                regexes.append(r)
-            }
-        }
-        return regexes
-    }()
 
     init() {
         loadSessions()
@@ -200,14 +179,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func highlightAndCountFillerWords(in text: String) {
-        var count = 0
+        let matches = FillerWordDetector.matches(in: text)
+        let count = matches.count
         let attributed = NSMutableAttributedString(string: text)
-        for regex in fillerWordRegexes {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            count += matches.count
-            for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
-            }
+        for match in matches {
+            attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count

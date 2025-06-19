@@ -28,7 +28,8 @@ let package = Package(
                 // included when building the Swift Package, otherwise SwiftPM
                 // emits warnings about unhandled files.
                 "Assets.xcassets",
-                "Preview Content"
+                "Preview Content",
+                "Transcribe.plist.example"
             ]
         ),
         .testTarget(
