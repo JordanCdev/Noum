@@ -63,10 +63,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         do {
-            let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                awsCredentialIdentityResolver: try authManager.credentialResolver(),
-                region: authManager.region
-            )
+            var config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(region: authManager.region)
+            config.awsCredentialIdentityResolver = try authManager.credentialResolver()
             transcribeClient = TranscribeStreamingClient(config: config)
         } catch {
             print("Failed to create AWS client: \(error)")
@@ -142,7 +140,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
             let data = self.convertBufferToPCMData(buffer: buffer)
-            self.requestStream?.yield(.audioEvent(.init(audioChunk: data)))
+            self.requestStream?.yield(.audioevent(.init(audioChunk: data)))
         }
 
         audioEngine!.prepare()
