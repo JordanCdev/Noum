@@ -1,12 +1,16 @@
 import Foundation
+#if canImport(SwiftUI)
 import SwiftUI
+#endif
+#if canImport(AVFoundation)
 import AVFoundation
-import AWSCore
+#endif
+import AWSSDKIdentity
 import AWSTranscribeStreaming
 
+#if canImport(AVFoundation)
 @MainActor
 class SpeechRecognizerViewModel: ObservableObject {
-    
     @Published var transcribedText: String = ""
     @Published var fillerWordCount: Int = 0
     @Published var highlightedText: AttributedString = AttributedString("")
@@ -17,7 +21,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private let sessionsKey = "practiceSessions"
     private let authManager: AuthManager = .shared
-    
+
     private var audioEngine: AVAudioEngine?
     private var transcribeClient: TranscribeStreamingClient?
     private var streamConnection: TranscribeStreamingStartStreamTranscriptionOutputEventStream?
@@ -27,27 +31,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
 
-    private let baseFillerWords: Set<String> = [
-        "uh", "um", "er", "erm", "ah", "eh", "huh",
-        "like", "so", "you know"
-    ]
-
-    private lazy var fillerWordRegexes: [NSRegularExpression] = {
-        var regexes: [NSRegularExpression] = []
-        if let dynamic = try? NSRegularExpression(
-            pattern: #"(?i)(?<!\w)(?:u+h{2,}|u+m{2,}|hu+h+|er{2,}|er+m{2,}|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
-        ) {
-            regexes.append(dynamic)
-        }
-        for word in baseFillerWords {
-            let escaped = NSRegularExpression.escapedPattern(for: word)
-            let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
-            if let r = try? NSRegularExpression(pattern: pattern) {
-                regexes.append(r)
-            }
-        }
-        return regexes
-    }()
 
     init() {
         loadSessions()
@@ -58,7 +41,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         guard !isRecording else { return }
         Task {
             do {
-                try await authManager.currentCredentials()
+                _ = try await authManager.currentCredentials()
                 await self.startRecordingWith()
             } catch {
                 print("Failed to fetch AWS credentials: \(error)")
@@ -79,19 +62,12 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Audio session error: \(error)")
         }
 
-        // Initialize AWS SDK v2 Transcribe client
         do {
-            let credentials = try await authManager.credentialsProvider.getCredentials().get()
-            let awsCredentials = try AWSCredentials(
-                accessKey: credentials.accessKey!,
-                secret: credentials.secretKey!,
-                sessionToken: credentials.sessionKey
+            let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+                region: authManager.region,
+                awsCredentialIdentityResolver: authManager.credentialResolver()
             )
-            let clientConfig = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                region: "eu-west-2",
-                credentialsProvider: StaticCredentialsProvider(awsCredentials)
-            )
-            transcribeClient = TranscribeStreamingClient(config: clientConfig)
+            transcribeClient = TranscribeStreamingClient(config: config)
         } catch {
             print("Failed to create AWS client: \(error)")
             return
@@ -203,14 +179,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func highlightAndCountFillerWords(in text: String) {
-        var count = 0
+        let matches = FillerWordDetector.matches(in: text)
+        let count = matches.count
         let attributed = NSMutableAttributedString(string: text)
-        for regex in fillerWordRegexes {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            count += matches.count
-            for match in matches {
-                attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
-            }
+        for match in matches {
+            attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
         }
         DispatchQueue.main.async {
             self.fillerWordCount = count
@@ -248,6 +221,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 }
+#endif
 
 struct PracticeSession: Identifiable, Codable {
     let id: UUID = UUID()
@@ -256,4 +230,3 @@ struct PracticeSession: Identifiable, Codable {
     let duration: TimeInterval
     let date: Date
 }
-

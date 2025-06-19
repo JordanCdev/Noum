@@ -9,9 +9,16 @@ let package = Package(
     products: [
         .executable(name: "NoumApp", targets: ["Noum"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.3.0")
+    ],
     targets: [
         .executableTarget(
             name: "Noum",
+            dependencies: [
+                .product(name: "AWSTranscribeStreaming", package: "aws-sdk-swift"),
+                .product(name: "AWSSDKIdentity", package: "aws-sdk-swift")
+            ],
             path: "Noum",
             exclude: [
                 "ContentView.swift",
@@ -21,7 +28,8 @@ let package = Package(
                 // included when building the Swift Package, otherwise SwiftPM
                 // emits warnings about unhandled files.
                 "Assets.xcassets",
-                "Preview Content"
+                "Preview Content",
+                "Transcribe.plist.example"
             ]
         ),
         .testTarget(
