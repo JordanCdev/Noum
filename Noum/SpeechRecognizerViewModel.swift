@@ -24,8 +24,8 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private var audioEngine: AVAudioEngine?
     private var transcribeClient: TranscribeStreamingClient?
-    private var streamConnection: TranscribeStreamingStartStreamTranscriptionOutputEventStream?
-    private var requestStream: TranscribeStreamingStartStreamTranscriptionInputStream?
+    private var streamConnection: StartStreamTranscriptionOutput?
+    private var requestStream: AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error>.Continuation?
 
     private var sessionStart: Date?
     private var finalTranscript: String = ""
@@ -64,8 +64,8 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         do {
             let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                region: authManager.region,
-                awsCredentialIdentityResolver: authManager.credentialResolver()
+                awsCredentialIdentityResolver: authManager.credentialResolver(),
+                region: authManager.region
             )
             transcribeClient = TranscribeStreamingClient(config: config)
         } catch {
@@ -73,19 +73,30 @@ class SpeechRecognizerViewModel: ObservableObject {
             return
         }
 
+        let stream = AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error> { continuation in
+            self.requestStream = continuation
+        }
         let request = StartStreamTranscriptionInput(
-            languageCode: .enUS,
+            audioStream: stream,
+            languageCode: .enUs,
             mediaEncoding: .pcm,
-            mediaSampleRateHertz: 48000,
-            audioStream: .init()
+            mediaSampleRateHertz: 48000
         )
-
-        self.requestStream = request.audioStream
 
         Task {
             do {
-                streamConnection = try await transcribeClient?.startStreamTranscription(input: request, onEvent: handleTranscribeEvent(_:))
-                print("Transcribe streaming started")
+                if let client = transcribeClient {
+                    let output = try await client.startStreamTranscription(input: request)
+                    streamConnection = output
+                    Task.detached { [weak self] in
+                        if let events = output.transcriptResultStream {
+                            for try await event in events {
+                                await self?.handleTranscribeEvent(event)
+                            }
+                        }
+                    }
+                    print("Transcribe streaming started")
+                }
             } catch {
                 print("Transcribe start failed: \(error)")
                 connectionError = "\(error)"
@@ -101,7 +112,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine?.stop()
         audioEngine = nil
         try? AVAudioSession.sharedInstance().setActive(false)
-        Task { await requestStream?.close() }
+        requestStream?.finish()
         isRecording = false
 
         if !partialTranscript.isEmpty {
@@ -131,7 +142,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
             let data = self.convertBufferToPCMData(buffer: buffer)
-            Task { await self.requestStream?.send(.audioEvent(.init(audioChunk: data))) }
+            self.requestStream?.yield(
+                .audioevent(TranscribeStreamingClientTypes.AudioEvent(audioChunk: data))
+            )
         }
 
         audioEngine!.prepare()
@@ -152,9 +165,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         return Data()
     }
 
-    private func handleTranscribeEvent(_ event: StartStreamTranscriptionOutputEventStream) async {
+    private func handleTranscribeEvent(_ event: TranscribeStreamingClientTypes.TranscriptResultStream) async {
         switch event {
-        case .transcriptEvent(let transcriptEvent):
+        case .transcriptevent(let transcriptEvent):
             for result in transcriptEvent.transcript?.results ?? [] {
                 guard let alternative = result.alternatives?.first,
                       let snippet = alternative.transcript?.trimmingCharacters(in: .whitespacesAndNewlines),
