@@ -41,7 +41,7 @@ class AuthManager: ObservableObject {
     func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest, isSignUp: Bool) {
         if isSignUp {
             request.requestedScopes = [.fullName, .email]
-            request.requestedOperation = .operationCreateAccount
+            request.requestedOperation = .operationImplicit
         } else {
             request.requestedOperation = .operationLogin
         }
