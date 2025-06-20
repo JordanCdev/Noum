@@ -17,28 +17,12 @@ struct ContentView: View {
     @StateObject private var authManager = AuthManager.shared
     @State private var showSummary = false
     @State private var showHistory = false
+    @State private var showSettings = false
+    @State private var showSignInAlert = false
     
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                if !authManager.isSignedIn {
-                    VStack(spacing: 10) {
-                        Button("Sign in with Google") {
-                            #if canImport(UIKit)
-                            if let root = UIApplication.shared.windows.first?.rootViewController {
-                                authManager.signInWithGoogle(presenting: root)
-                            }
-                            #endif
-                        }
-                        Button("Sign in with Apple") {
-                            authManager.signInWithApple()
-                        }
-                    }
-                } else {
-                    Button("Sign Out") {
-                        authManager.signOut()
-                    }
-                }
 
                 ScrollView {
                     Text(speechVM.highlightedText)
@@ -54,7 +38,11 @@ struct ContentView: View {
                 
                 HStack {
                     Button("Start") {
-                        speechVM.startRecording()
+                        if authManager.isSignedIn {
+                            speechVM.startRecording()
+                        } else {
+                            showSignInAlert = true
+                        }
                     }
                     .disabled(speechVM.isRecording)
                     Button("Stop") {
@@ -68,6 +56,7 @@ struct ContentView: View {
             .navigationTitle("Practice")
             .toolbar {
                 Button("History") { showHistory = true }
+                Button("Settings") { showSettings = true }
             }
         }
         .sheet(
@@ -83,6 +72,14 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: speechVM)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
+        .alert("Not Signed In", isPresented: $showSignInAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Please sign in via Settings before starting a session.")
         }
     }
 }
