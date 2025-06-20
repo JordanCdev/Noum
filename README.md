@@ -10,7 +10,8 @@ you are using temporary credentials). A `Transcribe.plist` file can also provide
 these values when running on Apple platforms. The region defaults to
 `eu-west-2` but can be overridden with the `AWS_REGION` variable. The
 Settings screen includes a **Refresh** button to reload credentials from these
-locations.
+locations. The app stores the account identifier in the Keychain so sign-in
+persists across launches.
 
 Supply AWS credentials either through environment variables or a matching
 `Transcribe.plist` file. These credentials are used to sign the WebSocket
