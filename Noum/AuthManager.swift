@@ -17,6 +17,7 @@ class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
     @Published var isSignedIn: Bool = false
+    @Published var signInError: String?
     private var credentialIdentity: AWSCredentialIdentity?
     private(set) var region: String = "eu-west-2"
     private let accountKey = "NoumAccountID"
@@ -33,9 +34,6 @@ class AuthManager: ObservableObject {
         }
     }
 
-    func signInWithGoogle(presenting: Any? = nil) {
-        loadCredentialsAndAccount()
-    }
 
     #if canImport(AuthenticationServices)
     func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest, isSignUp: Bool) {
@@ -46,6 +44,26 @@ class AuthManager: ObservableObject {
             request.requestedOperation = .operationLogin
         }
     }
+
+    func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
+                let user = credential.user
+                _ = KeychainHelper.save(user, key: accountKey)
+                print("Saved account ID: \(user)")
+                signIn()
+                isSignedIn = true
+            }
+        case .failure(let error):
+            signInError = error.localizedDescription
+            print("Apple sign in failed: \(error)")
+        }
+    }
+    #else
+    func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
+    func handleAppleAuthorization(_ result: Result<Any, Error>) {}
+    #endif
 
     func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
         switch result {
@@ -70,19 +88,6 @@ class AuthManager: ObservableObject {
     }
 
     private func signIn() {
-        if let creds = Self.loadCredentials() {
-            self.credentialIdentity = creds.identity
-            self.region = creds.region
-        }
-    }
-
-    private func loadCredentialsAndAccount() {
-        if KeychainHelper.load(key: accountKey) == nil {
-            let id = UUID().uuidString
-            _ = KeychainHelper.save(id, key: accountKey)
-            print("Created new account ID: \(id)")
-        }
-        self.isSignedIn = KeychainHelper.load(key: accountKey) != nil
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
@@ -141,6 +146,8 @@ class AuthManager: ObservableObject {
 class AuthManager {
     static let shared = AuthManager()
     private(set) var region: String = "eu-west-2"
+    var isSignedIn: Bool = false
+    var signInError: String?
     var currentAccountID: String? { nil }
     func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         DefaultAWSCredentialIdentityResolverChain()
@@ -150,7 +157,7 @@ class AuthManager {
     }
     func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
     func handleAppleAuthorization(_ result: Result<Any, Error>) {}
-    func signOut() {}
+    func signOut() { isSignedIn = false }
     func reloadCredentials() {}
 }
 #endif
