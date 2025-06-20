@@ -3,6 +3,9 @@ import SwiftUI
 #if canImport(AuthenticationServices)
 import AuthenticationServices
 #endif
+#if canImport(GoogleSignInSwift)
+import GoogleSignInSwift
+#endif
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LoginView: View {
@@ -31,6 +34,14 @@ struct LoginView: View {
                     #else
                     Button("Sign in with Apple") { }
                     #endif
+#if canImport(GoogleSignInSwift)
+                    GoogleSignInButton(action: { authManager.startGoogleSignIn() })
+                        .frame(height: 45)
+#else
+                    Button("Sign in with Google") {
+                        authManager.startGoogleSignIn()
+                    }
+#endif
                 }
                 Spacer()
             }
