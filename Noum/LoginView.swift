@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(AuthenticationServices)
+import AuthenticationServices
+#endif
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LoginView: View {
@@ -16,18 +19,30 @@ struct LoginView: View {
                 Spacer()
                 VStack(spacing: 16) {
                     Text("Already have an account?")
-                    Button(action: { authManager.signInWithApple() }) {
-#if canImport(UIKit)
-                        Label("Sign in with Apple", systemImage: "applelogo")
-                            .frame(maxWidth: .infinity)
-#else
-                        Text("Sign in with Apple")
-#endif
+                    #if canImport(AuthenticationServices)
+                    SignInWithAppleButton(.signIn) { request in
+                        authManager.configureAppleRequest(request, isSignUp: false)
+                    } onCompletion: { result in
+                        authManager.handleAppleAuthorization(result)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 45)
+                    #else
+                    Button("Sign in with Apple") { }
+                    #endif
+                    Spacer().frame(height: 30)
                     Text("New to Noum?")
-                    Button("Get Started") { authManager.signInWithApple() }
-                        .buttonStyle(.bordered)
+                    #if canImport(AuthenticationServices)
+                    SignInWithAppleButton(.signUp) { request in
+                        authManager.configureAppleRequest(request, isSignUp: true)
+                    } onCompletion: { result in
+                        authManager.handleAppleAuthorization(result)
+                    }
+                    .signInWithAppleButtonStyle(.whiteOutline)
+                    .frame(height: 45)
+                    #else
+                    Button("Get Started") { }
+                    #endif
                 }
                 Spacer()
             }

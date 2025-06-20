@@ -13,6 +13,10 @@ struct SettingsView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 if authManager.isSignedIn {
+                    if let id = authManager.currentAccountID {
+                        Text("Apple ID: \(id)")
+                            .font(.footnote)
+                    }
                     Button("Sign Out") {
                         authManager.signOut()
                     }

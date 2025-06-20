@@ -2,6 +2,9 @@ import Foundation
 #if canImport(Security)
 import Security
 #endif
+#if canImport(AuthenticationServices)
+import AuthenticationServices
+#endif
 import AWSSDKIdentity
 import protocol SmithyIdentity.AWSCredentialIdentityResolver
 #if canImport(Combine)
@@ -17,6 +20,7 @@ class AuthManager: ObservableObject {
     private var credentialIdentity: AWSCredentialIdentity?
     private(set) var region: String = "eu-west-2"
     private let accountKey = "NoumAccountID"
+    var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
 
     private init() {
         if let id = KeychainHelper.load(key: accountKey) {
@@ -33,9 +37,33 @@ class AuthManager: ObservableObject {
         loadCredentialsAndAccount()
     }
 
-    func signInWithApple() {
-        loadCredentialsAndAccount()
+    #if canImport(AuthenticationServices)
+    func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest, isSignUp: Bool) {
+        if isSignUp {
+            request.requestedScopes = [.fullName, .email]
+            request.requestedOperation = .operationCreateAccount
+        } else {
+            request.requestedOperation = .operationLogin
+        }
     }
+
+    func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
+                let user = credential.user
+                _ = KeychainHelper.save(user, key: accountKey)
+                print("Saved account ID: \(user)")
+                loadCredentialsAndAccount()
+            }
+        case .failure(let error):
+            print("Apple sign in failed: \(error)")
+        }
+    }
+    #else
+    func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
+    func handleAppleAuthorization(_ result: Result<Any, Error>) {}
+    #endif
 
     func reloadCredentials() {
         loadCredentialsAndAccount()
@@ -113,14 +141,15 @@ class AuthManager: ObservableObject {
 class AuthManager {
     static let shared = AuthManager()
     private(set) var region: String = "eu-west-2"
+    var currentAccountID: String? { nil }
     func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         DefaultAWSCredentialIdentityResolverChain()
     }
     func currentCredentials() async throws -> AWSCredentialIdentity {
         throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "AWS credentials not configured"])
     }
-    func signInWithGoogle(presenting: Any? = nil) {}
-    func signInWithApple() {}
+    func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
+    func handleAppleAuthorization(_ result: Result<Any, Error>) {}
     func signOut() {}
     func reloadCredentials() {}
 }

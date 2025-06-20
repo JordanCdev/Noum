@@ -139,6 +139,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         requestStream?.finish()
         isRecording = false
 
+        Task {
+            // Allow time for any final transcripts to arrive before finalizing
+            try? await Task.sleep(for: .milliseconds(500))
+            finalizeTranscript()
+        }
+    }
+
+    private func finalizeTranscript() {
         if !partialTranscript.isEmpty {
             if !finalTranscript.isEmpty { finalTranscript += " " }
             finalTranscript += partialTranscript
