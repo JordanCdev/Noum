@@ -38,16 +38,10 @@ class AuthManager: ObservableObject {
     }
 
     func reloadCredentials() {
-        loadCredentialsAndAccount()
+        signIn()
     }
 
-    private func loadCredentialsAndAccount() {
-        if KeychainHelper.load(key: accountKey) == nil {
-            let id = UUID().uuidString
-            _ = KeychainHelper.save(id, key: accountKey)
-            print("Created new account ID: \(id)")
-        }
-        self.isSignedIn = KeychainHelper.load(key: accountKey) != nil
+    private func signIn() {
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region

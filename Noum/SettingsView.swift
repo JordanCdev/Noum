@@ -10,15 +10,15 @@ struct SettingsView: View {
     @StateObject private var authManager = AuthManager.shared
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack(spacing: 20) {
-                Text(authManager.isSignedIn ? "Signed in" : "Not signed in")
+                Text(authManager.isSignedIn ? "AWS credentials loaded" : "AWS credentials missing")
                     .accessibilityIdentifier("signInState")
-                Button("Refresh") {
+                Button("Reload Credentials") {
                     authManager.reloadCredentials()
                 }
                 if authManager.isSignedIn {
-                    Button("Clear") {
+                    Button("Clear Credentials") {
                         authManager.signOut()
                     }
                 }
