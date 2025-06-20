@@ -10,14 +10,17 @@ let package = Package(
         .executable(name: "NoumApp", targets: ["Noum"])
     ],
     dependencies: [
-        .package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.3.0")
+        .package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.3.0"),
+        .package(url: "https://github.com/google/GoogleSignIn-iOS.git", from: "7.0.0")
     ],
     targets: [
         .executableTarget(
             name: "Noum",
             dependencies: [
                 .product(name: "AWSTranscribeStreaming", package: "aws-sdk-swift"),
-                .product(name: "AWSSDKIdentity", package: "aws-sdk-swift")
+                .product(name: "AWSSDKIdentity", package: "aws-sdk-swift"),
+                .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
+                .product(name: "GoogleSignInSwift", package: "GoogleSignIn-iOS")
             ],
             path: "Noum",
             exclude: [
