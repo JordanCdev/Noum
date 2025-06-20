@@ -8,6 +8,7 @@ import AuthenticationServices
 struct LoginView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var authManager = AuthManager.shared
+    @State private var showError = false
 
     var body: some View {
         NavigationStack {
@@ -17,7 +18,7 @@ struct LoginView: View {
                     .font(.largeTitle)
                     .bold()
                 Spacer()
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
                     Text("Already have an account?")
                     #if canImport(AuthenticationServices)
                     SignInWithAppleButton(.signIn) { request in
@@ -30,7 +31,7 @@ struct LoginView: View {
                     #else
                     Button("Sign in with Apple") { }
                     #endif
-                    Spacer().frame(height: 30)
+                    Spacer().frame(height: 40)
                     Text("New to Noum?")
                     #if canImport(AuthenticationServices)
                     SignInWithAppleButton(.signUp) { request in
@@ -51,6 +52,14 @@ struct LoginView: View {
         }
         .onChange(of: authManager.isSignedIn) { signedIn in
             if signedIn { dismiss() }
+        }
+        .alert("Sign In Failed", isPresented: $showError, actions: {
+            Button("OK", role: .cancel) { authManager.signInError = nil }
+        }, message: {
+            Text(authManager.signInError ?? "Unknown error")
+        })
+        .onChange(of: authManager.signInError) { err in
+            showError = err != nil
         }
     }
 }
