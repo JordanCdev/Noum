@@ -63,10 +63,12 @@ struct LoginView: View {
 #if canImport(GoogleSignInSwift)
             GoogleSignInButton(action: { authManager.startGoogleSignIn() })
                 .frame(height: 45)
-#else
+#elseif canImport(GoogleSignIn)
             Button("Sign in with Google") {
                 authManager.startGoogleSignIn()
             }
+#else
+            Button("Sign in with Google") { }
 #endif
         }
     }
