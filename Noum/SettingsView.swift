@@ -10,7 +10,7 @@ struct SettingsView: View {
     @StateObject private var authManager = AuthManager.shared
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
                 Text(authManager.isSignedIn ? "Signed in" : "Not signed in")
                     .accessibilityIdentifier("signInState")
