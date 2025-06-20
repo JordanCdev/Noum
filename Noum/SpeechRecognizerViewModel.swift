@@ -77,11 +77,10 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         // NEW AWS SDK WAY
         do {
-            let awsClient = try AWSClient(
-                credentialProvider: authManager.credentialResolver(),
-                region: .euWest2 // or Region(rawValue: "eu-west-2") if dynamic
+            transcribeClient = try TranscribeStreamingClient(
+                region: authManager.region,
+                awsCredentialIdentityResolver: authManager.credentialResolver()
             )
-            transcribeClient = TranscribeStreamingClient(client: awsClient)
         } catch {
             print("Failed to create AWS client: \(error)")
             connectionError = "\(error)"
