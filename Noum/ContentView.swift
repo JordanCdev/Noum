@@ -19,10 +19,12 @@ struct ContentView: View {
     @State private var showHistory = false
     @State private var showSettings = false
     @State private var showCredentialsAlert = false
+    @State private var countdown: Int = 0
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            ZStack {
+                VStack(spacing: 20) {
 
                 ScrollView {
                     Text(speechVM.highlightedText)
@@ -39,12 +41,12 @@ struct ContentView: View {
                 HStack {
                     Button("Start") {
                         if authManager.isSignedIn {
-                            speechVM.startRecording()
+                            startCountdown()
                         } else {
                             showCredentialsAlert = true
                         }
                     }
-                    .disabled(speechVM.isRecording)
+                    .disabled(speechVM.isRecording || countdown > 0)
                     Button("Stop") {
                         speechVM.stopRecording()
                         showSummary = true
@@ -52,7 +54,14 @@ struct ContentView: View {
                     .disabled(!speechVM.isRecording)
                 }
             }
-            .padding()
+            if countdown > 0 {
+                Text("\(countdown)")
+                    .font(.system(size: 72, weight: .bold))
+                    .transition(.opacity)
+                    .accessibilityIdentifier("countdown")
+            }
+        }
+        .padding()
             .navigationTitle("Practice")
             .toolbar {
                 Button("History") { showHistory = true }
@@ -79,7 +88,29 @@ struct ContentView: View {
         .alert("Credentials Missing", isPresented: $showCredentialsAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Configure AWS credentials in Settings before starting a session.")
+            Text("Sign in from Settings before starting a session.")
+        }
+        .fullScreenCover(
+            isPresented: .init(
+                get: { !authManager.isSignedIn },
+                set: { _ in }
+            )
+        ) {
+            LoginView()
+        }
+    }
+
+    private func startCountdown() {
+        countdown = 3
+        Task {
+            for i in stride(from: 3, through: 1, by: -1) {
+                await MainActor.run { countdown = i }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            await MainActor.run {
+                countdown = 0
+                speechVM.startRecording()
+            }
         }
     }
 }
