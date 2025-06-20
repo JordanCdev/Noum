@@ -3,6 +3,9 @@ import SwiftUI
 #if canImport(GoogleSignInSwift)
 import GoogleSignInSwift
 #endif
+#if canImport(GoogleSignInSwift)
+import GoogleSignInSwift
+#endif
 
 @available(iOS 17.0, macOS 12.0, *)
 struct LoginView: View {
@@ -46,6 +49,7 @@ struct LoginView: View {
     private var signInButtons: some View {
         VStack(spacing: 20) {
             Text("Already have an account?")
+
 #if canImport(GoogleSignInSwift)
             GoogleSignInButton(action: { authManager.startGoogleSignIn() })
                 .frame(height: 45)
