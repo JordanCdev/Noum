@@ -24,14 +24,7 @@ class AuthManager: ObservableObject {
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
 
     private init() {
-        if let id = KeychainHelper.load(key: accountKey) {
-            print("Loaded account ID: \(id)")
-            self.isSignedIn = true
-        }
-        if let creds = Self.loadCredentials() {
-            self.credentialIdentity = creds.identity
-            self.region = creds.region
-        }
+        loadCredentialsAndAccount()
     }
 
 
