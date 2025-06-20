@@ -8,9 +8,9 @@ Configure the app with AWS credentials using the environment variables
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` if
 you are using temporary credentials). A `Transcribe.plist` file can also provide
 these values when running on Apple platforms. The region defaults to
-`eu-west-2` but can be overridden with the `AWS_REGION` variable. Google and
-Apple sign‑in buttons simply trigger loading the credentials from these
-locations.
+`eu-west-2` but can be overridden with the `AWS_REGION` variable. The
+Settings screen displays whether credentials are configured and lets you reload
+them from these locations.
 
 Supply AWS credentials either through environment variables or a matching
 `Transcribe.plist` file. These credentials are used to sign the WebSocket
