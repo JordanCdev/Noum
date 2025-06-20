@@ -2,9 +2,6 @@ import Foundation
 #if canImport(Security)
 import Security
 #endif
-#if canImport(AuthenticationServices)
-import AuthenticationServices
-#endif
 import AWSSDKIdentity
 import protocol SmithyIdentity.AWSCredentialIdentityResolver
 #if canImport(GoogleSignIn)
@@ -41,29 +38,6 @@ class AuthManager: ObservableObject {
 #endif
     }
 
-
-    #if canImport(AuthenticationServices)
-    func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
-        request.requestedOperation = .operationLogin
-    }
-
-    func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
-        switch result {
-        case .success(let authorization):
-            if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
-                let user = credential.user
-                _ = KeychainHelper.save(user, key: accountKey)
-                print("Saved account ID: \(user)")
-                signIn()
-                isSignedIn = true
-            }
-        case .failure(let error):
-            signInError = error.localizedDescription
-            print("Apple sign in failed: \(error)")
-        }
-    }
-#endif
-
 #if canImport(GoogleSignIn) && canImport(UIKit)
     func startGoogleSignIn() {
         guard let root = UIApplication.shared.connectedScenes
@@ -99,8 +73,6 @@ class AuthManager: ObservableObject {
         }
     }
 #else
-    func configureAppleRequest(_ request: Any) {}
-    func handleAppleAuthorization(_ result: Result<Any, Error>) {}
 #if canImport(GoogleSignIn)
     func startGoogleSignIn() {}
 #endif
@@ -191,8 +163,6 @@ class AuthManager {
     func currentCredentials() async throws -> AWSCredentialIdentity {
         throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "AWS credentials not configured"])
     }
-    func configureAppleRequest(_ request: Any) {}
-    func handleAppleAuthorization(_ result: Result<Any, Error>) {}
     func signOut() { isSignedIn = false }
     func reloadCredentials() {}
 }
