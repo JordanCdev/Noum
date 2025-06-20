@@ -30,6 +30,10 @@ class AuthManager: ObservableObject {
         signIn()
     }
 
+    func reloadCredentials() {
+        signIn()
+    }
+
     private func signIn() {
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
@@ -99,5 +103,6 @@ class AuthManager {
     func signInWithGoogle(presenting: Any? = nil) {}
     func signInWithApple() {}
     func signOut() {}
+    func reloadCredentials() {}
 }
 #endif
