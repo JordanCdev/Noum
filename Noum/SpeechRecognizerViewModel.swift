@@ -7,6 +7,9 @@ import AVFoundation
 #endif
 import AWSSDKIdentity
 import AWSTranscribeStreaming
+import AWSClientRuntime
+
+
 
 #if canImport(AVFoundation)
 @MainActor
@@ -62,17 +65,6 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Audio session error: \(error)")
         }
 
-        do {
-            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                awsCredentialIdentityResolver: authManager.credentialResolver(),
-                region: authManager.region
-            )
-            transcribeClient = TranscribeStreamingClient(config: config)
-        } catch {
-            print("Failed to create AWS client: \(error)")
-            return
-        }
-
         let stream = AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error> { continuation in
             self.requestStream = continuation
         }
@@ -82,6 +74,19 @@ class SpeechRecognizerViewModel: ObservableObject {
             mediaEncoding: .pcm,
             mediaSampleRateHertz: 48000
         )
+
+        // NEW AWS SDK WAY
+        do {
+            let awsClient = try AWSClient(
+                credentialProvider: authManager.credentialResolver(),
+                region: .euWest2 // or Region(rawValue: "eu-west-2") if dynamic
+            )
+            transcribeClient = TranscribeStreamingClient(client: awsClient)
+        } catch {
+            print("Failed to create AWS client: \(error)")
+            connectionError = "\(error)"
+            return
+        }
 
         Task {
             do {
@@ -106,6 +111,8 @@ class SpeechRecognizerViewModel: ObservableObject {
 
         startAudioStream()
     }
+
+
 
     func stopRecording() {
         guard isRecording else { return }
