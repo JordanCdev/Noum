@@ -17,6 +17,10 @@ Supply AWS credentials either through environment variables or a matching
 `Transcribe.plist` file. These credentials are used to sign the WebSocket
 request to Amazon Transcribe.
 
+Google Sign-In also requires an OAuth client ID. Set the `GOOGLE_CLIENT_ID`
+environment variable before building so the app can configure its Google
+authentication.
+
 Common disfluencies such as "umm" or "hmm" are detected using a regex so
 variants are matched dynamically.
 
