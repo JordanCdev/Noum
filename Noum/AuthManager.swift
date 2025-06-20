@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Security)
+import Security
+#endif
 import AWSSDKIdentity
 import protocol SmithyIdentity.AWSCredentialIdentityResolver
 #if canImport(Combine)
@@ -13,21 +16,25 @@ class AuthManager: ObservableObject {
     @Published var isSignedIn: Bool = false
     private var credentialIdentity: AWSCredentialIdentity?
     private(set) var region: String = "eu-west-2"
+    private let accountKey = "NoumAccountID"
 
     private init() {
+        if let id = KeychainHelper.load(key: accountKey) {
+            print("Loaded account ID: \(id)")
+            self.isSignedIn = true
+        }
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
-            self.isSignedIn = true
         }
     }
 
     func signInWithGoogle(presenting: Any? = nil) {
-        signIn()
+        loadCredentialsAndAccount()
     }
 
     func signInWithApple() {
-        signIn()
+        loadCredentialsAndAccount()
     }
 
     func reloadCredentials() {
@@ -38,7 +45,6 @@ class AuthManager: ObservableObject {
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
-            self.isSignedIn = true
         }
     }
 
@@ -56,7 +62,6 @@ class AuthManager: ObservableObject {
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
-            self.isSignedIn = true
             return creds.identity
         }
         throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "AWS credentials not configured"])
@@ -64,6 +69,7 @@ class AuthManager: ObservableObject {
 
     func signOut() {
         credentialIdentity = nil
+        KeychainHelper.delete(key: accountKey)
         isSignedIn = false
     }
 

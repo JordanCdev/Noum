@@ -9,6 +9,7 @@ Configure the app with AWS credentials using the environment variables
 you are using temporary credentials). A `Transcribe.plist` file can also provide
 these values when running on Apple platforms. The region defaults to
 `eu-west-2` but can be overridden with the `AWS_REGION` variable. The
+
 Settings screen displays whether credentials are configured and lets you reload
 them from these locations.
 
