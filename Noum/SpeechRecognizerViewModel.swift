@@ -78,8 +78,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         // Configure client with custom credentials
         do {
             let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                region: authManager.region,
-                awsCredentialIdentityResolver: authManager.credentialResolver()
+                awsCredentialIdentityResolver: authManager.credentialResolver(),
+                region: authManager.region
             )
             transcribeClient = TranscribeStreamingClient(config: config)
         } catch {
