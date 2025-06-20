@@ -62,6 +62,7 @@ class AuthManager: ObservableObject {
             print("Apple sign in failed: \(error)")
         }
     }
+  
 #endif
 
 #if canImport(GoogleSignIn) && canImport(UIKit)
