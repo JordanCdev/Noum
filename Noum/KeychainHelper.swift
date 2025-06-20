@@ -1,4 +1,5 @@
 #if canImport(Security)
+import Foundation
 import Security
 
 enum KeychainHelper {
