@@ -21,7 +21,7 @@ struct ContentView: View {
     @State private var showCredentialsAlert = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
 
                 ScrollView {
