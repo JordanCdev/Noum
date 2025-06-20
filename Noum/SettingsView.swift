@@ -12,6 +12,9 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
+                Text(authManager.isSignedIn ? "Signed in" : "Not signed in")
+                    .accessibilityIdentifier("signInState")
+              
                 if authManager.isSignedIn {
                     Button("Sign Out") {
                         authManager.signOut()

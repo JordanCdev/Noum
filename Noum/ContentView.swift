@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showHistory = false
     @State private var showSettings = false
+    @State private var showSignInAlert = false
     
     var body: some View {
         NavigationView {
@@ -37,7 +38,11 @@ struct ContentView: View {
                 
                 HStack {
                     Button("Start") {
-                        speechVM.startRecording()
+                        if authManager.isSignedIn {
+                            speechVM.startRecording()
+                        } else {
+                            showSignInAlert = true
+                        }
                     }
                     .disabled(speechVM.isRecording)
                     Button("Stop") {
@@ -70,6 +75,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .alert("Not Signed In", isPresented: $showSignInAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Please sign in via Settings before starting a session.")
         }
     }
 }
