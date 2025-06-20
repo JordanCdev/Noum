@@ -18,7 +18,7 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showHistory = false
     @State private var showSettings = false
-    @State private var showSignInAlert = false
+    @State private var showCredentialsAlert = false
     
     var body: some View {
         NavigationView {
@@ -41,7 +41,7 @@ struct ContentView: View {
                         if authManager.isSignedIn {
                             speechVM.startRecording()
                         } else {
-                            showSignInAlert = true
+                            showCredentialsAlert = true
                         }
                     }
                     .disabled(speechVM.isRecording)
@@ -76,10 +76,10 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-        .alert("Not Signed In", isPresented: $showSignInAlert) {
+        .alert("Credentials Missing", isPresented: $showCredentialsAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Please sign in via Settings before starting a session.")
+            Text("Configure AWS credentials in Settings before starting a session.")
         }
     }
 }

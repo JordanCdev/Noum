@@ -12,20 +12,12 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                Text(authManager.isSignedIn ? "Signed in" : "Not signed in")
+                Text(authManager.isSignedIn ? "AWS credentials loaded" : "AWS credentials missing")
                     .accessibilityIdentifier("signInState")
-              
-                if authManager.isSignedIn {
-                    Button("Sign Out") {
-                        authManager.signOut()
-                    }
-                } else {
-                    #if canImport(UIKit)
-                    Button("Sign in with Google") {
-                        if let root = UIApplication.shared.windows.first?.rootViewController {
-                            authManager.signInWithGoogle(presenting: root)
-                        }
-                    }
+                Button("Reload Credentials") {
+                    authManager.reloadCredentials()
+                }
+                    Button("Clear Credentials") {
                     #endif
                     Button("Sign in with Apple") {
                         authManager.signInWithApple()
