@@ -79,7 +79,7 @@ struct ContentView: View {
         .alert("Credentials Missing", isPresented: $showCredentialsAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Configure AWS credentials in Settings before starting a session.")
+            Text("Sign in from Settings before starting a session.")
         }
     }
 }
