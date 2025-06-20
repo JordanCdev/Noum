@@ -75,12 +75,13 @@ class SpeechRecognizerViewModel: ObservableObject {
             mediaSampleRateHertz: 48000
         )
 
-        // NEW AWS SDK WAY
+        // Configure client with custom credentials
         do {
-            transcribeClient = try TranscribeStreamingClient(
+            let config = try TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
                 region: authManager.region,
                 awsCredentialIdentityResolver: authManager.credentialResolver()
             )
+            transcribeClient = TranscribeStreamingClient(config: config)
         } catch {
             print("Failed to create AWS client: \(error)")
             connectionError = "\(error)"
@@ -243,7 +244,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 #endif
 
 struct PracticeSession: Identifiable, Codable {
-    let id: UUID = UUID()
+    var id: UUID = UUID()
     let transcript: String
     let fillerWordCount: Int
     let duration: TimeInterval
