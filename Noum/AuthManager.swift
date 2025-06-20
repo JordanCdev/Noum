@@ -29,13 +29,8 @@ class AuthManager: ObservableObject {
 
 
     #if canImport(AuthenticationServices)
-    func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest, isSignUp: Bool) {
-        if isSignUp {
-            request.requestedScopes = [.fullName, .email]
-            request.requestedOperation = .operationImplicit
-        } else {
-            request.requestedOperation = .operationLogin
-        }
+    func configureAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
+        request.requestedOperation = .operationLogin
     }
 
     func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
@@ -54,7 +49,7 @@ class AuthManager: ObservableObject {
         }
     }
     #else
-    func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
+    func configureAppleRequest(_ request: Any) {}
     func handleAppleAuthorization(_ result: Result<Any, Error>) {}
     #endif
 
@@ -143,7 +138,7 @@ class AuthManager {
     func currentCredentials() async throws -> AWSCredentialIdentity {
         throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "AWS credentials not configured"])
     }
-    func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
+    func configureAppleRequest(_ request: Any) {}
     func handleAppleAuthorization(_ result: Result<Any, Error>) {}
     func signOut() { isSignedIn = false }
     func reloadCredentials() {}
