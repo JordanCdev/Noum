@@ -31,6 +31,7 @@ struct LoginView: View {
                     #else
                     Button("Sign in with Apple") { }
                     #endif
+
                     Spacer().frame(height: 40)
                     Text("New to Noum?")
                     #if canImport(AuthenticationServices)

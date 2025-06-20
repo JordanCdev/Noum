@@ -65,8 +65,26 @@ class AuthManager: ObservableObject {
     func handleAppleAuthorization(_ result: Result<Any, Error>) {}
     #endif
 
+    func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
+                let user = credential.user
+                _ = KeychainHelper.save(user, key: accountKey)
+                print("Saved account ID: \(user)")
+                loadCredentialsAndAccount()
+            }
+        case .failure(let error):
+            print("Apple sign in failed: \(error)")
+        }
+    }
+    #else
+    func configureAppleRequest(_ request: Any, isSignUp: Bool) {}
+    func handleAppleAuthorization(_ result: Result<Any, Error>) {}
+    #endif
+
     func reloadCredentials() {
-        signIn()
+        loadCredentialsAndAccount()
     }
 
     private func signIn() {
@@ -75,7 +93,6 @@ class AuthManager: ObservableObject {
             self.region = creds.region
         }
     }
-
 
     func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         if let cred = credentialIdentity {
