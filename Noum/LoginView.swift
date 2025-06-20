@@ -16,33 +16,8 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 30) {
-                Spacer()
-                Text("Welcome to Noum")
-                    .font(.largeTitle)
-                    .bold()
-                Spacer()
-                VStack(spacing: 20) {
-                    Text("Already have an account?")
-                    #if canImport(AuthenticationServices)
-                    SignInWithAppleButton(.signIn) { request in
-                        authManager.configureAppleRequest(request)
-                    } onCompletion: { result in
-                        authManager.handleAppleAuthorization(result)
-                    }
-                    .signInWithAppleButtonStyle(.black)
-                    .frame(height: 45)
-                    #else
-                    Button("Sign in with Apple") { }
-                    #endif
-#if canImport(GoogleSignInSwift)
-                    GoogleSignInButton(action: { authManager.startGoogleSignIn() })
-                        .frame(height: 45)
-#else
-                    Button("Sign in with Google") {
-                        authManager.startGoogleSignIn()
-                    }
-#endif
-                }
+                header
+                signInButtons
                 Spacer()
             }
             .padding()
@@ -58,6 +33,41 @@ struct LoginView: View {
         })
         .onChange(of: authManager.signInError) { err in
             showError = err != nil
+        }
+    }
+
+    private var header: some View {
+        VStack {
+            Spacer()
+            Text("Welcome to Noum")
+                .font(.largeTitle)
+                .bold()
+            Spacer()
+        }
+    }
+
+    private var signInButtons: some View {
+        VStack(spacing: 20) {
+            Text("Already have an account?")
+            #if canImport(AuthenticationServices)
+            SignInWithAppleButton(.signIn) { request in
+                authManager.configureAppleRequest(request)
+            } onCompletion: { result in
+                authManager.handleAppleAuthorization(result)
+            }
+            .signInWithAppleButtonStyle(.black)
+            .frame(height: 45)
+            #else
+            Button("Sign in with Apple") { }
+            #endif
+#if canImport(GoogleSignInSwift)
+            GoogleSignInButton(action: { authManager.startGoogleSignIn() })
+                .frame(height: 45)
+#else
+            Button("Sign in with Google") {
+                authManager.startGoogleSignIn()
+            }
+#endif
         }
     }
 }
