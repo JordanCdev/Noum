@@ -38,6 +38,21 @@ class SpeechRecognizerViewModel: ObservableObject {
     init() {
         loadSessions()
         requestRecordAuthorization()
+        Task { await preloadTranscribeClient() }
+    }
+
+    private func preloadTranscribeClient() async {
+        guard transcribeClient == nil else { return }
+        do {
+            _ = try await authManager.currentCredentials()
+            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+                awsCredentialIdentityResolver: authManager.credentialResolver(),
+                region: authManager.region
+            )
+            transcribeClient = TranscribeStreamingClient(config: config)
+        } catch {
+            print("Transcribe pre-load failed: \(error)")
+        }
     }
 
     func startRecording() {
@@ -75,17 +90,19 @@ class SpeechRecognizerViewModel: ObservableObject {
             mediaSampleRateHertz: 48000
         )
 
-        // Configure client with custom credentials
-        do {
-            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                awsCredentialIdentityResolver: authManager.credentialResolver(),
-                region: authManager.region
-            )
-            transcribeClient = TranscribeStreamingClient(config: config)
-        } catch {
-            print("Failed to create AWS client: \(error)")
-            connectionError = "\(error)"
-            return
+        // Configure client with custom credentials if needed
+        if transcribeClient == nil {
+            do {
+                let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+                    awsCredentialIdentityResolver: authManager.credentialResolver(),
+                    region: authManager.region
+                )
+                transcribeClient = TranscribeStreamingClient(config: config)
+            } catch {
+                print("Failed to create AWS client: \(error)")
+                connectionError = "\(error)"
+                return
+            }
         }
 
         Task {
@@ -122,6 +139,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         requestStream?.finish()
         isRecording = false
 
+        Task {
+            // Allow time for any final transcripts to arrive before finalizing
+            try? await Task.sleep(for: .milliseconds(500))
+            finalizeTranscript()
+        }
+    }
+
+    private func finalizeTranscript() {
         if !partialTranscript.isEmpty {
             if !finalTranscript.isEmpty { finalTranscript += " " }
             finalTranscript += partialTranscript

@@ -1,0 +1,57 @@
+#if canImport(SwiftUI)
+import SwiftUI
+#if canImport(AuthenticationServices)
+import AuthenticationServices
+#endif
+
+@available(iOS 17.0, macOS 12.0, *)
+struct LoginView: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var authManager = AuthManager.shared
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 30) {
+                Spacer()
+                Text("Welcome to Noum")
+                    .font(.largeTitle)
+                    .bold()
+                Spacer()
+                VStack(spacing: 16) {
+                    Text("Already have an account?")
+                    #if canImport(AuthenticationServices)
+                    SignInWithAppleButton(.signIn) { request in
+                        authManager.configureAppleRequest(request, isSignUp: false)
+                    } onCompletion: { result in
+                        authManager.handleAppleAuthorization(result)
+                    }
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 45)
+                    #else
+                    Button("Sign in with Apple") { }
+                    #endif
+                    Spacer().frame(height: 30)
+                    Text("New to Noum?")
+                    #if canImport(AuthenticationServices)
+                    SignInWithAppleButton(.signUp) { request in
+                        authManager.configureAppleRequest(request, isSignUp: true)
+                    } onCompletion: { result in
+                        authManager.handleAppleAuthorization(result)
+                    }
+                    .signInWithAppleButtonStyle(.whiteOutline)
+                    .frame(height: 45)
+                    #else
+                    Button("Get Started") { }
+                    #endif
+                }
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("")
+        }
+        .onChange(of: authManager.isSignedIn) { signedIn in
+            if signedIn { dismiss() }
+        }
+    }
+}
+#endif

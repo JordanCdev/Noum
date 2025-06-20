@@ -10,17 +10,17 @@ struct SettingsView: View {
     @StateObject private var authManager = AuthManager.shared
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 20) {
-                Text(authManager.isSignedIn ? "AWS credentials loaded" : "AWS credentials missing")
-                    .accessibilityIdentifier("signInState")
-                Button("Reload Credentials") {
-                    authManager.reloadCredentials()
-                }
                 if authManager.isSignedIn {
-                    Button("Clear Credentials") {
+                    if let id = authManager.currentAccountID {
+                        Text("Apple ID: \(id)")
+                            .font(.footnote)
+                    }
+                    Button("Sign Out") {
                         authManager.signOut()
                     }
+                    .buttonStyle(.bordered)
                 }
             }
             .padding()
@@ -28,6 +28,9 @@ struct SettingsView: View {
             .toolbar {
                 Button("Done") { dismiss() }
             }
+        }
+        .onChange(of: authManager.isSignedIn) { signedIn in
+            if !signedIn { dismiss() }
         }
     }
 }
