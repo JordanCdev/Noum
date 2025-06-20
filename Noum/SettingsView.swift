@@ -12,15 +12,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text(authManager.isSignedIn ? "Signed in" : "Not signed in")
-                    .accessibilityIdentifier("signInState")
-                Button("Refresh") {
-                    authManager.reloadCredentials()
-                }
                 if authManager.isSignedIn {
-                    Button("Clear") {
+                    Button("Sign Out") {
                         authManager.signOut()
                     }
+                    .buttonStyle(.bordered)
                 }
             }
             .padding()
@@ -28,6 +24,9 @@ struct SettingsView: View {
             .toolbar {
                 Button("Done") { dismiss() }
             }
+        }
+        .onChange(of: authManager.isSignedIn) { signedIn in
+            if !signedIn { dismiss() }
         }
     }
 }
