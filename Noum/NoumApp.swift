@@ -9,9 +9,20 @@
 import SwiftUI
 
 struct NoumApp: App {
+    @State private var showSplash = true
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if showSplash {
+                SplashScreenView()
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                            withAnimation { showSplash = false }
+                        }
+                    }
+            } else {
+                ContentView()
+            }
         }
     }
 }
