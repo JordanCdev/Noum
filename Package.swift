@@ -29,10 +29,7 @@ let package = Package(
                 // emits warnings about unhandled files.
                 "Assets.xcassets",
                 "Preview Content",
-                "Transcribe.plist.example",
-                "Info.plist",
-                "InfoTemplate.plist",
-                "Noum.entitlements"
+                "Transcribe.plist.example"
             ]
         ),
         .testTarget(
