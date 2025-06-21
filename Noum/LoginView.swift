@@ -1,7 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
-#if canImport(AuthenticationServices)
-import AuthenticationServices
+#if canImport(GoogleSignInSwift)
+import GoogleSignInSwift
 #endif
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -13,39 +13,8 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 30) {
-                Spacer()
-                Text("Welcome to Noum")
-                    .font(.largeTitle)
-                    .bold()
-                Spacer()
-                VStack(spacing: 20) {
-                    Text("Already have an account?")
-                    #if canImport(AuthenticationServices)
-                    SignInWithAppleButton(.signIn) { request in
-                        authManager.configureAppleRequest(request, isSignUp: false)
-                    } onCompletion: { result in
-                        authManager.handleAppleAuthorization(result)
-                    }
-                    .signInWithAppleButtonStyle(.black)
-                    .frame(height: 45)
-                    #else
-                    Button("Sign in with Apple") { }
-                    #endif
-
-                    Spacer().frame(height: 40)
-                    Text("New to Noum?")
-                    #if canImport(AuthenticationServices)
-                    SignInWithAppleButton(.signUp) { request in
-                        authManager.configureAppleRequest(request, isSignUp: true)
-                    } onCompletion: { result in
-                        authManager.handleAppleAuthorization(result)
-                    }
-                    .signInWithAppleButtonStyle(.whiteOutline)
-                    .frame(height: 45)
-                    #else
-                    Button("Get Started") { }
-                    #endif
-                }
+                header
+                signInButtons
                 Spacer()
             }
             .padding()
@@ -61,6 +30,32 @@ struct LoginView: View {
         })
         .onChange(of: authManager.signInError) { err in
             showError = err != nil
+        }
+    }
+
+    private var header: some View {
+        VStack {
+            Spacer()
+            Text("Welcome to Noum")
+                .font(.largeTitle)
+                .bold()
+            Spacer()
+        }
+    }
+
+    private var signInButtons: some View {
+        VStack(spacing: 20) {
+            Text("Already have an account?")
+#if canImport(GoogleSignInSwift)
+            GoogleSignInButton(action: { authManager.startGoogleSignIn() })
+                .frame(height: 45)
+#elseif canImport(GoogleSignIn)
+            Button("Sign in with Google") {
+                authManager.startGoogleSignIn()
+            }
+#else
+            Button("Sign in with Google") { }
+#endif
         }
     }
 }
