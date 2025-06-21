@@ -428,8 +428,7 @@
                                 DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
                                 DEVELOPMENT_TEAM = UF8H25D98V;
                                 ENABLE_PREVIEWS = YES;
-                               GENERATE_INFOPLIST_FILE = NO;
-                               INFOPLIST_FILE = Noum/InfoTemplate.plist;
+                               GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -460,8 +459,7 @@
                                 DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
                                 DEVELOPMENT_TEAM = UF8H25D98V;
                                 ENABLE_PREVIEWS = YES;
-                               GENERATE_INFOPLIST_FILE = NO;
-                               INFOPLIST_FILE = Noum/InfoTemplate.plist;
+                               GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
