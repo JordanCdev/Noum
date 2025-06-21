@@ -38,8 +38,6 @@ class AuthManager: ObservableObject {
 #endif
     }
 
-
-
 #if canImport(GoogleSignIn) && canImport(UIKit)
     func startGoogleSignIn() {
         guard let root = UIApplication.shared.connectedScenes

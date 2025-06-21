@@ -46,6 +46,7 @@ struct LoginView: View {
     private var signInButtons: some View {
         VStack(spacing: 20) {
             Text("Already have an account?")
+          
 #if canImport(GoogleSignInSwift)
             GoogleSignInButton(action: { authManager.startGoogleSignIn() })
                 .frame(height: 45)
