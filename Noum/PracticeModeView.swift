@@ -47,12 +47,13 @@ struct PracticeModeView: View {
             .navigationTitle("Practice Mode")
         }
         .onAppear { startThinkingCountdown() }
-        .sheet(isPresented: $showSummary, onDismiss: reset) {
+        .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
                 score: score,
+                showDuration: false,
                 onNewSession: { reset() }
             )
         }
