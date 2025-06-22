@@ -50,11 +50,11 @@ struct SuddenDeathPracticeView: View {
                 showDuration: true,
                 onSelectPracticeMode: {
                     showSummary = false
-                    dismissToRoot()
+                    dismiss(times: 2)
                 },
                 onHome: {
                     showSummary = false
-                    dismissToRoot()
+                    dismiss(times: 3)
                 },
                 onPracticeAgain: {
                     reset()
@@ -103,11 +103,12 @@ struct SuddenDeathPracticeView: View {
         score = max(1, min(10, base + bonus - penalty))
     }
 
-    private func dismissToRoot() {
-        dismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { dismiss() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { dismiss() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { dismiss() }
+    private func dismiss(times: Int) {
+        guard times > 0 else { return }
+        withAnimation(.none) { dismiss() }
+        if times > 1 {
+            DispatchQueue.main.async { dismiss(times: times - 1) }
+        }
     }
 }
 #endif
