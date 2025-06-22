@@ -24,7 +24,9 @@ class AuthManager: ObservableObject {
     private var credentialIdentity: AWSCredentialIdentity?
     private(set) var region: String = "eu-west-2"
     private let accountKey = "NoumAccountID"
+    private let accountNameKey = "NoumAccountName"
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
+    var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
 #if canImport(GoogleSignIn)
     private var googleConfig: GIDConfiguration?
 #endif
@@ -67,6 +69,9 @@ class AuthManager: ObservableObject {
                 return
             }
             _ = KeychainHelper.save(userID, key: self.accountKey)
+            if let name = result?.user.profile?.name {
+                _ = KeychainHelper.save(name, key: self.accountNameKey)
+            }
             print("Saved Google user ID: \(userID)")
             self.signIn()
             self.isSignedIn = true
@@ -124,6 +129,7 @@ class AuthManager: ObservableObject {
     func signOut() {
         credentialIdentity = nil
         KeychainHelper.delete(key: accountKey)
+        KeychainHelper.delete(key: accountNameKey)
         isSignedIn = false
     }
 
