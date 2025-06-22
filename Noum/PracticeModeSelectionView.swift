@@ -13,7 +13,6 @@ enum PracticeMode: String, Codable {
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
     var startPractice: () -> Void
-
     var body: some View {
         NavigationStack {
             Form {
