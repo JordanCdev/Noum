@@ -57,11 +57,11 @@ struct PracticeModeView: View {
                 showDuration: false,
                 onSelectPracticeMode: {
                     showSummary = false
-                    dismissToRoot()
+                    dismiss(times: 2)
                 },
                 onHome: {
                     showSummary = false
-                    dismissToRoot()
+                    dismiss(times: 3)
                 },
                 onPracticeAgain: {
                     reset()
@@ -113,15 +113,11 @@ struct PracticeModeView: View {
         score = 0
     }
 
-    private func dismissToRoot() {
-        DispatchQueue.main.async {
-            dismiss()
-            DispatchQueue.main.async {
-                dismiss()
-                DispatchQueue.main.async {
-                    dismiss()
-                }
-            }
+    private func dismiss(times: Int) {
+        guard times > 0 else { return }
+        withAnimation(.none) { dismiss() }
+        if times > 1 {
+            DispatchQueue.main.async { dismiss(times: times - 1) }
         }
     }
 }

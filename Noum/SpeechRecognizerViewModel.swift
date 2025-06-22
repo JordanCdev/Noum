@@ -58,6 +58,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     func startRecording() {
         guard !isRecording else { return }
         Task {
+            print("Starting transcription")
             do {
                 _ = try await authManager.currentCredentials()
                 await self.startRecordingWith()
@@ -135,6 +136,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func stopRecording() {
         guard isRecording else { return }
+        print("Stopping transcription")
         audioEngine?.stop()
         audioEngine = nil
         try? AVAudioSession.sharedInstance().setActive(false)
