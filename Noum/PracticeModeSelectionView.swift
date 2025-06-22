@@ -14,26 +14,25 @@ struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
     var startPractice: () -> Void
     var body: some View {
-        NavigationStack {
-            Form {
-                Toggle(isOn: Binding(
-                    get: { selectedMode == .timed },
-                    set: { if $0 { selectedMode = .timed } }
-                )) {
-                    Label("Timed Practice", systemImage: "clock")
-                }
-                Toggle(isOn: Binding(
-                    get: { selectedMode == .suddenDeath },
-                    set: { if $0 { selectedMode = .suddenDeath } }
-                )) {
-                    Label("Sudden-Death", systemImage: "bolt.fill")
-                }
+        Form {
+            Toggle(isOn: Binding(
+                get: { selectedMode == .timed },
+                set: { if $0 { selectedMode = .timed } }
+            )) {
+                Label("Timed Practice", systemImage: "clock")
             }
-            .navigationTitle("Practice Modes")
-            .toolbar {
-                Button("Start") { startPractice() }
+            Toggle(isOn: Binding(
+                get: { selectedMode == .suddenDeath },
+                set: { if $0 { selectedMode = .suddenDeath } }
+            )) {
+                Label("Sudden-Death", systemImage: "bolt.fill")
             }
         }
+        .navigationTitle("Practice Modes")
+        .toolbar {
+            Button("Start") { startPractice() }
+        }
+
     }
 }
 #endif
