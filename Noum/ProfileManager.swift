@@ -21,6 +21,11 @@ final class ProfileManager: ObservableObject {
         UserDefaults.standard.set(xp, forKey: xpKey)
     }
 
+    /// Progress towards the next level as a value between 0 and 1.
+    var progressTowardsNextLevel: Double {
+        Double(xp % 1000) / 1000.0
+    }
+
     private let mainLevels = [
         "Beginner Speaker",
         "Novice Speaker",
@@ -35,6 +40,23 @@ final class ProfileManager: ObservableObject {
         let subIndex = totalLevel % 3
         let roman = ["I", "II", "III"][min(subIndex, 2)]
         return "\(mainLevels[mainIndex]) \(roman)"
+    }
+
+    static func levelTitle(forXP xp: Int) -> String {
+        let manager = ProfileManager.shared
+        let totalLevel = xp / 1000
+        let mainIndex = min(totalLevel / 3, manager.mainLevels.count - 1)
+        let subIndex = totalLevel % 3
+        let roman = ["I", "II", "III"][min(subIndex, 2)]
+        return "\(manager.mainLevels[mainIndex]) \(roman)"
+    }
+
+    static func progressTowardsNextLevel(forXP xp: Int) -> Double {
+        Double(xp % 1000) / 1000.0
+    }
+
+    static func xpNeededToNextLevel(forXP xp: Int) -> Int {
+        1000 - (xp % 1000)
     }
 }
 #endif
