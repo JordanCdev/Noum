@@ -19,7 +19,8 @@ struct ContentView: View {
     @State private var showHistory = false
     @State private var showSettings = false
     @State private var showPracticeOptions = false
-    @State private var showPracticeView = false
+    // Track whether the selected practice view should be shown
+    @State private var showPractice = false
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showCredentialsAlert = false
     @State private var countdown: Int = 0
@@ -80,7 +81,8 @@ struct ContentView: View {
                 }
             }
        }
-        .navigationDestination(isPresented: $showPracticeView) {
+        // Present the selected practice mode within the navigation stack
+        .navigationDestination(isPresented: $showPractice) {
             practiceDestination
         }
         .sheet(
@@ -106,7 +108,7 @@ struct ContentView: View {
         }
         .navigationDestination(isPresented: $showPracticeOptions) {
             PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
-                showPracticeView = true
+                showPractice = true
             }
         }
         .alert("Credentials Missing", isPresented: $showCredentialsAlert) {
