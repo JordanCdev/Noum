@@ -53,7 +53,7 @@ struct SummaryView: View {
                 Text("Duration: \(Int(duration))s")
                     .font(.subheadline)
             }
-            if let score {
+            if score != nil {
                 if showBronze {
                     Text("Bronze +1")
                         .transition(.opacity)
@@ -124,7 +124,7 @@ struct SummaryView: View {
     @State private var showXP = false
 
     private func setupAndAnimate() {
-        guard let score else { return }
+        guard score != nil else { return }
         startXP = profile.xp
         displayedXP = startXP
         currentLevel = ProfileManager.levelTitle(forXP: startXP)
@@ -149,6 +149,7 @@ struct SummaryView: View {
     }
 
     private func animateScore() {
+        guard let score else { return }
         Task {
             for i in 0...score {
                 await MainActor.run { displayedScore = i }
