@@ -17,9 +17,6 @@ struct ContentView: View {
     @StateObject private var profile = ProfileManager.shared
     @State private var showHistory = false
     @State private var showSettings = false
-    @State private var showPracticeOptions = false
-    // Track whether the selected practice view should be shown
-    @State private var showPractice = false
     @State private var selectedPracticeMode: PracticeMode = .timed
     
     var body: some View {
@@ -44,7 +41,7 @@ struct ContentView: View {
                         .background(Color.gray.opacity(0.3))
                         .padding(.bottom, 20)
                     HStack(spacing: 50) {
-                        Button { showPracticeOptions = true } label: {
+                        NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode)) {
                             Image(systemName: "dumbbell.fill")
                                 .font(.system(size: 27))
                                 .foregroundStyle(.gray)
@@ -68,15 +65,6 @@ struct ContentView: View {
                 .background(Color(UIColor.systemBackground))
             }
         }
-        .navigationDestination(isPresented: $showPracticeOptions) {
-            PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
-                showPractice = true
-            }
-       }
-        // Present the selected practice mode within the navigation stack
-        .navigationDestination(isPresented: $showPractice) {
-            practiceDestination
-        }
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: SpeechRecognizerViewModel())
         }
@@ -93,15 +81,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var practiceDestination: some View {
-        switch selectedPracticeMode {
-        case .timed:
-            TimedPracticeView()
-        case .suddenDeath:
-            SuddenDeathPracticeView()
-        }
-    }
 }
 #endif
 

@@ -12,7 +12,6 @@ enum PracticeMode: String, Codable {
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
-    var startPractice: () -> Void
     var body: some View {
         Form {
             Toggle(isOn: Binding(
@@ -30,7 +29,15 @@ struct PracticeModeSelectionView: View {
         }
         .navigationTitle("Practice Modes")
         .toolbar {
-            Button("Start") { startPractice() }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                NavigationLink("Start") {
+                    if selectedMode == .timed {
+                        TimedPracticeView()
+                    } else {
+                        SuddenDeathPracticeView()
+                    }
+                }
+            }
         }
     }
 }
