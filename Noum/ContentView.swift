@@ -88,6 +88,9 @@ struct ContentView: View {
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: speechVM)
         }
+        .sheet(isPresented: $showPractice) {
+            PracticeModeView()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
