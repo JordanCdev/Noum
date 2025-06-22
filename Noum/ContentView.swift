@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showHistory = false
     @State private var showSettings = false
+    @State private var showPracticeOptions = false
+    @State private var showPracticeView = false
+    @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showCredentialsAlert = false
     @State private var countdown: Int = 0
     
@@ -64,9 +67,21 @@ struct ContentView: View {
         .padding()
             .navigationTitle("Practice")
             .toolbar {
-                Button("History") { showHistory = true }
-                Button("Settings") { showSettings = true }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button { showPracticeOptions = true } label: {
+                        Image(systemName: "figure.walk")
+                    }
+                    Button { showHistory = true } label: {
+                        Image(systemName: "clock")
+                    }
+                    Button { showSettings = true } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                }
             }
+       }
+        .navigationDestination(isPresented: $showPracticeView) {
+            practiceDestination
         }
         .sheet(
             isPresented: $showSummary,
@@ -76,6 +91,7 @@ struct ContentView: View {
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
+                score: nil,
                 onNewSession: { speechVM.resetCurrentSession() }
             )
         }
@@ -84,6 +100,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .navigationDestination(isPresented: $showPracticeOptions) {
+            PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
+                showPracticeView = true
+            }
         }
         .alert("Credentials Missing", isPresented: $showCredentialsAlert) {
             Button("OK", role: .cancel) { }
@@ -111,6 +132,16 @@ struct ContentView: View {
                 countdown = 0
                 speechVM.startRecording()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var practiceDestination: some View {
+        switch selectedPracticeMode {
+        case .timed:
+            TimedPracticeView()
+        case .suddenDeath:
+            SuddenDeathPracticeView()
         }
     }
 }
