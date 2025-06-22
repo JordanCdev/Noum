@@ -98,16 +98,6 @@ struct ContentView: View {
             SuddenDeathPracticeView()
         }
     }
-
-    @ViewBuilder
-    private var practiceDestination: some View {
-        switch selectedPracticeMode {
-        case .timed:
-            TimedPracticeView()
-        case .suddenDeath:
-            SuddenDeathPracticeView()
-        }
-    }
 }
 #endif
 
