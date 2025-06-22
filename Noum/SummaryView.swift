@@ -133,7 +133,6 @@ struct SummaryView: View {
         progress = ProfileManager.progressTowardsNextLevel(forXP: startXP)
 
         profile.addXP(xpEarned)
-
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showBronze = progressSegments > 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { showSilver = progressSegments > 1 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showGold = progressSegments > 2 }
