@@ -105,6 +105,8 @@ struct SummaryView: View {
         }
         .padding()
         .navigationTitle("Summary")
+        .navigationBarBackButtonHidden(true)
+        .disableSwipeBack()
         .onAppear(perform: setupAndAnimate)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
