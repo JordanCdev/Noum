@@ -83,11 +83,13 @@ class SpeechRecognizerViewModel: ObservableObject {
         let stream = AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error> { continuation in
             self.requestStream = continuation
         }
+
+        let sampleRate = Int(AVAudioSession.sharedInstance().sampleRate)
         let request = StartStreamTranscriptionInput(
             audioStream: stream,
             languageCode: .enUs,
             mediaEncoding: .pcm,
-            mediaSampleRateHertz: 48000
+            mediaSampleRateHertz: sampleRate
         )
 
         // Configure client with custom credentials if needed
@@ -169,7 +171,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     private func startAudioStream() {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        let inputFormat = inputNode.inputFormat(forBus: 0)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
