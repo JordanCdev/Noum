@@ -29,7 +29,7 @@ struct SettingsView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .onChange(of: authManager.isSignedIn) { signedIn in
+        .onChange(of: authManager.isSignedIn) { _, signedIn in
             if !signedIn { dismiss() }
         }
     }
