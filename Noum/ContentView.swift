@@ -38,7 +38,11 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .overlay(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    Divider().background(Color.gray.opacity(0.3))
+                    Divider()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 3)
+                        .background(Color.gray.opacity(0.3))
+                        .padding(.bottom, 20)
                     HStack(spacing: 50) {
                         Button { showPracticeOptions = true } label: {
                             Image(systemName: "dumbbell.fill")
@@ -49,7 +53,7 @@ struct ContentView: View {
                         Button { showHistory = true } label: {
                             Image(systemName: "book.fill")
                                 .font(.system(size: 27))
-                                .foregroundStyle(.brown)
+                                .foregroundStyle(Color(white: 0.95))
                         }
                         .frame(maxWidth: .infinity)
                         Button { showSettings = true } label: {
@@ -70,9 +74,6 @@ struct ContentView: View {
             }
        }
         // Present the selected practice mode within the navigation stack
-        .navigationDestination(isPresented: $showPractice) {
-            practiceDestination
-        }
         .navigationDestination(isPresented: $showPractice) {
             practiceDestination
         }
