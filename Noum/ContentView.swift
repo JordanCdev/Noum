@@ -25,38 +25,43 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("Welcome back \(authManager.currentAccountID ?? "User")")
+                Text("Welcome back \(authManager.currentAccountName ?? \"User\")")
                     .font(.title3)
+                    .fontWeight(.semibold)
                 Text(profile.levelTitle)
                     .font(.headline)
                 Spacer()
             }
             .padding()
             .navigationTitle("Noum")
-        }
-        .overlay(alignment: .bottom) {
-            VStack(spacing: 0) {
-                Divider().background(Color.gray.opacity(0.3))
-                HStack(spacing: 50) {
-                    Button { showPracticeOptions = true } label: {
-                        Image(systemName: "dumbbell.fill")
-                            .font(.system(size: 27))
+            .navigationBarTitleDisplayMode(.inline)
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    Divider().background(Color.gray.opacity(0.3))
+                    HStack(spacing: 50) {
+                        Button { showPracticeOptions = true } label: {
+                            Image(systemName: "dumbbell.fill")
+                                .font(.system(size: 27))
+                                .foregroundStyle(.gray)
+                        }
+                        .frame(maxWidth: .infinity)
+                        Button { showHistory = true } label: {
+                            Image(systemName: "book.fill")
+                                .font(.system(size: 27))
+                                .foregroundStyle(.brown)
+                        }
+                        .frame(maxWidth: .infinity)
+                        Button { showSettings = true } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 27))
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                    Button { showHistory = true } label: {
-                        Image(systemName: "book.fill")
-                            .font(.system(size: 27))
-                    }
-                    .frame(maxWidth: .infinity)
-                    Button { showSettings = true } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 27))
-                    }
-                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
                 }
-                .padding(.vertical, 12)
+                .padding(.bottom, 10)
+                .background(Color(UIColor.systemBackground))
             }
-            .background(Color(UIColor.systemBackground))
         }
         .navigationDestination(isPresented: $showPracticeOptions) {
             PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
