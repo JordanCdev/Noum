@@ -13,8 +13,11 @@ struct SettingsView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 if authManager.isSignedIn {
-                    if let id = authManager.currentAccountID {
-                        Text("Apple ID: \(id)")
+                    if let name = authManager.currentAccountName {
+                        Text("Logged in as \(name)")
+                            .font(.footnote)
+                    } else if let id = authManager.currentAccountID {
+                        Text("Account ID: \(id)")
                             .font(.footnote)
                     }
                     Button("Sign Out") {
@@ -29,7 +32,7 @@ struct SettingsView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .onChange(of: authManager.isSignedIn) { signedIn in
+        .onChange(of: authManager.isSignedIn) { _, signedIn in
             if !signedIn { dismiss() }
         }
     }
