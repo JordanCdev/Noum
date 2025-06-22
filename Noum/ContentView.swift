@@ -39,7 +39,8 @@ struct ContentView: View {
             .overlay(alignment: .bottom) {
                 VStack(spacing: 0) {
                     Divider()
-                        .frame(maxWidth: .infinity, height: 3)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 3)
                         .background(Color.gray.opacity(0.3))
                         .padding(.bottom, 20)
                     HStack(spacing: 50) {
@@ -52,7 +53,7 @@ struct ContentView: View {
                         Button { showHistory = true } label: {
                             Image(systemName: "book.fill")
                                 .font(.system(size: 27))
-                                .foregroundStyle(Color(white: 0.9))
+                                .foregroundStyle(Color(white: 0.95))
                         }
                         .frame(maxWidth: .infinity)
                         Button { showSettings = true } label: {
