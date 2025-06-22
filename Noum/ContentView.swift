@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showHistory = false
     @State private var showSettings = false
+    @State private var showPractice = false
     @State private var showCredentialsAlert = false
     @State private var countdown: Int = 0
     
@@ -66,6 +67,7 @@ struct ContentView: View {
             .toolbar {
                 Button("History") { showHistory = true }
                 Button("Settings") { showSettings = true }
+                Button("Practice Mode") { showPractice = true }
             }
         }
         .sheet(
@@ -76,11 +78,15 @@ struct ContentView: View {
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
+                score: nil,
                 onNewSession: { speechVM.resetCurrentSession() }
             )
         }
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: speechVM)
+        }
+        .sheet(isPresented: $showPractice) {
+            PracticeModeView()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
