@@ -13,7 +13,6 @@ enum PracticeMode: String, Codable {
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
     var startPractice: () -> Void
-
     var body: some View {
         Form {
             Toggle(isOn: Binding(
@@ -33,7 +32,6 @@ struct PracticeModeSelectionView: View {
         .toolbar {
             Button("Start") { startPractice() }
         }
-
     }
 }
 #endif
