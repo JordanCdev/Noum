@@ -20,7 +20,7 @@ struct LoginView: View {
             .padding()
             .navigationTitle("")
         }
-        .onChange(of: authManager.isSignedIn) { signedIn in
+        .onChange(of: authManager.isSignedIn) { _, signedIn in
             if signedIn { dismiss() }
         }
         .alert("Sign In Failed", isPresented: $showError, actions: {
@@ -28,7 +28,7 @@ struct LoginView: View {
         }, message: {
             Text(authManager.signInError ?? "Unknown error")
         })
-        .onChange(of: authManager.signInError) { err in
+        .onChange(of: authManager.signInError) { _, err in
             showError = err != nil
         }
     }

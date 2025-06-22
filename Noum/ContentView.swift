@@ -13,82 +13,70 @@ import UIKit
 
 @available(iOS 17.0, macOS 12.0, *)
 struct ContentView: View {
-    @StateObject private var speechVM = SpeechRecognizerViewModel()
     @StateObject private var authManager = AuthManager.shared
-    @State private var showSummary = false
+    @StateObject private var profile = ProfileManager.shared
     @State private var showHistory = false
     @State private var showSettings = false
-    @State private var showCredentialsAlert = false
-    @State private var countdown: Int = 0
+    @State private var showPracticeOptions = false
+    // Track whether the selected practice view should be shown
+    @State private var showPractice = false
+    @State private var selectedPracticeMode: PracticeMode = .timed
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                VStack(spacing: 20) {
-
-                ScrollView {
-                    Text(speechVM.highlightedText)
-                        .padding()
-                }
-
-                Text("Filler Words: \(speechVM.fillerWordCount)")
-
-                if let error = speechVM.connectionError {
-                    Text(error)
-                        .foregroundStyle(.red)
-                }
-                
-                HStack {
-                    Button("Start") {
-                        if authManager.isSignedIn {
-                            startCountdown()
-                        } else {
-                            showCredentialsAlert = true
+            VStack(spacing: 20) {
+                let displayName = authManager.currentAccountName ?? "User"
+                Text("Welcome back \(displayName)")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Text(profile.levelTitle)
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Noum")
+            .navigationBarTitleDisplayMode(.inline)
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    Divider().background(Color.gray.opacity(0.3))
+                    HStack(spacing: 50) {
+                        Button { showPracticeOptions = true } label: {
+                            Image(systemName: "dumbbell.fill")
+                                .font(.system(size: 27))
+                                .foregroundStyle(.gray)
                         }
+                        .frame(maxWidth: .infinity)
+                        Button { showHistory = true } label: {
+                            Image(systemName: "book.fill")
+                                .font(.system(size: 27))
+                                .foregroundStyle(.brown)
+                        }
+                        .frame(maxWidth: .infinity)
+                        Button { showSettings = true } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 27))
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .disabled(speechVM.isRecording || countdown > 0)
-                    Button("Stop") {
-                        speechVM.stopRecording()
-                        showSummary = true
-                    }
-                    .disabled(!speechVM.isRecording)
+                    .padding(.vertical, 12)
                 }
-            }
-            if countdown > 0 {
-                Text("\(countdown)")
-                    .font(.system(size: 72, weight: .bold))
-                    .transition(.opacity)
-                    .accessibilityIdentifier("countdown")
+                .padding(.bottom, 10)
+                .background(Color(UIColor.systemBackground))
             }
         }
-        .padding()
-            .navigationTitle("Practice")
-            .toolbar {
-                Button("History") { showHistory = true }
-                Button("Settings") { showSettings = true }
+        .navigationDestination(isPresented: $showPracticeOptions) {
+            PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
+                showPractice = true
             }
         }
-        .sheet(
-            isPresented: $showSummary,
-            onDismiss: { speechVM.resetCurrentSession() }
-        ) {
-            SummaryView(
-                transcript: speechVM.highlightedText,
-                fillerCount: speechVM.fillerWordCount,
-                duration: speechVM.lastSessionDuration,
-                onNewSession: { speechVM.resetCurrentSession() }
-            )
+        .navigationDestination(isPresented: $showPractice) {
+            practiceDestination
         }
         .sheet(isPresented: $showHistory) {
-            SessionHistoryView(speechVM: speechVM)
+            SessionHistoryView(speechVM: SpeechRecognizerViewModel())
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
-        }
-        .alert("Credentials Missing", isPresented: $showCredentialsAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Sign in from Settings before starting a session.")
         }
         .fullScreenCover(
             isPresented: .init(
@@ -100,17 +88,13 @@ struct ContentView: View {
         }
     }
 
-    private func startCountdown() {
-        countdown = 3
-        Task {
-            for i in stride(from: 3, through: 1, by: -1) {
-                await MainActor.run { countdown = i }
-                try? await Task.sleep(for: .seconds(1))
-            }
-            await MainActor.run {
-                countdown = 0
-                speechVM.startRecording()
-            }
+    @ViewBuilder
+    private var practiceDestination: some View {
+        switch selectedPracticeMode {
+        case .timed:
+            TimedPracticeView()
+        case .suddenDeath:
+            SuddenDeathPracticeView()
         }
     }
 }
