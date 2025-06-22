@@ -8,6 +8,7 @@ import SwiftUI
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var profile = ProfileManager.shared
     @State private var question: String = PracticeTopics.random()
     @State private var thinkingCountdown: Int = 15
     @State private var speakingCountdown: Int = 60
@@ -97,6 +98,7 @@ struct TimedPracticeView: View {
     private func stopSession() {
         speechVM.stopRecording()
         computeScore()
+        profile.addXP(score)
         showSummary = true
     }
 
