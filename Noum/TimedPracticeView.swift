@@ -15,6 +15,7 @@ struct TimedPracticeView: View {
     @State private var progressSegments: Int = 0
     @State private var showSummary = false
     @State private var score: Int = 0
+    @State private var xpEarned: Int = 0
 
     var body: some View {
         ZStack {
@@ -28,8 +29,15 @@ struct TimedPracticeView: View {
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
                 score: score,
+                progressSegments: progressSegments,
+                xpEarned: xpEarned,
                 showDuration: false,
-                onNewSession: { reset() }
+                onSelectPracticeMode: { dismissToRoot() },
+                onHome: { dismissToRoot() },
+                onPracticeAgain: {
+                    reset()
+                    startThinkingCountdown()
+                }
             )
         }
     }
@@ -98,15 +106,15 @@ struct TimedPracticeView: View {
     private func stopSession() {
         speechVM.stopRecording()
         computeScore()
-        profile.addXP(score)
+        xpEarned = score * 10
         showSummary = true
     }
 
     private func computeScore() {
-        let base = 100
-        let penalty = speechVM.fillerWordCount * 5
-        let bonus = progressSegments * 5
-        score = max(1, base - penalty + bonus)
+        let base = 7
+        let penalty = speechVM.fillerWordCount
+        let bonus = progressSegments
+        score = max(1, min(10, base + bonus - penalty))
     }
 
     private func reset() {
@@ -133,6 +141,12 @@ struct TimedPracticeView: View {
         } else {
             return .gray.opacity(0.3)
         }
+    }
+
+    private func dismissToRoot() {
+        dismiss()
+        DispatchQueue.main.async { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { dismiss() }
     }
 }
 #endif
