@@ -13,8 +13,6 @@ enum PracticeMode: String, Codable {
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
     var startPractice: () -> Void
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
         NavigationStack {
             Form {
@@ -33,10 +31,7 @@ struct PracticeModeSelectionView: View {
             }
             .navigationTitle("Practice Modes")
             .toolbar {
-                Button("Start") {
-                    dismiss()
-                    startPractice()
-                }
+                Button("Start") { startPractice() }
             }
         }
     }

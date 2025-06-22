@@ -68,12 +68,12 @@ struct ContentView: View {
         .padding()
             .navigationTitle("Practice")
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .bottomBar) {
                     Button { showPracticeOptions = true } label: {
-                        Image(systemName: "figure.walk")
+                        Image(systemName: "dumbbell.fill")
                     }
                     Button { showHistory = true } label: {
-                        Image(systemName: "clock")
+                        Image(systemName: "book.fill")
                     }
                     Button { showSettings = true } label: {
                         Image(systemName: "ellipsis")
