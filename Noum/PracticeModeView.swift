@@ -54,9 +54,14 @@ struct PracticeModeView: View {
                 duration: speechVM.lastSessionDuration,
                 score: score,
                 progressSegments: 0,
+                xpEarned: 0,
                 showDuration: false,
-                onSelectPracticeMode: { dismiss() },
-                onHome: { dismiss() }
+                onSelectPracticeMode: { dismissToRoot() },
+                onHome: { dismissToRoot() },
+                onPracticeAgain: {
+                    reset()
+                    startThinkingCountdown()
+                }
             )
         }
     }
@@ -101,6 +106,12 @@ struct PracticeModeView: View {
         thinkingCountdown = 15
         speakingCountdown = 60
         score = 0
+    }
+
+    private func dismissToRoot() {
+        dismiss()
+        DispatchQueue.main.async { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { dismiss() }
     }
 }
 #endif

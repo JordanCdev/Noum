@@ -10,10 +10,20 @@ struct SummaryView: View {
     let duration: TimeInterval
     let score: Int?
     let progressSegments: Int
+    let xpEarned: Int
     var showDuration: Bool = true
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
+    var onPracticeAgain: () -> Void = {}
     @StateObject private var profile = ProfileManager.shared
+    @State private var startXP: Int = 0
+    @State private var displayedXP: Int = 0
+    @State private var progress: Double = 0
+    @State private var displayedScore: Int = 0
+    @State private var displayedEarnedXP: Int = 0
+    @State private var currentLevel: String = ""
+    @State private var nextLevel: String = ""
+    @State private var xpToNext: Int = 0
 
     private var feedback: String? {
         guard score != nil else { return nil }
@@ -61,17 +71,26 @@ struct SummaryView: View {
                         .transition(.opacity)
                 }
                 if showScore {
-                    Text("Score: \(score)/10")
+                    Text("Score: \(displayedScore)/10")
                         .font(.title2)
                         .transition(.opacity)
                 }
                 if showXP {
-                    Text("XP Earned: \(score * 10)")
+                    Text("XP Earned: \(displayedEarnedXP)")
                         .transition(.opacity)
-                    VStack {
-                        Text("Level: \(profile.levelTitle)")
-                        ProgressView(value: profile.progressTowardsNextLevel)
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text(currentLevel)
+                            Spacer()
+                            Text(nextLevel)
+                        }
+                        ProgressView(value: progress)
                             .tint(.blue)
+                        HStack {
+                            Text("\(displayedXP) XP")
+                            Spacer()
+                            Text("\(xpToNext) to level up")
+                        }
                     }
                     .transition(.opacity)
                 }
@@ -81,9 +100,12 @@ struct SummaryView: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, 8)
             }
+            Button("Practice Again") { onPracticeAgain() }
+                .buttonStyle(.borderedProminent)
         }
         .padding()
-        .onAppear(perform: animateBreakdown)
+        .navigationTitle("Summary")
+        .onAppear(perform: setupAndAnimate)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Practice Mode") { onSelectPracticeMode() }
@@ -101,14 +123,65 @@ struct SummaryView: View {
     @State private var showScore = false
     @State private var showXP = false
 
-    private func animateBreakdown() {
-        guard score != nil else { return }
+    private func setupAndAnimate() {
+        guard let score else { return }
+        startXP = profile.xp
+        displayedXP = startXP
+        currentLevel = ProfileManager.levelTitle(forXP: startXP)
+        nextLevel = ProfileManager.levelTitle(forXP: ((startXP / 1000) + 1) * 1000)
+        xpToNext = ProfileManager.xpNeededToNextLevel(forXP: startXP)
+        progress = ProfileManager.progressTowardsNextLevel(forXP: startXP)
+
+        profile.addXP(xpEarned)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showBronze = progressSegments > 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { showSilver = progressSegments > 1 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showGold = progressSegments > 2 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { showFiller = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { showScore = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { showXP = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            showScore = true
+            animateScore()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            showXP = true
+            animateXPEarned()
+            animateProgress()
+        }
+    }
+
+    private func animateScore() {
+        Task {
+            for i in 0...score {
+                await MainActor.run { displayedScore = i }
+                try? await Task.sleep(for: .milliseconds(80))
+            }
+        }
+    }
+
+    private func animateXPEarned() {
+        Task {
+            for i in 0...xpEarned {
+                await MainActor.run { displayedEarnedXP = i }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+    }
+
+    private func animateProgress() {
+        let endXP = startXP + xpEarned
+        Task {
+            for xp in stride(from: startXP, through: endXP, by: 1) {
+                await MainActor.run {
+                    displayedXP = xp
+                    progress = ProfileManager.progressTowardsNextLevel(forXP: xp)
+                }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            await MainActor.run {
+                currentLevel = ProfileManager.levelTitle(forXP: endXP)
+                nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
+                xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
+            }
+        }
     }
 }
 
@@ -122,7 +195,9 @@ struct SummaryView: View {
         duration: 0,
         score: 7,
         progressSegments: 3,
-        showDuration: false
+        xpEarned: 70,
+        showDuration: false,
+        onPracticeAgain: {}
     )
 }
 #endif
