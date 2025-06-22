@@ -25,7 +25,8 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("Welcome back \(authManager.currentAccountName ?? \"User\")")
+                let displayName = authManager.currentAccountName ?? "User"
+                Text("Welcome back \(displayName)")
                     .font(.title3)
                     .fontWeight(.semibold)
                 Text(profile.levelTitle)
