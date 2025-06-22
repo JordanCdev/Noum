@@ -17,42 +17,10 @@ struct TimedPracticeView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 20) {
-                HStack {
-                    ForEach(0..<3) { index in
-                        Image(systemName: "circle.fill")
-                            .foregroundColor(color(for: index))
-                    }
-                }
-                if thinkingCountdown > 0 {
-                        Text(question)
-                            .font(.title3)
-                            .multilineTextAlignment(.center)
-                            .padding()
-                        Text("Prepare your answer")
-                        Text("\(thinkingCountdown)")
-                            .font(.system(size: 48, weight: .bold))
-                    } else {
-                        ScrollView { Text(speechVM.highlightedText).padding() }
-                        Text("Filler Words: \(speechVM.fillerWordCount)")
-                        if speechVM.isRecording {
-                            Text("\(speakingCountdown)")
-                                .font(.system(size: 48, weight: .bold))
-                                .accessibilityIdentifier("practiceCountdown")
-                        }
-                    }
-                    if speechVM.isRecording {
-                        Button("Stop") { stopSession() }
-                            .buttonStyle(.borderedProminent)
-                    } else if thinkingCountdown <= 0 {
-                        Button("Close") { dismiss() }
-                    }
-                }
-            }
-            .padding()
-            .navigationTitle("Timed Practice")
+            content
         }
-        .onAppear { startThinkingCountdown() }
+        .navigationTitle("Timed Practice")
+        .onAppear(perform: startThinkingCountdown)
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: speechVM.highlightedText,
@@ -63,6 +31,42 @@ struct TimedPracticeView: View {
                 onNewSession: { reset() }
             )
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        VStack(spacing: 20) {
+            HStack {
+                ForEach(0..<3) { index in
+                    Image(systemName: "circle.fill")
+                        .foregroundColor(color(for: index))
+                }
+            }
+            if thinkingCountdown > 0 {
+                Text(question)
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                Text("Prepare your answer")
+                Text("\(thinkingCountdown)")
+                    .font(.system(size: 48, weight: .bold))
+            } else {
+                ScrollView { Text(speechVM.highlightedText).padding() }
+                Text("Filler Words: \(speechVM.fillerWordCount)")
+                if speechVM.isRecording {
+                    Text("\(speakingCountdown)")
+                        .font(.system(size: 48, weight: .bold))
+                        .accessibilityIdentifier("practiceCountdown")
+                }
+            }
+            if speechVM.isRecording {
+                Button("Stop") { stopSession() }
+                    .buttonStyle(.borderedProminent)
+            } else if thinkingCountdown <= 0 {
+                Button("Close") { dismiss() }
+            }
+        }
+        .padding()
     }
 
     private func startThinkingCountdown() {
