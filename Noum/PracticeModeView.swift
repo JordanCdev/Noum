@@ -42,7 +42,7 @@ struct PracticeModeView: View {
                     }
                 }
             }
-        }
+        
         .padding()
         .navigationTitle("Practice Mode")
         .onAppear { startThinkingCountdown() }
@@ -114,10 +114,15 @@ struct PracticeModeView: View {
     }
 
     private func dismissToRoot() {
-        dismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { dismiss() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { dismiss() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { dismiss() }
+        DispatchQueue.main.async {
+            dismiss()
+            DispatchQueue.main.async {
+                dismiss()
+                DispatchQueue.main.async {
+                    dismiss()
+                }
+            }
+        }
     }
 }
 #endif
