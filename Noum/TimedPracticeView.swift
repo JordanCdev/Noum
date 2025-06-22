@@ -28,8 +28,10 @@ struct TimedPracticeView: View {
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
                 score: score,
+                progressSegments: progressSegments,
                 showDuration: false,
-                onNewSession: { reset() }
+                onSelectPracticeMode: { dismiss() },
+                onHome: { dismiss() }
             )
         }
     }
@@ -98,15 +100,15 @@ struct TimedPracticeView: View {
     private func stopSession() {
         speechVM.stopRecording()
         computeScore()
-        profile.addXP(score)
+        profile.addXP(score * 10)
         showSummary = true
     }
 
     private func computeScore() {
-        let base = 100
-        let penalty = speechVM.fillerWordCount * 5
-        let bonus = progressSegments * 5
-        score = max(1, base - penalty + bonus)
+        let base = 10
+        let penalty = speechVM.fillerWordCount
+        let bonus = progressSegments
+        score = max(1, min(10, base - penalty + bonus))
     }
 
     private func reset() {

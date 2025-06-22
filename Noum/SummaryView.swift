@@ -9,9 +9,11 @@ struct SummaryView: View {
     let fillerCount: Int
     let duration: TimeInterval
     let score: Int?
+    let progressSegments: Int
     var showDuration: Bool = true
-    var onNewSession: () -> Void = {}
-    @Environment(\.dismiss) private var dismiss
+    var onSelectPracticeMode: () -> Void = {}
+    var onHome: () -> Void = {}
+    @StateObject private var profile = ProfileManager.shared
 
     private var feedback: String? {
         guard score != nil else { return nil }
@@ -42,20 +44,71 @@ struct SummaryView: View {
                     .font(.subheadline)
             }
             if let score {
-                Text("Score: \(score)")
-                    .font(.title2)
+                if showBronze {
+                    Text("Bronze +1")
+                        .transition(.opacity)
+                }
+                if showSilver {
+                    Text("Silver +1")
+                        .transition(.opacity)
+                }
+                if showGold {
+                    Text("Gold +1")
+                        .transition(.opacity)
+                }
+                if showFiller {
+                    Text("Filler Words -\(fillerCount)")
+                        .transition(.opacity)
+                }
+                if showScore {
+                    Text("Score: \(score)/10")
+                        .font(.title2)
+                        .transition(.opacity)
+                }
+                if showXP {
+                    Text("XP Earned: \(score * 10)")
+                        .transition(.opacity)
+                    VStack {
+                        Text("Level: \(profile.levelTitle)")
+                        ProgressView(value: profile.progressTowardsNextLevel)
+                            .tint(.blue)
+                    }
+                    .transition(.opacity)
+                }
             }
             if let feedback {
                 Text(feedback)
                     .multilineTextAlignment(.center)
                     .padding(.top, 8)
             }
-            Button("New Practice Session") {
-                onNewSession()
-                dismiss()
-            }
         }
         .padding()
+        .onAppear(perform: animateBreakdown)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Practice Mode") { onSelectPracticeMode() }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Home") { onHome() }
+            }
+        }
+    }
+
+    @State private var showBronze = false
+    @State private var showSilver = false
+    @State private var showGold = false
+    @State private var showFiller = false
+    @State private var showScore = false
+    @State private var showXP = false
+
+    private func animateBreakdown() {
+        guard score != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showBronze = progressSegments > 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { showSilver = progressSegments > 1 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showGold = progressSegments > 2 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { showFiller = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { showScore = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { showXP = true }
     }
 }
 
@@ -63,6 +116,13 @@ struct SummaryView: View {
 
 #if canImport(SwiftUI)
 #Preview {
-    SummaryView(transcript: AttributedString("Example"), fillerCount: 0, duration: 0, score: 100, showDuration: false)
+    SummaryView(
+        transcript: AttributedString("Example"),
+        fillerCount: 0,
+        duration: 0,
+        score: 7,
+        progressSegments: 3,
+        showDuration: false
+    )
 }
 #endif

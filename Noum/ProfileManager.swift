@@ -21,6 +21,11 @@ final class ProfileManager: ObservableObject {
         UserDefaults.standard.set(xp, forKey: xpKey)
     }
 
+    /// Progress towards the next level as a value between 0 and 1.
+    var progressTowardsNextLevel: Double {
+        Double(xp % 1000) / 1000.0
+    }
+
     private let mainLevels = [
         "Beginner Speaker",
         "Novice Speaker",

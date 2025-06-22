@@ -15,8 +15,6 @@ import UIKit
 struct ContentView: View {
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var profile = ProfileManager.shared
-    @State private var showHistory = false
-    @State private var showSettings = false
     @State private var selectedPracticeMode: PracticeMode = .timed
     
     var body: some View {
@@ -47,13 +45,13 @@ struct ContentView: View {
                                 .foregroundStyle(.gray)
                         }
                         .frame(maxWidth: .infinity)
-                        Button { showHistory = true } label: {
+                        NavigationLink(destination: SessionHistoryView(speechVM: SpeechRecognizerViewModel())) {
                             Image(systemName: "book.fill")
                                 .font(.system(size: 27))
                                 .foregroundStyle(Color(white: 0.95))
                         }
                         .frame(maxWidth: .infinity)
-                        Button { showSettings = true } label: {
+                        NavigationLink(destination: SettingsView()) {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 27))
                         }
@@ -65,12 +63,7 @@ struct ContentView: View {
                 .background(Color(UIColor.systemBackground))
             }
         }
-        .sheet(isPresented: $showHistory) {
-            SessionHistoryView(speechVM: SpeechRecognizerViewModel())
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-        }
+        // Sheets removed in favor of navigation links
         .fullScreenCover(
             isPresented: .init(
                 get: { !authManager.isSignedIn },

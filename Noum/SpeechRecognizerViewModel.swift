@@ -248,6 +248,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     private func saveCurrentSession() {
         let duration = Date().timeIntervalSince(sessionStart ?? Date())
         lastSessionDuration = duration
+        let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, duration >= 5 else {
+            sessionStart = nil
+            return
+        }
         let session = PracticeSession(transcript: transcribedText, fillerWordCount: fillerWordCount, duration: duration, date: sessionStart ?? Date())
         pastSessions.insert(session, at: 0)
         saveSessions()
