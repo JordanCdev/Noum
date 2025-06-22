@@ -42,9 +42,9 @@ struct PracticeModeView: View {
                     }
                 }
             }
-            .padding()
-            .navigationTitle("Practice Mode")
         }
+        .padding()
+        .navigationTitle("Practice Mode")
         .onAppear { startThinkingCountdown() }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
