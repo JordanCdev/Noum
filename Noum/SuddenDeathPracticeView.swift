@@ -33,7 +33,7 @@ struct SuddenDeathPracticeView: View {
         }
         .padding()
         .navigationTitle("Sudden-Death")
-        .onChange(of: speechVM.fillerWordCount) { count in
+        .onChange(of: speechVM.fillerWordCount) { _, count in
             if count > 0 { stopSession() }
         }
         .navigationDestination(isPresented: $showSummary) {
