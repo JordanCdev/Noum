@@ -96,7 +96,7 @@ struct SuddenDeathPracticeView: View {
         xpEarned = 0
         timerTask = nil
     }
-
+  
     private func computeScore() {
         let base = 7
         let penalty = speechVM.fillerWordCount
