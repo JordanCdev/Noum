@@ -32,8 +32,14 @@ struct TimedPracticeView: View {
                 progressSegments: progressSegments,
                 xpEarned: xpEarned,
                 showDuration: false,
-                onSelectPracticeMode: { dismissToRoot() },
-                onHome: { dismissToRoot() },
+                onSelectPracticeMode: {
+                    showSummary = false
+                    dismissToRoot()
+                },
+                onHome: {
+                    showSummary = false
+                    dismissToRoot()
+                },
                 onPracticeAgain: {
                     reset()
                     startThinkingCountdown()

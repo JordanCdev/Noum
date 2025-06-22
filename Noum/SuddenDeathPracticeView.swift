@@ -48,8 +48,14 @@ struct SuddenDeathPracticeView: View {
                 progressSegments: progressSegments,
                 xpEarned: xpEarned,
                 showDuration: true,
-                onSelectPracticeMode: { dismissToRoot() },
-                onHome: { dismissToRoot() },
+                onSelectPracticeMode: {
+                    showSummary = false
+                    dismissToRoot()
+                },
+                onHome: {
+                    showSummary = false
+                    dismissToRoot()
+                },
                 onPracticeAgain: {
                     reset()
                     startRecording()
