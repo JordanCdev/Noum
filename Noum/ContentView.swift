@@ -70,6 +70,9 @@ struct ContentView: View {
                 Button("Practice Mode") { showPractice = true }
             }
         }
+        .navigationDestination(isPresented: $showPractice) {
+            PracticeModeView()
+        }
         .sheet(
             isPresented: $showSummary,
             onDismiss: { speechVM.resetCurrentSession() }
@@ -84,9 +87,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: speechVM)
-        }
-        .sheet(isPresented: $showPractice) {
-            PracticeModeView()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
