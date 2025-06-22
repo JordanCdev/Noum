@@ -68,6 +68,10 @@ struct ContentView: View {
             PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
                 showPractice = true
             }
+       }
+        // Present the selected practice mode within the navigation stack
+        .navigationDestination(isPresented: $showPractice) {
+            practiceDestination
         }
         .navigationDestination(isPresented: $showPractice) {
             practiceDestination
