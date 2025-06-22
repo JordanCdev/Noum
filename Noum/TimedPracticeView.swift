@@ -11,14 +11,20 @@ struct TimedPracticeView: View {
     @State private var question: String = PracticeTopics.random()
     @State private var thinkingCountdown: Int = 15
     @State private var speakingCountdown: Int = 60
+    @State private var progressSegments: Int = 0
     @State private var showSummary = false
     @State private var score: Int = 0
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                VStack(spacing: 20) {
-                    if thinkingCountdown > 0 {
+        ZStack {
+            VStack(spacing: 20) {
+                HStack {
+                    ForEach(0..<3) { index in
+                        Image(systemName: "circle.fill")
+                            .foregroundColor(color(for: index))
+                    }
+                }
+                if thinkingCountdown > 0 {
                         Text(question)
                             .font(.title3)
                             .multilineTextAlignment(.center)
@@ -74,7 +80,10 @@ struct TimedPracticeView: View {
         speechVM.startRecording()
         Task {
             for i in stride(from: speakingCountdown, through: 1, by: -1) {
-                await MainActor.run { speakingCountdown = i }
+                await MainActor.run {
+                    speakingCountdown = i
+                    updateProgress()
+                }
                 try? await Task.sleep(for: .seconds(1))
             }
             stopSession()
@@ -90,7 +99,8 @@ struct TimedPracticeView: View {
     private func computeScore() {
         let base = 100
         let penalty = speechVM.fillerWordCount * 5
-        score = max(1, base - penalty)
+        let bonus = progressSegments * 5
+        score = max(1, base - penalty + bonus)
     }
 
     private func reset() {
@@ -98,7 +108,25 @@ struct TimedPracticeView: View {
         question = PracticeTopics.random()
         thinkingCountdown = 15
         speakingCountdown = 60
+        progressSegments = 0
         score = 0
+    }
+
+    private func updateProgress() {
+        let elapsed = 60 - speakingCountdown
+        progressSegments = min(3, elapsed / 15)
+    }
+
+    private func color(for index: Int) -> Color {
+        if index < progressSegments {
+            switch index {
+            case 0: return .brown // bronze
+            case 1: return .gray // silver
+            default: return .yellow // gold
+            }
+        } else {
+            return .gray.opacity(0.3)
+        }
     }
 }
 #endif

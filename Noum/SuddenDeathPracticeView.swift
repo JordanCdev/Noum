@@ -14,12 +14,11 @@ struct SuddenDeathPracticeView: View {
     @State private var timerTask: Task<Void, Never>? = nil
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                if speechVM.isRecording {
-                    ScrollView { Text(speechVM.highlightedText).padding() }
-                    Text("\(elapsed)")
-                        .font(.system(size: 48, weight: .bold))
+        VStack(spacing: 20) {
+            if speechVM.isRecording {
+                ScrollView { Text(speechVM.highlightedText).padding() }
+                Text("\(elapsed)")
+                    .font(.system(size: 48, weight: .bold))
                         .accessibilityIdentifier("suddenDeathTimer")
                     Button("Stop") { stopSession() }
                         .buttonStyle(.borderedProminent)
@@ -31,12 +30,11 @@ struct SuddenDeathPracticeView: View {
                     Button("Start") { startRecording() }
                         .buttonStyle(.borderedProminent)
                 }
-            }
-            .padding()
-            .navigationTitle("Sudden-Death")
-            .onChange(of: speechVM.fillerWordCount) { count in
-                if count > 0 { stopSession() }
-            }
+        }
+        .padding()
+        .navigationTitle("Sudden-Death")
+        .onChange(of: speechVM.fillerWordCount) { count in
+            if count > 0 { stopSession() }
         }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(

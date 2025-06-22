@@ -83,7 +83,7 @@ struct ContentView: View {
         .navigationDestination(isPresented: $showPracticeView) {
             practiceDestination
         }
-        .navigationDestination(isPresented: $showPractice) {
+        .navigationDestination(isPresented: $showPracticeOptions) {
             PracticeModeView()
         }
         .sheet(
