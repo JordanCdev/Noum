@@ -18,7 +18,9 @@ struct ContentView: View {
     @State private var showSummary = false
     @State private var showHistory = false
     @State private var showSettings = false
-    @State private var showPractice = false
+    @State private var showPracticeOptions = false
+    @State private var showPracticeView = false
+    @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showCredentialsAlert = false
     @State private var countdown: Int = 0
     
@@ -65,13 +67,21 @@ struct ContentView: View {
         .padding()
             .navigationTitle("Practice")
             .toolbar {
-                Button("History") { showHistory = true }
-                Button("Settings") { showSettings = true }
-                Button("Practice Mode") { showPractice = true }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button { showPracticeOptions = true } label: {
+                        Image(systemName: "figure.walk")
+                    }
+                    Button { showHistory = true } label: {
+                        Image(systemName: "clock")
+                    }
+                    Button { showSettings = true } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                }
             }
-        }
-        .navigationDestination(isPresented: $showPractice) {
-            PracticeModeView()
+       }
+        .navigationDestination(isPresented: $showPracticeView) {
+            practiceDestination
         }
         .sheet(
             isPresented: $showSummary,
@@ -88,6 +98,21 @@ struct ContentView: View {
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: speechVM)
         }
+        .sheet(isPresented: $showPracticeOptions) {
+            PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
+                showPracticeView = true
+            }
+        }
+
+    @ViewBuilder
+    private var practiceDestination: some View {
+        switch selectedPracticeMode {
+        case .timed:
+            TimedPracticeView()
+        case .suddenDeath:
+            SuddenDeathPracticeView()
+        }
+    }
         .sheet(isPresented: $showPractice) {
             PracticeModeView()
         }

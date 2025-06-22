@@ -5,7 +5,7 @@ import SwiftUI
 
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
-struct PracticeModeView: View {
+struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speechVM = SpeechRecognizerViewModel()
     @State private var question: String = PracticeTopics.random()
@@ -44,7 +44,7 @@ struct PracticeModeView: View {
                 }
             }
             .padding()
-            .navigationTitle("Practice Mode")
+            .navigationTitle("Timed Practice")
         }
         .onAppear { startThinkingCountdown() }
         .navigationDestination(isPresented: $showSummary) {
