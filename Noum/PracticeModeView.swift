@@ -53,8 +53,10 @@ struct PracticeModeView: View {
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
                 score: score,
+                progressSegments: 0,
                 showDuration: false,
-                onNewSession: { reset() }
+                onSelectPracticeMode: { dismiss() },
+                onHome: { dismiss() }
             )
         }
     }
@@ -88,9 +90,9 @@ struct PracticeModeView: View {
     }
 
     private func computeScore() {
-        let base = 100
-        let penalty = speechVM.fillerWordCount * 5
-        score = max(1, base - penalty)
+        let base = 10
+        let penalty = speechVM.fillerWordCount
+        score = max(1, min(10, base - penalty))
     }
 
     private func reset() {

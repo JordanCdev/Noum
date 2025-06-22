@@ -42,8 +42,10 @@ struct SuddenDeathPracticeView: View {
                 fillerCount: speechVM.fillerWordCount,
                 duration: TimeInterval(elapsed),
                 score: nil,
+                progressSegments: 0,
                 showDuration: true,
-                onNewSession: { reset() }
+                onSelectPracticeMode: { dismiss() },
+                onHome: { dismiss() }
             )
         }
     }
