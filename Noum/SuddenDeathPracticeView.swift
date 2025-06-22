@@ -42,8 +42,15 @@ struct SuddenDeathPracticeView: View {
                 fillerCount: speechVM.fillerWordCount,
                 duration: TimeInterval(elapsed),
                 score: nil,
+                progressSegments: 0,
+                xpEarned: 0,
                 showDuration: true,
-                onNewSession: { reset() }
+                onSelectPracticeMode: { dismissToRoot() },
+                onHome: { dismissToRoot() },
+                onPracticeAgain: {
+                    reset()
+                    startRecording()
+                }
             )
         }
     }
@@ -71,6 +78,12 @@ struct SuddenDeathPracticeView: View {
         question = PracticeTopics.random()
         elapsed = 0
         timerTask = nil
+    }
+
+    private func dismissToRoot() {
+        dismiss()
+        DispatchQueue.main.async { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { dismiss() }
     }
 }
 #endif
