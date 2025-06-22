@@ -12,6 +12,9 @@ struct SuddenDeathPracticeView: View {
     @State private var elapsed: Int = 0
     @State private var showSummary = false
     @State private var timerTask: Task<Void, Never>? = nil
+    @State private var progressSegments: Int = 0
+    @State private var score: Int = 0
+    @State private var xpEarned: Int = 0
 
     var body: some View {
         VStack(spacing: 20) {
@@ -41,9 +44,9 @@ struct SuddenDeathPracticeView: View {
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: TimeInterval(elapsed),
-                score: nil,
-                progressSegments: 0,
-                xpEarned: 0,
+                score: score,
+                progressSegments: progressSegments,
+                xpEarned: xpEarned,
                 showDuration: true,
                 onSelectPracticeMode: { dismissToRoot() },
                 onHome: { dismissToRoot() },
@@ -60,7 +63,10 @@ struct SuddenDeathPracticeView: View {
         timerTask = Task {
             for i in 1...30 {
                 try? await Task.sleep(for: .seconds(1))
-                await MainActor.run { elapsed = i }
+                await MainActor.run {
+                    elapsed = i
+                    progressSegments = min(3, i / 10)
+                }
                 if Task.isCancelled { return }
             }
             stopSession()
@@ -70,6 +76,8 @@ struct SuddenDeathPracticeView: View {
     private func stopSession() {
         timerTask?.cancel()
         speechVM.stopRecording()
+        computeScore()
+        xpEarned = score * 10
         showSummary = true
     }
 
@@ -77,13 +85,24 @@ struct SuddenDeathPracticeView: View {
         speechVM.resetCurrentSession()
         question = PracticeTopics.random()
         elapsed = 0
+        progressSegments = 0
+        score = 0
+        xpEarned = 0
         timerTask = nil
+    }
+  
+    private func computeScore() {
+        let base = 7
+        let penalty = speechVM.fillerWordCount
+        let bonus = progressSegments
+        score = max(1, min(10, base + bonus - penalty))
     }
 
     private func dismissToRoot() {
         dismiss()
-        DispatchQueue.main.async { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { dismiss() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { dismiss() }
     }
 }
 #endif
