@@ -62,12 +62,19 @@ struct ContentView: View {
             PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
                 showPractice = true
             }
+       }
+        // Present the selected practice mode within the navigation stack
+        .navigationDestination(isPresented: $showPractice) {
+            practiceDestination
         }
         .navigationDestination(isPresented: $showPractice) {
             practiceDestination
         }
         .sheet(isPresented: $showHistory) {
             SessionHistoryView(speechVM: SpeechRecognizerViewModel())
+        }
+        .sheet(isPresented: $showPractice) {
+            PracticeModeView()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -79,6 +86,16 @@ struct ContentView: View {
             )
         ) {
             LoginView()
+        }
+    }
+
+    @ViewBuilder
+    private var practiceDestination: some View {
+        switch selectedPracticeMode {
+        case .timed:
+            TimedPracticeView()
+        case .suddenDeath:
+            SuddenDeathPracticeView()
         }
     }
 
