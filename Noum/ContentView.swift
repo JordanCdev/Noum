@@ -83,9 +83,6 @@ struct ContentView: View {
         .navigationDestination(isPresented: $showPracticeView) {
             practiceDestination
         }
-        .navigationDestination(isPresented: $showPractice) {
-            PracticeModeView()
-        }
         .sheet(
             isPresented: $showSummary,
             onDismiss: { speechVM.resetCurrentSession() }
@@ -107,7 +104,7 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-        .sheet(isPresented: $showPracticeOptions) {
+        .navigationDestination(isPresented: $showPracticeOptions) {
             PracticeModeSelectionView(selectedMode: $selectedPracticeMode) {
                 showPracticeView = true
             }
