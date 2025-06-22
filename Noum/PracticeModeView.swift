@@ -15,9 +15,8 @@ struct PracticeModeView: View {
     @State private var score: Int = 0
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                VStack(spacing: 20) {
+        ZStack {
+            VStack(spacing: 20) {
                     if thinkingCountdown > 0 {
                         Text(question)
                             .font(.title3)
@@ -56,8 +55,14 @@ struct PracticeModeView: View {
                 progressSegments: 0,
                 xpEarned: 0,
                 showDuration: false,
-                onSelectPracticeMode: { dismissToRoot() },
-                onHome: { dismissToRoot() },
+                onSelectPracticeMode: {
+                    showSummary = false
+                    dismissToRoot()
+                },
+                onHome: {
+                    showSummary = false
+                    dismissToRoot()
+                },
                 onPracticeAgain: {
                     reset()
                     startThinkingCountdown()
