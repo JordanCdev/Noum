@@ -6,6 +6,7 @@ import SwiftUI
 enum PracticeMode: String, Codable {
     case timed
     case suddenDeath
+    case ahCounter
 }
 
 #if canImport(SwiftUI)
@@ -26,15 +27,24 @@ struct PracticeModeSelectionView: View {
             )) {
                 Label("Sudden-Death", systemImage: "bolt.fill")
             }
+            Toggle(isOn: Binding(
+                get: { selectedMode == .ahCounter },
+                set: { if $0 { selectedMode = .ahCounter } }
+            )) {
+                Label("Ah-Counter", systemImage: "ear")
+            }
         }
         .navigationTitle("Practice Modes")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink("Start") {
-                    if selectedMode == .timed {
+                    switch selectedMode {
+                    case .timed:
                         TimedPracticeView()
-                    } else {
+                    case .suddenDeath:
                         SuddenDeathPracticeView()
+                    case .ahCounter:
+                        AhCounterView()
                     }
                 }
             }
