@@ -5,9 +5,9 @@ import SwiftUI
 #if canImport(AVFoundation)
 import AVFoundation
 #endif
-import AWSSDKIdentity
-import AWSTranscribeStreaming
-import AWSClientRuntime
+@preconcurrency import AWSSDKIdentity
+@preconcurrency import AWSTranscribeStreaming
+@preconcurrency import AWSClientRuntime
 
 
 
