@@ -23,12 +23,22 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testLaunchToTimedPracticeSmoke() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("UI_TESTING")
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(app.buttons["home.startPracticing"].waitForExistence(timeout: 5))
+        app.buttons["home.startPracticing"].tap()
+
+        XCTAssertTrue(app.navigationBars["Practice Modes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["practiceMode.timed"].waitForExistence(timeout: 5))
+        app.buttons["practiceMode.timed"].tap()
+
+        XCTAssertTrue(app.buttons["practiceModes.start"].waitForExistence(timeout: 5))
+        app.buttons["practiceModes.start"].tap()
+
+        XCTAssertTrue(app.otherElements["timedPractice.screen"].waitForExistence(timeout: 5))
     }
 
     @MainActor

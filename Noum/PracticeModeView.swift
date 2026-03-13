@@ -64,8 +64,8 @@ struct PracticeModeView: View {
                     dismiss(times: 3)
                 },
                 onPracticeAgain: {
-                    reset()
-                    startThinkingCountdown()
+                    showSummary = false
+                    dismiss(times: 2)
                 }
             )
         }
@@ -83,6 +83,7 @@ struct PracticeModeView: View {
     }
 
     private func startRecording() {
+        speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
         Task {
             for i in stride(from: speakingCountdown, through: 1, by: -1) {

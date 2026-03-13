@@ -22,8 +22,8 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var pastSessions: [PracticeSession] = []
     @Published var connectionError: String?
 
-    private let sessionsKey = "practiceSessions"
     private let authManager: AuthManager = .shared
+    private let sessionStore = PracticeSessionStore.shared
 
     private var audioEngine: AVAudioEngine?
     private var transcribeClient: TranscribeStreamingClient?
@@ -33,6 +33,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var sessionStart: Date?
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
+    private var currentSessionMode: PracticeMode = .ahCounter
 
 
     init() {
@@ -55,6 +56,30 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
+    func prepareSession(mode: PracticeMode) {
+        currentSessionMode = mode
+    }
+
+    func annotateLatestSession(
+        score: Int? = nil,
+        xpEarned: Int? = nil,
+        headline: String? = nil,
+        insights: [String] = [],
+        coachSummary: String? = nil
+    ) {
+        sessionStore.annotateLatest(
+            PracticeSessionAnnotation(
+                score: score,
+                xpEarned: xpEarned,
+                headline: headline,
+                insights: insights,
+                coachSummary: coachSummary
+            ),
+            expectedMode: currentSessionMode
+        )
+        pastSessions = sessionStore.sessions
+    }
+
     func startRecording() {
         guard !isRecording else { return }
         Task {
@@ -64,7 +89,7 @@ class SpeechRecognizerViewModel: ObservableObject {
                 await self.startRecordingWith()
             } catch {
                 print("Failed to fetch AWS credentials: \(error)")
-                await MainActor.run { self.transcribedText = "Failed to fetch AWS credentials." }
+                await MainActor.run { self.transcribedText = AuthManager.missingCredentialsMessage }
             }
         }
     }
@@ -257,22 +282,23 @@ class SpeechRecognizerViewModel: ObservableObject {
             sessionStart = nil
             return
         }
-        let session = PracticeSession(transcript: transcribedText, fillerWordCount: fillerWordCount, duration: duration, date: sessionStart ?? Date())
-        pastSessions.insert(session, at: 0)
-        saveSessions()
+        _ = PracticeSessionFinalizer.finalize(
+            store: sessionStore,
+            draft: PracticeSessionDraft(
+                transcript: transcribedText,
+                fillerWordCount: fillerWordCount,
+                duration: duration,
+                date: sessionStart ?? Date(),
+                mode: currentSessionMode
+            )
+        )
+        pastSessions = sessionStore.sessions
         sessionStart = nil
     }
 
     private func loadSessions() {
-        guard let data = UserDefaults.standard.data(forKey: sessionsKey),
-              let sessions = try? JSONDecoder().decode([PracticeSession].self, from: data) else { return }
-        pastSessions = sessions.sorted { $0.date > $1.date }
-    }
-
-    private func saveSessions() {
-        if let data = try? JSONEncoder().encode(pastSessions) {
-            UserDefaults.standard.set(data, forKey: sessionsKey)
-        }
+        sessionStore.reload()
+        pastSessions = sessionStore.sessions
     }
 }
 #endif
@@ -283,4 +309,70 @@ struct PracticeSession: Identifiable, Codable {
     let fillerWordCount: Int
     let duration: TimeInterval
     let date: Date
+    var mode: PracticeMode = .ahCounter
+    var score: Int? = nil
+    var xpEarned: Int? = nil
+    var headline: String? = nil
+    var insights: [String] = []
+    var coachSummary: String? = nil
+    var aiCoachFeedback: AICoachFeedback? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case transcript
+        case fillerWordCount
+        case duration
+        case date
+        case mode
+        case score
+        case xpEarned
+        case headline
+        case insights
+        case coachSummary
+        case aiCoachFeedback
+    }
+
+    init(
+        id: UUID = UUID(),
+        transcript: String,
+        fillerWordCount: Int,
+        duration: TimeInterval,
+        date: Date,
+        mode: PracticeMode = .ahCounter,
+        score: Int? = nil,
+        xpEarned: Int? = nil,
+        headline: String? = nil,
+        insights: [String] = [],
+        coachSummary: String? = nil,
+        aiCoachFeedback: AICoachFeedback? = nil
+    ) {
+        self.id = id
+        self.transcript = transcript
+        self.fillerWordCount = fillerWordCount
+        self.duration = duration
+        self.date = date
+        self.mode = mode
+        self.score = score
+        self.xpEarned = xpEarned
+        self.headline = headline
+        self.insights = insights
+        self.coachSummary = coachSummary
+        self.aiCoachFeedback = aiCoachFeedback
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        transcript = try container.decode(String.self, forKey: .transcript)
+        fillerWordCount = try container.decode(Int.self, forKey: .fillerWordCount)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        date = try container.decode(Date.self, forKey: .date)
+        mode = try container.decodeIfPresent(PracticeMode.self, forKey: .mode) ?? .ahCounter
+        score = try container.decodeIfPresent(Int.self, forKey: .score)
+        xpEarned = try container.decodeIfPresent(Int.self, forKey: .xpEarned)
+        headline = try container.decodeIfPresent(String.self, forKey: .headline)
+        insights = try container.decodeIfPresent([String].self, forKey: .insights) ?? []
+        coachSummary = try container.decodeIfPresent(String.self, forKey: .coachSummary)
+        aiCoachFeedback = try container.decodeIfPresent(AICoachFeedback.self, forKey: .aiCoachFeedback)
+    }
 }

@@ -3,15 +3,55 @@ import SwiftUI
 
 @available(iOS 17.0, macOS 12.0, *)
 struct SplashScreenView: View {
+    @State private var animateOrb = false
+
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Noum")
-                .font(.largeTitle)
-                .bold()
-            ProgressView()
-                .progressViewStyle(.circular)
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.96, green: 0.93, blue: 0.88),
+                    Color.white,
+                    Color(red: 0.90, green: 0.95, blue: 0.99)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            Circle()
+                .fill(Color.blue.opacity(0.16))
+                .frame(width: 220, height: 220)
+                .blur(radius: 18)
+                .offset(x: animateOrb ? 26 : -18, y: animateOrb ? -44 : -12)
+                .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: animateOrb)
+
+            Circle()
+                .fill(Color.orange.opacity(0.14))
+                .frame(width: 180, height: 180)
+                .blur(radius: 16)
+                .offset(x: animateOrb ? -34 : 20, y: animateOrb ? 68 : 30)
+                .animation(.easeInOut(duration: 2.1).repeatForever(autoreverses: true), value: animateOrb)
+
+            VStack(spacing: 18) {
+                Text("Noum")
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+
+                Text("Sharper speaking, one rep at a time.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.blue)
+                    .scaleEffect(1.1)
+            }
+            .padding(34)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            animateOrb = true
+        }
     }
 }
 #endif

@@ -7,7 +7,6 @@ xcuserdata/
 
 # Local configuration files
 Noum/Transcribe.plist
+Noum/AIConfig.plist
 Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme
-Noum/Transcribe.plist.example
-Noum/Transcribe.plist.example
 Noum/test.swift

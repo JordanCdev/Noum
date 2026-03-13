@@ -19,6 +19,9 @@ import Combine
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
+    static let missingCredentialsMessage =
+        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment or create a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
+
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
     private var credentialIdentity: AWSCredentialIdentity?
@@ -58,23 +61,25 @@ class AuthManager: ObservableObject {
         }
         GIDSignIn.sharedInstance.configuration = config
         GIDSignIn.sharedInstance.signIn(withPresenting: controller) { [weak self] result, error in
-            guard let self else { return }
-            if let error {
-                self.signInError = error.localizedDescription
-                print("Google sign in failed: \(error)")
-                return
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let error {
+                    self.signInError = error.localizedDescription
+                    print("Google sign in failed: \(error)")
+                    return
+                }
+                guard let userID = result?.user.userID else {
+                    self.signInError = "Google sign in failed"
+                    return
+                }
+                _ = KeychainHelper.save(userID, key: self.accountKey)
+                if let name = result?.user.profile?.name {
+                    _ = KeychainHelper.save(name, key: self.accountNameKey)
+                }
+                print("Saved Google user ID: \(userID)")
+                self.signIn()
+                self.isSignedIn = true
             }
-            guard let userID = result?.user.userID else {
-                self.signInError = "Google sign in failed"
-                return
-            }
-            _ = KeychainHelper.save(userID, key: self.accountKey)
-            if let name = result?.user.profile?.name {
-                _ = KeychainHelper.save(name, key: self.accountNameKey)
-            }
-            print("Saved Google user ID: \(userID)")
-            self.signIn()
-            self.isSignedIn = true
         }
     }
 #else
@@ -123,7 +128,11 @@ class AuthManager: ObservableObject {
             self.region = creds.region
             return creds.identity
         }
-        throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "AWS credentials not configured"])
+        throw NSError(
+            domain: "AuthManager",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: Self.missingCredentialsMessage]
+        )
     }
 
     func signOut() {
@@ -159,6 +168,8 @@ class AuthManager: ObservableObject {
 @MainActor
 class AuthManager {
     static let shared = AuthManager()
+    static let missingCredentialsMessage =
+        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment or create a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
     private(set) var region: String = "eu-west-2"
     var isSignedIn: Bool = false
     var signInError: String?
@@ -167,7 +178,7 @@ class AuthManager {
         DefaultAWSCredentialIdentityResolverChain()
     }
     func currentCredentials() async throws -> AWSCredentialIdentity {
-        throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "AWS credentials not configured"])
+        throw NSError(domain: "AuthManager", code: 1, userInfo: [NSLocalizedDescriptionKey: Self.missingCredentialsMessage])
     }
     func signOut() { isSignedIn = false }
     func reloadCredentials() {}

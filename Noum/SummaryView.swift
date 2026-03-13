@@ -2,7 +2,15 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+
 #if canImport(SwiftUI)
+private enum SummaryTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case insights = "Insights"
+    case transcript = "Transcript"
+
+    var id: String { rawValue }
+}
 
 struct SummaryView: View {
     let transcript: AttributedString
@@ -12,102 +20,132 @@ struct SummaryView: View {
     let progressSegments: Int
     let xpEarned: Int
     var showDuration: Bool = true
+    var practiceTitle: String = "Practice Summary"
+    var feedbackOverride: String?
+    var headlineOverride: String?
+    var scoreBreakdown: [PracticeScoreSegment] = []
+    var insights: [String] = []
+    var recentSessions: [PracticeSession] = []
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
+
     @StateObject private var profile = ProfileManager.shared
-    @State private var startXP: Int = 0
+    @StateObject private var aiSettings = AISettingsManager.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var sessionStore = PracticeSessionStore.shared
+    @State private var selectedTab: SummaryTab = .overview
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
-    @State private var displayedScore: Int = 0
-    @State private var displayedEarnedXP: Int = 0
     @State private var currentLevel: String = ""
     @State private var nextLevel: String = ""
     @State private var xpToNext: Int = 0
+    @State private var visibleSegments = 0
+    @State private var didApplyXP = false
+    @State private var aiFeedback: AICoachFeedback?
+    @State private var isRequestingAIFeedback = false
+    @State private var aiError: String?
 
-    private var feedback: String? {
-        guard score != nil else { return nil }
-        switch fillerCount {
-        case 0...1:
-            return "Outstanding! World-class speaking with almost no filler words."
-        case 2...3:
-            return "Great job! You're nearing professional level."
-        case 4...5:
-            return "Good work. About average filler usage."
-        case 6...8:
-            return "Fair effort. Try to reduce filler words."
-        default:
-            return "Keep practicing to minimize filler words."
+    private let aiCoachService: AICoachServicing = AICoachService()
+
+    private var scoreValue: Int {
+        score ?? max(1, 10 - fillerCount)
+    }
+
+    private var headline: String {
+        if let headlineOverride { return headlineOverride }
+        switch scoreValue {
+        case 9...10: return "Strong delivery"
+        case 7...8: return "Good control"
+        case 4...6: return "Room to sharpen"
+        default: return "Needs another rep"
         }
     }
 
-    var body: some View {
-        VStack(spacing: 20) {
-            ScrollView {
-                Text(transcript)
-                    .padding()
-            }
-            Text("Filler Words: \(fillerCount)")
-                .font(.headline)
-            if showDuration {
-                Text("Duration: \(Int(duration))s")
-                    .font(.subheadline)
-            }
-            if score != nil {
-                if showBronze {
-                    Text("Bronze +1")
-                        .transition(.opacity)
-                }
-                if showSilver {
-                    Text("Silver +1")
-                        .transition(.opacity)
-                }
-                if showGold {
-                    Text("Gold +1")
-                        .transition(.opacity)
-                }
-                if showFiller {
-                    Text("Filler Words -\(fillerCount)")
-                        .transition(.opacity)
-                }
-                if showScore {
-                    Text("Score: \(displayedScore)/10")
-                        .font(.title2)
-                        .transition(.opacity)
-                }
-                if showXP {
-                    Text("XP Earned: \(displayedEarnedXP)")
-                        .transition(.opacity)
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text(currentLevel)
-                            Spacer()
-                            Text(nextLevel)
-                        }
-                        ProgressView(value: progress)
-                            .tint(.blue)
-                        HStack {
-                            Text("\(displayedXP) XP")
-                            Spacer()
-                            Text("\(xpToNext) to level up")
-                        }
-                    }
-                    .transition(.opacity)
-                }
-            }
-            if let feedback {
-                Text(feedback)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 8)
-            }
-            Button("Practice Again") { onPracticeAgain() }
-                .buttonStyle(.borderedProminent)
+    private var feedback: String {
+        if let feedbackOverride { return feedbackOverride }
+        switch fillerCount {
+        case 0...1: return "Excellent control. Keep bringing the same calm pacing to harder prompts."
+        case 2...3: return "You were close to a clean round. Tighten your transitions."
+        case 4...6: return "The answer had shape, but filler words are still carrying too much load."
+        default: return "Slow down and let pauses do the work instead of filler words."
         }
-        .padding()
+    }
+
+    private var scoreAccent: Color {
+        switch scoreValue {
+        case 8...10: return Color(red: 0.10, green: 0.56, blue: 0.40)
+        case 5...7: return Color(red: 0.83, green: 0.52, blue: 0.10)
+        default: return Color(red: 0.74, green: 0.22, blue: 0.20)
+        }
+    }
+
+    private var visibleBreakdown: [PracticeScoreSegment] {
+        Array(scoreBreakdown.prefix(visibleSegments))
+    }
+
+    private var derivedInsights: [String] {
+        if !insights.isEmpty { return insights }
+        let previousSessions = Array(recentSessions.dropFirst())
+        guard !previousSessions.isEmpty else {
+            return ["Finish a few more sessions and this screen will start surfacing trend-based coaching."]
+        }
+
+        let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
+        let averageFillers = previousSessions.map(\.fillerWordCount).reduce(0, +) / previousSessions.count
+
+        var messages: [String] = []
+        if duration > averageDuration {
+            messages.append("You stayed with this answer longer than your recent average.")
+        } else {
+            messages.append("This answer ended sooner than your recent average, so push the middle section further next time.")
+        }
+
+        if fillerCount < averageFillers {
+            messages.append("Your filler count improved against your recent baseline.")
+        } else if fillerCount > averageFillers {
+            messages.append("Filler words rose above your recent baseline. Try a slower opening.")
+        }
+
+        messages.append("You now have \(recentSessions.count) saved practice session\(recentSessions.count == 1 ? "" : "s") to compare against.")
+        return Array(messages.prefix(3))
+    }
+
+    private var latestSessionID: UUID? {
+        recentSessions.first?.id
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.97, green: 0.95, blue: 0.90),
+                        Color.white,
+                        Color(red: 0.92, green: 0.96, blue: 1.0)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 12) {
+                    headerCard
+                    metricRow
+                    tabPicker
+                    detailPanel
+                        .frame(maxHeight: max(220, geometry.size.height * 0.34))
+                    xpPanel
+                    actionButtons
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 18)
+            }
+        }
         .navigationTitle("Summary")
         .navigationBarBackButtonHidden(true)
         .disableSwipeBack()
-        .onAppear(perform: setupAndAnimate)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Practice Mode") { onSelectPracticeMode() }
@@ -116,75 +154,349 @@ struct SummaryView: View {
                 Button("Home") { onHome() }
             }
         }
+        .onAppear(perform: setup)
     }
 
-    @State private var showBronze = false
-    @State private var showSilver = false
-    @State private var showGold = false
-    @State private var showFiller = false
-    @State private var showScore = false
-    @State private var showXP = false
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(practiceTitle)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
 
-    private func setupAndAnimate() {
-        guard score != nil else { return }
-        startXP = profile.xp
-        displayedXP = startXP
-        currentLevel = ProfileManager.levelTitle(forXP: startXP)
-        nextLevel = ProfileManager.levelTitle(forXP: ((startXP / 1000) + 1) * 1000)
-        xpToNext = ProfileManager.xpNeededToNextLevel(forXP: startXP)
-        progress = ProfileManager.progressTowardsNextLevel(forXP: startXP)
+            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                Text("\(scoreValue)/10")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(scoreAccent)
+                Text(headline)
+                    .font(.headline)
+            }
+
+            Text(feedback)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var metricRow: some View {
+        HStack(spacing: 10) {
+            metricCard(title: "Fillers", value: "\(fillerCount)", tint: .red)
+            if showDuration {
+                metricCard(title: "Duration", value: "\(Int(duration))s", tint: .blue)
+            }
+            metricCard(title: "XP", value: "\(xpEarned)", tint: .orange)
+        }
+    }
+
+    private func metricCard(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var tabPicker: some View {
+        HStack(spacing: 8) {
+            ForEach(SummaryTab.allCases) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(selectedTab == tab ? Color.blue : Color.white.opacity(0.72), in: Capsule())
+                        .foregroundStyle(selectedTab == tab ? .white : .primary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detailPanel: some View {
+        Group {
+            switch selectedTab {
+            case .overview:
+                overviewPanel
+            case .insights:
+                insightsPanel
+            case .transcript:
+                transcriptPanel
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(18)
+        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var overviewPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Breakdown")
+                .font(.headline)
+            if visibleBreakdown.isEmpty {
+                Text("No scoring breakdown for this mode.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(visibleBreakdown) { segment in
+                    HStack {
+                        Text(segment.title)
+                        Spacer()
+                        Text(segment.value)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(color(for: segment.tintName))
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var insightsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Insights")
+                .font(.headline)
+            ForEach(Array(derivedInsights.enumerated()), id: \.offset) { index, insight in
+                HStack(alignment: .top, spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.14))
+                            .frame(width: 24, height: 24)
+                        Text("\(index + 1)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.blue)
+                    }
+                    Text(insight)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            aiCoachSection
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var aiCoachSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+                .padding(.vertical, 4)
+            Text("AI Coach")
+                .font(.headline)
+
+            if let aiFeedback {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("What you did well")
+                        .font(.subheadline.weight(.semibold))
+                    ForEach(aiFeedback.strengths, id: \.self) { strength in
+                        Text("• \(strength)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Biggest improvement")
+                        .font(.subheadline.weight(.semibold))
+                    Text(aiFeedback.keyImprovement)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Suggested drill")
+                        .font(.subheadline.weight(.semibold))
+                    Text(aiFeedback.suggestedDrill)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Stronger opening")
+                        .font(.subheadline.weight(.semibold))
+                    Text(aiFeedback.revisedOpening)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Use AI occasionally for a deeper coaching pass on stronger transcripts. This is kept manual so costs stay controlled.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let aiError {
+                Text(aiError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            Button {
+                Task { await requestDeeperFeedback() }
+            } label: {
+                HStack {
+                    if isRequestingAIFeedback {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(aiFeedback == nil ? "Get Deeper Feedback" : "Refresh AI Feedback")
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(canRequestAIFeedback ? Color.blue : Color.gray.opacity(0.35), in: Capsule())
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canRequestAIFeedback || isRequestingAIFeedback)
+        }
+    }
+
+    private var transcriptPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Transcript")
+                .font(.headline)
+            Text(transcript)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .lineLimit(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(14)
+                .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+
+    private var xpPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(currentLevel)
+                Spacer()
+                Text(nextLevel)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            ProgressView(value: progress)
+                .tint(.blue)
+
+            HStack {
+                Text("\(displayedXP) XP")
+                Spacer()
+                Text("\(xpToNext) to level up")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: 8) {
+            Button("Choose Another Mode") { onPracticeAgain() }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(Color.blue, in: Capsule())
+                .foregroundStyle(.white)
+
+            Button("Home") { onHome() }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private func setup() {
+        guard !didApplyXP else { return }
+        didApplyXP = true
+        aiFeedback = recentSessions.first?.aiCoachFeedback
+        displayedXP = profile.xp
+        currentLevel = ProfileManager.levelTitle(forXP: profile.xp)
+        nextLevel = ProfileManager.levelTitle(forXP: ((profile.xp / 1000) + 1) * 1000)
+        xpToNext = ProfileManager.xpNeededToNextLevel(forXP: profile.xp)
+        progress = ProfileManager.progressTowardsNextLevel(forXP: profile.xp)
 
         profile.addXP(xpEarned)
+        animateXP(to: profile.xp)
+        animateSegments()
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showBronze = progressSegments > 0 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { showSilver = progressSegments > 1 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showGold = progressSegments > 2 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { showFiller = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            showScore = true
-            animateScore()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            showXP = true
-            animateXPEarned()
-            animateProgress()
+    private var canRequestAIFeedback: Bool {
+        aiSettings.canRequestAnalysis && latestSessionID != nil && String(transcript.characters).split(whereSeparator: \.isWhitespace).count >= 20
+    }
+
+    private func requestDeeperFeedback() async {
+        guard let sessionID = latestSessionID else { return }
+        aiError = nil
+        isRequestingAIFeedback = true
+        defer { isRequestingAIFeedback = false }
+
+        do {
+            let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            let feedback = try await aiCoachService.generateDeeperFeedback(
+                input: AICoachSessionInput(
+                    transcript: String(transcript.characters),
+                    mode: recentSessions.first?.mode ?? .timed,
+                    score: score,
+                    fillerCount: fillerCount,
+                    duration: duration
+                ),
+                profile: coachingProfileStore.profile,
+                plan: plan
+            )
+            sessionStore.saveAIFeedback(sessionID: sessionID, feedback: feedback)
+            aiFeedback = feedback
+        } catch {
+            aiError = error.localizedDescription
         }
     }
 
-    private func animateScore() {
-        guard let score else { return }
+    private func animateXP(to endXP: Int) {
         Task {
-            for i in 0...score {
-                await MainActor.run { displayedScore = i }
-                try? await Task.sleep(for: .milliseconds(80))
-            }
-        }
-    }
-
-    private func animateXPEarned() {
-        Task {
-            for i in 0...xpEarned {
-                await MainActor.run { displayedEarnedXP = i }
-                try? await Task.sleep(for: .milliseconds(5))
-            }
-        }
-    }
-
-    private func animateProgress() {
-        let endXP = startXP + xpEarned
-        Task {
+            let startXP = displayedXP
             for xp in stride(from: startXP, through: endXP, by: 1) {
                 await MainActor.run {
                     displayedXP = xp
                     progress = ProfileManager.progressTowardsNextLevel(forXP: xp)
                 }
-                try? await Task.sleep(for: .milliseconds(5))
+                try? await Task.sleep(for: .milliseconds(6))
             }
             await MainActor.run {
                 currentLevel = ProfileManager.levelTitle(forXP: endXP)
                 nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                 xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
             }
+        }
+    }
+
+    private func animateSegments() {
+        guard !scoreBreakdown.isEmpty else { return }
+        Task {
+            for index in 1...scoreBreakdown.count {
+                try? await Task.sleep(for: .milliseconds(180))
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        visibleSegments = index
+                    }
+                }
+            }
+        }
+    }
+
+    private func color(for tintName: String) -> Color {
+        switch tintName {
+        case "blue": return .blue
+        case "orange": return .orange
+        case "green": return .green
+        case "red": return .red
+        case "purple": return .purple
+        default: return .primary
         }
     }
 }
@@ -194,14 +506,26 @@ struct SummaryView: View {
 #if canImport(SwiftUI)
 #Preview {
     SummaryView(
-        transcript: AttributedString("Example"),
-        fillerCount: 0,
-        duration: 0,
-        score: 7,
+        transcript: AttributedString("This was a concise practice answer with a strong opening, clear middle, and a tidy finish."),
+        fillerCount: 1,
+        duration: 28,
+        score: 8,
         progressSegments: 3,
-        xpEarned: 70,
-        showDuration: false,
-        onPracticeAgain: {}
+        xpEarned: 74,
+        practiceTitle: "Timed Practice • Medium",
+        feedbackOverride: "Clear answer overall. Push for a little more depth or time on the next rep.",
+        headlineOverride: "Solid response",
+        scoreBreakdown: [
+            PracticeScoreSegment(title: "Depth", value: "+2", tintName: "blue"),
+            PracticeScoreSegment(title: "Content", value: "+3", tintName: "orange"),
+            PracticeScoreSegment(title: "Pace", value: "+2", tintName: "green"),
+            PracticeScoreSegment(title: "Filler penalty", value: "-1", tintName: "red")
+        ],
+        insights: [
+            "You used fewer filler words than your recent average.",
+            "You stayed with the answer longer than your recent average.",
+            "Your pace was calm. Keep that control while expanding the middle of the answer."
+        ]
     )
 }
 #endif
