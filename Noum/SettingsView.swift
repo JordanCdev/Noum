@@ -99,6 +99,8 @@ struct SettingsView: View {
                 settingsRow(title: "Primary goal", value: profile.primaryGoal.title)
                 settingsRow(title: "Challenge", value: profile.biggestChallenge.title)
                 settingsRow(title: "Desired result", value: profile.desiredOutcome.title)
+                settingsRow(title: "Voice target", value: profile.speakingStyleGoal.title)
+                settingsRow(title: "Style brief", value: profile.styleReference)
                 settingsRow(title: "Starting point", value: profile.confidenceLevel.title)
                 if !profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     settingsRow(title: "Coaching brief", value: profile.coachingBrief)
@@ -128,28 +130,20 @@ struct SettingsView: View {
             Text("AI Coach")
                 .font(.headline)
 
-            Text("Keep AI as an occasional deeper-feedback layer rather than something that runs after every session.")
+            Text("Deeper feedback runs selectively after stronger sessions and each result is saved, so the same session is not billed twice.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Picker("Provider", selection: $aiSettings.provider) {
-                ForEach(AIProvider.allCases) { provider in
-                    Text(provider.title).tag(provider)
-                }
-            }
-            .pickerStyle(.segmented)
+            settingsRow(
+                title: "Status",
+                value: aiSettings.activeProvider == nil ? "Not configured" : "Ready"
+            )
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Monthly AI feedback budget: \(aiSettings.monthlyAnalysisLimit)")
-                    .font(.subheadline.weight(.semibold))
-                Stepper(value: $aiSettings.monthlyAnalysisLimit, in: 5...100, step: 5) {
-                    Text("\(aiSettings.remainingAnalyses) analyses remaining this month")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("The app chooses the model internally and keeps a protected monthly cap in place to avoid abuse.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            Text("Set `OPENAI_API_KEY` or `DEEPSEEK_API_KEY` in your Xcode scheme environment, or create a local `AIConfig.plist` from `AIConfig.plist.example` and keep it out of git.")
+            Text("For local development, add `GEMINI_API_KEY` to `AIConfig.plist`. The app can fall back to `OPENAI_API_KEY` or `DEEPSEEK_API_KEY` if needed.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -176,6 +176,9 @@ struct ContentView: View {
                 if let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile) {
                     focusRow(title: "Current focus", value: plan.currentFocus)
                     focusRow(title: "Suggested drill", value: plan.suggestedDrill)
+                    if let profile = coachingProfileStore.profile {
+                        focusRow(title: "Voice target", value: "\(profile.speakingStyleGoal.title) • \(profile.styleReference)")
+                    }
                     focusRow(title: "Coach note", value: plan.encouragement)
                 } else {
                     focusRow(

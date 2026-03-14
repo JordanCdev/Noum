@@ -7,6 +7,7 @@ private enum OnboardingStep: Int, CaseIterable {
     case priority
     case confidence
     case outcome
+    case style
     case brief
 
     var title: String {
@@ -16,6 +17,7 @@ private enum OnboardingStep: Int, CaseIterable {
         case .priority: return "What should the coaching prioritise first?"
         case .confidence: return "How would you describe your speaking confidence today?"
         case .outcome: return "What should a stronger result feel like?"
+        case .style: return "What kind of voice or presence do you want to build?"
         case .brief: return "Finish this sentence for me."
         }
     }
@@ -27,6 +29,7 @@ private enum OnboardingStep: Int, CaseIterable {
         case .priority: return "We’ll use this to decide what kind of improvement to reinforce first."
         case .confidence: return "This sets the tone of the coaching, not a label you’re stuck with."
         case .outcome: return "Think about the version of your speaking you want people to notice."
+        case .style: return "Choose the voice you want Noum to coach you toward, then make it specific in your own words."
         case .brief: return "Be specific. This gives the coaching its clearest target."
         }
     }
@@ -43,6 +46,8 @@ struct CoachingOnboardingView: View {
     @State private var primaryGoal: CoachingPriority = .reduceFillers
     @State private var confidenceLevel: ConfidenceLevel = .rebuilding
     @State private var desiredOutcome: SpeakingOutcome = .concise
+    @State private var speakingStyleGoal: SpeakingStyleGoal = .authoritative
+    @State private var styleReference: String = ""
     @State private var coachingBrief: String = ""
 
     private var isLastStep: Bool {
@@ -52,6 +57,9 @@ struct CoachingOnboardingView: View {
     private var canAdvance: Bool {
         if step == .brief {
             return coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines).count >= 12
+        }
+        if step == .style {
+            return styleReference.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
         }
         return true
     }
@@ -136,6 +144,8 @@ struct CoachingOnboardingView: View {
                     selectionList(options: ConfidenceLevel.allCases, selectedID: confidenceLevel.id) { confidenceLevel = $0 }
                 case .outcome:
                     selectionList(options: SpeakingOutcome.allCases, selectedID: desiredOutcome.id) { desiredOutcome = $0 }
+                case .style:
+                    styleComposer
                 case .brief:
                     briefComposer
                 }
@@ -164,6 +174,23 @@ struct CoachingOnboardingView: View {
         }
     }
 
+    private var styleComposer: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            selectionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal.id) { speakingStyleGoal = $0 }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Describe the voice you want")
+                    .font(.headline)
+                TextField("Example: like a calm king, more authority, less apologetic", text: $styleReference, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...5)
+                Text("This is required so Noum can compare your current language with the style you want to grow into.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var navigationBar: some View {
         HStack(spacing: 12) {
             if step.rawValue > 0 {
@@ -188,6 +215,8 @@ struct CoachingOnboardingView: View {
                             confidenceLevel: confidenceLevel,
                             biggestChallenge: biggestChallenge,
                             desiredOutcome: desiredOutcome,
+                            speakingStyleGoal: speakingStyleGoal,
+                            styleReference: styleReference.trimmingCharacters(in: .whitespacesAndNewlines),
                             coachingBrief: coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
                         )
                     )
@@ -243,6 +272,8 @@ struct CoachingOnboardingView: View {
             primaryGoal = profile.primaryGoal
             confidenceLevel = profile.confidenceLevel
             desiredOutcome = profile.desiredOutcome
+            speakingStyleGoal = profile.speakingStyleGoal
+            styleReference = profile.styleReference
             coachingBrief = profile.coachingBrief
         }
     }
@@ -265,6 +296,10 @@ extension SpeakingChallenge: CustomStringConvertible {
 }
 
 extension SpeakingOutcome: CustomStringConvertible {
+    var description: String { title }
+}
+
+extension SpeakingStyleGoal: CustomStringConvertible {
     var description: String { title }
 }
 #endif

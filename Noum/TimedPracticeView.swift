@@ -9,6 +9,7 @@ struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speechVM = SpeechRecognizerViewModel()
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var question: String = PracticeTopics.random()
     @State private var thinkingCountdown: Int = 15
     @State private var speakingCountdown: Int = 60
@@ -61,7 +62,7 @@ struct TimedPracticeView: View {
                 },
                 onPracticeAgain: {
                     showSummary = false
-                    dismiss(times: 2)
+                    startThinkingCountdown()
                 }
             )
         }
@@ -277,7 +278,8 @@ struct TimedPracticeView: View {
                     fillerCount: speechVM.fillerWordCount,
                     duration: speechVM.lastSessionDuration,
                     difficulty: practiceSettings.timedDifficulty,
-                    recentSessions: speechVM.pastSessions
+                    recentSessions: speechVM.pastSessions,
+                    profile: coachingProfileStore.profile
                 )
                 evaluation = result
                 speechVM.annotateLatestSession(

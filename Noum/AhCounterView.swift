@@ -8,7 +8,9 @@ import SwiftUI
 struct AhCounterView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var showSummary = false
+    @State private var evaluation: PracticeEvaluation?
 
     var body: some View {
         ZStack {
@@ -78,10 +80,14 @@ struct AhCounterView: View {
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
-                score: nil,
+                score: evaluation?.score,
                 progressSegments: 0,
-                xpEarned: 0,
+                xpEarned: evaluation?.xpEarned ?? 0,
                 showDuration: false,
+                feedbackOverride: evaluation?.feedback,
+                headlineOverride: evaluation?.headline,
+                scoreBreakdown: evaluation?.segments ?? [],
+                insights: evaluation?.insights ?? [],
                 onSelectPracticeMode: {
                     showSummary = false
                     dismiss(times: 2)
@@ -92,7 +98,7 @@ struct AhCounterView: View {
                 },
                 onPracticeAgain: {
                     showSummary = false
-                    dismiss(times: 2)
+                    speechVM.resetCurrentSession()
                 }
             )
         }
@@ -122,16 +128,20 @@ struct AhCounterView: View {
         Task {
             try? await Task.sleep(for: .milliseconds(650))
             await MainActor.run {
+                let result = PracticeEvaluator.evaluateAhCounterPractice(
+                    transcript: speechVM.transcribedText,
+                    fillerCount: speechVM.fillerWordCount,
+                    duration: speechVM.lastSessionDuration,
+                    recentSessions: speechVM.pastSessions,
+                    profile: coachingProfileStore.profile
+                )
+                evaluation = result
                 speechVM.annotateLatestSession(
-                    headline: speechVM.fillerWordCount <= 2 ? "Good awareness" : "Useful awareness rep",
-                    insights: [
-                        speechVM.fillerWordCount <= 2
-                            ? "You kept filler words relatively low in a free-form speaking rep."
-                            : "This rep surfaced your filler habits clearly, which is useful coaching data."
-                    ],
-                    coachSummary: speechVM.fillerWordCount <= 2
-                        ? "A solid awareness rep. Keep noticing where silence can replace filler words."
-                        : "This was a productive awareness drill. Notice which moments triggered the filler words and rehearse cleaner pauses."
+                    score: result.score,
+                    xpEarned: result.xpEarned,
+                    headline: result.headline,
+                    insights: result.insights,
+                    coachSummary: result.feedback
                 )
                 showSummary = true
             }

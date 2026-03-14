@@ -8,11 +8,13 @@ import SwiftUI
 struct PracticeModeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var question: String = PracticeTopics.random()
     @State private var thinkingCountdown: Int = 15
     @State private var speakingCountdown: Int = 60
     @State private var showSummary = false
-    @State private var score: Int = 0
+    @State private var evaluation: PracticeEvaluation?
+    @State private var countdownTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -51,10 +53,16 @@ struct PracticeModeView: View {
                 transcript: speechVM.highlightedText,
                 fillerCount: speechVM.fillerWordCount,
                 duration: speechVM.lastSessionDuration,
-                score: score,
+                score: evaluation?.score,
                 progressSegments: 0,
-                xpEarned: 0,
+                xpEarned: evaluation?.xpEarned ?? 0,
                 showDuration: false,
+                practiceTitle: "Legacy Timed Practice",
+                feedbackOverride: evaluation?.feedback,
+                headlineOverride: evaluation?.headline,
+                scoreBreakdown: evaluation?.segments ?? [],
+                insights: evaluation?.insights ?? [],
+                recentSessions: speechVM.pastSessions,
                 onSelectPracticeMode: {
                     showSummary = false
                     dismiss(times: 2)
@@ -65,13 +73,14 @@ struct PracticeModeView: View {
                 },
                 onPracticeAgain: {
                     showSummary = false
-                    dismiss(times: 2)
+                    startThinkingCountdown()
                 }
             )
         }
     }
 
     private func startThinkingCountdown() {
+        reset()
         Task {
             for i in stride(from: thinkingCountdown, through: 1, by: -1) {
                 await MainActor.run { thinkingCountdown = i }
@@ -85,33 +94,51 @@ struct PracticeModeView: View {
     private func startRecording() {
         speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
-        Task {
+        countdownTask?.cancel()
+        countdownTask = Task {
             for i in stride(from: speakingCountdown, through: 1, by: -1) {
                 await MainActor.run { speakingCountdown = i }
                 try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
             }
             stopSession()
         }
     }
 
     private func stopSession() {
+        countdownTask?.cancel()
         speechVM.stopRecording()
-        computeScore()
-        showSummary = true
-    }
-
-    private func computeScore() {
-        let base = 10
-        let penalty = speechVM.fillerWordCount
-        score = max(1, min(10, base - penalty))
+        Task {
+            try? await Task.sleep(for: .milliseconds(650))
+            await MainActor.run {
+                let result = PracticeEvaluator.evaluateTimedPractice(
+                    transcript: speechVM.transcribedText,
+                    fillerCount: speechVM.fillerWordCount,
+                    duration: speechVM.lastSessionDuration,
+                    difficulty: .easy,
+                    recentSessions: speechVM.pastSessions,
+                    profile: coachingProfileStore.profile
+                )
+                evaluation = result
+                speechVM.annotateLatestSession(
+                    score: result.score,
+                    xpEarned: result.xpEarned,
+                    headline: result.headline,
+                    insights: result.insights,
+                    coachSummary: result.feedback
+                )
+                showSummary = true
+            }
+        }
     }
 
     private func reset() {
+        countdownTask?.cancel()
         speechVM.resetCurrentSession()
         question = PracticeTopics.random()
         thinkingCountdown = 15
         speakingCountdown = 60
-        score = 0
+        evaluation = nil
     }
 
     private func dismiss(times: Int) {

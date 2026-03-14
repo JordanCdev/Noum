@@ -278,7 +278,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         let duration = Date().timeIntervalSince(sessionStart ?? Date())
         lastSessionDuration = duration
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, duration >= 5 else {
+        guard !trimmed.isEmpty, duration >= 1 else {
             sessionStart = nil
             return
         }

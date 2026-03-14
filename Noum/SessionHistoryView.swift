@@ -40,7 +40,11 @@ struct SessionHistoryView: View {
                                 NavigationLink {
                                     SessionHistoryDetailView(
                                         session: session,
-                                        insights: CoachingPlanner.sessionInsights(for: session, comparedTo: sessionStore.sessions)
+                                        insights: CoachingPlanner.sessionInsights(
+                                            for: session,
+                                            comparedTo: sessionStore.sessions,
+                                            profile: coachingProfileStore.profile
+                                        )
                                     )
                                 } label: {
                                     sessionCard(session)
@@ -87,12 +91,14 @@ struct SessionHistoryView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
-                statPill(title: "Focus", value: shortFocusText(from: plan.currentFocus), tint: .blue)
-                statPill(title: "Drill", value: shortDrillText(from: plan.suggestedDrill), tint: .orange)
+            LazyVGrid(columns: snapshotColumns, spacing: 10) {
+                snapshotCard(title: "Focus", value: shortFocusText(from: plan.currentFocus), tint: .blue)
+                snapshotCard(title: "Drill", value: shortDrillText(from: plan.suggestedDrill), tint: .orange)
                 if let strongestMode = plan.strongestMode {
-                    statPill(title: "Best mode", value: label(for: strongestMode), tint: .green)
+                    snapshotCard(title: "Best mode", value: label(for: strongestMode), tint: .green)
                 }
+                snapshotCard(title: "Pace", value: "\(Int(plan.hiddenBaseline.averageWordsPerMinute.rounded())) WPM", tint: .purple)
+                snapshotCard(title: "Current voice", value: plan.hiddenBaseline.currentIdentity, tint: .pink)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,6 +130,7 @@ struct SessionHistoryView: View {
                 statPill(title: "Mode", value: label(for: session.mode), tint: .purple)
                 statPill(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
                 statPill(title: "Duration", value: "\(Int(session.duration))s", tint: .blue)
+                statPill(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
             }
 
             if let score = session.score {
@@ -152,6 +159,30 @@ struct SessionHistoryView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(tint.opacity(0.10), in: Capsule())
+    }
+
+    private var snapshotColumns: [GridItem] {
+        [
+            GridItem(.flexible(minimum: 0), spacing: 10),
+            GridItem(.flexible(minimum: 0), spacing: 10)
+        ]
+    }
+
+    private func snapshotCard(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(tint)
+                .lineLimit(3)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+        .padding(14)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func label(for mode: PracticeMode) -> String {
@@ -214,6 +245,7 @@ private struct SessionHistoryDetailView: View {
                         HStack(spacing: 10) {
                             metric(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
                             metric(title: "Duration", value: "\(Int(session.duration))s", tint: .blue)
+                            metric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
                             if let score = session.score {
                                 metric(title: "Score", value: "\(score)/10", tint: .green)
                             }
@@ -224,16 +256,14 @@ private struct SessionHistoryDetailView: View {
                     .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Coaching Notes")
+                        let identity = PracticeEvaluator.speakingIdentity(for: session.transcript, profile: CoachingProfileStore.shared.profile)
+                        Text("Speaking Identity")
                             .font(.headline)
-                        ForEach(Array(insights.enumerated()), id: \.offset) { index, insight in
-                            HStack(alignment: .top, spacing: 10) {
-                                Text("\(index + 1).")
-                                    .fontWeight(.semibold)
-                                Text(insight)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text(identity.identity)
+                            .font(.title3.weight(.bold))
+                        Text(identity.coachingNote)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(18)
@@ -241,7 +271,7 @@ private struct SessionHistoryDetailView: View {
 
                     if let aiFeedback = session.aiCoachFeedback {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("AI Coach")
+                            Text("Coach Read")
                                 .font(.headline)
                             Text("What you did well")
                                 .font(.subheadline.weight(.semibold))
@@ -266,6 +296,22 @@ private struct SessionHistoryDetailView: View {
                         .padding(18)
                         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(session.aiCoachFeedback == nil ? "Session Signals" : "Supporting Signals")
+                            .font(.headline)
+                        ForEach(Array(insights.prefix(session.aiCoachFeedback == nil ? 3 : 2).enumerated()), id: \.offset) { index, insight in
+                            HStack(alignment: .top, spacing: 10) {
+                                Text("\(index + 1).")
+                                    .fontWeight(.semibold)
+                                Text(insight)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Transcript")

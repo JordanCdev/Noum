@@ -6,7 +6,7 @@ import SwiftUI
 #if canImport(SwiftUI)
 private enum SummaryTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
-    case insights = "Insights"
+    case insights = "Coach"
     case transcript = "Transcript"
 
     var id: String { rawValue }
@@ -48,8 +48,19 @@ struct SummaryView: View {
 
     private let aiCoachService: AICoachServicing = AICoachService()
 
+    private var transcriptText: String {
+        String(transcript.characters)
+    }
+
+    private var transcriptWordCount: Int {
+        transcriptText.split { !$0.isLetter && !$0.isNumber }.count
+    }
+
     private var scoreValue: Int {
-        score ?? max(1, 10 - fillerCount)
+        if let score { return score }
+        if duration < 4 || transcriptWordCount < 4 { return 1 }
+        if duration < 8 || transcriptWordCount < 8 { return max(2, 5 - fillerCount) }
+        return max(3, min(8, 7 - fillerCount))
     }
 
     private var headline: String {
@@ -64,11 +75,22 @@ struct SummaryView: View {
 
     private var feedback: String {
         if let feedbackOverride { return feedbackOverride }
-        switch fillerCount {
-        case 0...1: return "Excellent control. Keep bringing the same calm pacing to harder prompts."
-        case 2...3: return "You were close to a clean round. Tighten your transitions."
-        case 4...6: return "The answer had shape, but filler words are still carrying too much load."
-        default: return "Slow down and let pauses do the work instead of filler words."
+        if duration < 4 || transcriptWordCount < 4 {
+            return "That rep ended before the answer really began. Go again with a clear opening, one point, and a clean finish."
+        }
+        if duration < 8 || transcriptWordCount < 8 {
+            return "This was too brief to show control yet. Push the next answer further so the idea has time to land."
+        }
+
+        switch scoreValue {
+        case 8...10:
+            return "A convincing rep. Keep that same control while raising the difficulty."
+        case 6...7:
+            return "There is a solid response in here. One stronger opening sentence would make it feel more complete."
+        case 4...5:
+            return "The idea started to form, but it needs more structure and follow-through."
+        default:
+            return "Go again straight away and aim for a steadier opening with one clear supporting point."
         }
     }
 
@@ -111,12 +133,17 @@ struct SummaryView: View {
         return Array(messages.prefix(3))
     }
 
+    private var lightweightSignals: [String] {
+        Array(derivedInsights.prefix(aiFeedback == nil ? 2 : 1))
+    }
+
     private var latestSessionID: UUID? {
-        recentSessions.first?.id
+        recentSessions.first?.id ?? sessionStore.sessions.first?.id
     }
 
     var body: some View {
         GeometryReader { geometry in
+            let isCompactHeight = geometry.size.height < 760
             ZStack {
                 LinearGradient(
                     colors: [
@@ -129,18 +156,19 @@ struct SummaryView: View {
                 )
                 .ignoresSafeArea()
 
-                VStack(spacing: 12) {
+                VStack(spacing: isCompactHeight ? 10 : 12) {
                     headerCard
                     metricRow
                     tabPicker
                     detailPanel
-                        .frame(maxHeight: max(220, geometry.size.height * 0.34))
+                        .frame(minHeight: isCompactHeight ? 210 : 240)
+                        .frame(maxHeight: max(isCompactHeight ? 240 : 260, geometry.size.height * (isCompactHeight ? 0.31 : 0.34)))
                     xpPanel
                     actionButtons
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 18)
+                .padding(.top, isCompactHeight ? 8 : 12)
+                .padding(.bottom, isCompactHeight ? 12 : 18)
             }
         }
         .navigationTitle("Summary")
@@ -166,7 +194,7 @@ struct SummaryView: View {
 
             HStack(alignment: .lastTextBaseline, spacing: 10) {
                 Text("\(scoreValue)/10")
-                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .font(.system(size: compactSummary ? 32 : 38, weight: .bold, design: .rounded))
                     .foregroundStyle(scoreAccent)
                 Text(headline)
                     .font(.headline)
@@ -179,7 +207,7 @@ struct SummaryView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(compactSummary ? 16 : 18)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
@@ -203,7 +231,7 @@ struct SummaryView: View {
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(compactSummary ? 12 : 14)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
@@ -229,7 +257,7 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var detailPanel: some View {
-        Group {
+        ScrollView(showsIndicators: false) {
             switch selectedTab {
             case .overview:
                 overviewPanel
@@ -240,7 +268,8 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(18)
+        .scrollBounceBehavior(.basedOnSize)
+        .padding(compactSummary ? 16 : 18)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
@@ -264,32 +293,38 @@ struct SummaryView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var insightsPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Insights")
+            Text("Coach Read")
                 .font(.headline)
-            ForEach(Array(derivedInsights.enumerated()), id: \.offset) { index, insight in
-                HStack(alignment: .top, spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.blue.opacity(0.14))
-                            .frame(width: 24, height: 24)
-                        Text("\(index + 1)")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.blue)
+            aiCoachSection
+            if !lightweightSignals.isEmpty {
+                Divider()
+                    .padding(.vertical, 4)
+                Text(aiFeedback == nil ? "Immediate signals" : "Signal checks")
+                    .font(.headline)
+                ForEach(Array(lightweightSignals.enumerated()), id: \.offset) { index, insight in
+                    HStack(alignment: .top, spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.14))
+                                .frame(width: 24, height: 24)
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.blue)
+                        }
+                        Text(insight)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    Text(insight)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
             }
-            aiCoachSection
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -326,7 +361,7 @@ struct SummaryView: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Text("Use AI occasionally for a deeper coaching pass on stronger transcripts. This is kept manual so costs stay controlled.")
+                Text("Noum can generate a deeper coach read from this transcript. The local checks below are only immediate signals, not the full coaching pass.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -345,16 +380,16 @@ struct SummaryView: View {
                         ProgressView()
                             .tint(.white)
                     }
-                    Text(aiFeedback == nil ? "Get Deeper Feedback" : "Refresh AI Feedback")
+                    Text(aiFeedback == nil ? "Generate Coach Read" : "Refresh Coach Read")
                         .font(.headline)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(canRequestAIFeedback ? Color.blue : Color.gray.opacity(0.35), in: Capsule())
+                .background(isRequestingAIFeedback ? Color.gray.opacity(0.35) : Color.blue, in: Capsule())
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
-            .disabled(!canRequestAIFeedback || isRequestingAIFeedback)
+            .disabled(isRequestingAIFeedback)
         }
     }
 
@@ -365,11 +400,12 @@ struct SummaryView: View {
             Text(transcript)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .lineLimit(10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(14)
                 .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var xpPanel: some View {
@@ -393,23 +429,31 @@ struct SummaryView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .padding(14)
+        .padding(compactSummary ? 12 : 14)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var actionButtons: some View {
         VStack(spacing: 8) {
-            Button("Choose Another Mode") { onPracticeAgain() }
+            Button(scoreValue <= 5 ? "Practice Again Now" : "Practice Again") { onPracticeAgain() }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .padding(.vertical, compactSummary ? 13 : 15)
                 .background(Color.blue, in: Capsule())
                 .foregroundStyle(.white)
 
-            Button("Home") { onHome() }
+            Button("Choose Another Mode") { onSelectPracticeMode() }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
+
+            Button("Home") { onHome() }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
+    }
+
+    private var compactSummary: Bool {
+        showDuration ? duration <= 25 : transcriptWordCount <= 18
     }
 
     private func setup() {
@@ -428,24 +472,44 @@ struct SummaryView: View {
     }
 
     private var canRequestAIFeedback: Bool {
-        aiSettings.canRequestAnalysis && latestSessionID != nil && String(transcript.characters).split(whereSeparator: \.isWhitespace).count >= 20
+        aiSettings.canRequestAnalysis && latestSessionID != nil
     }
 
     private func requestDeeperFeedback() async {
-        guard let sessionID = latestSessionID else { return }
         aiError = nil
+        guard aiSettings.canRequestAnalysis else {
+            aiError = aiSettings.activeProvider == nil
+                ? "AI feedback is not configured yet."
+                : "AI feedback is temporarily unavailable right now."
+            return
+        }
+
+        guard let sessionID = latestSessionID else {
+            aiError = "This session has not been saved yet. Finish one more rep and try again."
+            return
+        }
+
         isRequestingAIFeedback = true
         defer { isRequestingAIFeedback = false }
 
         do {
             let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            let styleSnapshot = PracticeEvaluator.speakingIdentity(
+                for: String(transcript.characters),
+                profile: coachingProfileStore.profile
+            )
             let feedback = try await aiCoachService.generateDeeperFeedback(
                 input: AICoachSessionInput(
                     transcript: String(transcript.characters),
                     mode: recentSessions.first?.mode ?? .timed,
                     score: score,
                     fillerCount: fillerCount,
-                    duration: duration
+                    duration: duration,
+                    wordsPerMinute: PracticeEvaluator.paceSnapshot(
+                        forTranscript: String(transcript.characters),
+                        duration: duration
+                    ).wordsPerMinute,
+                    speakingIdentity: styleSnapshot.identity
                 ),
                 profile: coachingProfileStore.profile,
                 plan: plan
