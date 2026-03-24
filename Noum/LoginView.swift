@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(AuthenticationServices)
+import AuthenticationServices
+#endif
 #if canImport(GoogleSignInSwift)
 import GoogleSignInSwift
 #endif
@@ -13,26 +16,19 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.96, green: 0.93, blue: 0.88),
-                        Color.white,
-                        Color(red: 0.90, green: 0.95, blue: 0.99)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                background
 
-                VStack(spacing: 24) {
-                    Spacer()
-                    headerCard
-                    signInCard
+                VStack(spacing: 0) {
+                    Spacer(minLength: 40)
+
+                    content
+                        .padding(.horizontal, 24)
+
                     Spacer()
                 }
-                .padding(20)
             }
             .navigationTitle("")
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onChange(of: authManager.isSignedIn) { _, signedIn in
             if signedIn { dismiss() }
@@ -47,68 +43,94 @@ struct LoginView: View {
         }
     }
 
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Speak with less friction")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+    private var background: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.95, green: 0.96, blue: 0.99),
+                    Color(red: 0.99, green: 0.98, blue: 0.96),
+                    Color.white
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            Text("Welcome to Noum")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
+            Circle()
+                .fill(Color(red: 0.24, green: 0.47, blue: 0.86).opacity(0.08))
+                .frame(width: 240, height: 240)
+                .blur(radius: 30)
+                .offset(x: 130, y: -250)
 
-            Text("Practice answers out loud, catch filler words in real time, and build repeatable speaking confidence.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            Circle()
+                .fill(Color(red: 0.94, green: 0.73, blue: 0.48).opacity(0.10))
+                .frame(width: 220, height: 220)
+                .blur(radius: 32)
+                .offset(x: -120, y: 260)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
     }
 
-    private var signInCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label("Continue with your account", systemImage: "person.crop.circle.badge.checkmark")
-                .font(.headline)
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Noum")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
 
-            Text("Google sign-in keeps your progress tied to one identity across sessions on this device.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Text("Speak with more clarity.")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(red: 0.11, green: 0.15, blue: 0.24))
+                    .fixedSize(horizontal: false, vertical: true)
 
-            signInButtons
-
-            Text("By continuing, you’re entering the practice workspace for this device.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-    }
-
-    private var signInButtons: some View {
-        VStack(spacing: 14) {
-#if canImport(GoogleSignInSwift)
-            GoogleSignInButton(action: { authManager.startGoogleSignIn() })
-                .frame(height: 50)
-#elseif canImport(GoogleSignIn)
-            Button("Sign in with Google") {
-                authManager.startGoogleSignIn()
+                Text("Track filler words, practice out loud, and get coaching tuned to how you want to sound.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-            .background(Color.blue, in: Capsule())
-            .foregroundStyle(.white)
-#else
-            Button("Sign in with Google") { }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(Color.blue, in: Capsule())
-                .foregroundStyle(.white)
+
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(spacing: 12) {
+#if canImport(AuthenticationServices)
+                    SignInWithAppleButton(.continue) { request in
+                        request.requestedScopes = [.fullName]
+                    } onCompletion: { result in
+                        authManager.handleAppleSignIn(result)
+                    }
+                    .frame(height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 #endif
+
+                    if authManager.isGoogleSignInAvailable {
+                        googleButton
+                    }
+                }
+            }
+            .padding(22)
+            .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.78), lineWidth: 1)
+            )
         }
+        .frame(maxWidth: 460)
+    }
+
+    private var googleButton: some View {
+        Button {
+            authManager.startGoogleSignIn()
+        } label: {
+            HStack(spacing: 8) {
+                Text("Use Google instead")
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "arrow.right")
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
     }
 }
 #endif

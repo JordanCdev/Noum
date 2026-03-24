@@ -63,7 +63,7 @@ struct ContentView: View {
         }
         .fullScreenCover(
             isPresented: .init(
-                get: { authManager.isSignedIn && coachingProfileStore.needsOnboarding && !isUITesting },
+                get: { authManager.isSignedIn && coachingProfileStore.shouldPresentInitialOnboarding && !isUITesting },
                 set: { _ in }
             )
         ) {
@@ -177,7 +177,11 @@ struct ContentView: View {
                     focusRow(title: "Current focus", value: plan.currentFocus)
                     focusRow(title: "Suggested drill", value: plan.suggestedDrill)
                     if let profile = coachingProfileStore.profile {
-                        focusRow(title: "Voice target", value: "\(profile.speakingStyleGoal.title) • \(profile.styleReference)")
+                        let reference = profile.personalGoalReference
+                        focusRow(
+                            title: "Voice target",
+                            value: reference.isEmpty ? profile.speakingStyleGoal.title : "\(profile.speakingStyleGoal.title) • \(reference)"
+                        )
                     }
                     focusRow(title: "Coach note", value: plan.encouragement)
                 } else {

@@ -100,10 +100,9 @@ struct SettingsView: View {
                 settingsRow(title: "Challenge", value: profile.biggestChallenge.title)
                 settingsRow(title: "Desired result", value: profile.desiredOutcome.title)
                 settingsRow(title: "Voice target", value: profile.speakingStyleGoal.title)
-                settingsRow(title: "Style brief", value: profile.styleReference)
                 settingsRow(title: "Starting point", value: profile.confidenceLevel.title)
-                if !profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    settingsRow(title: "Coaching brief", value: profile.coachingBrief)
+                if !profile.personalGoalReference.isEmpty {
+                    settingsRow(title: "Goal", value: profile.personalGoalReference)
                 }
             } else {
                 Text("Complete your coaching profile so Noum can tailor drills and guidance to your goals.")
@@ -160,10 +159,14 @@ struct SettingsView: View {
             if authManager.isSignedIn {
                 if let name = authManager.currentAccountName {
                     settingsRow(title: "Signed in as", value: name)
-                } else if let id = authManager.currentAccountID {
+                }
+
+                if let provider = authManager.currentAuthProviderTitle {
+                    settingsRow(title: "Provider", value: provider)
+                }
+
+                if authManager.currentAccountName == nil, let id = authManager.currentAccountID {
                     settingsRow(title: "Account ID", value: id)
-                } else {
-                    settingsRow(title: "Status", value: "Signed in")
                 }
             } else {
                 settingsRow(title: "Status", value: "Signed out")
@@ -179,7 +182,7 @@ struct SettingsView: View {
             Text("Session")
                 .font(.headline)
 
-            Text("Use sign out if you want to disconnect the current Google account on this device.")
+            Text("Use sign out if you want to disconnect the current account on this device.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 

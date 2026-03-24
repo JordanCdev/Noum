@@ -132,6 +132,24 @@ enum SpeakingChallenge: String, CaseIterable, Codable, Identifiable {
         case .rushing: return "I speak too quickly under pressure"
         }
     }
+
+    var recommendedPriority: CoachingPriority {
+        switch self {
+        case .fillerWords: return .reduceFillers
+        case .rambling: return .moreConcise
+        case .freezing: return .thinkFaster
+        case .rushing: return .calmerDelivery
+        }
+    }
+
+    var goalPrompt: String {
+        switch self {
+        case .fillerWords: return "What do you want to say more cleanly when fillers usually creep in?"
+        case .rambling: return "What do you want to explain more clearly when your answer starts to drift?"
+        case .freezing: return "What situation do you want to handle more smoothly when you’re put on the spot?"
+        case .rushing: return "What do you want to deliver with more control when pressure speeds you up?"
+        }
+    }
 }
 
 enum SpeakingOutcome: String, CaseIterable, Codable, Identifiable {
@@ -183,6 +201,15 @@ enum SpeakingStyleGoal: String, CaseIterable, Codable, Identifiable {
         case .storytelling: return "sound vivid, engaging, and memorable"
         }
     }
+
+    var recommendedOutcome: SpeakingOutcome {
+        switch self {
+        case .authoritative, .concise: return .concise
+        case .warm, .executive: return .composed
+        case .persuasive: return .persuasive
+        case .storytelling: return .spontaneous
+        }
+    }
 }
 
 struct CoachingProfile: Codable, Equatable {
@@ -196,6 +223,14 @@ struct CoachingProfile: Codable, Equatable {
     var coachingBrief: String
 
     var isComplete: Bool { true }
+    var personalGoalReference: String {
+        let trimmedStyleReference = styleReference.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedStyleReference.isEmpty {
+            return trimmedStyleReference
+        }
+
+        return coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     enum CodingKeys: String, CodingKey {
         case speakingContext
@@ -319,11 +354,14 @@ final class CoachingProfileStore: ObservableObject {
     static let shared = CoachingProfileStore()
 
     @Published private(set) var profile: CoachingProfile?
+    @Published private(set) var shouldPresentInitialOnboarding = false
 
-    private let profileKey = "coachingProfile"
+    private let accountKey = "NoumAccountID"
+    private let profileKeyPrefix = "coachingProfile."
+    private let onboardingCompletionKeyPrefix = "coachingProfileOnboardingComplete."
 
     private init() {
-        profile = Self.loadProfile(forKey: profileKey)
+        reloadForCurrentAccount()
     }
 
     var needsOnboarding: Bool {
@@ -331,10 +369,57 @@ final class CoachingProfileStore: ObservableObject {
     }
 
     func save(_ profile: CoachingProfile) {
+        guard let accountID = currentAccountID else { return }
         self.profile = profile
         if let data = try? JSONEncoder().encode(profile) {
-            UserDefaults.standard.set(data, forKey: profileKey)
+            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
         }
+        UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
+        shouldPresentInitialOnboarding = false
+    }
+
+    func reloadForCurrentAccount() {
+        guard let accountID = currentAccountID else {
+            profile = nil
+            shouldPresentInitialOnboarding = false
+            return
+        }
+
+        let loadedProfile = Self.loadProfile(forKey: profileKey(for: accountID))
+        profile = loadedProfile
+
+        if loadedProfile != nil {
+            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
+        }
+
+        shouldPresentInitialOnboarding = false
+    }
+
+    func beginSession(isNewAccount: Bool) {
+        guard let accountID = currentAccountID else {
+            shouldPresentInitialOnboarding = false
+            return
+        }
+
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingCompletionKey(for: accountID))
+        shouldPresentInitialOnboarding = isNewAccount && !hasCompletedOnboarding && profile == nil
+    }
+
+    func endSession() {
+        profile = nil
+        shouldPresentInitialOnboarding = false
+    }
+
+    private func profileKey(for accountID: String) -> String {
+        "\(profileKeyPrefix)\(accountID)"
+    }
+
+    private func onboardingCompletionKey(for accountID: String) -> String {
+        "\(onboardingCompletionKeyPrefix)\(accountID)"
+    }
+
+    private var currentAccountID: String? {
+        KeychainHelper.load(key: accountKey)
     }
 
     private static func loadProfile(forKey key: String) -> CoachingProfile? {
@@ -876,8 +961,8 @@ enum PracticeEvaluator {
             case .storytelling:
                 targetNote = identity == "Story-led" ? "You already use story cues well. Add sharper structure so the message lands with more force." : "To sound more like a storyteller, introduce one concrete image or example earlier."
             }
-            if !profile.styleReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                targetNote += " Keep nudging the voice toward: \"\(profile.styleReference)\"."
+            if !profile.personalGoalReference.isEmpty {
+                targetNote += " Keep nudging the voice toward: \"\(profile.personalGoalReference)\"."
             }
         } else {
             targetNote = "Your speaking identity is becoming clearer. More reps will make the coaching more specific."
@@ -1558,7 +1643,7 @@ struct AICoachService: AICoachServicing {
         Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")
         Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
         Target speaking style: \(profile?.speakingStyleGoal.title ?? "unknown")
-        Style reference: \(profile?.styleReference ?? "none")
+        Personal goal reference: \(profile?.personalGoalReference ?? "none")
         Coaching brief: \(profile?.coachingBrief ?? "none")
         Current focus suggestion: \(plan?.currentFocus ?? "none")
         Suggested drill: \(plan?.suggestedDrill ?? "none")
