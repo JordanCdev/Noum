@@ -10,6 +10,9 @@ import CryptoKit
 #if canImport(AuthenticationServices)
 import AuthenticationServices
 #endif
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
 #if canImport(FirebaseAuth)
 import FirebaseAuth
 #endif
@@ -113,6 +116,11 @@ class AuthManager: ObservableObject {
                     return
                 }
 
+                guard self.isFirebaseAuthConfigured else {
+                    self.signInError = self.missingFirebaseConfigurationMessage
+                    return
+                }
+
                 let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
                 do {
                     let authResult = try await self.signInWithFirebase(credential: credential)
@@ -159,6 +167,10 @@ class AuthManager: ObservableObject {
     func startAnonymousSession() {
 #if canImport(FirebaseAuth)
         Task {
+            guard isFirebaseAuthConfigured else {
+                completeSignIn(accountID: UUID().uuidString, name: "Guest Speaker", provider: .guest)
+                return
+            }
             do {
                 let authResult = try await signInAnonymouslyWithFirebase()
                 await MainActor.run {
@@ -198,6 +210,12 @@ class AuthManager: ObservableObject {
                 let nonce = currentNonce
             else {
                 signInError = "Apple sign-in could not be completed. Please try again."
+                return
+            }
+
+            guard isFirebaseAuthConfigured else {
+                signInError = missingFirebaseConfigurationMessage
+                currentNonce = nil
                 return
             }
 
@@ -305,7 +323,9 @@ class AuthManager: ObservableObject {
         GIDSignIn.sharedInstance.signOut()
 #endif
 #if canImport(FirebaseAuth)
-        try? Auth.auth().signOut()
+        if isFirebaseAuthConfigured {
+            try? Auth.auth().signOut()
+        }
 #endif
         clearStoredSession()
         isSignedIn = false
@@ -324,7 +344,7 @@ class AuthManager: ObservableObject {
         Task {
             await BackendSyncManager.shared.deleteAccount(accountID: accountID, providerRawValue: providerRawValue)
 #if canImport(FirebaseAuth)
-            if let user = Auth.auth().currentUser {
+            if isFirebaseAuthConfigured, let user = Auth.auth().currentUser {
                 try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     user.delete { error in
                         if let error {
@@ -390,7 +410,7 @@ class AuthManager: ObservableObject {
 
     private func restoreFirebaseSessionIfAvailable() {
 #if canImport(FirebaseAuth)
-        guard let user = Auth.auth().currentUser else { return }
+        guard isFirebaseAuthConfigured, let user = Auth.auth().currentUser else { return }
         let provider = firebaseProvider(for: user) ?? authProvider ?? .google
         completeSignIn(accountID: user.uid, name: user.displayName ?? currentAccountName, provider: provider)
 #endif
@@ -466,6 +486,16 @@ class AuthManager: ObservableObject {
         }
 
         return "Google sign-in could not be completed right now. Please try again."
+    }
+#endif
+
+#if canImport(FirebaseAuth)
+    private var isFirebaseAuthConfigured: Bool {
+        FirebaseApp.app() != nil
+    }
+
+    private var missingFirebaseConfigurationMessage: String {
+        "Firebase is not configured on this Mac yet. Add your local GoogleService-Info.plist to the app target, then try again."
     }
 #endif
 

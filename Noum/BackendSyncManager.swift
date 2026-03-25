@@ -180,7 +180,7 @@ private extension BackendSyncManager {
 
     func syncFirebaseProfile(_ profile: CoachingProfile, accountID: String, providerRawValue: String) async {
         do {
-            try await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
+            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
             let data = try encodeDocument(profile)
             try await setDocument(
                 userDocument(accountID: accountID).collection("profile").document("main"),
@@ -192,7 +192,7 @@ private extension BackendSyncManager {
 
     func syncFirebaseXP(_ xp: Int, accountID: String, providerRawValue: String) async {
         do {
-            try await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
+            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
             try await setDocument(
                 userDocument(accountID: accountID).collection("progress").document("main"),
                 data: ["xp": xp],
@@ -203,7 +203,7 @@ private extension BackendSyncManager {
 
     func syncFirebaseSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
         do {
-            try await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
+            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
             let data = try encodeDocument(session)
             try await setDocument(
                 userDocument(accountID: accountID).collection("sessions").document(session.id.uuidString),
