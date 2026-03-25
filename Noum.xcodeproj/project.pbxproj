@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0B2EB16C2F7355070093625F /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB16B2F7355070093625F /* FirebaseAnalytics */; };
+		0B2EB16E2F7355070093625F /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB16D2F7355070093625F /* FirebaseStorage */; };
+		0B2EB1702F7357160093625F /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB16F2F7357160093625F /* FirebaseAuth */; };
+		0B2EB1722F7357200093625F /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB1712F7357200093625F /* FirebaseCore */; };
+		0B2EB1742F7357270093625F /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 0B2EB1732F7357270093625F /* FirebaseFirestore */; };
 		0B31DD952E04E1AB00DE8F71 /* AWSSDKIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0A0A0A0A0A0A0A0A0A0A0B /* AWSSDKIdentity */; };
 		0B31DD962E04E1AB00DE8F71 /* AWSTranscribeStreaming in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0B0B0B0B0B0B0B0B0B0B0B /* AWSTranscribeStreaming */; };
 		0B31DDB72E04EA9100DE8F71 /* AWSClientRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */; };
@@ -37,9 +42,22 @@
 		0B981F862D446110008F4158 /* NoumUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0B2EB1672F7350820093625F /* Exceptions for "Noum" folder in "Noum" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0B981F6B2D44610E008F4158 /* Noum */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0B981F6E2D44610E008F4158 /* Noum */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0B2EB1672F7350820093625F /* Exceptions for "Noum" folder in "Noum" target */,
+			);
 			path = Noum;
 			sourceTree = "<group>";
 		};
@@ -62,9 +80,14 @@
 			files = (
 				0B31DDB72E04EA9100DE8F71 /* AWSClientRuntime in Frameworks */,
 				0B31DD962E04E1AB00DE8F71 /* AWSTranscribeStreaming in Frameworks */,
+				0B2EB16C2F7355070093625F /* FirebaseAnalytics in Frameworks */,
+				0B2EB1742F7357270093625F /* FirebaseFirestore in Frameworks */,
 				0B31DD952E04E1AB00DE8F71 /* AWSSDKIdentity in Frameworks */,
+				0B2EB16E2F7355070093625F /* FirebaseStorage in Frameworks */,
 				0D222222222222222222222223 /* GoogleSignIn in Frameworks */,
 				0D333333333333333333333334 /* GoogleSignInSwift in Frameworks */,
+				0B2EB1722F7357200093625F /* FirebaseCore in Frameworks */,
+				0B2EB1702F7357160093625F /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -138,6 +161,11 @@
 				0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */,
 				0D222222222222222222222222 /* GoogleSignIn */,
 				0D333333333333333333333333 /* GoogleSignInSwift */,
+				0B2EB16B2F7355070093625F /* FirebaseAnalytics */,
+				0B2EB16D2F7355070093625F /* FirebaseStorage */,
+				0B2EB16F2F7357160093625F /* FirebaseAuth */,
+				0B2EB1712F7357200093625F /* FirebaseCore */,
+				0B2EB1732F7357270093625F /* FirebaseFirestore */,
 			);
 			productName = Noum;
 			productReference = 0B981F6C2D44610E008F4158 /* Noum.app */;
@@ -224,6 +252,7 @@
 			packageReferences = (
 				0C0A0A0A0A0A0A0A0A0A0A0A /* XCRemoteSwiftPackageReference "aws-sdk-swift" */,
 				0D111111111111111111111111 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0B981F6D2D44610E008F4158 /* Products */;
@@ -432,6 +461,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Noum/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -444,7 +474,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Noum;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -462,6 +492,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Noum/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -474,7 +505,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Noum;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -592,6 +623,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.11.0;
+			};
+		};
 		0C0A0A0A0A0A0A0A0A0A0A0A /* XCRemoteSwiftPackageReference "aws-sdk-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/awslabs/aws-sdk-swift.git";
@@ -611,6 +650,31 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0B2EB16B2F7355070093625F /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		0B2EB16D2F7355070093625F /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+		0B2EB16F2F7357160093625F /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		0B2EB1712F7357200093625F /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		0B2EB1732F7357270093625F /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B2EB16A2F7355070093625F /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
 		0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0C0A0A0A0A0A0A0A0A0A0A0A /* XCRemoteSwiftPackageReference "aws-sdk-swift" */;

@@ -357,6 +357,7 @@ final class CoachingProfileStore: ObservableObject {
     @Published private(set) var shouldPresentInitialOnboarding = false
 
     private let accountKey = "NoumAccountID"
+    private let providerKey = "NoumAccountProvider"
     private let profileKeyPrefix = "coachingProfile."
     private let onboardingCompletionKeyPrefix = "coachingProfileOnboardingComplete."
 
@@ -376,6 +377,7 @@ final class CoachingProfileStore: ObservableObject {
         }
         UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         shouldPresentInitialOnboarding = false
+        syncProfileIfPossible(profile, accountID: accountID)
     }
 
     func reloadForCurrentAccount() {
@@ -410,6 +412,15 @@ final class CoachingProfileStore: ObservableObject {
         shouldPresentInitialOnboarding = false
     }
 
+    func replaceFromRemote(_ profile: CoachingProfile?, for accountID: String) {
+        self.profile = profile
+        if let profile, let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
+            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
+        }
+        shouldPresentInitialOnboarding = false
+    }
+
     private func profileKey(for accountID: String) -> String {
         "\(profileKeyPrefix)\(accountID)"
     }
@@ -422,10 +433,21 @@ final class CoachingProfileStore: ObservableObject {
         KeychainHelper.load(key: accountKey)
     }
 
+    private var currentProviderRawValue: String? {
+        KeychainHelper.load(key: providerKey)
+    }
+
     private static func loadProfile(forKey key: String) -> CoachingProfile? {
         guard let data = UserDefaults.standard.data(forKey: key),
               let profile = try? JSONDecoder().decode(CoachingProfile.self, from: data) else { return nil }
         return profile
+    }
+
+    private func syncProfileIfPossible(_ profile: CoachingProfile, accountID: String) {
+        guard let providerRawValue = currentProviderRawValue else { return }
+        Task {
+            await BackendSyncManager.shared.syncProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
+        }
     }
 }
 
@@ -1233,14 +1255,23 @@ final class PracticeSessionStore: ObservableObject {
 
     @Published private(set) var sessions: [PracticeSession]
 
-    private let sessionsKey = "practiceSessions"
+    private let accountKey = "NoumAccountID"
+    private let providerKey = "NoumAccountProvider"
 
     private init() {
-        sessions = Self.loadSessions(forKey: sessionsKey)
+        sessions = Self.loadSessions(forKey: Self.storageKey(for: KeychainHelper.load(key: "NoumAccountID")))
     }
 
     func reload() {
-        sessions = Self.loadSessions(forKey: sessionsKey)
+        sessions = Self.loadSessions(forKey: Self.storageKey(for: currentAccountID))
+    }
+
+    func reloadForCurrentAccount() {
+        reload()
+    }
+
+    func endSession() {
+        sessions = []
     }
 
     @discardableResult
@@ -1254,6 +1285,7 @@ final class PracticeSessionStore: ObservableObject {
         )
         sessions.insert(session, at: 0)
         persist()
+        syncSessionIfPossible(session)
         return session
     }
 
@@ -1268,6 +1300,7 @@ final class PracticeSessionStore: ObservableObject {
         latest.coachSummary = annotation.coachSummary
         sessions[0] = latest
         persist()
+        syncSessionIfPossible(latest)
     }
 
     func annotate(sessionID: UUID, annotation: PracticeSessionAnnotation) {
@@ -1278,17 +1311,46 @@ final class PracticeSessionStore: ObservableObject {
         sessions[index].insights = annotation.insights
         sessions[index].coachSummary = annotation.coachSummary
         persist()
+        syncSessionIfPossible(sessions[index])
     }
 
     func saveAIFeedback(sessionID: UUID, feedback: AICoachFeedback) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         sessions[index].aiCoachFeedback = feedback
         persist()
+        syncSessionIfPossible(sessions[index])
+    }
+
+    func replaceFromRemote(_ remoteSessions: [PracticeSession]) {
+        sessions = remoteSessions.sorted { $0.date > $1.date }
+        persist()
     }
 
     private func persist() {
         if let data = try? JSONEncoder().encode(sessions) {
-            UserDefaults.standard.set(data, forKey: sessionsKey)
+            UserDefaults.standard.set(data, forKey: Self.storageKey(for: currentAccountID))
+        }
+    }
+
+    private var currentAccountID: String? {
+        KeychainHelper.load(key: accountKey)
+    }
+
+    private var currentProviderRawValue: String? {
+        KeychainHelper.load(key: providerKey)
+    }
+
+    private static func storageKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "practiceSessions.\(accountID)"
+        }
+        return "practiceSessions.guest"
+    }
+
+    private func syncSessionIfPossible(_ session: PracticeSession) {
+        guard let accountID = currentAccountID, let providerRawValue = currentProviderRawValue else { return }
+        Task {
+            await BackendSyncManager.shared.syncSession(session, accountID: accountID, providerRawValue: providerRawValue)
         }
     }
 

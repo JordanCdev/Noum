@@ -8,5 +8,7 @@ xcuserdata/
 # Local configuration files
 Noum/Transcribe.plist
 Noum/AIConfig.plist
+Noum/GoogleService-Info.plist
+Noum/BackendConfig.plist
 Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme
 Noum/test.swift

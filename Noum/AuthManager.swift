@@ -4,8 +4,14 @@ import Security
 #endif
 import AWSSDKIdentity
 import protocol SmithyIdentity.AWSCredentialIdentityResolver
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 #if canImport(AuthenticationServices)
 import AuthenticationServices
+#endif
+#if canImport(FirebaseAuth)
+import FirebaseAuth
 #endif
 #if canImport(GoogleSignIn)
 import GoogleSignIn
@@ -21,11 +27,13 @@ import Combine
 enum AuthProvider: String {
     case apple
     case google
+    case guest
 
     var title: String {
         switch self {
         case .apple: return "Apple"
         case .google: return "Google"
+        case .guest: return "Guest"
         }
     }
 }
@@ -50,16 +58,21 @@ class AuthManager: ObservableObject {
     var currentAccountID: String? { KeychainHelper.load(key: accountKey) }
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
     var currentAuthProviderTitle: String? { authProvider?.title }
+    var currentAuthProviderRawValue: String? { KeychainHelper.load(key: accountProviderKey) }
 #if canImport(GoogleSignIn)
     private var googleConfig: GIDConfiguration?
+#endif
+#if canImport(FirebaseAuth)
+    private var currentNonce: String?
 #endif
 
     private init() {
         initializeInstallStateIfNeeded()
-        loadCredentialsAndAccount()
 #if canImport(GoogleSignIn)
         configureGoogleSignInIfAvailable()
 #endif
+        loadCredentialsAndAccount()
+        restoreFirebaseSessionIfAvailable()
     }
 
 #if canImport(GoogleSignIn) && canImport(UIKit)
@@ -67,7 +80,7 @@ class AuthManager: ObservableObject {
         guard let root = UIApplication.shared.connectedScenes
             .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
             .first?.rootViewController else {
-            signInError = "Unable to find root view controller"
+            signInError = "Google sign-in is temporarily unavailable right now. Please try again in a moment."
             return
         }
         signInWithGoogle(presenting: root)
@@ -75,7 +88,7 @@ class AuthManager: ObservableObject {
 
     private func signInWithGoogle(presenting controller: UIViewController) {
         guard let config = googleConfig else {
-            signInError = "Google sign in is not configured for this build yet."
+            signInError = "Google sign-in is temporarily unavailable for this build. Please try again later."
             return
         }
         GIDSignIn.sharedInstance.configuration = config
@@ -83,19 +96,42 @@ class AuthManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let error {
-                    self.signInError = error.localizedDescription
+                    self.signInError = self.friendlyGoogleSignInMessage(for: error)
                     print("Google sign in failed: \(error)")
                     return
                 }
                 guard let userID = result?.user.userID else {
-                    self.signInError = "Google sign in failed"
+                    self.signInError = "Google sign-in could not be completed. Please try again."
                     return
                 }
+#if canImport(FirebaseAuth)
+                guard
+                    let idToken = result?.user.idToken?.tokenString,
+                    let accessToken = result?.user.accessToken.tokenString
+                else {
+                    self.signInError = "Google sign-in returned incomplete credentials. Please try again."
+                    return
+                }
+
+                let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+                do {
+                    let authResult = try await self.signInWithFirebase(credential: credential)
+                    let user = authResult.user
+                    self.completeSignIn(
+                        accountID: user.uid,
+                        name: user.displayName ?? result?.user.profile?.name,
+                        provider: .google
+                    )
+                } catch {
+                    self.signInError = self.friendlyGoogleSignInMessage(for: error)
+                }
+#else
                 self.completeSignIn(
                     accountID: userID,
                     name: result?.user.profile?.name,
                     provider: .google
                 )
+#endif
             }
         }
     }
@@ -105,8 +141,42 @@ class AuthManager: ObservableObject {
 #endif
 #endif
 
+#if canImport(AuthenticationServices)
+    func prepareAppleSignIn(_ request: ASAuthorizationAppleIDRequest) {
+        request.requestedScopes = [.fullName]
+#if canImport(FirebaseAuth) && canImport(CryptoKit)
+        let nonce = randomNonceString()
+        currentNonce = nonce
+        request.nonce = sha256(nonce)
+#endif
+    }
+#endif
+
     func reloadCredentials() {
         loadCredentialsAndAccount()
+    }
+
+    func startAnonymousSession() {
+#if canImport(FirebaseAuth)
+        Task {
+            do {
+                let authResult = try await signInAnonymouslyWithFirebase()
+                await MainActor.run {
+                    self.completeSignIn(
+                        accountID: authResult.user.uid,
+                        name: "Guest Speaker",
+                        provider: .guest
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self.signInError = "Guest access could not be started right now. Please try again."
+                }
+            }
+        }
+#else
+        completeSignIn(accountID: UUID().uuidString, name: "Guest Speaker", provider: .guest)
+#endif
     }
 
 #if canImport(AuthenticationServices)
@@ -121,11 +191,47 @@ class AuthManager: ObservableObject {
             let formatter = PersonNameComponentsFormatter()
             let formattedName = formatter.string(from: credential.fullName ?? PersonNameComponents())
             let displayName = formattedName.trimmingCharacters(in: .whitespacesAndNewlines)
+#if canImport(FirebaseAuth)
+            guard
+                let identityToken = credential.identityToken,
+                let tokenString = String(data: identityToken, encoding: .utf8),
+                let nonce = currentNonce
+            else {
+                signInError = "Apple sign-in could not be completed. Please try again."
+                return
+            }
+
+            let firebaseCredential = OAuthProvider.appleCredential(
+                withIDToken: tokenString,
+                rawNonce: nonce,
+                fullName: credential.fullName
+            )
+
+            Task {
+                do {
+                    let authResult = try await signInWithFirebase(credential: firebaseCredential)
+                    await MainActor.run {
+                        self.completeSignIn(
+                            accountID: authResult.user.uid,
+                            name: authResult.user.displayName ?? (displayName.isEmpty ? self.currentAccountName : displayName),
+                            provider: .apple
+                        )
+                        self.currentNonce = nil
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.signInError = self.friendlyAppleSignInMessage(for: error)
+                        self.currentNonce = nil
+                    }
+                }
+            }
+#else
             completeSignIn(
                 accountID: credential.user,
                 name: displayName.isEmpty ? currentAccountName : displayName,
                 provider: .apple
             )
+#endif
         case .failure(let error):
             signInError = friendlyAppleSignInMessage(for: error)
         }
@@ -149,6 +255,8 @@ class AuthManager: ObservableObject {
             isSignedIn = false
             authProvider = nil
             CoachingProfileStore.shared.endSession()
+            PracticeSessionStore.shared.endSession()
+            ProfileManager.shared.endSession()
             if let creds = Self.loadCredentials() {
                 self.credentialIdentity = creds.identity
                 self.region = creds.region
@@ -160,6 +268,8 @@ class AuthManager: ObservableObject {
         isSignedIn = true
         authProvider = provider
         CoachingProfileStore.shared.reloadForCurrentAccount()
+        PracticeSessionStore.shared.reloadForCurrentAccount()
+        ProfileManager.shared.reloadForCurrentAccount()
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
@@ -191,10 +301,31 @@ class AuthManager: ObservableObject {
 
     func signOut() {
         credentialIdentity = nil
+#if canImport(GoogleSignIn)
+        GIDSignIn.sharedInstance.signOut()
+#endif
+#if canImport(FirebaseAuth)
+        try? Auth.auth().signOut()
+#endif
         clearStoredSession()
         isSignedIn = false
         authProvider = nil
         CoachingProfileStore.shared.endSession()
+        PracticeSessionStore.shared.endSession()
+        ProfileManager.shared.endSession()
+    }
+
+    func supportReportPayload() -> String {
+        let provider = currentAuthProviderTitle ?? "Signed out"
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let issue = signInError ?? "Unknown sign-in error"
+        return """
+        Noum Sign-In Report
+        Timestamp: \(timestamp)
+        Active provider: \(provider)
+        Google configured: \(isGoogleSignInAvailable ? "yes" : "no")
+        Error: \(issue)
+        """
     }
 
     private func completeSignIn(accountID: String, name: String?, provider: AuthProvider) {
@@ -218,13 +349,47 @@ class AuthManager: ObservableObject {
         authProvider = provider
         isSignedIn = true
         CoachingProfileStore.shared.reloadForCurrentAccount()
+        PracticeSessionStore.shared.reloadForCurrentAccount()
+        ProfileManager.shared.reloadForCurrentAccount()
         CoachingProfileStore.shared.beginSession(isNewAccount: isNewAccount)
+        syncFromBackendIfPossible(accountID: accountID, providerRawValue: provider.rawValue)
     }
 
     private func clearStoredSession() {
         KeychainHelper.delete(key: accountKey)
         KeychainHelper.delete(key: accountNameKey)
         KeychainHelper.delete(key: accountProviderKey)
+    }
+
+    private func restoreFirebaseSessionIfAvailable() {
+#if canImport(FirebaseAuth)
+        guard let user = Auth.auth().currentUser else { return }
+        let provider = firebaseProvider(for: user) ?? authProvider ?? .google
+        completeSignIn(accountID: user.uid, name: user.displayName ?? currentAccountName, provider: provider)
+#endif
+    }
+
+    private func syncFromBackendIfPossible(accountID: String, providerRawValue: String) {
+        Task {
+            guard let bootstrap = await BackendSyncManager.shared.fetchBootstrap(
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            ) else {
+                return
+            }
+
+            await MainActor.run {
+                if let xp = bootstrap.xp {
+                    ProfileManager.shared.replaceFromRemote(xp)
+                }
+                if let profile = bootstrap.profile {
+                    CoachingProfileStore.shared.replaceFromRemote(profile, for: accountID)
+                }
+                if let sessions = bootstrap.sessions {
+                    PracticeSessionStore.shared.replaceFromRemote(sessions)
+                }
+            }
+        }
     }
 
     private func initializeInstallStateIfNeeded() {
@@ -258,6 +423,121 @@ class AuthManager: ObservableObject {
         }
 
         return error.localizedDescription
+    }
+#endif
+
+#if canImport(GoogleSignIn)
+    private func friendlyGoogleSignInMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == "com.google.GIDSignIn" {
+            switch nsError.code {
+            case -2:
+                return "Google sign-in was cancelled."
+            default:
+                break
+            }
+        }
+
+        return "Google sign-in could not be completed right now. Please try again."
+    }
+#endif
+
+#if canImport(FirebaseAuth)
+    private func signInWithFirebase(credential: FirebaseAuth.AuthCredential) async throws -> FirebaseAuth.AuthDataResult {
+        try await withCheckedThrowingContinuation { continuation in
+            Auth.auth().signIn(with: credential) { authResult, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let authResult else {
+                    continuation.resume(throwing: NSError(
+                        domain: "AuthManager",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Firebase sign-in returned no user."]
+                    ))
+                    return
+                }
+
+                continuation.resume(returning: authResult)
+            }
+        }
+    }
+
+    private func signInAnonymouslyWithFirebase() async throws -> FirebaseAuth.AuthDataResult {
+        try await withCheckedThrowingContinuation { continuation in
+            Auth.auth().signInAnonymously { authResult, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let authResult else {
+                    continuation.resume(throwing: NSError(
+                        domain: "AuthManager",
+                        code: -2,
+                        userInfo: [NSLocalizedDescriptionKey: "Anonymous sign-in returned no user."]
+                    ))
+                    return
+                }
+
+                continuation.resume(returning: authResult)
+            }
+        }
+    }
+
+    private func firebaseProvider(for user: FirebaseAuth.User) -> AuthProvider? {
+        if user.isAnonymous {
+            return .guest
+        }
+        if user.providerData.contains(where: { $0.providerID == "apple.com" }) {
+            return .apple
+        }
+        if user.providerData.contains(where: { $0.providerID == "google.com" }) {
+            return .google
+        }
+        return nil
+    }
+#endif
+
+#if canImport(CryptoKit)
+    private func randomNonceString(length: Int = 32) -> String {
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var remainingLength = length
+
+        while remainingLength > 0 {
+            let randoms: [UInt8] = (0..<16).map { _ in
+                var random: UInt8 = 0
+                let errorCode = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
+                if errorCode != errSecSuccess {
+                    fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+                }
+                return random
+            }
+
+            randoms.forEach { random in
+                if remainingLength == 0 {
+                    return
+                }
+
+                if random < charset.count {
+                    result.append(charset[Int(random)])
+                    remainingLength -= 1
+                }
+            }
+        }
+
+        return result
+    }
+
+    private func sha256(_ input: String) -> String {
+        let inputData = Data(input.utf8)
+        let hashedData = SHA256.hash(data: inputData)
+        return hashedData.compactMap {
+            String(format: "%02x", $0)
+        }.joined()
     }
 #endif
 

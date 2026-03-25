@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 #if canImport(AuthenticationServices)
 import AuthenticationServices
 #endif
@@ -12,6 +15,7 @@ struct LoginView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var authManager = AuthManager.shared
     @State private var showError = false
+    @State private var showReportConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -19,12 +23,16 @@ struct LoginView: View {
                 background
 
                 VStack(spacing: 0) {
-                    Spacer(minLength: 40)
+                    Spacer(minLength: 64)
 
-                    content
+                    hero
                         .padding(.horizontal, 24)
 
-                    Spacer()
+                    Spacer(minLength: 72)
+
+                    authPanel
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 32)
                 }
             }
             .navigationTitle("")
@@ -34,10 +42,18 @@ struct LoginView: View {
             if signedIn { dismiss() }
         }
         .alert("Sign In Failed", isPresented: $showError, actions: {
+            Button("Report Issue") {
+                reportCurrentSignInIssue()
+            }
             Button("OK", role: .cancel) { authManager.signInError = nil }
         }, message: {
             Text(authManager.signInError ?? "Unknown error")
         })
+        .alert("Issue Ready to Share", isPresented: $showReportConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("We prepared a support report for this sign-in issue. You can paste it into a message to the Noum team.")
+        }
         .onChange(of: authManager.signInError) { _, err in
             showError = err != nil
         }
@@ -70,7 +86,7 @@ struct LoginView: View {
         }
     }
 
-    private var content: some View {
+    private var hero: some View {
         VStack(alignment: .leading, spacing: 28) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Noum")
@@ -88,49 +104,99 @@ struct LoginView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .frame(maxWidth: 460, alignment: .leading)
+    }
 
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(spacing: 12) {
+    private var authPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Choose a sign in method to save your coaching profile, session history, and progression.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 12) {
 #if canImport(AuthenticationServices)
-                    SignInWithAppleButton(.continue) { request in
-                        request.requestedScopes = [.fullName]
-                    } onCompletion: { result in
-                        authManager.handleAppleSignIn(result)
-                    }
-                    .frame(height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                SignInWithAppleButton(.continue) { request in
+                    authManager.prepareAppleSignIn(request)
+                } onCompletion: { result in
+                    authManager.handleAppleSignIn(result)
+                }
+                .frame(height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 #endif
 
-                    if authManager.isGoogleSignInAvailable {
-                        googleButton
-                    }
-                }
+                googleButton
+                guestButton
             }
-            .padding(22)
-            .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.white.opacity(0.78), lineWidth: 1)
-            )
         }
+        .padding(22)
+        .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.white.opacity(0.78), lineWidth: 1)
+        )
         .frame(maxWidth: 460)
     }
 
     private var googleButton: some View {
-        Button {
+#if canImport(GoogleSignInSwift)
+        GoogleSignInButton(
+            viewModel: GoogleSignInButtonViewModel(
+                scheme: .light,
+                style: .wide,
+                state: .normal
+            )
+        ) {
             authManager.startGoogleSignIn()
+        }
+        .frame(height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+#else
+        Button("Continue with Google") {
+            authManager.startGoogleSignIn()
+        }
+        .frame(maxWidth: .infinity, minHeight: 56)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .buttonStyle(.plain)
+#endif
+    }
+
+    private var guestButton: some View {
+        Button {
+            authManager.startAnonymousSession()
         } label: {
-            HStack(spacing: 8) {
-                Text("Use Google instead")
-                    .font(.subheadline.weight(.semibold))
-                Image(systemName: "arrow.right")
-                    .font(.caption.weight(.bold))
+            HStack {
+                Text("Continue as Guest")
+                    .font(.headline)
+                Spacer()
+                Text("Test Mode")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.24, green: 0.47, blue: 0.86))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color(red: 0.24, green: 0.47, blue: 0.86).opacity(0.10), in: Capsule())
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
+    }
+
+    private func reportCurrentSignInIssue() {
+        let issue = authManager.supportReportPayload()
+#if canImport(UIKit)
+        UIPasteboard.general.string = issue
+#endif
+        authManager.signInError = nil
+        showReportConfirmation = true
     }
 }
 #endif

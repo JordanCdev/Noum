@@ -9,19 +9,34 @@ final class ProfileManager: ObservableObject {
     static let shared = ProfileManager()
 
     @Published private(set) var xp: Int
-    private let xpKey = "profileXP"
+
+    private let accountKey = "NoumAccountID"
+    private let providerKey = "NoumAccountProvider"
 
     private init() {
-        xp = UserDefaults.standard.integer(forKey: xpKey)
+        xp = Self.loadXP(forKey: Self.storageKey(for: KeychainHelper.load(key: "NoumAccountID")))
     }
 
     func addXP(_ amount: Int) {
         guard amount > 0 else { return }
         xp += amount
-        UserDefaults.standard.set(xp, forKey: xpKey)
+        persist()
+        syncXPIfPossible()
     }
 
-    /// Progress towards the next level as a value between 0 and 1.
+    func reloadForCurrentAccount() {
+        xp = Self.loadXP(forKey: Self.storageKey(for: currentAccountID))
+    }
+
+    func replaceFromRemote(_ remoteXP: Int) {
+        xp = max(0, remoteXP)
+        persist()
+    }
+
+    func endSession() {
+        xp = 0
+    }
+
     var progressTowardsNextLevel: Double {
         Double(xp % 1000) / 1000.0
     }
@@ -57,6 +72,37 @@ final class ProfileManager: ObservableObject {
 
     static func xpNeededToNextLevel(forXP xp: Int) -> Int {
         1000 - (xp % 1000)
+    }
+
+    private var currentAccountID: String? {
+        KeychainHelper.load(key: accountKey)
+    }
+
+    private var currentProviderRawValue: String? {
+        KeychainHelper.load(key: providerKey)
+    }
+
+    private func persist() {
+        UserDefaults.standard.set(xp, forKey: Self.storageKey(for: currentAccountID))
+    }
+
+    private func syncXPIfPossible() {
+        guard let accountID = currentAccountID, let providerRawValue = currentProviderRawValue else { return }
+        let value = xp
+        Task {
+            await BackendSyncManager.shared.syncXP(value, accountID: accountID, providerRawValue: providerRawValue)
+        }
+    }
+
+    private static func storageKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "profileXP.\(accountID)"
+        }
+        return "profileXP.guest"
+    }
+
+    private static func loadXP(forKey key: String) -> Int {
+        UserDefaults.standard.integer(forKey: key)
     }
 }
 #endif
