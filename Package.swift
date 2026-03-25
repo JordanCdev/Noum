@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "Noum",
-    platforms: [.macOS(.v13), .iOS(.v17)],
+    platforms: [.iOS(.v17)],
     products: [
         .executable(name: "NoumApp", targets: ["Noum"])
     ],
@@ -30,9 +30,7 @@ let package = Package(
                 "Assets.xcassets",
                 "Preview Content",
                 "Transcribe.plist.example",
-                "Info.plist",
-                "InfoTemplate.plist",
-                "Noum.entitlements"
+                "Info.plist"
             ]
         ),
         .testTarget(
