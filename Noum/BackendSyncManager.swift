@@ -77,6 +77,15 @@ actor BackendSyncManager {
         try? await send(session, path: "/v1/me/sessions", accountID: accountID, providerRawValue: providerRawValue)
     }
 
+    func deleteAccount(accountID: String, providerRawValue: String) async {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            await deleteFirebaseAccount(accountID: accountID)
+            return
+        }
+#endif
+    }
+
     private func send<Payload: Encodable>(
         _ payload: Payload,
         path: String,
@@ -204,6 +213,17 @@ private extension BackendSyncManager {
         } catch {}
     }
 
+    func deleteFirebaseAccount(accountID: String) async {
+        let userRef = userDocument(accountID: accountID)
+        do {
+            let sessionDocs = try await getDocuments(userRef.collection("sessions").limit(to: 200))
+            try await deleteDocuments(sessionDocs.map(\.reference))
+            try await deleteDocument(userRef.collection("profile").document("main"))
+            try await deleteDocument(userRef.collection("progress").document("main"))
+            try await deleteDocument(userRef)
+        } catch {}
+    }
+
     func ensureFirebaseUserDocument(accountID: String, providerRawValue: String) async {
         let userRef = userDocument(accountID: accountID)
         do {
@@ -272,6 +292,24 @@ private extension BackendSyncManager {
                     continuation.resume(returning: ())
                 }
             }
+        }
+    }
+
+    func deleteDocument(_ reference: DocumentReference) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            reference.delete { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+
+    func deleteDocuments(_ references: [DocumentReference]) async throws {
+        for reference in references {
+            try await deleteDocument(reference)
         }
     }
 }

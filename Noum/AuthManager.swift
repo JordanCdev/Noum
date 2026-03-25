@@ -315,6 +315,33 @@ class AuthManager: ObservableObject {
         ProfileManager.shared.endSession()
     }
 
+    func deleteCurrentAccount() {
+        guard let accountID = currentAccountID, let providerRawValue = currentAuthProviderRawValue else {
+            signOut()
+            return
+        }
+
+        Task {
+            await BackendSyncManager.shared.deleteAccount(accountID: accountID, providerRawValue: providerRawValue)
+#if canImport(FirebaseAuth)
+            if let user = Auth.auth().currentUser {
+                try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    user.delete { error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume(returning: ())
+                        }
+                    }
+                }
+            }
+#endif
+            await MainActor.run {
+                self.signOut()
+            }
+        }
+    }
+
     func supportReportPayload() -> String {
         let provider = currentAuthProviderTitle ?? "Signed out"
         let timestamp = ISO8601DateFormatter().string(from: Date())
