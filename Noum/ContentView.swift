@@ -18,8 +18,30 @@ struct ContentView: View {
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
+    @State private var aiRecommendation: AIHomeRecommendation?
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
+    private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
+
+    private struct PracticeSuggestion {
+        let title: String
+        let detail: String
+        let focus: String
+        let target: String
+        let mode: PracticeMode
+        let tint: Color
+    }
+
+    private struct ModeSnapshot {
+        let mode: PracticeMode
+        let count: Int
+        let averageFillers: Double
+        let averageDuration: Double
+        let averagePace: Double
+        let averageScore: Double
+    }
 
     var body: some View {
         NavigationStack {
@@ -36,19 +58,17 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 18) {
+                    VStack(spacing: 12) {
                         heroCard
+                        suggestedPracticeCard
                         progressCard
-                        quickStartCard
-                        focusCard
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 18)
-                    .padding(.bottom, 120)
+                    .padding(.bottom, 94)
                 }
             }
-            .navigationTitle("Noum")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .overlay(alignment: .bottom) {
                 bottomNavigation
             }
@@ -69,56 +89,74 @@ struct ContentView: View {
         ) {
             CoachingOnboardingView()
         }
+        .task(id: recommendationCacheKey) {
+            await refreshHomeRecommendation()
+        }
+        .task(id: shownRecommendationFingerprint) {
+            recommendationLearningStore.recordShown(
+                fingerprint: shownRecommendationFingerprint,
+                title: effectiveSuggestion.title,
+                focus: effectiveSuggestion.focus,
+                target: effectiveSuggestion.target,
+                mode: effectiveSuggestion.mode,
+                isAIBacked: aiRecommendation != nil
+            )
+        }
     }
 
     private var displayName: String {
         authManager.currentAccountName ?? "Speaker"
     }
 
+    private var heroTitle: String {
+        displayName == "Guest Speaker" ? "Guest" : displayName
+    }
+
     private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Speak with control")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            Text("Welcome back, \(displayName)")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Hello, \(heroTitle)")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
-
-            Text("Train clarity, reduce filler words, and stack consistent speaking reps.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode)) {
-                Label("Start Practicing", systemImage: "waveform.and.mic")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Color.blue, in: Capsule())
-                    .foregroundStyle(.white)
-            }
-            .accessibilityIdentifier("home.startPracticing")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(22)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .padding(.top, 24)
     }
 
     private var progressCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Current Level")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(profile.levelTitle)
-                        .font(.title3.weight(.bold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(rankTint.opacity(0.12))
+                            .frame(width: 44, height: 44)
+                        HStack(spacing: rankAccentCount > 2 ? -2 : 0) {
+                            ForEach(0..<rankAccentCount, id: \.self) { _ in
+                                Image(systemName: rankSymbol)
+                                    .font(.system(size: rankSymbolSize, weight: .bold))
+                                    .foregroundStyle(rankTint)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Speaking Rank")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(rankTitle)
+                            .font(.title3.weight(.bold))
+                        Text(rankDescriptor)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(rankTint)
+                    }
                 }
                 Spacer()
                 Text("\(profile.xp) XP")
-                    .font(.headline)
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.10), in: Capsule())
             }
 
             ProgressView(value: profile.progressTowardsNextLevel)
@@ -129,158 +167,593 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("Momentum")
+                Text(levelProgressLabel)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.blue)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(18)
+        .background(Color.white.opacity(0.80), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
-    private var quickStartCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Quick Start")
-                .font(.headline)
+    private var suggestedPracticeCard: some View {
+        let primary = effectiveSuggestion
 
-            HStack(spacing: 12) {
-                quickLink(
-                    title: "Timed",
-                    subtitle: "Structured practice",
-                    systemImage: "clock.fill",
-                    tint: .blue,
-                    mode: .timed
-                )
+        return VStack(alignment: .leading, spacing: 14) {
+                Text("Noum Recommends For You")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
 
-                quickLink(
-                    title: "Sudden Death",
-                    subtitle: "Pressure test",
-                    systemImage: "bolt.fill",
-                    tint: .orange,
-                    mode: .suddenDeath
-                )
-            }
+            suggestionLink(
+                title: primary.title,
+                subtitle: "Mode: \(modeLabel(for: primary.mode))",
+                systemImage: iconName(for: primary.mode),
+                tint: primary.tint,
+                mode: primary.mode
+            )
+
+            coachingFocusCard
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-    }
-
-    private var focusCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Focus Today")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 10) {
-                if let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile) {
-                    focusRow(title: "Current focus", value: plan.currentFocus)
-                    focusRow(title: "Suggested drill", value: plan.suggestedDrill)
-                    if let profile = coachingProfileStore.profile {
-                        let reference = profile.personalGoalReference
-                        focusRow(
-                            title: "Voice target",
-                            value: reference.isEmpty ? profile.speakingStyleGoal.title : "\(profile.speakingStyleGoal.title) • \(reference)"
-                        )
-                    }
-                    focusRow(title: "Coach note", value: plan.encouragement)
-                } else {
-                    focusRow(
-                        title: "Starting point",
-                        value: coachingProfileStore.profile == nil
-                            ? "Complete your coaching profile first, then finish a few practice sessions so Noum can tailor your next steps."
-                            : "Complete a few sessions and Noum will start tailoring your coaching from your practice patterns."
-                    )
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.94),
+                    Color.white.opacity(0.78)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.white.opacity(0.75), lineWidth: 1)
+        )
     }
 
     private var bottomNavigation: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .overlay(Color.black.opacity(0.04))
-
-            HStack(spacing: 10) {
+        HStack(spacing: 10) {
+            Group {
                 NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode)) {
-                    navItem(title: "Practice", systemImage: "dumbbell.fill", accent: .blue)
+                    navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
                 }
                 .accessibilityIdentifier("nav.practice")
-                .frame(maxWidth: .infinity)
 
                 NavigationLink(destination: SessionHistoryView()) {
                     navItem(title: "History", systemImage: "book.fill", accent: .orange)
                 }
                 .accessibilityIdentifier("nav.history")
-                .frame(maxWidth: .infinity)
 
                 NavigationLink(destination: SettingsView()) {
                     navItem(title: "Settings", systemImage: "slider.horizontal.3", accent: .green)
                 }
                 .accessibilityIdentifier("nav.settings")
-                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 20)
-            .background(.ultraThinMaterial)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.55), lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+        .padding(.bottom, 14)
     }
 
-    private func quickLink(
+    private func suggestionLink(
         title: String,
         subtitle: String,
         systemImage: String,
         tint: Color,
         mode: PracticeMode
     ) -> some View {
-        NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode)) {
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
+        NavigationLink(destination: practiceDestination(for: mode)) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(tint.opacity(0.12))
+                        .frame(width: 42, height: 42)
+                    Image(systemName: systemImage)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(tint)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(tint)
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
-            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .simultaneousGesture(TapGesture().onEnded {
             selectedPracticeMode = mode
+            recommendationLearningStore.markTapped(mode: mode)
         })
     }
 
-    private func focusRow(title: String, value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .frame(width: 92, alignment: .leading)
-            Text(value)
-                .font(.subheadline)
+    private var coachingFocusCard: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Coaching Focus")
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+            Text(primaryFocusText)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+            Text(coachingFocusDetail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func navItem(title: String, systemImage: String, accent: Color) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(accent)
+        VStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.12))
+                    .frame(width: 36, height: 36)
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(accent)
+                    .symbolEffect(.pulse, options: .repeating.speed(0.6))
+            }
             Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .textCase(.uppercase)
+                .tracking(0.4)
+                .foregroundStyle(accent.opacity(0.85))
         }
-        .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
-        .background(Color.white.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var primarySuggestion: PracticeSuggestion {
+        let sessions = sessionStore.sessions
+        let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile)
+
+        guard let latest = sessions.first else {
+            return PracticeSuggestion(
+                title: "Start with a clean baseline rep",
+                detail: "Timed rep to establish your baseline.",
+                focus: "Baseline",
+                target: "Clean rep",
+                mode: .timed,
+                tint: .blue
+            )
+        }
+
+        let recent = Array(sessions.prefix(5))
+        let averageFillers = Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
+        let averagePace = Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
+        let averageDuration = recent.map(\.duration).reduce(0, +) / Double(recent.count)
+        let timedSnapshot = modeSnapshot(for: .timed, sessions: recent)
+        let suddenDeathSnapshot = modeSnapshot(for: .suddenDeath, sessions: recent)
+        let ahCounterSnapshot = modeSnapshot(for: .ahCounter, sessions: recent)
+        let targetFillers = max(0, Int(floor(min(averageFillers, Double(latest.fillerWordCount)) - 1)))
+        let strongControl = averageFillers <= 1.5 && latest.fillerWordCount <= 1 && averageDuration >= 30
+        let rushedDelivery = averagePace >= 155 || latest.wordsPerMinute >= 165
+        let shortAnswers = averageDuration < 25 || latest.duration < 25
+        let fillerPressure = averageFillers >= 4 || latest.fillerWordCount >= 5
+
+        if strongControl {
+            let mode: PracticeMode = suddenDeathSnapshot.count > 0 ? .suddenDeath : .timed
+            return PracticeSuggestion(
+                title: mode == .suddenDeath ? "Step up into pressure" : "Push a sharper timed rep",
+                detail: mode == .suddenDeath
+                    ? "Your filler control is strong enough to push into a harder mode."
+                    : "Your control is steady. Push for a cleaner, firmer timed answer.",
+                focus: "Pressure",
+                target: mode == .suddenDeath ? "Zero fillers" : "35s+",
+                mode: mode,
+                tint: tint(for: mode)
+            )
+        }
+
+        if fillerPressure {
+            return PracticeSuggestion(
+                title: "Clean up the next opening",
+                detail: "Too many fillers usually means the pressure is too high right now.",
+                focus: "Cleaner opening",
+                target: "\(targetFillers) fillers or less",
+                mode: timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .timed : .ahCounter,
+                tint: timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .blue : .green
+            )
+        }
+
+        if rushedDelivery {
+            return PracticeSuggestion(
+                title: "Slow the pace without losing control",
+                detail: "The message is getting rushed, so the next rep should train calmer spacing.",
+                focus: "Pacing",
+                target: "<150 WPM",
+                mode: .ahCounter,
+                tint: .green
+            )
+        }
+
+        if shortAnswers {
+            return PracticeSuggestion(
+                title: "Extend the next answer",
+                detail: "Your answers are ending too early to build real speaking stamina.",
+                focus: "Longer answer",
+                target: "30s+",
+                mode: .timed,
+                tint: .blue
+            )
+        }
+
+        if let plan, plan.strongestMode == .suddenDeath, suddenDeathSnapshot.averageFillers <= 2.0 {
+            return PracticeSuggestion(
+                title: "Lean into the pressure rep",
+                detail: "Recent sudden-death runs suggest you can handle more pressure.",
+                focus: "Pressure",
+                target: "Zero fillers",
+                mode: .suddenDeath,
+                tint: .orange
+            )
+        }
+
+        if timedSnapshot.count >= 3 && timedSnapshot.averageFillers <= 2.5 && timedSnapshot.averageDuration >= 30 {
+            return PracticeSuggestion(
+                title: "Graduate to a harder rep",
+                detail: "Your timed sessions are stable enough to turn the pressure up.",
+                focus: "Pressure",
+                target: "Zero fillers",
+                mode: .suddenDeath,
+                tint: .orange
+            )
+        }
+
+        return PracticeSuggestion(
+            title: plan?.strongestMode == .ahCounter ? "Keep the delivery composed" : "Keep the streak deliberate",
+            detail: plan?.encouragement ?? "Use the mode where your recent control is strongest.",
+            focus: plan?.strongestMode == .ahCounter ? "Pacing" : "Consistency",
+            target: plan?.strongestMode == .ahCounter ? "<150 WPM" : "Clean rep",
+            mode: plan?.strongestMode ?? .timed,
+            tint: tint(for: plan?.strongestMode ?? .timed)
+        )
+    }
+
+    private var effectiveSuggestion: PracticeSuggestion {
+        guard let aiRecommendation,
+              let mode = PracticeMode(rawValue: aiRecommendation.recommendedMode) else {
+            return primarySuggestion
+        }
+
+        return PracticeSuggestion(
+            title: aiRecommendation.title,
+            detail: aiRecommendation.detail,
+            focus: aiRecommendation.focus,
+            target: aiRecommendation.target,
+            mode: mode,
+            tint: tint(for: mode)
+        )
+    }
+
+    private var sessionsThisWeek: Int {
+        let calendar = Calendar.current
+        let now = Date()
+        return sessionStore.sessions.filter { calendar.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }.count
+    }
+
+    private var averageFillersText: String {
+        guard !sessionStore.sessions.isEmpty else { return "0.0" }
+        let recent = Array(sessionStore.sessions.prefix(5))
+        let average = Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
+        return String(format: "%.1f", average)
+    }
+
+    private var averagePaceText: String {
+        guard !sessionStore.sessions.isEmpty else { return "--" }
+        let recent = Array(sessionStore.sessions.prefix(5))
+        let average = Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
+        return "\(Int(average.rounded())) WPM"
+    }
+
+    private var primaryTargetText: String {
+        effectiveSuggestion.target
+    }
+
+    private var primaryCardLabel: String {
+        switch effectiveSuggestion.mode {
+        case .timed:
+            return "Recommended"
+        case .suddenDeath:
+            return "Pressure rep"
+        case .ahCounter:
+            return "Pace reset"
+        }
+    }
+
+    private var primaryFocusText: String {
+        effectiveSuggestion.focus
+    }
+
+    private var coachingFocusDetail: String {
+        if let aiRecommendation {
+            return "\(aiRecommendation.whyMode) \(aiRecommendation.whyNow)"
+        }
+
+        let target = effectiveSuggestion.target
+        if target == "30s+" {
+            return "Time target: 30 seconds or longer."
+        }
+        if target == "<150 WPM" {
+            return "Coaching tip: slow the pace and leave more space between points."
+        }
+        if target.localizedCaseInsensitiveContains("filler") {
+            return "Coaching tip: settle the opening and replace fillers with pauses."
+        }
+        return "Coaching tip: establish a clean baseline rep."
+    }
+
+    private var recommendationCacheKey: String {
+        let recent = sessionStore.sessions.prefix(5).map { session in
+            "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
+        }.joined(separator: "|")
+        let profileKey = coachingProfileStore.profile.map {
+            "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.speakingStyleGoal.rawValue)"
+        } ?? "no-profile"
+        return "homeRecommendation.\(profileKey).\(recent)"
+    }
+
+    private func refreshHomeRecommendation() async {
+        if let cached = loadCachedRecommendation(for: recommendationCacheKey) {
+            aiRecommendation = cached
+            return
+        }
+
+        guard sessionStore.sessions.count >= AIHomeRecommendationService.minimumSessionCount,
+              aiSettings.canRequestAnalysis else {
+            aiRecommendation = nil
+            return
+        }
+
+        let recent = Array(sessionStore.sessions.prefix(5))
+        let previous = Array(sessionStore.sessions.dropFirst(5).prefix(5))
+        let identity = PracticeEvaluator.speakingIdentity(
+            for: recent.first?.transcript ?? "",
+            profile: coachingProfileStore.profile
+        )
+        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
+            transcript: recent.first?.transcript ?? "",
+            recentSessions: recent,
+            profile: coachingProfileStore.profile
+        )
+        let input = AIHomeRecommendationInput(
+            recentSessionSummary: recentSessionSummary(from: recent),
+            averageFillers: Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count),
+            averageDuration: recent.map(\.duration).reduce(0, +) / Double(recent.count),
+            averageWordsPerMinute: Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count),
+            fillerTrendDelta: trendDelta(
+                current: recent.map { Double($0.fillerWordCount) },
+                previous: previous.map { Double($0.fillerWordCount) }
+            ),
+            durationTrendDelta: trendDelta(
+                current: recent.map(\.duration),
+                previous: previous.map(\.duration)
+            ),
+            paceTrendDelta: trendDelta(
+                current: recent.map { Double($0.wordsPerMinute) },
+                previous: previous.map { Double($0.wordsPerMinute) }
+            ),
+            averageWordCount: Double(recent.map(\.wordCount).reduce(0, +)) / Double(recent.count),
+            strongestMode: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode,
+            currentIdentity: identity.identity,
+            currentIdentityEvidence: identity.evidence,
+            styleAlignmentScore: styleTrend.currentAlignment,
+            sessionStreak: sessionStreak,
+            daysSinceLastSession: daysSinceLastSession
+        )
+
+        do {
+            let recommendation = try await aiHomeRecommendationService.generateHomeRecommendation(
+                input: input,
+                profile: coachingProfileStore.profile,
+                plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            )
+            aiRecommendation = recommendation
+            cacheRecommendation(recommendation, for: recommendationCacheKey)
+        } catch {
+            aiRecommendation = nil
+        }
+    }
+
+    private func recentSessionSummary(from sessions: [PracticeSession]) -> String {
+        sessions.enumerated().map { index, session in
+            let scoreText = session.score.map(String.init) ?? "n/a"
+            let pace = PracticeEvaluator.paceSnapshot(forTranscript: session.transcript, duration: session.duration)
+            let identity = PracticeEvaluator.speakingIdentity(for: session.transcript, profile: coachingProfileStore.profile)
+            return "Session \(index + 1): mode=\(session.mode.rawValue), fillers=\(session.fillerWordCount), duration=\(Int(session.duration))s, words=\(session.wordCount), wpm=\(session.wordsPerMinute), paceLabel=\(pace.label), score=\(scoreText), headline=\(session.headline ?? "none"), identity=\(identity.identity)"
+        }.joined(separator: "\n")
+    }
+
+    private func loadCachedRecommendation(for key: String) -> AIHomeRecommendation? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let recommendation = try? JSONDecoder().decode(AIHomeRecommendation.self, from: data) else {
+            return nil
+        }
+        return recommendation
+    }
+
+    private func cacheRecommendation(_ recommendation: AIHomeRecommendation, for key: String) {
+        guard let data = try? JSONEncoder().encode(recommendation) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private var shownRecommendationFingerprint: String {
+        let suggestion = effectiveSuggestion
+        return "\(recommendationCacheKey).\(suggestion.mode.rawValue).\(suggestion.title).\(suggestion.focus).\(suggestion.target)"
+    }
+
+    private func trendDelta(current: [Double], previous: [Double]) -> Double {
+        guard !current.isEmpty else { return 0 }
+        let currentAverage = current.reduce(0, +) / Double(current.count)
+        guard !previous.isEmpty else { return 0 }
+        let previousAverage = previous.reduce(0, +) / Double(previous.count)
+        return currentAverage - previousAverage
+    }
+
+    private var sessionStreak: Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        while uniqueDays.contains(cursor) {
+            streak += 1
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previousDay
+        }
+        return streak
+    }
+
+    private var daysSinceLastSession: Int {
+        guard let latest = sessionStore.sessions.first else { return 999 }
+        return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: latest.date), to: Calendar.current.startOfDay(for: Date())).day ?? 0
+    }
+
+    private func modeSnapshot(for mode: PracticeMode, sessions: [PracticeSession]) -> ModeSnapshot {
+        let matching = sessions.filter { $0.mode == mode }
+        guard !matching.isEmpty else {
+            return ModeSnapshot(
+                mode: mode,
+                count: 0,
+                averageFillers: .greatestFiniteMagnitude,
+                averageDuration: 0,
+                averagePace: 0,
+                averageScore: 0
+            )
+        }
+
+        let averageFillers = Double(matching.map(\.fillerWordCount).reduce(0, +)) / Double(matching.count)
+        let averageDuration = matching.map(\.duration).reduce(0, +) / Double(matching.count)
+        let averagePace = Double(matching.map(\.wordsPerMinute).reduce(0, +)) / Double(matching.count)
+        let scored = matching.compactMap(\.score)
+        let averageScore = scored.isEmpty ? 0 : Double(scored.reduce(0, +)) / Double(scored.count)
+
+        return ModeSnapshot(
+            mode: mode,
+            count: matching.count,
+            averageFillers: averageFillers,
+            averageDuration: averageDuration,
+            averagePace: averagePace,
+            averageScore: averageScore
+        )
+    }
+
+    @ViewBuilder
+    private func practiceDestination(for mode: PracticeMode) -> some View {
+        switch mode {
+        case .timed:
+            TimedPracticeView()
+        case .suddenDeath:
+            SuddenDeathPracticeView()
+        case .ahCounter:
+            AhCounterView()
+        }
+    }
+
+    private var levelProgressLabel: String {
+        "\(Int((profile.progressTowardsNextLevel * 100).rounded()))%"
+    }
+
+    private var rankSymbol: String {
+        let title = profile.levelTitle
+        if title.contains("Beginner") { return "sparkles" }
+        if title.contains("Novice") { return "figure.stand" }
+        if title.contains("Average") { return "waveform.path.ecg" }
+        if title.contains("Professional") { return "shield.lefthalf.filled" }
+        return "crown.fill"
+    }
+
+    private var rankTint: Color {
+        let title = profile.levelTitle
+        if title.contains("Beginner") { return .blue }
+        if title.contains("Novice") { return .teal }
+        if title.contains("Average") { return .indigo }
+        if title.contains("Professional") { return .orange }
+        return .yellow
+    }
+
+    private var rankDescriptor: String {
+        let title = profile.levelTitle
+        if title.contains("Beginner") { return "Foundational tier" }
+        if title.contains("Novice") { return "Developing tier" }
+        if title.contains("Average") { return "Steady tier" }
+        if title.contains("Professional") { return "Advanced tier" }
+        return "Elite tier"
+    }
+
+    private var rankTitle: String {
+        "Speaker \(max(1, (profile.xp / 1000) + 1))"
+    }
+
+    private var rankAccentCount: Int {
+        let totalLevel = max(0, profile.xp / 1000)
+        return min(3, (totalLevel % 3) + 1)
+    }
+
+    private var rankSymbolSize: Double {
+        let totalLevel = max(0, profile.xp / 1000)
+        switch totalLevel % 3 {
+        case 0: return 11
+        case 1: return 10
+        default: return 9
+        }
+    }
+
+    private func modeLabel(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:
+            return "Timed"
+        case .suddenDeath:
+            return "Sudden Death"
+        case .ahCounter:
+            return "Ah-Counter"
+        }
+    }
+
+    private func iconName(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:
+            return "clock.fill"
+        case .suddenDeath:
+            return "bolt.fill"
+        case .ahCounter:
+            return "waveform.and.mic"
+        }
+    }
+
+    private func tint(for mode: PracticeMode) -> Color {
+        switch mode {
+        case .timed:
+            return .blue
+        case .suddenDeath:
+            return .orange
+        case .ahCounter:
+            return .green
+        }
     }
 }
 #endif

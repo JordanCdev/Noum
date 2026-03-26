@@ -46,7 +46,7 @@ class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
     static let missingCredentialsMessage =
-        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment or create a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
+        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment, Info.plist, or a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
 
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
@@ -398,6 +398,7 @@ class AuthManager: ObservableObject {
         CoachingProfileStore.shared.reloadForCurrentAccount()
         PracticeSessionStore.shared.reloadForCurrentAccount()
         ProfileManager.shared.reloadForCurrentAccount()
+        RecommendationLearningStore.shared.reloadForCurrentAccount()
         CoachingProfileStore.shared.beginSession(isNewAccount: isNewAccount)
         syncFromBackendIfPossible(accountID: accountID, providerRawValue: provider.rawValue)
     }
@@ -435,6 +436,10 @@ class AuthManager: ObservableObject {
                 if let sessions = bootstrap.sessions {
                     PracticeSessionStore.shared.replaceFromRemote(sessions)
                 }
+                RecommendationLearningStore.shared.replaceFromRemote(
+                    pendingExposure: bootstrap.recommendationPending,
+                    outcomes: bootstrap.recommendationOutcomes ?? []
+                )
             }
         }
     }
@@ -607,6 +612,16 @@ class AuthManager: ObservableObject {
             return (AWSCredentialIdentity(accessKey: access, secret: secret, sessionToken: token), region)
         }
         #if canImport(Foundation)
+        if let access = Bundle.main.object(forInfoDictionaryKey: "AWS_ACCESS_KEY_ID") as? String,
+           let secret = Bundle.main.object(forInfoDictionaryKey: "AWS_SECRET_ACCESS_KEY") as? String,
+           !access.isEmpty,
+           !secret.isEmpty {
+            let token = Bundle.main.object(forInfoDictionaryKey: "AWS_SESSION_TOKEN") as? String
+            let region = (Bundle.main.object(forInfoDictionaryKey: "AWS_REGION") as? String).flatMap {
+                $0.isEmpty ? nil : $0
+            } ?? "eu-west-2"
+            return (AWSCredentialIdentity(accessKey: access, secret: secret, sessionToken: token), region)
+        }
         if let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
            let data = try? Data(contentsOf: url),
            let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
@@ -625,7 +640,7 @@ class AuthManager: ObservableObject {
 class AuthManager {
     static let shared = AuthManager()
     static let missingCredentialsMessage =
-        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment or create a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
+        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment, Info.plist, or a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
     private(set) var region: String = "eu-west-2"
     var isSignedIn: Bool = false
     var signInError: String?

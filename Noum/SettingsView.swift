@@ -3,6 +3,9 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 @available(iOS 17.0, macOS 12.0, *)
 struct SettingsView: View {
@@ -13,6 +16,7 @@ struct SettingsView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @State private var showCoachingProfile = false
     @State private var debugMessage: String?
     @State private var showDeleteConfirmation = false
@@ -40,6 +44,7 @@ struct SettingsView: View {
                         accountCard
 #if DEBUG
                         debugCard
+                        recommendationDiagnosticsCard
 #endif
                         securityCard
                         Spacer(minLength: 0)
@@ -273,6 +278,81 @@ struct SettingsView: View {
         .padding(20)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
+
+    private var recommendationDiagnosticsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Recommendation Diagnostics")
+                .font(.headline)
+
+            Text("Inspect whether Noum's recommended mode is actually improving outcomes.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if let pending = recommendationLearningStore.pendingExposure {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Pending Recommendation")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(pending.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text("Mode: \(label(for: pending.mode)) • \(pending.isAIBacked ? "AI-backed" : "Rules-backed")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+
+            HStack(spacing: 10) {
+                compactTag(title: "Shown", value: "\(recommendationLearningStore.outcomes.count)")
+                compactTag(title: "Followed", value: "\(followedRecommendationCount)")
+                compactTag(title: "Hit rate", value: followedRecommendationCount == 0 ? "--" : "\(Int(followRate * 100))%")
+            }
+
+            HStack(spacing: 10) {
+                compactTag(title: "Score delta", value: signedValue(averageScoreDelta))
+                compactTag(title: "Filler delta", value: signedValue(averageFillerDelta))
+                compactTag(title: "Duration delta", value: signedSeconds(averageDurationDelta))
+            }
+
+            HStack(spacing: 10) {
+                compactTag(
+                    title: "Storage",
+                    value: BackendSyncManager.shared.isConfigured ? "Firebase / backend synced" : "Local only"
+                )
+
+                Button("Reset") {
+                    recommendationLearningStore.resetDiagnostics()
+                    debugMessage = "Recommendation diagnostics reset."
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .foregroundStyle(.red)
+            }
+
+            if recommendationLearningStore.outcomes.isEmpty {
+                Text("No completed recommendation outcomes yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Recent Outcomes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ForEach(recommendationLearningStore.outcomes.prefix(4)) { outcome in
+                        recommendationOutcomeRow(outcome)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
 #endif
 
     private func compactTag(title: String, value: String) -> some View {
@@ -310,6 +390,76 @@ struct SettingsView: View {
                 .stroke(tint.opacity(0.14), lineWidth: 1)
         )
     }
+
+#if DEBUG
+    private func recommendationOutcomeRow(_ outcome: RecommendationOutcome) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(outcome.title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(outcome.followed ? "Followed" : "Skipped")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(outcome.followed ? .green : .secondary)
+            }
+            Text("Mode: \(label(for: outcome.mode)) • Score \(signedValue(outcome.scoreDelta)) • Fillers \(signedValue(outcome.fillerDelta)) • Duration \(signedSeconds(outcome.durationDelta))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var followedRecommendationCount: Int {
+        recommendationLearningStore.outcomes.filter(\.followed).count
+    }
+
+    private var followRate: Double {
+        guard !recommendationLearningStore.outcomes.isEmpty else { return 0 }
+        return Double(followedRecommendationCount) / Double(recommendationLearningStore.outcomes.count)
+    }
+
+    private var averageScoreDelta: Double {
+        averageMetric(for: \.scoreDelta)
+    }
+
+    private var averageFillerDelta: Double {
+        averageMetric(for: \.fillerDelta)
+    }
+
+    private var averageDurationDelta: Double {
+        averageMetric(for: \.durationDelta)
+    }
+
+    private func averageMetric(for keyPath: KeyPath<RecommendationOutcome, Double>) -> Double {
+        guard !recommendationLearningStore.outcomes.isEmpty else { return 0 }
+        let values = recommendationLearningStore.outcomes.map { $0[keyPath: keyPath] }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private func signedValue(_ value: Double) -> String {
+        let rounded = Int((value * 10).rounded() / 10)
+        return rounded > 0 ? "+\(rounded)" : "\(rounded)"
+    }
+
+    private func signedSeconds(_ value: Double) -> String {
+        let rounded = Int(value.rounded())
+        return rounded > 0 ? "+\(rounded)s" : "\(rounded)s"
+    }
+
+    private func label(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:
+            return "Timed"
+        case .suddenDeath:
+            return "Sudden Death"
+        case .ahCounter:
+            return "Ah-Counter"
+        }
+    }
+
+#endif
 
 #if DEBUG
     private func seedTestSession() {

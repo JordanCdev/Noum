@@ -10,5 +10,11 @@ Noum/Transcribe.plist
 Noum/AIConfig.plist
 Noum/GoogleService-Info.plist
 Noum/BackendConfig.plist
+Noum/Noum/Transcribe.plist
+Noum/Noum/AIConfig.plist
+Noum/Noum/GoogleService-Info.plist
+Noum/Noum/BackendConfig.plist
 Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme
 Noum/test.swift
+Noum/Info.plist
+Noum/Noum/Info.plist

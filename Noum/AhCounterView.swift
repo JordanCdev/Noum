@@ -46,6 +46,10 @@ struct AhCounterView: View {
                     statCard(title: "Status", value: speechVM.isRecording ? "Live" : "Ready", tint: speechVM.isRecording ? .green : .blue)
                 }
 
+                if let error = speechVM.connectionError {
+                    errorCard(error)
+                }
+
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Transcript")
                         .font(.headline)
@@ -116,6 +120,20 @@ struct AhCounterView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func errorCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Transcription error")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func startRecording() {

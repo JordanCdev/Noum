@@ -24,6 +24,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     private let authManager: AuthManager = .shared
     private let sessionStore = PracticeSessionStore.shared
+    private let recommendationLearningStore = RecommendationLearningStore.shared
 
     private var audioEngine: AVAudioEngine?
     private var transcribeClient: TranscribeStreamingClient?
@@ -78,6 +79,12 @@ class SpeechRecognizerViewModel: ObservableObject {
             expectedMode: currentSessionMode
         )
         pastSessions = sessionStore.sessions
+        if let latest = sessionStore.sessions.first {
+            recommendationLearningStore.recordOutcome(
+                for: latest,
+                previousSessions: Array(sessionStore.sessions.dropFirst())
+            )
+        }
     }
 
     func startRecording() {
@@ -89,14 +96,16 @@ class SpeechRecognizerViewModel: ObservableObject {
                 await self.startRecordingWith()
             } catch {
                 print("Failed to fetch AWS credentials: \(error)")
-                await MainActor.run { self.transcribedText = AuthManager.missingCredentialsMessage }
+                await MainActor.run {
+                    self.connectionError = error.localizedDescription
+                    self.transcribedText = AuthManager.missingCredentialsMessage
+                }
             }
         }
     }
 
     private func startRecordingWith() async {
         resetCurrentSession()
-        isRecording = true
         sessionStart = Date()
 
         do {
@@ -128,10 +137,18 @@ class SpeechRecognizerViewModel: ObservableObject {
                 transcribeClient = TranscribeStreamingClient(config: config)
             } catch {
                 print("Failed to create AWS client: \(error)")
-                connectionError = "\(error)"
+                failStartRecording(with: error)
                 return
             }
         }
+
+        do {
+            try startAudioStream()
+        } catch {
+            failStartRecording(with: error)
+            return
+        }
+        isRecording = true
 
         Task {
             do {
@@ -149,12 +166,11 @@ class SpeechRecognizerViewModel: ObservableObject {
                 }
             } catch {
                 print("Transcribe start failed: \(error)")
-                connectionError = "\(error)"
-                stopRecording()
+                await MainActor.run {
+                    self.failStartRecording(with: error)
+                }
             }
         }
-
-        startAudioStream()
     }
 
 
@@ -162,10 +178,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     func stopRecording() {
         guard isRecording else { return }
         print("Stopping transcription")
-        audioEngine?.stop()
-        audioEngine = nil
+        teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
         requestStream?.finish()
+        requestStream = nil
+        streamConnection = nil
         isRecording = false
 
         Task {
@@ -195,10 +212,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func startAudioStream() {
+    private func startAudioStream() throws {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
         let inputFormat = inputNode.inputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
@@ -209,7 +227,25 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         audioEngine!.prepare()
-        try? audioEngine!.start()
+        try audioEngine!.start()
+    }
+
+    private func teardownAudioStream() {
+        guard let audioEngine else { return }
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        self.audioEngine = nil
+    }
+
+    private func failStartRecording(with error: Error) {
+        connectionError = "\(error)"
+        teardownAudioStream()
+        try? AVAudioSession.sharedInstance().setActive(false)
+        requestStream?.finish()
+        requestStream = nil
+        streamConnection = nil
+        isRecording = false
+        sessionStart = nil
     }
 
     private func convertBufferToPCMData(buffer: AVAudioPCMBuffer) -> Data {

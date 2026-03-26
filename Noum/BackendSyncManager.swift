@@ -10,6 +10,13 @@ struct BackendBootstrap: Codable {
     let xp: Int?
     let profile: CoachingProfile?
     let sessions: [PracticeSession]?
+    let recommendationPending: RecommendationExposure?
+    let recommendationOutcomes: [RecommendationOutcome]?
+}
+
+private struct RecommendationSyncPayload: Codable {
+    let pendingExposure: RecommendationExposure?
+    let outcomes: [RecommendationOutcome]
 }
 
 actor BackendSyncManager {
@@ -75,6 +82,34 @@ actor BackendSyncManager {
         }
 #endif
         try? await send(session, path: "/v1/me/sessions", accountID: accountID, providerRawValue: providerRawValue)
+    }
+
+    func syncRecommendationState(
+        pendingExposure: RecommendationExposure?,
+        outcomes: [RecommendationOutcome],
+        accountID: String,
+        providerRawValue: String
+    ) async {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            await syncFirebaseRecommendationState(
+                pendingExposure: pendingExposure,
+                outcomes: outcomes,
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            )
+            return
+        }
+#endif
+        try? await send(
+            RecommendationSyncPayload(
+                pendingExposure: pendingExposure,
+                outcomes: outcomes
+            ),
+            path: "/v1/me/recommendations",
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        )
     }
 
     func deleteAccount(accountID: String, providerRawValue: String) async {
@@ -159,19 +194,33 @@ private extension BackendSyncManager {
             async let sessionDocuments = getDocuments(
                 userRef.collection("sessions").order(by: "date", descending: true).limit(to: 100)
             )
+            async let recommendationStateDocument = getDocument(
+                userRef.collection("recommendations").document("state")
+            )
 
             let profileSnapshot = try await profileDocument
             let progressionSnapshot = try await progressionDocument
             let sessionSnapshots = try await sessionDocuments
+            let recommendationStateSnapshot = try await recommendationStateDocument
 
             let profile = try decodeDocument(CoachingProfile.self, from: profileSnapshot?.data())
             let xp = progressionSnapshot?.data()?["xp"] as? Int
             let sessions = try sessionSnapshots.compactMap { try decodeDocument(PracticeSession.self, from: $0.data()) }
+            let recommendationPending = try decodeDocument(
+                RecommendationExposure.self,
+                from: recommendationStateSnapshot?.data()?["pendingExposure"] as? [String: Any]
+            )
+            let recommendationOutcomes = try decodeArray(
+                RecommendationOutcome.self,
+                from: recommendationStateSnapshot?.data()?["outcomes"] as? [[String: Any]]
+            )
 
             return BackendBootstrap(
                 xp: xp,
                 profile: profile,
-                sessions: sessions.isEmpty ? nil : sessions
+                sessions: sessions.isEmpty ? nil : sessions,
+                recommendationPending: recommendationPending,
+                recommendationOutcomes: recommendationOutcomes.isEmpty ? nil : recommendationOutcomes
             )
         } catch {
             return nil
@@ -213,6 +262,27 @@ private extension BackendSyncManager {
         } catch {}
     }
 
+    func syncFirebaseRecommendationState(
+        pendingExposure: RecommendationExposure?,
+        outcomes: [RecommendationOutcome],
+        accountID: String,
+        providerRawValue: String
+    ) async {
+        do {
+            await ensureFirebaseUserDocument(accountID: accountID, providerRawValue: providerRawValue)
+            let pendingData = try pendingExposure.map(encodeDocument)
+            let outcomesData = try outcomes.map(encodeDocument)
+            try await setDocument(
+                userDocument(accountID: accountID).collection("recommendations").document("state"),
+                data: [
+                    "pendingExposure": pendingData as Any,
+                    "outcomes": outcomesData
+                ],
+                merge: true
+            )
+        } catch {}
+    }
+
     func deleteFirebaseAccount(accountID: String) async {
         let userRef = userDocument(accountID: accountID)
         do {
@@ -220,6 +290,7 @@ private extension BackendSyncManager {
             try await deleteDocuments(sessionDocs.map(\.reference))
             try await deleteDocument(userRef.collection("profile").document("main"))
             try await deleteDocument(userRef.collection("progress").document("main"))
+            try await deleteDocument(userRef.collection("recommendations").document("state"))
             try await deleteDocument(userRef)
         } catch {}
     }
@@ -257,6 +328,14 @@ private extension BackendSyncManager {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         return try decoder.decode(T.self, from: data)
+    }
+
+    func decodeArray<T: Decodable>(_ type: T.Type, from array: [[String: Any]]?) throws -> [T] {
+        guard let array else { return [] }
+        let data = try JSONSerialization.data(withJSONObject: array)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        return try decoder.decode([T].self, from: data)
     }
 
     func getDocument(_ reference: DocumentReference) async throws -> DocumentSnapshot? {

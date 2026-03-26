@@ -1362,6 +1362,218 @@ final class PracticeSessionStore: ObservableObject {
 }
 #endif
 
+#if canImport(SwiftUI)
+struct RecommendationExposure: Codable, Equatable {
+    let fingerprint: String
+    let title: String
+    let focus: String
+    let target: String
+    let mode: PracticeMode
+    let isAIBacked: Bool
+    let shownAt: Date
+    var tappedAt: Date?
+}
+
+struct RecommendationOutcome: Codable, Equatable, Identifiable {
+    let id: UUID
+    let fingerprint: String
+    let title: String
+    let mode: PracticeMode
+    let sessionID: UUID
+    let followed: Bool
+    let completedAt: Date
+    let scoreDelta: Double
+    let fillerDelta: Double
+    let durationDelta: Double
+}
+
+@MainActor
+final class RecommendationLearningStore: ObservableObject {
+    static let shared = RecommendationLearningStore()
+
+    @Published private(set) var pendingExposure: RecommendationExposure?
+    @Published private(set) var outcomes: [RecommendationOutcome]
+
+    private let accountKey = "NoumAccountID"
+    private let providerKey = "NoumAccountProvider"
+
+    private init() {
+        let accountID = KeychainHelper.load(key: "NoumAccountID")
+        pendingExposure = Self.loadPending(forKey: Self.pendingKey(for: accountID))
+        outcomes = Self.loadOutcomes(forKey: Self.outcomesKey(for: accountID))
+    }
+
+    func reloadForCurrentAccount() {
+        let accountID = KeychainHelper.load(key: accountKey)
+        pendingExposure = Self.loadPending(forKey: Self.pendingKey(for: accountID))
+        outcomes = Self.loadOutcomes(forKey: Self.outcomesKey(for: accountID))
+    }
+
+    func replaceFromRemote(pendingExposure: RecommendationExposure?, outcomes: [RecommendationOutcome]) {
+        self.pendingExposure = pendingExposure
+        self.outcomes = outcomes.sorted { $0.completedAt > $1.completedAt }
+        persistOutcomes()
+        persistPending()
+    }
+
+    func recordShown(
+        fingerprint: String,
+        title: String,
+        focus: String,
+        target: String,
+        mode: PracticeMode,
+        isAIBacked: Bool
+    ) {
+        if pendingExposure?.fingerprint == fingerprint { return }
+        pendingExposure = RecommendationExposure(
+            fingerprint: fingerprint,
+            title: title,
+            focus: focus,
+            target: target,
+            mode: mode,
+            isAIBacked: isAIBacked,
+            shownAt: Date(),
+            tappedAt: nil
+        )
+        persistPending()
+        syncIfPossible()
+    }
+
+    func markTapped(mode: PracticeMode) {
+        guard var pendingExposure else { return }
+        guard pendingExposure.mode == mode else { return }
+        pendingExposure.tappedAt = Date()
+        self.pendingExposure = pendingExposure
+        persistPending()
+        syncIfPossible()
+    }
+
+    func recordOutcome(for session: PracticeSession, previousSessions: [PracticeSession]) {
+        guard let pendingExposure else { return }
+
+        let relevantHistory = previousSessions.isEmpty ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id } : previousSessions
+        let averageScore = relevantHistory.compactMap(\.score).isEmpty
+            ? Double(session.score ?? 0)
+            : Double(relevantHistory.compactMap(\.score).reduce(0, +)) / Double(relevantHistory.compactMap(\.score).count)
+        let averageFillers = relevantHistory.isEmpty
+            ? Double(session.fillerWordCount)
+            : Double(relevantHistory.map(\.fillerWordCount).reduce(0, +)) / Double(relevantHistory.count)
+        let averageDuration = relevantHistory.isEmpty
+            ? session.duration
+            : relevantHistory.map(\.duration).reduce(0, +) / Double(relevantHistory.count)
+
+        let outcome = RecommendationOutcome(
+            id: UUID(),
+            fingerprint: pendingExposure.fingerprint,
+            title: pendingExposure.title,
+            mode: pendingExposure.mode,
+            sessionID: session.id,
+            followed: pendingExposure.mode == session.mode,
+            completedAt: Date(),
+            scoreDelta: Double(session.score ?? 0) - averageScore,
+            fillerDelta: Double(session.fillerWordCount) - averageFillers,
+            durationDelta: session.duration - averageDuration
+        )
+
+        outcomes.insert(outcome, at: 0)
+        outcomes = Array(outcomes.prefix(40))
+        self.pendingExposure = nil
+        persistOutcomes()
+        persistPending()
+        syncIfPossible()
+    }
+
+    func resetDiagnostics() {
+        outcomes = []
+        pendingExposure = nil
+        persistOutcomes()
+        persistPending()
+        syncIfPossible()
+    }
+
+    func exportDiagnostics() -> String? {
+        struct ExportPayload: Codable {
+            let pendingExposure: RecommendationExposure?
+            let outcomes: [RecommendationOutcome]
+            let exportedAt: Date
+        }
+
+        let payload = ExportPayload(
+            pendingExposure: pendingExposure,
+            outcomes: outcomes,
+            exportedAt: Date()
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(payload) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func persistPending() {
+        let key = Self.pendingKey(for: KeychainHelper.load(key: accountKey))
+        if let pendingExposure, let data = try? JSONEncoder().encode(pendingExposure) {
+            UserDefaults.standard.set(data, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func persistOutcomes() {
+        let key = Self.outcomesKey(for: KeychainHelper.load(key: accountKey))
+        if let data = try? JSONEncoder().encode(outcomes) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func syncIfPossible() {
+        guard let accountID = KeychainHelper.load(key: accountKey),
+              let providerRawValue = KeychainHelper.load(key: providerKey) else { return }
+        let pendingExposure = pendingExposure
+        let outcomes = outcomes
+        Task {
+            await BackendSyncManager.shared.syncRecommendationState(
+                pendingExposure: pendingExposure,
+                outcomes: outcomes,
+                accountID: accountID,
+                providerRawValue: providerRawValue
+            )
+        }
+    }
+
+    private static func pendingKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "recommendation.pending.\(accountID)"
+        }
+        return "recommendation.pending.guest"
+    }
+
+    private static func outcomesKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "recommendation.outcomes.\(accountID)"
+        }
+        return "recommendation.outcomes.guest"
+    }
+
+    private static func loadPending(forKey key: String) -> RecommendationExposure? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let value = try? JSONDecoder().decode(RecommendationExposure.self, from: data) else {
+            return nil
+        }
+        return value
+    }
+
+    private static func loadOutcomes(forKey key: String) -> [RecommendationOutcome] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let value = try? JSONDecoder().decode([RecommendationOutcome].self, from: data) else {
+            return []
+        }
+        return value
+    }
+}
+#endif
+
 @MainActor
 enum PracticeSessionFinalizer {
     static func finalize(
@@ -1583,6 +1795,42 @@ protocol AICoachServicing {
     ) async throws -> AICoachFeedback
 }
 
+struct AIHomeRecommendation: Codable, Equatable {
+    let title: String
+    let detail: String
+    let focus: String
+    let target: String
+    let recommendedMode: String
+    let whyMode: String
+    let whyNow: String
+}
+
+struct AIHomeRecommendationInput {
+    let recentSessionSummary: String
+    let averageFillers: Double
+    let averageDuration: Double
+    let averageWordsPerMinute: Double
+    let fillerTrendDelta: Double
+    let durationTrendDelta: Double
+    let paceTrendDelta: Double
+    let averageWordCount: Double
+    let strongestMode: PracticeMode?
+    let currentIdentity: String
+    let currentIdentityEvidence: String
+    let styleAlignmentScore: Double
+    let sessionStreak: Int
+    let daysSinceLastSession: Int
+}
+
+protocol AIHomeRecommendationServicing {
+    @MainActor
+    func generateHomeRecommendation(
+        input: AIHomeRecommendationInput,
+        profile: CoachingProfile?,
+        plan: CoachingPlan?
+    ) async throws -> AIHomeRecommendation
+}
+
 @MainActor
 struct AICoachService: AICoachServicing {
     static let minimumTranscriptWordCount = 10
@@ -1712,6 +1960,170 @@ struct AICoachService: AICoachServicing {
 
         Transcript:
         \(input.transcript)
+        """
+    }
+
+    private func apiKey(for provider: AIProvider) -> String? {
+        if let keyName = provider.environmentKey,
+           let value = ProcessInfo.processInfo.environment[keyName],
+           !value.isEmpty {
+            return value
+        }
+        if let keyName = provider.environmentKey,
+           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
+            return value
+        }
+        return nil
+    }
+
+    private func apiError(from data: Data, provider: AIProvider) -> AICoachError {
+        if provider == .gemini,
+           let response = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data) {
+            return .apiFailure(response.error.message)
+        }
+
+        if let response = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data) {
+            return .apiFailure(response.error.message)
+        }
+
+        return .invalidResponse
+    }
+}
+
+@MainActor
+struct AIHomeRecommendationService: AIHomeRecommendationServicing {
+    static let minimumSessionCount = 2
+
+    private let settings = AISettingsManager.shared
+
+    func generateHomeRecommendation(
+        input: AIHomeRecommendationInput,
+        profile: CoachingProfile?,
+        plan: CoachingPlan?
+    ) async throws -> AIHomeRecommendation {
+        settings.resetIfNeeded()
+        guard let provider = settings.activeProvider else { throw AICoachError.missingAPIKey }
+        guard settings.canRequestAnalysis else { throw AICoachError.providerDisabled }
+        guard let apiKey = apiKey(for: provider) else { throw AICoachError.missingAPIKey }
+        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let prompt = prompt(for: input, profile: profile, plan: plan)
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body = OpenAICompatibleChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: systemPrompt),
+                    .init(role: "user", content: prompt)
+                ],
+                temperature: 0.2,
+                responseFormat: .jsonObject
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiGenerateContentRequest(
+                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
+                contents: [.init(parts: [.init(text: prompt)])],
+                generationConfig: .init(
+                    temperature: 0.2,
+                    responseMimeType: "application/json"
+                )
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AICoachError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw apiError(from: data, provider: provider)
+        }
+
+        let jsonData: Data
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            guard let content = completion.choices.first?.message.content,
+                  let contentData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            jsonData = contentData
+        case .gemini:
+            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            let content = completion.candidates
+                .first?
+                .content
+                .parts
+                .compactMap(\.text)
+                .joined()
+            guard let content, let contentData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            jsonData = contentData
+        }
+
+        let recommendation = try JSONDecoder().decode(AIHomeRecommendation.self, from: jsonData)
+        settings.recordAnalysis()
+        return recommendation
+    }
+
+    private var systemPrompt: String {
+        """
+        You are the intelligence behind a premium communication coaching app.
+        Recommend the single best next speaking drill for the user based on recent performance.
+        Be specific, coach-like, and adaptive. Do not sound generic.
+        Return JSON only with keys: title, detail, focus, target, recommendedMode, whyMode, whyNow.
+        recommendedMode must be one of: timed, suddenDeath, ahCounter.
+        title should be short and action-oriented.
+        detail should explain the reasoning in one sentence.
+        focus should be a short coaching label.
+        target should be a concise measurable target like '30s+' or 'Zero fillers' or '<150 WPM'.
+        whyMode should explain why this mode is the best fit right now in one sentence.
+        whyNow should explain the timing or trend behind the recommendation in one sentence.
+        """
+    }
+
+    private func prompt(
+        for input: AIHomeRecommendationInput,
+        profile: CoachingProfile?,
+        plan: CoachingPlan?
+    ) -> String {
+        """
+        Average fillers: \(String(format: "%.2f", input.averageFillers))
+        Filler trend delta vs previous block: \(String(format: "%.2f", input.fillerTrendDelta))
+        Average duration: \(Int(input.averageDuration)) seconds
+        Duration trend delta vs previous block: \(Int(input.durationTrendDelta)) seconds
+        Average words per minute: \(Int(input.averageWordsPerMinute.rounded()))
+        Pace trend delta vs previous block: \(Int(input.paceTrendDelta.rounded())) WPM
+        Average word count: \(Int(input.averageWordCount.rounded()))
+        Strongest mode: \(input.strongestMode?.rawValue ?? "none")
+        Current speaking identity: \(input.currentIdentity)
+        Identity evidence: \(input.currentIdentityEvidence)
+        Style alignment score: \(String(format: "%.2f", input.styleAlignmentScore))
+        Session streak in days: \(input.sessionStreak)
+        Days since last session: \(input.daysSinceLastSession)
+        Speaker context: \(profile?.speakingContext.title ?? "unknown")
+        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
+        Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
+        Target speaking style: \(profile?.speakingStyleGoal.title ?? "unknown")
+        Personal goal reference: \(profile?.personalGoalReference ?? "none")
+        Current coaching focus: \(plan?.currentFocus ?? "none")
+        Suggested drill from rules engine: \(plan?.suggestedDrill ?? "none")
+
+        Recent sessions:
+        \(input.recentSessionSummary)
         """
     }
 

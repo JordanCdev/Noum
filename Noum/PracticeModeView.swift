@@ -19,6 +19,9 @@ struct PracticeModeView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 20) {
+                    if let error = speechVM.connectionError {
+                        errorCard(error)
+                    }
                     if thinkingCountdown > 0 {
                         Text(question)
                             .font(.title3)
@@ -130,6 +133,15 @@ struct PracticeModeView: View {
                 showSummary = true
             }
         }
+    }
+
+    private func errorCard(_ message: String) -> some View {
+        Text(message)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func reset() {

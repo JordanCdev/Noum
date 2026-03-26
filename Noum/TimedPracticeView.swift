@@ -87,6 +87,10 @@ struct TimedPracticeView: View {
             }
             .padding(.vertical, 8)
 
+            if let error = speechVM.connectionError {
+                errorCard(error)
+            }
+
             if !hasStartedSpeaking {
                 promptCard
                 if thinkingCountdown > 0 {
@@ -217,6 +221,20 @@ struct TimedPracticeView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color.white.opacity(0.92), in: Capsule())
+    }
+
+    private func errorCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Transcription error")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func startThinkingCountdown() {

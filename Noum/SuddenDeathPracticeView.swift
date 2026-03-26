@@ -41,6 +41,10 @@ struct SuddenDeathPracticeView: View {
 
             VStack(spacing: 20) {
                 headerCard
+
+                if let error = speechVM.connectionError {
+                    errorCard(error)
+                }
                 
                 if speechVM.isRecording {
                     progressCard
@@ -297,6 +301,20 @@ struct SuddenDeathPracticeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func errorCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Transcription error")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func startSequence() {
