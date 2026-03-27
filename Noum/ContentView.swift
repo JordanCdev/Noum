@@ -57,16 +57,16 @@ struct ContentView: View {
                 )
                 .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 12) {
-                        heroCard
-                        suggestedPracticeCard
-                        progressCard
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
-                    .padding(.bottom, 94)
+                VStack(spacing: 12) {
+                    heroCard
+                    suggestedPracticeCard
+                    journeyPreviewCard
+                    progressCard
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 94)
             }
             .toolbar(.hidden, for: .navigationBar)
             .overlay(alignment: .bottom) {
@@ -123,7 +123,7 @@ struct ContentView: View {
     }
 
     private var progressCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 HStack(spacing: 12) {
                     ZStack {
@@ -144,7 +144,7 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(rankTitle)
-                            .font(.title3.weight(.bold))
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
                         Text(rankDescriptor)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(rankTint)
@@ -159,32 +159,42 @@ struct ContentView: View {
                     .background(Color.blue.opacity(0.10), in: Capsule())
             }
 
-            ProgressView(value: profile.progressTowardsNextLevel)
-                .tint(.blue)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(nextRankTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(levelProgressLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.blue)
+                }
+
+                ProgressView(value: profile.progressTowardsNextLevel)
+                    .tint(.blue)
+            }
 
             HStack {
                 Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Spacer()
-                Text(levelProgressLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .frame(minHeight: 164)
+        .padding(20)
         .background(Color.white.opacity(0.80), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var suggestedPracticeCard: some View {
         let primary = effectiveSuggestion
 
-        return VStack(alignment: .leading, spacing: 14) {
-                Text("Noum Recommends For You")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Noum Recommends For You")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
 
             suggestionLink(
                 title: primary.title,
@@ -197,22 +207,88 @@ struct ContentView: View {
             coachingFocusCard
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .frame(minHeight: 164)
+        .padding(16)
         .background(
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.94),
-                    Color.white.opacity(0.78)
+                    Color.white.opacity(0.92),
+                    Color.white.opacity(0.80)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.white.opacity(0.75), lineWidth: 1)
         )
+    }
+
+    private var journeyPreviewCard: some View {
+        NavigationLink(destination: PathJourneyView()) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.86, green: 0.93, blue: 0.81),
+                                    Color(red: 0.95, green: 0.98, blue: 0.91)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 56, height: 56)
+                    Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color(red: 0.34, green: 0.56, blue: 0.25))
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Your Path")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text(journeySnapshot.progressLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(red: 0.30, green: 0.54, blue: 0.24))
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(journeySnapshot.homeGoalShortLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color(red: 0.30, green: 0.54, blue: 0.24))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 88)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.94),
+                        Color(red: 0.94, green: 0.98, blue: 0.93).opacity(0.88)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.75), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var bottomNavigation: some View {
@@ -264,10 +340,11 @@ struct ContentView: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.subheadline.weight(.bold))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -276,10 +353,14 @@ struct ContentView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(tint)
             }
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.vertical, 10)
+            .background(Color.black.opacity(0.025), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
         }
         .simultaneousGesture(TapGesture().onEnded {
             selectedPracticeMode = mode
@@ -288,22 +369,28 @@ struct ContentView: View {
     }
 
     private var coachingFocusCard: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Coaching Focus")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(primaryFocusText)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.primary)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Coaching Focus")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(primaryFocusText)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.primary)
+            }
+
+            Spacer()
+
             Text(coachingFocusDetail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func navItem(title: String, systemImage: String, accent: Color) -> some View {
@@ -486,6 +573,10 @@ struct ContentView: View {
 
     private var primaryFocusText: String {
         effectiveSuggestion.focus
+    }
+
+    private var journeySnapshot: PracticeJourneySnapshot {
+        PracticeJourneySnapshot.make(from: sessionStore.sessions)
     }
 
     private var coachingFocusDetail: String {
@@ -707,6 +798,10 @@ struct ContentView: View {
 
     private var rankTitle: String {
         "Speaker \(max(1, (profile.xp / 1000) + 1))"
+    }
+
+    private var nextRankTitle: String {
+        "Next: Speaker \(max(2, (profile.xp / 1000) + 2))"
     }
 
     private var rankAccentCount: Int {
