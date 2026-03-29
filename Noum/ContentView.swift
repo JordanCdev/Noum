@@ -568,6 +568,8 @@ struct ContentView: View {
             return "Pressure rep"
         case .ahCounter:
             return "Pace reset"
+        case .imConversation:
+            return "Conversation rep"
         }
     }
 
@@ -762,6 +764,8 @@ struct ContentView: View {
             SuddenDeathPracticeView()
         case .ahCounter:
             AhCounterView()
+        case .imConversation:
+            IMPracticeView()
         }
     }
 
@@ -826,6 +830,8 @@ struct ContentView: View {
             return "Sudden Death"
         case .ahCounter:
             return "Ah-Counter"
+        case .imConversation:
+            return "IM Mode"
         }
     }
 
@@ -837,6 +843,8 @@ struct ContentView: View {
             return "bolt.fill"
         case .ahCounter:
             return "waveform.and.mic"
+        case .imConversation:
+            return "message.badge.waveform.fill"
         }
     }
 
@@ -848,6 +856,8 @@ struct ContentView: View {
             return .orange
         case .ahCounter:
             return .green
+        case .imConversation:
+            return .purple
         }
     }
 }

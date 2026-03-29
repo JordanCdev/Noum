@@ -26,6 +26,7 @@ struct SummaryView: View {
     var scoreBreakdown: [PracticeScoreSegment] = []
     var insights: [String] = []
     var recentSessions: [PracticeSession] = []
+    var imConversationDetails: IMConversationDetails? = nil
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
@@ -54,6 +55,14 @@ struct SummaryView: View {
 
     private var transcriptWordCount: Int {
         transcriptText.split { !$0.isLetter && !$0.isNumber }.count
+    }
+
+    private var actualToneText: String? {
+        imConversationDetails?.actualTone
+    }
+
+    private var targetToneText: String? {
+        imConversationDetails?.setup.targetTone.title
     }
 
     private var scoreValue: Int {
@@ -275,6 +284,11 @@ struct SummaryView: View {
 
     private var overviewPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let imConversationDetails {
+                imTonePanel(details: imConversationDetails)
+                Divider()
+                    .padding(.vertical, 4)
+            }
             Text("Breakdown")
                 .font(.headline)
             if visibleBreakdown.isEmpty {
@@ -295,6 +309,45 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func imTonePanel(details: IMConversationDetails) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Conversation Read")
+                .font(.headline)
+
+            HStack(spacing: 10) {
+                metricCard(title: "Target Tone", value: details.setup.targetTone.title, tint: .blue)
+                metricCard(title: "Actual Tone", value: details.actualTone ?? "Not captured", tint: .orange)
+            }
+
+            HStack(spacing: 10) {
+                metricCard(title: "Scenario", value: details.setup.scenario.title, tint: .purple)
+                metricCard(title: "Turns", value: "\(details.turns.filter { $0.speaker == .user }.count)", tint: .green)
+            }
+
+            if let finalState = details.finalState {
+                HStack(spacing: 10) {
+                    metricCard(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .blue)
+                    metricCard(title: "Engagement", value: "\(finalState.normalizedEngagement)/10", tint: .green)
+                    metricCard(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
+                }
+
+                Text(finalState.beat)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let outcome = details.outcome {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(outcome.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(outcome.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var insightsPanel: some View {
@@ -395,17 +448,57 @@ struct SummaryView: View {
 
     private var transcriptPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Transcript")
+            Text(imConversationDetails == nil ? "Transcript" : "Conversation")
                 .font(.headline)
-            Text(transcript)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(14)
-                .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            if let details = imConversationDetails {
+                VStack(spacing: 10) {
+                    ForEach(details.turns) { turn in
+                        HStack {
+                            if turn.speaker == .npc {
+                                transcriptBubble(
+                                    speaker: details.setup.scenario.personaName,
+                                    text: turn.text,
+                                    tint: Color(red: 0.95, green: 0.96, blue: 0.99),
+                                    isLeading: true
+                                )
+                                Spacer(minLength: 36)
+                            } else {
+                                Spacer(minLength: 36)
+                                transcriptBubble(
+                                    speaker: "You",
+                                    text: turn.text,
+                                    tint: Color(red: 0.87, green: 0.94, blue: 1.0),
+                                    isLeading: false
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(transcript)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(14)
+                    .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func transcriptBubble(speaker: String, text: String, tint: Color, isLeading: Bool) -> some View {
+        VStack(alignment: isLeading ? .leading : .trailing, spacing: 6) {
+            Text(speaker)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.subheadline)
+                .multilineTextAlignment(isLeading ? .leading : .trailing)
+        }
+        .frame(maxWidth: 260, alignment: isLeading ? .leading : .trailing)
+        .padding(12)
+        .background(tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var xpPanel: some View {

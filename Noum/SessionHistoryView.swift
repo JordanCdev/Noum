@@ -133,6 +133,27 @@ struct SessionHistoryView: View {
                 statPill(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
             }
 
+            if let imDetails = session.imConversationDetails {
+                HStack(spacing: 10) {
+                    statPill(title: "Target", value: imDetails.setup.targetTone.title, tint: .blue)
+                    statPill(title: "Actual", value: imDetails.actualTone ?? "Pending", tint: .orange)
+                }
+
+                if let finalState = imDetails.finalState {
+                    HStack(spacing: 10) {
+                        statPill(title: "Trust", value: "\(finalState.normalizedTrust)", tint: .blue)
+                        statPill(title: "Engage", value: "\(finalState.normalizedEngagement)", tint: .green)
+                        statPill(title: "Tension", value: "\(finalState.normalizedTension)", tint: .orange)
+                    }
+                }
+
+                if let outcome = imDetails.outcome {
+                    Text(outcome.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+
             if let score = session.score {
                 HStack(spacing: 10) {
                     statPill(title: "Score", value: "\(score)/10", tint: .green)
@@ -190,6 +211,7 @@ struct SessionHistoryView: View {
         case .timed: return "Timed"
         case .suddenDeath: return "Sudden Death"
         case .ahCounter: return "Ah-Counter"
+        case .imConversation: return "IM Mode"
         }
     }
 
@@ -255,6 +277,41 @@ private struct SessionHistoryDetailView: View {
                     .padding(18)
                     .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
 
+                    if let imDetails = session.imConversationDetails {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Tone Check")
+                                .font(.headline)
+                            HStack(spacing: 10) {
+                                metric(title: "Target", value: imDetails.setup.targetTone.title, tint: .blue)
+                                metric(title: "Actual", value: imDetails.actualTone ?? "Pending", tint: .orange)
+                                metric(title: "Scenario", value: imDetails.setup.scenario.title, tint: .purple)
+                            }
+
+                            if let finalState = imDetails.finalState {
+                                HStack(spacing: 10) {
+                                    metric(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .blue)
+                                    metric(title: "Engage", value: "\(finalState.normalizedEngagement)/10", tint: .green)
+                                    metric(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
+                                }
+
+                                Text(finalState.beat)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let outcome = imDetails.outcome {
+                                Text(outcome.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(outcome.summary)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    }
+
                     VStack(alignment: .leading, spacing: 12) {
                         let identity = PracticeEvaluator.speakingIdentity(for: session.transcript, profile: CoachingProfileStore.shared.profile)
                         Text("Speaking Identity")
@@ -268,6 +325,38 @@ private struct SessionHistoryDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(18)
                     .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+
+                    if let imDetails = session.imConversationDetails {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Conversation")
+                                .font(.headline)
+
+                            ForEach(imDetails.turns) { turn in
+                                HStack {
+                                    if turn.speaker == .npc {
+                                        historyBubble(
+                                            speaker: imDetails.setup.scenario.personaName,
+                                            text: turn.text,
+                                            tint: Color(red: 0.95, green: 0.96, blue: 0.99),
+                                            isLeading: true
+                                        )
+                                        Spacer(minLength: 32)
+                                    } else {
+                                        Spacer(minLength: 32)
+                                        historyBubble(
+                                            speaker: "You",
+                                            text: turn.text,
+                                            tint: Color(red: 0.87, green: 0.94, blue: 1.0),
+                                            isLeading: false
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    }
 
                     if let aiFeedback = session.aiCoachFeedback {
                         VStack(alignment: .leading, spacing: 12) {
@@ -344,6 +433,20 @@ private struct SessionHistoryDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func historyBubble(speaker: String, text: String, tint: Color, isLeading: Bool) -> some View {
+        VStack(alignment: isLeading ? .leading : .trailing, spacing: 6) {
+            Text(speaker)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.subheadline)
+                .multilineTextAlignment(isLeading ? .leading : .trailing)
+        }
+        .frame(maxWidth: 270, alignment: isLeading ? .leading : .trailing)
+        .padding(12)
+        .background(tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 #endif

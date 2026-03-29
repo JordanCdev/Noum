@@ -2,6 +2,9 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+#if canImport(AVFAudio)
+import AVFAudio
+#endif
 
 enum LocalConfigLoader {
     static func value(forKey key: String, plistNamed plistName: String) -> String? {
@@ -332,6 +335,380 @@ struct AICoachFeedback: Codable, Equatable {
     let revisedOpening: String
 }
 
+enum IMConversationScenario: String, CaseIterable, Codable, Identifiable {
+    case socialCatchUp
+    case workUpdate
+    case difficultConversation
+    case networking
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .socialCatchUp: return "Social Catch-Up"
+        case .workUpdate: return "Work Update"
+        case .difficultConversation: return "Difficult Conversation"
+        case .networking: return "Networking"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .socialCatchUp:
+            return "Keep a natural chat moving without rambling or sounding flat."
+        case .workUpdate:
+            return "Give a useful update that sounds clear, steady, and professional."
+        case .difficultConversation:
+            return "Handle pressure, pushback, or awkwardness without losing composure."
+        case .networking:
+            return "Build rapport quickly and keep the conversation warm but intentional."
+        }
+    }
+
+    var personaName: String {
+        switch self {
+        case .socialCatchUp: return "Maya"
+        case .workUpdate: return "Jordan"
+        case .difficultConversation: return "Sam"
+        case .networking: return "Alex"
+        }
+    }
+
+    var personaRole: String {
+        switch self {
+        case .socialCatchUp: return "friend"
+        case .workUpdate: return "coworker"
+        case .difficultConversation: return "teammate"
+        case .networking: return "new connection"
+        }
+    }
+
+    var stakes: String {
+        switch self {
+        case .socialCatchUp: return "low stakes, personal"
+        case .workUpdate: return "light professional pressure"
+        case .difficultConversation: return "mild tension and emotional risk"
+        case .networking: return "social-professional opportunity"
+        }
+    }
+
+    var currentMood: String {
+        switch self {
+        case .socialCatchUp: return "curious and relaxed"
+        case .workUpdate: return "slightly rushed but open"
+        case .difficultConversation: return "tense, guarded, and looking for clarity"
+        case .networking: return "friendly, alert, and evaluating the connection"
+        }
+    }
+
+    var conversationGoal: String {
+        switch self {
+        case .socialCatchUp: return "keep the chat flowing and feel genuinely interested"
+        case .workUpdate: return "understand the update quickly and test whether it is clear"
+        case .difficultConversation: return "see whether the speaker can stay calm and direct under pressure"
+        case .networking: return "find out whether the speaker is engaging, clear, and worth talking to longer"
+        }
+    }
+
+    var frictionStyle: String {
+        switch self {
+        case .socialCatchUp: return "light follow-up questions"
+        case .workUpdate: return "asks for the headline and practical detail"
+        case .difficultConversation: return "pushes back a little and asks for clarity"
+        case .networking: return "tests warmth, clarity, and curiosity"
+        }
+    }
+
+    var coachingFocus: String {
+        switch self {
+        case .socialCatchUp: return "sound natural without drifting or going flat"
+        case .workUpdate: return "be clear, concise, and easy to follow"
+        case .difficultConversation: return "stay composed while being honest and direct"
+        case .networking: return "balance warmth with intention and specificity"
+        }
+    }
+
+    var openingLine: String {
+        switch self {
+        case .socialCatchUp:
+            return "Hey, long time. What’s been going on with you lately?"
+        case .workUpdate:
+            return "Quick one before the meeting. What’s the headline on your side?"
+        case .difficultConversation:
+            return "Can we talk about earlier? It didn’t sit right with me."
+        case .networking:
+            return "Good to meet you. What kind of work are you focused on?"
+        }
+    }
+}
+
+enum IMTargetTone: String, CaseIterable, Codable, Identifiable {
+    case confident
+    case warm
+    case concise
+    case assertive
+    case calm
+    case professional
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .confident: return "Confident"
+        case .warm: return "Warm"
+        case .concise: return "Concise"
+        case .assertive: return "Assertive"
+        case .calm: return "Calm"
+        case .professional: return "Professional"
+        }
+    }
+
+    var coachingPrompt: String {
+        switch self {
+        case .confident: return "sound assured without over-explaining"
+        case .warm: return "sound human, open, and easy to talk to"
+        case .concise: return "get to the point quickly while still sounding natural"
+        case .assertive: return "be direct and clear without sounding aggressive"
+        case .calm: return "sound steady and composed under pressure"
+        case .professional: return "sound polished, clear, and workplace-ready"
+        }
+    }
+}
+
+enum IMConversationSpeaker: String, Codable {
+    case user
+    case npc
+}
+
+struct IMConversationTurn: Identifiable, Codable, Equatable {
+    let id: UUID
+    let speaker: IMConversationSpeaker
+    let text: String
+    let createdAt: Date
+
+    init(id: UUID = UUID(), speaker: IMConversationSpeaker, text: String, createdAt: Date = Date()) {
+        self.id = id
+        self.speaker = speaker
+        self.text = text
+        self.createdAt = createdAt
+    }
+}
+
+struct IMConversationSetup: Codable, Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+}
+
+struct IMConversationState: Codable, Equatable {
+    let trust: Int
+    let engagement: Int
+    let tension: Int
+    let beat: String
+
+    static let starting = IMConversationState(
+        trust: 5,
+        engagement: 5,
+        tension: 4,
+        beat: "The conversation has just opened."
+    )
+
+    var normalizedTrust: Int { max(1, min(10, trust)) }
+    var normalizedEngagement: Int { max(1, min(10, engagement)) }
+    var normalizedTension: Int { max(1, min(10, tension)) }
+}
+
+struct IMConversationOutcome: Codable, Equatable {
+    let title: String
+    let summary: String
+    let closingMessage: String
+}
+
+struct IMConversationDetails: Codable, Equatable {
+    let setup: IMConversationSetup
+    let turns: [IMConversationTurn]
+    let actualTone: String?
+    let finalState: IMConversationState?
+    let outcome: IMConversationOutcome?
+}
+
+struct IMConversationReply: Codable, Equatable {
+    let message: String
+    let shouldWrapUp: Bool
+    let updatedState: IMConversationState
+}
+
+private struct BackendIMConversationReplyRequest: Codable {
+    let setup: IMConversationSetup
+    let turns: [IMConversationTurn]
+    let state: IMConversationState
+    let profile: CoachingProfile?
+}
+
+struct IMConversationEvaluation: Codable, Equatable {
+    let actualTone: String
+    let toneMatch: Int
+    let clarityScore: Int
+    let composureScore: Int
+    let vocabularyScore: Int
+    let conversationScore: Int
+    let headline: String
+    let feedback: String
+    let insights: [String]
+    let suggestedDrill: String
+    let outcome: IMConversationOutcome?
+
+    var overallScore: Int {
+        let total = toneMatch + clarityScore + composureScore + vocabularyScore + conversationScore
+        return max(1, min(10, Int(round(Double(total) / 5.0))))
+    }
+
+    var xpEarned: Int {
+        max(8, overallScore * 9)
+    }
+
+    var segments: [PracticeScoreSegment] {
+        [
+            PracticeScoreSegment(title: "Tone Match", value: "\(toneMatch)/10", tintName: "blue"),
+            PracticeScoreSegment(title: "Clarity", value: "\(clarityScore)/10", tintName: "teal"),
+            PracticeScoreSegment(title: "Composure", value: "\(composureScore)/10", tintName: "orange"),
+            PracticeScoreSegment(title: "Vocabulary", value: "\(vocabularyScore)/10", tintName: "purple"),
+            PracticeScoreSegment(title: "Conversation", value: "\(conversationScore)/10", tintName: "green")
+        ]
+    }
+}
+
+private struct BackendIMConversationEvaluationRequest: Codable {
+    let setup: IMConversationSetup
+    let turns: [IMConversationTurn]
+    let finalState: IMConversationState?
+    let transcript: String
+    let fillerCount: Int
+    let duration: TimeInterval
+    let recentSessions: [PracticeSession]
+    let profile: CoachingProfile?
+
+    enum CodingKeys: String, CodingKey {
+        case setup
+        case turns
+        case finalState = "final_state"
+        case transcript
+        case fillerCount = "filler_count"
+        case duration
+        case recentSessions = "recent_sessions"
+        case profile
+    }
+}
+
+enum IMConversationOutcomeResolver {
+    static func resolve(for scenario: IMConversationScenario, state: IMConversationState) -> IMConversationOutcome {
+        if state.normalizedTrust >= 8 && state.normalizedEngagement >= 7 && state.normalizedTension <= 4 {
+            return IMConversationOutcome(
+                title: "Strong connection",
+                summary: "You built trust and kept the conversation open.",
+                closingMessage: positiveClosing(for: scenario)
+            )
+        }
+
+        if state.normalizedTension >= 8 && state.normalizedTrust <= 4 {
+            return IMConversationOutcome(
+                title: "Conversation tightened",
+                summary: "The interaction stayed guarded and more strained than it needed to be.",
+                closingMessage: guardedClosing(for: scenario)
+            )
+        }
+
+        if state.normalizedEngagement <= 4 {
+            return IMConversationOutcome(
+                title: "Low momentum",
+                summary: "The conversation lost energy before it fully opened up.",
+                closingMessage: flatClosing(for: scenario)
+            )
+        }
+
+        return IMConversationOutcome(
+            title: "Steady exchange",
+            summary: "You kept the conversation moving, but there is room to shape the tone more intentionally.",
+            closingMessage: neutralClosing(for: scenario)
+        )
+    }
+
+    private static func positiveClosing(for scenario: IMConversationScenario) -> String {
+        switch scenario {
+        case .socialCatchUp:
+            return "This was actually really nice to catch up on. Let’s talk again soon."
+        case .workUpdate:
+            return "Perfect, that gives me confidence going into the meeting. Thanks."
+        case .difficultConversation:
+            return "I appreciate you saying that clearly. I think that helps."
+        case .networking:
+            return "This has been good. I’d genuinely be up for staying in touch."
+        }
+    }
+
+    private static func guardedClosing(for scenario: IMConversationScenario) -> String {
+        switch scenario {
+        case .socialCatchUp:
+            return "Right, okay. Anyway, I should get going."
+        case .workUpdate:
+            return "Okay. I’ll work with that for now."
+        case .difficultConversation:
+            return "I still don’t think we’re really aligned here."
+        case .networking:
+            return "Got it. Nice meeting you."
+        }
+    }
+
+    private static func flatClosing(for scenario: IMConversationScenario) -> String {
+        switch scenario {
+        case .socialCatchUp:
+            return "Yeah, fair enough. Hope the rest of your day goes well."
+        case .workUpdate:
+            return "Alright, thanks for the update."
+        case .difficultConversation:
+            return "Okay. I think that’s all I wanted to say."
+        case .networking:
+            return "Nice chatting. Enjoy the rest of the event."
+        }
+    }
+
+    private static func neutralClosing(for scenario: IMConversationScenario) -> String {
+        switch scenario {
+        case .socialCatchUp:
+            return "Good to hear where you’re at. Let’s catch up again soon."
+        case .workUpdate:
+            return "Got it. That helps me understand where things stand."
+        case .difficultConversation:
+            return "Okay, I hear where you’re coming from."
+        case .networking:
+            return "Nice talking with you. It’s been good hearing more."
+        }
+    }
+}
+
+protocol IMConversationServicing {
+    @MainActor
+    func generateReply(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        state: IMConversationState,
+        profile: CoachingProfile?
+    ) async throws -> IMConversationReply
+}
+
+protocol IMConversationEvaluatorServicing {
+    @MainActor
+    func evaluateConversation(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState?,
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        recentSessions: [PracticeSession],
+        profile: CoachingProfile?
+    ) async throws -> IMConversationEvaluation
+}
+
 #if canImport(SwiftUI)
 @MainActor
 final class PracticeSettingsManager: ObservableObject {
@@ -506,6 +883,688 @@ final class AISettingsManager: ObservableObject {
         return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") != nil
     }
 }
+
+@MainActor
+final class IMVoicePlaybackSettingsManager: ObservableObject {
+    static let shared = IMVoicePlaybackSettingsManager()
+
+    @Published var engine: IMVoiceEngine {
+        didSet { UserDefaults.standard.set(engine.rawValue, forKey: engineKey) }
+    }
+
+    @Published var isEnabled: Bool {
+        didSet { UserDefaults.standard.set(isEnabled, forKey: playbackEnabledKey) }
+    }
+
+    private let engineKey = "imVoicePlaybackEngine"
+    private let playbackEnabledKey = "imVoicePlaybackEnabled"
+
+    private init() {
+        if UserDefaults.standard.object(forKey: playbackEnabledKey) == nil {
+            UserDefaults.standard.set(true, forKey: playbackEnabledKey)
+        }
+        if let storedEngine = UserDefaults.standard.string(forKey: engineKey),
+           let parsedEngine = IMVoiceEngine(rawValue: storedEngine) {
+            engine = parsedEngine
+        } else {
+            engine = .auto
+        }
+        isEnabled = UserDefaults.standard.bool(forKey: playbackEnabledKey)
+    }
+}
+
+enum IMVoiceEngine: String, CaseIterable, Codable, Identifiable {
+    case auto
+    case backend
+    case googleCloud
+    case elevenLabs
+    case openAI
+    case system
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto:
+            return "Auto"
+        case .backend:
+            return "Backend"
+        case .googleCloud:
+            return "Google Cloud"
+        case .elevenLabs:
+            return "ElevenLabs"
+        case .openAI:
+            return "AI"
+        case .system:
+            return "Device"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .auto:
+            return "Prefer backend voice, then Google Cloud, then ElevenLabs, then OpenAI, then device speech."
+        case .backend:
+            return "Use Noum backend voice synthesis first, with provider secrets kept off the device."
+        case .googleCloud:
+            return "Use Google Cloud Text-to-Speech when an access token is configured."
+        case .elevenLabs:
+            return "Use ElevenLabs voice synthesis when API keys and voice IDs are configured."
+        case .openAI:
+            return "Force OpenAI TTS for the most natural NPC replies."
+        case .system:
+            return "Use offline Apple speech synthesis only."
+        }
+    }
+}
+
+#if canImport(AVFAudio)
+@MainActor
+final class IMMessageSpeaker: NSObject, ObservableObject {
+    static let shared = IMMessageSpeaker()
+
+    private let playbackSettings = IMVoicePlaybackSettingsManager.shared
+    private let synthesizer = AVSpeechSynthesizer()
+    private var audioPlayer: AVAudioPlayer?
+    private var speechTask: Task<Void, Never>?
+
+    override private init() {
+        super.init()
+    }
+
+    func speak(_ text: String, setup: IMConversationSetup) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        stop()
+        speechTask = Task { [weak self] in
+            guard let self else { return }
+            let selectedEngine = resolvedEngine(for: setup)
+            if selectedEngine == .backend,
+               await playWithBackend(trimmed, setup: setup) {
+                return
+            }
+            if selectedEngine == .googleCloud,
+               await playWithGoogleCloud(trimmed, setup: setup) {
+                return
+            }
+            if selectedEngine == .elevenLabs,
+               await playWithElevenLabs(trimmed, setup: setup) {
+                return
+            }
+            if selectedEngine == .openAI,
+               await playWithOpenAI(trimmed, setup: setup) {
+                return
+            }
+            playWithSystemVoice(trimmed, setup: setup)
+        }
+    }
+
+    func stop() {
+        speechTask?.cancel()
+        speechTask = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        if synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+        }
+    }
+
+    private func resolvedEngine(for setup: IMConversationSetup) -> IMVoiceEngine {
+        switch playbackSettings.engine {
+        case .auto:
+            if backendTTSAvailable() {
+                return .backend
+            }
+            if googleCloudAccessToken() != nil {
+                return .googleCloud
+            }
+            if googleCloudAPIKey() != nil {
+                return .googleCloud
+            }
+            if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
+                return .elevenLabs
+            }
+            return openAIAPIKey() == nil ? .system : .openAI
+        case .backend:
+            return .backend
+        case .googleCloud:
+            return .googleCloud
+        case .elevenLabs:
+            return .elevenLabs
+        case .openAI:
+            return .openAI
+        case .system:
+            return .system
+        }
+    }
+
+    private func playWithSystemVoice(_ text: String, setup: IMConversationSetup) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = preferredSystemVoice(for: setup)
+            ?? AVSpeechSynthesisVoice(language: preferredLanguageCode())
+        utterance.rate = 0.47
+        utterance.pitchMultiplier = 1.0
+        utterance.volume = 0.98
+        synthesizer.speak(utterance)
+    }
+
+    private func preferredSystemVoice(for setup: IMConversationSetup) -> AVSpeechSynthesisVoice? {
+        let targetLanguage = preferredLanguageCode()
+        let candidates = AVSpeechSynthesisVoice.speechVoices()
+            .filter {
+                $0.language.hasPrefix(String(targetLanguage.prefix(2))) &&
+                !$0.voiceTraits.contains(.isNoveltyVoice)
+            }
+            .sorted { lhs, rhs in
+                qualityRank(lhs) > qualityRank(rhs)
+            }
+
+        if let exact = candidates.first(where: { $0.language == targetLanguage }) {
+            return exact
+        }
+
+        return candidates.first
+    }
+
+    private func qualityRank(_ voice: AVSpeechSynthesisVoice) -> Int {
+        switch voice.quality {
+        case .premium:
+            return 3
+        case .enhanced:
+            return 2
+        default:
+            return 1
+        }
+    }
+
+    private func preferredLanguageCode() -> String {
+        let current = Locale.autoupdatingCurrent
+        if current.identifier.hasPrefix("en_GB") || TimeZone.autoupdatingCurrent.identifier == "Europe/London" {
+            return "en-GB"
+        }
+        return "en-US"
+    }
+
+    private func backendTTSAvailable() -> Bool {
+        backendBaseURL() != nil
+    }
+
+    private func backendBaseURL() -> URL? {
+        let rawValue =
+            ProcessInfo.processInfo.environment["BACKEND_BASE_URL"] ??
+            LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+        return URL(string: rawValue)
+    }
+
+    private func backendAPIKey() -> String? {
+        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
+        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
+    }
+
+    private func playWithBackend(_ text: String, setup: IMConversationSetup) async -> Bool {
+        guard let baseURL = backendBaseURL() else { return false }
+        let endpoint = baseURL.appending(path: "/v1/tts/im")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey = backendAPIKey() {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+        if let accountID = AuthManager.shared.currentAccountID {
+            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        }
+        if let provider = AuthManager.shared.currentAuthProviderRawValue {
+            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
+        }
+
+        let body = BackendIMTTSRequest(
+            text: text,
+            languageCode: preferredLanguageCode(),
+            scenario: setup.scenario.rawValue,
+            targetTone: setup.targetTone.rawValue,
+            personaName: setup.scenario.personaName
+        )
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+
+            if let mimeType = http.value(forHTTPHeaderField: "Content-Type"),
+               mimeType.contains("audio"),
+               playAudioData(data) {
+                return true
+            }
+
+            let payload = try JSONDecoder().decode(BackendIMTTSResponse.self, from: data)
+            guard let audioData = Data(base64Encoded: payload.audioBase64) else {
+                return false
+            }
+            return playAudioData(audioData)
+        } catch {
+            return false
+        }
+    }
+
+    private func playAudioData(_ data: Data) -> Bool {
+        do {
+            let player = try AVAudioPlayer(data: data)
+            player.prepareToPlay()
+            audioPlayer = player
+            player.play()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func googleCloudAccessToken() -> String? {
+        if let value = ProcessInfo.processInfo.environment["GOOGLE_CLOUD_TTS_ACCESS_TOKEN"], !value.isEmpty {
+            return value
+        }
+        if let value = ProcessInfo.processInfo.environment["GCP_TTS_ACCESS_TOKEN"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_ACCESS_TOKEN", plistNamed: "AIConfig")
+            ?? LocalConfigLoader.value(forKey: "GCP_TTS_ACCESS_TOKEN", plistNamed: "AIConfig")
+    }
+
+    private func googleCloudAPIKey() -> String? {
+        if let value = ProcessInfo.processInfo.environment["GOOGLE_CLOUD_TTS_API_KEY"], !value.isEmpty {
+            return value
+        }
+        if let value = ProcessInfo.processInfo.environment["GCP_TTS_API_KEY"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_API_KEY", plistNamed: "AIConfig")
+            ?? LocalConfigLoader.value(forKey: "GCP_TTS_API_KEY", plistNamed: "AIConfig")
+    }
+
+    private func googleCloudProjectID() -> String? {
+        if let value = ProcessInfo.processInfo.environment["GOOGLE_CLOUD_PROJECT_ID"], !value.isEmpty {
+            return value
+        }
+        if let value = ProcessInfo.processInfo.environment["GCP_PROJECT_ID"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_PROJECT_ID", plistNamed: "AIConfig")
+            ?? LocalConfigLoader.value(forKey: "GCP_PROJECT_ID", plistNamed: "AIConfig")
+    }
+
+    private func googleCloudVoiceOverride(for scenario: IMConversationScenario) -> String? {
+        let key: String
+        switch scenario {
+        case .socialCatchUp:
+            key = "GOOGLE_CLOUD_TTS_VOICE_MAYA"
+        case .workUpdate:
+            key = "GOOGLE_CLOUD_TTS_VOICE_JORDAN"
+        case .difficultConversation:
+            key = "GOOGLE_CLOUD_TTS_VOICE_SAM"
+        case .networking:
+            key = "GOOGLE_CLOUD_TTS_VOICE_ALEX"
+        }
+
+        if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty {
+            return value
+        }
+        if let value = LocalConfigLoader.value(forKey: key, plistNamed: "AIConfig") {
+            return value
+        }
+        if let value = ProcessInfo.processInfo.environment["GOOGLE_CLOUD_TTS_VOICE_DEFAULT"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_VOICE_DEFAULT", plistNamed: "AIConfig")
+    }
+
+    private func preferredGoogleCloudVoice(for setup: IMConversationSetup) -> String {
+        if let override = googleCloudVoiceOverride(for: setup.scenario) {
+            return override
+        }
+
+        let languageCode = preferredLanguageCode()
+        switch (languageCode, setup.scenario) {
+        case ("en-GB", .socialCatchUp):
+            return "en-GB-Chirp3-HD-Achernar"
+        case ("en-GB", .networking):
+            return "en-GB-Chirp3-HD-Achernar"
+        case ("en-GB", .workUpdate):
+            return "en-GB-Chirp3-HD-Orus"
+        case ("en-GB", .difficultConversation):
+            return "en-GB-Chirp3-HD-Orus"
+        case ("en-US", .socialCatchUp):
+            return "en-US-Chirp3-HD-Achernar"
+        case ("en-US", .networking):
+            return "en-US-Chirp3-HD-Achernar"
+        case ("en-US", .workUpdate):
+            return "en-US-Chirp3-HD-Orus"
+        case ("en-US", .difficultConversation):
+            return "en-US-Chirp3-HD-Orus"
+        default:
+            return "\(languageCode)-Chirp3-HD-Achernar"
+        }
+    }
+
+    private func playWithGoogleCloud(_ text: String, setup: IMConversationSetup) async -> Bool {
+        guard var components = URLComponents(string: "https://texttospeech.googleapis.com/v1/text:synthesize") else {
+            return false
+        }
+
+        let accessToken = googleCloudAccessToken()
+        let apiKey = googleCloudAPIKey()
+        guard accessToken != nil || apiKey != nil else {
+            return false
+        }
+
+        if let apiKey {
+            components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        }
+
+        guard let endpoint = components.url else {
+            return false
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if accessToken != nil, let projectID = googleCloudProjectID() {
+            request.setValue(projectID, forHTTPHeaderField: "x-goog-user-project")
+        }
+
+        let body = GoogleCloudTTSSpeechRequest(
+            input: GoogleCloudTTSInput(text: text),
+            voice: GoogleCloudTTSVoiceSelectionParams(
+                languageCode: preferredLanguageCode(),
+                name: preferredGoogleCloudVoice(for: setup)
+            ),
+            audioConfig: GoogleCloudTTSAudioConfig(audioEncoding: "MP3", speakingRate: 0.94)
+        )
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+
+            let payload = try JSONDecoder().decode(GoogleCloudTTSSpeechResponse.self, from: data)
+            guard let audioData = Data(base64Encoded: payload.audioContent) else {
+                return false
+            }
+
+            return playAudioData(audioData)
+        } catch {
+            return false
+        }
+    }
+
+    private func openAIAPIKey() -> String? {
+        if let value = ProcessInfo.processInfo.environment["OPENAI_API_KEY"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "OPENAI_API_KEY", plistNamed: "AIConfig")
+    }
+
+    private func preferredOpenAIVoice(for setup: IMConversationSetup) -> String {
+        switch setup.scenario {
+        case .socialCatchUp:
+            return "coral"
+        case .workUpdate:
+            return "sage"
+        case .difficultConversation:
+            return "ash"
+        case .networking:
+            return setup.targetTone == .warm ? "shimmer" : "nova"
+        }
+    }
+
+    private func playWithOpenAI(_ text: String, setup: IMConversationSetup) async -> Bool {
+        guard let apiKey = openAIAPIKey(),
+              let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+            return false
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body = OpenAITTSSpeechRequest(
+            model: "gpt-4o-mini-tts",
+            voice: preferredOpenAIVoice(for: setup),
+            input: text,
+            responseFormat: "wav",
+            instructions: openAIInstructions(for: setup)
+        )
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+
+            return playAudioData(data)
+        } catch {
+            return false
+        }
+    }
+
+    private func openAIInstructions(for setup: IMConversationSetup) -> String {
+        switch setup.scenario {
+        case .socialCatchUp:
+            return "Speak like a warm, natural friend in a short instant message voice note. Sound human, relaxed, and lightly upbeat. Keep the delivery concise and conversational."
+        case .workUpdate:
+            return "Speak clearly and professionally, like a calm coworker sending a quick voice note. Natural, steady, and confident. Avoid sounding robotic or theatrical."
+        case .difficultConversation:
+            return "Speak with calm directness and emotional control, like a real person in a slightly tense conversation. Keep it grounded, human, and short."
+        case .networking:
+            return "Speak like a warm, polished new connection in a short voice note. Sound approachable, natural, and socially confident."
+        }
+    }
+
+    private func elevenLabsAPIKey() -> String? {
+        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "ELEVENLABS_API_KEY", plistNamed: "AIConfig")
+    }
+
+    private func elevenLabsModelID() -> String {
+        ProcessInfo.processInfo.environment["ELEVENLABS_MODEL_ID"]
+            ?? LocalConfigLoader.value(forKey: "ELEVENLABS_MODEL_ID", plistNamed: "AIConfig")
+            ?? "eleven_multilingual_v2"
+    }
+
+    private func elevenLabsVoiceID(for scenario: IMConversationScenario) -> String? {
+        let scenarioKey: String
+        switch scenario {
+        case .socialCatchUp:
+            scenarioKey = "ELEVENLABS_VOICE_ID_MAYA"
+        case .workUpdate:
+            scenarioKey = "ELEVENLABS_VOICE_ID_JORDAN"
+        case .difficultConversation:
+            scenarioKey = "ELEVENLABS_VOICE_ID_SAM"
+        case .networking:
+            scenarioKey = "ELEVENLABS_VOICE_ID_ALEX"
+        }
+
+        if let value = ProcessInfo.processInfo.environment[scenarioKey], !value.isEmpty {
+            return value
+        }
+        if let value = LocalConfigLoader.value(forKey: scenarioKey, plistNamed: "AIConfig") {
+            return value
+        }
+        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_VOICE_ID_DEFAULT"], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: "ELEVENLABS_VOICE_ID_DEFAULT", plistNamed: "AIConfig")
+    }
+
+    private func playWithElevenLabs(_ text: String, setup: IMConversationSetup) async -> Bool {
+        guard let apiKey = elevenLabsAPIKey(),
+              let voiceID = elevenLabsVoiceID(for: setup.scenario),
+              let endpoint = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)") else {
+            return false
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+
+        let body = ElevenLabsSpeechRequest(
+            text: text,
+            modelID: elevenLabsModelID(),
+            voiceSettings: ElevenLabsVoiceSettings(
+                stability: 0.48,
+                similarityBoost: 0.78,
+                style: 0.22,
+                useSpeakerBoost: true,
+                speed: 0.96
+            )
+        )
+
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+
+            return playAudioData(data)
+        } catch {
+            return false
+        }
+    }
+}
+
+private struct BackendIMTTSRequest: Codable {
+    let text: String
+    let languageCode: String
+    let scenario: String
+    let targetTone: String
+    let personaName: String
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case languageCode = "language_code"
+        case scenario
+        case targetTone = "target_tone"
+        case personaName = "persona_name"
+    }
+}
+
+private struct BackendIMTTSResponse: Codable {
+    let audioBase64: String
+
+    enum CodingKeys: String, CodingKey {
+        case audioBase64 = "audio_base64"
+    }
+}
+
+private struct OpenAITTSSpeechRequest: Codable {
+    let model: String
+    let voice: String
+    let input: String
+    let responseFormat: String
+    let instructions: String
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case voice
+        case input
+        case instructions
+        case responseFormat = "response_format"
+    }
+}
+
+private struct GoogleCloudTTSSpeechRequest: Codable {
+    let input: GoogleCloudTTSInput
+    let voice: GoogleCloudTTSVoiceSelectionParams
+    let audioConfig: GoogleCloudTTSAudioConfig
+
+    enum CodingKeys: String, CodingKey {
+        case input
+        case voice
+        case audioConfig = "audioConfig"
+    }
+}
+
+private struct GoogleCloudTTSInput: Codable {
+    let text: String
+}
+
+private struct GoogleCloudTTSVoiceSelectionParams: Codable {
+    let languageCode: String
+    let name: String
+
+    enum CodingKeys: String, CodingKey {
+        case languageCode = "languageCode"
+        case name
+    }
+}
+
+private struct GoogleCloudTTSAudioConfig: Codable {
+    let audioEncoding: String
+    let speakingRate: Double
+
+    enum CodingKeys: String, CodingKey {
+        case audioEncoding = "audioEncoding"
+        case speakingRate = "speakingRate"
+    }
+}
+
+private struct GoogleCloudTTSSpeechResponse: Codable {
+    let audioContent: String
+
+    enum CodingKeys: String, CodingKey {
+        case audioContent = "audioContent"
+    }
+}
+
+private struct ElevenLabsSpeechRequest: Codable {
+    let text: String
+    let modelID: String
+    let voiceSettings: ElevenLabsVoiceSettings
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case modelID = "model_id"
+        case voiceSettings = "voice_settings"
+    }
+}
+
+private struct ElevenLabsVoiceSettings: Codable {
+    let stability: Double
+    let similarityBoost: Double
+    let style: Double
+    let useSpeakerBoost: Bool
+    let speed: Double
+
+    enum CodingKeys: String, CodingKey {
+        case stability
+        case similarityBoost = "similarity_boost"
+        case style
+        case useSpeakerBoost = "use_speaker_boost"
+        case speed
+    }
+}
+#endif
 #endif
 
 struct PracticeEvaluation {
@@ -1230,6 +2289,23 @@ struct PracticeSessionDraft {
     let duration: TimeInterval
     let date: Date
     let mode: PracticeMode
+    let imDetails: IMConversationDetails?
+
+    init(
+        transcript: String,
+        fillerWordCount: Int,
+        duration: TimeInterval,
+        date: Date,
+        mode: PracticeMode,
+        imDetails: IMConversationDetails? = nil
+    ) {
+        self.transcript = transcript
+        self.fillerWordCount = fillerWordCount
+        self.duration = duration
+        self.date = date
+        self.mode = mode
+        self.imDetails = imDetails
+    }
 }
 
 struct PracticeSessionAnnotation: Equatable {
@@ -1281,7 +2357,8 @@ final class PracticeSessionStore: ObservableObject {
             fillerWordCount: draft.fillerWordCount,
             duration: draft.duration,
             date: draft.date,
-            mode: draft.mode
+            mode: draft.mode,
+            imConversationDetails: draft.imDetails
         )
         sessions.insert(session, at: 0)
         persist()
@@ -1832,6 +2909,687 @@ protocol AIHomeRecommendationServicing {
 }
 
 @MainActor
+struct IMConversationService: IMConversationServicing {
+    private let settings = AISettingsManager.shared
+
+    func generateReply(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        state: IMConversationState,
+        profile: CoachingProfile?
+    ) async throws -> IMConversationReply {
+        if let backendReply = try? await backendReply(
+            setup: setup,
+            turns: turns,
+            state: state,
+            profile: profile
+        ) {
+            return backendReply
+        }
+
+        guard let provider = settings.activeProvider,
+              let apiKey = apiKey(for: provider),
+              let endpoint = provider.endpoint else {
+            return fallbackReply(for: setup, turns: turns, state: state)
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let prompt = prompt(for: setup, turns: turns, state: state, profile: profile)
+        switch provider {
+        case .none:
+            return fallbackReply(for: setup, turns: turns, state: state)
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body = OpenAICompatibleChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: systemPrompt),
+                    .init(role: "user", content: prompt)
+                ],
+                temperature: 0.7,
+                responseFormat: .jsonObject
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiGenerateContentRequest(
+                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
+                contents: [.init(parts: [.init(text: prompt)])],
+                generationConfig: .init(
+                    temperature: 0.7,
+                    responseMimeType: "application/json"
+                )
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+                return fallbackReply(for: setup, turns: turns, state: state)
+            }
+
+            let jsonData = try extractJSONData(from: data, provider: provider)
+            let decoded = try JSONDecoder().decode(IMConversationReply.self, from: jsonData)
+            return IMConversationReply(
+                message: decoded.message.truncatedToWordLimit(30),
+                shouldWrapUp: decoded.shouldWrapUp,
+                updatedState: IMConversationState(
+                    trust: decoded.updatedState.normalizedTrust,
+                    engagement: decoded.updatedState.normalizedEngagement,
+                    tension: decoded.updatedState.normalizedTension,
+                    beat: decoded.updatedState.beat
+                )
+            )
+        } catch {
+            return fallbackReply(for: setup, turns: turns, state: state)
+        }
+    }
+
+    private func backendReply(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        state: IMConversationState,
+        profile: CoachingProfile?
+    ) async throws -> IMConversationReply? {
+        guard var request = backendRequest(path: "/v1/im/reply") else { return nil }
+        let body = BackendIMConversationReplyRequest(
+            setup: setup,
+            turns: turns,
+            state: state,
+            profile: profile
+        )
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        let decoded = try JSONDecoder().decode(IMConversationReply.self, from: data)
+        return IMConversationReply(
+            message: decoded.message.truncatedToWordLimit(30),
+            shouldWrapUp: decoded.shouldWrapUp,
+            updatedState: IMConversationState(
+                trust: decoded.updatedState.normalizedTrust,
+                engagement: decoded.updatedState.normalizedEngagement,
+                tension: decoded.updatedState.normalizedTension,
+                beat: decoded.updatedState.beat
+            )
+        )
+    }
+
+    private var systemPrompt: String {
+        """
+        You are roleplaying one human in a realistic text conversation.
+        Reply with JSON only using keys: message, shouldWrapUp, updatedState.
+        Hard rules:
+        - message must be conversational and sound like texting or IM, not coaching
+        - message should usually be 8 to 18 words and never exceed 30 words
+        - do not use bullets, emojis, stage directions, or explanations
+        - never mention being AI
+        - ask or react naturally
+        - one conversational move per message
+        - keep pressure and realism appropriate to the scenario
+        """
+    }
+
+    private func prompt(
+        for setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        state: IMConversationState,
+        profile: CoachingProfile?
+    ) -> String {
+        let userTurnCount = turns.filter { $0.speaker == .user }.count
+        let lastUserMessage = turns.last(where: { $0.speaker == .user })?.text ?? "none yet"
+        let conversationPhase: String
+        switch userTurnCount {
+        case 0...1:
+            conversationPhase = "opening"
+        case 2...3:
+            conversationPhase = "middle"
+        default:
+            conversationPhase = "late"
+        }
+
+        let escalationInstruction: String
+        switch setup.scenario {
+        case .socialCatchUp:
+            escalationInstruction = conversationPhase == "late" ? "Start testing whether the conversation still has energy or should naturally close." : "Stay friendly, but make the user earn the flow by being specific."
+        case .workUpdate:
+            escalationInstruction = conversationPhase == "late" ? "Push for the clearest headline and one practical takeaway." : "Ask for clarity, specifics, or the practical point."
+        case .difficultConversation:
+            escalationInstruction = conversationPhase == "late" ? "Push slightly harder and check whether the user stays calm and direct." : "Apply mild pressure and ask the user to clarify intent."
+        case .networking:
+            escalationInstruction = conversationPhase == "late" ? "Test whether the user can keep warmth while becoming more memorable or specific." : "Reward good specificity and push back on generic answers."
+        }
+
+        let transcript = turns.map { turn in
+            let speaker = turn.speaker == .user ? "User" : setup.scenario.personaName
+            return "\(speaker): \(turn.text)"
+        }.joined(separator: "\n")
+
+        return """
+        Scenario: \(setup.scenario.title)
+        Persona name: \(setup.scenario.personaName)
+        Persona role: \(setup.scenario.personaRole)
+        Stakes: \(setup.scenario.stakes)
+        Persona mood: \(setup.scenario.currentMood)
+        Persona goal: \(setup.scenario.conversationGoal)
+        Persona friction style: \(setup.scenario.frictionStyle)
+        User target tone: \(setup.targetTone.title)
+        User tone goal: \(setup.targetTone.coachingPrompt)
+        Speaker context: \(profile?.speakingContext.title ?? "unknown")
+        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
+        Conversation phase: \(conversationPhase)
+        User turn count: \(userTurnCount)
+        Latest user message: \(lastUserMessage)
+        Current trust: \(state.normalizedTrust)/10
+        Current engagement: \(state.normalizedEngagement)/10
+        Current tension: \(state.normalizedTension)/10
+        Current beat: \(state.beat)
+        Escalation instruction: \(escalationInstruction)
+        Keep the conversation realistic and brief.
+        React to what the user actually said. Do not sound generic.
+        If the conversation already feels naturally complete, set shouldWrapUp to true.
+        Update the state based on how the user is handling the interaction.
+
+        Conversation so far:
+        \(transcript)
+        """
+    }
+
+    private func fallbackReply(for setup: IMConversationSetup, turns: [IMConversationTurn], state: IMConversationState) -> IMConversationReply {
+        let turnCount = turns.filter { $0.speaker == .user }.count
+        let message: String
+        let updatedState: IMConversationState
+        switch setup.scenario {
+        case .socialCatchUp:
+            message = turnCount > 3 ? "Nice, that actually sounds like a good shift. What are you focusing on most right now?" : "That makes sense. Has that been feeling better lately or still a bit messy?"
+            updatedState = IMConversationState(
+                trust: state.normalizedTrust + 1,
+                engagement: state.normalizedEngagement + 1,
+                tension: max(1, state.normalizedTension - 1),
+                beat: "The chat feels easier and more natural."
+            )
+        case .workUpdate:
+            message = turnCount > 3 ? "Helpful. What’s the main risk or blocker I should know before we go in?" : "Got it. What’s the headline version if someone asks in the meeting?"
+            updatedState = IMConversationState(
+                trust: state.normalizedTrust,
+                engagement: state.normalizedEngagement + 1,
+                tension: state.normalizedTension + (turnCount > 3 ? 1 : 0),
+                beat: "The other person is pushing for clarity and useful detail."
+            )
+        case .difficultConversation:
+            message = turnCount > 3 ? "I hear that. What do you actually want from me going forward?" : "Okay, but from my side it still felt off. What are you saying you meant?"
+            updatedState = IMConversationState(
+                trust: max(1, state.normalizedTrust - 1),
+                engagement: state.normalizedEngagement + 1,
+                tension: min(10, state.normalizedTension + 1),
+                beat: "The conversation still feels tense and unresolved."
+            )
+        case .networking:
+            message = turnCount > 3 ? "Interesting. What kind of projects do you want to be doing more of next?" : "Nice. How did you end up getting into that in the first place?"
+            updatedState = IMConversationState(
+                trust: state.normalizedTrust + 1,
+                engagement: state.normalizedEngagement + 1,
+                tension: max(1, state.normalizedTension - 1),
+                beat: "The conversation is opening up and testing depth."
+            )
+        }
+        return IMConversationReply(
+            message: message.truncatedToWordLimit(30),
+            shouldWrapUp: turnCount >= 5,
+            updatedState: updatedState
+        )
+    }
+
+    private func apiKey(for provider: AIProvider) -> String? {
+        if let keyName = provider.environmentKey,
+           let value = ProcessInfo.processInfo.environment[keyName],
+           !value.isEmpty {
+            return value
+        }
+
+        if let keyName = provider.environmentKey,
+           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
+            return value
+        }
+
+        return nil
+    }
+
+    private func extractJSONData(from data: Data, provider: AIProvider) throws -> Data {
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            guard let content = completion.choices.first?.message.content,
+                  let contentData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return contentData
+        case .gemini:
+            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            let content = completion.candidates.first?.content.parts.compactMap(\.text).joined()
+            guard let content, let contentData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return contentData
+        }
+    }
+
+    private func backendRequest(path: String) -> URLRequest? {
+        guard let baseURL = backendBaseURL() else { return nil }
+        let endpoint = baseURL.appending(path: path)
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey = backendAPIKey() {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+        if let accountID = AuthManager.shared.currentAccountID {
+            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        }
+        if let provider = AuthManager.shared.currentAuthProviderRawValue {
+            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
+        }
+        return request
+    }
+
+    private func backendBaseURL() -> URL? {
+        let rawValue =
+            ProcessInfo.processInfo.environment["BACKEND_BASE_URL"] ??
+            LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+        return URL(string: rawValue)
+    }
+
+    private func backendAPIKey() -> String? {
+        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
+        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
+    }
+}
+
+@MainActor
+struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
+    private let settings = AISettingsManager.shared
+
+    func evaluateConversation(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState?,
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        recentSessions: [PracticeSession],
+        profile: CoachingProfile?
+    ) async throws -> IMConversationEvaluation {
+        if let backendEvaluation = try? await backendEvaluation(
+            setup: setup,
+            turns: turns,
+            finalState: finalState,
+            transcript: transcript,
+            fillerCount: fillerCount,
+            duration: duration,
+            recentSessions: recentSessions,
+            profile: profile
+        ) {
+            return backendEvaluation
+        }
+
+        guard let provider = settings.activeProvider,
+              let apiKey = apiKey(for: provider),
+              let endpoint = provider.endpoint else {
+            return fallbackEvaluation(
+                setup: setup,
+                finalState: finalState,
+                transcript: transcript,
+                fillerCount: fillerCount,
+                duration: duration,
+                recentSessions: recentSessions,
+                profile: profile
+            )
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let prompt = prompt(
+            for: setup,
+            turns: turns,
+            finalState: finalState,
+            transcript: transcript,
+            fillerCount: fillerCount,
+            duration: duration,
+            recentSessions: recentSessions,
+            profile: profile
+        )
+
+        switch provider {
+        case .none:
+            return fallbackEvaluation(
+                setup: setup,
+                finalState: finalState,
+                transcript: transcript,
+                fillerCount: fillerCount,
+                duration: duration,
+                recentSessions: recentSessions,
+                profile: profile
+            )
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body = OpenAICompatibleChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: systemPrompt),
+                    .init(role: "user", content: prompt)
+                ],
+                temperature: 0.2,
+                responseFormat: .jsonObject
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiGenerateContentRequest(
+                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
+                contents: [.init(parts: [.init(text: prompt)])],
+                generationConfig: .init(
+                    temperature: 0.2,
+                    responseMimeType: "application/json"
+                )
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+                return fallbackEvaluation(
+                    setup: setup,
+                    finalState: finalState,
+                    transcript: transcript,
+                    fillerCount: fillerCount,
+                    duration: duration,
+                    recentSessions: recentSessions,
+                    profile: profile
+                )
+            }
+
+            let jsonData = try extractJSONData(from: data, provider: provider)
+            return try JSONDecoder().decode(IMConversationEvaluation.self, from: jsonData)
+        } catch {
+            return fallbackEvaluation(
+                setup: setup,
+                finalState: finalState,
+                transcript: transcript,
+                fillerCount: fillerCount,
+                duration: duration,
+                recentSessions: recentSessions,
+                profile: profile
+            )
+        }
+    }
+
+    private func backendEvaluation(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState?,
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        recentSessions: [PracticeSession],
+        profile: CoachingProfile?
+    ) async throws -> IMConversationEvaluation? {
+        guard var request = backendRequest(path: "/v1/im/evaluate") else { return nil }
+        let body = BackendIMConversationEvaluationRequest(
+            setup: setup,
+            turns: turns,
+            finalState: finalState,
+            transcript: transcript,
+            fillerCount: fillerCount,
+            duration: duration,
+            recentSessions: recentSessions,
+            profile: profile
+        )
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        return try JSONDecoder().decode(IMConversationEvaluation.self, from: data)
+    }
+
+    private var systemPrompt: String {
+        """
+        You are evaluating a short voice-driven instant message conversation for a speaking coach app.
+        Return JSON only with keys:
+        actualTone, toneMatch, clarityScore, composureScore, vocabularyScore, conversationScore, headline, feedback, insights, suggestedDrill.
+        Scoring rules:
+        - all numeric scores are integers from 1 to 10
+        - insights must contain exactly 3 concise strings
+        - headline must be short
+        - feedback should be 2-4 sentences, practical and coach-like
+        - actualTone should describe how the speaker actually came across
+        - judge target tone vs actual tone, conversational relevance, clarity, pacing signals, vocabulary, and composure
+        """
+    }
+
+    private func prompt(
+        for setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState?,
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        recentSessions: [PracticeSession],
+        profile: CoachingProfile?
+    ) -> String {
+        let pace = PracticeEvaluator.paceSnapshot(forTranscript: transcript, duration: duration)
+        let identity = PracticeEvaluator.speakingIdentity(for: transcript, profile: profile)
+        let recentAverageFillers = recentSessions.isEmpty ? 0 : Double(recentSessions.map(\.fillerWordCount).reduce(0, +)) / Double(recentSessions.count)
+        let recentAverageDuration = recentSessions.isEmpty ? 0 : recentSessions.map(\.duration).reduce(0, +) / Double(recentSessions.count)
+        let transcriptLog = turns.map { turn in
+            let speaker = turn.speaker == .user ? "User" : setup.scenario.personaName
+            return "\(speaker): \(turn.text)"
+        }.joined(separator: "\n")
+
+        return """
+        Scenario: \(setup.scenario.title)
+        Target tone: \(setup.targetTone.title)
+        Tone goal: \(setup.targetTone.coachingPrompt)
+        Scenario coaching focus: \(setup.scenario.coachingFocus)
+        Final trust: \(finalState?.normalizedTrust ?? 5)/10
+        Final engagement: \(finalState?.normalizedEngagement ?? 5)/10
+        Final tension: \(finalState?.normalizedTension ?? 4)/10
+        Final conversation beat: \(finalState?.beat ?? "Not captured")
+        Speaker context: \(profile?.speakingContext.title ?? "unknown")
+        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
+        Filler words: \(fillerCount)
+        Duration seconds: \(Int(duration))
+        Words per minute: \(pace.wordsPerMinute)
+        Pace label: \(pace.label)
+        Speaking identity: \(identity.identity)
+        Identity evidence: \(identity.evidence)
+        Recent average fillers: \(String(format: "%.1f", recentAverageFillers))
+        Recent average duration: \(Int(recentAverageDuration))
+
+        Full conversation:
+        \(transcriptLog)
+
+        Combined user transcript:
+        \(transcript)
+
+        Evaluate not only speaking delivery but conversational quality:
+        - directness
+        - relevance to the other person
+        - tone consistency
+        - recovery after awkward or pressured moments
+        - whether the user actually moved the conversation forward
+        - whether trust/engagement improved or tension escalated appropriately
+        """
+    }
+
+    private func backendRequest(path: String) -> URLRequest? {
+        guard let baseURL = backendBaseURL() else { return nil }
+        let endpoint = baseURL.appending(path: path)
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey = backendAPIKey() {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+        if let accountID = AuthManager.shared.currentAccountID {
+            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        }
+        if let provider = AuthManager.shared.currentAuthProviderRawValue {
+            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
+        }
+        return request
+    }
+
+    private func backendBaseURL() -> URL? {
+        let rawValue =
+            ProcessInfo.processInfo.environment["BACKEND_BASE_URL"] ??
+            LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+        return URL(string: rawValue)
+    }
+
+    private func backendAPIKey() -> String? {
+        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
+        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
+    }
+
+    private func fallbackEvaluation(
+        setup: IMConversationSetup,
+        finalState: IMConversationState?,
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        recentSessions: [PracticeSession],
+        profile: CoachingProfile?
+    ) -> IMConversationEvaluation {
+        let resolvedState = finalState ?? .starting
+        let wordCount = transcript.split { !$0.isLetter && !$0.isNumber }.count
+        let pace = PracticeEvaluator.paceSnapshot(forTranscript: transcript, duration: duration)
+        let toneMatch = toneMatchScore(for: setup.targetTone, transcript: transcript)
+        let clarityScore = max(2, min(10, Int(round(Double(wordCount) / 8.0)) - fillerCount / 2))
+        let composureScore = max(2, min(10, 10 - fillerCount))
+        let vocabularyScore = max(2, min(10, Int(round(PracticeEvaluator.styleTrendSnapshot(
+            transcript: transcript,
+            recentSessions: recentSessions,
+            profile: profile
+        ).currentAlignment * 10))))
+        let conversationScore = max(2, min(10, duration >= 18 ? 8 : 5))
+        let actualTone = inferredTone(from: transcript, paceLabel: pace.label)
+        let outcome = IMConversationOutcomeResolver.resolve(for: setup.scenario, state: resolvedState)
+        let trustBonus = (resolvedState.normalizedTrust + resolvedState.normalizedEngagement - resolvedState.normalizedTension) / 3
+        let headline = toneMatch >= 8 ? "Natural conversation control" : "Close, but still sharpening tone"
+        let feedback = "You aimed for a \(setup.targetTone.title.lowercased()) tone and came across as \(actualTone.lowercased()). The conversation finished with trust at \(resolvedState.normalizedTrust)/10 and engagement at \(resolvedState.normalizedEngagement)/10. \(outcome.summary) The next rep should tighten the opening and keep the reply more intentional without losing the conversational feel."
+        let insights = [
+            "Actual tone landed as \(actualTone.lowercased()).",
+            "Conversation state ended at trust \(resolvedState.normalizedTrust), engagement \(resolvedState.normalizedEngagement), tension \(resolvedState.normalizedTension).",
+            pace.label == "Balanced" ? "Your pacing stayed fairly natural for a chat." : pace.coachNote,
+            fillerCount == 0 ? "You kept the message clean without filler clutter." : "A few filler words softened the message and made it feel less intentional.",
+            outcome.summary
+        ]
+        let suggestedDrill = "Run the same scenario again and keep each reply to one clear point before expanding."
+
+        return IMConversationEvaluation(
+            actualTone: actualTone,
+            toneMatch: max(1, min(10, toneMatch + max(0, trustBonus - 2))),
+            clarityScore: clarityScore,
+            composureScore: composureScore,
+            vocabularyScore: vocabularyScore,
+            conversationScore: conversationScore,
+            headline: headline,
+            feedback: feedback,
+            insights: Array(insights.prefix(4)),
+            suggestedDrill: suggestedDrill,
+            outcome: outcome
+        )
+    }
+
+    private func toneMatchScore(for tone: IMTargetTone, transcript: String) -> Int {
+        let lower = transcript.lowercased()
+        switch tone {
+        case .confident:
+            return lower.contains("i think") ? 6 : 8
+        case .warm:
+            return lower.contains("thanks") || lower.contains("love") || lower.contains("glad") ? 8 : 6
+        case .concise:
+            return transcript.split(separator: " ").count < 45 ? 8 : 6
+        case .assertive:
+            return lower.contains("i need") || lower.contains("i want") ? 8 : 6
+        case .calm:
+            return lower.contains("just") || lower.contains("sorry") ? 6 : 8
+        case .professional:
+            return lower.contains("like") || lower.contains("literally") ? 6 : 8
+        }
+    }
+
+    private func inferredTone(from transcript: String, paceLabel: String) -> String {
+        let lower = transcript.lowercased()
+        if lower.contains("thanks") || lower.contains("glad") {
+            return "Warm"
+        }
+        if lower.contains("i need") || lower.contains("let's") {
+            return "Assertive"
+        }
+        if paceLabel == "Fast" {
+            return "Slightly rushed"
+        }
+        return "Clear but measured"
+    }
+
+    private func apiKey(for provider: AIProvider) -> String? {
+        if let keyName = provider.environmentKey,
+           let value = ProcessInfo.processInfo.environment[keyName],
+           !value.isEmpty {
+            return value
+        }
+
+        if let keyName = provider.environmentKey,
+           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
+            return value
+        }
+
+        return nil
+    }
+
+    private func extractJSONData(from data: Data, provider: AIProvider) throws -> Data {
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            guard let content = completion.choices.first?.message.content,
+                  let contentData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return contentData
+        case .gemini:
+            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            let content = completion.candidates.first?.content.parts.compactMap(\.text).joined()
+            guard let content, let contentData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return contentData
+        }
+    }
+}
+
+@MainActor
 struct AICoachService: AICoachServicing {
     static let minimumTranscriptWordCount = 10
 
@@ -2176,6 +3934,14 @@ private struct OpenAICompatibleChatRequest: Codable {
         case messages
         case temperature
         case responseFormat = "response_format"
+    }
+}
+
+private extension String {
+    func truncatedToWordLimit(_ limit: Int) -> String {
+        let words = split(whereSeparator: \.isWhitespace)
+        guard words.count > limit else { return self }
+        return words.prefix(limit).joined(separator: " ")
     }
 }
 

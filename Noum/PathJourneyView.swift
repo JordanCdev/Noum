@@ -17,57 +17,63 @@ struct PathJourneyView: View {
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.93, blue: 0.88),
-                    Color.white,
-                    Color(red: 0.89, green: 0.96, blue: 0.91)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.95, green: 0.93, blue: 0.88),
+                        Color.white,
+                        Color(red: 0.89, green: 0.96, blue: 0.91)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your Path")
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Your path")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
                         Text(snapshot.summaryLine)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
 
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         PathJourneyArtwork(
                             snapshot: snapshot,
                             compact: false,
-                            scene: daylightModel.sceneState(for: Date())
+                            sceneResolver: { date in
+                                daylightModel.sceneState(for: date)
+                            }
                         )
-                            .frame(height: 320)
+                        .frame(height: min(270, geometry.size.height * 0.37))
 
                         HStack(spacing: 10) {
                             journeyPill(title: "Revealed", value: snapshot.progressLabel, accent: .green)
                             journeyPill(title: "Current streak", value: snapshot.streakLabel, accent: .blue)
                         }
 
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("What this means")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .textCase(.uppercase)
                             Text(snapshot.explanationLine)
                                 .font(.subheadline.weight(.semibold))
+                                .lineLimit(2)
                             Text(snapshot.consequenceLine)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(2)
                             Text(snapshot.nextMilestoneLabel)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
-                    .padding(22)
+                    .padding(16)
                     .background(
                         LinearGradient(
                             colors: [
@@ -83,13 +89,16 @@ struct PathJourneyView: View {
                         RoundedRectangle(cornerRadius: 30, style: .continuous)
                             .stroke(Color.white.opacity(0.72), lineWidth: 1)
                     )
+
+                    Spacer(minLength: 0)
                 }
-                .padding(18)
-                .padding(.top, 10)
-                .padding(.bottom, 36)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .navigationTitle("Path")
+        .navigationTitle("path")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             daylightModel.activate()
@@ -265,11 +274,12 @@ struct PracticeJourneySnapshot {
 struct PathJourneyArtwork: View {
     let snapshot: PracticeJourneySnapshot
     let compact: Bool
-    let scene: PathSkyScene
+    let sceneResolver: (Date) -> PathSkyScene
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 15.0)) { timeline in
             let phase = breezePhase(for: timeline.date)
+            let scene = sceneResolver(timeline.date)
 
             GeometryReader { geometry in
                 let size = geometry.size
@@ -646,16 +656,6 @@ struct PathJourneyArtwork: View {
                 .position(tree.position)
             }
         }
-        .mask {
-            ZStack {
-                Rectangle()
-                    .frame(width: size.width * 0.35)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Rectangle()
-                    .frame(width: size.width * 0.35)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        }
     }
 
     private func treeSilhouettes(for size: CGSize) -> [FieldTreeNode] {
@@ -663,8 +663,8 @@ struct PathJourneyArtwork: View {
             (0.04, 0.455, 1.65),
             (0.11, 0.425, 2.35),
             (0.17, 0.448, 1.58),
-            (0.27, 0.438, 1.82),
-            (0.73, 0.444, 1.72),
+            (0.22, 0.438, 1.62),
+            (0.78, 0.444, 1.58),
             (0.81, 0.430, 1.98),
             (0.88, 0.418, 2.42),
             (0.94, 0.438, 1.92),
@@ -672,16 +672,29 @@ struct PathJourneyArtwork: View {
         ]
 
         return values.map { x, y, scale in
-            FieldTreeNode(
-                position: CGPoint(x: size.width * x, y: size.height * y),
-                crownWidth: (compact ? 22 : 38) * scale,
+            let crownWidth = (compact ? 22 : 38) * scale
+            let clusterCount = scale > 2.3 ? 4 : 2
+            let canopyHalfWidth = crownWidth * (clusterCount == 4 ? 1.45 : 0.82)
+            let exclusionLeft = size.width * 0.35
+            let exclusionRight = size.width * 0.65
+            var positionX = size.width * x
+
+            if positionX < size.width * 0.5 {
+                positionX = min(positionX, exclusionLeft - canopyHalfWidth)
+            } else {
+                positionX = max(positionX, exclusionRight + canopyHalfWidth)
+            }
+
+            return FieldTreeNode(
+                position: CGPoint(x: positionX, y: size.height * y),
+                crownWidth: crownWidth,
                 crownHeight: (compact ? 26 : 52) * scale,
                 trunkWidth: (compact ? 2.8 : 5.4) * scale,
                 trunkHeight: (compact ? 10 : 20) * scale,
                 color: Color(red: 0.26, green: 0.38, blue: 0.14),
                 highlight: Color(red: 0.36, green: 0.50, blue: 0.20),
                 opacity: 1.0,
-                clusterCount: scale > 2.3 ? 4 : 2
+                clusterCount: clusterCount
             )
         }
     }
@@ -776,10 +789,12 @@ struct PathSkyScene {
 }
 
 final class PathDaylightModel: NSObject, ObservableObject {
-    @Published private var coordinate: PathCoordinate?
+    @Published private var coordinate: PathCoordinate? = .approximateCurrent
+    @Published private var source: PathCoordinateSource = .fallback
 
 #if canImport(CoreLocation)
     private let manager = CLLocationManager()
+    private let geocoder = CLGeocoder()
 #endif
 
     override init() {
@@ -808,6 +823,26 @@ final class PathDaylightModel: NSObject, ObservableObject {
         let solar = SolarCalculator.events(for: coordinate, on: date)
         return SolarCalculator.scene(for: date, events: solar)
     }
+
+    @MainActor
+    fileprivate func debugSnapshot(for date: Date) -> PathSkyDebugSnapshot {
+        let activeCoordinate = coordinate ?? .approximateCurrent
+        let solar = SolarCalculator.events(for: coordinate, on: date)
+        let scene = SolarCalculator.scene(for: date, events: solar)
+        let formatter = DateFormatter()
+        formatter.timeZone = activeCoordinate.timeZone
+        formatter.dateFormat = "HH:mm"
+
+        return PathSkyDebugSnapshot(
+            source: source.label,
+            timeZoneID: activeCoordinate.timeZone.identifier,
+            coordinateLabel: String(format: "%.4f, %.4f", activeCoordinate.latitude, activeCoordinate.longitude),
+            nowLabel: formatter.string(from: date),
+            sunriseLabel: formatter.string(from: solar.sunrise),
+            sunsetLabel: formatter.string(from: solar.sunset),
+            modeLabel: scene.isNight ? "NIGHT" : "DAY"
+        )
+    }
 }
 
 #if canImport(CoreLocation)
@@ -823,30 +858,114 @@ extension PathDaylightModel: CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        Task { @MainActor in
-            self.coordinate = PathCoordinate(
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                timeZone: .current
-            )
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
+            guard let self else { return }
+            let resolvedTimeZone = placemarks?.first?.timeZone
+            let resolvedCoordinate: PathCoordinate
+            let resolvedSource: PathCoordinateSource
+            let currentTimeZone = TimeZone.autoupdatingCurrent
+
+            if let resolvedTimeZone,
+               resolvedTimeZone.identifier == currentTimeZone.identifier {
+                resolvedCoordinate = PathCoordinate(
+                    latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude,
+                    timeZone: resolvedTimeZone
+                )
+                resolvedSource = .resolvedLocation
+            } else {
+                // Keep the sky aligned with the user-visible local time if the
+                // simulator/device location is stale or points at a different region.
+                resolvedCoordinate = PathCoordinate.approximate(for: currentTimeZone)
+                resolvedSource = .fallback
+            }
+
+            Task { @MainActor in
+                self.coordinate = resolvedCoordinate
+                self.source = resolvedSource
+            }
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: any Error) {}
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: any Error) {
+        Task { @MainActor in
+            self.coordinate = .approximateCurrent
+            self.source = .fallback
+        }
+    }
 }
 #endif
+
+fileprivate enum PathCoordinateSource {
+    case fallback
+    case resolvedLocation
+
+    var label: String {
+        switch self {
+        case .fallback:
+            return "Fallback"
+        case .resolvedLocation:
+            return "Location"
+        }
+    }
+}
+
+fileprivate struct PathSkyDebugSnapshot {
+    let source: String
+    let timeZoneID: String
+    let coordinateLabel: String
+    let nowLabel: String
+    let sunriseLabel: String
+    let sunsetLabel: String
+    let modeLabel: String
+}
 
 struct PathCoordinate {
     let latitude: Double
     let longitude: Double
     let timeZone: TimeZone
+
+    static var approximateCurrent: PathCoordinate {
+        approximate(for: .autoupdatingCurrent)
+    }
+
+    static func approximate(for timeZone: TimeZone) -> PathCoordinate {
+        switch timeZone.identifier {
+        case "Europe/London":
+            return PathCoordinate(latitude: 51.5074, longitude: -0.1278, timeZone: timeZone)
+        case "Europe/Dublin":
+            return PathCoordinate(latitude: 53.3498, longitude: -6.2603, timeZone: timeZone)
+        case "Europe/Paris":
+            return PathCoordinate(latitude: 48.8566, longitude: 2.3522, timeZone: timeZone)
+        case "Europe/Berlin":
+            return PathCoordinate(latitude: 52.5200, longitude: 13.4050, timeZone: timeZone)
+        case "Europe/Madrid":
+            return PathCoordinate(latitude: 40.4168, longitude: -3.7038, timeZone: timeZone)
+        case "Europe/Rome":
+            return PathCoordinate(latitude: 41.9028, longitude: 12.4964, timeZone: timeZone)
+        case "America/New_York":
+            return PathCoordinate(latitude: 40.7128, longitude: -74.0060, timeZone: timeZone)
+        case "America/Chicago":
+            return PathCoordinate(latitude: 41.8781, longitude: -87.6298, timeZone: timeZone)
+        case "America/Denver":
+            return PathCoordinate(latitude: 39.7392, longitude: -104.9903, timeZone: timeZone)
+        case "America/Los_Angeles":
+            return PathCoordinate(latitude: 34.0522, longitude: -118.2437, timeZone: timeZone)
+        case "America/Phoenix":
+            return PathCoordinate(latitude: 33.4484, longitude: -112.0740, timeZone: timeZone)
+        case "America/Toronto":
+            return PathCoordinate(latitude: 43.6532, longitude: -79.3832, timeZone: timeZone)
+        case "Australia/Sydney":
+            return PathCoordinate(latitude: -33.8688, longitude: 151.2093, timeZone: timeZone)
+        default:
+            return PathCoordinate(latitude: 51.5074, longitude: -0.1278, timeZone: timeZone)
+        }
+    }
 }
 
 enum SolarCalculator {
     static func events(for coordinate: PathCoordinate?, on date: Date) -> SolarEvents {
-        guard let coordinate else {
-            return fallbackEvents(on: date, timeZone: .current)
-        }
+        let coordinate = coordinate ?? .approximateCurrent
         return calculateEvents(
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -917,16 +1036,17 @@ enum SolarCalculator {
     }
 
     private static func fallbackEvents(on date: Date, timeZone: TimeZone) -> SolarEvents {
-        let calendar = Calendar(identifier: .gregorian)
-        let localDate = date.addingTimeInterval(TimeInterval(timeZone.secondsFromGMT(for: date)))
-        let start = calendar.startOfDay(for: localDate)
-        let sunrise = start.addingTimeInterval(6.5 * 3600).addingTimeInterval(-TimeInterval(timeZone.secondsFromGMT(for: date)))
-        let sunset = start.addingTimeInterval(19.5 * 3600).addingTimeInterval(-TimeInterval(timeZone.secondsFromGMT(for: date)))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let start = calendar.startOfDay(for: date)
+        let sunrise = start.addingTimeInterval(6.5 * 3600)
+        let sunset = start.addingTimeInterval(19.5 * 3600)
         return SolarEvents(sunrise: sunrise, sunset: sunset)
     }
 
     private static func calculateEvents(latitude: Double, longitude: Double, date: Date, timeZone: TimeZone) -> SolarEvents? {
-        let calendar = Calendar(identifier: .gregorian)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
         let dayOfYear = calendar.ordinality(of: .day, in: .year, for: date) ?? 1
         let lngHour = longitude / 15
 
@@ -959,8 +1079,11 @@ enum SolarCalculator {
             utcHour.formTruncatingRemainder(dividingBy: 24)
             if utcHour < 0 { utcHour += 24 }
 
-            let startOfDay = calendar.startOfDay(for: date)
-            return startOfDay.addingTimeInterval((utcHour * 3600) - Double(timeZone.secondsFromGMT(for: date)))
+            var utcCalendar = Calendar(identifier: .gregorian)
+            utcCalendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+            let localComponents = calendar.dateComponents([.year, .month, .day], from: date)
+            let utcMidnight = utcCalendar.date(from: localComponents)
+            return utcMidnight?.addingTimeInterval(utcHour * 3600)
         }
 
         guard let sunrise = eventTime(isSunrise: true),

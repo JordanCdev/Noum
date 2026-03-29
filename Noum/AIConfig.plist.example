@@ -6,6 +6,36 @@
     <string></string>
     <key>OPENAI_API_KEY</key>
     <string>REPLACE_ME</string>
+    <key>GOOGLE_CLOUD_TTS_API_KEY</key>
+    <string></string>
+    <key>GOOGLE_CLOUD_TTS_ACCESS_TOKEN</key>
+    <string></string>
+    <key>GOOGLE_CLOUD_PROJECT_ID</key>
+    <string></string>
+    <key>GOOGLE_CLOUD_TTS_VOICE_MAYA</key>
+    <string>en-GB-Chirp3-HD-Achernar</string>
+    <key>GOOGLE_CLOUD_TTS_VOICE_JORDAN</key>
+    <string>en-GB-Chirp3-HD-Orus</string>
+    <key>GOOGLE_CLOUD_TTS_VOICE_SAM</key>
+    <string>en-GB-Chirp3-HD-Orus</string>
+    <key>GOOGLE_CLOUD_TTS_VOICE_ALEX</key>
+    <string>en-GB-Chirp3-HD-Achernar</string>
+    <key>GOOGLE_CLOUD_TTS_VOICE_DEFAULT</key>
+    <string>en-GB-Chirp3-HD-Achernar</string>
+    <key>ELEVENLABS_API_KEY</key>
+    <string></string>
+    <key>ELEVENLABS_MODEL_ID</key>
+    <string>eleven_multilingual_v2</string>
+    <key>ELEVENLABS_VOICE_ID_MAYA</key>
+    <string></string>
+    <key>ELEVENLABS_VOICE_ID_JORDAN</key>
+    <string></string>
+    <key>ELEVENLABS_VOICE_ID_SAM</key>
+    <string></string>
+    <key>ELEVENLABS_VOICE_ID_ALEX</key>
+    <string></string>
+    <key>ELEVENLABS_VOICE_ID_DEFAULT</key>
+    <string></string>
     <key>DEEPSEEK_API_KEY</key>
     <string></string>
     <key>GEMINI_API_KEY</key>

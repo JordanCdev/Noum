@@ -17,6 +17,8 @@ struct SettingsView: View {
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var imVoicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
+    @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
     @State private var debugMessage: String?
     @State private var showDeleteConfirmation = false
@@ -61,6 +63,9 @@ struct SettingsView: View {
         }
         .onChange(of: authManager.isSignedIn) { _, signedIn in
             if !signedIn { dismiss() }
+        }
+        .task {
+            isBackendConfigured = await BackendSyncManager.shared.isConfigured
         }
         .sheet(isPresented: $showCoachingProfile) {
             CoachingOnboardingView()
@@ -123,6 +128,53 @@ struct SettingsView: View {
                     .background(Color.blue.opacity(practiceSettings.timedDifficulty == difficulty ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
                 .buttonStyle(.plain)
+            }
+
+            Divider()
+                .padding(.vertical, 2)
+
+            Toggle(isOn: $imVoicePlaybackSettings.isEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Read IM messages aloud")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Noum reads NPC replies out loud during IM Mode. Enabled by default.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+
+            if imVoicePlaybackSettings.isEnabled {
+                Divider()
+                    .padding(.vertical, 2)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("IM voice quality")
+                        .font(.subheadline.weight(.semibold))
+
+                    ForEach(IMVoiceEngine.allCases) { engine in
+                        Button {
+                            imVoicePlaybackSettings.engine = engine
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(engine.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(engine.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: imVoicePlaybackSettings.engine == engine ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(imVoicePlaybackSettings.engine == engine ? .blue : .secondary)
+                            }
+                            .padding(14)
+                            .background(Color.blue.opacity(imVoicePlaybackSettings.engine == engine ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -319,7 +371,7 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 compactTag(
                     title: "Storage",
-                    value: BackendSyncManager.shared.isConfigured ? "Firebase / backend synced" : "Local only"
+                    value: isBackendConfigured ? "Firebase / backend synced" : "Local only"
                 )
 
                 Button("Reset") {
@@ -456,6 +508,8 @@ struct SettingsView: View {
             return "Sudden Death"
         case .ahCounter:
             return "Ah-Counter"
+        case .imConversation:
+            return "IM Mode"
         }
     }
 
@@ -533,6 +587,15 @@ struct SettingsView: View {
                 transcript: transcript,
                 fillerCount: fillerCount,
                 duration: duration,
+                recentSessions: recentSessions,
+                profile: coachingProfileStore.profile
+            )
+        case .imConversation:
+            evaluation = PracticeEvaluator.evaluateTimedPractice(
+                transcript: transcript,
+                fillerCount: fillerCount,
+                duration: duration,
+                difficulty: .easy,
                 recentSessions: recentSessions,
                 profile: coachingProfileStore.profile
             )

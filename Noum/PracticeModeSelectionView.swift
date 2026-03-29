@@ -7,6 +7,7 @@ enum PracticeMode: String, Codable {
     case timed
     case suddenDeath
     case ahCounter
+    case imConversation
 }
 
 #if canImport(SwiftUI)
@@ -61,6 +62,14 @@ struct PracticeModeSelectionView: View {
                     mode: .ahCounter
                 )
 
+                practiceModeCard(
+                    title: "IM Mode",
+                    subtitle: "Voice your side of a realistic chat and train tone, pacing, and conversational control.",
+                    systemImage: "message.badge.waveform.fill",
+                    tint: Color(red: 0.56, green: 0.36, blue: 0.92),
+                    mode: .imConversation
+                )
+
                 Spacer()
             }
             .padding(20)
@@ -77,6 +86,8 @@ struct PracticeModeSelectionView: View {
                         SuddenDeathPracticeView()
                     case .ahCounter:
                         AhCounterView()
+                    case .imConversation:
+                        IMPracticeView()
                     }
                 }
                 .accessibilityIdentifier("practiceModes.start")

@@ -346,6 +346,7 @@ struct PracticeSession: Identifiable, Codable {
     let duration: TimeInterval
     let date: Date
     var mode: PracticeMode = .ahCounter
+    var imConversationDetails: IMConversationDetails? = nil
     var score: Int? = nil
     var xpEarned: Int? = nil
     var headline: String? = nil
@@ -360,6 +361,7 @@ struct PracticeSession: Identifiable, Codable {
         case duration
         case date
         case mode
+        case imConversationDetails
         case score
         case xpEarned
         case headline
@@ -375,6 +377,7 @@ struct PracticeSession: Identifiable, Codable {
         duration: TimeInterval,
         date: Date,
         mode: PracticeMode = .ahCounter,
+        imConversationDetails: IMConversationDetails? = nil,
         score: Int? = nil,
         xpEarned: Int? = nil,
         headline: String? = nil,
@@ -388,6 +391,7 @@ struct PracticeSession: Identifiable, Codable {
         self.duration = duration
         self.date = date
         self.mode = mode
+        self.imConversationDetails = imConversationDetails
         self.score = score
         self.xpEarned = xpEarned
         self.headline = headline
@@ -404,6 +408,7 @@ struct PracticeSession: Identifiable, Codable {
         duration = try container.decode(TimeInterval.self, forKey: .duration)
         date = try container.decode(Date.self, forKey: .date)
         mode = try container.decodeIfPresent(PracticeMode.self, forKey: .mode) ?? .ahCounter
+        imConversationDetails = try container.decodeIfPresent(IMConversationDetails.self, forKey: .imConversationDetails)
         score = try container.decodeIfPresent(Int.self, forKey: .score)
         xpEarned = try container.decodeIfPresent(Int.self, forKey: .xpEarned)
         headline = try container.decodeIfPresent(String.self, forKey: .headline)
