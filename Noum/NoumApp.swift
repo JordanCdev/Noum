@@ -19,12 +19,7 @@ struct NoumApp: App {
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
 
     init() {
-#if canImport(FirebaseCore)
-        if FirebaseApp.app() == nil,
-           Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil {
-            FirebaseApp.configure()
-        }
-#endif
+        FirebaseBootstrap.configure()
     }
 
     var body: some Scene {
@@ -55,3 +50,4 @@ struct NoumApp: App {
     }
 }
 #endif
+

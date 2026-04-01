@@ -27,6 +27,7 @@ struct IMPracticeView: View {
     @State private var showSummary = false
     @State private var summaryTranscript = AttributedString("")
     @State private var summaryEvaluation: IMConversationEvaluation?
+    @State private var serviceErrorMessage: String?
     @State private var setupStep: SetupStep = .scenario
 
     private let conversationService: IMConversationServicing = IMConversationService()
@@ -101,6 +102,11 @@ struct IMPracticeView: View {
         }
         .navigationTitle("IM Mode")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("IM Mode Unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
+            Button("OK", role: .cancel) { serviceErrorMessage = nil }
+        }, message: {
+            Text(serviceErrorMessage ?? "")
+        })
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: summaryTranscript,
@@ -552,6 +558,10 @@ struct IMPracticeView: View {
     }
 
     private func beginConversation() {
+        guard IMModeAvailability.isAvailable else {
+            serviceErrorMessage = IMModeServiceError.unavailable.errorDescription
+            return
+        }
         resetConversation()
         isSessionActive = true
         conversationState = .starting
@@ -601,23 +611,28 @@ struct IMPracticeView: View {
             isAwaitingNPC = true
         }
 
-        let reply = try? await conversationService.generateReply(
-            setup: setup,
-            turns: turns,
-            state: conversationState,
-            profile: coachingProfileStore.profile
-        )
+        do {
+            let reply = try await conversationService.generateReply(
+                setup: setup,
+                turns: turns,
+                state: conversationState,
+                profile: coachingProfileStore.profile
+            )
 
-        await MainActor.run {
-            let npcMessage = reply?.message ?? "Okay. Tell me a little more about that."
-            turns.append(IMConversationTurn(speaker: .npc, text: npcMessage))
-            if let updatedState = reply?.updatedState {
-                conversationState = updatedState
+            await MainActor.run {
+                turns.append(IMConversationTurn(speaker: .npc, text: reply.message))
+                conversationState = reply.updatedState
+                isAwaitingNPC = false
+                isWrappingUp = reply.shouldWrapUp || userTurnCount >= 6
+                speechVM.resetCurrentSession()
+                speakIfEnabled(reply.message)
             }
-            isAwaitingNPC = false
-            isWrappingUp = (reply?.shouldWrapUp ?? false) || userTurnCount >= 6
-            speechVM.resetCurrentSession()
-            speakIfEnabled(npcMessage)
+        } catch {
+            await MainActor.run {
+                isAwaitingNPC = false
+                speechVM.resetCurrentSession()
+                serviceErrorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -629,70 +644,60 @@ struct IMPracticeView: View {
                 return
             }
 
-            let evaluation = try? await evaluationService.evaluateConversation(
-                setup: setup,
-                turns: turns,
-                finalState: conversationState,
-                transcript: transcript,
-                fillerCount: totalFillers,
-                duration: totalDuration,
-                recentSessions: speechVM.pastSessions,
-                profile: coachingProfileStore.profile
-            )
-
-            await MainActor.run {
-                let finalEvaluation = evaluation ?? IMConversationEvaluation(
-                    actualTone: "Measured",
-                    toneMatch: 7,
-                    clarityScore: 7,
-                    composureScore: 7,
-                    vocabularyScore: 7,
-                    conversationScore: 7,
-                    headline: "Steady conversational rep",
-                    feedback: "You kept the conversation moving. The next pass should make the tone even more intentional and the replies a little cleaner.",
-                    insights: [
-                        "You kept the chat flowing.",
-                        "The next rep should tighten tone consistency.",
-                        "A cleaner opening sentence will help."
-                    ],
-                    suggestedDrill: "Repeat the same scenario and keep each message to one clear point.",
-                    outcome: IMConversationOutcomeResolver.resolve(for: setup.scenario, state: conversationState)
+            do {
+                let evaluation = try await evaluationService.evaluateConversation(
+                    setup: setup,
+                    turns: turns,
+                    finalState: conversationState,
+                    transcript: transcript,
+                    fillerCount: totalFillers,
+                    duration: totalDuration,
+                    recentSessions: speechVM.pastSessions,
+                    profile: coachingProfileStore.profile
                 )
 
-                if let closingMessage = finalEvaluation.outcome?.closingMessage,
-                   turns.last?.text != closingMessage {
-                    turns.append(IMConversationTurn(speaker: .npc, text: closingMessage))
-                    speakIfEnabled(closingMessage)
-                }
+                await MainActor.run {
+                    let finalEvaluation = evaluation
 
-                summaryEvaluation = finalEvaluation
-                summaryTranscript = AttributedString(transcript)
+                    if let closingMessage = finalEvaluation.outcome?.closingMessage,
+                       turns.last?.text != closingMessage {
+                        turns.append(IMConversationTurn(speaker: .npc, text: closingMessage))
+                        speakIfEnabled(closingMessage)
+                    }
 
-                _ = PracticeSessionFinalizer.finalize(
-                    store: sessionStore,
-                    draft: PracticeSessionDraft(
-                        transcript: transcript,
-                        fillerWordCount: totalFillers,
-                        duration: totalDuration,
-                        date: Date(),
-                        mode: .imConversation,
-                        imDetails: IMConversationDetails(
-                            setup: setup,
-                            turns: turns,
-                            actualTone: finalEvaluation.actualTone,
-                            finalState: conversationState,
-                            outcome: finalEvaluation.outcome
+                    summaryEvaluation = finalEvaluation
+                    summaryTranscript = AttributedString(transcript)
+
+                    _ = PracticeSessionFinalizer.finalize(
+                        store: sessionStore,
+                        draft: PracticeSessionDraft(
+                            transcript: transcript,
+                            fillerWordCount: totalFillers,
+                            duration: totalDuration,
+                            date: Date(),
+                            mode: .imConversation,
+                            imDetails: IMConversationDetails(
+                                setup: setup,
+                                turns: turns,
+                                actualTone: finalEvaluation.actualTone,
+                                finalState: conversationState,
+                                outcome: finalEvaluation.outcome
+                            )
+                        ),
+                        annotation: PracticeSessionAnnotation(
+                            score: finalEvaluation.overallScore,
+                            xpEarned: finalEvaluation.xpEarned,
+                            headline: finalEvaluation.headline,
+                            insights: summaryInsights,
+                            coachSummary: finalEvaluation.feedback
                         )
-                    ),
-                    annotation: PracticeSessionAnnotation(
-                        score: finalEvaluation.overallScore,
-                        xpEarned: finalEvaluation.xpEarned,
-                        headline: finalEvaluation.headline,
-                        insights: summaryInsights,
-                        coachSummary: finalEvaluation.feedback
                     )
-                )
-                showSummary = true
+                    showSummary = true
+                }
+            } catch {
+                await MainActor.run {
+                    serviceErrorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -710,6 +715,7 @@ struct IMPracticeView: View {
         totalFillers = 0
         summaryEvaluation = nil
         summaryTranscript = AttributedString("")
+        serviceErrorMessage = nil
         speechVM.resetCurrentSession()
     }
 

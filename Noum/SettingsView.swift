@@ -174,6 +174,31 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+#if DEBUG
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Voice Debug")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text("Selected: \(imVoicePlaybackSettings.engine.title)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Resolved: \(imVoicePlaybackSettings.lastResolvedEngineTitle)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Status: \(imVoicePlaybackSettings.lastPlaybackStatus)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let lastPlaybackError = imVoicePlaybackSettings.lastPlaybackError {
+                            Text("Last error: \(lastPlaybackError)")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+#endif
                 }
             }
         }

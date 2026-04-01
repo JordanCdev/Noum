@@ -885,6 +885,38 @@ final class AISettingsManager: ObservableObject {
 }
 
 @MainActor
+enum IMModeAvailability {
+    static var isAvailable: Bool {
+        AISettingsManager.shared.activeProvider != nil || backendBaseURL != nil
+    }
+
+    private static var backendBaseURL: URL? {
+        let rawValue =
+            ProcessInfo.processInfo.environment["BACKEND_BASE_URL"] ??
+            LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+        return URL(string: rawValue)
+    }
+}
+
+enum IMModeServiceError: LocalizedError {
+    case unavailable
+    case replyGenerationFailed(String)
+    case evaluationFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return "IM Mode is unavailable right now because no live AI provider or backend is configured."
+        case .replyGenerationFailed(let reason):
+            return "IM reply generation failed: \(reason)"
+        case .evaluationFailed(let reason):
+            return "IM evaluation failed: \(reason)"
+        }
+    }
+}
+
+@MainActor
 final class IMVoicePlaybackSettingsManager: ObservableObject {
     static let shared = IMVoicePlaybackSettingsManager()
 
@@ -895,6 +927,10 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
     @Published var isEnabled: Bool {
         didSet { UserDefaults.standard.set(isEnabled, forKey: playbackEnabledKey) }
     }
+
+    @Published private(set) var lastResolvedEngineTitle: String = "None"
+    @Published private(set) var lastPlaybackStatus: String = "Idle"
+    @Published private(set) var lastPlaybackError: String?
 
     private let engineKey = "imVoicePlaybackEngine"
     private let playbackEnabledKey = "imVoicePlaybackEnabled"
@@ -911,6 +947,30 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
         }
         isEnabled = UserDefaults.standard.bool(forKey: playbackEnabledKey)
     }
+
+    func recordPlaybackAttempt(resolvedEngine: IMVoiceEngine) {
+        lastResolvedEngineTitle = resolvedEngine.title
+        lastPlaybackStatus = "Attempting \(resolvedEngine.title)"
+        lastPlaybackError = nil
+    }
+
+    func recordPlaybackSuccess(resolvedEngine: IMVoiceEngine) {
+        lastResolvedEngineTitle = resolvedEngine.title
+        lastPlaybackStatus = "Playing via \(resolvedEngine.title)"
+        lastPlaybackError = nil
+    }
+
+    func recordPlaybackFallback(to fallbackEngine: IMVoiceEngine, reason: String) {
+        lastResolvedEngineTitle = fallbackEngine.title
+        lastPlaybackStatus = "Fell back to \(fallbackEngine.title)"
+        lastPlaybackError = reason
+    }
+
+    func recordPlaybackFailure(resolvedEngine: IMVoiceEngine, reason: String) {
+        lastResolvedEngineTitle = resolvedEngine.title
+        lastPlaybackStatus = "Failed via \(resolvedEngine.title)"
+        lastPlaybackError = reason
+    }
 }
 
 enum IMVoiceEngine: String, CaseIterable, Codable, Identifiable {
@@ -919,7 +979,6 @@ enum IMVoiceEngine: String, CaseIterable, Codable, Identifiable {
     case googleCloud
     case elevenLabs
     case openAI
-    case system
 
     var id: String { rawValue }
 
@@ -935,25 +994,21 @@ enum IMVoiceEngine: String, CaseIterable, Codable, Identifiable {
             return "ElevenLabs"
         case .openAI:
             return "AI"
-        case .system:
-            return "Device"
         }
     }
 
     var subtitle: String {
         switch self {
         case .auto:
-            return "Prefer backend voice, then Google Cloud, then ElevenLabs, then OpenAI, then device speech."
+            return "Prefer Google Cloud, then ElevenLabs, then OpenAI, then backend voice."
         case .backend:
             return "Use Noum backend voice synthesis first, with provider secrets kept off the device."
         case .googleCloud:
-            return "Use Google Cloud Text-to-Speech when an access token is configured."
+            return "Use Google Cloud Text-to-Speech when an API key or access token is configured."
         case .elevenLabs:
             return "Use ElevenLabs voice synthesis when API keys and voice IDs are configured."
         case .openAI:
             return "Force OpenAI TTS for the most natural NPC replies."
-        case .system:
-            return "Use offline Apple speech synthesis only."
         }
     }
 }
@@ -964,9 +1019,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     static let shared = IMMessageSpeaker()
 
     private let playbackSettings = IMVoicePlaybackSettingsManager.shared
-    private let synthesizer = AVSpeechSynthesizer()
     private var audioPlayer: AVAudioPlayer?
     private var speechTask: Task<Void, Never>?
+    private var lastFailureReason: String?
 
     override private init() {
         super.init()
@@ -978,24 +1033,38 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         stop()
         speechTask = Task { [weak self] in
             guard let self else { return }
-            let selectedEngine = resolvedEngine(for: setup)
+            guard let selectedEngine = resolvedEngine(for: setup) else {
+                playbackSettings.recordPlaybackFailure(
+                    resolvedEngine: .auto,
+                    reason: "No cloud voice provider is configured."
+                )
+                return
+            }
+            playbackSettings.recordPlaybackAttempt(resolvedEngine: selectedEngine)
             if selectedEngine == .backend,
                await playWithBackend(trimmed, setup: setup) {
+                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
                 return
             }
             if selectedEngine == .googleCloud,
                await playWithGoogleCloud(trimmed, setup: setup) {
+                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
                 return
             }
             if selectedEngine == .elevenLabs,
                await playWithElevenLabs(trimmed, setup: setup) {
+                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
                 return
             }
             if selectedEngine == .openAI,
                await playWithOpenAI(trimmed, setup: setup) {
+                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
                 return
             }
-            playWithSystemVoice(trimmed, setup: setup)
+            playbackSettings.recordPlaybackFailure(
+                resolvedEngine: selectedEngine,
+                reason: lastFailureReason ?? "Provider playback did not return playable audio."
+            )
         }
     }
 
@@ -1004,17 +1073,11 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         speechTask = nil
         audioPlayer?.stop()
         audioPlayer = nil
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
     }
 
-    private func resolvedEngine(for setup: IMConversationSetup) -> IMVoiceEngine {
+    private func resolvedEngine(for setup: IMConversationSetup) -> IMVoiceEngine? {
         switch playbackSettings.engine {
         case .auto:
-            if backendTTSAvailable() {
-                return .backend
-            }
             if googleCloudAccessToken() != nil {
                 return .googleCloud
             }
@@ -1024,7 +1087,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
                 return .elevenLabs
             }
-            return openAIAPIKey() == nil ? .system : .openAI
+            if openAIAPIKey() != nil {
+                return .openAI
+            }
+            if backendTTSAvailable() {
+                return .backend
+            }
+            return nil
         case .backend:
             return .backend
         case .googleCloud:
@@ -1033,47 +1102,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return .elevenLabs
         case .openAI:
             return .openAI
-        case .system:
-            return .system
-        }
-    }
-
-    private func playWithSystemVoice(_ text: String, setup: IMConversationSetup) {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = preferredSystemVoice(for: setup)
-            ?? AVSpeechSynthesisVoice(language: preferredLanguageCode())
-        utterance.rate = 0.47
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 0.98
-        synthesizer.speak(utterance)
-    }
-
-    private func preferredSystemVoice(for setup: IMConversationSetup) -> AVSpeechSynthesisVoice? {
-        let targetLanguage = preferredLanguageCode()
-        let candidates = AVSpeechSynthesisVoice.speechVoices()
-            .filter {
-                $0.language.hasPrefix(String(targetLanguage.prefix(2))) &&
-                !$0.voiceTraits.contains(.isNoveltyVoice)
-            }
-            .sorted { lhs, rhs in
-                qualityRank(lhs) > qualityRank(rhs)
-            }
-
-        if let exact = candidates.first(where: { $0.language == targetLanguage }) {
-            return exact
-        }
-
-        return candidates.first
-    }
-
-    private func qualityRank(_ voice: AVSpeechSynthesisVoice) -> Int {
-        switch voice.quality {
-        case .premium:
-            return 3
-        case .enhanced:
-            return 2
-        default:
-            return 1
         }
     }
 
@@ -1132,6 +1160,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
+                lastFailureReason = "Backend TTS request failed."
                 return false
             }
 
@@ -1143,22 +1172,31 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
 
             let payload = try JSONDecoder().decode(BackendIMTTSResponse.self, from: data)
             guard let audioData = Data(base64Encoded: payload.audioBase64) else {
+                lastFailureReason = "Backend TTS returned invalid audio."
                 return false
             }
             return playAudioData(audioData)
         } catch {
+            lastFailureReason = "Backend TTS error: \(error.localizedDescription)"
             return false
         }
     }
 
     private func playAudioData(_ data: Data) -> Bool {
         do {
+            #if canImport(AVFoundation)
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audioSession.setActive(true)
+            #endif
             let player = try AVAudioPlayer(data: data)
             player.prepareToPlay()
             audioPlayer = player
             player.play()
+            lastFailureReason = nil
             return true
         } catch {
+            lastFailureReason = "Audio playback error: \(error.localizedDescription)"
             return false
         }
     }
@@ -1170,8 +1208,15 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         if let value = ProcessInfo.processInfo.environment["GCP_TTS_ACCESS_TOKEN"], !value.isEmpty {
             return value
         }
-        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_ACCESS_TOKEN", plistNamed: "AIConfig")
-            ?? LocalConfigLoader.value(forKey: "GCP_TTS_ACCESS_TOKEN", plistNamed: "AIConfig")
+        if let value = LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_ACCESS_TOKEN", plistNamed: "AIConfig"),
+           !value.isEmpty {
+            return value
+        }
+        if let value = LocalConfigLoader.value(forKey: "GCP_TTS_ACCESS_TOKEN", plistNamed: "AIConfig"),
+           !value.isEmpty {
+            return value
+        }
+        return nil
     }
 
     private func googleCloudAPIKey() -> String? {
@@ -1181,8 +1226,15 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         if let value = ProcessInfo.processInfo.environment["GCP_TTS_API_KEY"], !value.isEmpty {
             return value
         }
-        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_API_KEY", plistNamed: "AIConfig")
-            ?? LocalConfigLoader.value(forKey: "GCP_TTS_API_KEY", plistNamed: "AIConfig")
+        if let value = LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_TTS_API_KEY", plistNamed: "AIConfig"),
+           !value.isEmpty {
+            return value
+        }
+        if let value = LocalConfigLoader.value(forKey: "GCP_TTS_API_KEY", plistNamed: "AIConfig"),
+           !value.isEmpty {
+            return value
+        }
+        return nil
     }
 
     private func googleCloudProjectID() -> String? {
@@ -1192,8 +1244,15 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         if let value = ProcessInfo.processInfo.environment["GCP_PROJECT_ID"], !value.isEmpty {
             return value
         }
-        return LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_PROJECT_ID", plistNamed: "AIConfig")
-            ?? LocalConfigLoader.value(forKey: "GCP_PROJECT_ID", plistNamed: "AIConfig")
+        if let value = LocalConfigLoader.value(forKey: "GOOGLE_CLOUD_PROJECT_ID", plistNamed: "AIConfig"),
+           !value.isEmpty {
+            return value
+        }
+        if let value = LocalConfigLoader.value(forKey: "GCP_PROJECT_ID", plistNamed: "AIConfig"),
+           !value.isEmpty {
+            return value
+        }
+        return nil
     }
 
     private func googleCloudVoiceOverride(for scenario: IMConversationScenario) -> String? {
@@ -1257,6 +1316,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         let accessToken = googleCloudAccessToken()
         let apiKey = googleCloudAPIKey()
         guard accessToken != nil || apiKey != nil else {
+            lastFailureReason = "Google Cloud TTS key or access token is missing."
             return false
         }
 
@@ -1293,16 +1353,24 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
+                let responseBody = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let http = response as? HTTPURLResponse {
+                    lastFailureReason = "Google Cloud TTS request failed (\(http.statusCode)): \(responseBody ?? "No response body")"
+                } else {
+                    lastFailureReason = "Google Cloud TTS request failed."
+                }
                 return false
             }
 
             let payload = try JSONDecoder().decode(GoogleCloudTTSSpeechResponse.self, from: data)
             guard let audioData = Data(base64Encoded: payload.audioContent) else {
+                lastFailureReason = "Google Cloud TTS returned invalid audio."
                 return false
             }
 
             return playAudioData(audioData)
         } catch {
+            lastFailureReason = "Google Cloud TTS error: \(error.localizedDescription)"
             return false
         }
     }
@@ -1330,6 +1398,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     private func playWithOpenAI(_ text: String, setup: IMConversationSetup) async -> Bool {
         guard let apiKey = openAIAPIKey(),
               let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+            lastFailureReason = "OpenAI TTS credentials are missing."
             return false
         }
 
@@ -1352,11 +1421,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
+                lastFailureReason = "OpenAI TTS request failed."
                 return false
             }
 
             return playAudioData(data)
         } catch {
+            lastFailureReason = "OpenAI TTS error: \(error.localizedDescription)"
             return false
         }
     }
@@ -1416,6 +1487,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         guard let apiKey = elevenLabsAPIKey(),
               let voiceID = elevenLabsVoiceID(for: setup.scenario),
               let endpoint = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)") else {
+            lastFailureReason = "ElevenLabs credentials or voice ID are missing."
             return false
         }
 
@@ -1443,11 +1515,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
+                lastFailureReason = "ElevenLabs request failed."
                 return false
             }
 
             return playAudioData(data)
         } catch {
+            lastFailureReason = "ElevenLabs error: \(error.localizedDescription)"
             return false
         }
     }
@@ -2918,19 +2992,22 @@ struct IMConversationService: IMConversationServicing {
         state: IMConversationState,
         profile: CoachingProfile?
     ) async throws -> IMConversationReply {
-        if let backendReply = try? await backendReply(
-            setup: setup,
-            turns: turns,
-            state: state,
-            profile: profile
-        ) {
-            return backendReply
+        guard IMModeAvailability.isAvailable else {
+            throw IMModeServiceError.unavailable
         }
 
         guard let provider = settings.activeProvider,
               let apiKey = apiKey(for: provider),
               let endpoint = provider.endpoint else {
-            return fallbackReply(for: setup, turns: turns, state: state)
+            if let backendReply = try? await backendReply(
+                setup: setup,
+                turns: turns,
+                state: state,
+                profile: profile
+            ) {
+                return backendReply
+            }
+            throw IMModeServiceError.unavailable
         }
 
         var request = URLRequest(url: endpoint)
@@ -2940,7 +3017,7 @@ struct IMConversationService: IMConversationServicing {
         let prompt = prompt(for: setup, turns: turns, state: state, profile: profile)
         switch provider {
         case .none:
-            return fallbackReply(for: setup, turns: turns, state: state)
+            throw IMModeServiceError.unavailable
         case .openAI, .deepSeek:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             let body = OpenAICompatibleChatRequest(
@@ -2969,7 +3046,7 @@ struct IMConversationService: IMConversationServicing {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                return fallbackReply(for: setup, turns: turns, state: state)
+                throw IMModeServiceError.replyGenerationFailed("HTTP request failed")
             }
 
             let jsonData = try extractJSONData(from: data, provider: provider)
@@ -2985,7 +3062,15 @@ struct IMConversationService: IMConversationServicing {
                 )
             )
         } catch {
-            return fallbackReply(for: setup, turns: turns, state: state)
+            if let backendReply = try? await backendReply(
+                setup: setup,
+                turns: turns,
+                state: state,
+                profile: profile
+            ) {
+                return backendReply
+            }
+            throw IMModeServiceError.replyGenerationFailed(error.localizedDescription)
         }
     }
 
@@ -3103,51 +3188,6 @@ struct IMConversationService: IMConversationServicing {
         """
     }
 
-    private func fallbackReply(for setup: IMConversationSetup, turns: [IMConversationTurn], state: IMConversationState) -> IMConversationReply {
-        let turnCount = turns.filter { $0.speaker == .user }.count
-        let message: String
-        let updatedState: IMConversationState
-        switch setup.scenario {
-        case .socialCatchUp:
-            message = turnCount > 3 ? "Nice, that actually sounds like a good shift. What are you focusing on most right now?" : "That makes sense. Has that been feeling better lately or still a bit messy?"
-            updatedState = IMConversationState(
-                trust: state.normalizedTrust + 1,
-                engagement: state.normalizedEngagement + 1,
-                tension: max(1, state.normalizedTension - 1),
-                beat: "The chat feels easier and more natural."
-            )
-        case .workUpdate:
-            message = turnCount > 3 ? "Helpful. What’s the main risk or blocker I should know before we go in?" : "Got it. What’s the headline version if someone asks in the meeting?"
-            updatedState = IMConversationState(
-                trust: state.normalizedTrust,
-                engagement: state.normalizedEngagement + 1,
-                tension: state.normalizedTension + (turnCount > 3 ? 1 : 0),
-                beat: "The other person is pushing for clarity and useful detail."
-            )
-        case .difficultConversation:
-            message = turnCount > 3 ? "I hear that. What do you actually want from me going forward?" : "Okay, but from my side it still felt off. What are you saying you meant?"
-            updatedState = IMConversationState(
-                trust: max(1, state.normalizedTrust - 1),
-                engagement: state.normalizedEngagement + 1,
-                tension: min(10, state.normalizedTension + 1),
-                beat: "The conversation still feels tense and unresolved."
-            )
-        case .networking:
-            message = turnCount > 3 ? "Interesting. What kind of projects do you want to be doing more of next?" : "Nice. How did you end up getting into that in the first place?"
-            updatedState = IMConversationState(
-                trust: state.normalizedTrust + 1,
-                engagement: state.normalizedEngagement + 1,
-                tension: max(1, state.normalizedTension - 1),
-                beat: "The conversation is opening up and testing depth."
-            )
-        }
-        return IMConversationReply(
-            message: message.truncatedToWordLimit(30),
-            shouldWrapUp: turnCount >= 5,
-            updatedState: updatedState
-        )
-    }
-
     private func apiKey(for provider: AIProvider) -> String? {
         if let keyName = provider.environmentKey,
            let value = ProcessInfo.processInfo.environment[keyName],
@@ -3230,31 +3270,26 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         recentSessions: [PracticeSession],
         profile: CoachingProfile?
     ) async throws -> IMConversationEvaluation {
-        if let backendEvaluation = try? await backendEvaluation(
-            setup: setup,
-            turns: turns,
-            finalState: finalState,
-            transcript: transcript,
-            fillerCount: fillerCount,
-            duration: duration,
-            recentSessions: recentSessions,
-            profile: profile
-        ) {
-            return backendEvaluation
+        guard IMModeAvailability.isAvailable else {
+            throw IMModeServiceError.unavailable
         }
 
         guard let provider = settings.activeProvider,
               let apiKey = apiKey(for: provider),
               let endpoint = provider.endpoint else {
-            return fallbackEvaluation(
+            if let backendEvaluation = try? await backendEvaluation(
                 setup: setup,
+                turns: turns,
                 finalState: finalState,
                 transcript: transcript,
                 fillerCount: fillerCount,
                 duration: duration,
                 recentSessions: recentSessions,
                 profile: profile
-            )
+            ) {
+                return backendEvaluation
+            }
+            throw IMModeServiceError.unavailable
         }
 
         var request = URLRequest(url: endpoint)
@@ -3274,15 +3309,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
         switch provider {
         case .none:
-            return fallbackEvaluation(
-                setup: setup,
-                finalState: finalState,
-                transcript: transcript,
-                fillerCount: fillerCount,
-                duration: duration,
-                recentSessions: recentSessions,
-                profile: profile
-            )
+            throw IMModeServiceError.unavailable
         case .openAI, .deepSeek:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             let body = OpenAICompatibleChatRequest(
@@ -3311,29 +3338,25 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                return fallbackEvaluation(
-                    setup: setup,
-                    finalState: finalState,
-                    transcript: transcript,
-                    fillerCount: fillerCount,
-                    duration: duration,
-                    recentSessions: recentSessions,
-                    profile: profile
-                )
+                throw IMModeServiceError.evaluationFailed("HTTP request failed")
             }
 
             let jsonData = try extractJSONData(from: data, provider: provider)
             return try JSONDecoder().decode(IMConversationEvaluation.self, from: jsonData)
         } catch {
-            return fallbackEvaluation(
+            if let backendEvaluation = try? await backendEvaluation(
                 setup: setup,
+                turns: turns,
                 finalState: finalState,
                 transcript: transcript,
                 fillerCount: fillerCount,
                 duration: duration,
                 recentSessions: recentSessions,
                 profile: profile
-            )
+            ) {
+                return backendEvaluation
+            }
+            throw IMModeServiceError.evaluationFailed(error.localizedDescription)
         }
     }
 
@@ -3468,56 +3491,6 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
     private func backendAPIKey() -> String? {
         ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
         LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
-    }
-
-    private func fallbackEvaluation(
-        setup: IMConversationSetup,
-        finalState: IMConversationState?,
-        transcript: String,
-        fillerCount: Int,
-        duration: TimeInterval,
-        recentSessions: [PracticeSession],
-        profile: CoachingProfile?
-    ) -> IMConversationEvaluation {
-        let resolvedState = finalState ?? .starting
-        let wordCount = transcript.split { !$0.isLetter && !$0.isNumber }.count
-        let pace = PracticeEvaluator.paceSnapshot(forTranscript: transcript, duration: duration)
-        let toneMatch = toneMatchScore(for: setup.targetTone, transcript: transcript)
-        let clarityScore = max(2, min(10, Int(round(Double(wordCount) / 8.0)) - fillerCount / 2))
-        let composureScore = max(2, min(10, 10 - fillerCount))
-        let vocabularyScore = max(2, min(10, Int(round(PracticeEvaluator.styleTrendSnapshot(
-            transcript: transcript,
-            recentSessions: recentSessions,
-            profile: profile
-        ).currentAlignment * 10))))
-        let conversationScore = max(2, min(10, duration >= 18 ? 8 : 5))
-        let actualTone = inferredTone(from: transcript, paceLabel: pace.label)
-        let outcome = IMConversationOutcomeResolver.resolve(for: setup.scenario, state: resolvedState)
-        let trustBonus = (resolvedState.normalizedTrust + resolvedState.normalizedEngagement - resolvedState.normalizedTension) / 3
-        let headline = toneMatch >= 8 ? "Natural conversation control" : "Close, but still sharpening tone"
-        let feedback = "You aimed for a \(setup.targetTone.title.lowercased()) tone and came across as \(actualTone.lowercased()). The conversation finished with trust at \(resolvedState.normalizedTrust)/10 and engagement at \(resolvedState.normalizedEngagement)/10. \(outcome.summary) The next rep should tighten the opening and keep the reply more intentional without losing the conversational feel."
-        let insights = [
-            "Actual tone landed as \(actualTone.lowercased()).",
-            "Conversation state ended at trust \(resolvedState.normalizedTrust), engagement \(resolvedState.normalizedEngagement), tension \(resolvedState.normalizedTension).",
-            pace.label == "Balanced" ? "Your pacing stayed fairly natural for a chat." : pace.coachNote,
-            fillerCount == 0 ? "You kept the message clean without filler clutter." : "A few filler words softened the message and made it feel less intentional.",
-            outcome.summary
-        ]
-        let suggestedDrill = "Run the same scenario again and keep each reply to one clear point before expanding."
-
-        return IMConversationEvaluation(
-            actualTone: actualTone,
-            toneMatch: max(1, min(10, toneMatch + max(0, trustBonus - 2))),
-            clarityScore: clarityScore,
-            composureScore: composureScore,
-            vocabularyScore: vocabularyScore,
-            conversationScore: conversationScore,
-            headline: headline,
-            feedback: feedback,
-            insights: Array(insights.prefix(4)),
-            suggestedDrill: suggestedDrill,
-            outcome: outcome
-        )
     }
 
     private func toneMatchScore(for tone: IMTargetTone, transcript: String) -> Int {

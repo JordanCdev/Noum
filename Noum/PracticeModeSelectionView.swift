@@ -62,13 +62,15 @@ struct PracticeModeSelectionView: View {
                     mode: .ahCounter
                 )
 
-                practiceModeCard(
-                    title: "IM Mode",
-                    subtitle: "Voice your side of a realistic chat and train tone, pacing, and conversational control.",
-                    systemImage: "message.badge.waveform.fill",
-                    tint: Color(red: 0.56, green: 0.36, blue: 0.92),
-                    mode: .imConversation
-                )
+                if IMModeAvailability.isAvailable {
+                    practiceModeCard(
+                        title: "IM Mode",
+                        subtitle: "Voice your side of a realistic chat and train tone, pacing, and conversational control.",
+                        systemImage: "message.badge.waveform.fill",
+                        tint: Color(red: 0.56, green: 0.36, blue: 0.92),
+                        mode: .imConversation
+                    )
+                }
 
                 Spacer()
             }
@@ -87,7 +89,11 @@ struct PracticeModeSelectionView: View {
                     case .ahCounter:
                         AhCounterView()
                     case .imConversation:
-                        IMPracticeView()
+                        if IMModeAvailability.isAvailable {
+                            IMPracticeView()
+                        } else {
+                            TimedPracticeView()
+                        }
                     }
                 }
                 .accessibilityIdentifier("practiceModes.start")

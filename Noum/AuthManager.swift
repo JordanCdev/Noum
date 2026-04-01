@@ -272,9 +272,7 @@ class AuthManager: ObservableObject {
             clearStoredSession()
             isSignedIn = false
             authProvider = nil
-            CoachingProfileStore.shared.endSession()
-            PracticeSessionStore.shared.endSession()
-            ProfileManager.shared.endSession()
+            deferStoreSessionReset()
             if let creds = Self.loadCredentials() {
                 self.credentialIdentity = creds.identity
                 self.region = creds.region
@@ -285,9 +283,7 @@ class AuthManager: ObservableObject {
         print("Restored signed in account: \(accountID)")
         isSignedIn = true
         authProvider = provider
-        CoachingProfileStore.shared.reloadForCurrentAccount()
-        PracticeSessionStore.shared.reloadForCurrentAccount()
-        ProfileManager.shared.reloadForCurrentAccount()
+        deferStoreReloadForCurrentAccount(includeRecommendations: false)
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
@@ -330,9 +326,7 @@ class AuthManager: ObservableObject {
         clearStoredSession()
         isSignedIn = false
         authProvider = nil
-        CoachingProfileStore.shared.endSession()
-        PracticeSessionStore.shared.endSession()
-        ProfileManager.shared.endSession()
+        deferStoreSessionReset()
     }
 
     func deleteCurrentAccount() {
@@ -395,12 +389,35 @@ class AuthManager: ObservableObject {
         signIn()
         authProvider = provider
         isSignedIn = true
-        CoachingProfileStore.shared.reloadForCurrentAccount()
-        PracticeSessionStore.shared.reloadForCurrentAccount()
-        ProfileManager.shared.reloadForCurrentAccount()
-        RecommendationLearningStore.shared.reloadForCurrentAccount()
-        CoachingProfileStore.shared.beginSession(isNewAccount: isNewAccount)
+        deferStoreReloadForCurrentAccount(includeRecommendations: true) {
+            CoachingProfileStore.shared.beginSession(isNewAccount: isNewAccount)
+        }
         syncFromBackendIfPossible(accountID: accountID, providerRawValue: provider.rawValue)
+    }
+
+    private func deferStoreReloadForCurrentAccount(
+        includeRecommendations: Bool,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
+        Task { @MainActor in
+            await Task.yield()
+            CoachingProfileStore.shared.reloadForCurrentAccount()
+            PracticeSessionStore.shared.reloadForCurrentAccount()
+            ProfileManager.shared.reloadForCurrentAccount()
+            if includeRecommendations {
+                RecommendationLearningStore.shared.reloadForCurrentAccount()
+            }
+            completion?()
+        }
+    }
+
+    private func deferStoreSessionReset() {
+        Task { @MainActor in
+            await Task.yield()
+            CoachingProfileStore.shared.endSession()
+            PracticeSessionStore.shared.endSession()
+            ProfileManager.shared.endSession()
+        }
     }
 
     private func clearStoredSession() {

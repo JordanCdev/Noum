@@ -4,6 +4,10 @@ build/
 xcuserdata/
 *.xcuserstate
 .build/
+.DS_Store
+**/.DS_Store
+firebase-debug.log
+functions/firebase-debug.log
 
 # Local configuration files
 Noum/Transcribe.plist

@@ -523,17 +523,17 @@ struct ContentView: View {
     private var effectiveSuggestion: PracticeSuggestion {
         guard let aiRecommendation,
               let mode = PracticeMode(rawValue: aiRecommendation.recommendedMode) else {
-            return primarySuggestion
+            return normalizedSuggestion(primarySuggestion)
         }
 
-        return PracticeSuggestion(
+        return normalizedSuggestion(PracticeSuggestion(
             title: aiRecommendation.title,
             detail: aiRecommendation.detail,
             focus: aiRecommendation.focus,
             target: aiRecommendation.target,
             mode: mode,
             tint: tint(for: mode)
-        )
+        ))
     }
 
     private var sessionsThisWeek: Int {
@@ -765,8 +765,27 @@ struct ContentView: View {
         case .ahCounter:
             AhCounterView()
         case .imConversation:
-            IMPracticeView()
+            if IMModeAvailability.isAvailable {
+                IMPracticeView()
+            } else {
+                TimedPracticeView()
+            }
         }
+    }
+
+    private func normalizedSuggestion(_ suggestion: PracticeSuggestion) -> PracticeSuggestion {
+        guard suggestion.mode == .imConversation, !IMModeAvailability.isAvailable else {
+            return suggestion
+        }
+
+        return PracticeSuggestion(
+            title: "Keep the next rep deliberate",
+            detail: "Conversation mode is offline right now, so train the same control in a live speaking drill.",
+            focus: "Consistency",
+            target: "Clean rep",
+            mode: .timed,
+            tint: .blue
+        )
     }
 
     private var levelProgressLabel: String {
