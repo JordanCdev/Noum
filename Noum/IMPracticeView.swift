@@ -29,13 +29,25 @@ struct IMPracticeView: View {
     @State private var summaryTranscript = AttributedString("")
     @State private var summaryEvaluation: IMConversationEvaluation?
     @State private var serviceErrorMessage: String?
+    @State private var isEndingConversation = false
     @State private var setupStep: SetupStep = .scenario
     @State private var typingPhase = 0
     @State private var sessionContext = IMSessionContextProvider.current()
     @State private var latestUserSignal: IMUserMessageSignal?
 
+    private let preferredScenario: IMConversationScenario?
+    private let preferredTone: IMTargetTone?
+
     private let conversationService: IMConversationServicing = IMConversationService()
     private let evaluationService: IMConversationEvaluatorServicing = IMConversationEvaluationService()
+
+    init(
+        preferredScenario: IMConversationScenario? = nil,
+        preferredTone: IMTargetTone? = nil
+    ) {
+        self.preferredScenario = preferredScenario
+        self.preferredTone = preferredTone
+    }
 
     private var setup: IMConversationSetup {
         IMConversationSetup(scenario: scenario, targetTone: targetTone)
@@ -116,14 +128,14 @@ struct IMPracticeView: View {
             Text(serviceErrorMessage ?? "")
         })
         .task(id: isAwaitingNPC) {
-            guard isAwaitingNPC else {
+            guard isAwaitingNPC || isEndingConversation else {
                 typingPhase = 0
                 return
             }
 
-            while isAwaitingNPC {
+            while isAwaitingNPC || isEndingConversation {
                 try? await Task.sleep(for: .milliseconds(220))
-                guard isAwaitingNPC else { break }
+                guard isAwaitingNPC || isEndingConversation else { break }
                 typingPhase = (typingPhase + 1) % 3
             }
         }
@@ -165,6 +177,14 @@ struct IMPracticeView: View {
                 }
             )
         }
+        .onAppear {
+            if let preferredScenario {
+                scenario = preferredScenario
+            }
+            if let preferredTone {
+                targetTone = preferredTone
+            }
+        }
     }
 
     @ViewBuilder
@@ -190,6 +210,12 @@ struct IMPracticeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
+            .overlay {
+                if isEndingConversation {
+                    endingConversationOverlay
+                        .transition(.opacity)
+                }
+            }
         }
     }
 
@@ -235,8 +261,11 @@ struct IMPracticeView: View {
                         setupStep = .scenario
                     }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.vertical, 15)
+                .padding(.horizontal, 24)
+                .background(Color.white.opacity(0.92), in: Capsule())
             }
 
             Button(isToneStep ? "Start conversation" : "Next") {
@@ -248,10 +277,11 @@ struct IMPracticeView: View {
                     }
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.blue)
-            .controlSize(.large)
+            .font(.headline)
             .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(!canAdvanceFromScenario ? Color.gray.opacity(0.35) : Color.blue, in: Capsule())
+            .foregroundStyle(.white)
             .disabled(!canAdvanceFromScenario)
         }
     }
@@ -438,6 +468,77 @@ struct IMPracticeView: View {
         }
     }
 
+    private var endingConversationOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.10))
+                        .frame(width: 68, height: 68)
+
+                    HStack(spacing: 6) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(Color.blue.opacity(0.78))
+                                .frame(width: 8, height: 8)
+                                .scaleEffect(typingPhase == index ? 1.12 : 0.72)
+                                .opacity(typingPhase == index ? 1 : 0.4)
+                                .animation(.easeInOut(duration: 0.18), value: typingPhase)
+                        }
+                    }
+                }
+
+                VStack(spacing: 6) {
+                    Text("Ending the chat")
+                        .font(.headline.weight(.semibold))
+
+                    Text(endingStageMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                ShimmerProgressBar(progress: endingStageProgress, tint: .blue)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.orange)
+                    Text("Preparing your read, relationship shift, and next move")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(24)
+        }
+        .padding(10)
+    }
+
+    private var endingStageMessage: String {
+        switch typingPhase {
+        case 0:
+            return "Reading the full conversation and tone."
+        case 1:
+            return "Updating the relationship and progression state."
+        default:
+            return "Building the summary and best next move."
+        }
+    }
+
+    private var endingStageProgress: Double {
+        switch typingPhase {
+        case 0:
+            return 0.34
+        case 1:
+            return 0.67
+        default:
+            return 0.92
+        }
+    }
+
     private var composerBar: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
@@ -498,10 +599,23 @@ struct IMPracticeView: View {
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.secondary)
-            .disabled(speechVM.isRecording || isAwaitingNPC)
+            .disabled(speechVM.isRecording || isAwaitingNPC || isEndingConversation)
         }
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(alignment: .bottomTrailing) {
+            if isEndingConversation {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Wrapping up...")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.trailing, 4)
+                .padding(.bottom, 2)
+            }
+        }
     }
 
     private func statusChip(title: String, value: String, tint: Color) -> some View {
@@ -770,10 +884,15 @@ struct IMPracticeView: View {
     }
 
     private func endConversation() {
+        guard !isEndingConversation else { return }
+        isEndingConversation = true
         Task {
             let transcript = combinedUserTranscript
             guard !transcript.isEmpty else {
-                await MainActor.run { dismiss() }
+                await MainActor.run {
+                    isEndingConversation = false
+                    dismiss()
+                }
                 return
             }
 
@@ -836,9 +955,11 @@ struct IMPracticeView: View {
                         )
                     )
                     showSummary = true
+                    isEndingConversation = false
                 }
             } catch {
                 await MainActor.run {
+                    isEndingConversation = false
                     serviceErrorMessage = error.localizedDescription
                 }
             }
@@ -859,6 +980,7 @@ struct IMPracticeView: View {
         summaryEvaluation = nil
         summaryTranscript = AttributedString("")
         serviceErrorMessage = nil
+        isEndingConversation = false
         sessionContext = IMSessionContextProvider.current()
         latestUserSignal = nil
         speechVM.resetCurrentSession()

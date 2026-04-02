@@ -100,7 +100,7 @@ struct CoachingOnboardingView: View {
             Text("A few quick answers, once.")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
 
-            Text("Noum will use these to tailor drills and feedback.")
+            Text("Noum will use these to tailor drills, feedback, and reminders around what better communication actually changes for you.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -170,7 +170,54 @@ struct CoachingOnboardingView: View {
             Text("Keep it concrete so Noum can coach toward a real outcome, not just a vague improvement.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            northStarPreview
         }
+    }
+
+    private var northStarPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("What Noum will optimize for")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(goalPreviewHeadline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(goalPreviewDetail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var goalPreviewHeadline: String {
+        let goal = coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if goal.isEmpty {
+            return "Help me sound \(speakingStyleGoal.title.lowercased()) in \(speakingContext.title.lowercased())."
+        }
+        return goal
+    }
+
+    private var goalPreviewDetail: String {
+        let why = whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+        let success = successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !why.isEmpty && !success.isEmpty {
+            return "Because \(why), and better communication would help \(success)."
+        }
+        if !why.isEmpty {
+            return "Because \(why)."
+        }
+        if !success.isEmpty {
+            return "Success would look like \(success)."
+        }
+        return "Noum will bias recommendations toward the drills most likely to move this forward."
     }
 
     private var goalPlaceholder: String {

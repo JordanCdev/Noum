@@ -1411,8 +1411,13 @@ struct IMConversationEvaluation: Codable, Equatable {
     let outcome: IMConversationOutcome?
 
     var overallScore: Int {
-        let total = toneMatch + clarityScore + composureScore + vocabularyScore + conversationScore
-        return max(1, min(10, Int(round(Double(total) / 5.0))))
+        let weighted =
+            (Double(toneMatch) * 0.15) +
+            (Double(clarityScore) * 0.25) +
+            (Double(composureScore) * 0.20) +
+            (Double(vocabularyScore) * 0.10) +
+            (Double(conversationScore) * 0.30)
+        return max(1, min(10, Int(round(weighted))))
     }
 
     var xpEarned: Int {
@@ -3299,12 +3304,16 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
     }
 }
 
-enum IMVoiceEngine: String, CaseIterable, Codable, Identifiable {
+enum IMVoiceEngine: String, Codable, Identifiable {
     case auto
     case backend
     case googleCloud
     case elevenLabs
     case openAI
+
+    static var allCases: [IMVoiceEngine] {
+        [.auto, .googleCloud, .openAI]
+    }
 
     var id: String { rawValue }
 
@@ -3326,15 +3335,15 @@ enum IMVoiceEngine: String, CaseIterable, Codable, Identifiable {
     var subtitle: String {
         switch self {
         case .auto:
-            return "Prefer Google Cloud, then ElevenLabs, then OpenAI, then backend voice."
+            return "Prefer Google Cloud first, then OpenAI, with backend voice only as the quiet fallback."
         case .backend:
-            return "Use Noum backend voice synthesis first, with provider secrets kept off the device."
+            return "Use Noum backend voice synthesis when cloud voice providers are unavailable."
         case .googleCloud:
-            return "Use Google Cloud Text-to-Speech when an API key or access token is configured."
+            return "Use Google Cloud Text-to-Speech as the primary premium voice path."
         case .elevenLabs:
             return "Use ElevenLabs voice synthesis when API keys and voice IDs are configured."
         case .openAI:
-            return "Force OpenAI TTS for the most natural NPC replies."
+            return "Use OpenAI TTS as the backup premium voice if Google Cloud is unavailable."
         }
     }
 }
@@ -3359,33 +3368,27 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         stop()
         speechTask = Task { [weak self] in
             guard let self else { return }
-            guard let selectedEngine = resolvedEngine(for: setup) else {
+            let candidateEngines = candidateEngines(for: setup)
+            guard let selectedEngine = candidateEngines.first else {
                 playbackSettings.recordPlaybackFailure(
                     resolvedEngine: .auto,
                     reason: "No cloud voice provider is configured."
                 )
                 return
             }
-            playbackSettings.recordPlaybackAttempt(resolvedEngine: selectedEngine)
-            if selectedEngine == .backend,
-               await playWithBackend(trimmed, setup: setup) {
-                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
-                return
-            }
-            if selectedEngine == .googleCloud,
-               await playWithGoogleCloud(trimmed, setup: setup) {
-                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
-                return
-            }
-            if selectedEngine == .elevenLabs,
-               await playWithElevenLabs(trimmed, setup: setup) {
-                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
-                return
-            }
-            if selectedEngine == .openAI,
-               await playWithOpenAI(trimmed, setup: setup) {
-                playbackSettings.recordPlaybackSuccess(resolvedEngine: selectedEngine)
-                return
+            for (index, engine) in candidateEngines.enumerated() {
+                playbackSettings.recordPlaybackAttempt(resolvedEngine: engine)
+                if await play(trimmed, using: engine, setup: setup) {
+                    playbackSettings.recordPlaybackSuccess(resolvedEngine: engine)
+                    return
+                }
+                if index < candidateEngines.count - 1 {
+                    let fallbackEngine = candidateEngines[index + 1]
+                    playbackSettings.recordPlaybackFallback(
+                        to: fallbackEngine,
+                        reason: lastFailureReason ?? "\(engine.title) did not return playable audio."
+                    )
+                }
             }
             playbackSettings.recordPlaybackFailure(
                 resolvedEngine: selectedEngine,
@@ -3401,33 +3404,65 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         audioPlayer = nil
     }
 
-    private func resolvedEngine(for setup: IMConversationSetup) -> IMVoiceEngine? {
+    private func candidateEngines(for setup: IMConversationSetup) -> [IMVoiceEngine] {
+        func appendUnique(_ engine: IMVoiceEngine, to engines: inout [IMVoiceEngine]) {
+            guard !engines.contains(engine) else { return }
+            engines.append(engine)
+        }
+
+        var engines: [IMVoiceEngine] = []
         switch playbackSettings.engine {
         case .auto:
-            if googleCloudAccessToken() != nil {
-                return .googleCloud
-            }
-            if googleCloudAPIKey() != nil {
-                return .googleCloud
-            }
-            if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
-                return .elevenLabs
+            if googleCloudAccessToken() != nil || googleCloudAPIKey() != nil {
+                appendUnique(.googleCloud, to: &engines)
             }
             if openAIAPIKey() != nil {
-                return .openAI
+                appendUnique(.openAI, to: &engines)
             }
             if backendTTSAvailable() {
-                return .backend
+                appendUnique(.backend, to: &engines)
             }
-            return nil
         case .backend:
-            return .backend
+            appendUnique(.backend, to: &engines)
         case .googleCloud:
-            return .googleCloud
+            appendUnique(.googleCloud, to: &engines)
+            if openAIAPIKey() != nil {
+                appendUnique(.openAI, to: &engines)
+            }
+            if backendTTSAvailable() {
+                appendUnique(.backend, to: &engines)
+            }
         case .elevenLabs:
-            return .elevenLabs
+            if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
+                appendUnique(.elevenLabs, to: &engines)
+            }
+            if openAIAPIKey() != nil {
+                appendUnique(.openAI, to: &engines)
+            }
+            if backendTTSAvailable() {
+                appendUnique(.backend, to: &engines)
+            }
         case .openAI:
-            return .openAI
+            appendUnique(.openAI, to: &engines)
+            if backendTTSAvailable() {
+                appendUnique(.backend, to: &engines)
+            }
+        }
+        return engines
+    }
+
+    private func play(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+        switch engine {
+        case .backend:
+            return await playWithBackend(text, setup: setup)
+        case .googleCloud:
+            return await playWithGoogleCloud(text, setup: setup)
+        case .elevenLabs:
+            return await playWithElevenLabs(text, setup: setup)
+        case .openAI:
+            return await playWithOpenAI(text, setup: setup)
+        case .auto:
+            return false
         }
     }
 
@@ -5278,8 +5313,62 @@ struct AIHomeRecommendation: Codable, Equatable {
     let focus: String
     let target: String
     let recommendedMode: String
+    let recommendedTone: String?
+    let recommendedScenario: String?
+    let modeBenefit: String
     let whyMode: String
     let whyNow: String
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case detail
+        case focus
+        case target
+        case recommendedMode
+        case recommendedTone
+        case recommendedScenario
+        case modeBenefit
+        case whyMode
+        case whyNow
+    }
+
+    init(
+        title: String,
+        detail: String,
+        focus: String,
+        target: String,
+        recommendedMode: String,
+        recommendedTone: String?,
+        recommendedScenario: String?,
+        modeBenefit: String,
+        whyMode: String,
+        whyNow: String
+    ) {
+        self.title = title
+        self.detail = detail
+        self.focus = focus
+        self.target = target
+        self.recommendedMode = recommendedMode
+        self.recommendedTone = recommendedTone
+        self.recommendedScenario = recommendedScenario
+        self.modeBenefit = modeBenefit
+        self.whyMode = whyMode
+        self.whyNow = whyNow
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        detail = try container.decode(String.self, forKey: .detail)
+        focus = try container.decode(String.self, forKey: .focus)
+        target = try container.decode(String.self, forKey: .target)
+        recommendedMode = try container.decode(String.self, forKey: .recommendedMode)
+        recommendedTone = try container.decodeIfPresent(String.self, forKey: .recommendedTone)
+        recommendedScenario = try container.decodeIfPresent(String.self, forKey: .recommendedScenario)
+        modeBenefit = try container.decodeIfPresent(String.self, forKey: .modeBenefit) ?? ""
+        whyMode = try container.decode(String.self, forKey: .whyMode)
+        whyNow = try container.decode(String.self, forKey: .whyNow)
+    }
 }
 
 struct AIHomeRecommendationInput {
@@ -5297,6 +5386,182 @@ struct AIHomeRecommendationInput {
     let styleAlignmentScore: Double
     let sessionStreak: Int
     let daysSinceLastSession: Int
+    let preferredModeBias: String
+    let preferredToneBias: String
+    let preferredScenarioBias: String
+    let modeBenefitBias: String
+}
+
+struct PracticeModePlaybookEntry {
+    let mode: PracticeMode
+    let benefit: String
+    let bestFor: String
+}
+
+struct RecommendationBiasBlueprint {
+    let recommendedMode: PracticeMode
+    let recommendedTone: IMTargetTone?
+    let recommendedScenario: IMConversationScenario?
+    let focus: String
+    let target: String
+    let modeBenefit: String
+    let whyMode: String
+    let whyNow: String
+}
+
+enum RecommendationBiasEngine {
+    static let playbook: [PracticeModePlaybookEntry] = [
+        .init(
+            mode: .timed,
+            benefit: "Best for building structure, clean openings, and complete answers before pressure breaks the thought.",
+            bestFor: "Users who need clearer structure, longer answers, or steadier pacing."
+        ),
+        .init(
+            mode: .suddenDeath,
+            benefit: "Best for fast thinking and composure when there is no warm-up and every hesitation gets exposed.",
+            bestFor: "Users who freeze, overthink, or need sharper recall under pressure."
+        ),
+        .init(
+            mode: .ahCounter,
+            benefit: "Best for real-time filler awareness and replacing verbal clutter with cleaner pauses.",
+            bestFor: "Users whose main drag is fillers, rambling, or rushed delivery."
+        ),
+        .init(
+            mode: .imConversation,
+            benefit: "Best for training tone, relationship reading, and saying the right thing cleanly in a live exchange.",
+            bestFor: "Users who want better small talk, work conversations, networking, or difficult-message control."
+        )
+    ]
+
+    static func blueprint(
+        profile: CoachingProfile?,
+        input: AIHomeRecommendationInput,
+        plan: CoachingPlan?
+    ) -> RecommendationBiasBlueprint {
+        guard let profile else {
+            let mode: PracticeMode = input.averageFillers >= 4 ? .ahCounter : (input.averageDuration < 20 ? .timed : .suddenDeath)
+            return RecommendationBiasBlueprint(
+                recommendedMode: mode,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                focus: mode == .ahCounter ? "Cleaner delivery" : "Baseline control",
+                target: mode == .ahCounter ? "Cut fillers by 1" : "One complete rep",
+                modeBenefit: playbookEntry(for: mode).benefit,
+                whyMode: playbookEntry(for: mode).bestFor,
+                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline."
+            )
+        }
+
+        let tone = recommendedTone(for: profile)
+        let scenario = recommendedScenario(for: profile)
+        let priorities = prioritizedModes(for: profile)
+        let mode = preferredMode(from: priorities, strongestMode: plan?.strongestMode)
+        let benefit = playbookEntry(for: mode)
+        let target = target(for: mode, profile: profile, input: input)
+        let focus = focus(for: mode, profile: profile)
+        let whyNow = whyNow(for: mode, profile: profile, input: input)
+
+        return RecommendationBiasBlueprint(
+            recommendedMode: mode,
+            recommendedTone: mode == .imConversation ? tone : nil,
+            recommendedScenario: mode == .imConversation ? scenario : nil,
+            focus: focus,
+            target: target,
+            modeBenefit: benefit.benefit,
+            whyMode: benefit.bestFor + " This lines up with the user's north star.",
+            whyNow: whyNow
+        )
+    }
+
+    private static func prioritizedModes(for profile: CoachingProfile) -> [PracticeMode] {
+        switch (profile.primaryGoal, profile.biggestChallenge) {
+        case (.reduceFillers, _), (_, .fillerWords):
+            return [.ahCounter, .suddenDeath, .timed, .imConversation]
+        case (.moreConcise, _), (_, .rambling):
+            return [.timed, .imConversation, .ahCounter, .suddenDeath]
+        case (.thinkFaster, _), (_, .freezing):
+            return [.suddenDeath, .timed, .imConversation, .ahCounter]
+        case (.calmerDelivery, _), (_, .rushing):
+            return [.imConversation, .timed, .ahCounter, .suddenDeath]
+        }
+    }
+
+    private static func preferredMode(from priorities: [PracticeMode], strongestMode: PracticeMode?) -> PracticeMode {
+        guard let first = priorities.first else { return .timed }
+        if strongestMode == first, priorities.count > 1 {
+            return priorities[1]
+        }
+        return first
+    }
+
+    private static func recommendedTone(for profile: CoachingProfile) -> IMTargetTone {
+        switch profile.speakingStyleGoal {
+        case .warm: return .warm
+        case .concise: return .concise
+        case .persuasive: return .assertive
+        case .executive: return .professional
+        case .storytelling: return .confident
+        case .authoritative: return .confident
+        }
+    }
+
+    private static func recommendedScenario(for profile: CoachingProfile) -> IMConversationScenario {
+        switch profile.speakingContext {
+        case .social:
+            return .socialCatchUp
+        case .work, .presentations:
+            return profile.primaryGoal == .calmerDelivery ? .difficultConversation : .workUpdate
+        case .interviews:
+            return profile.primaryGoal == .thinkFaster ? .networking : .workUpdate
+        }
+    }
+
+    private static func focus(for mode: PracticeMode, profile: CoachingProfile) -> String {
+        switch mode {
+        case .timed:
+            return "Structured delivery"
+        case .suddenDeath:
+            return "Thinking on your feet"
+        case .ahCounter:
+            return "Filler control"
+        case .imConversation:
+            return "\(profile.speakingContext.title) realism"
+        }
+    }
+
+    private static func target(for mode: PracticeMode, profile: CoachingProfile, input: AIHomeRecommendationInput) -> String {
+        switch mode {
+        case .timed:
+            return profile.primaryGoal == .moreConcise ? "45s, clean structure" : "One complete answer"
+        case .suddenDeath:
+            return profile.primaryGoal == .thinkFaster ? "Fast clear reply" : "Zero panic fillers"
+        case .ahCounter:
+            return input.averageFillers >= 5 ? "Cut fillers by 2" : "Zero filler start"
+        case .imConversation:
+            return "\(recommendedTone(for: profile).title) \(recommendedScenario(for: profile).title)"
+        }
+    }
+
+    private static func whyNow(for mode: PracticeMode, profile: CoachingProfile, input: AIHomeRecommendationInput) -> String {
+        if input.daysSinceLastSession > 2 {
+            return "The user has drifted off rhythm, so the next drill should reconnect them to the exact communication goal they signed up with."
+        }
+
+        switch mode {
+        case .timed:
+            return "Their recent reps still need stronger structure before pressure gets layered on."
+        case .suddenDeath:
+            return "They need a cleaner reaction under pressure, not more time to polish the answer."
+        case .ahCounter:
+            return "Verbal clutter is still costing clarity, so awareness needs to happen live."
+        case .imConversation:
+            return "Their goal depends on sounding right with another person, not just speaking cleanly in isolation."
+        }
+    }
+
+    private static func playbookEntry(for mode: PracticeMode) -> PracticeModePlaybookEntry {
+        playbook.first(where: { $0.mode == mode }) ?? playbook[0]
+    }
 }
 
 protocol AIHomeRecommendationServicing {
@@ -6328,12 +6593,15 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         You are the intelligence behind a premium communication coaching app.
         Recommend the single best next speaking drill for the user based on recent performance.
         Be specific, coach-like, and adaptive. Do not sound generic.
-        Return JSON only with keys: title, detail, focus, target, recommendedMode, whyMode, whyNow.
-        recommendedMode must be one of: timed, suddenDeath, ahCounter.
+        Return JSON only with keys: title, detail, focus, target, recommendedMode, recommendedTone, recommendedScenario, modeBenefit, whyMode, whyNow.
+        recommendedMode must be one of: timed, suddenDeath, ahCounter, imConversation.
+        recommendedTone must be one of: confident, warm, concise, assertive, calm, professional, or an empty string if not relevant.
+        recommendedScenario must be one of: socialCatchUp, workUpdate, difficultConversation, networking, or an empty string if not relevant.
         title should be short and action-oriented.
         detail should explain the reasoning in one sentence.
         focus should be a short coaching label.
         target should be a concise measurable target like '30s+' or 'Zero fillers' or '<150 WPM'.
+        modeBenefit should explain the defined benefit of the chosen mode for this user in one sentence.
         whyMode should explain why this mode is the best fit right now in one sentence.
         whyNow should explain the timing or trend behind the recommendation in one sentence.
         """
@@ -6358,6 +6626,10 @@ struct AIHomeRecommendationService: AIHomeRecommendationServicing {
         Style alignment score: \(String(format: "%.2f", input.styleAlignmentScore))
         Session streak in days: \(input.sessionStreak)
         Days since last session: \(input.daysSinceLastSession)
+        Rule-based preferred mode bias: \(input.preferredModeBias)
+        Rule-based preferred tone bias: \(input.preferredToneBias)
+        Rule-based preferred scenario bias: \(input.preferredScenarioBias)
+        Defined mode benefit bias: \(input.modeBenefitBias)
         Speaker context: \(profile?.speakingContext.title ?? "unknown")
         Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
         Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")

@@ -3,6 +3,10 @@ import Foundation
 import SwiftUI
 #endif
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 #if canImport(SwiftUI)
 private enum SummaryTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
@@ -27,6 +31,7 @@ struct SummaryView: View {
     var insights: [String] = []
     var recentSessions: [PracticeSession] = []
     var imConversationDetails: IMConversationDetails? = nil
+    var explicitMode: PracticeMode? = nil
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
@@ -35,6 +40,7 @@ struct SummaryView: View {
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var notificationManager = NotificationManager.shared
     @State private var selectedTab: SummaryTab = .overview
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -46,11 +52,21 @@ struct SummaryView: View {
     @State private var aiFeedback: AICoachFeedback?
     @State private var isRequestingAIFeedback = false
     @State private var aiError: String?
+    @State private var celebrationVisible = false
+    @State private var lockedTranscriptText: String?
+    @State private var lockedFillerCount: Int?
+    @State private var lockedDuration: TimeInterval?
+    @State private var lockedScore: Int?
+    @State private var lockedFeedbackOverride: String?
+    @State private var lockedHeadlineOverride: String?
+    @State private var lockedScoreBreakdown: [PracticeScoreSegment] = []
+    @State private var lockedInsights: [String] = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let aiCoachService: AICoachServicing = AICoachService()
 
     private var transcriptText: String {
-        String(transcript.characters)
+        lockedTranscriptText ?? String(transcript.characters)
     }
 
     private var transcriptWordCount: Int {
@@ -76,6 +92,69 @@ struct SummaryView: View {
 
     private var motivationSummary: String? {
         coachingProfileStore.profile?.motivationalSummary
+    }
+
+    private var retentionSnapshot: RetentionLoopSnapshot {
+        RetentionLoopEngine.snapshot(
+            sessions: sessionStore.sessions,
+            profile: coachingProfileStore.profile
+        )
+    }
+
+    private var recentWindow: [PracticeSession] {
+        Array(sessionStore.sessions.prefix(5))
+    }
+
+    private var strongestMode: PracticeMode? {
+        CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode
+    }
+
+    private var summaryRecommendation: RecommendationBiasBlueprint {
+        RecommendationBiasEngine.blueprint(
+            profile: coachingProfileStore.profile,
+            input: AIHomeRecommendationInput(
+                recentSessionSummary: recentWindowSummary,
+                averageFillers: averageFillers,
+                averageDuration: averageDuration,
+                averageWordsPerMinute: averagePace,
+                fillerTrendDelta: 0,
+                durationTrendDelta: 0,
+                paceTrendDelta: 0,
+                averageWordCount: averageWordCount,
+                strongestMode: strongestMode,
+                currentIdentity: currentIdentity.identity,
+                currentIdentityEvidence: currentIdentity.evidence,
+                styleAlignmentScore: 0,
+                sessionStreak: sessionStreak,
+                daysSinceLastSession: daysSinceLastSession,
+                preferredModeBias: "",
+                preferredToneBias: "",
+                preferredScenarioBias: "",
+                modeBenefitBias: ""
+            ),
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+        )
+    }
+
+    private var currentMode: PracticeMode {
+        if let explicitMode { return explicitMode }
+        if imConversationDetails != nil { return .imConversation }
+        let title = practiceTitle.lowercased()
+        if title.contains("sudden") { return .suddenDeath }
+        if title.contains("ah-counter") || title.contains("ah counter") { return .ahCounter }
+        return .timed
+    }
+
+    private var shouldPushRecommendedMode: Bool {
+        summaryRecommendation.recommendedMode != currentMode
+    }
+
+    private var primaryActionTitle: String {
+        shouldPushRecommendedMode ? "Open Recommended Next Rep" : (scoreValue <= 5 ? "Practice Again Now" : "Practice Again")
+    }
+
+    private var secondaryActionTitle: String {
+        shouldPushRecommendedMode ? "Run This Drill Again" : "Choose Another Mode"
     }
 
     private var imSessionStreak: Int {
@@ -105,13 +184,15 @@ struct SummaryView: View {
     }
 
     private var scoreValue: Int {
+        if let lockedScore { return lockedScore }
         if let score { return score }
-        if duration < 4 || transcriptWordCount < 4 { return 1 }
-        if duration < 8 || transcriptWordCount < 8 { return max(2, 5 - fillerCount) }
-        return max(3, min(8, 7 - fillerCount))
+        if effectiveDuration < 4 || transcriptWordCount < 4 { return 1 }
+        if effectiveDuration < 8 || transcriptWordCount < 8 { return max(2, 5 - effectiveFillerCount) }
+        return max(3, min(8, 7 - effectiveFillerCount))
     }
 
     private var headline: String {
+        if let lockedHeadlineOverride { return lockedHeadlineOverride }
         if let headlineOverride { return headlineOverride }
         switch scoreValue {
         case 9...10: return "Strong delivery"
@@ -122,11 +203,12 @@ struct SummaryView: View {
     }
 
     private var feedback: String {
+        if let lockedFeedbackOverride { return lockedFeedbackOverride }
         if let feedbackOverride { return feedbackOverride }
-        if duration < 4 || transcriptWordCount < 4 {
+        if effectiveDuration < 4 || transcriptWordCount < 4 {
             return "That rep ended before the answer really began. Go again with a clear opening, one point, and a clean finish."
         }
-        if duration < 8 || transcriptWordCount < 8 {
+        if effectiveDuration < 8 || transcriptWordCount < 8 {
             return "This was too brief to show control yet. Push the next answer further so the idea has time to land."
         }
 
@@ -151,10 +233,11 @@ struct SummaryView: View {
     }
 
     private var visibleBreakdown: [PracticeScoreSegment] {
-        Array(scoreBreakdown.prefix(visibleSegments))
+        Array(effectiveScoreBreakdown.prefix(visibleSegments))
     }
 
     private var derivedInsights: [String] {
+        if !lockedInsights.isEmpty { return lockedInsights }
         if !insights.isEmpty { return insights }
         let previousSessions = Array(recentSessions.dropFirst())
         guard !previousSessions.isEmpty else {
@@ -181,6 +264,18 @@ struct SummaryView: View {
         return Array(messages.prefix(3))
     }
 
+    private var effectiveFillerCount: Int {
+        lockedFillerCount ?? fillerCount
+    }
+
+    private var effectiveDuration: TimeInterval {
+        lockedDuration ?? duration
+    }
+
+    private var effectiveScoreBreakdown: [PracticeScoreSegment] {
+        lockedScoreBreakdown.isEmpty ? scoreBreakdown : lockedScoreBreakdown
+    }
+
     private var lightweightSignals: [String] {
         Array(derivedInsights.prefix(aiFeedback == nil ? 2 : 1))
     }
@@ -189,34 +284,106 @@ struct SummaryView: View {
         recentSessions.first?.id ?? sessionStore.sessions.first?.id
     }
 
-    var body: some View {
-        GeometryReader { geometry in
-            let isCompactHeight = geometry.size.height < 760
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.97, green: 0.95, blue: 0.90),
-                        Color.white,
-                        Color(red: 0.92, green: 0.96, blue: 1.0)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+    private var recentWindowSummary: String {
+        guard !recentWindow.isEmpty else { return "No recent sessions yet." }
+        return recentWindow.map { session in
+            let label: String
+            switch session.mode {
+            case .timed: label = "Timed"
+            case .suddenDeath: label = "Sudden Death"
+            case .ahCounter: label = "Ah-Counter"
+            case .imConversation: label = "IM"
+            }
+            return "\(label): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
+        }.joined(separator: " • ")
+    }
 
-                VStack(spacing: isCompactHeight ? 10 : 12) {
+    private var averageFillers: Double {
+        guard !recentWindow.isEmpty else { return 0 }
+        return Double(recentWindow.map(\.fillerWordCount).reduce(0, +)) / Double(recentWindow.count)
+    }
+
+    private var averageDuration: Double {
+        guard !recentWindow.isEmpty else { return 0 }
+        return recentWindow.map(\.duration).reduce(0, +) / Double(recentWindow.count)
+    }
+
+    private var averagePace: Double {
+        guard !recentWindow.isEmpty else { return 0 }
+        return Double(recentWindow.map(\.wordsPerMinute).reduce(0, +)) / Double(recentWindow.count)
+    }
+
+    private var averageWordCount: Double {
+        guard !recentWindow.isEmpty else { return 0 }
+        return Double(recentWindow.map(\.wordCount).reduce(0, +)) / Double(recentWindow.count)
+    }
+
+    private var daysSinceLastSession: Int {
+        guard let last = sessionStore.sessions.first?.date else { return 99 }
+        return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: last), to: Calendar.current.startOfDay(for: Date())).day ?? 0
+    }
+
+    private var sessionStreak: Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        while uniqueDays.contains(cursor) {
+            streak += 1
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previousDay
+        }
+        return streak
+    }
+
+    private var currentIdentity: SpeakingIdentitySnapshot {
+        PracticeEvaluator.speakingIdentity(
+            for: transcriptText,
+            profile: coachingProfileStore.profile
+        )
+    }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.97, green: 0.95, blue: 0.90),
+                    Color.white,
+                    Color(red: 0.92, green: 0.96, blue: 1.0)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 12) {
                     headerCard
+                    nextRepPanel
                     metricRow
                     tabPicker
                     detailPanel
-                        .frame(minHeight: isCompactHeight ? 210 : 240)
-                        .frame(maxHeight: max(isCompactHeight ? 240 : 260, geometry.size.height * (isCompactHeight ? 0.31 : 0.34)))
+                        .frame(height: 280)
                     xpPanel
-                    actionButtons
+                    retentionPanel
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, isCompactHeight ? 8 : 12)
-                .padding(.bottom, isCompactHeight ? 12 : 18)
+                .padding(.top, 12)
+                .padding(.bottom, 90)
+            }
+            .safeAreaInset(edge: .bottom) {
+                actionButtons
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+            }
+
+            if celebrationVisible && !reduceMotion {
+                summaryCelebrationOverlay
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
         .navigationTitle("Summary")
@@ -231,6 +398,14 @@ struct SummaryView: View {
             }
         }
         .onAppear(perform: setup)
+#if canImport(UIKit)
+        .onChange(of: celebrationVisible) { visible in
+            if visible {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+            }
+        }
+#endif
     }
 
     private var headerCard: some View {
@@ -244,6 +419,8 @@ struct SummaryView: View {
                 Text("\(scoreValue)/10")
                     .font(.system(size: compactSummary ? 32 : 38, weight: .bold, design: .rounded))
                     .foregroundStyle(scoreAccent)
+                    .scaleEffect(celebrationVisible ? 1.04 : 1.0)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.65), value: celebrationVisible)
                 Text(headline)
                     .font(.headline)
             }
@@ -261,9 +438,9 @@ struct SummaryView: View {
 
     private var metricRow: some View {
         HStack(spacing: 10) {
-            metricCard(title: "Fillers", value: "\(fillerCount)", tint: .red)
+            metricCard(title: "Fillers", value: "\(effectiveFillerCount)", tint: .red)
             if showDuration {
-                metricCard(title: "Duration", value: "\(Int(duration))s", tint: .blue)
+                metricCard(title: "Duration", value: "\(Int(effectiveDuration))s", tint: .blue)
             }
             metricCard(title: "XP", value: "\(xpEarned)", tint: .orange)
         }
@@ -356,20 +533,15 @@ struct SummaryView: View {
                 .font(.headline)
 
             HStack(spacing: 10) {
-                metricCard(title: "Target Tone", value: details.setup.targetTone.title, tint: .blue)
-                metricCard(title: "Actual Tone", value: details.actualTone ?? "Not captured", tint: .orange)
-            }
-
-            HStack(spacing: 10) {
+                metricCard(title: "Tone", value: details.setup.targetTone.title, tint: .blue)
                 metricCard(title: "Scenario", value: details.setup.scenario.title, tint: .purple)
-                metricCard(title: "Turns", value: "\(details.turns.filter { $0.speaker == .user }.count)", tint: .green)
             }
 
             if let finalState = details.finalState {
                 HStack(spacing: 10) {
                     metricCard(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .blue)
-                    metricCard(title: "Engagement", value: "\(finalState.normalizedEngagement)/10", tint: .green)
                     metricCard(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
+                    metricCard(title: "Turns", value: "\(details.turns.filter { $0.speaker == .user }.count)", tint: .green)
                 }
 
                 Text(finalState.beat)
@@ -391,38 +563,12 @@ struct SummaryView: View {
                 Divider()
                     .padding(.vertical, 4)
 
-                Text("Relationship Memory")
+                Text("Relationship Impact")
                     .font(.headline)
 
                 HStack(spacing: 10) {
                     metricCard(title: "Milestone", value: relationship.activeMilestone.title, tint: .teal)
-                    metricCard(title: "Sessions", value: "\(relationship.sessionCount)", tint: .indigo)
-                }
-
-                HStack(spacing: 10) {
-                    metricCard(title: "Warmth", value: "\(relationship.warmthScore)/10", tint: .pink)
-                    metricCard(title: "Reliability", value: "\(relationship.reliabilityScore)/10", tint: .blue)
-                }
-
-                HStack(spacing: 10) {
-                    metricCard(title: "Openness", value: "\(relationship.opennessScore)/10", tint: .green)
-                    metricCard(title: "Reciprocity", value: "\(relationship.reciprocityScore)/10", tint: .orange)
-                }
-
-                HStack(spacing: 10) {
-                    metricCard(title: "Rupture", value: "\(relationship.ruptureScore)/10", tint: .red)
-                    metricCard(title: "Repair", value: "\(relationship.repairMomentum)/10", tint: .teal)
-                }
-
-                HStack(spacing: 10) {
-                    metricCard(title: "Consistency", value: "\(max(1, 11 - relationship.inconsistencyScore))/10", tint: .purple)
-                    metricCard(title: "Inconsistency", value: "\(relationship.inconsistencyScore)/10", tint: .orange)
-                }
-
-                if let daysText = relationship.daysSinceLastInteractionText {
-                    Text(daysText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    metricCard(title: "Momentum", value: relationship.nextMilestoneProgressLabel, tint: .orange)
                 }
 
                 Text(relationship.activeMilestone.description)
@@ -432,24 +578,6 @@ struct SummaryView: View {
                 Text(relationship.continuitySummary)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-
-                if relationship.milestoneHistory.count > 1 {
-                    Text("Milestone path: \(relationship.milestoneHistory.map(\.title).joined(separator: " -> "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if !relationship.rememberedTopics.isEmpty {
-                    Text("Carry-forward themes: \(relationship.rememberedTopics.joined(separator: " • "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let callbackCue = relationship.callbackCue, !callbackCue.isEmpty {
-                    Text("Callback cue: \(callbackCue)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
 
                 if let activeArcTitle = relationship.activeArcTitle,
                    let activeArcStageLabel = relationship.activeArcStageLabel {
@@ -470,22 +598,10 @@ struct SummaryView: View {
                     .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
 
-                if let communicationNorthStar {
-                    Text("North star: \(communicationNorthStar)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-
-                if let motivationSummary {
-                    Text(motivationSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
                 if let nextRelationshipChallenge {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Next Relationship Challenge")
-                            .font(.subheadline.weight(.semibold))
+                        Text("Best Next Move")
+                        .font(.subheadline.weight(.semibold))
                         Text(nextRelationshipChallenge)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -494,14 +610,30 @@ struct SummaryView: View {
                     .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
 
+                if communicationNorthStar != nil || motivationSummary != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Why This Matters")
+                            .font(.subheadline.weight(.semibold))
+                        if let communicationNorthStar {
+                            Text(communicationNorthStar)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                        if let motivationSummary {
+                            Text(motivationSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Progress Loop")
+                    Text("Keep This Moving")
                         .font(.subheadline.weight(.semibold))
 
-                    HStack(spacing: 10) {
-                        metricCard(title: "Momentum", value: relationship.nextMilestoneProgressLabel, tint: .teal)
-                        metricCard(title: "IM Streak", value: "\(imSessionStreak) days", tint: .orange)
-                    }
+                    metricCard(title: "IM Streak", value: "\(imSessionStreak) days", tint: .orange)
 
                     ProgressView(value: relationship.nextMilestoneProgress)
                         .tint(.teal)
@@ -512,31 +644,6 @@ struct SummaryView: View {
                 }
                 .padding(12)
                 .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            }
-
-            if let context = details.contextSnapshot {
-                Divider()
-                    .padding(.vertical, 4)
-
-                Text("Live Context")
-                    .font(.headline)
-
-                HStack(spacing: 10) {
-                    metricCard(title: "Time", value: context.timeLabel, tint: .blue)
-                    metricCard(title: "Region", value: context.regionLabel ?? "Local", tint: .indigo)
-                }
-
-                if let weather = context.weatherSummary, !weather.isEmpty {
-                    Text(weather)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let events = context.majorEventsSummary, !events.isEmpty {
-                    Text(events)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
     }
@@ -702,8 +809,7 @@ struct SummaryView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            ProgressView(value: progress)
-                .tint(.blue)
+            ShimmerProgressBar(progress: progress, tint: .blue)
 
             HStack {
                 Text("\(displayedXP) XP")
@@ -717,16 +823,157 @@ struct SummaryView: View {
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
+    private var retentionPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Momentum Loop")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(spacing: 10) {
+                PulseBadge(systemImage: "sparkles", tint: .orange)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(retentionSnapshot.activeChallenge.title)
+                        .font(.headline)
+                    Text(retentionSnapshot.activeChallenge.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .orange)
+
+            HStack {
+                Text(retentionSnapshot.activeChallenge.progressLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                HStack(spacing: 6) {
+                    SparkleRibbon(tint: .orange)
+                    Text(retentionSnapshot.activeChallenge.rewardLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.blue)
+                }
+            }
+
+            Text(retentionSnapshot.motivationLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let nextLocked = retentionSnapshot.achievements.first(where: { !$0.isUnlocked }) {
+                Text("Next milestone: \(nextLocked.title) • \(nextLocked.progressLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(compactSummary ? 12 : 14)
+        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var nextRepPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                PulseBadge(systemImage: systemImage(for: summaryRecommendation.recommendedMode), tint: tint(for: summaryRecommendation.recommendedMode))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Next Best Rep")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Text(title(for: summaryRecommendation.recommendedMode))
+                        .font(.headline)
+                    Text(summaryRecommendation.modeBenefit)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                chip(summaryRecommendation.focus, tint: tint(for: summaryRecommendation.recommendedMode))
+                chip(summaryRecommendation.target, tint: .blue)
+            }
+
+            if summaryRecommendation.recommendedMode == .imConversation,
+               let tone = summaryRecommendation.recommendedTone,
+               let scenario = summaryRecommendation.recommendedScenario {
+                HStack(spacing: 8) {
+                    chip("Tone: \(tone.title)", tint: .indigo)
+                    chip("Scenario: \(scenario.title)", tint: .purple)
+                }
+            }
+
+            Text(summaryRecommendation.whyNow)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(compactSummary ? 12 : 14)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.94),
+                    tint(for: summaryRecommendation.recommendedMode).opacity(0.08)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(tint(for: summaryRecommendation.recommendedMode).opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var summaryCelebrationOverlay: some View {
+        GeometryReader { geometry in
+            TimelineView(.animation(minimumInterval: 1 / 22.0)) { timeline in
+                let phase = timeline.date.timeIntervalSinceReferenceDate
+
+                ZStack {
+                    ForEach(0..<14, id: \.self) { index in
+                        let x = geometry.size.width * (0.10 + (Double(index % 7) * 0.13))
+                        let travel = (phase.truncatingRemainder(dividingBy: 1.6)) / 1.6
+                        let y = geometry.size.height * (0.22 + Double(index / 7) * 0.08) - travel * 120
+
+                        Image(systemName: index.isMultiple(of: 2) ? "sparkle" : "star.fill")
+                            .font(.system(size: index.isMultiple(of: 2) ? 10 : 8, weight: .bold))
+                            .foregroundStyle(scoreAccent.opacity(0.28))
+                            .position(x: x, y: y)
+                            .opacity(1 - travel)
+                            .scaleEffect(0.7 + travel * 0.4)
+                    }
+                }
+            }
+        }
+    }
+
     private var actionButtons: some View {
         VStack(spacing: 8) {
-            Button(scoreValue <= 5 ? "Practice Again Now" : "Practice Again") { onPracticeAgain() }
+            Button(primaryActionTitle) {
+                if shouldPushRecommendedMode {
+                    onSelectPracticeMode()
+                } else {
+                    onPracticeAgain()
+                }
+            }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, compactSummary ? 13 : 15)
                 .background(Color.blue, in: Capsule())
                 .foregroundStyle(.white)
 
-            Button("Choose Another Mode") { onSelectPracticeMode() }
+            Button(secondaryActionTitle) {
+                if shouldPushRecommendedMode {
+                    onPracticeAgain()
+                } else {
+                    onSelectPracticeMode()
+                }
+            }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
 
@@ -740,10 +987,59 @@ struct SummaryView: View {
         showDuration ? duration <= 25 : transcriptWordCount <= 18
     }
 
+    private func chip(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(tint.opacity(0.10), in: Capsule())
+    }
+
+    private func title(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed: return "Timed Practice"
+        case .suddenDeath: return "Sudden Death"
+        case .ahCounter: return "Ah-Counter"
+        case .imConversation: return "IM Mode"
+        }
+    }
+
+    private func systemImage(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed: return "clock.fill"
+        case .suddenDeath: return "bolt.fill"
+        case .ahCounter: return "waveform.and.mic"
+        case .imConversation: return "message.badge.waveform.fill"
+        }
+    }
+
+    private func tint(for mode: PracticeMode) -> Color {
+        switch mode {
+        case .timed:
+            return Color(red: 0.20, green: 0.47, blue: 0.96)
+        case .suddenDeath:
+            return Color(red: 0.95, green: 0.55, blue: 0.15)
+        case .ahCounter:
+            return Color(red: 0.14, green: 0.60, blue: 0.44)
+        case .imConversation:
+            return Color(red: 0.32, green: 0.43, blue: 0.94)
+        }
+    }
+
     private func setup() {
         guard !didApplyXP else { return }
         didApplyXP = true
+        lockedTranscriptText = String(transcript.characters)
+        lockedFillerCount = fillerCount
+        lockedDuration = duration
+        lockedScore = score
+        lockedFeedbackOverride = feedbackOverride
+        lockedHeadlineOverride = headlineOverride
+        lockedScoreBreakdown = scoreBreakdown
+        lockedInsights = insights
         aiFeedback = recentSessions.first?.aiCoachFeedback
+        selectedTab = (aiFeedback != nil) ? .insights : .overview
         displayedXP = profile.xp
         currentLevel = ProfileManager.levelTitle(forXP: profile.xp)
         nextLevel = ProfileManager.levelTitle(forXP: ((profile.xp / 1000) + 1) * 1000)
@@ -753,6 +1049,26 @@ struct SummaryView: View {
         profile.addXP(xpEarned)
         animateXP(to: profile.xp)
         animateSegments()
+        withAnimation(.easeInOut(duration: 0.35)) {
+            celebrationVisible = scoreValue >= 7 || xpEarned >= 100
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35)) {
+                    celebrationVisible = false
+                }
+            }
+        }
+        Task {
+            await notificationManager.scheduleFollowUpReminder(
+                profile: coachingProfileStore.profile,
+                relationship: imConversationDetails?.relationshipSnapshot,
+                sessions: sessionStore.sessions,
+                practiceTitle: practiceTitle,
+                nextMove: nextRelationshipChallenge ?? derivedInsights.first
+            )
+        }
     }
 
     private var canRequestAIFeedback: Bool {
@@ -873,7 +1189,8 @@ struct SummaryView: View {
             "You used fewer filler words than your recent average.",
             "You stayed with the answer longer than your recent average.",
             "Your pace was calm. Keep that control while expanding the middle of the answer."
-        ]
+        ],
+        explicitMode: .timed
     )
 }
 #endif

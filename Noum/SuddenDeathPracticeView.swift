@@ -39,39 +39,59 @@ struct SuddenDeathPracticeView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                headerCard
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 20) {
+                    headerCard
 
-                if let error = speechVM.connectionError {
-                    errorCard(error)
-                }
-                
-                if speechVM.isRecording {
-                    progressCard
-                    transcriptCard
-                    pressureDirectiveCard
-                    if let activePressureEvent {
-                        pressureEventCard(activePressureEvent)
+                    if let error = speechVM.connectionError {
+                        errorCard(error)
                     }
-                    if let silenceNudge {
-                        silenceNudgeCard(silenceNudge)
+
+                    if speechVM.isRecording {
+                        progressCard
+                        transcriptCard
+                        pressureDirectiveCard
+                        if let activePressureEvent {
+                            pressureEventCard(activePressureEvent)
+                        }
+                        if let silenceNudge {
+                            silenceNudgeCard(silenceNudge)
+                        }
+                        timerCard
+                            .accessibilityIdentifier("suddenDeathTimer")
+                    } else if let prepCountdown {
+                        prepStage(countdown: prepCountdown)
+                    } else {
+                        progressCard
+                        promptCard
                     }
-                    timerCard
-                        .accessibilityIdentifier("suddenDeathTimer")
-                    Button("Stop") { stopSession() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                } else if let prepCountdown {
-                    prepStage(countdown: prepCountdown)
-                } else {
-                    progressCard
-                    promptCard
-                    Button("Begin Run") { startSequence() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 90)
             }
-            .padding()
+            .safeAreaInset(edge: .bottom) {
+                Group {
+                    if speechVM.isRecording {
+                        Button("Stop") { stopSession() }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color.red, in: Capsule())
+                            .foregroundStyle(.white)
+                    } else if prepCountdown == nil {
+                        Button("Begin Run") { startSequence() }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color.orange, in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
+            }
 
             if let launchCountdown {
                 countdownOverlay(value: "\(launchCountdown)", subtitle: "Get ready")
@@ -205,8 +225,11 @@ struct SuddenDeathPracticeView: View {
                 prepCountdown = nil
                 beginLaunchCountdown()
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(Color.orange, in: Capsule())
+            .foregroundStyle(.white)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(24)

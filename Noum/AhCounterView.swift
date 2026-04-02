@@ -25,57 +25,73 @@ struct AhCounterView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Live Monitor")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text("Track filler words as you speak")
-                        .font(.largeTitle.weight(.bold))
-                    Text("Use this mode for open-ended reps without a fixed countdown.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-
-                HStack(spacing: 12) {
-                    statCard(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
-                    statCard(title: "Status", value: speechVM.isRecording ? "Live" : "Ready", tint: speechVM.isRecording ? .green : .blue)
-                }
-
-                if let error = speechVM.connectionError {
-                    errorCard(error)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Transcript")
-                        .font(.headline)
-                    ScrollView {
-                        Text(speechVM.highlightedText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                            .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Live Monitor")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                        Text("Track filler words as you speak")
+                            .font(.largeTitle.weight(.bold))
+                        Text("Use this mode for open-ended reps without a fixed countdown.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(minHeight: 260)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-                .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
 
-                if speechVM.isRecording {
-                    Button("Stop") { stopSession() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                } else {
-                    Button("Start") { startRecording() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
+                    HStack(spacing: 12) {
+                        statCard(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
+                        statCard(title: "Status", value: speechVM.isRecording ? "Live" : "Ready", tint: speechVM.isRecording ? .green : .blue)
+                    }
+
+                    if let error = speechVM.connectionError {
+                        errorCard(error)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Transcript")
+                            .font(.headline)
+                        ScrollView {
+                            Text(speechVM.highlightedText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                                .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        }
+                        .frame(minHeight: 260)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                    .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 90)
             }
-            .padding()
+            .safeAreaInset(edge: .bottom) {
+                Group {
+                    if speechVM.isRecording {
+                        Button("Stop") { stopSession() }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color.red, in: Capsule())
+                            .foregroundStyle(.white)
+                    } else {
+                        Button("Start") { startRecording() }
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color(red: 0.14, green: 0.60, blue: 0.44), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
+            }
         }
         .navigationTitle("Ah-Counter")
         .accessibilityIdentifier("ahCounter.screen")

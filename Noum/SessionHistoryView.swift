@@ -5,8 +5,19 @@ import SwiftUI
 
 #if canImport(SwiftUI)
 struct SessionHistoryView: View {
+    private let overviewColumns = [
+        GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)
+    ]
+    private let trendColumns = [
+        GridItem(.adaptive(minimum: 150), spacing: 10, alignment: .top)
+    ]
+    private let metricColumns = [
+        GridItem(.adaptive(minimum: 88), spacing: 10, alignment: .top)
+    ]
+
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @State private var selectedAchievementID: String?
     @Environment(\.dismiss) private var dismiss
 
     private var sessions: [PracticeSession] {
@@ -36,6 +47,13 @@ struct SessionHistoryView: View {
             return plan.encouragement
         }
         return "Your session history turns into clearer coaching once a few more reps are logged."
+    }
+
+    private var retentionSnapshot: RetentionLoopSnapshot {
+        RetentionLoopEngine.snapshot(
+            sessions: sessions,
+            profile: coachingProfileStore.profile
+        )
     }
 
     private var recentSessionsForProgress: [PracticeSession] {
@@ -102,57 +120,56 @@ struct SessionHistoryView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.97, green: 0.95, blue: 0.91),
-                        Color.white,
-                        Color(red: 0.93, green: 0.96, blue: 0.99)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.97, green: 0.95, blue: 0.91),
+                    Color.white,
+                    Color(red: 0.93, green: 0.96, blue: 0.99)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                if sessions.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            overviewPanel
-                            progressOverTimePanel
+            if sessions.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        overviewPanel
+                        journeyPanel
+                        progressOverTimePanel
 
-                            Text("Recent Sessions")
-                                .font(.title3.weight(.bold))
-                                .padding(.horizontal, 2)
+                        Text("Recent Sessions")
+                            .font(.title3.weight(.bold))
+                            .padding(.horizontal, 2)
 
-                            ForEach(sessions) { session in
-                                NavigationLink {
-                                    SessionHistoryDetailView(
-                                        session: session,
-                                        insights: CoachingPlanner.sessionInsights(
-                                            for: session,
-                                            comparedTo: sessions,
-                                            profile: coachingProfileStore.profile
-                                        )
+                        ForEach(sessions) { session in
+                            NavigationLink {
+                                SessionHistoryDetailView(
+                                    session: session,
+                                    insights: CoachingPlanner.sessionInsights(
+                                        for: session,
+                                        comparedTo: sessions,
+                                        profile: coachingProfileStore.profile
                                     )
-                                } label: {
-                                    sessionCard(session)
-                                }
-                                .buttonStyle(.plain)
+                                )
+                            } label: {
+                                sessionCard(session)
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding(18)
                     }
+                    .padding(18)
                 }
             }
-            .navigationTitle("Practice History")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+        }
+        .navigationTitle("Practice History")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
             }
         }
     }
@@ -183,7 +200,7 @@ struct SessionHistoryView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
+            LazyVGrid(columns: overviewColumns, alignment: .leading, spacing: 10) {
                 overviewMetric(title: "Sessions", value: "\(totalSessions)", tint: .blue)
                 overviewMetric(title: "Average", value: averageScoreText, tint: .green)
                 overviewMetric(title: "Best Mode", value: strongestModeText, tint: .purple)
@@ -202,7 +219,7 @@ struct SessionHistoryView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
+            LazyVGrid(columns: trendColumns, alignment: .leading, spacing: 10) {
                 trendCard(
                     title: "Session Score",
                     subtitle: trendDeltaText(for: scoreTrendValues, positiveIsImprovement: true, suffix: " pts"),
@@ -240,6 +257,22 @@ struct SessionHistoryView: View {
         .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
+    private var journeyPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Challenges + Achievements")
+                .font(.title3.weight(.bold))
+
+            Text(retentionSnapshot.motivationLine)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            activeChallengeCard
+            achievementsCard
+        }
+        .padding(18)
+        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
     private func sessionCard(_ session: PracticeSession) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -267,7 +300,7 @@ struct SessionHistoryView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
-            HStack(spacing: 10) {
+            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
                 compactMetric(label: "Score", value: session.score.map { "\($0)/10" } ?? "Pending")
                 compactMetric(label: "Duration", value: "\(Int(session.duration))s")
                 compactMetric(label: "Fillers", value: "\(session.fillerWordCount)")
@@ -298,7 +331,7 @@ struct SessionHistoryView: View {
             Text(value)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(tint)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
@@ -320,7 +353,7 @@ struct SessionHistoryView: View {
             Text(subtitle)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(tint)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             SparklineView(values: values, color: tint)
                 .frame(height: 48)
@@ -343,6 +376,129 @@ struct SessionHistoryView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var activeChallengeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Active Challenge")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(alignment: .top, spacing: 10) {
+                PulseBadge(systemImage: "bolt.fill", tint: .orange)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(retentionSnapshot.activeChallenge.title)
+                        .font(.headline)
+                    Text(retentionSnapshot.activeChallenge.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Spacer()
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(retentionSnapshot.activeChallenge.rewardLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.orange.opacity(0.12), in: Capsule())
+                    SparkleRibbon(tint: .orange)
+                }
+            }
+
+            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(retentionSnapshot.activeChallenge.progressLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+                Text(retentionSnapshot.motivationLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var achievementsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Achievements")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            ForEach(retentionSnapshot.achievements.prefix(3)) { achievement in
+                Button {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            Group {
+                                if achievement.isUnlocked {
+                                    PulseBadge(systemImage: achievement.symbolName, tint: .green)
+                                } else {
+                                    Image(systemName: achievement.symbolName)
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24, height: 24)
+                                        .padding(12)
+                                        .background(Color.black.opacity(0.06), in: Circle())
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(achievement.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(achievement.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text(achievement.progressLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
+                                Image(systemName: selectedAchievementID == achievement.id ? "chevron.up" : "chevron.down")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if selectedAchievementID == achievement.id {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ShimmerProgressBar(
+                                    progress: achievement.progress,
+                                    tint: achievement.isUnlocked ? .green : .blue
+                                )
+                                Text(
+                                    achievement.isUnlocked
+                                        ? "Unlocked. This is now part of your communication identity."
+                                        : "Keep going. This one unlocks once the habit becomes repeatable."
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private func sessionTitle(for session: PracticeSession) -> String {
@@ -576,14 +732,14 @@ private struct SessionHistoryDetailView: View {
 
     private func conversationReadCard(_ imDetails: IMConversationDetails) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Conversation Read")
+            Text("What Changed")
                 .font(.headline)
 
             HStack(spacing: 10) {
                 detailMetric(title: "Target Tone", value: imDetails.setup.targetTone.title, tint: .blue)
-                detailMetric(title: "Actual Tone", value: imDetails.actualTone ?? "Pending", tint: .orange)
                 if let finalState = imDetails.finalState {
                     detailMetric(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .teal)
+                    detailMetric(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
                 }
             }
 
@@ -597,27 +753,13 @@ private struct SessionHistoryDetailView: View {
                 }
             }
 
-            if let finalState = imDetails.finalState {
-                HStack(spacing: 10) {
-                    detailMetric(title: "Engagement", value: "\(finalState.normalizedEngagement)/10", tint: .green)
-                    detailMetric(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
-                    detailMetric(title: "Turns", value: "\(imDetails.turns.filter { $0.speaker == .user }.count)", tint: .indigo)
-                }
-
-                Text(finalState.beat)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Text(imDetails.finalState?.beat ?? "The conversation is still settling into a readable pattern.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
             if let relationship = imDetails.relationshipSnapshot {
                 relationshipBlock(relationship)
             }
-
-            if let context = imDetails.contextSnapshot {
-                contextBlock(context)
-            }
-
-            conversationBlock(imDetails)
         }
         .padding(18)
         .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -627,13 +769,12 @@ private struct SessionHistoryDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Divider().padding(.vertical, 2)
 
-            Text("Relationship Memory")
+            Text("Relationship Impact")
                 .font(.headline)
 
             HStack(spacing: 10) {
                 detailMetric(title: "Milestone", value: relationship.activeMilestone.title, tint: .teal)
                 detailMetric(title: "Momentum", value: relationship.nextMilestoneProgressLabel, tint: .orange)
-                detailMetric(title: "IM Streak", value: "\(imSessionStreak) days", tint: .purple)
             }
 
             Text(relationship.continuitySummary)
@@ -664,71 +805,12 @@ private struct SessionHistoryDetailView: View {
                     .font(.subheadline.weight(.semibold))
             }
 
-            Text(relationship.nextSessionHook(profile: coachingProfileStore.profile))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if !relationship.rememberedTopics.isEmpty {
-                Text("Carry-forward themes: \(relationship.rememberedTopics.joined(separator: " • "))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func contextBlock(_ context: IMSessionContext) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider().padding(.vertical, 2)
-
-            Text("Context Used")
-                .font(.headline)
-
-            HStack(spacing: 10) {
-                detailMetric(title: "Time", value: context.timeLabel, tint: .blue)
-                detailMetric(title: "Region", value: context.regionLabel ?? "Local", tint: .indigo)
-            }
-
-            if let weather = context.weatherSummary, !weather.isEmpty {
-                Text(weather)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Next best move")
+                    .font(.subheadline.weight(.semibold))
+                Text(relationship.nextSessionHook(profile: coachingProfileStore.profile))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            }
-
-            if let events = context.majorEventsSummary, !events.isEmpty {
-                Text(events)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func conversationBlock(_ imDetails: IMConversationDetails) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Divider().padding(.vertical, 2)
-
-            Text("Conversation")
-                .font(.headline)
-
-            ForEach(imDetails.turns) { turn in
-                HStack {
-                    if turn.speaker == .npc {
-                        historyBubble(
-                            speaker: imDetails.setup.scenario.personaName,
-                            text: turn.text,
-                            tint: Color(red: 0.95, green: 0.96, blue: 0.99),
-                            isLeading: true
-                        )
-                        Spacer(minLength: 28)
-                    } else {
-                        Spacer(minLength: 28)
-                        historyBubble(
-                            speaker: "You",
-                            text: turn.text,
-                            tint: Color(red: 0.87, green: 0.94, blue: 1.0),
-                            isLeading: false
-                        )
-                    }
-                }
             }
         }
     }
@@ -784,7 +866,7 @@ private struct SessionHistoryDetailView: View {
 
     private var transcriptCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Transcript")
+            Text(session.imConversationDetails == nil ? "Transcript" : "Conversation Transcript")
                 .font(.headline)
             Text(session.transcript)
                 .font(.subheadline)

@@ -70,65 +70,83 @@ struct TimedPracticeView: View {
 
     @ViewBuilder
     private var content: some View {
-        VStack(spacing: 20) {
-            headerCard(
-                eyebrow: "Timed Drill",
-                title: hasStartedSpeaking ? "Deliver with control" : "Prepare your answer",
-                subtitle: thinkingCountdown > 0
-                    ? "Use the setup window to structure your response before the timer starts."
-                    : activeSubtitle
-            )
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                headerCard(
+                    eyebrow: "Timed Drill",
+                    title: hasStartedSpeaking ? "Deliver with control" : "Prepare your answer",
+                    subtitle: thinkingCountdown > 0
+                        ? "Use the setup window to structure your response before the timer starts."
+                        : activeSubtitle
+                )
 
-            HStack {
-                ForEach(0..<4) { index in
-                    Image(systemName: "circle.fill")
-                        .foregroundColor(color(for: index))
+                HStack {
+                    ForEach(0..<4) { index in
+                        Image(systemName: "circle.fill")
+                            .foregroundColor(color(for: index))
+                    }
                 }
-            }
-            .padding(.vertical, 8)
+                .padding(.vertical, 8)
 
-            if let error = speechVM.connectionError {
-                errorCard(error)
-            }
-
-            if !hasStartedSpeaking {
-                promptCard
-                if thinkingCountdown > 0 {
-                    countdownCard(value: thinkingCountdown, label: "Seconds to think", tint: .blue)
-                } else if practiceSettings.timedDifficulty == .free {
-                    countdownCard(value: 0, label: "Free mode. Start when ready", tint: .green)
-                } else {
-                    countdownCard(value: speakingCountdown, label: "Ready to begin", tint: .orange)
+                if let error = speechVM.connectionError {
+                    errorCard(error)
                 }
-            } else {
-                transcriptCard
-                statChip(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
-                if speechVM.isRecording {
-                    if practiceSettings.timedDifficulty == .free {
-                        countdownCard(value: Int(speechVM.lastSessionDuration), label: "Seconds spoken", tint: .green)
-                            .accessibilityIdentifier("practiceCountdown")
+
+                if !hasStartedSpeaking {
+                    promptCard
+                    if thinkingCountdown > 0 {
+                        countdownCard(value: thinkingCountdown, label: "Seconds to think", tint: .blue)
+                    } else if practiceSettings.timedDifficulty == .free {
+                        countdownCard(value: 0, label: "Free mode. Start when ready", tint: .green)
                     } else {
-                        countdownCard(value: speakingCountdown, label: "Seconds remaining", tint: .orange)
-                            .accessibilityIdentifier("practiceCountdown")
+                        countdownCard(value: speakingCountdown, label: "Ready to begin", tint: .orange)
+                    }
+                } else {
+                    transcriptCard
+                    statChip(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
+                    if speechVM.isRecording {
+                        if practiceSettings.timedDifficulty == .free {
+                            countdownCard(value: Int(speechVM.lastSessionDuration), label: "Seconds spoken", tint: .green)
+                                .accessibilityIdentifier("practiceCountdown")
+                        } else {
+                            countdownCard(value: speakingCountdown, label: "Seconds remaining", tint: .orange)
+                                .accessibilityIdentifier("practiceCountdown")
+                        }
                     }
                 }
             }
-            if speechVM.isRecording {
-                Button("Stop") { stopSession() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-            } else if !hasStartedSpeaking {
-                Button(thinkingCountdown > 0 ? "Start Now" : "Start Speaking") {
-                    beginSpeaking()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(practiceSettings.timedDifficulty == .free ? .green : .blue)
-            } else {
-                Button("Close") { dismiss() }
-                    .buttonStyle(.bordered)
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 90)
         }
-        .padding()
+        .safeAreaInset(edge: .bottom) {
+            Group {
+                if speechVM.isRecording {
+                    Button("Stop") { stopSession() }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(Color.red, in: Capsule())
+                        .foregroundStyle(.white)
+                } else if !hasStartedSpeaking {
+                    Button(thinkingCountdown > 0 ? "Start Now" : "Start Speaking") {
+                        beginSpeaking()
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(practiceSettings.timedDifficulty == .free ? Color.green : Color.blue, in: Capsule())
+                    .foregroundStyle(.white)
+                } else {
+                    Button("Close") { dismiss() }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial)
+        }
     }
 
     private var promptCard: some View {

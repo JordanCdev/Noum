@@ -10,10 +10,19 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct PathJourneyView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
+    @State private var selectedAchievementID: String?
 
     private var snapshot: PracticeJourneySnapshot {
         PracticeJourneySnapshot.make(from: sessionStore.sessions)
+    }
+
+    private var retentionSnapshot: RetentionLoopSnapshot {
+        RetentionLoopEngine.snapshot(
+            sessions: sessionStore.sessions,
+            profile: coachingProfileStore.profile
+        )
     }
 
     var body: some View {
@@ -72,6 +81,9 @@ struct PathJourneyView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+
+                        activeChallengeCard
+                        achievementsCard
                     }
                     .padding(16)
                     .background(
@@ -118,6 +130,335 @@ struct PathJourneyView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var activeChallengeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Active Challenge")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(alignment: .top, spacing: 10) {
+                PulseBadge(systemImage: "bolt.fill", tint: .orange)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(retentionSnapshot.activeChallenge.title)
+                        .font(.headline)
+                    Text(retentionSnapshot.activeChallenge.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(retentionSnapshot.activeChallenge.rewardLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.orange.opacity(0.12), in: Capsule())
+                    SparkleRibbon(tint: .orange)
+                }
+            }
+
+            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue)
+
+            HStack {
+                Text(retentionSnapshot.activeChallenge.progressLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+                Spacer()
+                Text(retentionSnapshot.motivationLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+        .padding(14)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var achievementsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Milestones")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            ForEach(retentionSnapshot.achievements.prefix(3)) { achievement in
+                Button {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            Group {
+                                if achievement.isUnlocked {
+                                    PulseBadge(systemImage: achievement.symbolName, tint: .green)
+                                } else {
+                                    Image(systemName: achievement.symbolName)
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 24, height: 24)
+                                        .padding(12)
+                                        .background(Color.black.opacity(0.06), in: Circle())
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(achievement.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(achievement.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text(achievement.progressLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
+                                Image(systemName: selectedAchievementID == achievement.id ? "chevron.up" : "chevron.down")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if selectedAchievementID == achievement.id {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ShimmerProgressBar(
+                                    progress: achievement.progress,
+                                    tint: achievement.isUnlocked ? .green : .blue
+                                )
+                                Text(
+                                    achievement.isUnlocked
+                                        ? "Unlocked. This is now part of your communication identity."
+                                        : "Keep going. This one unlocks once the habit becomes repeatable."
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+struct PracticeChallengeStatus {
+    let title: String
+    let summary: String
+    let progress: Double
+    let progressLabel: String
+    let rewardLabel: String
+}
+
+struct PracticeAchievementStatus: Identifiable {
+    let id: String
+    let title: String
+    let summary: String
+    let progress: Double
+    let progressLabel: String
+    let isUnlocked: Bool
+    let symbolName: String
+}
+
+struct RetentionLoopSnapshot {
+    let activeChallenge: PracticeChallengeStatus
+    let achievements: [PracticeAchievementStatus]
+    let motivationLine: String
+}
+
+enum RetentionLoopEngine {
+    static func snapshot(sessions: [PracticeSession], profile: CoachingProfile?) -> RetentionLoopSnapshot {
+        let sortedSessions = sessions.sorted { $0.date > $1.date }
+        let recentSessions = Array(sortedSessions.prefix(6))
+        let currentStreak = currentStreak(from: sortedSessions)
+
+        let activeChallenge = activeChallenge(
+            sessions: recentSessions,
+            allSessions: sortedSessions,
+            profile: profile,
+            currentStreak: currentStreak
+        )
+
+        let achievements = achievementStatuses(
+            sessions: sortedSessions,
+            currentStreak: currentStreak
+        )
+
+        let motivationLine: String
+        if activeChallenge.progress >= 1 {
+            motivationLine = "Challenge cleared. Keep the momentum alive."
+        } else if currentStreak >= 3 {
+            motivationLine = "You already have rhythm. One more rep strengthens it."
+        } else {
+            motivationLine = "Consistency is still the unlock."
+        }
+
+        return RetentionLoopSnapshot(
+            activeChallenge: activeChallenge,
+            achievements: achievements,
+            motivationLine: motivationLine
+        )
+    }
+
+    private static func activeChallenge(
+        sessions: [PracticeSession],
+        allSessions: [PracticeSession],
+        profile: CoachingProfile?,
+        currentStreak: Int
+    ) -> PracticeChallengeStatus {
+        if currentStreak < 2 {
+            let progress = min(Double(currentStreak), 2) / 2
+            return PracticeChallengeStatus(
+                title: "Hold the streak",
+                summary: "Come back tomorrow and keep the path open with one focused rep.",
+                progress: progress,
+                progressLabel: "\(currentStreak)/2 days",
+                rewardLabel: "+80 XP"
+            )
+        }
+
+        switch profile?.biggestChallenge {
+        case .fillerWords:
+            let qualifying = sessions.filter { $0.fillerWordCount <= 2 && $0.wordCount >= 14 }.count
+            return PracticeChallengeStatus(
+                title: "Clean delivery",
+                summary: "Complete two recent reps with two fillers or fewer.",
+                progress: min(Double(qualifying), 2) / 2,
+                progressLabel: "\(qualifying)/2 clean reps",
+                rewardLabel: "+120 XP"
+            )
+        case .rambling:
+            let qualifying = sessions.filter {
+                ($0.score ?? 0) >= 7 && $0.duration >= 20 && $0.wordCount >= 18
+            }.count
+            return PracticeChallengeStatus(
+                title: "Land the point",
+                summary: "Finish two strong reps that stay structured instead of drifting.",
+                progress: min(Double(qualifying), 2) / 2,
+                progressLabel: "\(qualifying)/2 structured reps",
+                rewardLabel: "+120 XP"
+            )
+        case .freezing:
+            let qualifying = sessions.filter {
+                ($0.score ?? 0) >= 6 && ($0.mode == .suddenDeath || $0.mode == .timed || $0.mode == .imConversation)
+            }.count
+            return PracticeChallengeStatus(
+                title: "Fast response reps",
+                summary: "Hit two quick-answer sessions without freezing or collapsing the reply.",
+                progress: min(Double(qualifying), 2) / 2,
+                progressLabel: "\(qualifying)/2 pressure reps",
+                rewardLabel: "+120 XP"
+            )
+        case .rushing:
+            let qualifying = sessions.filter {
+                ($0.score ?? 0) >= 7 && (105...145).contains($0.wordsPerMinute)
+            }.count
+            return PracticeChallengeStatus(
+                title: "Controlled pace",
+                summary: "Finish two solid reps in the calmer pacing zone.",
+                progress: min(Double(qualifying), 2) / 2,
+                progressLabel: "\(qualifying)/2 controlled reps",
+                rewardLabel: "+120 XP"
+            )
+        case .none:
+            let qualifying = allSessions.filter { ($0.score ?? 0) >= 7 }.prefix(3).count
+            return PracticeChallengeStatus(
+                title: "Sharp sessions",
+                summary: "Build three solid sessions to set your baseline.",
+                progress: min(Double(qualifying), 3) / 3,
+                progressLabel: "\(qualifying)/3 strong sessions",
+                rewardLabel: "+140 XP"
+            )
+        }
+    }
+
+    private static func achievementStatuses(
+        sessions: [PracticeSession],
+        currentStreak: Int
+    ) -> [PracticeAchievementStatus] {
+        let imSessions = sessions.filter { $0.mode == .imConversation }.count
+        let highScoreCount = sessions.filter { ($0.score ?? 0) >= 8 }.count
+        let zeroFillerCount = sessions.filter { $0.fillerWordCount == 0 && $0.wordCount >= 12 }.count
+
+        return [
+            PracticeAchievementStatus(
+                id: "first_rep",
+                title: "First Rep",
+                summary: "You started the path.",
+                progress: min(Double(sessions.count), 1),
+                progressLabel: sessions.isEmpty ? "0/1" : "Unlocked",
+                isUnlocked: !sessions.isEmpty,
+                symbolName: "flag.fill"
+            ),
+            PracticeAchievementStatus(
+                id: "streak_three",
+                title: "Rhythm Builder",
+                summary: "Practice three days in a row.",
+                progress: min(Double(currentStreak), 3) / 3,
+                progressLabel: currentStreak >= 3 ? "Unlocked" : "\(currentStreak)/3 days",
+                isUnlocked: currentStreak >= 3,
+                symbolName: "flame.fill"
+            ),
+            PracticeAchievementStatus(
+                id: "sharp_score",
+                title: "Sharp Session",
+                summary: "Land a session scored 8 or higher.",
+                progress: min(Double(highScoreCount), 1),
+                progressLabel: highScoreCount >= 1 ? "Unlocked" : "0/1",
+                isUnlocked: highScoreCount >= 1,
+                symbolName: "sparkles"
+            ),
+            PracticeAchievementStatus(
+                id: "clean_run",
+                title: "Clean Run",
+                summary: "Finish a meaningful session without filler words.",
+                progress: min(Double(zeroFillerCount), 1),
+                progressLabel: zeroFillerCount >= 1 ? "Unlocked" : "0/1",
+                isUnlocked: zeroFillerCount >= 1,
+                symbolName: "checkmark.seal.fill"
+            ),
+            PracticeAchievementStatus(
+                id: "im_connector",
+                title: "Connection Builder",
+                summary: "Complete three IM sessions.",
+                progress: min(Double(imSessions), 3) / 3,
+                progressLabel: imSessions >= 3 ? "Unlocked" : "\(imSessions)/3 chats",
+                isUnlocked: imSessions >= 3,
+                symbolName: "bubble.left.and.bubble.right.fill"
+            )
+        ]
+        .sorted { lhs, rhs in
+            if lhs.isUnlocked == rhs.isUnlocked {
+                return lhs.progress > rhs.progress
+            }
+            return !lhs.isUnlocked && rhs.isUnlocked
+        }
+    }
+
+    private static func currentStreak(from sessions: [PracticeSession]) -> Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        while uniqueDays.contains(cursor) {
+            streak += 1
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previousDay
+        }
+        return streak
     }
 }
 

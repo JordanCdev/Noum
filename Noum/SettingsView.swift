@@ -18,47 +18,45 @@ struct SettingsView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var imVoicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
+    @StateObject private var notificationManager = NotificationManager.shared
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
     @State private var debugMessage: String?
     @State private var showDeleteConfirmation = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.95, green: 0.92, blue: 0.87),
-                        Color.white,
-                        Color(red: 0.90, green: 0.95, blue: 0.99)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.95, green: 0.92, blue: 0.87),
+                    Color.white,
+                    Color(red: 0.90, green: 0.95, blue: 0.99)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 14) {
-                        overviewCard
-                        practiceCard
-                        coachingCard
-                        aiCard
-                        accountCard
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    overviewCard
+                    practiceCard
+                    coachingCard
+                    remindersCard
+                    accountPrivacyCard
 #if DEBUG
-                        debugCard
-                        recommendationDiagnosticsCard
+                    debugCard
+                    recommendationDiagnosticsCard
 #endif
-                        securityCard
-                        Spacer(minLength: 0)
-                    }
-                    .padding(18)
+                    Spacer(minLength: 0)
                 }
+                .padding(18)
             }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+        }
+        .navigationTitle("Settings")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") { dismiss() }
             }
         }
         .onChange(of: authManager.isSignedIn) { _, signedIn in
@@ -152,6 +150,10 @@ struct SettingsView: View {
                     Text("IM voice quality")
                         .font(.subheadline.weight(.semibold))
 
+                    Text("Keep voice dependable. Noum now prioritizes Google Cloud first and quietly falls back to OpenAI if needed.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     ForEach(IMVoiceEngine.allCases) { engine in
                         Button {
                             imVoicePlaybackSettings.engine = engine
@@ -242,6 +244,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            compactTag(title: "AI coach", value: aiSettings.activeProvider == nil ? "Not configured" : "Ready")
+
             Button(coachingProfileStore.profile == nil ? "Set Coaching Profile" : "Update Coaching Profile") {
                 showCoachingProfile = true
             }
@@ -256,29 +260,43 @@ struct SettingsView: View {
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
-    private var aiCard: some View {
+    private var remindersCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("AI Coach")
+            Text("Practice Reminders")
                 .font(.headline)
 
-            Text("Deeper feedback is saved per session so repeat reads are not generated again.")
+            Text("Tie the return loop to what the user actually cares about, not a generic streak banner.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            compactTag(title: "Status", value: aiSettings.activeProvider == nil ? "Not configured" : "Ready")
+            Toggle(
+                isOn: Binding(
+                    get: { notificationManager.isEnabled },
+                    set: { newValue in
+                        Task { await notificationManager.updateEnabled(newValue) }
+                    }
+                )
+            ) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Goal-based follow-ups")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Send a single follow-up based on the north star, why now, and the next best move.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
 
-            Text("The app chooses the model internally and keeps a protected monthly cap in place to avoid abuse.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            compactTag(title: "Notification access", value: notificationManager.authorizationLabel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
-    private var accountCard: some View {
+    private var accountPrivacyCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Account")
+            Text("Account & Privacy")
                 .font(.headline)
 
             if authManager.isSignedIn {
@@ -286,22 +304,9 @@ struct SettingsView: View {
                 if let provider = authManager.currentAuthProviderTitle {
                     compactTag(title: "Provider", value: provider)
                 }
-                if let id = authManager.currentAccountID {
-                    compactTag(title: "UID", value: id)
-                }
             } else {
                 compactTag(title: "Status", value: "Signed out")
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-    }
-
-    private var securityCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Account Actions")
-                .font(.headline)
 
             Text("Use sign out to disconnect this device, or delete the current account if you want to remove it.")
                 .font(.subheadline)

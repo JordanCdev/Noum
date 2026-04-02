@@ -41,9 +41,15 @@ struct PracticeModeView: View {
                     }
                     if speechVM.isRecording {
                         Button("Stop") { stopSession() }
-                            .buttonStyle(.borderedProminent)
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color.red, in: Capsule())
+                            .foregroundStyle(.white)
                     } else if thinkingCountdown <= 0 {
                         Button("Close") { dismiss() }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
                     }
                 }
             }

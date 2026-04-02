@@ -22,6 +22,7 @@ struct ContentView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var aiRecommendation: AIHomeRecommendation?
+    @State private var homeCelebrationVisible = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
 
@@ -31,6 +32,9 @@ struct ContentView: View {
         let focus: String
         let target: String
         let mode: PracticeMode
+        let recommendedTone: IMTargetTone?
+        let recommendedScenario: IMConversationScenario?
+        let benefit: String
         let tint: Color
     }
 
@@ -46,27 +50,30 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                // Refined background gradient
                 LinearGradient(
                     colors: [
-                        Color(red: 0.96, green: 0.93, blue: 0.88),
+                        Color(red: 0.98, green: 0.97, blue: 0.95),
+                        Color(red: 0.99, green: 0.99, blue: 0.98),
                         Color.white,
-                        Color(red: 0.90, green: 0.95, blue: 0.99)
+                        Color(red: 0.97, green: 0.98, blue: 1.0)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
 
-                VStack(spacing: 12) {
-                    heroCard
-                    suggestedPracticeCard
-                    journeyPreviewCard
-                    progressCard
-                    Spacer(minLength: 0)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 18) {
+                        heroCard
+                        suggestedPracticeCard
+                        journeyPreviewCard
+                        progressCard
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 110)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 18)
-                .padding(.bottom, 94)
             }
             .toolbar(.hidden, for: .navigationBar)
             .overlay(alignment: .bottom) {
@@ -113,186 +120,284 @@ struct ContentView: View {
     }
 
     private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Hello, \(heroTitle)")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .font(.system(size: 28, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
+            
+            Text("Ready to level up your speaking?")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
     }
 
     private var progressCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                HStack(spacing: 12) {
+        NavigationLink(destination: SpeakingRankView()) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(rankTint.opacity(0.12))
-                            .frame(width: 44, height: 44)
-                        HStack(spacing: rankAccentCount > 2 ? -2 : 0) {
-                            ForEach(0..<rankAccentCount, id: \.self) { _ in
-                                Image(systemName: rankSymbol)
-                                    .font(.system(size: rankSymbolSize, weight: .bold))
-                                    .foregroundStyle(rankTint)
-                            }
-                        }
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [rankTint.opacity(0.2), rankTint.opacity(0.3)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 56, height: 56)
+                        
+                        Image(systemName: rankSymbol)
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(rankTint)
+                            .symbolEffect(.pulse, options: .repeating.speed(0.6))
                     }
 
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Speaking Rank")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.6)
+                        
+                        Text(rankTitle)
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                        
+                        Text("Open progress, unlocked achievements, and recent coaching insights")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(rankTitle)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text(rankDescriptor)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(rankTint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    VStack(spacing: 8) {
+                        Text("\(profile.xp) XP")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.blue.opacity(0.12), in: Capsule())
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.tertiary)
                     }
                 }
-                Spacer()
-                Text("\(profile.xp) XP")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.blue.opacity(0.10), in: Capsule())
-            }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(nextRankTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(levelProgressLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(nextRankTitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(levelProgressLabel)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.blue)
+                    }
+
+                    ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: .blue)
                 }
 
-                ProgressView(value: profile.progressTowardsNextLevel)
-                    .tint(.blue)
+                HStack(spacing: 8) {
+                    Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    Text(rankDescriptor)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(rankTint)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(rankTint.opacity(0.12), in: Capsule())
+                }
             }
-
-            HStack {
-                Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.white)
+                        .shadow(color: rankTint.opacity(0.1), radius: 16, x: 0, y: 6)
+                    
+                    LinearGradient(
+                        colors: [
+                            Color.white,
+                            rankTint.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.8), rankTint.opacity(0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 164)
-        .padding(20)
-        .background(Color.white.opacity(0.80), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private var suggestedPracticeCard: some View {
         let primary = effectiveSuggestion
 
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Noum Recommends For You")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recommended Practice")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                    
+                    Text("The next rep most likely to move your speaking forward right now.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
 
+            challengePreviewPill
+                .padding(.vertical, 2)
+            
             suggestionLink(
-                title: primary.title,
-                subtitle: "Mode: \(modeLabel(for: primary.mode))",
-                systemImage: iconName(for: primary.mode),
-                tint: primary.tint,
-                mode: primary.mode
+                suggestion: primary,
+                systemImage: iconName(for: primary.mode)
             )
 
             coachingFocusCard
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: 164)
-        .padding(16)
+        .padding(18)
         .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.92),
-                    Color.white.opacity(0.80)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+            ZStack {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: primary.tint.opacity(0.12), radius: 20, x: 0, y: 8)
+                
+                LinearGradient(
+                    colors: [
+                        Color.white,
+                        primary.tint.opacity(0.06)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
         )
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.75), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.8), primary.tint.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
         )
     }
 
     private var journeyPreviewCard: some View {
         NavigationLink(destination: PathJourneyView()) {
-            HStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    Circle()
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color(red: 0.86, green: 0.93, blue: 0.81),
-                                    Color(red: 0.95, green: 0.98, blue: 0.91)
+                                    Color(red: 0.34, green: 0.56, blue: 0.25).opacity(0.2),
+                                    Color(red: 0.34, green: 0.56, blue: 0.25).opacity(0.3)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .frame(width: 56, height: 56)
+                    
                     Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(Color(red: 0.34, green: 0.56, blue: 0.25))
+                        .symbolEffect(.pulse, options: .repeating.speed(0.6))
                 }
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Your Path")
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
-                    Text(journeySnapshot.progressLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.30, green: 0.54, blue: 0.24))
+                    
+                    HStack(spacing: 6) {
+                        Text(journeySnapshot.progressLabel)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color(red: 0.30, green: 0.54, blue: 0.24))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color(red: 0.30, green: 0.54, blue: 0.24).opacity(0.12), in: Capsule())
+                        
+                        Text(journeySnapshot.homeGoalShortLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(journeySnapshot.homeGoalShortLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Image(systemName: "arrow.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Color(red: 0.30, green: 0.54, blue: 0.24))
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 88)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(18)
             .background(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.94),
-                        Color(red: 0.94, green: 0.98, blue: 0.93).opacity(0.88)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.white)
+                        .shadow(color: Color(red: 0.34, green: 0.56, blue: 0.25).opacity(0.08), radius: 12, x: 0, y: 4)
+                    
+                    LinearGradient(
+                        colors: [
+                            Color.white,
+                            Color(red: 0.94, green: 0.98, blue: 0.93).opacity(0.6)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
             )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.75), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.8), Color(red: 0.34, green: 0.56, blue: 0.25).opacity(0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
             )
         }
         .buttonStyle(.plain)
     }
 
     private var bottomNavigation: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 0) {
             Group {
                 NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode)) {
                     navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
@@ -310,107 +415,142 @@ struct ContentView: View {
                 .accessibilityIdentifier("nav.settings")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.55), lineWidth: 1)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            ZStack {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: 6)
+                
+                Capsule()
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.6), Color.white.opacity(0.3)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
-        .padding(.horizontal, 18)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
     }
 
     private func suggestionLink(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        tint: Color,
-        mode: PracticeMode
+        suggestion: PracticeSuggestion,
+        systemImage: String
     ) -> some View {
-        NavigationLink(destination: practiceDestination(for: mode)) {
-            HStack(spacing: 12) {
+        NavigationLink(destination: practiceDestination(for: suggestion)) {
+            HStack(alignment: .center, spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(tint.opacity(0.12))
-                        .frame(width: 42, height: 42)
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [suggestion.tint.opacity(0.15), suggestion.tint.opacity(0.25)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 52, height: 52)
+                    
                     Image(systemName: systemImage)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(tint)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(suggestion.tint)
+                        .symbolEffect(.pulse, options: .repeating.speed(0.8))
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(suggestion.title)
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
-                    Text(subtitle)
-                        .font(.caption.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    Text(suggestionSubtitle(for: suggestion))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                Image(systemName: "arrow.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(tint)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(suggestion.tint)
+                    .symbolEffect(.bounce, options: .repeating.speed(0.3))
             }
-            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.025), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(suggestion.tint.opacity(0.06))
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(suggestion.tint.opacity(0.2), lineWidth: 1)
             )
         }
         .simultaneousGesture(TapGesture().onEnded {
-            selectedPracticeMode = mode
-            recommendationLearningStore.markTapped(mode: mode)
+            selectedPracticeMode = suggestion.mode
+            recommendationLearningStore.markTapped(mode: suggestion.mode)
         })
     }
 
     private var coachingFocusCard: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
                 Text("Coaching Focus")
-                    .font(.caption2.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Spacer()
                 Text(primaryFocusText)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(effectiveSuggestion.tint)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(effectiveSuggestion.tint.opacity(0.12), in: Capsule())
             }
 
-            Spacer()
-
+            Text(effectiveSuggestion.benefit)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            
             Text(coachingFocusDetail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.black.opacity(0.02), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(white: 0.98))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+        )
     }
 
     private func navItem(title: String, systemImage: String, accent: Color) -> some View {
-        VStack(spacing: 7) {
-            ZStack {
-                Circle()
-                    .fill(accent.opacity(0.12))
-                    .frame(width: 36, height: 36)
-                Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(accent)
-                    .symbolEffect(.pulse, options: .repeating.speed(0.6))
-            }
+        VStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(accent)
+                .symbolEffect(.bounce, options: .repeating.speed(0.4))
+                .frame(height: 24)
+            
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(.system(size: 10, weight: .bold, design: .rounded))
                 .textCase(.uppercase)
-                .tracking(0.4)
-                .foregroundStyle(accent.opacity(0.85))
+                .tracking(0.5)
+                .foregroundStyle(accent.opacity(0.9))
         }
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     private var primarySuggestion: PracticeSuggestion {
@@ -424,6 +564,9 @@ struct ContentView: View {
                 focus: "Baseline",
                 target: "Clean rep",
                 mode: .timed,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "Best for establishing a clean baseline.",
                 tint: .blue
             )
         }
@@ -451,6 +594,9 @@ struct ContentView: View {
                 focus: "Pressure",
                 target: mode == .suddenDeath ? "Zero fillers" : "35s+",
                 mode: mode,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == mode })?.benefit ?? "",
                 tint: tint(for: mode)
             )
         }
@@ -462,6 +608,9 @@ struct ContentView: View {
                 focus: "Cleaner opening",
                 target: "\(targetFillers) fillers or less",
                 mode: timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .timed : .ahCounter,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == (timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .timed : .ahCounter) })?.benefit ?? "",
                 tint: timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .blue : .green
             )
         }
@@ -473,6 +622,9 @@ struct ContentView: View {
                 focus: "Pacing",
                 target: "<150 WPM",
                 mode: .ahCounter,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .ahCounter })?.benefit ?? "",
                 tint: .green
             )
         }
@@ -484,6 +636,9 @@ struct ContentView: View {
                 focus: "Longer answer",
                 target: "30s+",
                 mode: .timed,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "",
                 tint: .blue
             )
         }
@@ -495,6 +650,9 @@ struct ContentView: View {
                 focus: "Pressure",
                 target: "Zero fillers",
                 mode: .suddenDeath,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .suddenDeath })?.benefit ?? "",
                 tint: .orange
             )
         }
@@ -506,17 +664,24 @@ struct ContentView: View {
                 focus: "Pressure",
                 target: "Zero fillers",
                 mode: .suddenDeath,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .suddenDeath })?.benefit ?? "",
                 tint: .orange
             )
         }
 
+        let bias = recommendationBiasBlueprint
         return PracticeSuggestion(
-            title: plan?.strongestMode == .ahCounter ? "Keep the delivery composed" : "Keep the streak deliberate",
-            detail: plan?.encouragement ?? "Use the mode where your recent control is strongest.",
-            focus: plan?.strongestMode == .ahCounter ? "Pacing" : "Consistency",
-            target: plan?.strongestMode == .ahCounter ? "<150 WPM" : "Clean rep",
-            mode: plan?.strongestMode ?? .timed,
-            tint: tint(for: plan?.strongestMode ?? .timed)
+            title: bias.recommendedMode == .imConversation ? "Train the live interaction" : (plan?.strongestMode == .ahCounter ? "Keep the delivery composed" : "Keep the streak deliberate"),
+            detail: plan?.encouragement ?? bias.whyNow,
+            focus: bias.focus,
+            target: bias.target,
+            mode: bias.recommendedMode,
+            recommendedTone: bias.recommendedTone,
+            recommendedScenario: bias.recommendedScenario,
+            benefit: bias.modeBenefit,
+            tint: tint(for: bias.recommendedMode)
         )
     }
 
@@ -526,12 +691,16 @@ struct ContentView: View {
             return normalizedSuggestion(primarySuggestion)
         }
 
+        let bias = recommendationBiasBlueprint
         return normalizedSuggestion(PracticeSuggestion(
             title: aiRecommendation.title,
             detail: aiRecommendation.detail,
             focus: aiRecommendation.focus,
             target: aiRecommendation.target,
             mode: mode,
+            recommendedTone: aiRecommendation.recommendedTone.flatMap(IMTargetTone.init(rawValue:)) ?? bias.recommendedTone,
+            recommendedScenario: aiRecommendation.recommendedScenario.flatMap(IMConversationScenario.init(rawValue:)) ?? bias.recommendedScenario,
+            benefit: aiRecommendation.modeBenefit.isEmpty ? bias.modeBenefit : aiRecommendation.modeBenefit,
             tint: tint(for: mode)
         ))
     }
@@ -554,6 +723,45 @@ struct ContentView: View {
         let recent = Array(sessionStore.sessions.prefix(5))
         let average = Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
         return "\(Int(average.rounded())) WPM"
+    }
+
+    private var recommendationBiasBlueprint: RecommendationBiasBlueprint {
+        let recent = Array(sessionStore.sessions.prefix(5))
+        let previous = Array(sessionStore.sessions.dropFirst(5).prefix(5))
+        let identity = PracticeEvaluator.speakingIdentity(
+            for: recent.first?.transcript ?? "",
+            profile: coachingProfileStore.profile
+        )
+        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
+            transcript: recent.first?.transcript ?? "",
+            recentSessions: recent,
+            profile: coachingProfileStore.profile
+        )
+        let input = AIHomeRecommendationInput(
+            recentSessionSummary: recentSessionSummary(from: recent),
+            averageFillers: recent.isEmpty ? 0 : Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count),
+            averageDuration: recent.isEmpty ? 0 : recent.map(\.duration).reduce(0, +) / Double(recent.count),
+            averageWordsPerMinute: recent.isEmpty ? 0 : Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count),
+            fillerTrendDelta: trendDelta(current: recent.map { Double($0.fillerWordCount) }, previous: previous.map { Double($0.fillerWordCount) }),
+            durationTrendDelta: trendDelta(current: recent.map(\.duration), previous: previous.map(\.duration)),
+            paceTrendDelta: trendDelta(current: recent.map { Double($0.wordsPerMinute) }, previous: previous.map { Double($0.wordsPerMinute) }),
+            averageWordCount: recent.isEmpty ? 0 : Double(recent.map(\.wordCount).reduce(0, +)) / Double(recent.count),
+            strongestMode: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode,
+            currentIdentity: identity.identity,
+            currentIdentityEvidence: identity.evidence,
+            styleAlignmentScore: styleTrend.currentAlignment,
+            sessionStreak: sessionStreak,
+            daysSinceLastSession: daysSinceLastSession,
+            preferredModeBias: "",
+            preferredToneBias: "",
+            preferredScenarioBias: "",
+            modeBenefitBias: ""
+        )
+        return RecommendationBiasEngine.blueprint(
+            profile: coachingProfileStore.profile,
+            input: input,
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+        )
     }
 
     private var primaryTargetText: String {
@@ -581,22 +789,71 @@ struct ContentView: View {
         PracticeJourneySnapshot.make(from: sessionStore.sessions)
     }
 
+    private var retentionSnapshot: RetentionLoopSnapshot {
+        RetentionLoopEngine.snapshot(
+            sessions: sessionStore.sessions,
+            profile: coachingProfileStore.profile
+        )
+    }
+
+    private var challengePreviewPill: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "flame.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(effectiveSuggestion.tint)
+                
+                Text(retentionSnapshot.activeChallenge.title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            
+            Spacer(minLength: 8)
+            
+            Text(retentionSnapshot.activeChallenge.progressLabel)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(effectiveSuggestion.tint)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(effectiveSuggestion.tint.opacity(0.15), in: Capsule())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            Capsule()
+                .fill(Color(white: 0.98))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+        )
+    }
+
     private var coachingFocusDetail: String {
+        let biasSuffix: String
+        if effectiveSuggestion.mode == .imConversation,
+           let scenario = effectiveSuggestion.recommendedScenario,
+           let tone = effectiveSuggestion.recommendedTone {
+            biasSuffix = " Start with \(scenario.title) in a \(tone.title.lowercased()) tone."
+        } else {
+            biasSuffix = ""
+        }
         if let aiRecommendation {
-            return "\(aiRecommendation.whyMode) \(aiRecommendation.whyNow)"
+            return "\(aiRecommendation.whyMode) \(aiRecommendation.whyNow)\(biasSuffix)"
         }
 
         let target = effectiveSuggestion.target
         if target == "30s+" {
-            return "Time target: 30 seconds or longer."
+            return "Time target: 30 seconds or longer.\(biasSuffix)"
         }
         if target == "<150 WPM" {
-            return "Coaching tip: slow the pace and leave more space between points."
+            return "Coaching tip: slow the pace and leave more space between points.\(biasSuffix)"
         }
         if target.localizedCaseInsensitiveContains("filler") {
-            return "Coaching tip: settle the opening and replace fillers with pauses."
+            return "Coaching tip: settle the opening and replace fillers with pauses.\(biasSuffix)"
         }
-        return "Coaching tip: establish a clean baseline rep."
+        return "Coaching tip: establish a clean baseline rep.\(biasSuffix)"
     }
 
     private var recommendationCacheKey: String {
@@ -655,7 +912,11 @@ struct ContentView: View {
             currentIdentityEvidence: identity.evidence,
             styleAlignmentScore: styleTrend.currentAlignment,
             sessionStreak: sessionStreak,
-            daysSinceLastSession: daysSinceLastSession
+            daysSinceLastSession: daysSinceLastSession,
+            preferredModeBias: recommendationBiasBlueprint.recommendedMode.rawValue,
+            preferredToneBias: recommendationBiasBlueprint.recommendedTone?.rawValue ?? "",
+            preferredScenarioBias: recommendationBiasBlueprint.recommendedScenario?.rawValue ?? "",
+            modeBenefitBias: recommendationBiasBlueprint.modeBenefit
         )
 
         do {
@@ -756,8 +1017,8 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func practiceDestination(for mode: PracticeMode) -> some View {
-        switch mode {
+    private func practiceDestination(for suggestion: PracticeSuggestion) -> some View {
+        switch suggestion.mode {
         case .timed:
             TimedPracticeView()
         case .suddenDeath:
@@ -766,7 +1027,10 @@ struct ContentView: View {
             AhCounterView()
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                IMPracticeView()
+                IMPracticeView(
+                    preferredScenario: suggestion.recommendedScenario,
+                    preferredTone: suggestion.recommendedTone
+                )
             } else {
                 TimedPracticeView()
             }
@@ -784,8 +1048,20 @@ struct ContentView: View {
             focus: "Consistency",
             target: "Clean rep",
             mode: .timed,
+            recommendedTone: nil,
+            recommendedScenario: nil,
+            benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "",
             tint: .blue
         )
+    }
+
+    private func suggestionSubtitle(for suggestion: PracticeSuggestion) -> String {
+        guard suggestion.mode == .imConversation,
+              let scenario = suggestion.recommendedScenario,
+              let tone = suggestion.recommendedTone else {
+            return "Mode: \(modeLabel(for: suggestion.mode))"
+        }
+        return "Mode: \(modeLabel(for: suggestion.mode)) • \(scenario.title) • \(tone.title)"
     }
 
     private var levelProgressLabel: String {
@@ -825,20 +1101,6 @@ struct ContentView: View {
 
     private var nextRankTitle: String {
         "Next: Speaker \(max(2, (profile.xp / 1000) + 2))"
-    }
-
-    private var rankAccentCount: Int {
-        let totalLevel = max(0, profile.xp / 1000)
-        return min(3, (totalLevel % 3) + 1)
-    }
-
-    private var rankSymbolSize: Double {
-        let totalLevel = max(0, profile.xp / 1000)
-        switch totalLevel % 3 {
-        case 0: return 11
-        case 1: return 10
-        default: return 9
-        }
     }
 
     private func modeLabel(for mode: PracticeMode) -> String {
