@@ -10,6 +10,7 @@ struct IMPracticeView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel()
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var relationshipStore = IMRelationshipStore.shared
     @StateObject private var imVoicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
 #if canImport(AVFAudio)
     @StateObject private var messageSpeaker = IMMessageSpeaker.shared
@@ -29,12 +30,19 @@ struct IMPracticeView: View {
     @State private var summaryEvaluation: IMConversationEvaluation?
     @State private var serviceErrorMessage: String?
     @State private var setupStep: SetupStep = .scenario
+    @State private var typingPhase = 0
+    @State private var sessionContext = IMSessionContextProvider.current()
+    @State private var latestUserSignal: IMUserMessageSignal?
 
     private let conversationService: IMConversationServicing = IMConversationService()
     private let evaluationService: IMConversationEvaluatorServicing = IMConversationEvaluationService()
 
     private var setup: IMConversationSetup {
         IMConversationSetup(scenario: scenario, targetTone: targetTone)
+    }
+
+    private var relationshipProfile: IMRelationshipProfile {
+        relationshipStore.profile(for: scenario)
     }
 
     private var userTurnCount: Int {
@@ -107,6 +115,18 @@ struct IMPracticeView: View {
         }, message: {
             Text(serviceErrorMessage ?? "")
         })
+        .task(id: isAwaitingNPC) {
+            guard isAwaitingNPC else {
+                typingPhase = 0
+                return
+            }
+
+            while isAwaitingNPC {
+                try? await Task.sleep(for: .milliseconds(220))
+                guard isAwaitingNPC else { break }
+                typingPhase = (typingPhase + 1) % 3
+            }
+        }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: summaryTranscript,
@@ -127,8 +147,10 @@ struct IMPracticeView: View {
                     turns: turns,
                     actualTone: summaryEvaluation?.actualTone,
                     finalState: conversationState,
-                    outcome: summaryEvaluation?.outcome
-                ),
+                    outcome: summaryEvaluation?.outcome,
+                    relationshipSnapshot: relationshipProfile,
+                    contextSnapshot: sessionContext
+                ), 
                 onSelectPracticeMode: {
                     showSummary = false
                     dismiss(times: 2)
@@ -263,10 +285,15 @@ struct IMPracticeView: View {
             }
 
             HStack(spacing: 8) {
-                statusChip(title: "Tone", value: targetTone.title, tint: .blue)
+                statusChip(title: "Tone", value: targetTone.title, tint: .indigo)
                 statusChip(title: "Trust", value: "\(conversationState.normalizedTrust)", tint: .teal)
                 statusChip(title: "Tension", value: "\(conversationState.normalizedTension)", tint: .orange)
             }
+
+            Text(relationshipProfile.continuitySummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -323,6 +350,11 @@ struct IMPracticeView: View {
                         messageBubble(turn)
                             .id(turn.id)
                     }
+
+                    if isAwaitingNPC {
+                        typingBubble
+                            .id("typing-indicator")
+                    }
                 }
                 .padding(6)
             }
@@ -335,6 +367,12 @@ struct IMPracticeView: View {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo(last, anchor: .bottom)
                     }
+                }
+            }
+            .onChange(of: isAwaitingNPC) { _, awaiting in
+                guard awaiting else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo("typing-indicator", anchor: .bottom)
                 }
             }
         }
@@ -376,6 +414,30 @@ struct IMPracticeView: View {
         .background(tint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+    private var typingBubble: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(scenario.personaName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(Color.secondary.opacity(0.6))
+                            .frame(width: 7, height: 7)
+                            .scaleEffect(typingPhase == index ? 1.1 : 0.72)
+                            .opacity(typingPhase == index ? 1 : 0.45)
+                            .animation(.easeInOut(duration: 0.18), value: typingPhase)
+                    }
+                }
+            }
+            .frame(maxWidth: 120, alignment: .leading)
+            .padding(14)
+            .background(Color(red: 0.92, green: 0.94, blue: 0.98), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            Spacer(minLength: 72)
+        }
+    }
+
     private var composerBar: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
@@ -399,9 +461,17 @@ struct IMPracticeView: View {
                 .disabled(isAwaitingNPC)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(speechVM.isRecording ? "Listening..." : (draftReplyText.isEmpty ? "Tap the mic and speak" : "Ready to send"))
+                    Text(
+                        isAwaitingNPC
+                            ? "\(scenario.personaName) is typing..."
+                            : (speechVM.isRecording ? "Listening..." : (draftReplyText.isEmpty ? "Tap the mic and speak" : "Ready to send"))
+                    )
                         .font(.subheadline.weight(.semibold))
-                    Text(draftReplyText.isEmpty ? conversationState.beat : draftReplyText)
+                    Text(
+                        isAwaitingNPC
+                            ? "Generating a live reply..."
+                            : (draftReplyText.isEmpty ? conversationState.beat : draftReplyText)
+                    )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -557,6 +627,15 @@ struct IMPracticeView: View {
         return ["Actual tone: \(summaryEvaluation.actualTone)."] + summaryEvaluation.insights + [summaryEvaluation.suggestedDrill]
     }
 
+    private var liveToneMatchScore: Int {
+        let transcript = turns
+            .filter { $0.speaker == .user }
+            .map(\.text)
+            .joined(separator: " ")
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return 5 }
+        return IMToneMatcher.score(for: targetTone, transcript: transcript)
+    }
+
     private func beginConversation() {
         guard IMModeAvailability.isAvailable else {
             serviceErrorMessage = IMModeServiceError.unavailable.errorDescription
@@ -564,11 +643,47 @@ struct IMPracticeView: View {
         }
         resetConversation()
         isSessionActive = true
-        conversationState = .starting
-        turns = [
-            IMConversationTurn(speaker: .npc, text: scenario.openingLine)
-        ]
-        speakIfEnabled(scenario.openingLine)
+        conversationState = relationshipStore.startingState(for: scenario)
+        isAwaitingNPC = true
+
+        Task {
+            do {
+                let context = await IMContextService.shared.context(
+                    for: scenario,
+                    relationship: relationshipProfile
+                )
+                let opening = try await conversationService.generateReply(
+                    setup: setup,
+                    turns: [],
+                    state: conversationState,
+                    profile: coachingProfileStore.profile,
+                    relationship: relationshipProfile,
+                    context: context,
+                    latestUserSignal: nil
+                )
+
+                await MainActor.run {
+                    let balancedOpeningState = IMTurnStateBalancer.balanced(
+                        current: conversationState,
+                        proposed: opening.updatedState,
+                        signal: nil,
+                        isOpening: true
+                    )
+                    sessionContext = context
+                    turns = [IMConversationTurn(speaker: .npc, text: opening.message)]
+                    conversationState = balancedOpeningState
+                    isAwaitingNPC = false
+                    isWrappingUp = opening.shouldWrapUp
+                    speakIfEnabled(opening.message)
+                }
+            } catch {
+                await MainActor.run {
+                    isAwaitingNPC = false
+                    isSessionActive = false
+                    serviceErrorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     private func startReply() async {
@@ -604,10 +719,19 @@ struct IMPracticeView: View {
     }
 
     private func processReply(_ text: String) async {
+        let analyzedSignal = IMUserMessageAnalyzer.analyze(
+            text: text,
+            currentState: conversationState,
+            scenario: scenario,
+            relationship: relationshipProfile
+        )
+
         await MainActor.run {
             totalDuration += speechVM.lastSessionDuration
             totalFillers += speechVM.fillerWordCount
             turns.append(IMConversationTurn(speaker: .user, text: text))
+            latestUserSignal = analyzedSignal
+            conversationState = analyzedSignal.adjustedState
             isAwaitingNPC = true
         }
 
@@ -615,15 +739,24 @@ struct IMPracticeView: View {
             let reply = try await conversationService.generateReply(
                 setup: setup,
                 turns: turns,
-                state: conversationState,
-                profile: coachingProfileStore.profile
+                state: analyzedSignal.adjustedState,
+                profile: coachingProfileStore.profile,
+                relationship: relationshipProfile,
+                context: sessionContext,
+                latestUserSignal: analyzedSignal
             )
 
             await MainActor.run {
+                let balancedReplyState = IMTurnStateBalancer.balanced(
+                    current: analyzedSignal.adjustedState,
+                    proposed: reply.updatedState,
+                    signal: analyzedSignal,
+                    isOpening: false
+                )
                 turns.append(IMConversationTurn(speaker: .npc, text: reply.message))
-                conversationState = reply.updatedState
+                conversationState = balancedReplyState
                 isAwaitingNPC = false
-                isWrappingUp = reply.shouldWrapUp || userTurnCount >= 6
+                isWrappingUp = reply.shouldWrapUp || analyzedSignal.shouldForceWrapUp || userTurnCount >= 6
                 speechVM.resetCurrentSession()
                 speakIfEnabled(reply.message)
             }
@@ -653,11 +786,19 @@ struct IMPracticeView: View {
                     fillerCount: totalFillers,
                     duration: totalDuration,
                     recentSessions: speechVM.pastSessions,
-                    profile: coachingProfileStore.profile
+                    profile: coachingProfileStore.profile,
+                    relationship: relationshipProfile,
+                    context: sessionContext
                 )
 
                 await MainActor.run {
                     let finalEvaluation = evaluation
+                    let updatedRelationship = relationshipStore.applySessionOutcome(
+                        scenario: scenario,
+                        turns: turns,
+                        finalState: conversationState,
+                        evaluation: finalEvaluation
+                    )
 
                     if let closingMessage = finalEvaluation.outcome?.closingMessage,
                        turns.last?.text != closingMessage {
@@ -681,7 +822,9 @@ struct IMPracticeView: View {
                                 turns: turns,
                                 actualTone: finalEvaluation.actualTone,
                                 finalState: conversationState,
-                                outcome: finalEvaluation.outcome
+                                outcome: finalEvaluation.outcome,
+                                relationshipSnapshot: updatedRelationship,
+                                contextSnapshot: sessionContext
                             )
                         ),
                         annotation: PracticeSessionAnnotation(
@@ -707,7 +850,7 @@ struct IMPracticeView: View {
         messageSpeaker.stop()
 #endif
         turns = []
-        conversationState = .starting
+        conversationState = relationshipStore.startingState(for: scenario)
         isSessionActive = false
         isAwaitingNPC = false
         isWrappingUp = false
@@ -716,6 +859,8 @@ struct IMPracticeView: View {
         summaryEvaluation = nil
         summaryTranscript = AttributedString("")
         serviceErrorMessage = nil
+        sessionContext = IMSessionContextProvider.current()
+        latestUserSignal = nil
         speechVM.resetCurrentSession()
     }
 

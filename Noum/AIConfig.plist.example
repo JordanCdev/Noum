@@ -40,5 +40,15 @@
     <string></string>
     <key>GEMINI_API_KEY</key>
     <string></string>
+    <key>IM_CONTEXT_REGION</key>
+    <string></string>
+    <key>IM_CONTEXT_LOCATION</key>
+    <string></string>
+    <key>IM_CONTEXT_WEATHER</key>
+    <string></string>
+    <key>IM_CONTEXT_MAJOR_EVENTS</key>
+    <string></string>
+    <key>IM_CONTEXT_SOCIAL_PULSE</key>
+    <string></string>
 </dict>
 </plist>

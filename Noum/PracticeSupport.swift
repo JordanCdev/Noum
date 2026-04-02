@@ -224,6 +224,8 @@ struct CoachingProfile: Codable, Equatable {
     var speakingStyleGoal: SpeakingStyleGoal
     var styleReference: String
     var coachingBrief: String
+    var motivationWhyNow: String
+    var successVision: String
 
     var isComplete: Bool { true }
     var personalGoalReference: String {
@@ -235,6 +237,14 @@ struct CoachingProfile: Codable, Equatable {
         return coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    var whyNowReference: String {
+        motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var successVisionReference: String {
+        successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     enum CodingKeys: String, CodingKey {
         case speakingContext
         case primaryGoal
@@ -244,6 +254,8 @@ struct CoachingProfile: Codable, Equatable {
         case speakingStyleGoal
         case styleReference
         case coachingBrief
+        case motivationWhyNow
+        case successVision
     }
 
     init(
@@ -254,7 +266,9 @@ struct CoachingProfile: Codable, Equatable {
         desiredOutcome: SpeakingOutcome,
         speakingStyleGoal: SpeakingStyleGoal,
         styleReference: String,
-        coachingBrief: String
+        coachingBrief: String,
+        motivationWhyNow: String,
+        successVision: String
     ) {
         self.speakingContext = speakingContext
         self.primaryGoal = primaryGoal
@@ -264,6 +278,8 @@ struct CoachingProfile: Codable, Equatable {
         self.speakingStyleGoal = speakingStyleGoal
         self.styleReference = styleReference
         self.coachingBrief = coachingBrief
+        self.motivationWhyNow = motivationWhyNow
+        self.successVision = successVision
     }
 
     init(from decoder: Decoder) throws {
@@ -276,6 +292,61 @@ struct CoachingProfile: Codable, Equatable {
         speakingStyleGoal = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .speakingStyleGoal) ?? .authoritative
         styleReference = try container.decodeIfPresent(String.self, forKey: .styleReference) ?? ""
         coachingBrief = try container.decodeIfPresent(String.self, forKey: .coachingBrief) ?? ""
+        motivationWhyNow = try container.decodeIfPresent(String.self, forKey: .motivationWhyNow) ?? ""
+        successVision = try container.decodeIfPresent(String.self, forKey: .successVision) ?? ""
+    }
+}
+
+extension CoachingProfile {
+    var communicationNorthStar: String {
+        let goalReference = personalGoalReference.isEmpty
+            ? desiredOutcome.title.lowercased()
+            : personalGoalReference
+        let whyNowNote = whyNowReference.isEmpty ? "" : " It matters now because \(whyNowReference)."
+        let successNote = successVisionReference.isEmpty ? "" : " If this works, they want \(successVisionReference)."
+        return "The user signed up to \(primaryGoal.title.lowercased()) so they can \(goalReference).\(whyNowNote)\(successNote)"
+    }
+
+    var motivationalSummary: String {
+        if !whyNowReference.isEmpty && !successVisionReference.isEmpty {
+            return "Why now: \(whyNowReference)  Next payoff: \(successVisionReference)"
+        }
+        if !whyNowReference.isEmpty {
+            return "Why now: \(whyNowReference)"
+        }
+        if !successVisionReference.isEmpty {
+            return "What better would unlock: \(successVisionReference)"
+        }
+        return communicationNorthStar
+    }
+
+    var inConversationTrainingFocus: String {
+        let priorityNote: String
+        switch primaryGoal {
+        case .reduceFillers:
+            priorityNote = "Reward clean pauses, direct wording, and answers that do not lean on hesitation or filler."
+        case .moreConcise:
+            priorityNote = "Reward tight, relevant answers and penalize drift, over-explaining, or generic padding."
+        case .thinkFaster:
+            priorityNote = "Reward timely replies that still make sense under pressure, even if they stay simple."
+        case .calmerDelivery:
+            priorityNote = "Reward steady tone, calm pacing, and non-defensive replies under pressure."
+        }
+
+        let challengeNote: String
+        switch biggestChallenge {
+        case .fillerWords:
+            challengeNote = "If the user starts hedging or padding, do not treat that as strong progress."
+        case .rambling:
+            challengeNote = "If the user becomes vague or rambly, let the interaction cool slightly until they tighten up."
+        case .freezing:
+            challengeNote = "If the user hesitates but recovers with something clear and real, count that as progress."
+        case .rushing:
+            challengeNote = "If the user gets sharp or rushed, let tension rise unless they slow themselves down."
+        }
+
+        let outcomeNote = "The long-term aim is for them to sound \(desiredOutcome.title.lowercased()) with a \(speakingStyleGoal.title.lowercased()) edge."
+        return "\(priorityNote) \(challengeNote) \(outcomeNote)"
     }
 }
 
@@ -440,6 +511,459 @@ enum IMConversationScenario: String, CaseIterable, Codable, Identifiable {
             return "Good to meet you. What kind of work are you focused on?"
         }
     }
+
+    var contextIntegrationStyle: IMContextIntegrationStyle {
+        switch self {
+        case .socialCatchUp:
+            return .proactiveSmallTalk
+        case .workUpdate:
+            return .taskFirst
+        case .difficultConversation:
+            return .pressureFirst
+        case .networking:
+            return .situationalBlend
+        }
+    }
+
+    var currentEventLens: String {
+        switch self {
+        case .socialCatchUp:
+            return "light cultural or local talking points that make a catch-up feel current"
+        case .workUpdate:
+            return "work-relevant timing, workplace rhythm, or a headline that affects priorities"
+        case .difficultConversation:
+            return "the immediate practical pressure around the issue, not broad news unless it directly matters"
+        case .networking:
+            return "industry, event, or city-level context that makes the interaction feel current and grounded"
+        }
+    }
+
+    var contextUsageRule: String {
+        switch self {
+        case .socialCatchUp:
+            return "Use light small talk naturally if the weather, time of day, or a current event would plausibly come up between friends."
+        case .workUpdate:
+            return "Open efficiently. You can reference timing, meetings, workload, or a relevant headline, but do not linger in small talk."
+        case .difficultConversation:
+            return "Skip small talk unless it would realistically soften the opening by a sentence. The NPC should stay focused on the issue."
+        case .networking:
+            return "Use context as an icebreaker only if it improves rapport quickly, such as event atmosphere, city energy, or a timely topic."
+        }
+    }
+
+    func relevantContextEnvelope(from context: IMSessionContext, relationship: IMRelationshipProfile?) -> IMRelevantContextEnvelope {
+        let regionLabel = context.regionLabel ?? "the user's region"
+        let worldContext = context.majorEventsSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let weatherContext = context.weatherSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let smallTalkEligible: Bool
+        let openingGuidance: String
+
+        switch contextIntegrationStyle {
+        case .proactiveSmallTalk:
+            smallTalkEligible = true
+            openingGuidance = "A natural opener can briefly touch the moment before moving into the real catch-up."
+        case .situationalBlend:
+            smallTalkEligible = true
+            openingGuidance = "Open with rapport first, then pivot into a specific question or observation."
+        case .taskFirst:
+            smallTalkEligible = false
+            openingGuidance = "Lead with the practical point. Context should only sharpen relevance, not delay the ask."
+        case .pressureFirst:
+            smallTalkEligible = false
+            openingGuidance = "Open directly from the tension. Context is only useful if it makes the pressure feel more realistic."
+        }
+
+        var relevantLines = [
+            "Use context in a way that fits \(title.lowercased()) and the relationship stage.",
+            contextUsageRule,
+            "Current-event lens: \(currentEventLens).",
+            "Primary regional frame: \(regionLabel)."
+        ]
+
+        if let weatherContext, smallTalkEligible {
+            relevantLines.append("Weather context worth using only if natural: \(weatherContext)")
+        }
+
+        if let worldContext {
+            relevantLines.append("Current event context available if it fits this scenario: \(worldContext)")
+        }
+
+        if let socialPulse = context.socialPulse?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !socialPulse.isEmpty {
+            relevantLines.append("Use this ambient social cue only if it helps the opening sound human: \(socialPulse)")
+        }
+
+        if let relationship {
+            relevantLines.append("Relationship reminder: \(relationship.relationshipStage), with continuity note: \(relationship.continuitySummary)")
+        }
+
+        return IMRelevantContextEnvelope(
+            shouldUseSmallTalk: smallTalkEligible,
+            openingGuidance: openingGuidance,
+            relevantLines: relevantLines
+        )
+    }
+}
+
+enum IMContextIntegrationStyle {
+    case proactiveSmallTalk
+    case situationalBlend
+    case taskFirst
+    case pressureFirst
+}
+
+struct IMRelevantContextEnvelope {
+    let shouldUseSmallTalk: Bool
+    let openingGuidance: String
+    let relevantLines: [String]
+}
+
+struct IMRelationshipArcTemplate {
+    let id: String
+    let title: String
+    let topicMatches: [String]
+    let stages: [String]
+    let stageGuidance: [String]
+}
+
+struct IMPersonaToleranceProfile: Codable, Equatable {
+    let patience: Int
+    let forgiveness: Int
+    let directness: Int
+    let sensitivity: Int
+    let conflictReadiness: Int
+    let closureLikelihood: Int
+
+    var summary: String {
+        "Patience \(patience)/10, forgiveness \(forgiveness)/10, directness \(directness)/10, sensitivity \(sensitivity)/10, conflict readiness \(conflictReadiness)/10, closure likelihood \(closureLikelihood)/10."
+    }
+}
+
+enum IMRelationshipMilestone: String, Codable, Equatable {
+    case guarded
+    case openingUp
+    case steady
+    case trusted
+    case fractured
+    case recovering
+
+    var title: String {
+        switch self {
+        case .guarded: return "Guarded"
+        case .openingUp: return "Opening Up"
+        case .steady: return "Steady"
+        case .trusted: return "Trusted"
+        case .fractured: return "Fractured"
+        case .recovering: return "Recovering"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .guarded:
+            return "The persona is cautious and watches for consistency before relaxing."
+        case .openingUp:
+            return "The persona is warming up and becoming easier to talk to."
+        case .steady:
+            return "The relationship feels stable but still responsive to tone and effort."
+        case .trusted:
+            return "The persona now gives more benefit of the doubt and opens more naturally."
+        case .fractured:
+            return "Recent damage is shaping the relationship and future chats start colder."
+        case .recovering:
+            return "The relationship is improving again, but trust is still being rebuilt."
+        }
+    }
+
+    var npcBehaviorGuidance: String {
+        switch self {
+        case .guarded:
+            return "Stay a little measured. Make the user earn ease through steadiness, relevance, and basic social calibration."
+        case .openingUp:
+            return "Show a little more warmth and openness, but keep testing whether the user can sustain the tone."
+        case .steady:
+            return "Act comfortable but not automatic. A good exchange can deepen trust, and a sloppy one can still flatten the energy."
+        case .trusted:
+            return "Open more naturally, allow a touch more personality, and reward nuance, but still react honestly if the user slips."
+        case .fractured:
+            return "Start colder and more cautious. Do not give easy warmth back. The user should feel that repair needs to be earned."
+        case .recovering:
+            return "Be tentatively open. Allow repair, but keep a trace of caution until the user proves consistency again."
+        }
+    }
+
+    var nextMilestoneTitle: String? {
+        switch self {
+        case .guarded: return IMRelationshipMilestone.openingUp.title
+        case .openingUp: return IMRelationshipMilestone.steady.title
+        case .steady: return IMRelationshipMilestone.trusted.title
+        case .trusted: return nil
+        case .fractured: return IMRelationshipMilestone.recovering.title
+        case .recovering: return IMRelationshipMilestone.steady.title
+        }
+    }
+}
+
+extension IMConversationScenario {
+    var relationshipArcTemplates: [IMRelationshipArcTemplate] {
+        switch self {
+        case .socialCatchUp:
+            return [
+                IMRelationshipArcTemplate(
+                    id: "social_reset",
+                    title: "Rebuilding the Rhythm",
+                    topicMatches: ["weekend", "stress", "work", "home"],
+                    stages: ["Careful Reconnect", "Shared Updates", "Easy Flow"],
+                    stageGuidance: [
+                        "The persona is checking whether the catch-up will feel strained or easy.",
+                        "The persona is open to swapping more real-life updates if the user stays engaged.",
+                        "The persona expects a genuinely natural flow and may volunteer more without being dragged there."
+                    ]
+                ),
+                IMRelationshipArcTemplate(
+                    id: "social_life_shift",
+                    title: "Life Update Thread",
+                    topicMatches: ["dating", "relationship", "move", "travel", "family"],
+                    stages: ["Hinted Shift", "More Detail", "Ongoing Thread"],
+                    stageGuidance: [
+                        "There is a personal life thread in the background, but it should only come up lightly.",
+                        "The persona can share a little more if the user shows genuine care and specificity.",
+                        "This has become an ongoing part of the relationship and can be referenced naturally."
+                    ]
+                )
+            ]
+        case .workUpdate:
+            return [
+                IMRelationshipArcTemplate(
+                    id: "work_pressure",
+                    title: "Pressure Cycle",
+                    topicMatches: ["deadline", "project", "launch", "client", "budget"],
+                    stages: ["Pressure Building", "Need for Clarity", "Trusted Under Load"],
+                    stageGuidance: [
+                        "Work pressure is present, so the persona is listening for whether the user sounds grounded or messy.",
+                        "The persona now expects sharper headlines and more credible practical detail.",
+                        "The persona is beginning to trust the user under pressure and responds more efficiently."
+                    ]
+                ),
+                IMRelationshipArcTemplate(
+                    id: "manager_read",
+                    title: "Professional Read",
+                    topicMatches: ["manager", "team", "meeting", "hiring"],
+                    stages: ["Being Assessed", "Reliability Test", "Professional Confidence"],
+                    stageGuidance: [
+                        "The persona is still forming a read on the user's professional reliability.",
+                        "The persona is testing whether the user can stay clear, useful, and low-drag consistently.",
+                        "The user is starting to sound like someone the persona can rely on quickly."
+                    ]
+                )
+            ]
+        case .difficultConversation:
+            return [
+                IMRelationshipArcTemplate(
+                    id: "trust_repair",
+                    title: "Trust Repair",
+                    topicMatches: ["trust", "respect", "support", "communication"],
+                    stages: ["Damage Acknowledged", "Repair Attempt", "Cautious Stability"],
+                    stageGuidance: [
+                        "Trust damage is alive in the conversation, so defensiveness will cost the user quickly.",
+                        "A repair attempt is possible, but the persona is testing whether it sounds real.",
+                        "The relationship is stabilising, but the persona still notices lapses fast."
+                    ]
+                ),
+                IMRelationshipArcTemplate(
+                    id: "ownership_conflict",
+                    title: "Ownership Tension",
+                    topicMatches: ["deadline", "ownership", "fair", "frustrat", "pressure"],
+                    stages: ["Underlying Friction", "Direct Pushback", "Clearer Ground Rules"],
+                    stageGuidance: [
+                        "Friction is present beneath the surface and can be triggered by vagueness or defensiveness.",
+                        "The persona is willing to push back directly if the user avoids responsibility.",
+                        "The conversation can become more constructive if the user stays direct and composed."
+                    ]
+                )
+            ]
+        case .networking:
+            return [
+                IMRelationshipArcTemplate(
+                    id: "networking_interest",
+                    title: "Mutual Interest",
+                    topicMatches: ["startup", "product", "career", "market", "design", "engineer"],
+                    stages: ["Polite Curiosity", "Real Interest", "Worth Following Up"],
+                    stageGuidance: [
+                        "The persona is still deciding whether the interaction is just polite or actually interesting.",
+                        "The persona sees potential and is more willing to go beyond surface-level questions.",
+                        "The connection now feels follow-up worthy if the user keeps sounding sharp and human."
+                    ]
+                ),
+                IMRelationshipArcTemplate(
+                    id: "event_followup",
+                    title: "Event Momentum",
+                    topicMatches: ["event", "collaborat", "founder"],
+                    stages: ["Post-Event Energy", "Specific Opportunity", "Real Connection"],
+                    stageGuidance: [
+                        "The interaction still has event-style social energy and needs a memorable hook.",
+                        "There is now a more specific opening for collaboration or follow-up.",
+                        "The persona sees the user as more than a forgettable event contact."
+                    ]
+                )
+            ]
+        }
+    }
+
+    var topicCandidates: [(match: String, label: String)] {
+        switch self {
+        case .socialCatchUp:
+            return [
+                ("work", "work stuff"),
+                ("job", "job changes"),
+                ("weekend", "weekend plans"),
+                ("trip", "travel plans"),
+                ("travel", "travel plans"),
+                ("family", "family life"),
+                ("move", "moving plans"),
+                ("flat", "home situation"),
+                ("house", "home situation"),
+                ("dating", "dating life"),
+                ("relationship", "relationship life"),
+                ("stress", "stress levels"),
+                ("gym", "health routine")
+            ]
+        case .workUpdate:
+            return [
+                ("project", "the project"),
+                ("deadline", "deadlines"),
+                ("client", "the client work"),
+                ("meeting", "meeting pressure"),
+                ("team", "team dynamics"),
+                ("manager", "manager expectations"),
+                ("budget", "budget pressure"),
+                ("launch", "the launch"),
+                ("hiring", "hiring plans")
+            ]
+        case .difficultConversation:
+            return [
+                ("trust", "trust issues"),
+                ("respect", "respect"),
+                ("support", "support"),
+                ("fair", "fairness"),
+                ("communication", "communication"),
+                ("deadline", "missed expectations"),
+                ("ownership", "ownership"),
+                ("frustrat", "frustration"),
+                ("pressure", "pressure")
+            ]
+        case .networking:
+            return [
+                ("startup", "startup work"),
+                ("founder", "founder role"),
+                ("product", "product work"),
+                ("career", "career direction"),
+                ("market", "market trends"),
+                ("event", "the event"),
+                ("collaborat", "collaboration ideas"),
+                ("design", "design work"),
+                ("engineer", "engineering work")
+            ]
+        }
+    }
+
+    var toleranceProfile: IMPersonaToleranceProfile {
+        switch self {
+        case .socialCatchUp:
+            return IMPersonaToleranceProfile(
+                patience: 7,
+                forgiveness: 8,
+                directness: 5,
+                sensitivity: 7,
+                conflictReadiness: 3,
+                closureLikelihood: 5
+            )
+        case .workUpdate:
+            return IMPersonaToleranceProfile(
+                patience: 5,
+                forgiveness: 4,
+                directness: 8,
+                sensitivity: 5,
+                conflictReadiness: 6,
+                closureLikelihood: 6
+            )
+        case .difficultConversation:
+            return IMPersonaToleranceProfile(
+                patience: 3,
+                forgiveness: 3,
+                directness: 8,
+                sensitivity: 8,
+                conflictReadiness: 9,
+                closureLikelihood: 8
+            )
+        case .networking:
+            return IMPersonaToleranceProfile(
+                patience: 5,
+                forgiveness: 4,
+                directness: 6,
+                sensitivity: 6,
+                conflictReadiness: 4,
+                closureLikelihood: 7
+            )
+        }
+    }
+
+    func unlockTeaser(for milestone: IMRelationshipMilestone) -> String {
+        switch (self, milestone) {
+        case (.socialCatchUp, .guarded):
+            return "\(personaName) may start volunteering more of her own life once the chat stops feeling cautious."
+        case (.socialCatchUp, .openingUp), (.socialCatchUp, .steady):
+            return "\(personaName) is close to treating you like a genuinely easy person to text, not someone she has to read carefully."
+        case (.socialCatchUp, .trusted):
+            return "\(personaName) now opens warmer and with more personal follow-ups, which is the real reward state here."
+        case (.socialCatchUp, .fractured), (.socialCatchUp, .recovering):
+            return "Repairing this gets you back to warmer, more natural catch-ups instead of concerned distance."
+
+        case (.workUpdate, .guarded):
+            return "\(personaName) will start giving less guarded, more useful work context when your updates feel sharper."
+        case (.workUpdate, .openingUp), (.workUpdate, .steady):
+            return "\(personaName) is close to trusting your headlines quickly, which makes the exchange feel more senior and efficient."
+        case (.workUpdate, .trusted):
+            return "\(personaName) now gives you more benefit of the doubt and responds as if you are already reliable under pressure."
+        case (.workUpdate, .fractured), (.workUpdate, .recovering):
+            return "Repair here means getting back to clean professional trust instead of scrutiny."
+
+        case (.difficultConversation, .guarded):
+            return "\(personaName) may stop bracing for defensiveness if you keep showing calm honesty."
+        case (.difficultConversation, .openingUp), (.difficultConversation, .steady):
+            return "\(personaName) is close to dropping some of the edge and treating the conversation as safer."
+        case (.difficultConversation, .trusted):
+            return "\(personaName) now expects direct honesty rather than conflict, which is a major unlock in this scenario."
+        case (.difficultConversation, .fractured), (.difficultConversation, .recovering):
+            return "Repair here unlocks less defensive, less emotionally expensive conversations next time."
+
+        case (.networking, .guarded):
+            return "\(personaName) may start engaging beyond polite small talk once you feel sharper and more memorable."
+        case (.networking, .openingUp), (.networking, .steady):
+            return "\(personaName) is close to seeing you as someone worth continuing the connection with after this chat."
+        case (.networking, .trusted):
+            return "\(personaName) now treats you more like a real connection than a disposable networking interaction."
+        case (.networking, .fractured), (.networking, .recovering):
+            return "Repair here gets you back to actual rapport instead of awkward professional distance."
+        }
+    }
+
+    func topicUnlockGuidance(for milestone: IMRelationshipMilestone) -> String {
+        switch milestone {
+        case .guarded:
+            return "Do not force a callback yet. Keep the opener grounded in the current moment unless a prior topic is the cleanest way in."
+        case .openingUp:
+            return "A light callback to one remembered topic is allowed if it makes the conversation feel more human."
+        case .steady:
+            return "You can reuse one remembered thread to make the interaction feel continuous, but keep it natural and brief."
+        case .trusted:
+            return "Lean into continuity. Natural callbacks to shared threads should make the exchange feel like an ongoing relationship."
+        case .fractured:
+            return "If using a callback, let it carry tension or distance rather than warmth. Do not pretend the relationship reset."
+        case .recovering:
+            return "Use callbacks carefully. They should feel like cautious repair, not instant closeness."
+        }
+    }
 }
 
 enum IMTargetTone: String, CaseIterable, Codable, Identifiable {
@@ -517,6 +1041,292 @@ struct IMConversationState: Codable, Equatable {
     var normalizedTension: Int { max(1, min(10, tension)) }
 }
 
+enum IMTurnStateBalancer {
+    static func balanced(
+        current: IMConversationState,
+        proposed: IMConversationState,
+        signal: IMUserMessageSignal?,
+        isOpening: Bool
+    ) -> IMConversationState {
+        let hostility = signal?.hostilityScore ?? 0
+        let disengagement = signal?.disengagementScore ?? 0
+        let warmth = signal?.warmthScore ?? 0
+        let reciprocity = signal?.reciprocityScore ?? 0
+        let specificity = signal?.specificityScore ?? 0
+
+        let positiveTrustCap: Int
+        if isOpening {
+            positiveTrustCap = 1
+        } else if warmth >= 5 && reciprocity >= 4 && specificity >= 4 {
+            positiveTrustCap = 2
+        } else {
+            positiveTrustCap = 1
+        }
+
+        let negativeTrustCap = hostility >= 7 || disengagement >= 8 ? 4 : 2
+        let positiveEngagementCap = isOpening ? 1 : 2
+        let negativeEngagementCap = disengagement >= 7 ? 4 : 2
+        let positiveTensionCap = hostility >= 6 ? 3 : 2
+        let negativeTensionCap = warmth >= 5 && hostility == 0 ? 2 : 1
+
+        return IMConversationState(
+            trust: bounded(
+                current.normalizedTrust,
+                proposed.normalizedTrust,
+                riseCap: positiveTrustCap,
+                dropCap: negativeTrustCap
+            ),
+            engagement: bounded(
+                current.normalizedEngagement,
+                proposed.normalizedEngagement,
+                riseCap: positiveEngagementCap,
+                dropCap: negativeEngagementCap
+            ),
+            tension: bounded(
+                current.normalizedTension,
+                proposed.normalizedTension,
+                riseCap: positiveTensionCap,
+                dropCap: negativeTensionCap
+            ),
+            beat: proposed.beat
+        )
+    }
+
+    private static func bounded(_ current: Int, _ proposed: Int, riseCap: Int, dropCap: Int) -> Int {
+        if proposed > current {
+            return min(10, current + min(riseCap, proposed - current))
+        }
+        if proposed < current {
+            return max(1, current - min(dropCap, current - proposed))
+        }
+        return current
+    }
+}
+
+enum IMToneMatcher {
+    static func score(for tone: IMTargetTone, transcript: String) -> Int {
+        let lower = transcript.lowercased()
+        switch tone {
+        case .confident:
+            return lower.contains("i think") ? 6 : 8
+        case .warm:
+            return lower.contains("thanks") || lower.contains("love") || lower.contains("glad") ? 8 : 6
+        case .concise:
+            return transcript.split(separator: " ").count < 45 ? 8 : 6
+        case .assertive:
+            return lower.contains("i need") || lower.contains("i want") ? 8 : 6
+        case .calm:
+            return lower.contains("just") || lower.contains("sorry") ? 6 : 8
+        case .professional:
+            return lower.contains("like") || lower.contains("literally") ? 6 : 8
+        }
+    }
+}
+
+struct IMUserMessageSignal: Equatable {
+    let hostilityScore: Int
+    let warmthScore: Int
+    let reciprocityScore: Int
+    let disengagementScore: Int
+    let specificityScore: Int
+    let adjustedState: IMConversationState
+    let shouldForceWrapUp: Bool
+    let summary: String
+}
+
+enum IMUserMessageAnalyzer {
+    static func analyze(
+        text: String,
+        currentState: IMConversationState,
+        scenario: IMConversationScenario,
+        relationship: IMRelationshipProfile?
+    ) -> IMUserMessageSignal {
+        let tolerance = scenario.toleranceProfile
+        let normalized = text.lowercased()
+        let hostilityScore = hostilityScore(in: normalized)
+        let disengagementScore = disengagementScore(in: normalized)
+        let warmthScore = warmthScore(in: normalized)
+        let reciprocityScore = reciprocityScore(in: normalized)
+        let specificityScore = specificityScore(in: normalized)
+
+        let hostilityMultiplier = max(1.0, Double(tolerance.sensitivity + tolerance.closureLikelihood) / 12.0)
+        let forgivenessBuffer = max(0.6, Double(tolerance.forgiveness + tolerance.patience) / 18.0)
+        let trustDrop = min(
+            6,
+            Int(round((Double(hostilityScore) / 2.0 + Double(disengagementScore) / 3.2) * hostilityMultiplier / forgivenessBuffer))
+        )
+        let engagementDrop = min(
+            5,
+            Int(round((Double(max(0, disengagementScore / 2) + (specificityScore <= 1 ? 1 : 0))) * Double(11 - tolerance.patience) / 7.0))
+        )
+        let tensionRise = min(
+            6,
+            Int(round((Double(hostilityScore) / 2.0 + Double(max(1, disengagementScore / 4))) * Double(tolerance.sensitivity + tolerance.conflictReadiness) / 10.0))
+        )
+
+        let trustBoost = hostilityScore == 0
+            ? max(0, Int(round(Double(warmthScore / 3 + reciprocityScore / 4 + max(0, specificityScore - 2) / 2) * Double(tolerance.forgiveness) / 6.0)))
+            : 0
+        let engagementBoost = hostilityScore == 0
+            ? max(0, Int(round(Double(reciprocityScore / 3 + specificityScore / 3) * Double(tolerance.patience + 3) / 8.0)))
+            : 0
+        let tensionEase = hostilityScore == 0
+            ? max(0, Int(round(Double(warmthScore / 4 + reciprocityScore / 4) * Double(tolerance.forgiveness) / 7.0)))
+            : 0
+
+        let adjustedState = IMConversationState(
+            trust: clamp(currentState.normalizedTrust - trustDrop + trustBoost),
+            engagement: clamp(currentState.normalizedEngagement - engagementDrop + engagementBoost),
+            tension: clamp(currentState.normalizedTension + tensionRise - tensionEase),
+            beat: beatSummary(
+                hostilityScore: hostilityScore,
+                disengagementScore: disengagementScore,
+                warmthScore: warmthScore,
+                scenario: scenario,
+                relationship: relationship
+            )
+        )
+
+        let shouldForceWrapUp =
+            hostilityScore >= max(6, 11 - tolerance.closureLikelihood) ||
+            disengagementScore >= max(7, 12 - tolerance.patience)
+        let summary = summaryLine(
+            hostilityScore: hostilityScore,
+            warmthScore: warmthScore,
+            reciprocityScore: reciprocityScore,
+            disengagementScore: disengagementScore,
+            specificityScore: specificityScore,
+            shouldForceWrapUp: shouldForceWrapUp,
+            tolerance: tolerance
+        )
+
+        return IMUserMessageSignal(
+            hostilityScore: hostilityScore,
+            warmthScore: warmthScore,
+            reciprocityScore: reciprocityScore,
+            disengagementScore: disengagementScore,
+            specificityScore: specificityScore,
+            adjustedState: adjustedState,
+            shouldForceWrapUp: shouldForceWrapUp,
+            summary: summary
+        )
+    }
+
+    private static func hostilityScore(in text: String) -> Int {
+        let severePhrases = [
+            "fuck off", "leave me alone", "go away", "shut up",
+            "i don't want to speak to you", "don't want to speak to you",
+            "don't text me", "stop messaging me", "piss off"
+        ]
+        let hostileWords = ["fuck", "idiot", "stupid", "annoying", "hate", "loser", "moron"]
+        var score = 0
+        if severePhrases.contains(where: text.contains) { score += 9 }
+        score += hostileWords.reduce(into: 0) { partial, word in
+            if text.contains(word) { partial += 3 }
+        }
+        if text.contains("whatever") { score += 2 }
+        return min(10, score)
+    }
+
+    private static func disengagementScore(in text: String) -> Int {
+        let strong = [
+            "i don't want to speak to you", "don't want to speak to you",
+            "leave me alone", "stop messaging me", "go away",
+            "not now", "can't be bothered"
+        ]
+        let mild = ["busy", "later", "can't talk", "not in the mood", "not up for this"]
+        var score = 0
+        if strong.contains(where: text.contains) { score += 9 }
+        if mild.contains(where: text.contains) { score += 4 }
+        if text.split(whereSeparator: \.isWhitespace).count <= 3 { score += 2 }
+        return min(10, score)
+    }
+
+    private static func warmthScore(in text: String) -> Int {
+        let markers = ["thanks", "appreciate", "sorry", "hope you're okay", "how are you", "glad", "good to hear"]
+        return min(10, markers.reduce(into: 0) { partial, marker in
+            if text.contains(marker) { partial += 3 }
+        })
+    }
+
+    private static func reciprocityScore(in text: String) -> Int {
+        var score = 0
+        if text.contains("?") { score += 4 }
+        let markers = ["you", "your", "how are you", "what about you", "how's", "how is"]
+        score += markers.reduce(into: 0) { partial, marker in
+            if text.contains(marker) { partial += 2 }
+        }
+        return min(10, score)
+    }
+
+    private static func specificityScore(in text: String) -> Int {
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        if words <= 2 { return 0 }
+        if words <= 5 { return 2 }
+        if words <= 12 { return 5 }
+        if words <= 24 { return 7 }
+        return 6
+    }
+
+    private static func beatSummary(
+        hostilityScore: Int,
+        disengagementScore: Int,
+        warmthScore: Int,
+        scenario: IMConversationScenario,
+        relationship: IMRelationshipProfile?
+    ) -> String {
+        let tolerance = scenario.toleranceProfile
+        if hostilityScore >= 8 || disengagementScore >= 9 {
+            if tolerance.forgiveness >= 7 {
+                return "\(scenario.personaName) is hurt by the rejection and trying to work out if something deeper is wrong before backing off."
+            }
+            return "\(scenario.personaName) has just been hit with blunt rejection and is deciding whether to pull back completely."
+        }
+        if hostilityScore >= 5 {
+            if tolerance.conflictReadiness >= 7 {
+                return "\(scenario.personaName) reads the hostility instantly and is ready to push back or shut the exchange down."
+            }
+            return "\(scenario.personaName) feels the conversation turn sharp and defensive."
+        }
+        if warmthScore >= 5 {
+            return "\(scenario.personaName) feels a little more at ease and open to continuing."
+        }
+        if let relationship, relationship.normalizedTrustBaseline <= 4 {
+            return "\(scenario.personaName) is still guarded and reading your intent closely."
+        }
+        return currentBeatFallback(for: scenario)
+    }
+
+    private static func currentBeatFallback(for scenario: IMConversationScenario) -> String {
+        switch scenario {
+        case .socialCatchUp:
+            return "The chat is still finding its rhythm."
+        case .workUpdate:
+            return "The exchange is practical, and clarity matters."
+        case .difficultConversation:
+            return "The conversation remains delicate and easy to inflame."
+        case .networking:
+            return "Rapport is still being established."
+        }
+    }
+
+    private static func summaryLine(
+        hostilityScore: Int,
+        warmthScore: Int,
+        reciprocityScore: Int,
+        disengagementScore: Int,
+        specificityScore: Int,
+        shouldForceWrapUp: Bool,
+        tolerance: IMPersonaToleranceProfile
+    ) -> String {
+        "Latest user signal: hostility \(hostilityScore)/10, disengagement \(disengagementScore)/10, warmth \(warmthScore)/10, reciprocity \(reciprocityScore)/10, specificity \(specificityScore)/10. Persona tolerance: \(tolerance.summary) \(shouldForceWrapUp ? "The NPC should strongly consider ending the chat." : "Adjust tone accordingly but keep it human.")"
+    }
+
+    private static func clamp(_ value: Int) -> Int {
+        max(1, min(10, value))
+    }
+}
+
 struct IMConversationOutcome: Codable, Equatable {
     let title: String
     let summary: String
@@ -529,6 +1339,47 @@ struct IMConversationDetails: Codable, Equatable {
     let actualTone: String?
     let finalState: IMConversationState?
     let outcome: IMConversationOutcome?
+    let relationshipSnapshot: IMRelationshipProfile?
+    let contextSnapshot: IMSessionContext?
+
+    init(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        actualTone: String?,
+        finalState: IMConversationState?,
+        outcome: IMConversationOutcome?,
+        relationshipSnapshot: IMRelationshipProfile? = nil,
+        contextSnapshot: IMSessionContext? = nil
+    ) {
+        self.setup = setup
+        self.turns = turns
+        self.actualTone = actualTone
+        self.finalState = finalState
+        self.outcome = outcome
+        self.relationshipSnapshot = relationshipSnapshot
+        self.contextSnapshot = contextSnapshot
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case setup
+        case turns
+        case actualTone
+        case finalState
+        case outcome
+        case relationshipSnapshot
+        case contextSnapshot
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        setup = try container.decode(IMConversationSetup.self, forKey: .setup)
+        turns = try container.decode([IMConversationTurn].self, forKey: .turns)
+        actualTone = try container.decodeIfPresent(String.self, forKey: .actualTone)
+        finalState = try container.decodeIfPresent(IMConversationState.self, forKey: .finalState)
+        outcome = try container.decodeIfPresent(IMConversationOutcome.self, forKey: .outcome)
+        relationshipSnapshot = try container.decodeIfPresent(IMRelationshipProfile.self, forKey: .relationshipSnapshot)
+        contextSnapshot = try container.decodeIfPresent(IMSessionContext.self, forKey: .contextSnapshot)
+    }
 }
 
 struct IMConversationReply: Codable, Equatable {
@@ -537,11 +1388,13 @@ struct IMConversationReply: Codable, Equatable {
     let updatedState: IMConversationState
 }
 
-private struct BackendIMConversationReplyRequest: Codable {
+private struct BackendIMConversationReplyRequest: Encodable {
     let setup: IMConversationSetup
     let turns: [IMConversationTurn]
     let state: IMConversationState
     let profile: CoachingProfile?
+    let relationship: IMRelationshipProfile?
+    let context: IMSessionContext
 }
 
 struct IMConversationEvaluation: Codable, Equatable {
@@ -577,7 +1430,7 @@ struct IMConversationEvaluation: Codable, Equatable {
     }
 }
 
-private struct BackendIMConversationEvaluationRequest: Codable {
+private struct BackendIMConversationEvaluationRequest: Encodable {
     let setup: IMConversationSetup
     let turns: [IMConversationTurn]
     let finalState: IMConversationState?
@@ -586,6 +1439,8 @@ private struct BackendIMConversationEvaluationRequest: Codable {
     let duration: TimeInterval
     let recentSessions: [PracticeSession]
     let profile: CoachingProfile?
+    let relationship: IMRelationshipProfile?
+    let context: IMSessionContext
 
     enum CodingKeys: String, CodingKey {
         case setup
@@ -685,13 +1540,1359 @@ enum IMConversationOutcomeResolver {
     }
 }
 
+struct IMSessionContext: Codable, Equatable {
+    let generatedAt: Date
+    let weekday: String
+    let dateLabel: String
+    let timeLabel: String
+    let timeZoneLabel: String
+    let regionLabel: String?
+    let locationLabel: String?
+    let weatherSummary: String?
+    let majorEventsSummary: String?
+    let socialPulse: String?
+    let seasonLabel: String
+    let partOfDay: String
+
+    var summaryLines: [String] {
+        var lines: [String] = [
+            "Current local date: \(weekday), \(dateLabel)",
+            "Current local time: \(timeLabel) (\(timeZoneLabel))",
+            "Season: \(seasonLabel)",
+            "Time of day: \(partOfDay)"
+        ]
+        if let locationLabel, !locationLabel.isEmpty {
+            lines.append("Location context: \(locationLabel)")
+        }
+        if let regionLabel, !regionLabel.isEmpty {
+            lines.append("Regional context: \(regionLabel)")
+        }
+        if let weatherSummary, !weatherSummary.isEmpty {
+            lines.append("Weather today: \(weatherSummary)")
+        }
+        if let majorEventsSummary, !majorEventsSummary.isEmpty {
+            lines.append("Current major events: \(majorEventsSummary)")
+        }
+        if let socialPulse, !socialPulse.isEmpty {
+            lines.append("Social pulse: \(socialPulse)")
+        }
+        return lines
+    }
+}
+
+private struct IMContextRequestPayload: Encodable {
+    let scenario: String
+    let personaName: String
+    let personaRole: String
+    let regionLabel: String?
+    let locationLabel: String?
+    let relationshipStage: String?
+    let relationshipSummary: String?
+}
+
+private struct IMContextResponsePayload: Decodable {
+    let regionLabel: String?
+    let locationLabel: String?
+    let weatherSummary: String?
+    let majorEventsSummary: String?
+    let socialPulse: String?
+}
+
+enum IMSessionContextProvider {
+    static func current(now: Date = Date()) -> IMSessionContext {
+        let calendar = Calendar.current
+        let weekdayFormatter = DateFormatter()
+        weekdayFormatter.locale = .current
+        weekdayFormatter.dateFormat = "EEEE"
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = .current
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .none
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.locale = .current
+        timeFormatter.timeStyle = .short
+        timeFormatter.dateStyle = .none
+
+        let hour = calendar.component(.hour, from: now)
+        let month = calendar.component(.month, from: now)
+        let seasonLabel: String
+        switch month {
+        case 12, 1, 2: seasonLabel = "winter"
+        case 3, 4, 5: seasonLabel = "spring"
+        case 6, 7, 8: seasonLabel = "summer"
+        default: seasonLabel = "autumn"
+        }
+
+        let partOfDay: String
+        switch hour {
+        case 5..<12: partOfDay = "morning"
+        case 12..<17: partOfDay = "afternoon"
+        case 17..<22: partOfDay = "evening"
+        default: partOfDay = "late night"
+        }
+
+        let location = configuredValue(for: "IM_CONTEXT_LOCATION") ?? inferredLocationLabel()
+        let weather = configuredValue(for: "IM_CONTEXT_WEATHER")
+        let majorEvents = configuredValue(for: "IM_CONTEXT_MAJOR_EVENTS")
+        let region = configuredValue(for: "IM_CONTEXT_REGION") ??
+            localizedRegionName()
+
+        return IMSessionContext(
+            generatedAt: now,
+            weekday: weekdayFormatter.string(from: now),
+            dateLabel: dateFormatter.string(from: now),
+            timeLabel: timeFormatter.string(from: now),
+            timeZoneLabel: TimeZone.current.identifier,
+            regionLabel: region,
+            locationLabel: location,
+            weatherSummary: weather,
+            majorEventsSummary: majorEvents,
+            socialPulse: configuredValue(for: "IM_CONTEXT_SOCIAL_PULSE") ?? inferredSocialPulse(hour: hour),
+            seasonLabel: seasonLabel,
+            partOfDay: partOfDay
+        )
+    }
+
+    private static func configuredValue(for key: String) -> String? {
+        if let value = ProcessInfo.processInfo.environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: key, plistNamed: "AIConfig")
+    }
+
+    private static func localizedRegionName() -> String? {
+        if let region = Locale.current.region?.identifier {
+            return Locale.current.localizedString(forRegionCode: region) ?? region
+        }
+        return nil
+    }
+
+    private static func inferredLocationLabel() -> String? {
+        let zoneName = TimeZone.current.identifier
+            .split(separator: "/")
+            .last
+            .map(String.init)?
+            .replacingOccurrences(of: "_", with: " ")
+        guard let zoneName, !zoneName.isEmpty else { return localizedRegionName() }
+        if let region = localizedRegionName(), !region.isEmpty {
+            return "\(zoneName), \(region)"
+        }
+        return zoneName
+    }
+
+    private static func inferredSocialPulse(hour: Int) -> String {
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        switch (weekday, hour) {
+        case (2...5, 7..<10):
+            return "Weekday morning pace, people are getting into the day and keeping chats light but purposeful."
+        case (2...5, 10..<17):
+            return "Typical working-day energy, conversations tend to be efficient unless the relationship is already warm."
+        case (2...5, 17..<22):
+            return "After-work window, people are more open to catch-up energy once the practical part of the day eases."
+        case (1, _), (7, _):
+            return "Weekend rhythm, people are more relaxed and likely to tolerate a softer opener."
+        default:
+            return "Late-day or off-peak mood, keep the opening natural and read the other person's energy quickly."
+        }
+    }
+}
+
+actor IMContextService {
+    static let shared = IMContextService()
+
+    private var cachedContexts: [String: IMSessionContext] = [:]
+    private var cachedAt: [String: Date] = [:]
+    private let cacheTTL: TimeInterval = 60 * 30
+
+    func context(
+        for scenario: IMConversationScenario,
+        relationship: IMRelationshipProfile?
+    ) async -> IMSessionContext {
+        let cacheKey = scenario.rawValue
+        let baseline = IMSessionContextProvider.current()
+        if let timestamp = cachedAt[cacheKey],
+           Date().timeIntervalSince(timestamp) < cacheTTL,
+           let cached = cachedContexts[cacheKey] {
+            return mergedContext(local: baseline, remote: cached)
+        }
+
+        var resolved = baseline
+
+        if let publicContext = await fetchPublicContext(for: scenario, local: baseline) {
+            resolved = mergedContext(local: resolved, remote: publicContext)
+        }
+
+        guard let remote = await fetchRemoteContext(
+            scenario: scenario,
+            relationship: relationship,
+            local: resolved
+        ) else {
+            cachedContexts[cacheKey] = resolved
+            cachedAt[cacheKey] = Date()
+            return resolved
+        }
+
+        let merged = mergedContext(local: resolved, remote: remote)
+        cachedContexts[cacheKey] = merged
+        cachedAt[cacheKey] = Date()
+        return merged
+    }
+
+    private func fetchPublicContext(for scenario: IMConversationScenario, local: IMSessionContext) async -> IMSessionContext? {
+        guard let searchName = inferSearchLocation(from: local) else { return nil }
+
+        async let weatherTask = fetchWeatherSummary(for: searchName)
+        async let newsTask = fetchHeadlineSummary(for: scenario, regionLabel: local.regionLabel)
+        let scenarioPulse = scenarioAwareSocialPulse(for: scenario, local: local)
+
+        let weather = await weatherTask
+        let headlines = await newsTask
+
+        guard weather != nil || headlines != nil else { return nil }
+
+        return IMSessionContext(
+            generatedAt: local.generatedAt,
+            weekday: local.weekday,
+            dateLabel: local.dateLabel,
+            timeLabel: local.timeLabel,
+            timeZoneLabel: local.timeZoneLabel,
+            regionLabel: local.regionLabel,
+            locationLabel: local.locationLabel,
+            weatherSummary: weather ?? local.weatherSummary,
+            majorEventsSummary: headlines ?? local.majorEventsSummary,
+            socialPulse: scenarioPulse ?? local.socialPulse,
+            seasonLabel: local.seasonLabel,
+            partOfDay: local.partOfDay
+        )
+    }
+
+    private func fetchRemoteContext(
+        scenario: IMConversationScenario,
+        relationship: IMRelationshipProfile?,
+        local: IMSessionContext
+    ) async -> IMSessionContext? {
+        guard let baseURL = backendBaseURL() else { return nil }
+        let endpoint = baseURL.appending(path: "/v1/im/context")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey = backendAPIKey() {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+        let authHeaders = await MainActor.run {
+            (
+                accountID: AuthManager.shared.currentAccountID,
+                provider: AuthManager.shared.currentAuthProviderRawValue
+            )
+        }
+        if let accountID = authHeaders.accountID {
+            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        }
+        if let provider = authHeaders.provider {
+            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
+        }
+
+        let payload = IMContextRequestPayload(
+            scenario: scenario.rawValue,
+            personaName: scenario.personaName,
+            personaRole: scenario.personaRole,
+            regionLabel: local.regionLabel,
+            locationLabel: local.locationLabel,
+            relationshipStage: relationship?.relationshipStage,
+            relationshipSummary: relationship?.continuitySummary
+        )
+        request.httpBody = try? JSONEncoder().encode(payload)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                return nil
+            }
+            let decoded = try JSONDecoder().decode(IMContextResponsePayload.self, from: data)
+            return IMSessionContext(
+                generatedAt: local.generatedAt,
+                weekday: local.weekday,
+                dateLabel: local.dateLabel,
+                timeLabel: local.timeLabel,
+                timeZoneLabel: local.timeZoneLabel,
+                regionLabel: decoded.regionLabel ?? local.regionLabel,
+                locationLabel: decoded.locationLabel ?? local.locationLabel,
+                weatherSummary: decoded.weatherSummary ?? local.weatherSummary,
+                majorEventsSummary: decoded.majorEventsSummary ?? local.majorEventsSummary,
+                socialPulse: decoded.socialPulse ?? local.socialPulse,
+                seasonLabel: local.seasonLabel,
+                partOfDay: local.partOfDay
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private func mergedContext(local: IMSessionContext, remote: IMSessionContext) -> IMSessionContext {
+        IMSessionContext(
+            generatedAt: local.generatedAt,
+            weekday: local.weekday,
+            dateLabel: local.dateLabel,
+            timeLabel: local.timeLabel,
+            timeZoneLabel: local.timeZoneLabel,
+            regionLabel: remote.regionLabel ?? local.regionLabel,
+            locationLabel: remote.locationLabel ?? local.locationLabel,
+            weatherSummary: remote.weatherSummary ?? local.weatherSummary,
+            majorEventsSummary: remote.majorEventsSummary ?? local.majorEventsSummary,
+            socialPulse: remote.socialPulse ?? local.socialPulse,
+            seasonLabel: local.seasonLabel,
+            partOfDay: local.partOfDay
+        )
+    }
+
+    private func inferSearchLocation(from local: IMSessionContext) -> String? {
+        if let configured = local.locationLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !configured.isEmpty {
+            return configured
+        }
+        if let region = local.regionLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !region.isEmpty {
+            return region
+        }
+        return nil
+    }
+
+    private func fetchWeatherSummary(for searchName: String) async -> String? {
+        guard let query = searchName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let geocodeURL = URL(string: "https://geocoding-api.open-meteo.com/v1/search?name=\(query)&count=1&language=en&format=json") else {
+            return nil
+        }
+
+        do {
+            let (geocodeData, geocodeResponse) = try await URLSession.shared.data(from: geocodeURL)
+            guard let geocodeHTTP = geocodeResponse as? HTTPURLResponse,
+                  (200..<300).contains(geocodeHTTP.statusCode) else { return nil }
+            let geocode = try JSONDecoder().decode(OpenMeteoGeocodingResponse.self, from: geocodeData)
+            guard let result = geocode.results?.first else { return nil }
+
+            guard let forecastURL = URL(string: "https://api.open-meteo.com/v1/forecast?latitude=\(result.latitude)&longitude=\(result.longitude)&current=temperature_2m,apparent_temperature,weather_code&timezone=auto") else {
+                return nil
+            }
+
+            let (forecastData, forecastResponse) = try await URLSession.shared.data(from: forecastURL)
+            guard let forecastHTTP = forecastResponse as? HTTPURLResponse,
+                  (200..<300).contains(forecastHTTP.statusCode) else { return nil }
+            let forecast = try JSONDecoder().decode(OpenMeteoForecastResponse.self, from: forecastData)
+            guard let current = forecast.current else { return nil }
+
+            let place = [result.name, result.country].compactMap { $0 }.joined(separator: ", ")
+            let temp = Int(current.temperature2m.rounded())
+            let apparent = Int(current.apparentTemperature.rounded())
+            let weather = weatherDescription(for: current.weatherCode)
+            return "\(place): \(weather), about \(temp)C and feels like \(apparent)C."
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchHeadlineSummary(for scenario: IMConversationScenario, regionLabel: String?) async -> String? {
+        let normalizedRegion = (regionLabel ?? "").lowercased()
+        let prefersUK = normalizedRegion.contains("united kingdom") || normalizedRegion == "uk" || normalizedRegion == "gb"
+        let feedCandidates = headlineFeedCandidates(for: scenario, prefersUK: prefersUK)
+        let parser = RSSHeadlineParser()
+
+        for candidate in feedCandidates {
+            guard let url = URL(string: candidate.urlString) else { continue }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else { continue }
+                if let summary = parser.parse(data: data, limit: candidate.limit) {
+                    return "\(candidate.label): \(summary)"
+                }
+            } catch {
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    private func headlineFeedCandidates(for scenario: IMConversationScenario, prefersUK: Bool) -> [(label: String, urlString: String, limit: Int)] {
+        switch scenario {
+        case .socialCatchUp:
+            if prefersUK {
+                return [
+                    ("In the UK today", "https://feeds.bbci.co.uk/news/uk/rss.xml", 2),
+                    ("Around the world", "https://feeds.bbci.co.uk/news/world/rss.xml", 1)
+                ]
+            }
+            return [
+                ("Around the world", "https://feeds.bbci.co.uk/news/world/rss.xml", 2)
+            ]
+        case .workUpdate:
+            return [
+                ("Business backdrop", "https://feeds.bbci.co.uk/news/business/rss.xml", 2),
+                ("Top headlines", prefersUK ? "https://feeds.bbci.co.uk/news/uk/rss.xml" : "https://feeds.bbci.co.uk/news/world/rss.xml", 1)
+            ]
+        case .difficultConversation:
+            return [
+                ("Public pressure points", prefersUK ? "https://feeds.bbci.co.uk/news/politics/rss.xml" : "https://feeds.bbci.co.uk/news/world/rss.xml", 2),
+                ("Top headlines", prefersUK ? "https://feeds.bbci.co.uk/news/uk/rss.xml" : "https://feeds.bbci.co.uk/news/world/rss.xml", 1)
+            ]
+        case .networking:
+            return [
+                ("Professional talking points", "https://feeds.bbci.co.uk/news/business/rss.xml", 2),
+                ("Broader backdrop", prefersUK ? "https://feeds.bbci.co.uk/news/uk/rss.xml" : "https://feeds.bbci.co.uk/news/world/rss.xml", 1)
+            ]
+        }
+    }
+
+    private func scenarioAwareSocialPulse(for scenario: IMConversationScenario, local: IMSessionContext) -> String? {
+        let basePulse = local.socialPulse ?? ""
+        switch scenario {
+        case .socialCatchUp:
+            return basePulse.isEmpty
+                ? "Keep the opener easy and human, like someone feeling out whether the other person has bandwidth to chat."
+                : "\(basePulse) Socially, the opener can breathe a little before the real catch-up."
+        case .workUpdate:
+            return "People are usually scanning for the practical point quickly here, so keep any rapport brief and useful."
+        case .difficultConversation:
+            return "The emotional temperature matters more than chit-chat here. The opener should feel realistic, but the issue stays central."
+        case .networking:
+            return "The opener should create rapport fast, then pivot into a concrete hook that makes the speaker memorable."
+        }
+    }
+
+    private func weatherDescription(for code: Int) -> String {
+        switch code {
+        case 0: return "clear skies"
+        case 1, 2: return "mostly clear conditions"
+        case 3: return "overcast skies"
+        case 45, 48: return "misty weather"
+        case 51, 53, 55, 56, 57: return "light rain in the air"
+        case 61, 63, 65, 66, 67: return "rainy conditions"
+        case 71, 73, 75, 77: return "snowy conditions"
+        case 80, 81, 82: return "scattered showers"
+        case 85, 86: return "snow showers"
+        case 95, 96, 99: return "stormy weather"
+        default: return "mixed weather"
+        }
+    }
+
+    private func backendBaseURL() -> URL? {
+        let rawValue =
+            ProcessInfo.processInfo.environment["BACKEND_BASE_URL"] ??
+            LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+        return URL(string: rawValue)
+    }
+
+    private func backendAPIKey() -> String? {
+        ProcessInfo.processInfo.environment["BACKEND_API_KEY"] ??
+        LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
+    }
+}
+
+private struct OpenMeteoGeocodingResponse: Decodable {
+    let results: [OpenMeteoGeocodingResult]?
+}
+
+private struct OpenMeteoGeocodingResult: Decodable {
+    let name: String
+    let country: String?
+    let latitude: Double
+    let longitude: Double
+}
+
+private struct OpenMeteoForecastResponse: Decodable {
+    let current: OpenMeteoCurrentWeather?
+}
+
+private struct OpenMeteoCurrentWeather: Decodable {
+    let temperature2m: Double
+    let apparentTemperature: Double
+    let weatherCode: Int
+
+    enum CodingKeys: String, CodingKey {
+        case temperature2m = "temperature_2m"
+        case apparentTemperature = "apparent_temperature"
+        case weatherCode = "weather_code"
+    }
+}
+
+private final class RSSHeadlineParser: NSObject, XMLParserDelegate {
+    private var insideItem = false
+    private var insideTitle = false
+    private var currentTitle = ""
+    private var titles: [String] = []
+
+    func parse(data: Data, limit: Int = 2) -> String? {
+        titles = []
+        currentTitle = ""
+        insideItem = false
+        insideTitle = false
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        guard parser.parse() else { return nil }
+        let cleaned = titles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("BBC") }
+        guard !cleaned.isEmpty else { return nil }
+        return cleaned.prefix(limit).joined(separator: " / ")
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+        if elementName == "item" {
+            insideItem = true
+            currentTitle = ""
+        } else if insideItem && elementName == "title" {
+            insideTitle = true
+            currentTitle = ""
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard insideItem, insideTitle else { return }
+        currentTitle += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        if insideItem && insideTitle && elementName == "title" {
+            titles.append(currentTitle)
+            insideTitle = false
+        } else if elementName == "item" {
+            insideItem = false
+            insideTitle = false
+        }
+    }
+}
+
+struct IMRelationshipProfile: Codable, Equatable {
+    let scenario: IMConversationScenario
+    let sessionCount: Int
+    let trustBaseline: Int
+    let engagementBaseline: Int
+    let tensionBaseline: Int
+    let warmthScore: Int
+    let reliabilityScore: Int
+    let opennessScore: Int
+    let reciprocityScore: Int
+    let frictionScore: Int
+    let ruptureScore: Int
+    let repairMomentum: Int
+    let inconsistencyScore: Int
+    let activeMilestone: IMRelationshipMilestone
+    let milestoneHistory: [IMRelationshipMilestone]
+    let rememberedTopics: [String]
+    let callbackCue: String?
+    let activeArcID: String?
+    let activeArcStage: Int
+    let arcHistory: [String]
+    let continuitySummary: String
+    let lastOutcomeTitle: String?
+    let lastOutcomeSummary: String?
+    let lastInteractionDate: Date?
+
+    static func initial(for scenario: IMConversationScenario) -> IMRelationshipProfile {
+        IMRelationshipProfile(
+            scenario: scenario,
+            sessionCount: 0,
+            trustBaseline: scenario == .socialCatchUp ? 6 : 5,
+            engagementBaseline: 5,
+            tensionBaseline: scenario == .difficultConversation ? 6 : 4,
+            warmthScore: scenario == .socialCatchUp ? 6 : 5,
+            reliabilityScore: 5,
+            opennessScore: 5,
+            reciprocityScore: 5,
+            frictionScore: scenario == .difficultConversation ? 6 : 4,
+            ruptureScore: 2,
+            repairMomentum: 4,
+            inconsistencyScore: 3,
+            activeMilestone: .guarded,
+            milestoneHistory: [.guarded],
+            rememberedTopics: [],
+            callbackCue: nil,
+            activeArcID: nil,
+            activeArcStage: 0,
+            arcHistory: [],
+            continuitySummary: "This relationship is still early, so the other person is reading your tone and consistency closely.",
+            lastOutcomeTitle: nil,
+            lastOutcomeSummary: nil,
+            lastInteractionDate: nil
+        )
+    }
+
+    var normalizedTrustBaseline: Int { max(1, min(10, trustBaseline)) }
+    var normalizedEngagementBaseline: Int { max(1, min(10, engagementBaseline)) }
+    var normalizedTensionBaseline: Int { max(1, min(10, tensionBaseline)) }
+
+    var relationshipStage: String {
+        switch (normalizedTrustBaseline, frictionScore) {
+        case (8..., ..<5): return "strong and comfortable"
+        case (6..., ..<7): return "steady but still being reinforced"
+        case (...4, 7...): return "fragile and easily strained"
+        default: return "developing and somewhat tentative"
+        }
+    }
+
+    var compactSummary: String {
+        "\(activeMilestone.title), trust \(normalizedTrustBaseline)/10, tension \(normalizedTensionBaseline)/10, rupture \(ruptureScore)/10"
+    }
+
+    var daysSinceLastInteractionText: String? {
+        guard let lastInteractionDate else { return nil }
+        let days = Calendar.current.dateComponents([.day], from: lastInteractionDate, to: Date()).day ?? 0
+        if days <= 0 { return "Updated today" }
+        if days == 1 { return "Updated 1 day ago" }
+        return "Updated \(days) days ago"
+    }
+
+    func startingState() -> IMConversationState {
+        IMConversationState(
+            trust: normalizedTrustBaseline,
+            engagement: normalizedEngagementBaseline,
+            tension: normalizedTensionBaseline,
+            beat: continuitySummary
+        )
+    }
+
+    var promptSummary: String {
+        var summary = "Relationship stage: \(relationshipStage). Sessions together: \(sessionCount). Baseline trust \(normalizedTrustBaseline)/10, engagement \(normalizedEngagementBaseline)/10, tension \(normalizedTensionBaseline)/10."
+        summary += " Warmth \(warmthScore)/10, reliability \(reliabilityScore)/10, openness \(opennessScore)/10, reciprocity \(reciprocityScore)/10, friction \(frictionScore)/10."
+        summary += " Rupture memory \(ruptureScore)/10, repair momentum \(repairMomentum)/10, inconsistency \(inconsistencyScore)/10."
+        summary += " Active milestone: \(activeMilestone.title)."
+        if !rememberedTopics.isEmpty {
+            summary += " Remembered themes: \(rememberedTopics.joined(separator: ", "))."
+        }
+        if let callbackCue, !callbackCue.isEmpty {
+            summary += " Callback cue: \(callbackCue)"
+        }
+        if let activeArcSummary {
+            summary += " Relationship arc: \(activeArcSummary)"
+        }
+        summary += " Continuity note: \(continuitySummary)"
+        if let lastOutcomeTitle, let lastOutcomeSummary {
+            summary += " Last outcome: \(lastOutcomeTitle) - \(lastOutcomeSummary)"
+        }
+        return summary
+    }
+
+    var milestoneBehaviorSummary: String {
+        activeMilestone.npcBehaviorGuidance
+    }
+
+    func nextSessionHook(profile: CoachingProfile?) -> String {
+        let goalNote = profile?.primaryGoal.title.lowercased() ?? "communicate better"
+        switch activeMilestone {
+        case .guarded:
+            return "One more steady session with clear, respectful specifics could move this dynamic from guarded to opening up. Focus on \(goalNote), not charm."
+        case .openingUp:
+            return "The other person is warming up. Another grounded exchange could make this feel genuinely steady, so keep \(goalNote) under light pressure."
+        case .steady:
+            return "This is close to becoming a relationship advantage. A sharper next session could turn steady rapport into real trust."
+        case .trusted:
+            return "This connection now has upside. The next challenge is making your stronger communication style feel natural enough to hold under pressure."
+        case .fractured:
+            return "The relationship is carrying damage. A calm, non-defensive repair attempt is the shortest path back, but it has to feel earned."
+        case .recovering:
+            return "Repair is working, but it is not locked in. Stack another composed session to prove the change is real."
+        }
+    }
+
+    var nextMilestoneProgress: Double {
+        switch activeMilestone {
+        case .guarded:
+            return progressScore(
+                trust: normalizedTrustBaseline,
+                repair: repairMomentum,
+                rupture: ruptureScore,
+                inconsistency: inconsistencyScore,
+                trustTarget: 6,
+                repairTarget: 6,
+                ruptureCap: 4,
+                inconsistencyCap: 5
+            )
+        case .openingUp:
+            return progressScore(
+                trust: normalizedTrustBaseline,
+                repair: repairMomentum,
+                rupture: ruptureScore,
+                inconsistency: inconsistencyScore,
+                trustTarget: 7,
+                repairTarget: 6,
+                ruptureCap: 4,
+                inconsistencyCap: 5
+            )
+        case .steady:
+            return progressScore(
+                trust: normalizedTrustBaseline,
+                repair: repairMomentum,
+                rupture: ruptureScore,
+                inconsistency: inconsistencyScore,
+                trustTarget: 8,
+                repairTarget: 8,
+                ruptureCap: 4,
+                inconsistencyCap: 4
+            )
+        case .trusted:
+            return 1
+        case .fractured:
+            return progressScore(
+                trust: normalizedTrustBaseline,
+                repair: repairMomentum,
+                rupture: 10 - ruptureScore,
+                inconsistency: 10 - inconsistencyScore,
+                trustTarget: 6,
+                repairTarget: 6,
+                ruptureCap: 6,
+                inconsistencyCap: 6
+            )
+        case .recovering:
+            return progressScore(
+                trust: normalizedTrustBaseline,
+                repair: repairMomentum,
+                rupture: 10 - ruptureScore,
+                inconsistency: 10 - inconsistencyScore,
+                trustTarget: 6,
+                repairTarget: 7,
+                ruptureCap: 6,
+                inconsistencyCap: 6
+            )
+        }
+    }
+
+    var nextMilestoneProgressLabel: String {
+        if let nextMilestoneTitle = activeMilestone.nextMilestoneTitle {
+            return "\(Int((nextMilestoneProgress * 100).rounded()))% to \(nextMilestoneTitle)"
+        }
+        return "Relationship state maximized"
+    }
+
+    var unlockTeaser: String {
+        scenario.unlockTeaser(for: activeMilestone)
+    }
+
+    var topicUnlockGuidance: String {
+        scenario.topicUnlockGuidance(for: activeMilestone)
+    }
+
+    var activeArcTemplate: IMRelationshipArcTemplate? {
+        guard let activeArcID else { return nil }
+        return scenario.relationshipArcTemplates.first { $0.id == activeArcID }
+    }
+
+    var activeArcTitle: String? {
+        activeArcTemplate?.title
+    }
+
+    var activeArcStageLabel: String? {
+        guard let template = activeArcTemplate, template.stages.indices.contains(activeArcStage) else { return nil }
+        return template.stages[activeArcStage]
+    }
+
+    var activeArcGuidance: String? {
+        guard let template = activeArcTemplate, template.stageGuidance.indices.contains(activeArcStage) else { return nil }
+        return template.stageGuidance[activeArcStage]
+    }
+
+    var activeArcSummary: String? {
+        guard let activeArcTitle, let activeArcStageLabel else { return nil }
+        return "\(activeArcTitle) - \(activeArcStageLabel)"
+    }
+
+    var activeArcProgress: Double {
+        guard let template = activeArcTemplate, !template.stages.isEmpty else { return 0 }
+        return min(1, Double(activeArcStage + 1) / Double(template.stages.count))
+    }
+
+    var activeArcProgressLabel: String {
+        guard let template = activeArcTemplate, let stage = activeArcStageLabel else {
+            return "No active arc yet"
+        }
+        return "\(stage) (\(activeArcStage + 1)/\(template.stages.count))"
+    }
+
+    private func progressScore(
+        trust: Int,
+        repair: Int,
+        rupture: Int,
+        inconsistency: Int,
+        trustTarget: Int,
+        repairTarget: Int,
+        ruptureCap: Int,
+        inconsistencyCap: Int
+    ) -> Double {
+        let trustProgress = min(1.0, Double(trust) / Double(max(trustTarget, 1)))
+        let repairProgress = min(1.0, Double(repair) / Double(max(repairTarget, 1)))
+        let ruptureProgress = min(1.0, Double(max(0, ruptureCap - rupture + 1)) / Double(max(ruptureCap, 1)))
+        let inconsistencyProgress = min(1.0, Double(max(0, inconsistencyCap - inconsistency + 1)) / Double(max(inconsistencyCap, 1)))
+        return max(0.0, min(1.0, (trustProgress * 0.4) + (repairProgress * 0.3) + (ruptureProgress * 0.2) + (inconsistencyProgress * 0.1)))
+    }
+}
+
+private enum IMRelationshipProfileCodingKeys: String, CodingKey {
+    case scenario
+    case sessionCount
+    case trustBaseline
+    case engagementBaseline
+    case tensionBaseline
+    case warmthScore
+    case reliabilityScore
+    case opennessScore
+    case reciprocityScore
+    case frictionScore
+    case ruptureScore
+    case repairMomentum
+    case inconsistencyScore
+    case activeMilestone
+    case milestoneHistory
+    case rememberedTopics
+    case callbackCue
+    case activeArcID
+    case activeArcStage
+    case arcHistory
+    case continuitySummary
+    case lastOutcomeTitle
+    case lastOutcomeSummary
+    case lastInteractionDate
+}
+
+extension IMRelationshipProfile {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: IMRelationshipProfileCodingKeys.self)
+        self.init(
+            scenario: try container.decode(IMConversationScenario.self, forKey: .scenario),
+            sessionCount: try container.decode(Int.self, forKey: .sessionCount),
+            trustBaseline: try container.decode(Int.self, forKey: .trustBaseline),
+            engagementBaseline: try container.decode(Int.self, forKey: .engagementBaseline),
+            tensionBaseline: try container.decode(Int.self, forKey: .tensionBaseline),
+            warmthScore: try container.decode(Int.self, forKey: .warmthScore),
+            reliabilityScore: try container.decode(Int.self, forKey: .reliabilityScore),
+            opennessScore: try container.decode(Int.self, forKey: .opennessScore),
+            reciprocityScore: try container.decode(Int.self, forKey: .reciprocityScore),
+            frictionScore: try container.decode(Int.self, forKey: .frictionScore),
+            ruptureScore: try container.decode(Int.self, forKey: .ruptureScore),
+            repairMomentum: try container.decode(Int.self, forKey: .repairMomentum),
+            inconsistencyScore: try container.decode(Int.self, forKey: .inconsistencyScore),
+            activeMilestone: try container.decode(IMRelationshipMilestone.self, forKey: .activeMilestone),
+            milestoneHistory: try container.decode([IMRelationshipMilestone].self, forKey: .milestoneHistory),
+            rememberedTopics: try container.decodeIfPresent([String].self, forKey: .rememberedTopics) ?? [],
+            callbackCue: try container.decodeIfPresent(String.self, forKey: .callbackCue),
+            activeArcID: try container.decodeIfPresent(String.self, forKey: .activeArcID),
+            activeArcStage: try container.decodeIfPresent(Int.self, forKey: .activeArcStage) ?? 0,
+            arcHistory: try container.decodeIfPresent([String].self, forKey: .arcHistory) ?? [],
+            continuitySummary: try container.decode(String.self, forKey: .continuitySummary),
+            lastOutcomeTitle: try container.decodeIfPresent(String.self, forKey: .lastOutcomeTitle),
+            lastOutcomeSummary: try container.decodeIfPresent(String.self, forKey: .lastOutcomeSummary),
+            lastInteractionDate: try container.decodeIfPresent(Date.self, forKey: .lastInteractionDate)
+        )
+    }
+}
+
+enum IMRelationshipArcPlanner {
+    static func nextState(
+        profile: IMRelationshipProfile,
+        rememberedTopics: [String],
+        evaluation: IMConversationEvaluation,
+        averageHostility: Int,
+        averageDisengagement: Int,
+        milestone: IMRelationshipMilestone
+    ) -> (arcID: String?, stage: Int, history: [String]) {
+        let templates = profile.scenario.relationshipArcTemplates
+        guard !templates.isEmpty else { return (nil, 0, profile.arcHistory) }
+
+        let activeTemplate = profile.activeArcTemplate ?? chooseTemplate(from: templates, rememberedTopics: rememberedTopics)
+        guard let activeTemplate else { return (nil, 0, profile.arcHistory) }
+
+        var stage = max(0, min(profile.activeArcStage, activeTemplate.stages.count - 1))
+        let strongPositive = evaluation.conversationScore >= 7 && evaluation.toneMatch >= 7 && averageHostility <= 3 && averageDisengagement <= 4
+        let breakdown = averageHostility >= 7 || averageDisengagement >= 8 || milestone == .fractured
+
+        if breakdown {
+            stage = max(0, stage - 1)
+        } else if strongPositive {
+            stage = min(activeTemplate.stages.count - 1, stage + 1)
+        }
+
+        let marker = "\(activeTemplate.title): \(activeTemplate.stages[stage])"
+        let history = profile.arcHistory.last == marker ? profile.arcHistory : Array((profile.arcHistory + [marker]).suffix(6))
+        return (activeTemplate.id, stage, history)
+    }
+
+    private static func chooseTemplate(
+        from templates: [IMRelationshipArcTemplate],
+        rememberedTopics: [String]
+    ) -> IMRelationshipArcTemplate? {
+        let loweredTopics = rememberedTopics.map { $0.lowercased() }
+        if let matched = templates.max(by: { score(for: $0, topics: loweredTopics) < score(for: $1, topics: loweredTopics) }),
+           score(for: matched, topics: loweredTopics) > 0 {
+            return matched
+        }
+        return templates.first
+    }
+
+    private static func score(for template: IMRelationshipArcTemplate, topics: [String]) -> Int {
+        template.topicMatches.reduce(0) { partial, match in
+            partial + (topics.contains { $0.contains(match) } ? 1 : 0)
+        }
+    }
+}
+
+enum IMTopicMemoryBuilder {
+    static func rememberedTopics(
+        for scenario: IMConversationScenario,
+        turns: [IMConversationTurn],
+        existing: [String]
+    ) -> [String] {
+        let userText = turns
+            .filter { $0.speaker == .user }
+            .map { $0.text.lowercased() }
+            .joined(separator: " ")
+
+        var topics = existing
+        for topic in scenario.topicCandidates {
+            if topics.count >= 3 { break }
+            if userText.contains(topic.match), !topics.contains(topic.label) {
+                topics.append(topic.label)
+            }
+        }
+
+        if topics.count < 2 {
+            let fallbackPhrases = turns
+                .filter { $0.speaker == .user }
+                .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { $0.split(whereSeparator: \.isWhitespace).count >= 4 }
+                .sorted { $0.count > $1.count }
+                .prefix(2)
+                .map { fallbackTopic(from: $0) }
+            for phrase in fallbackPhrases where !phrase.isEmpty && !topics.contains(phrase) {
+                topics.append(phrase)
+                if topics.count >= 3 { break }
+            }
+        }
+
+        return Array(topics.prefix(3))
+    }
+
+    static func callbackCue(
+        for scenario: IMConversationScenario,
+        milestone: IMRelationshipMilestone,
+        rememberedTopics: [String]
+    ) -> String? {
+        guard let firstTopic = rememberedTopics.first else { return nil }
+        switch milestone {
+        case .guarded:
+            return nil
+        case .openingUp, .steady:
+            return "\(scenario.personaName) can naturally call back to \(firstTopic.lowercased()) if it helps the opener feel grounded."
+        case .trusted:
+            return "\(scenario.personaName) should feel comfortable referencing \(firstTopic.lowercased()) more naturally, like someone who actually remembers the thread."
+        case .fractured:
+            return "\(scenario.personaName) may reopen the conversation with unresolved distance around \(firstTopic.lowercased()) rather than acting like nothing happened."
+        case .recovering:
+            return "\(scenario.personaName) can cautiously reference \(firstTopic.lowercased()) as a test of whether the dynamic is genuinely improving."
+        }
+    }
+
+    private static func fallbackTopic(from text: String) -> String {
+        let trimmed = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split(whereSeparator: \.isWhitespace).prefix(6)
+        let phrase = words.joined(separator: " ")
+        if phrase.count <= 42 {
+            return phrase
+        }
+        return String(phrase.prefix(39)) + "..."
+    }
+}
+
+enum IMRelationshipHeuristics {
+    static func updatedProfile(
+        from profile: IMRelationshipProfile,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState,
+        evaluation: IMConversationEvaluation
+    ) -> IMRelationshipProfile {
+        let tolerance = profile.scenario.toleranceProfile
+        let userTexts = turns.filter { $0.speaker == .user }.map(\.text)
+        let totalWordCount = userTexts.map(wordCount).reduce(0, +)
+        let averageWordCount = userTexts.isEmpty ? 0 : totalWordCount / max(1, userTexts.count)
+        let questionCount = userTexts.reduce(0) { $0 + $1.filter { $0 == "?" }.count }
+        let acknowledgementCount = userTexts.reduce(0) { partial, text in
+            partial + acknowledgementSignals(in: text)
+        }
+        let selfFocusCount = userTexts.reduce(0) { partial, text in
+            partial + tokenCount(in: text, matches: ["i", "me", "my", "mine"])
+        }
+        let sharedFocusCount = userTexts.reduce(0) { partial, text in
+            partial + tokenCount(in: text, matches: ["you", "your", "we", "us", "our"])
+        }
+        let signalScores = userTexts.map {
+            IMUserMessageAnalyzer.analyze(
+                text: $0,
+                currentState: .starting,
+                scenario: profile.scenario,
+                relationship: profile
+            )
+        }
+        let averageHostility = signalScores.isEmpty ? 0 : signalScores.map(\.hostilityScore).reduce(0, +) / signalScores.count
+        let averageWarmth = signalScores.isEmpty ? 0 : signalScores.map(\.warmthScore).reduce(0, +) / signalScores.count
+        let averageReciprocity = signalScores.isEmpty ? 0 : signalScores.map(\.reciprocityScore).reduce(0, +) / signalScores.count
+        let averageDisengagement = signalScores.isEmpty ? 0 : signalScores.map(\.disengagementScore).reduce(0, +) / signalScores.count
+        let qualityScore = Double(evaluation.clarityScore + evaluation.composureScore + evaluation.conversationScore + evaluation.toneMatch) / 4.0
+        let reciprocitySignal = questionCount > 0 ? 1 : 0
+        let balancedFocusSignal = sharedFocusCount >= max(1, selfFocusCount / 2) ? 1 : 0
+        let specificitySignal = averageWordCount >= 6 && averageWordCount <= 26 ? 1 : (averageWordCount > 26 ? 0 : -1)
+        let warmthSignal = min(1, acknowledgementCount)
+        let sharpnessPenalty = averageWordCount < 4 ? 1 : 0
+        let strainPenalty = finalState.normalizedTension >= 8 ? 1 : 0
+        let rupturePenalty = profile.ruptureScore >= 7 ? 1 : 0
+        let inconsistencyPenalty = profile.inconsistencyScore >= 7 ? 1 : 0
+
+        let trustDelta = boundedDelta(
+            Int(round((qualityScore - 6.0) / 1.4)) +
+            reciprocitySignal +
+            balancedFocusSignal +
+            specificitySignal -
+            sharpnessPenalty -
+            strainPenalty -
+            rupturePenalty -
+            inconsistencyPenalty,
+            magnitude: 2
+        )
+
+        let engagementDelta = boundedDelta(
+            Int(round((Double(evaluation.conversationScore) - 6.0) / 1.5)) +
+            reciprocitySignal +
+            max(0, specificitySignal),
+            magnitude: 2
+        )
+
+        let tensionDelta = boundedDelta(
+            Int(round((Double(finalState.normalizedTension) - 5.0) / 2.0)) -
+            Int(round((Double(evaluation.composureScore) - 6.0) / 2.0)),
+            magnitude: 2
+        )
+
+        let warmthScore = clamp(profile.warmthScore + warmthSignal + (evaluation.toneMatch >= 7 ? 1 : 0) - strainPenalty)
+        let reliabilityScore = clamp(profile.reliabilityScore + boundedDelta(Int(round((Double(evaluation.clarityScore + evaluation.composureScore) / 2.0 - 6.0) / 1.5)), magnitude: 2))
+        let opennessScore = clamp(profile.opennessScore + specificitySignal + (averageWordCount >= 10 ? 1 : 0) - sharpnessPenalty)
+        let reciprocityScore = clamp(profile.reciprocityScore + reciprocitySignal + balancedFocusSignal - (questionCount == 0 ? 1 : 0))
+        let frictionScore = clamp(profile.frictionScore + tensionDelta - (evaluation.composureScore >= 7 ? 1 : 0))
+        let ruptureScore = updatedRuptureScore(
+            current: profile.ruptureScore,
+            averageHostility: averageHostility,
+            averageDisengagement: averageDisengagement,
+            tolerance: tolerance,
+            evaluation: evaluation
+        )
+        let repairMomentum = updatedRepairMomentum(
+            current: profile.repairMomentum,
+            averageWarmth: averageWarmth,
+            averageReciprocity: averageReciprocity,
+            evaluation: evaluation,
+            ruptureScore: ruptureScore
+        )
+        let inconsistencyScore = updatedInconsistencyScore(
+            current: profile.inconsistencyScore,
+            averageHostility: averageHostility,
+            averageWarmth: averageWarmth,
+            averageDisengagement: averageDisengagement,
+            evaluation: evaluation
+        )
+
+        let repairBonus = repairMomentum >= 7 ? 1 : 0
+        let ruptureTax = ruptureScore >= 7 ? 2 : (ruptureScore >= 5 ? 1 : 0)
+        let inconsistencyTax = inconsistencyScore >= 7 ? 1 : 0
+
+        let newTrust = clamp(
+            smoothedBaseline(current: profile.normalizedTrustBaseline, live: finalState.normalizedTrust) +
+            trustDelta +
+            repairBonus -
+            ruptureTax -
+            inconsistencyTax
+        )
+        let newEngagement = clamp(
+            smoothedBaseline(current: profile.normalizedEngagementBaseline, live: finalState.normalizedEngagement) +
+            engagementDelta -
+            (inconsistencyScore >= 6 ? 1 : 0)
+        )
+        let newTension = clamp(
+            smoothedBaseline(current: profile.normalizedTensionBaseline, live: finalState.normalizedTension) +
+            tensionDelta +
+            (ruptureScore >= 6 ? 1 : 0) -
+            repairBonus
+        )
+        let milestone = resolveMilestone(
+            trust: newTrust,
+            rupture: ruptureScore,
+            repair: repairMomentum,
+            inconsistency: inconsistencyScore,
+            previous: profile.activeMilestone
+        )
+        let rememberedTopics = IMTopicMemoryBuilder.rememberedTopics(
+            for: profile.scenario,
+            turns: turns,
+            existing: profile.rememberedTopics
+        )
+        let callbackCue = IMTopicMemoryBuilder.callbackCue(
+            for: profile.scenario,
+            milestone: milestone,
+            rememberedTopics: rememberedTopics
+        )
+        let arcState = IMRelationshipArcPlanner.nextState(
+            profile: profile,
+            rememberedTopics: rememberedTopics,
+            evaluation: evaluation,
+            averageHostility: averageHostility,
+            averageDisengagement: averageDisengagement,
+            milestone: milestone
+        )
+
+        let continuitySummary = continuitySummary(
+            scenario: profile.scenario,
+            trust: newTrust,
+            engagement: newEngagement,
+            tension: newTension,
+            reliability: reliabilityScore,
+            reciprocity: reciprocityScore,
+            rupture: ruptureScore,
+            repair: repairMomentum,
+            inconsistency: inconsistencyScore,
+            rememberedTopics: rememberedTopics,
+            callbackCue: callbackCue,
+            lastOutcome: evaluation.outcome
+        )
+        let milestoneHistory = updatedMilestoneHistory(
+            current: profile.milestoneHistory,
+            next: milestone
+        )
+
+        return IMRelationshipProfile(
+            scenario: profile.scenario,
+            sessionCount: profile.sessionCount + 1,
+            trustBaseline: newTrust,
+            engagementBaseline: newEngagement,
+            tensionBaseline: newTension,
+            warmthScore: warmthScore,
+            reliabilityScore: reliabilityScore,
+            opennessScore: opennessScore,
+            reciprocityScore: reciprocityScore,
+            frictionScore: frictionScore,
+            ruptureScore: ruptureScore,
+            repairMomentum: repairMomentum,
+            inconsistencyScore: inconsistencyScore,
+            activeMilestone: milestone,
+            milestoneHistory: milestoneHistory,
+            rememberedTopics: rememberedTopics,
+            callbackCue: callbackCue,
+            activeArcID: arcState.arcID,
+            activeArcStage: arcState.stage,
+            arcHistory: arcState.history,
+            continuitySummary: continuitySummary,
+            lastOutcomeTitle: evaluation.outcome?.title,
+            lastOutcomeSummary: evaluation.outcome?.summary,
+            lastInteractionDate: Date()
+        )
+    }
+
+    private static func continuitySummary(
+        scenario: IMConversationScenario,
+        trust: Int,
+        engagement: Int,
+        tension: Int,
+        reliability: Int,
+        reciprocity: Int,
+        rupture: Int,
+        repair: Int,
+        inconsistency: Int,
+        rememberedTopics: [String],
+        callbackCue: String?,
+        lastOutcome: IMConversationOutcome?
+    ) -> String {
+        let connectionNote: String
+        if rupture >= 7 {
+            connectionNote = "\(scenario.personaName) remembers recent damage in the dynamic, so warmth alone will not reset the tone."
+        } else if trust >= 8 && reciprocity >= 7 && tension <= 4 {
+            connectionNote = "\(scenario.personaName) now expects a warmer, more natural back-and-forth and is more willing to open up quickly."
+        } else if trust <= 4 || tension >= 7 {
+            connectionNote = "\(scenario.personaName) is more guarded now and will need steadiness, relevance, and follow-through before relaxing."
+        } else {
+            connectionNote = "\(scenario.personaName) is moderately comfortable, but still judges whether you are engaged, specific, and easy to talk to."
+        }
+
+        let reliabilityNote: String
+        if inconsistency >= 7 {
+            reliabilityNote = "The relationship feels inconsistent, so one good exchange will not outweigh recent swings."
+        } else if reliability >= 8 {
+            reliabilityNote = "Your last few interactions read as dependable and composed."
+        } else if reliability <= 4 {
+            reliabilityNote = "The relationship still feels inconsistent, so vague or abrupt replies will cost you quickly."
+        } else {
+            reliabilityNote = "Consistency matters more than charm here."
+        }
+
+        let repairNote: String
+        if repair >= 8 && rupture <= 4 {
+            repairNote = "There is clear repair momentum, so the other person is becoming more willing to give you the benefit of the doubt."
+        } else if rupture >= 6 {
+            repairNote = "Repair will take repeated, credible good interactions rather than one warm moment."
+        } else {
+            repairNote = "The relationship is still being shaped by repeated behaviour, not isolated lines."
+        }
+
+        let memoryNote: String
+        if let callbackCue, !callbackCue.isEmpty {
+            memoryNote = "Carry-forward cue: \(callbackCue)"
+        } else if !rememberedTopics.isEmpty {
+            memoryNote = "Remembered themes include \(rememberedTopics.joined(separator: ", "))."
+        } else {
+            memoryNote = "No strong carry-forward topic has been earned yet."
+        }
+
+        if let lastOutcome {
+            return "\(connectionNote) \(reliabilityNote) \(repairNote) \(memoryNote) Last time landed as: \(lastOutcome.summary)"
+        }
+        return "\(connectionNote) \(reliabilityNote) \(repairNote) \(memoryNote)"
+    }
+
+    private static func resolveMilestone(
+        trust: Int,
+        rupture: Int,
+        repair: Int,
+        inconsistency: Int,
+        previous: IMRelationshipMilestone
+    ) -> IMRelationshipMilestone {
+        if rupture >= 8 {
+            return .fractured
+        }
+        if previous == .fractured && repair >= 6 {
+            return .recovering
+        }
+        if repair >= 8 && trust >= 8 && inconsistency <= 4 {
+            return .trusted
+        }
+        if trust >= 6 && repair >= 6 && rupture <= 4 {
+            return .openingUp
+        }
+        if trust >= 6 && inconsistency <= 6 {
+            return .steady
+        }
+        if previous == .recovering && repair >= 7 && rupture <= 4 {
+            return .steady
+        }
+        return .guarded
+    }
+
+    private static func updatedMilestoneHistory(
+        current: [IMRelationshipMilestone],
+        next: IMRelationshipMilestone
+    ) -> [IMRelationshipMilestone] {
+        var history = current
+        if history.last != next {
+            history.append(next)
+        }
+        return Array(history.suffix(6))
+    }
+
+    private static func updatedRuptureScore(
+        current: Int,
+        averageHostility: Int,
+        averageDisengagement: Int,
+        tolerance: IMPersonaToleranceProfile,
+        evaluation: IMConversationEvaluation
+    ) -> Int {
+        let hostilityWeight = Int(round(Double(averageHostility) * Double(tolerance.sensitivity + tolerance.closureLikelihood) / 12.0))
+        let disengagementWeight = Int(round(Double(averageDisengagement) * Double(11 - tolerance.patience) / 10.0))
+        let relief = evaluation.composureScore >= 8 && evaluation.conversationScore >= 7 ? 2 : (evaluation.composureScore >= 7 ? 1 : 0)
+        return clamp(current + hostilityWeight / 3 + disengagementWeight / 4 - relief)
+    }
+
+    private static func updatedRepairMomentum(
+        current: Int,
+        averageWarmth: Int,
+        averageReciprocity: Int,
+        evaluation: IMConversationEvaluation,
+        ruptureScore: Int
+    ) -> Int {
+        let positiveSession = evaluation.conversationScore >= 7 && evaluation.toneMatch >= 7
+        let gain = positiveSession ? max(1, (averageWarmth + averageReciprocity) / 6) : 0
+        let drag = ruptureScore >= 7 ? 2 : (ruptureScore >= 5 ? 1 : 0)
+        return clamp(current + gain - drag)
+    }
+
+    private static func updatedInconsistencyScore(
+        current: Int,
+        averageHostility: Int,
+        averageWarmth: Int,
+        averageDisengagement: Int,
+        evaluation: IMConversationEvaluation
+    ) -> Int {
+        let volatility = abs(averageWarmth - averageHostility) >= 4 ? 2 : 0
+        let unclearPenalty = evaluation.clarityScore <= 5 ? 1 : 0
+        let disengagementPenalty = averageDisengagement >= 6 ? 2 : 0
+        let stabilityRelief = evaluation.composureScore >= 8 && evaluation.clarityScore >= 7 ? 2 : 0
+        return clamp(current + volatility + unclearPenalty + disengagementPenalty - stabilityRelief)
+    }
+
+    private static func wordCount(in text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private static func tokenCount(in text: String, matches tokens: Set<String>) -> Int {
+        text
+            .lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" })
+            .reduce(into: 0) { count, token in
+                if tokens.contains(String(token)) {
+                    count += 1
+                }
+            }
+    }
+
+    private static func acknowledgementSignals(in text: String) -> Int {
+        let lower = text.lowercased()
+        let markers = [
+            "that makes sense",
+            "i hear you",
+            "i get that",
+            "thanks",
+            "appreciate",
+            "fair enough",
+            "i'm sorry",
+            "sorry"
+        ]
+        return markers.reduce(into: 0) { count, marker in
+            if lower.contains(marker) {
+                count += 1
+            }
+        }
+    }
+
+    private static func smoothedBaseline(current: Int, live: Int) -> Int {
+        Int(round((Double(current) * 0.65) + (Double(live) * 0.35)))
+    }
+
+    private static func boundedDelta(_ value: Int, magnitude: Int) -> Int {
+        max(-magnitude, min(magnitude, value))
+    }
+
+    private static func clamp(_ value: Int) -> Int {
+        max(1, min(10, value))
+    }
+}
+
 protocol IMConversationServicing {
     @MainActor
     func generateReply(
         setup: IMConversationSetup,
         turns: [IMConversationTurn],
         state: IMConversationState,
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext,
+        latestUserSignal: IMUserMessageSignal?
     ) async throws -> IMConversationReply
 }
 
@@ -705,7 +2906,9 @@ protocol IMConversationEvaluatorServicing {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext
     ) async throws -> IMConversationEvaluation
 }
 
@@ -825,6 +3028,129 @@ final class CoachingProfileStore: ObservableObject {
         Task {
             await BackendSyncManager.shared.syncProfile(profile, accountID: accountID, providerRawValue: providerRawValue)
         }
+    }
+}
+
+@MainActor
+final class IMRelationshipStore: ObservableObject {
+    static let shared = IMRelationshipStore()
+
+    @Published private var profiles: [String: IMRelationshipProfile]
+
+    private let accountKey = "NoumAccountID"
+    private let providerKey = "NoumAccountProvider"
+
+    private init() {
+        profiles = Self.loadProfiles(forKey: Self.storageKey(for: KeychainHelper.load(key: "NoumAccountID")))
+    }
+
+    func reloadForCurrentAccount() {
+        profiles = Self.loadProfiles(forKey: Self.storageKey(for: currentAccountID))
+    }
+
+    func endSession() {
+        profiles = [:]
+    }
+
+    func profile(for scenario: IMConversationScenario) -> IMRelationshipProfile {
+        let stored = profiles[scenario.rawValue] ?? IMRelationshipProfile.initial(for: scenario)
+        return decayedProfile(from: stored)
+    }
+
+    func startingState(for scenario: IMConversationScenario) -> IMConversationState {
+        profile(for: scenario).startingState()
+    }
+
+    func applySessionOutcome(
+        scenario: IMConversationScenario,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState,
+        evaluation: IMConversationEvaluation
+    ) -> IMRelationshipProfile {
+        let updated = IMRelationshipHeuristics.updatedProfile(
+            from: profile(for: scenario),
+            turns: turns,
+            finalState: finalState,
+            evaluation: evaluation
+        )
+        profiles[scenario.rawValue] = updated
+        persist()
+        syncIfPossible()
+        return updated
+    }
+
+    func replaceFromRemote(_ remoteProfiles: [IMRelationshipProfile]) {
+        profiles = Dictionary(uniqueKeysWithValues: remoteProfiles.map { ($0.scenario.rawValue, $0) })
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(Array(profiles.values)) {
+            UserDefaults.standard.set(data, forKey: Self.storageKey(for: currentAccountID))
+        }
+    }
+
+    private var currentAccountID: String? {
+        KeychainHelper.load(key: accountKey)
+    }
+
+    private var currentProviderRawValue: String? {
+        KeychainHelper.load(key: providerKey)
+    }
+
+    private func syncIfPossible() {
+        guard currentAccountID != nil, currentProviderRawValue != nil else { return }
+    }
+
+    private func decayedProfile(from profile: IMRelationshipProfile) -> IMRelationshipProfile {
+        guard let lastInteractionDate = profile.lastInteractionDate else { return profile }
+        let daysElapsed = Calendar.current.dateComponents([.day], from: lastInteractionDate, to: Date()).day ?? 0
+        guard daysElapsed > 3 else { return profile }
+
+        let decaySteps = min(3, daysElapsed / 7)
+        guard decaySteps > 0 else { return profile }
+
+        return IMRelationshipProfile(
+            scenario: profile.scenario,
+            sessionCount: profile.sessionCount,
+            trustBaseline: max(4, profile.trustBaseline - decaySteps),
+            engagementBaseline: max(4, profile.engagementBaseline - decaySteps),
+            tensionBaseline: min(7, profile.tensionBaseline + (profile.scenario == .difficultConversation ? 1 : 0)),
+            warmthScore: max(4, profile.warmthScore - decaySteps),
+            reliabilityScore: max(4, profile.reliabilityScore - decaySteps),
+            opennessScore: max(4, profile.opennessScore - decaySteps),
+            reciprocityScore: max(4, profile.reciprocityScore - decaySteps),
+            frictionScore: min(8, profile.frictionScore + (daysElapsed >= 21 ? 1 : 0)),
+            ruptureScore: max(2, profile.ruptureScore - (daysElapsed >= 28 ? 1 : 0)),
+            repairMomentum: max(3, profile.repairMomentum - decaySteps),
+            inconsistencyScore: min(8, profile.inconsistencyScore + (daysElapsed >= 21 ? 1 : 0)),
+            activeMilestone: profile.activeMilestone,
+            milestoneHistory: profile.milestoneHistory,
+            rememberedTopics: profile.rememberedTopics,
+            callbackCue: profile.callbackCue,
+            activeArcID: profile.activeArcID,
+            activeArcStage: profile.activeArcStage,
+            arcHistory: profile.arcHistory,
+            continuitySummary: "\(profile.scenario.personaName) remembers the dynamic, but some ease has cooled with time, so you need to re-earn flow through relevance and steadiness. Old tension may soften slowly, but inconsistency is still noticed.",
+            lastOutcomeTitle: profile.lastOutcomeTitle,
+            lastOutcomeSummary: profile.lastOutcomeSummary,
+            lastInteractionDate: profile.lastInteractionDate
+        )
+    }
+
+    private static func storageKey(for accountID: String?) -> String {
+        if let accountID, !accountID.isEmpty {
+            return "imRelationshipProfiles.\(accountID)"
+        }
+        return "imRelationshipProfiles.guest"
+    }
+
+    private static func loadProfiles(forKey key: String) -> [String: IMRelationshipProfile] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([IMRelationshipProfile].self, from: data) else {
+            return [:]
+        }
+        return Dictionary(uniqueKeysWithValues: decoded.map { ($0.scenario.rawValue, $0) })
     }
 }
 
@@ -2990,7 +5316,10 @@ struct IMConversationService: IMConversationServicing {
         setup: IMConversationSetup,
         turns: [IMConversationTurn],
         state: IMConversationState,
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext,
+        latestUserSignal: IMUserMessageSignal?
     ) async throws -> IMConversationReply {
         guard IMModeAvailability.isAvailable else {
             throw IMModeServiceError.unavailable
@@ -3003,7 +5332,10 @@ struct IMConversationService: IMConversationServicing {
                 setup: setup,
                 turns: turns,
                 state: state,
-                profile: profile
+                profile: profile,
+                relationship: relationship,
+                context: context,
+                latestUserSignal: latestUserSignal
             ) {
                 return backendReply
             }
@@ -3014,7 +5346,15 @@ struct IMConversationService: IMConversationServicing {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let prompt = prompt(for: setup, turns: turns, state: state, profile: profile)
+        let prompt = prompt(
+            for: setup,
+            turns: turns,
+            state: state,
+            profile: profile,
+            relationship: relationship,
+            context: context,
+            latestUserSignal: latestUserSignal
+        )
         switch provider {
         case .none:
             throw IMModeServiceError.unavailable
@@ -3050,7 +5390,7 @@ struct IMConversationService: IMConversationServicing {
             }
 
             let jsonData = try extractJSONData(from: data, provider: provider)
-            let decoded = try JSONDecoder().decode(IMConversationReply.self, from: jsonData)
+            let decoded = try decodeIMConversationReply(from: jsonData)
             return IMConversationReply(
                 message: decoded.message.truncatedToWordLimit(30),
                 shouldWrapUp: decoded.shouldWrapUp,
@@ -3066,7 +5406,10 @@ struct IMConversationService: IMConversationServicing {
                 setup: setup,
                 turns: turns,
                 state: state,
-                profile: profile
+                profile: profile,
+                relationship: relationship,
+                context: context,
+                latestUserSignal: latestUserSignal
             ) {
                 return backendReply
             }
@@ -3078,14 +5421,19 @@ struct IMConversationService: IMConversationServicing {
         setup: IMConversationSetup,
         turns: [IMConversationTurn],
         state: IMConversationState,
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext,
+        latestUserSignal: IMUserMessageSignal?
     ) async throws -> IMConversationReply? {
         guard var request = backendRequest(path: "/v1/im/reply") else { return nil }
         let body = BackendIMConversationReplyRequest(
             setup: setup,
             turns: turns,
             state: state,
-            profile: profile
+            profile: profile,
+            relationship: relationship,
+            context: context
         )
         request.httpBody = try JSONEncoder().encode(body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -3119,6 +5467,9 @@ struct IMConversationService: IMConversationServicing {
         - ask or react naturally
         - one conversational move per message
         - keep pressure and realism appropriate to the scenario
+        - the opening message must feel like something a real person would actually send first in that exact context
+        - if context is relevant, use at most one concrete contextual cue in the opener
+        - if context would sound forced, ignore it and open naturally from relationship + scenario instead
         """
     }
 
@@ -3126,10 +5477,14 @@ struct IMConversationService: IMConversationServicing {
         for setup: IMConversationSetup,
         turns: [IMConversationTurn],
         state: IMConversationState,
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext,
+        latestUserSignal: IMUserMessageSignal?
     ) -> String {
         let userTurnCount = turns.filter { $0.speaker == .user }.count
         let lastUserMessage = turns.last(where: { $0.speaker == .user })?.text ?? "none yet"
+        let contextEnvelope = setup.scenario.relevantContextEnvelope(from: context, relationship: relationship)
         let conversationPhase: String
         switch userTurnCount {
         case 0...1:
@@ -3165,11 +5520,25 @@ struct IMConversationService: IMConversationServicing {
         Persona mood: \(setup.scenario.currentMood)
         Persona goal: \(setup.scenario.conversationGoal)
         Persona friction style: \(setup.scenario.frictionStyle)
+        Persona tolerance profile: \(setup.scenario.toleranceProfile.summary)
         User target tone: \(setup.targetTone.title)
         User tone goal: \(setup.targetTone.coachingPrompt)
         Speaker context: \(profile?.speakingContext.title ?? "unknown")
+        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
         Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
         Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
+        Personal goal reference: \(profile?.personalGoalReference ?? "none")
+        Communication north star: \(profile?.communicationNorthStar ?? "Help the user become a stronger communicator over time.")
+        In-conversation training focus: \(profile?.inConversationTrainingFocus ?? "Reward clear, human, well-calibrated communication that would strengthen a real relationship.")
+        Relationship memory: \(relationship?.promptSummary ?? "No prior relationship memory yet. Treat this as an early interaction and calibrate based on consistency, reciprocity, and relevance.")
+        Active milestone behavior guide: \(relationship?.milestoneBehaviorSummary ?? IMRelationshipMilestone.guarded.npcBehaviorGuidance)
+        Remembered relationship themes: \(relationship?.rememberedTopics.joined(separator: ", ") ?? "none yet")
+        Callback cue: \(relationship?.callbackCue ?? "No callback earned yet.")
+        Topic unlock guidance: \(relationship?.topicUnlockGuidance ?? setup.scenario.topicUnlockGuidance(for: .guarded))
+        Active relationship arc: \(relationship?.activeArcSummary ?? "No active multi-session arc yet.")
+        Arc guidance: \(relationship?.activeArcGuidance ?? "Let the relationship feel continuous if a thread has genuinely formed, but do not invent fake history.")
+        Latest user signal analysis: \(latestUserSignal?.summary ?? "No user message yet, so open based on scenario, relationship, and context.")
         Conversation phase: \(conversationPhase)
         User turn count: \(userTurnCount)
         Latest user message: \(lastUserMessage)
@@ -3178,8 +5547,32 @@ struct IMConversationService: IMConversationServicing {
         Current tension: \(state.normalizedTension)/10
         Current beat: \(state.beat)
         Escalation instruction: \(escalationInstruction)
+        Real-world context:
+        \(context.summaryLines.joined(separator: "\n"))
+        Scenario relevance layer:
+        \(contextEnvelope.relevantLines.joined(separator: "\n"))
+        Opening guidance: \(contextEnvelope.openingGuidance)
         Keep the conversation realistic and brief.
         React to what the user actually said. Do not sound generic.
+        Trust should rise from steadiness, specificity, reciprocity, and appropriate warmth, not from empty compliments.
+        If the user is charming but vague, keep the relationship only slightly improved at most.
+        If the latest user signal shows strong hostility or disengagement, reflect that realistically. Trust should drop, tension should rise, and the NPC may pull back or end the chat.
+        You are not a coach inside the chat, but your reactions should naturally train the user toward their communication goal.
+        Reward progress toward the communication north star with slightly more openness, warmth, or trust.
+        Penalize regressions in the user's biggest challenge in a realistic human way.
+        If remembered relationship themes exist, only call one back when it would sound like something this person would genuinely remember and mention.
+        If the relationship is fractured or recovering, callbacks should carry caution or unresolved tension instead of false warmth.
+        If an active relationship arc exists, let it subtly shape what matters in the exchange and what the NPC notices next.
+        If this is the first NPC message, initiate the conversation naturally from the scenario and context instead of waiting for the user.
+        Only use small talk if it would make the opening feel more human in this scenario. Never force news or weather if it would sound unnatural.
+        For the first NPC message, make an explicit choice:
+        - Option A: open with one natural contextual cue plus a human follow-up
+        - Option B: skip context entirely and open directly because that is more realistic here
+        The opener must not sound like a template, briefing, headline summary, or generic catch-all.
+        In social catch-up, a softer opener is usually acceptable if the relationship is warm enough.
+        In work update, get to the point quickly unless one brief contextual line sharpens relevance.
+        In difficult conversation, do not hide the issue behind small talk.
+        In networking, use context only if it creates rapport fast and leads into a specific question.
         If the conversation already feels naturally complete, set shouldWrapUp to true.
         Update the state based on how the user is handling the interaction.
 
@@ -3210,18 +5603,114 @@ struct IMConversationService: IMConversationServicing {
         case .openAI, .deepSeek:
             let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
             guard let content = completion.choices.first?.message.content,
-                  let contentData = content.data(using: .utf8) else {
+                  let contentData = normalizedJSONData(from: content) else {
                 throw AICoachError.invalidResponse
             }
             return contentData
         case .gemini:
             let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
             let content = completion.candidates.first?.content.parts.compactMap(\.text).joined()
-            guard let content, let contentData = content.data(using: .utf8) else {
+            guard let content, let contentData = normalizedJSONData(from: content) else {
                 throw AICoachError.invalidResponse
             }
             return contentData
         }
+    }
+
+    private func normalizedJSONData(from text: String) -> Data? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let data = trimmed.data(using: .utf8),
+           (try? JSONSerialization.jsonObject(with: data)) != nil {
+            return data
+        }
+
+        let unfenced = trimmed
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let data = unfenced.data(using: .utf8),
+           (try? JSONSerialization.jsonObject(with: data)) != nil {
+            return data
+        }
+
+        guard
+            let start = unfenced.firstIndex(of: "{"),
+            let end = unfenced.lastIndex(of: "}"),
+            start <= end
+        else {
+            return nil
+        }
+
+        let candidate = String(unfenced[start...end])
+        guard let data = candidate.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: data)) != nil else {
+            return nil
+        }
+        return data
+    }
+
+    private func decodeIMConversationReply(from data: Data) throws -> IMConversationReply {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AICoachError.invalidResponse
+        }
+
+        let message = (object["message"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !message.isEmpty else {
+            throw IMModeServiceError.replyGenerationFailed("Model response did not include a usable message.")
+        }
+
+        let shouldWrapUp = boolValue(from: object["shouldWrapUp"]) ?? false
+        let stateObject = object["updatedState"] as? [String: Any]
+        let starting = IMConversationState.starting
+        let updatedState = IMConversationState(
+            trust: intValue(from: stateObject?["trust"]) ?? starting.trust,
+            engagement: intValue(from: stateObject?["engagement"]) ?? starting.engagement,
+            tension: intValue(from: stateObject?["tension"]) ?? starting.tension,
+            beat: normalizedBeat(from: stateObject?["beat"]) ?? starting.beat
+        )
+
+        return IMConversationReply(
+            message: message,
+            shouldWrapUp: shouldWrapUp,
+            updatedState: updatedState
+        )
+    }
+
+    private func intValue(from value: Any?) -> Int? {
+        switch value {
+        case let int as Int:
+            return int
+        case let double as Double:
+            return Int(double.rounded())
+        case let string as String:
+            return Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        default:
+            return nil
+        }
+    }
+
+    private func boolValue(from value: Any?) -> Bool? {
+        switch value {
+        case let bool as Bool:
+            return bool
+        case let string as String:
+            let normalized = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "true" { return true }
+            if normalized == "false" { return false }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private func normalizedBeat(from value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func backendRequest(path: String) -> URLRequest? {
@@ -3268,7 +5757,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext
     ) async throws -> IMConversationEvaluation {
         guard IMModeAvailability.isAvailable else {
             throw IMModeServiceError.unavailable
@@ -3285,7 +5776,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 fillerCount: fillerCount,
                 duration: duration,
                 recentSessions: recentSessions,
-                profile: profile
+                profile: profile,
+                relationship: relationship,
+                context: context
             ) {
                 return backendEvaluation
             }
@@ -3304,7 +5797,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             fillerCount: fillerCount,
             duration: duration,
             recentSessions: recentSessions,
-            profile: profile
+            profile: profile,
+            relationship: relationship,
+            context: context
         )
 
         switch provider {
@@ -3352,7 +5847,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 fillerCount: fillerCount,
                 duration: duration,
                 recentSessions: recentSessions,
-                profile: profile
+                profile: profile,
+                relationship: relationship,
+                context: context
             ) {
                 return backendEvaluation
             }
@@ -3368,7 +5865,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext
     ) async throws -> IMConversationEvaluation? {
         guard var request = backendRequest(path: "/v1/im/evaluate") else { return nil }
         let body = BackendIMConversationEvaluationRequest(
@@ -3379,7 +5878,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             fillerCount: fillerCount,
             duration: duration,
             recentSessions: recentSessions,
-            profile: profile
+            profile: profile,
+            relationship: relationship,
+            context: context
         )
         request.httpBody = try JSONEncoder().encode(body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -3414,7 +5915,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        relationship: IMRelationshipProfile?,
+        context: IMSessionContext
     ) -> String {
         let pace = PracticeEvaluator.paceSnapshot(forTranscript: transcript, duration: duration)
         let identity = PracticeEvaluator.speakingIdentity(for: transcript, profile: profile)
@@ -3435,8 +5938,14 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         Final tension: \(finalState?.normalizedTension ?? 4)/10
         Final conversation beat: \(finalState?.beat ?? "Not captured")
         Speaker context: \(profile?.speakingContext.title ?? "unknown")
+        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
         Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
         Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
+        Personal goal reference: \(profile?.personalGoalReference ?? "none")
+        Communication north star: \(profile?.communicationNorthStar ?? "Help the user become a stronger communicator over time.")
+        In-conversation training focus: \(profile?.inConversationTrainingFocus ?? "Reward clear, human, well-calibrated communication that would strengthen a real relationship.")
+        Relationship baseline before this session: \(relationship?.promptSummary ?? "No stored relationship history.")
         Filler words: \(fillerCount)
         Duration seconds: \(Int(duration))
         Words per minute: \(pace.wordsPerMinute)
@@ -3445,6 +5954,8 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         Identity evidence: \(identity.evidence)
         Recent average fillers: \(String(format: "%.1f", recentAverageFillers))
         Recent average duration: \(Int(recentAverageDuration))
+        Real-world context:
+        \(context.summaryLines.joined(separator: "\n"))
 
         Full conversation:
         \(transcriptLog)
@@ -3459,6 +5970,9 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         - recovery after awkward or pressured moments
         - whether the user actually moved the conversation forward
         - whether trust/engagement improved or tension escalated appropriately
+        - whether any gain in trust feels earned through responsiveness, steadiness, and specificity rather than empty positivity
+        - whether the user got meaningfully closer to their communication north star
+        - whether the user handled their biggest challenge better than they usually do
         """
     }
 

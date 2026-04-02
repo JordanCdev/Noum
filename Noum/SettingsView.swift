@@ -226,6 +226,16 @@ struct SettingsView: View {
                         .padding(14)
                         .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
+                if !profile.whyNowReference.isEmpty || !profile.successVisionReference.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !profile.whyNowReference.isEmpty {
+                            compactTag(title: "Why now", value: profile.whyNowReference)
+                        }
+                        if !profile.successVisionReference.isEmpty {
+                            compactTag(title: "What success changes", value: profile.successVisionReference)
+                        }
+                    }
+                }
             } else {
                 Text("Complete your coaching profile so Noum can tailor drills and guidance to your goals.")
                     .font(.subheadline)

@@ -65,6 +65,45 @@ struct SummaryView: View {
         imConversationDetails?.setup.targetTone.title
     }
 
+    private var nextRelationshipChallenge: String? {
+        guard let relationship = imConversationDetails?.relationshipSnapshot else { return nil }
+        return relationship.nextSessionHook(profile: coachingProfileStore.profile)
+    }
+
+    private var communicationNorthStar: String? {
+        coachingProfileStore.profile?.communicationNorthStar
+    }
+
+    private var motivationSummary: String? {
+        coachingProfileStore.profile?.motivationalSummary
+    }
+
+    private var imSessionStreak: Int {
+        guard let scenario = imConversationDetails?.setup.scenario else { return 0 }
+        let imSessions = sessionStore.sessions
+            .filter { $0.imConversationDetails?.setup.scenario == scenario }
+            .sorted { $0.date > $1.date }
+
+        guard !imSessions.isEmpty else { return 0 }
+        var streak = 0
+        var currentDay: Date?
+        let calendar = Calendar.current
+
+        for session in imSessions {
+            if let day = currentDay {
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: day) else { break }
+                if calendar.isDate(session.date, inSameDayAs: day) {
+                    continue
+                }
+                guard calendar.isDate(session.date, inSameDayAs: previousDay) else { break }
+            }
+            currentDay = session.date
+            streak += 1
+        }
+
+        return streak
+    }
+
     private var scoreValue: Int {
         if let score { return score }
         if duration < 4 || transcriptWordCount < 4 { return 1 }
@@ -343,6 +382,158 @@ struct SummaryView: View {
                     Text(outcome.title)
                         .font(.subheadline.weight(.semibold))
                     Text(outcome.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let relationship = details.relationshipSnapshot {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("Relationship Memory")
+                    .font(.headline)
+
+                HStack(spacing: 10) {
+                    metricCard(title: "Milestone", value: relationship.activeMilestone.title, tint: .teal)
+                    metricCard(title: "Sessions", value: "\(relationship.sessionCount)", tint: .indigo)
+                }
+
+                HStack(spacing: 10) {
+                    metricCard(title: "Warmth", value: "\(relationship.warmthScore)/10", tint: .pink)
+                    metricCard(title: "Reliability", value: "\(relationship.reliabilityScore)/10", tint: .blue)
+                }
+
+                HStack(spacing: 10) {
+                    metricCard(title: "Openness", value: "\(relationship.opennessScore)/10", tint: .green)
+                    metricCard(title: "Reciprocity", value: "\(relationship.reciprocityScore)/10", tint: .orange)
+                }
+
+                HStack(spacing: 10) {
+                    metricCard(title: "Rupture", value: "\(relationship.ruptureScore)/10", tint: .red)
+                    metricCard(title: "Repair", value: "\(relationship.repairMomentum)/10", tint: .teal)
+                }
+
+                HStack(spacing: 10) {
+                    metricCard(title: "Consistency", value: "\(max(1, 11 - relationship.inconsistencyScore))/10", tint: .purple)
+                    metricCard(title: "Inconsistency", value: "\(relationship.inconsistencyScore)/10", tint: .orange)
+                }
+
+                if let daysText = relationship.daysSinceLastInteractionText {
+                    Text(daysText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(relationship.activeMilestone.description)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(relationship.continuitySummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if relationship.milestoneHistory.count > 1 {
+                    Text("Milestone path: \(relationship.milestoneHistory.map(\.title).joined(separator: " -> "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !relationship.rememberedTopics.isEmpty {
+                    Text("Carry-forward themes: \(relationship.rememberedTopics.joined(separator: " • "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let callbackCue = relationship.callbackCue, !callbackCue.isEmpty {
+                    Text("Callback cue: \(callbackCue)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let activeArcTitle = relationship.activeArcTitle,
+                   let activeArcStageLabel = relationship.activeArcStageLabel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Active Arc")
+                            .font(.subheadline.weight(.semibold))
+                        Text("\(activeArcTitle) • \(activeArcStageLabel)")
+                            .font(.subheadline.weight(.semibold))
+                        if let activeArcGuidance = relationship.activeArcGuidance {
+                            Text(activeArcGuidance)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: relationship.activeArcProgress)
+                            .tint(.purple)
+                    }
+                    .padding(12)
+                    .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+
+                if let communicationNorthStar {
+                    Text("North star: \(communicationNorthStar)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+
+                if let motivationSummary {
+                    Text(motivationSummary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let nextRelationshipChallenge {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Next Relationship Challenge")
+                            .font(.subheadline.weight(.semibold))
+                        Text(nextRelationshipChallenge)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Progress Loop")
+                        .font(.subheadline.weight(.semibold))
+
+                    HStack(spacing: 10) {
+                        metricCard(title: "Momentum", value: relationship.nextMilestoneProgressLabel, tint: .teal)
+                        metricCard(title: "IM Streak", value: "\(imSessionStreak) days", tint: .orange)
+                    }
+
+                    ProgressView(value: relationship.nextMilestoneProgress)
+                        .tint(.teal)
+
+                    Text(relationship.unlockTeaser)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+
+            if let context = details.contextSnapshot {
+                Divider()
+                    .padding(.vertical, 4)
+
+                Text("Live Context")
+                    .font(.headline)
+
+                HStack(spacing: 10) {
+                    metricCard(title: "Time", value: context.timeLabel, tint: .blue)
+                    metricCard(title: "Region", value: context.regionLabel ?? "Local", tint: .indigo)
+                }
+
+                if let weather = context.weatherSummary, !weather.isEmpty {
+                    Text(weather)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let events = context.majorEventsSummary, !events.isEmpty {
+                    Text(events)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

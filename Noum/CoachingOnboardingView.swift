@@ -36,6 +36,8 @@ struct CoachingOnboardingView: View {
     @State private var biggestChallenge: SpeakingChallenge = .fillerWords
     @State private var speakingStyleGoal: SpeakingStyleGoal = .authoritative
     @State private var coachingGoal: String = ""
+    @State private var whyNow: String = ""
+    @State private var successVision: String = ""
 
     private var isLastStep: Bool {
         step == .goal
@@ -43,7 +45,9 @@ struct CoachingOnboardingView: View {
 
     private var canAdvance: Bool {
         if step == .goal {
-            return coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+            return coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10 &&
+                whyNow.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8 &&
+                successVision.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
         }
         return true
     }
@@ -155,7 +159,15 @@ struct CoachingOnboardingView: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...5)
 
-            Text("Keep it concrete so Noum can coach toward something specific.")
+            TextField("Why does this matter right now?", text: $whyNow, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...4)
+
+            TextField("If this gets better, what changes for you?", text: $successVision, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...4)
+
+            Text("Keep it concrete so Noum can coach toward a real outcome, not just a vague improvement.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -201,7 +213,9 @@ struct CoachingOnboardingView: View {
                             desiredOutcome: speakingStyleGoal.recommendedOutcome,
                             speakingStyleGoal: speakingStyleGoal,
                             styleReference: "",
-                            coachingBrief: trimmedGoal
+                            coachingBrief: trimmedGoal,
+                            motivationWhyNow: whyNow.trimmingCharacters(in: .whitespacesAndNewlines),
+                            successVision: successVision.trimmingCharacters(in: .whitespacesAndNewlines)
                         )
                     )
                     dismiss()
@@ -260,6 +274,8 @@ struct CoachingOnboardingView: View {
         biggestChallenge = profile.biggestChallenge
         speakingStyleGoal = profile.speakingStyleGoal
         coachingGoal = profile.personalGoalReference
+        whyNow = profile.whyNowReference
+        successVision = profile.successVisionReference
     }
 }
 
