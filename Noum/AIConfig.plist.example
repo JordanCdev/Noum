@@ -50,5 +50,9 @@
     <string></string>
     <key>IM_CONTEXT_SOCIAL_PULSE</key>
     <string></string>
+    <key>DEVELOPER_ACCOUNT_IDS</key>
+    <array>
+        <string></string>
+    </array>
 </dict>
 </plist>

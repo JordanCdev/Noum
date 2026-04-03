@@ -1,29 +1,41 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-private enum OnboardingStep: Int, CaseIterable {
+private enum OnboardingStage: Int, CaseIterable {
     case context
     case challenge
     case style
     case goal
+    case whyNow
+    case successVision
 
     var title: String {
         switch self {
         case .context: return "Where do you want the most help?"
         case .challenge: return "What usually breaks first?"
         case .style: return "How should you come across?"
-        case .goal: return "What are you trying to achieve?"
+        case .goal: return "What do you want to get better at?"
+        case .whyNow: return "Why does this matter right now?"
+        case .successVision: return "If this improves, what changes?"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .context: return "Pick the main situation you want Noum to coach."
-        case .challenge: return "Choose the pattern that costs you the most."
-        case .style: return "Pick the voice you want practice to reinforce."
-        case .goal: return "One short answer is enough."
+        case .context: return "Pick the situation Noum should coach first."
+        case .challenge: return "Choose the pattern that hurts you most."
+        case .style: return "Pick the voice you want to reinforce."
+        case .goal: return "One clear answer is enough."
+        case .whyNow: return "Give Noum the current stakes."
+        case .successVision: return "Describe the payoff in real life."
         }
     }
+}
+
+private enum OnboardingScreen: Equatable {
+    case intro
+    case question(OnboardingStage)
+    case summary
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -31,298 +43,945 @@ struct CoachingOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
 
-    @State private var step: OnboardingStep = .context
+    @State private var screen: OnboardingScreen = .intro
     @State private var speakingContext: SpeakingContext = .work
     @State private var biggestChallenge: SpeakingChallenge = .fillerWords
     @State private var speakingStyleGoal: SpeakingStyleGoal = .authoritative
-    @State private var coachingGoal: String = ""
-    @State private var whyNow: String = ""
-    @State private var successVision: String = ""
+    @State private var coachingGoal = ""
+    @State private var whyNow = ""
+    @State private var successVision = ""
+    @State private var isSaving = false
+    @State private var processingMessageIndex = 0
+    @State private var processingRingProgress: CGFloat = 0
+    @State private var showWelcome = false
+    @State private var processingCircleScale: CGFloat = 1.0
+    @State private var isEditingExistingProfile = false
+    @State private var editorOverlayField: InputField? = nil
+    @State private var editorOverlayText = ""
+    @FocusState private var focusedField: InputField?
+    @FocusState private var overlayEditorFocused: Bool
+    @Namespace private var headerNamespace
 
-    private var isLastStep: Bool {
-        step == .goal
+    private let processingMessages = [
+        "Reading your answers...",
+        "Mapping your speaking style...",
+        "Tuning coaching to your goals...",
+        "Building your profile..."
+    ]
+
+    private enum InputField: Hashable {
+        case goal
+        case whyNow
+        case successVision
     }
 
-    private var canAdvance: Bool {
-        if step == .goal {
-            return coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10 &&
-                whyNow.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8 &&
-                successVision.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
+    private var currentStage: OnboardingStage? {
+        if case let .question(stage) = screen {
+            return stage
         }
-        return true
+        return nil
+    }
+
+    private var progressStep: Int {
+        switch screen {
+        case .intro: return 0
+        case let .question(stage): return stage.rawValue + 1
+        case .summary: return OnboardingStage.allCases.count
+        }
+    }
+
+    private var progressValue: Double {
+        Double(progressStep) / Double(OnboardingStage.allCases.count)
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.96, green: 0.93, blue: 0.88),
-                        Color.white,
-                        Color(red: 0.90, green: 0.95, blue: 0.99)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+            GeometryReader { geometry in
+                let size = geometry.size
 
-                ScrollView {
-                    VStack(spacing: 16) {
-                        progressHeader
-                        questionCard
+                ZStack {
+                    backgroundLayer
+
+                    VStack(spacing: 0) {
+                        topBar
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+
+                        Spacer(minLength: 6)
+
+                        switch screen {
+                        case .intro:
+                            introScreen(size: size)
+                                .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+                        case let .question(stage):
+                            questionScreen(stage: stage, size: size)
+                                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
+                        case .summary:
+                            summaryScreen(size: size)
+                                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                        }
+
+                        Spacer(minLength: 8)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 12)
-                    .padding(.bottom, 120)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Full-screen text editor overlay
+                    if let field = editorOverlayField {
+                        editorOverlay(field: field)
+                            .transition(.opacity)
+                    }
                 }
-                .scrollIndicators(.hidden)
-                .scrollDismissesKeyboard(.interactively)
             }
-            .safeAreaInset(edge: .bottom) {
-                navigationBar
-                    .padding(.horizontal, 18)
-                    .padding(.top, 12)
-                    .padding(.bottom, 18)
-                    .background(.ultraThinMaterial)
-            }
-            .toolbar(.hidden, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
         .onAppear(perform: loadExistingProfile)
     }
 
-    private var progressHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Coaching Profile")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+    private var backgroundLayer: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.97, green: 0.94, blue: 0.89),
+                    Color(red: 0.99, green: 0.98, blue: 0.96),
+                    Color(red: 0.93, green: 0.96, blue: 1.00)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            Text("A few quick answers, once.")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+            Circle()
+                .fill(Color(red: 0.20, green: 0.55, blue: 0.98).opacity(0.11))
+                .frame(width: 260, height: 260)
+                .blur(radius: 36)
+                .offset(x: 130, y: 230)
 
-            Text("Noum will use these to tailor drills, feedback, and reminders around what better communication actually changes for you.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            Circle()
+                .fill(Color(red: 1.00, green: 0.77, blue: 0.45).opacity(0.12))
+                .frame(width: 220, height: 220)
+                .blur(radius: 32)
+                .offset(x: -120, y: -220)
+        }
+    }
 
-            HStack(spacing: 8) {
-                ForEach(Array(OnboardingStep.allCases.enumerated()), id: \.offset) { index, _ in
-                    Capsule()
-                        .fill(index <= step.rawValue ? Color.blue : Color.white.opacity(0.65))
-                        .frame(height: 8)
+    private var topBar: some View {
+        HStack {
+            if screen == .intro {
+                Text("Settings")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.35, green: 0.32, blue: 0.27))
+            } else if screen != .summary {
+                Button {
+                    goBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color(red: 0.23, green: 0.24, blue: 0.28))
+                        .frame(width: 38, height: 38)
+                        .background(Color.white.opacity(0.78), in: Circle())
                 }
+                .buttonStyle(.plain)
             }
+
+            Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .frame(height: 40)
     }
 
-    private var questionCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(step.title)
-                .font(.title2.weight(.bold))
-                .fixedSize(horizontal: false, vertical: true)
+    private func introScreen(size: CGSize) -> some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
 
-            Text(step.subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            introHeroCard
+                .frame(height: min(size.height * 0.62, 450))
+                .padding(.horizontal, 20)
 
-            Group {
-                switch step {
-                case .context:
-                    selectionList(options: SpeakingContext.allCases, selectedID: speakingContext.id) { speakingContext = $0 }
-                case .challenge:
-                    selectionList(options: SpeakingChallenge.allCases, selectedID: biggestChallenge.id) { biggestChallenge = $0 }
-                case .style:
-                    selectionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal.id) { speakingStyleGoal = $0 }
-                case .goal:
-                    goalComposer
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var introHeroCard: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Coaching Profile")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.white.opacity(0.74))
+                        .textCase(.uppercase)
+
+                    Text("Build a coaching profile that actually changes how you sound.")
+                        .font(.system(size: 31, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Noum will shape drills, prompts, and reminders around what matters in real conversations.")
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.84))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Spacer(minLength: 12)
+
+                progressRing(step: 1, total: OnboardingStage.allCases.count, compact: false)
+                    .matchedGeometryEffect(id: "progressRing", in: headerNamespace)
             }
-            .id(step.rawValue)
-            .transition(.opacity.combined(with: .move(edge: .trailing)))
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(22)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .animation(.easeInOut(duration: 0.22), value: step)
-    }
 
-    private var goalComposer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(biggestChallenge.goalPrompt)
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
 
-            TextField(goalPlaceholder, text: $coachingGoal, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(3...5)
+            VStack(alignment: .leading, spacing: 24) {
+                progressPills(activeCount: 0)
 
-            TextField("Why does this matter right now?", text: $whyNow, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(2...4)
-
-            TextField("If this gets better, what changes for you?", text: $successVision, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(2...4)
-
-            Text("Keep it concrete so Noum can coach toward a real outcome, not just a vague improvement.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            northStarPreview
-        }
-    }
-
-    private var northStarPreview: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("What Noum will optimize for")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Text(goalPreviewHeadline)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(goalPreviewDetail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private var goalPreviewHeadline: String {
-        let goal = coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines)
-        if goal.isEmpty {
-            return "Help me sound \(speakingStyleGoal.title.lowercased()) in \(speakingContext.title.lowercased())."
-        }
-        return goal
-    }
-
-    private var goalPreviewDetail: String {
-        let why = whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
-        let success = successVision.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if !why.isEmpty && !success.isEmpty {
-            return "Because \(why), and better communication would help \(success)."
-        }
-        if !why.isEmpty {
-            return "Because \(why)."
-        }
-        if !success.isEmpty {
-            return "Success would look like \(success)."
-        }
-        return "Noum will bias recommendations toward the drills most likely to move this forward."
-    }
-
-    private var goalPlaceholder: String {
-        switch speakingContext {
-        case .work:
-            return "Example: lead updates in meetings without second-guessing every sentence"
-        case .interviews:
-            return "Example: answer interview questions clearly without losing my structure"
-        case .presentations:
-            return "Example: sound more confident when opening a presentation"
-        case .social:
-            return "Example: speak more naturally without rushing or overexplaining"
-        }
-    }
-
-    private var navigationBar: some View {
-        HStack(spacing: 12) {
-            if step.rawValue > 0 {
-                Button("Back") {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        step = OnboardingStep(rawValue: step.rawValue - 1) ?? .context
+                Button {
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) {
+                        screen = .question(.context)
                     }
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Color.white.opacity(0.82), in: Capsule())
-                .foregroundStyle(.primary)
-            }
+                } label: {
+                    HStack(spacing: 12) {
+                        Text("Let's get started")
+                            .font(.headline.weight(.semibold))
 
-            Button(isLastStep ? "Save Profile" : "Continue") {
-                if isLastStep {
-                    let trimmedGoal = coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines)
-                    coachingProfileStore.save(
-                        CoachingProfile(
-                            speakingContext: speakingContext,
-                            primaryGoal: biggestChallenge.recommendedPriority,
-                            confidenceLevel: .rebuilding,
-                            biggestChallenge: biggestChallenge,
-                            desiredOutcome: speakingStyleGoal.recommendedOutcome,
-                            speakingStyleGoal: speakingStyleGoal,
-                            styleReference: "",
-                            coachingBrief: trimmedGoal,
-                            motivationWhyNow: whyNow.trimmingCharacters(in: .whitespacesAndNewlines),
-                            successVision: successVision.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
+                        Spacer()
+
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.16))
+                                .frame(width: 44, height: 44)
+
+                            Image(systemName: "arrow.right")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.white)
+                                .symbolEffect(.bounce, value: progressStep)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.14, green: 0.51, blue: 0.98),
+                                Color(red: 0.26, green: 0.63, blue: 1.00)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule(style: .continuous)
                     )
-                    dismiss()
-                } else {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        step = OnboardingStep(rawValue: step.rawValue + 1) ?? .goal
-                    }
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("coaching.start")
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(canAdvance ? Color.blue : Color.gray.opacity(0.35), in: Capsule())
-            .foregroundStyle(.white)
-            .disabled(!canAdvance)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(heroCardBackground.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
+    }
+
+    private func questionScreen(stage: OnboardingStage, size: CGSize) -> some View {
+        VStack(spacing: 12) {
+            compactHeader
+                .padding(.horizontal, 20)
+
+            questionCard(stage: stage)
+                .padding(.horizontal, 20)
         }
     }
 
-    private func selectionList<Option: Identifiable & CaseIterable & Hashable>(
+    private var compactHeader: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Building your coaching profile")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                Text("\(progressStep) of \(OnboardingStage.allCases.count) answered")
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.72))
+
+                progressPills(activeCount: progressStep)
+            }
+
+            Spacer(minLength: 12)
+
+            progressRing(step: progressStep, total: OnboardingStage.allCases.count, compact: true)
+                .matchedGeometryEffect(id: "progressRing", in: headerNamespace)
+        }
+        .frame(height: 82)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(heroCardBackground.matchedGeometryEffect(id: "heroCard", in: headerNamespace))
+    }
+
+    private func questionCard(stage: OnboardingStage) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(stage.title)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(stage.subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(Color(red: 0.41, green: 0.45, blue: 0.52))
+            }
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    switch stage {
+                    case .context:
+                        optionList(options: SpeakingContext.allCases, selectedID: speakingContext.id) { speakingContext = $0 }
+                    case .challenge:
+                        optionList(options: SpeakingChallenge.allCases, selectedID: biggestChallenge.id) { biggestChallenge = $0 }
+                    case .style:
+                        optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal.id) { speakingStyleGoal = $0 }
+                    case .goal:
+                        editorCard(
+                            prompt: "Example: lead updates in meetings without second-guessing every sentence.",
+                            text: $coachingGoal,
+                            field: .goal,
+                            identifier: "coaching.goal"
+                        )
+                    case .whyNow:
+                        editorCard(
+                            prompt: "Example: I need to sound sharper in high-visibility conversations.",
+                            text: $whyNow,
+                            field: .whyNow,
+                            identifier: "coaching.whyNow"
+                        )
+                    case .successVision:
+                        editorCard(
+                            prompt: "Example: I will feel calmer, clearer, and more credible at work.",
+                            text: $successVision,
+                            field: .successVision,
+                            identifier: "coaching.successVision"
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .scrollIndicators(.hidden)
+
+            HStack {
+                if let helper = helperText(for: stage) {
+                    Text(helper)
+                        .font(.caption)
+                        .foregroundStyle(Color(red: 0.48, green: 0.51, blue: 0.57))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Button {
+                    advance(from: stage)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(stage == .successVision ? "Finish" : "Next")
+                            .font(.subheadline.weight(.semibold))
+
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.16))
+                                .frame(width: 34, height: 34)
+
+                            Image(systemName: "arrow.right")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.white)
+                                .symbolEffect(.bounce, value: progressStep)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                    .background(
+                        LinearGradient(
+                            colors: canAdvance(from: stage)
+                                ? [
+                                    Color(red: 0.14, green: 0.51, blue: 0.98),
+                                    Color(red: 0.26, green: 0.63, blue: 1.00)
+                                ]
+                                : [
+                                    Color(red: 0.70, green: 0.73, blue: 0.78),
+                                    Color(red: 0.65, green: 0.68, blue: 0.73)
+                                ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule(style: .continuous)
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+                    .shadow(color: Color(red: 0.18, green: 0.53, blue: 0.98).opacity(canAdvance(from: stage) ? 0.18 : 0), radius: 14, y: 8)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAdvance(from: stage))
+                .accessibilityIdentifier("coaching.continue")
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(Color.white.opacity(0.95))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .stroke(Color.white.opacity(0.90), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.08), radius: 18, y: 10)
+    }
+
+    private func summaryScreen(size: CGSize) -> some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            if showWelcome {
+                // Welcome / completion state
+                VStack(spacing: 24) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.14, green: 0.51, blue: 0.98),
+                                        Color(red: 0.33, green: 0.70, blue: 1.00)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 120, height: 120)
+                            .shadow(color: Color(red: 0.14, green: 0.51, blue: 0.98).opacity(0.3), radius: 30, y: 10)
+
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 44, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+
+                    VStack(spacing: 8) {
+                        Text(isEditingExistingProfile ? "Profile updated!" : "Welcome to Noum!")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+
+                        Text(isEditingExistingProfile
+                            ? "Your coaching is now recalibrated."
+                            : "Your coaching journey starts now.")
+                            .font(.headline.weight(.medium))
+                            .foregroundStyle(Color(red: 0.48, green: 0.51, blue: 0.57))
+                    }
+                    .transition(.opacity.combined(with: .offset(y: 16)))
+                }
+                .padding(.horizontal, 40)
+            } else {
+                // Processing state
+                VStack(spacing: 36) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color(red: 0.88, green: 0.91, blue: 0.96), lineWidth: 8)
+                            .frame(width: 100, height: 100)
+
+                        Circle()
+                            .trim(from: 0, to: processingRingProgress)
+                            .stroke(
+                                AngularGradient(
+                                    colors: [
+                                        Color(red: 1.00, green: 0.79, blue: 0.42),
+                                        Color(red: 0.14, green: 0.51, blue: 0.98),
+                                        Color(red: 0.33, green: 0.70, blue: 1.00)
+                                    ],
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                            )
+                            .frame(width: 100, height: 100)
+                            .rotationEffect(.degrees(-90))
+
+                        Image(systemName: "waveform")
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundStyle(Color(red: 0.14, green: 0.51, blue: 0.98))
+                            .symbolEffect(.variableColor.iterative, options: .repeating, value: processingMessageIndex)
+                    }
+                    .scaleEffect(processingCircleScale)
+
+                    Text(processingMessages[processingMessageIndex])
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color(red: 0.41, green: 0.45, blue: 0.52))
+                        .multilineTextAlignment(.center)
+                        .id(processingMessageIndex)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 10)),
+                            removal: .opacity.combined(with: .offset(y: -10))
+                        ))
+                }
+                .padding(.horizontal, 40)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            startProcessingAnimation()
+        }
+    }
+
+    private func startProcessingAnimation() {
+        let messageCount = processingMessages.count
+        let processingDuration: Double = 12.0
+        let intervalPerMessage = processingDuration / Double(messageCount)
+
+        withAnimation(.linear(duration: processingDuration)) {
+            processingRingProgress = 1.0
+        }
+
+        for i in 1..<messageCount {
+            let delay = intervalPerMessage * Double(i)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    processingMessageIndex = i
+                }
+            }
+        }
+
+        // Transition to welcome
+        DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration) {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                showWelcome = true
+            }
+        }
+
+        // Save and dismiss after welcome is shown
+        DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration + 2.5) {
+            saveProfile()
+            dismiss()
+        }
+    }
+
+    private func optionList<Option: Identifiable & CaseIterable & Hashable>(
         options: Option.AllCases,
         selectedID: Option.ID,
         onSelect: @escaping (Option) -> Void
     ) -> some View where Option.AllCases.Element == Option, Option: CustomStringConvertible {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             ForEach(Array(options), id: \.id) { option in
+                let isSelected = option.id == selectedID
+                let detail = optionDetail(for: option)
+
                 Button {
-                    onSelect(option)
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.90)) {
+                        onSelect(option)
+                    }
                 } label: {
                     HStack(spacing: 14) {
-                        Text(option.description)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(option.description)
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(Color(red: 0.14, green: 0.16, blue: 0.21))
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if isSelected, !detail.isEmpty {
+                                Text(detail)
+                                    .font(.caption)
+                                    .foregroundStyle(Color(red: 0.43, green: 0.46, blue: 0.52))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .transition(.opacity)
+                            }
+                        }
 
                         Spacer(minLength: 12)
 
-                        Image(systemName: option.id == selectedID ? "checkmark.circle.fill" : "circle")
-                            .font(.title3)
-                            .foregroundStyle(option.id == selectedID ? .blue : .secondary)
+                        ZStack {
+                            Circle()
+                                .fill(isSelected ? Color(red: 0.14, green: 0.51, blue: 0.98) : Color.clear)
+                                .frame(width: 28, height: 28)
+                            Circle()
+                                .stroke(isSelected ? Color(red: 0.14, green: 0.51, blue: 0.98) : Color(red: 0.80, green: 0.83, blue: 0.88), lineWidth: 2)
+                                .frame(width: 28, height: 28)
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 54)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        Color.blue.opacity(option.id == selectedID ? 0.10 : 0.04),
-                        in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(isSelected ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00))
                     )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(
+                                isSelected ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                    )
+                    .shadow(color: isSelected ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
                 }
                 .buttonStyle(.plain)
             }
         }
     }
 
+    private func editorCard(
+        prompt: String,
+        text: Binding<String>,
+        field: InputField,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Your answer")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color(red: 0.38, green: 0.41, blue: 0.48))
+                    .textCase(.uppercase)
+
+                Spacer()
+
+                Text("\(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).count)/200")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.64))
+            }
+
+            Button {
+                editorOverlayText = text.wrappedValue
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                    editorOverlayField = field
+                }
+            } label: {
+                ZStack(alignment: .topLeading) {
+                    if text.wrappedValue.isEmpty {
+                        Text(prompt)
+                            .font(.subheadline)
+                            .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.65))
+                    } else {
+                        Text(text.wrappedValue)
+                            .font(.body)
+                            .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                    }
+                }
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                .background(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color(red: 0.97, green: 0.98, blue: 1.00))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color(red: 0.88, green: 0.91, blue: 0.95), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(identifier)
+        }
+    }
+
+    private func editorOverlay(field: InputField) -> some View {
+        let title: String
+        let prompt: String
+        let binding: Binding<String>
+
+        switch field {
+        case .goal:
+            title = OnboardingStage.goal.title
+            prompt = "Example: lead updates in meetings without second-guessing every sentence."
+            binding = $coachingGoal
+        case .whyNow:
+            title = OnboardingStage.whyNow.title
+            prompt = "Example: I need to sound sharper in high-visibility conversations."
+            binding = $whyNow
+        case .successVision:
+            title = OnboardingStage.successVision.title
+            prompt = "Example: I will feel calmer, clearer, and more credible at work."
+            binding = $successVision
+        }
+
+        let limitedOverlay = limitedBinding($editorOverlayText, maxLength: 200)
+
+        return ZStack {
+            // Dimmed background
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    commitOverlayText(to: binding)
+                }
+
+            VStack(spacing: 0) {
+                // Top bar
+                HStack {
+                    Text(title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                        .lineLimit(2)
+
+                    Spacer()
+
+                    Button {
+                        commitOverlayText(to: binding)
+                    } label: {
+                        Text("Done")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color(red: 0.14, green: 0.51, blue: 0.98))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+                // Character count
+                HStack {
+                    Spacer()
+                    Text("\(editorOverlayText.trimmingCharacters(in: .whitespacesAndNewlines).count)/200")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.64))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+
+                // Text editor
+                ZStack(alignment: .topLeading) {
+                    if editorOverlayText.isEmpty {
+                        Text(prompt)
+                            .font(.body)
+                            .foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.65))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 16)
+                    }
+
+                    TextEditor(text: limitedOverlay)
+                        .focused($overlayEditorFocused)
+                        .font(.body)
+                        .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: Color.black.opacity(0.15), radius: 30, y: 15)
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 60)
+            .padding(.bottom, 8)
+        }
+        .onAppear {
+            overlayEditorFocused = true
+        }
+    }
+
+    private func commitOverlayText(to binding: Binding<String>) {
+        binding.wrappedValue = editorOverlayText
+        overlayEditorFocused = false
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            editorOverlayField = nil
+        }
+    }
+
+    private var heroCardBackground: some View {
+        RoundedRectangle(cornerRadius: 32, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.27, green: 0.25, blue: 0.23),
+                        Color(red: 0.36, green: 0.34, blue: 0.31)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 20, y: 12)
+    }
+
+    private func progressRing(step: Int, total: Int, compact: Bool) -> some View {
+        let size: CGFloat = compact ? 48 : 72
+
+        return ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.16), lineWidth: compact ? 6 : 7)
+            Circle()
+                .trim(from: 0, to: max(0.06, Double(step) / Double(total)))
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            Color(red: 1.00, green: 0.79, blue: 0.42),
+                            Color(red: 0.33, green: 0.70, blue: 1.00)
+                        ],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: compact ? 6 : 7, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            Text("\(step == 0 ? 1 : step)")
+                .font(.system(size: compact ? 16 : 20, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+    }
+
+    private func progressPills(activeCount: Int) -> some View {
+        HStack(spacing: 8) {
+            ForEach(0..<OnboardingStage.allCases.count, id: \.self) { index in
+                Capsule(style: .continuous)
+                    .fill(index < activeCount ? Color(red: 0.14, green: 0.51, blue: 0.98) : Color.white.opacity(0.22))
+                    .frame(height: 6)
+            }
+        }
+    }
+
+    private func helperText(for stage: OnboardingStage) -> String? {
+        switch stage {
+        case .goal:
+            return "Specific beats impressive."
+        case .whyNow:
+            return "Tell Noum what makes this urgent."
+        case .successVision:
+            return "Keep it concrete and personal."
+        default:
+            return nil
+        }
+    }
+
+    private func canAdvance(from stage: OnboardingStage) -> Bool {
+        switch stage {
+        case .goal:
+            return coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+        case .whyNow:
+            return whyNow.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
+        case .successVision:
+            return successVision.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
+        default:
+            return true
+        }
+    }
+
+    private func advance(from stage: OnboardingStage) {
+        guard canAdvance(from: stage) else { return }
+        focusedField = nil
+
+        if let next = OnboardingStage(rawValue: stage.rawValue + 1) {
+            withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+                screen = .question(next)
+            }
+        } else {
+            withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+                screen = .summary
+            }
+        }
+    }
+
+    private func goBack() {
+        focusedField = nil
+
+        switch screen {
+        case .intro:
+            dismiss()
+        case let .question(stage):
+            if let previous = OnboardingStage(rawValue: stage.rawValue - 1) {
+                withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+                    screen = .question(previous)
+                }
+            } else {
+                withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+                    screen = .intro
+                }
+            }
+        case .summary:
+            break
+        }
+    }
+
+    private func saveProfile() {
+        guard !isSaving else { return }
+        isSaving = true
+
+        coachingProfileStore.save(
+            CoachingProfile(
+                speakingContext: speakingContext,
+                primaryGoal: biggestChallenge.recommendedPriority,
+                confidenceLevel: .rebuilding,
+                biggestChallenge: biggestChallenge,
+                desiredOutcome: speakingStyleGoal.recommendedOutcome,
+                speakingStyleGoal: speakingStyleGoal,
+                styleReference: "",
+                coachingBrief: coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines),
+                motivationWhyNow: whyNow.trimmingCharacters(in: .whitespacesAndNewlines),
+                successVision: successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        )
+    }
+
+    private func limitedBinding(_ binding: Binding<String>, maxLength: Int) -> Binding<String> {
+        Binding(
+            get: { binding.wrappedValue },
+            set: { newValue in
+                binding.wrappedValue = String(newValue.prefix(maxLength))
+            }
+        )
+    }
+
     private func loadExistingProfile() {
         guard let profile = coachingProfileStore.profile else { return }
+        isEditingExistingProfile = true
         speakingContext = profile.speakingContext
         biggestChallenge = profile.biggestChallenge
         speakingStyleGoal = profile.speakingStyleGoal
-        coachingGoal = profile.personalGoalReference
-        whyNow = profile.whyNowReference
-        successVision = profile.successVisionReference
+        coachingGoal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+        whyNow = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+        successVision = profile.successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func optionDetail<Option: Identifiable & Hashable>(for option: Option) -> String where Option: CustomStringConvertible {
+        switch option {
+        case let context as SpeakingContext:
+            switch context {
+            case .work: return "Meetings, updates, and everyday work conversations."
+            case .interviews: return "Faster answers under pressure."
+            case .presentations: return "Stronger openings and clearer delivery."
+            case .social: return "More natural confidence in regular conversation."
+            }
+        case let challenge as SpeakingChallenge:
+            switch challenge {
+            case .fillerWords: return "Sound more deliberate instead of hesitant."
+            case .rambling: return "Keep your structure instead of drifting."
+            case .freezing: return "Recover faster when put on the spot."
+            case .rushing: return "Slow down enough to stay composed."
+            }
+        case let style as SpeakingStyleGoal:
+            let desc = style.coachingDescription
+            return desc.prefix(1).uppercased() + desc.dropFirst() + "."
+        default:
+            return ""
+        }
     }
 }
 

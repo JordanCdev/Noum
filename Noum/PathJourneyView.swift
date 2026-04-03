@@ -13,9 +13,16 @@ struct PathJourneyView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
     @State private var selectedAchievementID: String?
+    @State private var debugDayOverride: Double = -1
+
+    private var isDebugActive: Bool { debugDayOverride >= 0 }
 
     private var snapshot: PracticeJourneySnapshot {
-        PracticeJourneySnapshot.make(from: sessionStore.sessions)
+        let base = PracticeJourneySnapshot.make(from: sessionStore.sessions)
+        if isDebugActive {
+            return base.withSimulatedDays(Int(debugDayOverride))
+        }
+        return base
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
@@ -39,75 +46,79 @@ struct PathJourneyView: View {
                 )
                 .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Your path")
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                        Text(snapshot.summaryLine)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-
+                ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 12) {
-                        PathJourneyArtwork(
-                            snapshot: snapshot,
-                            compact: false,
-                            sceneResolver: { date in
-                                daylightModel.sceneState(for: date)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Your path")
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                            Text(snapshot.summaryLine)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            PathJourneyArtwork(
+                                snapshot: snapshot,
+                                compact: false,
+                                sceneResolver: { date in
+                                    daylightModel.sceneState(for: date)
+                                }
+                            )
+                            .frame(height: min(270, geometry.size.height * 0.37))
+
+                            HStack(spacing: 10) {
+                                journeyPill(title: "Revealed", value: snapshot.progressLabel, accent: .green)
+                                journeyPill(title: "Current streak", value: snapshot.streakLabel, accent: .blue)
                             }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("What this means")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                Text(snapshot.explanationLine)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(2)
+                                Text(snapshot.consequenceLine)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                Text(snapshot.nextMilestoneLabel)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            activeChallengeCard
+                            achievementsCard
+                        }
+                        .padding(16)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.96),
+                                    Color(red: 0.93, green: 0.97, blue: 0.94).opacity(0.88)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 30, style: .continuous)
                         )
-                        .frame(height: min(270, geometry.size.height * 0.37))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                        )
 
-                        HStack(spacing: 10) {
-                            journeyPill(title: "Revealed", value: snapshot.progressLabel, accent: .green)
-                            journeyPill(title: "Current streak", value: snapshot.streakLabel, accent: .blue)
+                        // MARK: - Debug day slider (developer only)
+                        if AuthManager.shared.isDeveloper {
+                            debugSliderCard
                         }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("What this means")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-                            Text(snapshot.explanationLine)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(2)
-                            Text(snapshot.consequenceLine)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                            Text(snapshot.nextMilestoneLabel)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-
-                        activeChallengeCard
-                        achievementsCard
                     }
-                    .padding(16)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.96),
-                                Color(red: 0.93, green: 0.97, blue: 0.94).opacity(0.88)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 30, style: .continuous)
-                            .stroke(Color.white.opacity(0.72), lineWidth: 1)
-                    )
-
-                    Spacer(minLength: 0)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                .padding(.bottom, 16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .navigationTitle("path")
@@ -115,6 +126,82 @@ struct PathJourneyView: View {
         .task {
             daylightModel.activate()
         }
+    }
+
+    private var debugSliderCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Debug: Simulate Days")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                if isDebugActive {
+                    Button("Reset") {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            debugDayOverride = -1
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Text("Day \(isDebugActive ? Int(debugDayOverride) : snapshot.practicedDays)")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .frame(width: 80, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(snapshot.progressLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                    Text(String(format: "%.1f%% raw", snapshot.revealProgress * 100))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Slider(
+                value: Binding(
+                    get: { isDebugActive ? debugDayOverride : 0 },
+                    set: { debugDayOverride = $0 }
+                ),
+                in: 0...21,
+                step: 1
+            )
+            .tint(.orange)
+
+            HStack {
+                ForEach([0, 1, 3, 7, 14, 21], id: \.self) { day in
+                    Button("\(day)") {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            debugDayOverride = Double(day)
+                        }
+                    }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Int(debugDayOverride) == day ? .white : .orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Int(debugDayOverride) == day
+                            ? AnyShapeStyle(Color.orange)
+                            : AnyShapeStyle(Color.orange.opacity(0.12)),
+                        in: Capsule()
+                    )
+                }
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(
+            Color.orange.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+        )
     }
 
     private func journeyPill(title: String, value: String, accent: Color) -> some View {
@@ -476,6 +563,28 @@ struct PracticeJourneySnapshot {
     let homeGoalLine: String
     let homeGoalShortLabel: String
 
+    /// Returns a copy with `revealProgress` and labels overridden to simulate a specific day count.
+    func withSimulatedDays(_ days: Int) -> PracticeJourneySnapshot {
+        let windowDays = 21
+        let clamped = max(0, min(windowDays, days))
+        let progress = Double(clamped) / Double(windowDays)
+        let pct = Int(progress * 100)
+        return PracticeJourneySnapshot(
+            practicedDays: clamped,
+            streak: clamped,
+            revealProgress: progress,
+            quality: quality,
+            progressLabel: "\(pct)% revealed",
+            previewLine: previewLine,
+            summaryLine: summaryLine,
+            explanationLine: explanationLine,
+            nextMilestoneLabel: nextMilestoneLabel,
+            consequenceLine: consequenceLine,
+            homeGoalLine: homeGoalLine,
+            homeGoalShortLabel: homeGoalShortLabel
+        )
+    }
+
     static func make(from sessions: [PracticeSession]) -> PracticeJourneySnapshot {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -508,15 +617,11 @@ struct PracticeJourneySnapshot {
         let streakQuality = min(1, Double(streak) / 7)
         let quality = min(1, (scoreQuality * 0.30) + (fillerQuality * 0.30) + (durationQuality * 0.20) + (streakQuality * 0.20))
         let streakMomentum = max(0, Double(streak - 1) / Double(windowDays))
-        let revealProgress = min(
-            1,
-            max(
-                practicedDays > 0 ? 0.05 : 0,
-                (consistency * 0.82) + (quality * 0.08) + (streakMomentum * 0.10)
-            )
-        )
 
-        let progressPercent = Int((revealProgress * 100).rounded())
+        // Reveal progress: purely linear — each practiced day reveals 1/21 of the path.
+        let revealProgress = min(1.0, Double(practicedDays) / Double(windowDays))
+
+        let progressPercent = Int(revealProgress * 100)
         let milestoneIndex = min(3, Int(revealProgress * 4))
         let milestoneDays = [5, 10, 15, 21]
         let nextMilestoneDay = milestoneDays.first(where: { practicedDays < $0 }) ?? 21
@@ -664,54 +769,118 @@ struct PathJourneyArtwork: View {
                     fieldTexture(size: size)
 
                     ZStack {
-                        PerspectivePathShape()
-                            .fill(Color(red: 0.43, green: 0.37, blue: 0.27).opacity(0.03 + (snapshot.revealProgress * 0.04)))
-
-                        PerspectivePathShape()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.47, green: 0.39, blue: 0.29).opacity(0.10 + (snapshot.revealProgress * 0.14)),
-                                        Color(red: 0.60, green: 0.52, blue: 0.37).opacity(0.08 + (snapshot.revealProgress * 0.18)),
-                                        Color(red: 0.74, green: 0.68, blue: 0.49).opacity(0.03 + (snapshot.revealProgress * 0.14))
-                                    ],
-                                    startPoint: .bottom,
-                                    endPoint: .top
+                        // Only render path elements when there is actual progress.
+                        if snapshot.revealProgress > 0 {
+                            // Solid dirt base — the core of the walked trail.
+                            PerspectivePathShape()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.52, green: 0.42, blue: 0.30),
+                                            Color(red: 0.58, green: 0.48, blue: 0.34),
+                                            Color(red: 0.64, green: 0.56, blue: 0.40)
+                                        ],
+                                        startPoint: .bottom,
+                                        endPoint: .top
+                                    )
                                 )
-                            )
-                            .mask(alignment: .bottom) {
-                                Rectangle()
-                                    .frame(height: revealedDepth(for: size))
-                                    .frame(maxHeight: .infinity, alignment: .bottom)
-                            }
+                                .mask(alignment: .bottom) {
+                                    Rectangle()
+                                        .frame(height: revealedDepth(for: size))
+                                        .frame(maxHeight: .infinity, alignment: .bottom)
+                                }
 
-                        PerspectivePathTextureShape()
-                            .stroke(Color(red: 0.39, green: 0.31, blue: 0.22).opacity(0.03 + (snapshot.revealProgress * 0.08)), lineWidth: compact ? 0.7 : 0.9)
-                            .mask(alignment: .bottom) {
-                                Rectangle()
-                                    .frame(height: revealedDepth(for: size))
-                                    .frame(maxHeight: .infinity, alignment: .bottom)
-                            }
+                            // Worn rut lines down the centre of the trail.
+                            PerspectivePathTextureShape()
+                                .stroke(Color(red: 0.42, green: 0.34, blue: 0.24).opacity(0.55), lineWidth: compact ? 0.8 : 1.1)
+                                .mask(alignment: .bottom) {
+                                    Rectangle()
+                                        .frame(height: revealedDepth(for: size))
+                                        .frame(maxHeight: .infinity, alignment: .bottom)
+                                }
+
+                            // Lighter highlight on one side to give the dirt some dimension.
+                            PerspectivePathShape()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.72, green: 0.64, blue: 0.48).opacity(0.25),
+                                            Color.clear
+                                        ],
+                                        startPoint: .trailing,
+                                        endPoint: .leading
+                                    )
+                                )
+                                .mask(alignment: .bottom) {
+                                    Rectangle()
+                                        .frame(height: revealedDepth(for: size))
+                                        .frame(maxHeight: .infinity, alignment: .bottom)
+                                }
+
+                            // Dense overgrowth keeps the unrevealed section fully hidden until
+                            // the user has actually walked far enough to expose it.
+                            PerspectivePathShape()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.60, green: 0.65, blue: 0.30),
+                                            Color(red: 0.42, green: 0.52, blue: 0.18),
+                                            Color(red: 0.28, green: 0.38, blue: 0.12)
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .overlay {
+                                    PerspectivePathShape()
+                                        .stroke(
+                                            Color(red: 0.66, green: 0.74, blue: 0.34).opacity(0.26),
+                                            lineWidth: compact ? 5 : 8
+                                        )
+                                        .blur(radius: compact ? 1.8 : 2.6)
+                                }
+                                .mask(alignment: .bottom) {
+                                    Rectangle()
+                                        .frame(height: hiddenDepth(for: size))
+                                        .offset(y: -revealedDepth(for: size))
+                                        .frame(maxHeight: .infinity, alignment: .bottom)
+                                }
+                        }
 
                         flowerDots(size: size, phase: phase)
 
                         ForEach(grassBlades(for: size)) { blade in
-                            RoundedRectangle(cornerRadius: blade.width / 2, style: .continuous)
+                            Capsule(style: .continuous)
                                 .fill(
                                     LinearGradient(
                                         colors: [
-                                            grassBaseColor(for: blade).opacity(blade.opacity),
-                                            grassHighlightColor(for: blade).opacity(blade.opacity * 0.92)
+                                            grassBaseColor(for: blade).opacity(blade.opacity * 0.82),
+                                            grassHighlightColor(for: blade).opacity(blade.opacity * 0.62)
                                         ],
                                         startPoint: .bottom,
                                         endPoint: .top
                                     )
                                 )
                                 .frame(width: blade.width, height: blade.height)
+                                .blur(radius: compact ? 0.35 : 0.55)
                                 .rotationEffect(.degrees(blade.rotation + (blade.animates ? phase * blade.sway : 0)))
                                 .offset(x: CGFloat(blade.animates ? phase : 0) * blade.offset)
                                 .position(blade.position)
                         }
+
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.78, green: 0.79, blue: 0.47).opacity(0.05),
+                                        Color(red: 0.58, green: 0.65, blue: 0.28).opacity(0.14),
+                                        Color(red: 0.40, green: 0.49, blue: 0.16).opacity(0.08)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .blendMode(.softLight)
                     }
                     .mask(alignment: .bottom) {
                         Rectangle()
@@ -727,33 +896,50 @@ struct PathJourneyArtwork: View {
     }
 
     private func revealedDepth(for size: CGSize) -> CGFloat {
-        let minimum = compact ? size.height * 0.06 : size.height * 0.08
-        let maximum = compact ? size.height * 0.58 : size.height * 0.78
-        return minimum + (maximum - minimum) * snapshot.revealProgress
+        guard snapshot.revealProgress > 0 else { return 0 }
+        // The field occupies the bottom 46% of the artwork. At 100% the full field is revealed.
+        let fieldHeight = fieldMetrics(for: size).height
+        return fieldHeight * snapshot.revealProgress
+    }
+
+    private func hiddenDepth(for size: CGSize) -> CGFloat {
+        let metrics = fieldMetrics(for: size)
+        return max(0, metrics.height - revealedDepth(for: size))
+    }
+
+    private func fieldMetrics(for size: CGSize) -> (top: CGFloat, height: CGFloat) {
+        let height = size.height * 0.46
+        return (top: size.height - height, height: height)
     }
 
     private func grassBlades(for size: CGSize) -> [JourneyGrassBlade] {
-        let overgrowth = 1 - snapshot.revealProgress
+        let progress = snapshot.revealProgress
         let rowCount = compact ? 10 : 17
         let bladesPerRow = compact ? 28 : 46
+        let field = fieldMetrics(for: size)
+        let revealLine = progress > 0 ? Double((field.top + hiddenDepth(for: size)) / size.height) : 2.0
 
         return (0..<rowCount).flatMap { row in
             (0..<bladesPerRow).compactMap { column in
                 let depth = Double(row) / Double(max(1, rowCount - 1))
                 let y = 0.44 + depth * 0.50
                 let x = (Double(column) + 0.5) / Double(bladesPerRow)
-                let pathHalfWidth = pathHalfWidth(at: y, compact: compact)
+                let hw = pathHalfWidth(at: y, compact: compact)
                 let distanceFromCenter = abs(x - 0.5)
-                let insidePath = distanceFromCenter < pathHalfWidth * (0.70 + (overgrowth * 0.36))
-                let revealedLine = 1 - (revealedDepth(for: size) / size.height)
-                let pathVisibilityBuffer = 0.05 + (snapshot.revealProgress * 0.10)
+
+                // The clearing corridor matches the full path width so all grass
+                // inside the dirt trail is removed cleanly in the revealed zone.
+                let insidePath = distanceFromCenter < hw * 1.08
+                let inRevealedZone = y > revealLine
+
+                // Remove grass inside the path where it has been revealed.
+                if insidePath && progress > 0 && inRevealedZone {
+                    return nil
+                }
+
                 let clumpWave = (sin((x * 18) + (depth * 6.5)) + cos((x * 29) - (depth * 8.0))) * 0.5
                 let clumpStrength = 0.72 + (max(0, clumpWave) * 0.55)
                 let shouldSkipForPatchiness = clumpWave < -0.38 && !insidePath
-
-                if insidePath && y > (revealedLine + pathVisibilityBuffer) {
-                    return nil
-                }
 
                 if shouldSkipForPatchiness {
                     return nil
@@ -761,12 +947,22 @@ struct PathJourneyArtwork: View {
 
                 let noise = sin((Double(column) * 1.17) + (Double(row) * 0.73))
                 let perspectiveScale = 0.28 + pow(depth, 1.9) * 1.75
-                let worldHeight = (compact ? 18.0 : 26.0) * clumpStrength
-                let overgrowthHeight = compact ? 8.0 : 12.0
-                let width = (compact ? 1.8 : 2.2) + (perspectiveScale * (compact ? 1.8 : 2.4))
-                let height = (worldHeight + (overgrowth * overgrowthHeight)) * perspectiveScale
+
+                // Field grass stays full height at all times. Grass covering the
+                // unrevealed part of the path grows extra tall to hide the dirt beneath.
+                let baseHeight = (compact ? 18.0 : 26.0) * clumpStrength
+                let pathOvergrowth: Double
+                if insidePath && !inRevealedZone {
+                    pathOvergrowth = compact ? 20.0 : 30.0
+                } else {
+                    pathOvergrowth = 0
+                }
+
+                let width = (compact ? 1.4 : 1.8) + (perspectiveScale * (compact ? 1.2 : 1.7))
+                let height = (baseHeight + pathOvergrowth) * perspectiveScale * 0.94
                 let animates = depth > 0.74
                 let dryness = 0.35 + max(0, (0.5 - clumpWave)) * 0.7
+
                 return JourneyGrassBlade(
                     position: CGPoint(
                         x: size.width * x,
@@ -774,8 +970,8 @@ struct PathJourneyArtwork: View {
                     ),
                     width: width,
                     height: height + abs(noise * (compact ? 3.0 : 4.5)),
-                    rotation: (-22 + (noise * 24)),
-                    opacity: 0.18 + (depth * 0.34) + (overgrowth * 0.18),
+                    rotation: (-16 + (noise * 18)),
+                    opacity: 0.18 + (depth * 0.28),
                     sway: (compact ? 2.2 : 3.0) + (depth * 3.2),
                     offset: (compact ? 0.6 : 1.0) + (depth * 2.2),
                     animates: animates,
@@ -892,8 +1088,8 @@ struct PathJourneyArtwork: View {
 
     private func pathHalfWidth(at normalizedY: Double, compact: Bool) -> Double {
         let t = max(0, min(1, normalizedY))
-        let base = compact ? 0.18 : 0.21
-        let horizon = compact ? 0.012 : 0.018
+        let base = compact ? 0.20 : 0.23
+        let horizon = compact ? 0.016 : 0.024
         return horizon + ((base - horizon) * pow(t, 1.35))
     }
 
@@ -1457,17 +1653,17 @@ private struct JourneyFlowerNode: Identifiable {
 private struct PerspectivePathShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.width * 0.40, y: rect.height))
+        path.move(to: CGPoint(x: rect.width * 0.37, y: rect.height))
         path.addCurve(
-            to: CGPoint(x: rect.width * 0.49, y: rect.height * 0.24),
-            control1: CGPoint(x: rect.width * 0.42, y: rect.height * 0.72),
-            control2: CGPoint(x: rect.width * 0.46, y: rect.height * 0.42)
+            to: CGPoint(x: rect.width * 0.48, y: rect.height * 0.24),
+            control1: CGPoint(x: rect.width * 0.40, y: rect.height * 0.72),
+            control2: CGPoint(x: rect.width * 0.45, y: rect.height * 0.42)
         )
-        path.addLine(to: CGPoint(x: rect.width * 0.53, y: rect.height * 0.24))
+        path.addLine(to: CGPoint(x: rect.width * 0.54, y: rect.height * 0.24))
         path.addCurve(
-            to: CGPoint(x: rect.width * 0.60, y: rect.height),
-            control1: CGPoint(x: rect.width * 0.54, y: rect.height * 0.42),
-            control2: CGPoint(x: rect.width * 0.58, y: rect.height * 0.72)
+            to: CGPoint(x: rect.width * 0.63, y: rect.height),
+            control1: CGPoint(x: rect.width * 0.55, y: rect.height * 0.42),
+            control2: CGPoint(x: rect.width * 0.60, y: rect.height * 0.72)
         )
         path.closeSubpath()
         return path

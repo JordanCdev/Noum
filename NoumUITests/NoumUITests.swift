@@ -42,6 +42,45 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingFlowSmoke() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_ONBOARDING"]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["coaching.start"].waitForExistence(timeout: 5))
+        app.buttons["coaching.start"].tap()
+
+        XCTAssertTrue(app.buttons["coaching.continue"].waitForExistence(timeout: 5))
+        app.buttons["coaching.continue"].tap()
+        app.buttons["coaching.continue"].tap()
+        app.buttons["coaching.continue"].tap()
+
+        let goalField = app.textViews["coaching.goal"]
+        XCTAssertTrue(goalField.waitForExistence(timeout: 5))
+        goalField.tap()
+        goalField.typeText("Lead updates in meetings without second-guessing every sentence.")
+        app.buttons["Done"].tap()
+        app.buttons["coaching.continue"].tap()
+
+        let whyNowField = app.textViews["coaching.whyNow"]
+        XCTAssertTrue(whyNowField.waitForExistence(timeout: 5))
+        whyNowField.tap()
+        whyNowField.typeText("I need to sound sharper in high-visibility conversations.")
+        app.buttons["Done"].tap()
+        app.buttons["coaching.continue"].tap()
+
+        let successVisionField = app.textViews["coaching.successVision"]
+        XCTAssertTrue(successVisionField.waitForExistence(timeout: 5))
+        successVisionField.tap()
+        successVisionField.typeText("I will feel calmer, clearer, and more credible at work.")
+        app.buttons["Done"].tap()
+        app.buttons["coaching.continue"].tap()
+
+        XCTAssertTrue(app.buttons["coaching.save"].isEnabled)
+        app.buttons["coaching.save"].tap()
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 17.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.

@@ -23,16 +23,16 @@ struct LoginView: View {
                 background
 
                 VStack(spacing: 0) {
-                    Spacer(minLength: 64)
+                    Spacer(minLength: 60)
 
                     hero
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, 28)
 
-                    Spacer(minLength: 72)
+                    Spacer()
 
                     authPanel
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 32)
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, 48)
                 }
             }
             .navigationTitle("")
@@ -61,81 +61,98 @@ struct LoginView: View {
 
     private var background: some View {
         ZStack {
+            // Rich dark-to-warm gradient
             LinearGradient(
                 colors: [
-                    Color(red: 0.95, green: 0.96, blue: 0.99),
-                    Color(red: 0.99, green: 0.98, blue: 0.96),
-                    Color.white
+                    Color(red: 0.08, green: 0.10, blue: 0.18),
+                    Color(red: 0.12, green: 0.14, blue: 0.24),
+                    Color(red: 0.18, green: 0.16, blue: 0.22)
                 ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                startPoint: .top,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
 
+            // Accent glow - blue
             Circle()
-                .fill(Color(red: 0.24, green: 0.47, blue: 0.86).opacity(0.08))
-                .frame(width: 240, height: 240)
-                .blur(radius: 30)
-                .offset(x: 130, y: -250)
+                .fill(Color(red: 0.20, green: 0.50, blue: 0.95).opacity(0.25))
+                .frame(width: 300, height: 300)
+                .blur(radius: 80)
+                .offset(x: 100, y: -200)
 
+            // Accent glow - warm
             Circle()
-                .fill(Color(red: 0.94, green: 0.73, blue: 0.48).opacity(0.10))
-                .frame(width: 220, height: 220)
-                .blur(radius: 32)
-                .offset(x: -120, y: 260)
+                .fill(Color(red: 0.95, green: 0.65, blue: 0.30).opacity(0.15))
+                .frame(width: 280, height: 280)
+                .blur(radius: 70)
+                .offset(x: -100, y: -80)
+
+            // Subtle bottom glow
+            Circle()
+                .fill(Color(red: 0.30, green: 0.55, blue: 1.00).opacity(0.10))
+                .frame(width: 400, height: 400)
+                .blur(radius: 100)
+                .offset(x: 0, y: 300)
         }
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Noum")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+        VStack(alignment: .leading, spacing: 20) {
+            // App name
+            Text("noum")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.5))
+                .tracking(4)
+                .textCase(.uppercase)
 
-                Text("Speak with more clarity.")
-                    .font(.system(size: 38, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color(red: 0.11, green: 0.15, blue: 0.24))
+            // Main headline
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Speak with\nmore clarity.")
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Track filler words, practice out loud, and get coaching tuned to how you want to sound.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text("Practice out loud. Get real-time coaching.\nSound like the person you want to be.")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(3)
             }
         }
         .frame(maxWidth: 460, alignment: .leading)
     }
 
     private var authPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Choose a sign in method to save your coaching profile, session history, and progression.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(spacing: 12) {
+        VStack(spacing: 12) {
 #if canImport(AuthenticationServices)
-                SignInWithAppleButton(.continue) { request in
-                    authManager.prepareAppleSignIn(request)
-                } onCompletion: { result in
-                    authManager.handleAppleSignIn(result)
-                }
-                .frame(height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            SignInWithAppleButton(.continue) { request in
+                authManager.prepareAppleSignIn(request)
+            } onCompletion: { result in
+                authManager.handleAppleSignIn(result)
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: 54)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 #endif
 
-                googleButton
-                guestButton
+            googleButton
+
+            // Divider
+            HStack(spacing: 12) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: 1)
+                Text("or")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: 1)
             }
+            .padding(.vertical, 4)
+
+            guestButton
         }
-        .padding(22)
-        .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.78), lineWidth: 1)
-        )
         .frame(maxWidth: 460)
     }
 
@@ -150,14 +167,18 @@ struct LoginView: View {
         ) {
             authManager.startGoogleSignIn()
         }
-        .frame(height: 56)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .frame(height: 54)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 #else
-        Button("Continue with Google") {
+        Button {
             authManager.startGoogleSignIn()
+        } label: {
+            Text("Continue with Google")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                .frame(maxWidth: .infinity, minHeight: 54)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .frame(maxWidth: .infinity, minHeight: 56)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .buttonStyle(.plain)
 #endif
     }
@@ -166,28 +187,12 @@ struct LoginView: View {
         Button {
             authManager.startAnonymousSession()
         } label: {
-            HStack {
-                Text("Continue as Guest")
-                    .font(.headline)
-                Spacer()
-                Text("Test Mode")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.24, green: 0.47, blue: 0.86))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(red: 0.24, green: 0.47, blue: 0.86).opacity(0.10), in: Capsule())
-            }
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
-            )
+            Text("Try without an account")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.55))
         }
         .buttonStyle(.plain)
+        .padding(.top, 4)
     }
 
     private func reportCurrentSignInIssue() {

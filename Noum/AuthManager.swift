@@ -62,6 +62,22 @@ class AuthManager: ObservableObject {
     var currentAccountName: String? { KeychainHelper.load(key: accountNameKey) }
     var currentAuthProviderTitle: String? { authProvider?.title }
     var currentAuthProviderRawValue: String? { KeychainHelper.load(key: accountProviderKey) }
+
+    /// `true` when the signed-in account matches a developer ID listed in `AIConfig.plist`.
+    var isDeveloper: Bool {
+        guard let accountID = currentAccountID else { return false }
+        return Self.developerAccountIDs.contains(accountID)
+    }
+
+    private static let developerAccountIDs: Set<String> = {
+        guard let url = Bundle.main.url(forResource: "AIConfig", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let ids = dict["DEVELOPER_ACCOUNT_IDS"] as? [String] else {
+            return []
+        }
+        return Set(ids.filter { !$0.isEmpty })
+    }()
 #if canImport(GoogleSignIn)
     private var googleConfig: GIDConfiguration?
 #endif
@@ -662,6 +678,7 @@ class AuthManager {
     var isSignedIn: Bool = false
     var signInError: String?
     var currentAccountID: String? { nil }
+    var isDeveloper: Bool { false }
     func credentialResolver() throws -> any AWSCredentialIdentityResolver {
         DefaultAWSCredentialIdentityResolverChain()
     }

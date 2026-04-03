@@ -44,10 +44,10 @@ struct SettingsView: View {
                     coachingCard
                     remindersCard
                     accountPrivacyCard
-#if DEBUG
-                    debugCard
-                    recommendationDiagnosticsCard
-#endif
+                    if authManager.isDeveloper {
+                        debugCard
+                        recommendationDiagnosticsCard
+                    }
                     Spacer(minLength: 0)
                 }
                 .padding(18)
@@ -142,7 +142,7 @@ struct SettingsView: View {
             }
             .toggleStyle(.switch)
 
-            if imVoicePlaybackSettings.isEnabled {
+            if imVoicePlaybackSettings.isEnabled && authManager.isDeveloper {
                 Divider()
                     .padding(.vertical, 2)
 
@@ -177,7 +177,6 @@ struct SettingsView: View {
                         .buttonStyle(.plain)
                     }
 
-#if DEBUG
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Voice Debug")
                             .font(.caption.weight(.semibold))
@@ -200,7 +199,6 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                     .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-#endif
                 }
             }
         }
@@ -304,11 +302,25 @@ struct SettingsView: View {
                 if let provider = authManager.currentAuthProviderTitle {
                     compactTag(title: "Provider", value: provider)
                 }
+                if let accountID = authManager.currentAccountID {
+                    Button {
+                        #if canImport(UIKit)
+                        UIPasteboard.general.string = accountID
+                        #elseif canImport(AppKit)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(accountID, forType: .string)
+                        #endif
+                        debugMessage = "Account ID copied to clipboard."
+                    } label: {
+                        compactTag(title: "Account ID (tap to copy)", value: accountID)
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 compactTag(title: "Status", value: "Signed out")
             }
 
-            Text("Use sign out to disconnect this device, or delete the current account if you want to remove it.")
+            Text("Use log out to disconnect this device, or delete the current account if you want to remove it.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -316,7 +328,7 @@ struct SettingsView: View {
                 Button {
                     authManager.signOut()
                 } label: {
-                    actionRow(title: "Sign Out", tint: .red)
+                    actionRow(title: "Log Out", tint: .red)
                 }
                 .buttonStyle(.plain)
 
@@ -338,7 +350,6 @@ struct SettingsView: View {
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
-#if DEBUG
     private var debugCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Developer Tools")
@@ -445,7 +456,6 @@ struct SettingsView: View {
         .padding(20)
         .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
-#endif
 
     private func compactTag(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -483,7 +493,6 @@ struct SettingsView: View {
         )
     }
 
-#if DEBUG
     private func recommendationOutcomeRow(_ outcome: RecommendationOutcome) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -553,9 +562,6 @@ struct SettingsView: View {
         }
     }
 
-#endif
-
-#if DEBUG
     private func seedTestSession() {
         let transcript = "I want to explain ideas with more structure and a calmer, more authoritative delivery when I feel pressure."
         seedSession(
@@ -661,6 +667,5 @@ struct SettingsView: View {
 
         profileManager.addXP(evaluation.xpEarned)
     }
-#endif
 }
 #endif
