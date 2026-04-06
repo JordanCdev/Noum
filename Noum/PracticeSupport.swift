@@ -4848,6 +4848,8 @@ struct PracticeSessionAnnotation: Equatable {
     let headline: String?
     let insights: [String]
     let coachSummary: String?
+    var prompt: String? = nil
+    var theme: PromptTheme? = nil
 
     static let empty = PracticeSessionAnnotation(
         score: nil,
@@ -4909,6 +4911,8 @@ final class PracticeSessionStore: ObservableObject {
         latest.headline = annotation.headline
         latest.insights = annotation.insights
         latest.coachSummary = annotation.coachSummary
+        latest.prompt = annotation.prompt
+        latest.theme = annotation.theme
         sessions[0] = latest
         persist()
         syncSessionIfPossible(latest)

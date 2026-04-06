@@ -14,6 +14,7 @@ enum PracticeMode: String, Codable {
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
+    var goHome: (() -> Void)?
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @State private var highlightedMode: PracticeMode?
@@ -447,7 +448,7 @@ struct PracticeModeSelectionView: View {
     private func destinationView(for mode: PracticeMode) -> some View {
         switch mode {
         case .timed:
-            TimedPracticeView()
+            TimedPracticeView(goHome: goHome)
         case .suddenDeath:
             SuddenDeathPracticeView()
         case .ahCounter:
@@ -456,7 +457,7 @@ struct PracticeModeSelectionView: View {
             if IMModeAvailability.isAvailable {
                 IMPracticeView()
             } else {
-                TimedPracticeView()
+                TimedPracticeView(goHome: goHome)
             }
         }
     }

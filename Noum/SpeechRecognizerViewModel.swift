@@ -74,7 +74,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         xpEarned: Int? = nil,
         headline: String? = nil,
         insights: [String] = [],
-        coachSummary: String? = nil
+        coachSummary: String? = nil,
+        prompt: String? = nil,
+        theme: PromptTheme? = nil
     ) {
         sessionStore.annotateLatest(
             PracticeSessionAnnotation(
@@ -82,7 +84,9 @@ class SpeechRecognizerViewModel: ObservableObject {
                 xpEarned: xpEarned,
                 headline: headline,
                 insights: insights,
-                coachSummary: coachSummary
+                coachSummary: coachSummary,
+                prompt: prompt,
+                theme: theme
             ),
             expectedMode: currentSessionMode
         )
@@ -367,6 +371,8 @@ struct PracticeSession: Identifiable, Codable {
     var insights: [String] = []
     var coachSummary: String? = nil
     var aiCoachFeedback: AICoachFeedback? = nil
+    var prompt: String? = nil
+    var theme: PromptTheme? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -382,6 +388,8 @@ struct PracticeSession: Identifiable, Codable {
         case insights
         case coachSummary
         case aiCoachFeedback
+        case prompt
+        case theme
     }
 
     init(
@@ -397,7 +405,9 @@ struct PracticeSession: Identifiable, Codable {
         headline: String? = nil,
         insights: [String] = [],
         coachSummary: String? = nil,
-        aiCoachFeedback: AICoachFeedback? = nil
+        aiCoachFeedback: AICoachFeedback? = nil,
+        prompt: String? = nil,
+        theme: PromptTheme? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -412,6 +422,8 @@ struct PracticeSession: Identifiable, Codable {
         self.insights = insights
         self.coachSummary = coachSummary
         self.aiCoachFeedback = aiCoachFeedback
+        self.prompt = prompt
+        self.theme = theme
     }
 
     init(from decoder: Decoder) throws {
@@ -429,5 +441,7 @@ struct PracticeSession: Identifiable, Codable {
         insights = try container.decodeIfPresent([String].self, forKey: .insights) ?? []
         coachSummary = try container.decodeIfPresent(String.self, forKey: .coachSummary)
         aiCoachFeedback = try container.decodeIfPresent(AICoachFeedback.self, forKey: .aiCoachFeedback)
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
+        theme = try container.decodeIfPresent(PromptTheme.self, forKey: .theme)
     }
 }

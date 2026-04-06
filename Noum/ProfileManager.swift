@@ -13,8 +13,14 @@ final class ProfileManager: ObservableObject {
     private let accountKey = "NoumAccountID"
     private let providerKey = "NoumAccountProvider"
 
+    /// Cached account ID to avoid repeated Keychain reads on main thread
+    private var cachedAccountID: String?
+
     private init() {
-        xp = Self.loadXP(forKey: Self.storageKey(for: KeychainHelper.load(key: "NoumAccountID")))
+        // Read Keychain once and cache the result
+        let accountID = KeychainHelper.load(key: "NoumAccountID")
+        cachedAccountID = accountID
+        xp = Self.loadXP(forKey: Self.storageKey(for: accountID))
     }
 
     func addXP(_ amount: Int) {
@@ -25,6 +31,7 @@ final class ProfileManager: ObservableObject {
     }
 
     func reloadForCurrentAccount() {
+        invalidateAccountCache()
         xp = Self.loadXP(forKey: Self.storageKey(for: currentAccountID))
     }
 
@@ -75,11 +82,19 @@ final class ProfileManager: ObservableObject {
     }
 
     private var currentAccountID: String? {
-        KeychainHelper.load(key: accountKey)
+        if let cached = cachedAccountID { return cached }
+        let loaded = KeychainHelper.load(key: accountKey)
+        cachedAccountID = loaded
+        return loaded
     }
 
     private var currentProviderRawValue: String? {
         KeychainHelper.load(key: providerKey)
+    }
+
+    /// Call when account changes (sign in/out) to refresh the cached ID
+    func invalidateAccountCache() {
+        cachedAccountID = KeychainHelper.load(key: accountKey)
     }
 
     private func persist() {

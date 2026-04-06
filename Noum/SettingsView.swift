@@ -19,8 +19,10 @@ struct SettingsView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var imVoicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var premium = PremiumManager.shared
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
+    @State private var showPaywall = false
     @State private var debugMessage: String?
     @State private var showDeleteConfirmation = false
 
@@ -32,6 +34,7 @@ struct SettingsView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     overviewCard
+                    subscriptionCard
                     practiceCard
                     coachingCard
                     remindersCard
@@ -62,6 +65,9 @@ struct SettingsView: View {
         .sheet(isPresented: $showCoachingProfile) {
             CoachingOnboardingView()
         }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
         .alert("Debug Tools", isPresented: .constant(debugMessage != nil), actions: {
             Button("OK", role: .cancel) { debugMessage = nil }
         }, message: {
@@ -88,6 +94,141 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
+    private let proColor = Color(red: 0.56, green: 0.28, blue: 0.92)
+
+    private var subscriptionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if premium.isPremium {
+                // Active subscriber card
+                HStack(spacing: 14) {
+                    Image(systemName: "crown.fill")
+                        .font(.title2)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [proColor, Color(red: 0.82, green: 0.52, blue: 1.0)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text("Noum Pro")
+                                .font(.headline.weight(.bold))
+                            Text("ACTIVE")
+                                .font(.caption2.weight(.heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(proColor, in: Capsule())
+                        }
+                        Text("All premium features are unlocked.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                Divider()
+                    .padding(.vertical, 2)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    subscriptionFeatureRow(icon: "text.magnifyingglass", title: "Coach Mode")
+                    subscriptionFeatureRow(icon: "text.quote", title: "Live Transcript")
+                    subscriptionFeatureRow(icon: "video.fill", title: "Video Recording")
+                    subscriptionFeatureRow(icon: "waveform.badge.magnifyingglass", title: "Filler Tracking")
+                    subscriptionFeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Trends & Analytics")
+                    subscriptionFeatureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges")
+                    subscriptionFeatureRow(icon: "tray.full.fill", title: "Saved Transcripts")
+                }
+
+                if authManager.isDeveloper {
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    Button("Revoke Premium (Debug)") {
+                        premium.revokePremium()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.red)
+                }
+            } else {
+                // Free user — upgrade CTA
+                HStack(spacing: 14) {
+                    Image(systemName: "crown.fill")
+                        .font(.title2)
+                        .foregroundStyle(proColor.opacity(0.6))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Upgrade to Pro")
+                            .font(.headline.weight(.bold))
+                        Text("Unlock Coach Mode, transcripts, analytics, and more.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "crown.fill")
+                            .font(.subheadline)
+                        Text("See Plans")
+                            .font(.headline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(
+                        LinearGradient(
+                            colors: [proColor, proColor.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule()
+                    )
+                    .foregroundStyle(.white)
+                    .shadow(color: proColor.opacity(0.3), radius: 12, y: 4)
+                }
+
+                Button("Restore Purchase") {
+                    Task { await premium.restorePurchases() }
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            premium.isPremium
+                ? RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(proColor.opacity(0.15), lineWidth: 1)
+                : nil
+        )
+    }
+
+    private func subscriptionFeatureRow(icon: String, title: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(proColor)
+                .frame(width: 24, height: 24)
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.green)
+        }
     }
 
     private var practiceCard: some View {

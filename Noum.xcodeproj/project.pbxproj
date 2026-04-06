@@ -17,6 +17,7 @@
 		0B31DDB72E04EA9100DE8F71 /* AWSClientRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */; };
 		0D222222222222222222222223 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 0D222222222222222222222222 /* GoogleSignIn */; };
 		0D333333333333333333333334 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 0D333333333333333333333333 /* GoogleSignInSwift */; };
+		1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +41,7 @@
 		0B981F6C2D44610E008F4158 /* Noum.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noum.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B981F7C2D446110008F4158 /* NoumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B981F862D446110008F4158 /* NoumUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRecordingManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -123,6 +125,7 @@
 				0B981F892D446110008F4158 /* NoumUITests */,
 				0B31DDBB2E04EDE800DE8F71 /* Frameworks */,
 				0B981F6D2D44610E008F4158 /* Products */,
+				1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -295,6 +298,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

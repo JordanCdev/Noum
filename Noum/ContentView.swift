@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var aiRecommendation: AIHomeRecommendation?
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
+    @State private var navigationPath = NavigationPath()
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
@@ -58,7 +59,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 Color(UIColor.systemGroupedBackground)
                 .ignoresSafeArea()
@@ -317,7 +318,7 @@ struct ContentView: View {
     private var bottomNavigation: some View {
         HStack(spacing: 10) {
             Group {
-                NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode)) {
+                NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode, goHome: { navigationPath = NavigationPath() })) {
                     navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
                 }
                 .accessibilityIdentifier("nav.practice")
@@ -326,6 +327,11 @@ struct ContentView: View {
                     navItem(title: "Review", systemImage: "book.fill", accent: .orange)
                 }
                 .accessibilityIdentifier("nav.history")
+
+                NavigationLink(destination: SocialProfileView()) {
+                    navItem(title: "Social", systemImage: "person.2.fill", accent: .purple)
+                }
+                .accessibilityIdentifier("nav.social")
 
                 NavigationLink(destination: SettingsView()) {
                     navItem(title: "Settings", systemImage: "slider.horizontal.3", accent: .green)
@@ -876,9 +882,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private func practiceDestination(for suggestion: PracticeSuggestion) -> some View {
+        let home = { navigationPath = NavigationPath() }
         switch suggestion.mode {
         case .timed:
-            TimedPracticeView()
+            TimedPracticeView(goHome: home)
         case .suddenDeath:
             SuddenDeathPracticeView()
         case .ahCounter:
@@ -890,7 +897,7 @@ struct ContentView: View {
                     preferredTone: suggestion.recommendedTone
                 )
             } else {
-                TimedPracticeView()
+                TimedPracticeView(goHome: home)
             }
         }
     }

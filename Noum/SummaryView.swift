@@ -32,6 +32,9 @@ struct SummaryView: View {
     var recentSessions: [PracticeSession] = []
     var imConversationDetails: IMConversationDetails? = nil
     var explicitMode: PracticeMode? = nil
+    var recordingURL: URL? = nil
+    var sessionPrompt: String? = nil
+    var sessionTheme: PromptTheme? = nil
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
@@ -41,7 +44,9 @@ struct SummaryView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var premium = PremiumManager.shared
     @State private var selectedTab: SummaryTab = .overview
+    @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
     @State private var currentLevel: String = ""
@@ -52,6 +57,7 @@ struct SummaryView: View {
     @State private var aiFeedback: AICoachFeedback?
     @State private var isRequestingAIFeedback = false
     @State private var aiError: String?
+    @State private var showVideoPlayback = false
     @State private var celebrationVisible = false
     @State private var lockedTranscriptText: String?
     @State private var lockedFillerCount: Int?
@@ -369,6 +375,9 @@ struct SummaryView: View {
                         nextRepPanel
                         xpPanel
                         retentionPanel
+                        if scoreValue >= 5 {
+                            challengeFriendNudge
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -393,6 +402,11 @@ struct SummaryView: View {
         .navigationBarBackButtonHidden(true)
         .disableSwipeBack()
         .onAppear(perform: setup)
+        .sheet(isPresented: $showVideoPlayback) {
+            if let recordingURL {
+                VideoPlaybackView(url: recordingURL)
+            }
+        }
 #if canImport(UIKit)
         .onChange(of: celebrationVisible) { _, visible in
             if visible {
@@ -559,8 +573,158 @@ struct SummaryView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
+
+            // Smart session comparison (only shown when meaningful)
+            if let comparison = smartComparison {
+                Divider()
+                    .padding(.vertical, 4)
+                sessionComparisonCard(comparison)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Smart Session Comparison
+
+    private struct SessionComparison {
+        let reason: String  // e.g. "Same prompt" or "Same theme"
+        let previousScore: Int
+        let currentScore: Int
+        let previousWPM: Int
+        let currentWPM: Int
+        let previousFillers: Int
+        let currentFillers: Int
+        let previousDate: Date
+    }
+
+    private var smartComparison: SessionComparison? {
+        guard let currentScore = lockedScore ?? score,
+              let prompt = sessionPrompt else { return nil }
+
+        // Look for a previous session with the same prompt
+        let past = recentSessions.dropFirst() // skip the current one
+        if let match = past.first(where: { $0.prompt == prompt && $0.score != nil }) {
+            let scoreDelta = currentScore - (match.score ?? 0)
+            let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+            let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
+            let fillerDelta = (lockedFillerCount ?? fillerCount) - match.fillerWordCount
+
+            // Only show if there's meaningful change (score improved by 5+, or fillers dropped by 2+)
+            if abs(scoreDelta) >= 5 || fillerDelta <= -2 {
+                return SessionComparison(
+                    reason: "Same prompt",
+                    previousScore: match.score ?? 0,
+                    currentScore: currentScore,
+                    previousWPM: matchWPM,
+                    currentWPM: currentWPM,
+                    previousFillers: match.fillerWordCount,
+                    currentFillers: lockedFillerCount ?? fillerCount,
+                    previousDate: match.date
+                )
+            }
+        }
+
+        // Fallback: same theme comparison
+        if let theme = sessionTheme, theme != .all {
+            if let match = past.first(where: { $0.theme == theme && $0.score != nil }) {
+                let scoreDelta = currentScore - (match.score ?? 0)
+                let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+                let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
+
+                // Higher bar for theme comparison — only show strong improvement
+                if scoreDelta >= 10 {
+                    return SessionComparison(
+                        reason: "Same theme: \(theme.rawValue)",
+                        previousScore: match.score ?? 0,
+                        currentScore: currentScore,
+                        previousWPM: matchWPM,
+                        currentWPM: currentWPM,
+                        previousFillers: match.fillerWordCount,
+                        currentFillers: lockedFillerCount ?? fillerCount,
+                        previousDate: match.date
+                    )
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func sessionComparisonCard(_ comparison: SessionComparison) -> some View {
+        let scoreDelta = comparison.currentScore - comparison.previousScore
+        let improved = scoreDelta > 0
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: improved ? "arrow.up.right.circle.fill" : "arrow.down.right.circle.fill")
+                    .foregroundStyle(improved ? .green : .orange)
+                Text(comparison.reason)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(formatter.localizedString(for: comparison.previousDate, relativeTo: Date()))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            HStack(spacing: 16) {
+                comparisonMetric(
+                    label: "Score",
+                    previous: "\(comparison.previousScore)",
+                    current: "\(comparison.currentScore)",
+                    improved: scoreDelta > 0
+                )
+                comparisonMetric(
+                    label: "WPM",
+                    previous: "\(comparison.previousWPM)",
+                    current: "\(comparison.currentWPM)",
+                    improved: comparison.currentWPM >= comparison.previousWPM
+                )
+                comparisonMetric(
+                    label: "Fillers",
+                    previous: "\(comparison.previousFillers)",
+                    current: "\(comparison.currentFillers)",
+                    improved: comparison.currentFillers <= comparison.previousFillers
+                )
+            }
+
+            if improved {
+                Text("You're improving. Keep going.")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+        .padding(14)
+        .background(
+            (improved ? Color.green : Color.orange).opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke((improved ? Color.green : Color.orange).opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func comparisonMetric(label: String, previous: String, current: String, improved: Bool) -> some View {
+        VStack(spacing: 4) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text(previous)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .strikethrough()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.tertiary)
+                Text(current)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(improved ? .green : .orange)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func imTonePanel(details: IMConversationDetails) -> some View {
@@ -632,42 +796,119 @@ struct SummaryView: View {
 
     private var insightsPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Coach Read")
-                .font(.headline)
-            aiCoachSection
-            if !lightweightSignals.isEmpty {
-                Divider()
-                    .padding(.vertical, 4)
-                Text(aiFeedback == nil ? "Immediate signals" : "Signal checks")
+            if premium.canViewCoachingInsights {
+                // Video recording review
+                if let recordingURL {
+                    videoReviewSection(url: recordingURL)
+                    Divider()
+                        .padding(.vertical, 4)
+                }
+
+                Text("Coach Read")
                     .font(.headline)
-                ForEach(Array(lightweightSignals.enumerated()), id: \.offset) { index, insight in
-                    HStack(alignment: .top, spacing: 10) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.blue.opacity(0.14))
-                                .frame(width: 24, height: 24)
-                            Text("\(index + 1)")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.blue)
+                aiCoachSection
+                if !lightweightSignals.isEmpty {
+                    Divider()
+                        .padding(.vertical, 4)
+                    Text(aiFeedback == nil ? "Immediate signals" : "Signal checks")
+                        .font(.headline)
+                    ForEach(Array(lightweightSignals.enumerated()), id: \.offset) { index, insight in
+                        HStack(alignment: .top, spacing: 10) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.blue.opacity(0.14))
+                                    .frame(width: 24, height: 24)
+                                Text("\(index + 1)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.blue)
+                            }
+                            Text(insight)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
-                        Text(insight)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
                 }
-            }
-            if isIMSummary, let details = imConversationDetails, let relationship = details.relationshipSnapshot {
-                Divider()
-                    .padding(.vertical, 4)
-                relationshipCoachPanel(relationship)
-            }
-            if isIMSummary, shouldPushRecommendedMode {
-                Divider()
-                    .padding(.vertical, 4)
-                continuationPanel
+                if isIMSummary, let details = imConversationDetails, let relationship = details.relationshipSnapshot {
+                    Divider()
+                        .padding(.vertical, 4)
+                    relationshipCoachPanel(relationship)
+                }
+                if isIMSummary, shouldPushRecommendedMode {
+                    Divider()
+                        .padding(.vertical, 4)
+                    continuationPanel
+                }
+            } else {
+                // Premium gate for free users
+                PremiumGateOverlay(feature: "Coach insights")
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func videoReviewSection(url: URL) -> some View {
+        let videoManager = VideoRecordingManager.shared
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Session Recording")
+                .font(.headline)
+            Text("Review your delivery, body language, and presence.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Button {
+                showVideoPlayback = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.title3)
+                    Text("Watch Recording")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .foregroundStyle(.blue)
+            }
+            .buttonStyle(.plain)
+
+            // Save recording button
+            if videoManager.savedRecordingURL == nil {
+                Button {
+                    videoManager.saveRecording()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.down.fill")
+                            .font(.subheadline)
+                        Text("Save to Device")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(.green)
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                    Text("Recordings are temporary unless saved.")
+                        .font(.caption)
+                }
+                .foregroundStyle(.tertiary)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Recording saved")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.green)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -907,6 +1148,51 @@ struct SummaryView: View {
         .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
+    private var challengeFriendNudge: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Speak-off")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(spacing: 12) {
+                Image(systemName: "person.2.wave.2.fill")
+                    .font(.title3)
+                    .foregroundStyle(.purple)
+                    .frame(width: 40, height: 40)
+                    .background(Color.purple.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Think you nailed it?")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Challenge a friend to the same prompt and compare scores.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            Button {
+                onHome()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                        .font(.caption)
+                    Text("Go to Social")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.purple.opacity(0.1), in: Capsule())
+                .foregroundStyle(.purple)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
     private var nextRepPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -1082,6 +1368,14 @@ struct SummaryView: View {
         }
     }
 
+    /// Shareable text summary of the session for social sharing / referral
+    private var shareText: String {
+        let scoreText = "\(scoreValue)/10"
+        let fillerText = effectiveFillerCount == 0 ? "zero fillers" : "\(effectiveFillerCount) filler\(effectiveFillerCount == 1 ? "" : "s")"
+        let durationText = "\(Int(effectiveDuration))s"
+        return "Just scored \(scoreText) on a Table Topics practice — \(fillerText) in \(durationText). Practicing with Noum."
+    }
+
     private var actionButtons: some View {
         VStack(spacing: 10) {
             Button(isIMSummary ? "Practice Again" : primaryActionTitle) {
@@ -1099,17 +1393,34 @@ struct SummaryView: View {
             .background(Color.blue, in: Capsule())
             .foregroundStyle(.white)
 
-            Button(isIMSummary ? "Choose Another Mode" : secondaryActionTitle) {
-                if isIMSummary {
-                    onSelectPracticeMode()
-                } else if shouldPushRecommendedMode {
-                    onPracticeAgain()
-                } else {
-                    onSelectPracticeMode()
+            HStack(spacing: 10) {
+                Button(isIMSummary ? "Choose Another Mode" : secondaryActionTitle) {
+                    if isIMSummary {
+                        onSelectPracticeMode()
+                    } else if shouldPushRecommendedMode {
+                        onPracticeAgain()
+                    } else {
+                        onSelectPracticeMode()
+                    }
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity)
+
+                // Share score card
+                ShareLink(item: shareText) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.caption)
+                        Text("Share")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.08), in: Capsule())
                 }
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
         }
     }
 
