@@ -7,7 +7,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct IMPracticeView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var speechVM: SpeechRecognizerViewModel
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var relationshipStore = IMRelationshipStore.shared
@@ -16,8 +16,8 @@ struct IMPracticeView: View {
     @StateObject private var messageSpeaker = IMMessageSpeaker.shared
 #endif
 
-    @State private var scenario: IMConversationScenario = .socialCatchUp
-    @State private var targetTone: IMTargetTone = .confident
+    @State private var scenario: IMConversationScenario?
+    @State private var targetTone: IMTargetTone?
     @State private var turns: [IMConversationTurn] = []
     @State private var conversationState: IMConversationState = .starting
     @State private var isSessionActive = false
@@ -32,8 +32,10 @@ struct IMPracticeView: View {
     @State private var isEndingConversation = false
     @State private var setupStep: SetupStep = .scenario
     @State private var typingPhase = 0
+    @State private var processingStripeOffset: CGFloat = -140
     @State private var sessionContext = IMSessionContextProvider.current()
     @State private var latestUserSignal: IMUserMessageSignal?
+    @State private var cachedRelationshipProfile = IMRelationshipProfile.initial(for: .socialCatchUp)
 
     private let preferredScenario: IMConversationScenario?
     private let preferredTone: IMTargetTone?
@@ -45,16 +47,18 @@ struct IMPracticeView: View {
         preferredScenario: IMConversationScenario? = nil,
         preferredTone: IMTargetTone? = nil
     ) {
+        _speechVM = StateObject(wrappedValue: SpeechRecognizerViewModel(preloadOnInit: false))
         self.preferredScenario = preferredScenario
         self.preferredTone = preferredTone
     }
 
-    private var setup: IMConversationSetup {
-        IMConversationSetup(scenario: scenario, targetTone: targetTone)
+    private var setup: IMConversationSetup? {
+        guard let scenario, let targetTone else { return nil }
+        return IMConversationSetup(scenario: scenario, targetTone: targetTone)
     }
 
     private var relationshipProfile: IMRelationshipProfile {
-        relationshipStore.profile(for: scenario)
+        cachedRelationshipProfile
     }
 
     private var userTurnCount: Int {
@@ -62,6 +66,10 @@ struct IMPracticeView: View {
     }
 
     private var setupGuidanceTitle: String {
+        guard let scenario else {
+            return "Choose how you want to come across"
+        }
+
         switch scenario {
         case .socialCatchUp:
             return "Keep it easy and natural"
@@ -75,7 +83,11 @@ struct IMPracticeView: View {
     }
 
     private var setupGuidanceBody: String {
-        "Aim to \(targetTone.coachingPrompt)."
+        guard let targetTone else {
+            return "Pick a tone to shape the pace, phrasing, and overall feel of the conversation."
+        }
+
+        return "Aim to \(targetTone.coachingPrompt)."
     }
 
     private var combinedUserTranscript: String {
@@ -86,42 +98,65 @@ struct IMPracticeView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var canAdvanceFromScenario: Bool { true }
+    private var canAdvanceFromScenario: Bool { scenario != nil }
+
+    private var canStartConversation: Bool {
+        scenario != nil && targetTone != nil
+    }
 
     private var isToneStep: Bool { setupStep == .tone }
+
+    private var resolvedScenario: IMConversationScenario {
+        scenario ?? preferredScenario ?? .socialCatchUp
+    }
+
+    private var resolvedTargetTone: IMTargetTone {
+        targetTone ?? preferredTone ?? .confident
+    }
 
     var body: some View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.95, green: 0.92, blue: 0.87),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
+                    Color(red: 0.97, green: 0.97, blue: 0.99),
+                    Color(red: 0.93, green: 0.94, blue: 0.98)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
 
+            Circle()
+                .fill(Color.blue.opacity(0.08))
+                .frame(width: 240, height: 240)
+                .offset(x: 140, y: -250)
+
+            Circle()
+                .fill(Color.white.opacity(0.55))
+                .frame(width: 200, height: 200)
+                .offset(x: -130, y: -110)
+
             content
         }
+        .accessibilityIdentifier("imPractice.screen")
         .safeAreaInset(edge: .bottom) {
-            if isSessionActive {
+            if isSessionActive && !isEndingConversation {
                 composerBar
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
                     .padding(.bottom, 8)
                     .background(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.0), Color.white.opacity(0.92)],
+                            colors: [Color.white.opacity(0.0), Color.white],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
             }
         }
-        .navigationTitle("IM Mode")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .alert("IM Mode Unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
             Button("OK", role: .cancel) { serviceErrorMessage = nil }
         }, message: {
@@ -139,6 +174,22 @@ struct IMPracticeView: View {
                 typingPhase = (typingPhase + 1) % 3
             }
         }
+        .task(id: isEndingConversation) {
+            guard isEndingConversation else {
+                processingStripeOffset = -140
+                return
+            }
+
+            processingStripeOffset = -140
+            while isEndingConversation {
+                withAnimation(.linear(duration: 1.05)) {
+                    processingStripeOffset = 140
+                }
+                try? await Task.sleep(for: .milliseconds(1050))
+                guard isEndingConversation else { break }
+                processingStripeOffset = -140
+            }
+        }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: summaryTranscript,
@@ -148,14 +199,14 @@ struct IMPracticeView: View {
                 progressSegments: min(4, userTurnCount),
                 xpEarned: summaryEvaluation?.xpEarned ?? 0,
                 showDuration: true,
-                practiceTitle: "IM Mode • \(scenario.title)",
+                practiceTitle: "IM Mode • \(resolvedScenario.title)",
                 feedbackOverride: summaryEvaluation?.feedback,
                 headlineOverride: summaryEvaluation?.headline,
                 scoreBreakdown: summaryEvaluation?.segments ?? [],
                 insights: summaryInsights,
                 recentSessions: sessionStore.sessions,
                 imConversationDetails: IMConversationDetails(
-                    setup: setup,
+                    setup: setup ?? IMConversationSetup(scenario: resolvedScenario, targetTone: resolvedTargetTone),
                     turns: turns,
                     actualTone: summaryEvaluation?.actualTone,
                     finalState: conversationState,
@@ -180,28 +231,32 @@ struct IMPracticeView: View {
         .onAppear {
             if let preferredScenario {
                 scenario = preferredScenario
+                setupStep = preferredTone == nil ? .tone : .scenario
             }
             if let preferredTone {
                 targetTone = preferredTone
             }
+            if preferredScenario != nil, preferredTone != nil {
+                setupStep = .tone
+            }
+            cachedRelationshipProfile = IMRelationshipProfile.initial(for: resolvedScenario)
         }
     }
 
     @ViewBuilder
     private var content: some View {
-        if !isSessionActive {
-            GeometryReader { _ in
+        if isEndingConversation {
+            endingConversationScreen
+        } else if !isSessionActive {
+            ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     headerCard
-                    stepSwitcher
                     setupPanel
                     bottomSetupBar
-                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         } else {
             VStack(spacing: 12) {
@@ -210,80 +265,90 @@ struct IMPracticeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-            .overlay {
-                if isEndingConversation {
-                    endingConversationOverlay
-                        .transition(.opacity)
-                }
-            }
         }
     }
 
     private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(isSessionActive ? scenario.title : "Choose a conversation")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-            Text(isSessionActive ? "Target tone: \(targetTone.title)" : "Pick a scenario, then shape the tone.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+        VStack(alignment: .leading, spacing: 14) {
+            Label("IM Mode", systemImage: "message.badge.waveform.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.blue)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(isSessionActive ? resolvedScenario.title : "Choose a conversation")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                Text(isSessionActive ? "Target tone: \(resolvedTargetTone.title)" : "Pick a scenario, then shape the tone.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if !isSessionActive {
+                HStack(spacing: 10) {
+                    selectionSummaryChip(
+                        title: "Scenario",
+                        value: scenario?.title ?? "Not selected",
+                        isComplete: scenario != nil
+                    )
+                    selectionSummaryChip(
+                        title: "Tone",
+                        value: targetTone?.title ?? "Not selected",
+                        isComplete: targetTone != nil
+                    )
+                }
+            } else {
+                Text("You’re stepping into a live-text simulation with \(resolvedScenario.personaName).")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-    }
-
-    private var stepSwitcher: some View {
-        HStack(spacing: 10) {
-            stepChip(title: "scenario", isActive: setupStep == .scenario)
-            stepChip(title: "tone", isActive: setupStep == .tone)
-        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.white.opacity(0.94))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.9), lineWidth: 1)
+                )
+        )
     }
 
     private var setupPanel: some View {
         Group {
             if setupStep == .scenario {
                 setupCard
-                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
             } else {
                 guidanceCard
-                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: setupStep)
     }
 
     private var bottomSetupBar: some View {
         HStack(spacing: 10) {
             if isToneStep {
                 Button("Back") {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        setupStep = .scenario
-                    }
+                    setupStep = .scenario
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .padding(.vertical, 15)
                 .padding(.horizontal, 24)
-                .background(Color.white.opacity(0.92), in: Capsule())
-            }
+                .background(Color.white.opacity(0.95), in: Capsule())
 
-            Button(isToneStep ? "Start conversation" : "Next") {
-                if isToneStep {
+                Button("Start conversation") {
                     beginConversation()
-                } else {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        setupStep = .tone
-                    }
                 }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(canStartConversation ? Color.blue : Color.gray.opacity(0.35), in: Capsule())
+                .foregroundStyle(.white)
+                .disabled(!canStartConversation)
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-            .background(!canAdvanceFromScenario ? Color.gray.opacity(0.35) : Color.blue, in: Capsule())
-            .foregroundStyle(.white)
-            .disabled(!canAdvanceFromScenario)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var activeHeaderCard: some View {
@@ -293,15 +358,15 @@ struct IMPracticeView: View {
                     Circle()
                         .fill(Color.blue.opacity(0.12))
                         .frame(width: 42, height: 42)
-                    Text(String(scenario.personaName.prefix(1)))
+                    Text(String(resolvedScenario.personaName.prefix(1)))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.blue)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(scenario.personaName)
+                    Text(resolvedScenario.personaName)
                         .font(.headline.weight(.bold))
-                    Text(scenario.title)
+                    Text(resolvedScenario.title)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -315,7 +380,7 @@ struct IMPracticeView: View {
             }
 
             HStack(spacing: 8) {
-                statusChip(title: "Tone", value: targetTone.title, tint: .indigo)
+                statusChip(title: "Tone", value: resolvedTargetTone.title, tint: .indigo)
                 statusChip(title: "Trust", value: "\(conversationState.normalizedTrust)", tint: .teal)
                 statusChip(title: "Tension", value: "\(conversationState.normalizedTension)", tint: .orange)
             }
@@ -327,13 +392,18 @@ struct IMPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var setupCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("scenario")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Scenario")
+                    .font(.headline)
+                Text("Choose the kind of conversation you want to rehearse. Nothing is selected until you choose.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(spacing: 10) {
                 ForEach(IMConversationScenario.allCases) { option in
@@ -342,15 +412,26 @@ struct IMPracticeView: View {
             }
         }
         .padding(16)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var guidanceCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("tone")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Tone")
+                    .font(.headline)
+                Text("Set how you want to sound before the chat begins.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], spacing: 8) {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 10),
+                    GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 10)
+                ],
+                spacing: 10
+            ) {
                 ForEach(IMTargetTone.allCases) { tone in
                     toneChip(for: tone)
                 }
@@ -359,17 +440,23 @@ struct IMPracticeView: View {
             Text(setupGuidanceTitle)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .padding(.top, 2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .padding(.top, 6)
             Text(setupGuidanceBody)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
+
+            if let scenario {
+                HStack(spacing: 8) {
+                    detailPill(title: scenario.personaName, systemImage: "person.fill")
+                    detailPill(title: scenario.stakes, systemImage: "bolt.horizontal.fill")
+                }
+                .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(18)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var conversationCard: some View {
@@ -391,7 +478,7 @@ struct IMPracticeView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 12)
             .padding(.vertical, 14)
-            .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .onChange(of: turns.count) { _, _ in
                 if let last = turns.last?.id {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -412,7 +499,7 @@ struct IMPracticeView: View {
         HStack {
             if turn.speaker == .npc {
                 bubbleContent(
-                    title: scenario.personaName,
+                    title: resolvedScenario.personaName,
                     text: turn.text,
                     tint: Color(red: 0.92, green: 0.94, blue: 0.98),
                     isLeading: true
@@ -447,7 +534,7 @@ struct IMPracticeView: View {
     private var typingBubble: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                Text(scenario.personaName)
+                Text(resolvedScenario.personaName)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 HStack(spacing: 6) {
@@ -468,53 +555,48 @@ struct IMPracticeView: View {
         }
     }
 
-    private var endingConversationOverlay: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
+    private var endingConversationScreen: some View {
+        VStack(spacing: 20) {
+            Spacer(minLength: 24)
 
-            VStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(Color.blue.opacity(0.10))
-                        .frame(width: 68, height: 68)
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.10))
+                    .frame(width: 82, height: 82)
 
-                    HStack(spacing: 6) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Circle()
-                                .fill(Color.blue.opacity(0.78))
-                                .frame(width: 8, height: 8)
-                                .scaleEffect(typingPhase == index ? 1.12 : 0.72)
-                                .opacity(typingPhase == index ? 1 : 0.4)
-                                .animation(.easeInOut(duration: 0.18), value: typingPhase)
-                        }
+                HStack(spacing: 7) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(Color.blue.opacity(0.80))
+                            .frame(width: 9, height: 9)
+                            .scaleEffect(typingPhase == index ? 1.12 : 0.72)
+                            .opacity(typingPhase == index ? 1 : 0.4)
+                            .animation(.easeInOut(duration: 0.18), value: typingPhase)
                     }
                 }
-
-                VStack(spacing: 6) {
-                    Text("Ending the chat")
-                        .font(.headline.weight(.semibold))
-
-                    Text(endingStageMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-
-                ShimmerProgressBar(progress: endingStageProgress, tint: .blue)
-
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.orange)
-                    Text("Preparing your read, relationship shift, and next move")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
             }
-            .padding(24)
+
+            VStack(spacing: 8) {
+                Text("Ending the chat")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                Text(endingStageMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+
+            processingIndicator
+                .padding(.horizontal, 28)
+
+            sessionWrapUpCard
+
+            Spacer()
         }
-        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.top, 18)
+        .padding(.bottom, 24)
     }
 
     private var endingStageMessage: String {
@@ -528,15 +610,76 @@ struct IMPracticeView: View {
         }
     }
 
-    private var endingStageProgress: Double {
-        switch typingPhase {
-        case 0:
-            return 0.34
-        case 1:
-            return 0.67
-        default:
-            return 0.92
+    private var processingIndicator: some View {
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Color.blue.opacity(0.12))
+                .frame(height: 10)
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.10),
+                            Color.blue.opacity(0.80),
+                            Color.blue.opacity(0.10)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: 118, height: 10)
+                .offset(x: processingStripeOffset)
         }
+        .frame(maxWidth: .infinity)
+        .clipShape(Capsule())
+    }
+
+    private var sessionWrapUpCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Session boost")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(spacing: 10) {
+                wrapUpChip(title: "Turns", value: "\(userTurnCount)", tint: .blue)
+                wrapUpChip(title: "Fillers", value: "\(totalFillers)", tint: .orange)
+                wrapUpChip(title: "XP", value: "+\(summaryEvaluation?.xpEarned ?? 0)", tint: .teal)
+            }
+
+            Text("Locking in your score, relationship impact, and next best move.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [Color.white.opacity(0.96), Color.blue.opacity(0.04)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.white.opacity(0.9), lineWidth: 1)
+        )
+    }
+
+    private func wrapUpChip(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.white.opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var composerBar: some View {
@@ -564,7 +707,7 @@ struct IMPracticeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
                         isAwaitingNPC
-                            ? "\(scenario.personaName) is typing..."
+                            ? "\(resolvedScenario.personaName) is typing..."
                             : (speechVM.isRecording ? "Listening..." : (draftReplyText.isEmpty ? "Tap the mic and speak" : "Ready to send"))
                     )
                         .font(.subheadline.weight(.semibold))
@@ -602,7 +745,7 @@ struct IMPracticeView: View {
             .disabled(speechVM.isRecording || isAwaitingNPC || isEndingConversation)
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if isEndingConversation {
                 HStack(spacing: 8) {
@@ -649,21 +792,20 @@ struct IMPracticeView: View {
     private func scenarioCard(for option: IMConversationScenario) -> some View {
         Button {
             scenario = option
-            withAnimation(.easeInOut(duration: 0.22)) {
-                setupStep = .tone
-            }
+            targetTone = nil
+            setupStep = .tone
         } label: {
             HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill((scenario == option ? Color.blue : Color.gray).opacity(0.12))
+                        .fill((scenario == option ? Color.blue : Color.gray).opacity(scenario == option ? 0.14 : 0.10))
                         .frame(width: 50, height: 50)
                     Image(systemName: scenarioIconName(for: option))
                         .font(.headline)
                         .foregroundStyle(scenario == option ? .blue : .secondary)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(option.title)
                         .font(.headline)
                         .foregroundStyle(.primary)
@@ -671,6 +813,11 @@ struct IMPracticeView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        detailPill(title: option.personaName, systemImage: "person.fill")
+                        detailPill(title: option.stakes, systemImage: "sparkles")
+                    }
                 }
 
                 Spacer()
@@ -681,8 +828,12 @@ struct IMPracticeView: View {
             }
             .padding(14)
             .background(
-                (scenario == option ? Color.blue.opacity(0.06) : Color.black.opacity(0.03)),
+                (scenario == option ? Color.blue.opacity(0.08) : Color.white.opacity(0.8)),
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(scenario == option ? Color.blue.opacity(0.35) : Color.black.opacity(0.05), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -695,24 +846,44 @@ struct IMPracticeView: View {
             Text(tone.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(targetTone == tone ? .white : .primary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .padding(.horizontal, 10)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .padding(.horizontal, 12)
                 .background(
-                    targetTone == tone ? Color.blue : Color.black.opacity(0.05),
-                    in: Capsule()
+                    targetTone == tone ? Color.blue : Color.white.opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(targetTone == tone ? Color.clear : Color.black.opacity(0.06), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
     }
 
-    private func stepChip(title: String, isActive: Bool) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isActive ? .white : .secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(isActive ? Color.blue : Color.black.opacity(0.05), in: Capsule())
+    private func selectionSummaryChip(title: String, value: String, isComplete: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isComplete ? .primary : .secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(red: 0.96, green: 0.97, blue: 0.99), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func detailPill(title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.black.opacity(0.04), in: Capsule())
     }
 
     private func scenarioIconName(for option: IMConversationScenario) -> String {
@@ -747,16 +918,22 @@ struct IMPracticeView: View {
             .map(\.text)
             .joined(separator: " ")
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return 5 }
-        return IMToneMatcher.score(for: targetTone, transcript: transcript)
+        return IMToneMatcher.score(for: resolvedTargetTone, transcript: transcript)
     }
 
     private func beginConversation() {
+        guard let scenario, let targetTone else { return }
         guard IMModeAvailability.isAvailable else {
             serviceErrorMessage = IMModeServiceError.unavailable.errorDescription
             return
         }
+        let setup = IMConversationSetup(scenario: scenario, targetTone: targetTone)
+#if canImport(AVFAudio)
+        messageSpeaker.resetSessionPlaybackState()
+#endif
         resetConversation()
         isSessionActive = true
+        cachedRelationshipProfile = relationshipStore.profile(for: scenario)
         conversationState = relationshipStore.startingState(for: scenario)
         isAwaitingNPC = true
 
@@ -833,10 +1010,11 @@ struct IMPracticeView: View {
     }
 
     private func processReply(_ text: String) async {
+        guard let setup else { return }
         let analyzedSignal = IMUserMessageAnalyzer.analyze(
             text: text,
             currentState: conversationState,
-            scenario: scenario,
+            scenario: resolvedScenario,
             relationship: relationshipProfile
         )
 
@@ -885,6 +1063,7 @@ struct IMPracticeView: View {
 
     private func endConversation() {
         guard !isEndingConversation else { return }
+        guard let setup else { return }
         isEndingConversation = true
         Task {
             let transcript = combinedUserTranscript
@@ -913,11 +1092,12 @@ struct IMPracticeView: View {
                 await MainActor.run {
                     let finalEvaluation = evaluation
                     let updatedRelationship = relationshipStore.applySessionOutcome(
-                        scenario: scenario,
+                        scenario: resolvedScenario,
                         turns: turns,
                         finalState: conversationState,
                         evaluation: finalEvaluation
                     )
+                    cachedRelationshipProfile = updatedRelationship
 
                     if let closingMessage = finalEvaluation.outcome?.closingMessage,
                        turns.last?.text != closingMessage {
@@ -968,10 +1148,10 @@ struct IMPracticeView: View {
 
     private func resetConversation() {
 #if canImport(AVFAudio)
-        messageSpeaker.stop()
+        messageSpeaker.resetSessionPlaybackState()
 #endif
         turns = []
-        conversationState = relationshipStore.startingState(for: scenario)
+        conversationState = relationshipStore.startingState(for: resolvedScenario)
         isSessionActive = false
         isAwaitingNPC = false
         isWrappingUp = false
@@ -989,7 +1169,10 @@ struct IMPracticeView: View {
     private func speakIfEnabled(_ text: String) {
 #if canImport(AVFAudio)
         guard imVoicePlaybackSettings.isEnabled else { return }
-        messageSpeaker.speak(text, setup: setup)
+        messageSpeaker.speak(
+            text,
+            setup: IMConversationSetup(scenario: resolvedScenario, targetTone: resolvedTargetTone)
+        )
 #endif
     }
 

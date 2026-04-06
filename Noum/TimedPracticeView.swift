@@ -21,20 +21,13 @@ struct TimedPracticeView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.92, blue: 0.87),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             content
         }
-        .navigationTitle("Timed Practice")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("timedPractice.screen")
         .onAppear(perform: startThinkingCountdown)
         .navigationDestination(isPresented: $showSummary) {
@@ -145,7 +138,7 @@ struct TimedPracticeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
+            .background(.regularMaterial)
         }
     }
 
@@ -159,7 +152,7 @@ struct TimedPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var activeSubtitle: String {
@@ -189,7 +182,7 @@ struct TimedPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func headerCard(eyebrow: String, title: String, subtitle: String) -> some View {
@@ -206,7 +199,7 @@ struct TimedPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func countdownCard(value: Int, label: String, tint: Color) -> some View {
@@ -220,7 +213,7 @@ struct TimedPracticeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func statChip(title: String, value: String, tint: Color) -> some View {
@@ -238,7 +231,7 @@ struct TimedPracticeView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.white.opacity(0.92), in: Capsule())
+        .background(Color.white, in: Capsule())
     }
 
     private func errorCard(_ message: String) -> some View {

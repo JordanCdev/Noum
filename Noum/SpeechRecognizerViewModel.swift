@@ -35,12 +35,13 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
+    private var hasPreparedInteractiveUse = false
 
 
-    init() {
+    init(preloadOnInit: Bool = true) {
         loadSessions()
-        requestRecordAuthorization()
-        Task { await preloadTranscribeClient() }
+        guard preloadOnInit else { return }
+        prepareForInteractiveUse()
     }
 
     private func preloadTranscribeClient() async {
@@ -59,6 +60,13 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func prepareSession(mode: PracticeMode) {
         currentSessionMode = mode
+    }
+
+    func prepareForInteractiveUse() {
+        guard !hasPreparedInteractiveUse else { return }
+        hasPreparedInteractiveUse = true
+        requestRecordAuthorization()
+        Task(priority: .utility) { await preloadTranscribeClient() }
     }
 
     func annotateLatestSession(
@@ -89,6 +97,7 @@ class SpeechRecognizerViewModel: ObservableObject {
 
     func startRecording() {
         guard !isRecording else { return }
+        prepareForInteractiveUse()
         Task {
             print("Starting transcription")
             do {
@@ -316,6 +325,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, duration >= 1 else {
             sessionStart = nil
+            return
+        }
+        guard currentSessionMode != .imConversation else {
+            sessionStart = nil
+            pastSessions = sessionStore.sessions
             return
         }
         _ = PracticeSessionFinalizer.finalize(

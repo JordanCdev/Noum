@@ -90,7 +90,7 @@ struct SuddenDeathPracticeView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
+                .background(.regularMaterial)
             }
 
             if let launchCountdown {
@@ -104,7 +104,8 @@ struct SuddenDeathPracticeView: View {
                     .transition(.opacity.combined(with: .scale))
             }
         }
-        .navigationTitle("Sudden-Death")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("suddenDeath.screen")
         .onChange(of: speechVM.fillerWordCount) { _, count in
             if count > 0 { stopSession() }
@@ -163,7 +164,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(levelTint.opacity(pressurePulse ? 0.85 : 0.25), lineWidth: pressurePulse ? 2.5 : 1)
@@ -191,7 +192,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func prepStage(countdown: Int) -> some View {
@@ -233,7 +234,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(24)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
     }
 
     private var transcriptCard: some View {
@@ -250,7 +251,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var pressureDirectiveCard: some View {
@@ -282,7 +283,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(levelTint.opacity(pressurePulse ? 0.85 : 0.18), lineWidth: pressurePulse ? 2 : 1)
@@ -307,7 +308,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .scaleEffect(pressurePulse ? 1.02 : 1.0)
         .animation(.easeInOut(duration: 0.35), value: pressurePulse)
     }
@@ -323,7 +324,7 @@ struct SuddenDeathPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func errorCard(_ message: String) -> some View {

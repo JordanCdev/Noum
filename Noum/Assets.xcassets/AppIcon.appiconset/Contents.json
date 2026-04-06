@@ -1,29 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "this.png",
-      "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
-    },
-    {
-      "appearances" : [
-        {
-          "appearance" : "luminosity",
-          "value" : "dark"
-        }
-      ],
-      "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
-    },
-    {
-      "appearances" : [
-        {
-          "appearance" : "luminosity",
-          "value" : "tinted"
-        }
-      ],
+      "filename" : "ChatGPT Image Apr 5, 2026, 03_11_26 AM.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

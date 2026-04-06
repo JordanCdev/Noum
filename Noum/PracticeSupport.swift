@@ -3357,6 +3357,10 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     private var audioPlayer: AVAudioPlayer?
     private var speechTask: Task<Void, Never>?
     private var lastFailureReason: String?
+    private var hasPreparedAudioSession = false
+    private var prewarmingKeys: Set<String> = []
+    private var warmedKeys: Set<String> = []
+    private var hasPrewarmedDefaultConnection = false
 
     override private init() {
         super.init()
@@ -3396,6 +3400,52 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             )
         }
     }
+
+    func prepareForPlayback() {
+        guard !hasPreparedAudioSession else { return }
+        do {
+            #if canImport(AVFoundation)
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audioSession.setActive(true)
+            #endif
+            hasPreparedAudioSession = true
+            lastFailureReason = nil
+        } catch {
+            lastFailureReason = "Audio playback preparation error: \(error.localizedDescription)"
+        }
+    }
+
+    func prewarmPreferredEngineIfNeeded(for setup: IMConversationSetup) {
+        guard let engine = candidateEngines(for: setup).first else { return }
+        let warmupKey = "\(engine.rawValue):\(setup.scenario.rawValue)"
+        guard !warmedKeys.contains(warmupKey), !prewarmingKeys.contains(warmupKey) else { return }
+        prewarmingKeys.insert(warmupKey)
+
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            let didWarm = await self.prewarm(engine: engine, setup: setup)
+            await MainActor.run {
+                self.prewarmingKeys.remove(warmupKey)
+                if didWarm {
+                    self.warmedKeys.insert(warmupKey)
+                }
+            }
+        }
+    }
+
+    func prewarmDefaultConnectionIfNeeded() {
+        guard !hasPrewarmedDefaultConnection else { return }
+        hasPrewarmedDefaultConnection = true
+        prewarmPreferredEngineIfNeeded(
+            for: IMConversationSetup(
+                scenario: .socialCatchUp,
+                targetTone: .confident
+            )
+        )
+    }
+
+    func resetSessionPlaybackState() { stop() }
 
     func stop() {
         speechTask?.cancel()
@@ -3466,6 +3516,37 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
+    private func prewarm(engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+        switch engine {
+        case .googleCloud:
+            guard let request = googleCloudRequest(for: ".", setup: setup) else { return false }
+            return await executeWarmupRequest(request)
+        case .openAI:
+            guard let request = openAIRequest(for: ".", setup: setup) else { return false }
+            return await executeWarmupRequest(request)
+        case .elevenLabs:
+            guard let request = elevenLabsRequest(for: ".", setup: setup) else { return false }
+            return await executeWarmupRequest(request)
+        case .backend:
+            guard let request = backendRequest(for: ".", setup: setup) else { return false }
+            return await executeWarmupRequest(request)
+        case .auto:
+            return false
+        }
+    }
+
+    private func executeWarmupRequest(_ request: URLRequest) async -> Bool {
+        do {
+            var warmupRequest = request
+            warmupRequest.timeoutInterval = 8
+            let (_, response) = try await URLSession.shared.data(for: warmupRequest)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return (200..<300).contains(http.statusCode)
+        } catch {
+            return false
+        }
+    }
+
     private func preferredLanguageCode() -> String {
         let current = Locale.autoupdatingCurrent
         if current.identifier.hasPrefix("en_GB") || TimeZone.autoupdatingCurrent.identifier == "Europe/London" {
@@ -3492,31 +3573,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     private func playWithBackend(_ text: String, setup: IMConversationSetup) async -> Bool {
-        guard let baseURL = backendBaseURL() else { return false }
-        let endpoint = baseURL.appending(path: "/v1/tts/im")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let apiKey = backendAPIKey() {
-            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
-        }
-        if let accountID = AuthManager.shared.currentAccountID {
-            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
-        }
-        if let provider = AuthManager.shared.currentAuthProviderRawValue {
-            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
-        }
-
-        let body = BackendIMTTSRequest(
-            text: text,
-            languageCode: preferredLanguageCode(),
-            scenario: setup.scenario.rawValue,
-            targetTone: setup.targetTone.rawValue,
-            personaName: setup.scenario.personaName
-        )
+        guard let request = backendRequest(for: text, setup: setup) else { return false }
 
         do {
-            request.httpBody = try JSONEncoder().encode(body)
             let (data, response) = try await URLSession.shared.data(for: request)
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
@@ -3545,11 +3604,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
 
     private func playAudioData(_ data: Data) -> Bool {
         do {
-            #if canImport(AVFoundation)
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-            try audioSession.setActive(true)
-            #endif
+            prepareForPlayback()
             let player = try AVAudioPlayer(data: data)
             player.prepareToPlay()
             audioPlayer = player
@@ -3670,46 +3725,12 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     private func playWithGoogleCloud(_ text: String, setup: IMConversationSetup) async -> Bool {
-        guard var components = URLComponents(string: "https://texttospeech.googleapis.com/v1/text:synthesize") else {
-            return false
-        }
-
-        let accessToken = googleCloudAccessToken()
-        let apiKey = googleCloudAPIKey()
-        guard accessToken != nil || apiKey != nil else {
+        guard let request = googleCloudRequest(for: text, setup: setup) else {
             lastFailureReason = "Google Cloud TTS key or access token is missing."
             return false
         }
 
-        if let apiKey {
-            components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
-        }
-
-        guard let endpoint = components.url else {
-            return false
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if accessToken != nil, let projectID = googleCloudProjectID() {
-            request.setValue(projectID, forHTTPHeaderField: "x-goog-user-project")
-        }
-
-        let body = GoogleCloudTTSSpeechRequest(
-            input: GoogleCloudTTSInput(text: text),
-            voice: GoogleCloudTTSVoiceSelectionParams(
-                languageCode: preferredLanguageCode(),
-                name: preferredGoogleCloudVoice(for: setup)
-            ),
-            audioConfig: GoogleCloudTTSAudioConfig(audioEncoding: "MP3", speakingRate: 0.94)
-        )
-
         do {
-            request.httpBody = try JSONEncoder().encode(body)
             let (data, response) = try await URLSession.shared.data(for: request)
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
@@ -3757,27 +3778,12 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     private func playWithOpenAI(_ text: String, setup: IMConversationSetup) async -> Bool {
-        guard let apiKey = openAIAPIKey(),
-              let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+        guard let request = openAIRequest(for: text, setup: setup) else {
             lastFailureReason = "OpenAI TTS credentials are missing."
             return false
         }
 
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body = OpenAITTSSpeechRequest(
-            model: "gpt-4o-mini-tts",
-            voice: preferredOpenAIVoice(for: setup),
-            input: text,
-            responseFormat: "wav",
-            instructions: openAIInstructions(for: setup)
-        )
-
         do {
-            request.httpBody = try JSONEncoder().encode(body)
             let (data, response) = try await URLSession.shared.data(for: request)
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
@@ -3816,7 +3822,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     private func elevenLabsModelID() -> String {
         ProcessInfo.processInfo.environment["ELEVENLABS_MODEL_ID"]
             ?? LocalConfigLoader.value(forKey: "ELEVENLABS_MODEL_ID", plistNamed: "AIConfig")
-            ?? "eleven_multilingual_v2"
+            ?? "eleven_flash_v2_5"
     }
 
     private func elevenLabsVoiceID(for scenario: IMConversationScenario) -> String? {
@@ -3845,11 +3851,118 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     private func playWithElevenLabs(_ text: String, setup: IMConversationSetup) async -> Bool {
+        guard let request = elevenLabsRequest(for: text, setup: setup) else {
+            lastFailureReason = "ElevenLabs credentials or voice ID are missing."
+            return false
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                lastFailureReason = "ElevenLabs request failed."
+                return false
+            }
+
+            return playAudioData(data)
+        } catch {
+            lastFailureReason = "ElevenLabs error: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func backendRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
+        guard let baseURL = backendBaseURL() else { return nil }
+        let endpoint = baseURL.appending(path: "/v1/tts/im")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let apiKey = backendAPIKey() {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+        if let accountID = AuthManager.shared.currentAccountID {
+            request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        }
+        if let provider = AuthManager.shared.currentAuthProviderRawValue {
+            request.setValue(provider, forHTTPHeaderField: "X-Noum-Auth-Provider")
+        }
+
+        let body = BackendIMTTSRequest(
+            text: text,
+            languageCode: preferredLanguageCode(),
+            scenario: setup.scenario.rawValue,
+            targetTone: setup.targetTone.rawValue,
+            personaName: setup.scenario.personaName
+        )
+        request.httpBody = try? JSONEncoder().encode(body)
+        return request.httpBody == nil ? nil : request
+    }
+
+    private func googleCloudRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
+        guard var components = URLComponents(string: "https://texttospeech.googleapis.com/v1/text:synthesize") else {
+            return nil
+        }
+
+        let accessToken = googleCloudAccessToken()
+        let apiKey = googleCloudAPIKey()
+        guard accessToken != nil || apiKey != nil else { return nil }
+
+        if let apiKey {
+            components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        }
+
+        guard let endpoint = components.url else { return nil }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if accessToken != nil, let projectID = googleCloudProjectID() {
+            request.setValue(projectID, forHTTPHeaderField: "x-goog-user-project")
+        }
+
+        let body = GoogleCloudTTSSpeechRequest(
+            input: GoogleCloudTTSInput(text: text),
+            voice: GoogleCloudTTSVoiceSelectionParams(
+                languageCode: preferredLanguageCode(),
+                name: preferredGoogleCloudVoice(for: setup)
+            ),
+            audioConfig: GoogleCloudTTSAudioConfig(audioEncoding: "MP3", speakingRate: 0.94)
+        )
+        request.httpBody = try? JSONEncoder().encode(body)
+        return request.httpBody == nil ? nil : request
+    }
+
+    private func openAIRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
+        guard let apiKey = openAIAPIKey(),
+              let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+            return nil
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body = OpenAITTSSpeechRequest(
+            model: "tts-1",
+            voice: preferredOpenAIVoice(for: setup),
+            input: text,
+            responseFormat: "mp3",
+            instructions: openAIInstructions(for: setup)
+        )
+        request.httpBody = try? JSONEncoder().encode(body)
+        return request.httpBody == nil ? nil : request
+    }
+
+    private func elevenLabsRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
         guard let apiKey = elevenLabsAPIKey(),
               let voiceID = elevenLabsVoiceID(for: setup.scenario),
               let endpoint = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)") else {
-            lastFailureReason = "ElevenLabs credentials or voice ID are missing."
-            return false
+            return nil
         }
 
         var request = URLRequest(url: endpoint)
@@ -3869,22 +3982,8 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 speed: 0.96
             )
         )
-
-        do {
-            request.httpBody = try JSONEncoder().encode(body)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard !Task.isCancelled,
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                lastFailureReason = "ElevenLabs request failed."
-                return false
-            }
-
-            return playAudioData(data)
-        } catch {
-            lastFailureReason = "ElevenLabs error: \(error.localizedDescription)"
-            return false
-        }
+        request.httpBody = try? JSONEncoder().encode(body)
+        return request.httpBody == nil ? nil : request
     }
 }
 

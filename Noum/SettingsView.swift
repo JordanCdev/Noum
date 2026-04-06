@@ -26,15 +26,7 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.92, blue: 0.87),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
@@ -53,7 +45,9 @@ struct SettingsView: View {
                 .padding(18)
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("settings.screen")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") { dismiss() }
@@ -93,7 +87,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var practiceCard: some View {
@@ -204,7 +198,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var coachingCard: some View {
@@ -255,7 +249,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var remindersCard: some View {
@@ -289,7 +283,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var accountPrivacyCard: some View {
@@ -347,7 +341,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var debugCard: some View {
@@ -379,7 +373,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var recommendationDiagnosticsCard: some View {
@@ -454,7 +448,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func compactTag(title: String, value: String) -> some View {

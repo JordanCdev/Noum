@@ -42,6 +42,7 @@ struct NoumApp: App {
                 ContentView()
             }
         }
+        .preferredColorScheme(.light)
 #if canImport(GoogleSignIn)
         .onOpenURL { url in
             GIDSignIn.sharedInstance.handle(url)
@@ -50,4 +51,3 @@ struct NoumApp: App {
     }
 }
 #endif
-

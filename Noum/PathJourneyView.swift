@@ -9,6 +9,7 @@ import SwiftUI
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct PathJourneyView: View {
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
@@ -35,21 +36,13 @@ struct PathJourneyView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.95, green: 0.93, blue: 0.88),
-                        Color.white,
-                        Color(red: 0.89, green: 0.96, blue: 0.91)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Color(UIColor.systemGroupedBackground)
                 .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Your path")
+                            Text("Your journey")
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
                             Text(snapshot.summaryLine)
                                 .font(.subheadline)
@@ -68,8 +61,8 @@ struct PathJourneyView: View {
                             .frame(height: min(270, geometry.size.height * 0.37))
 
                             HStack(spacing: 10) {
-                                journeyPill(title: "Revealed", value: snapshot.progressLabel, accent: .green)
-                                journeyPill(title: "Current streak", value: snapshot.streakLabel, accent: .blue)
+                                journeyPill(title: "Revealed", value: snapshot.progressLabel, icon: "map.fill", accent: .green)
+                                journeyPill(title: "Streak", value: snapshot.streakLabel, icon: "flame.fill", accent: .orange)
                             }
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -95,14 +88,7 @@ struct PathJourneyView: View {
                         }
                         .padding(16)
                         .background(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.96),
-                                    Color(red: 0.93, green: 0.97, blue: 0.94).opacity(0.88)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
+                            Color.white,
                             in: RoundedRectangle(cornerRadius: 30, style: .continuous)
                         )
                         .overlay(
@@ -121,8 +107,20 @@ struct PathJourneyView: View {
                 }
             }
         }
-        .navigationTitle("path")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Back")
+                    }
+                    .foregroundStyle(.blue)
+                }
+            }
+        }
+        .accessibilityIdentifier("journey.screen")
         .task {
             daylightModel.activate()
         }
@@ -204,14 +202,19 @@ struct PathJourneyView: View {
         )
     }
 
-    private func journeyPill(title: String, value: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(accent.opacity(0.92))
+    private func journeyPill(title: String, value: String, icon: String, accent: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(accent.opacity(0.82))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(accent.opacity(0.92))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
@@ -227,7 +230,7 @@ struct PathJourneyView: View {
                 .textCase(.uppercase)
 
             HStack(alignment: .top, spacing: 10) {
-                PulseBadge(systemImage: "bolt.fill", tint: .orange)
+                PulseBadge(systemImage: "bolt.fill", tint: .orange, animated: false)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(retentionSnapshot.activeChallenge.title)
@@ -244,11 +247,11 @@ struct PathJourneyView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Color.orange.opacity(0.12), in: Capsule())
-                    SparkleRibbon(tint: .orange)
+                    SparkleRibbon(tint: .orange, animated: false)
                 }
             }
 
-            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue)
+            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue, animated: false)
 
             HStack {
                 Text(retentionSnapshot.activeChallenge.progressLabel)
@@ -282,7 +285,7 @@ struct PathJourneyView: View {
                         HStack(spacing: 10) {
                             Group {
                                 if achievement.isUnlocked {
-                                    PulseBadge(systemImage: achievement.symbolName, tint: .green)
+                                    PulseBadge(systemImage: achievement.symbolName, tint: .green, animated: false)
                                 } else {
                                     Image(systemName: achievement.symbolName)
                                         .font(.subheadline.weight(.bold))
@@ -318,7 +321,8 @@ struct PathJourneyView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 ShimmerProgressBar(
                                     progress: achievement.progress,
-                                    tint: achievement.isUnlocked ? .green : .blue
+                                    tint: achievement.isUnlocked ? .green : .blue,
+                                    animated: false
                                 )
                                 Text(
                                     achievement.isUnlocked
@@ -722,177 +726,277 @@ struct PathJourneyArtwork: View {
     let compact: Bool
     let sceneResolver: (Date) -> PathSkyScene
 
+    @State private var scene: PathSkyScene?
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 15.0)) { timeline in
-            let phase = breezePhase(for: timeline.date)
-            let scene = sceneResolver(timeline.date)
+        GeometryReader { geometry in
+            let size = geometry.size
+            let currentScene = scene ?? sceneResolver(Date())
 
-            GeometryReader { geometry in
-                let size = geometry.size
+            ZStack {
+                RoundedRectangle(cornerRadius: compact ? 24 : 30, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                currentScene.skyTop,
+                                currentScene.skyMiddle,
+                                currentScene.skyBottom
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: compact ? 24 : 30, style: .continuous)
+                skyGlow(size: size, scene: currentScene)
+                celestialBody(size: size, scene: currentScene)
+                cloudHaze(size: size, scene: currentScene)
+                if currentScene.isNight {
+                    starField(size: size)
+                }
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.70, green: 0.74, blue: 0.46),
+                                Color(red: 0.52, green: 0.60, blue: 0.28),
+                                Color(red: 0.32, green: 0.42, blue: 0.14)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: size.height * 0.46)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+
+                fieldTexture(size: size)
+                flowerDots(size: size)
+
+                ForEach(grassBlades(for: size)) { blade in
+                    Capsule(style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    scene.skyTop,
-                                    scene.skyMiddle,
-                                    scene.skyBottom
+                                    grassBaseColor(for: blade).opacity(blade.opacity * 0.82),
+                                    grassHighlightColor(for: blade).opacity(blade.opacity * 0.62)
                                 ],
-                                startPoint: .top,
-                                endPoint: .bottom
+                                startPoint: .bottom,
+                                endPoint: .top
                             )
                         )
+                        .frame(width: blade.width, height: blade.height)
+                        .rotationEffect(.degrees(blade.rotation))
+                        .position(blade.position)
+                }
 
-                    skyGlow(size: size, scene: scene)
-                    celestialBody(size: size, scene: scene)
-                    cloudHaze(size: size, scene: scene)
-                    if scene.isNight {
-                        starField(size: size)
+                ZStack {
+                    // Only render path elements when there is actual progress.
+                    if snapshot.revealProgress > 0 {
+                        // Solid dirt base — the core of the walked trail.
+                        PerspectivePathShape()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.56, green: 0.46, blue: 0.32),
+                                        Color(red: 0.62, green: 0.52, blue: 0.36),
+                                        Color(red: 0.68, green: 0.60, blue: 0.44)
+                                    ],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .mask(alignment: .bottom) {
+                                revealMask(for: size)
+                            }
+
+                        // Lighter highlight on one side to give the dirt some dimension.
+                        PerspectivePathShape()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.76, green: 0.68, blue: 0.52).opacity(0.28),
+                                        Color.clear
+                                    ],
+                                    startPoint: .trailing,
+                                    endPoint: .leading
+                                )
+                            )
+                            .mask(alignment: .bottom) {
+                                revealMask(for: size)
+                            }
+
+                        // Soft edge along the trail borders.
+                        PerspectivePathShape()
+                            .stroke(
+                                Color(red: 0.48, green: 0.54, blue: 0.26).opacity(0.35),
+                                lineWidth: compact ? 3 : 5
+                            )
+                            .mask(alignment: .bottom) {
+                                revealMask(for: size)
+                            }
+
+                        // Dense overgrowth keeps the unrevealed section fully hidden.
+                        PerspectivePathShape()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.60, green: 0.65, blue: 0.30),
+                                        Color(red: 0.42, green: 0.52, blue: 0.18),
+                                        Color(red: 0.28, green: 0.38, blue: 0.12)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .mask(alignment: .bottom) {
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    Rectangle()
+                                        .frame(height: hiddenDepth(for: size))
+                                    Rectangle()
+                                        .frame(height: revealedDepth(for: size))
+                                        .hidden()
+                                }
+                            }
+
                     }
 
                     Rectangle()
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color(red: 0.70, green: 0.74, blue: 0.46),
-                                    Color(red: 0.52, green: 0.60, blue: 0.28),
-                                    Color(red: 0.32, green: 0.42, blue: 0.14)
+                                    Color(red: 0.78, green: 0.79, blue: 0.47).opacity(0.05),
+                                    Color(red: 0.58, green: 0.65, blue: 0.28).opacity(0.14),
+                                    Color(red: 0.40, green: 0.49, blue: 0.16).opacity(0.08)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
+                        .blendMode(.softLight)
+                }
+                .mask(alignment: .bottom) {
+                    Rectangle()
                         .frame(height: size.height * 0.46)
                         .frame(maxHeight: .infinity, alignment: .bottom)
-
-                    fieldTexture(size: size)
-
-                    ZStack {
-                        // Only render path elements when there is actual progress.
-                        if snapshot.revealProgress > 0 {
-                            // Solid dirt base — the core of the walked trail.
-                            PerspectivePathShape()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(red: 0.52, green: 0.42, blue: 0.30),
-                                            Color(red: 0.58, green: 0.48, blue: 0.34),
-                                            Color(red: 0.64, green: 0.56, blue: 0.40)
-                                        ],
-                                        startPoint: .bottom,
-                                        endPoint: .top
-                                    )
-                                )
-                                .mask(alignment: .bottom) {
-                                    Rectangle()
-                                        .frame(height: revealedDepth(for: size))
-                                        .frame(maxHeight: .infinity, alignment: .bottom)
-                                }
-
-                            // Worn rut lines down the centre of the trail.
-                            PerspectivePathTextureShape()
-                                .stroke(Color(red: 0.42, green: 0.34, blue: 0.24).opacity(0.55), lineWidth: compact ? 0.8 : 1.1)
-                                .mask(alignment: .bottom) {
-                                    Rectangle()
-                                        .frame(height: revealedDepth(for: size))
-                                        .frame(maxHeight: .infinity, alignment: .bottom)
-                                }
-
-                            // Lighter highlight on one side to give the dirt some dimension.
-                            PerspectivePathShape()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(red: 0.72, green: 0.64, blue: 0.48).opacity(0.25),
-                                            Color.clear
-                                        ],
-                                        startPoint: .trailing,
-                                        endPoint: .leading
-                                    )
-                                )
-                                .mask(alignment: .bottom) {
-                                    Rectangle()
-                                        .frame(height: revealedDepth(for: size))
-                                        .frame(maxHeight: .infinity, alignment: .bottom)
-                                }
-
-                            // Dense overgrowth keeps the unrevealed section fully hidden until
-                            // the user has actually walked far enough to expose it.
-                            PerspectivePathShape()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(red: 0.60, green: 0.65, blue: 0.30),
-                                            Color(red: 0.42, green: 0.52, blue: 0.18),
-                                            Color(red: 0.28, green: 0.38, blue: 0.12)
-                                        ],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .overlay {
-                                    PerspectivePathShape()
-                                        .stroke(
-                                            Color(red: 0.66, green: 0.74, blue: 0.34).opacity(0.26),
-                                            lineWidth: compact ? 5 : 8
-                                        )
-                                        .blur(radius: compact ? 1.8 : 2.6)
-                                }
-                                .mask(alignment: .bottom) {
-                                    Rectangle()
-                                        .frame(height: hiddenDepth(for: size))
-                                        .offset(y: -revealedDepth(for: size))
-                                        .frame(maxHeight: .infinity, alignment: .bottom)
-                                }
-                        }
-
-                        flowerDots(size: size, phase: phase)
-
-                        ForEach(grassBlades(for: size)) { blade in
-                            Capsule(style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            grassBaseColor(for: blade).opacity(blade.opacity * 0.82),
-                                            grassHighlightColor(for: blade).opacity(blade.opacity * 0.62)
-                                        ],
-                                        startPoint: .bottom,
-                                        endPoint: .top
-                                    )
-                                )
-                                .frame(width: blade.width, height: blade.height)
-                                .blur(radius: compact ? 0.35 : 0.55)
-                                .rotationEffect(.degrees(blade.rotation + (blade.animates ? phase * blade.sway : 0)))
-                                .offset(x: CGFloat(blade.animates ? phase : 0) * blade.offset)
-                                .position(blade.position)
-                        }
-
-                        Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.78, green: 0.79, blue: 0.47).opacity(0.05),
-                                        Color(red: 0.58, green: 0.65, blue: 0.28).opacity(0.14),
-                                        Color(red: 0.40, green: 0.49, blue: 0.16).opacity(0.08)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .blendMode(.softLight)
-                    }
-                    .mask(alignment: .bottom) {
-                        Rectangle()
-                            .frame(height: size.height * 0.46)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
-                    }
-
-                    distantTrees(size: size)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: compact ? 24 : 30, style: .continuous))
+
+                distantTrees(size: size)
+
+                // Goal marker rendered outside the field mask so the flag
+                // pole and banner are never clipped by the ground region.
+                if snapshot.revealProgress > 0 {
+                    goalMarker(size: size)
+                }
             }
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 24 : 30, style: .continuous))
         }
+        .task {
+            scene = sceneResolver(Date())
+        }
+    }
+
+    @ViewBuilder
+    private func revealMask(for size: CGSize) -> some View {
+        let depth = revealedDepth(for: size)
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            // Rounded top edge gives the reveal a natural feel instead of a hard line.
+            Ellipse()
+                .frame(width: size.width * 0.6, height: compact ? 18 : 28)
+                .frame(maxWidth: .infinity)
+            Rectangle()
+                .frame(height: max(0, depth - (compact ? 9 : 14)))
+        }
+    }
+
+    @ViewBuilder
+    private func goalMarker(size: CGSize) -> some View {
+        let field = fieldMetrics(for: size)
+        let pathTopY = field.top
+        let centerX = size.width * 0.515
+        let poleHeight: CGFloat = compact ? 44 : 64
+        let poleWidth: CGFloat = compact ? 3.0 : 4.0
+        let flagWidth: CGFloat = compact ? 20 : 28
+        let flagHeight: CGFloat = compact ? 14 : 20
+        let isComplete = snapshot.revealProgress >= 1.0
+        let flagY = pathTopY + (compact ? 2 : 3)
+        let poleTopY = flagY - poleHeight
+
+        ZStack {
+            // Soft glow behind the flag
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            (isComplete
+                                ? Color(red: 0.40, green: 0.85, blue: 0.50)
+                                : Color(red: 1.0, green: 0.88, blue: 0.44)
+                            ).opacity(0.45),
+                            Color.clear
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: compact ? 22 : 32
+                    )
+                )
+                .frame(width: compact ? 46 : 64, height: compact ? 46 : 64)
+                .position(x: centerX + flagWidth * 0.35, y: poleTopY + flagHeight * 0.55)
+
+            // Pole
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.30, green: 0.24, blue: 0.16),
+                            Color(red: 0.20, green: 0.16, blue: 0.10)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: poleWidth, height: poleHeight)
+                .position(x: centerX, y: flagY - poleHeight * 0.5)
+
+            // Pennant flag — a triangular banner hanging from the pole top
+            FlagPennantShape()
+                .fill(
+                    LinearGradient(
+                        colors: isComplete
+                            ? [
+                                Color(red: 0.18, green: 0.72, blue: 0.40),
+                                Color(red: 0.36, green: 0.86, blue: 0.52)
+                            ]
+                            : [
+                                Color(red: 0.92, green: 0.30, blue: 0.16),
+                                Color(red: 0.98, green: 0.46, blue: 0.22)
+                            ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay {
+                    FlagPennantShape()
+                        .stroke(Color.white.opacity(0.60), lineWidth: compact ? 0.8 : 1.2)
+                }
+                .frame(width: flagWidth, height: flagHeight)
+                .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
+                .position(x: centerX + (flagWidth * 0.5) + (poleWidth * 0.5),
+                          y: poleTopY + flagHeight * 0.5 + (compact ? 1 : 2))
+
+            // Pole cap — small ball on top
+            Circle()
+                .fill(Color(red: 0.36, green: 0.30, blue: 0.20))
+                .frame(width: compact ? 5 : 7, height: compact ? 5 : 7)
+                .position(x: centerX, y: poleTopY)
+
+            // Ground base
+            Ellipse()
+                .fill(Color(red: 0.52, green: 0.42, blue: 0.28).opacity(0.70))
+                .frame(width: compact ? 10 : 14, height: compact ? 4 : 6)
+                .position(x: centerX, y: flagY + (compact ? 1 : 2))
+        }
+        .opacity(snapshot.revealProgress > 0.05 ? 1 : 0.35)
     }
 
     private func revealedDepth(for size: CGSize) -> CGFloat {
@@ -914,22 +1018,24 @@ struct PathJourneyArtwork: View {
 
     private func grassBlades(for size: CGSize) -> [JourneyGrassBlade] {
         let progress = snapshot.revealProgress
-        let rowCount = compact ? 10 : 17
-        let bladesPerRow = compact ? 28 : 46
+        let rowCount = compact ? 6 : 8
+        let bladesPerRow = compact ? 14 : 20
         let field = fieldMetrics(for: size)
         let revealLine = progress > 0 ? Double((field.top + hiddenDepth(for: size)) / size.height) : 2.0
 
         return (0..<rowCount).flatMap { row in
             (0..<bladesPerRow).compactMap { column in
                 let depth = Double(row) / Double(max(1, rowCount - 1))
-                let y = 0.44 + depth * 0.50
+                let y = 0.55 + depth * 0.39
                 let x = (Double(column) + 0.5) / Double(bladesPerRow)
                 let hw = pathHalfWidth(at: y, compact: compact)
-                let distanceFromCenter = abs(x - 0.5)
+                // The S-curve shifts the path center, so offset the clearing center
+                // to match. The curve shifts left in the lower half and right upper.
+                let curveShift = (1.0 - depth) * 0.015 - depth * 0.01
+                let distanceFromCenter = abs(x - (0.5 + curveShift))
 
-                // The clearing corridor matches the full path width so all grass
-                // inside the dirt trail is removed cleanly in the revealed zone.
-                let insidePath = distanceFromCenter < hw * 1.08
+                // Very generous clearing corridor to prevent any visual overlap.
+                let insidePath = distanceFromCenter < hw * 1.6
                 let inRevealedZone = y > revealLine
 
                 // Remove grass inside the path where it has been revealed.
@@ -958,9 +1064,16 @@ struct PathJourneyArtwork: View {
                     pathOvergrowth = 0
                 }
 
-                let width = (compact ? 1.4 : 1.8) + (perspectiveScale * (compact ? 1.2 : 1.7))
-                let height = (baseHeight + pathOvergrowth) * perspectiveScale * 0.94
-                let animates = depth > 0.74
+                // Edge overgrowth — grass near the left/right edges grows
+                // taller, especially early in the journey when progress is low.
+                let edgeness = max(0, (abs(x - 0.5) - 0.25) / 0.25) // 0 at center, 1 at edge
+                let wildness = 1.0 - min(1.0, progress * 1.5) // 1 at 0%, fades by ~67%
+                let edgeOvergrowth = edgeness * wildness * (compact ? 16.0 : 24.0)
+
+                let width = (compact ? 1.6 : 2.0) + (perspectiveScale * (compact ? 1.0 : 1.4))
+                    + (edgeness * wildness * (compact ? 0.6 : 1.0))
+                let height = (baseHeight + pathOvergrowth + edgeOvergrowth) * perspectiveScale * 0.88
+                let animates = false
                 let dryness = 0.35 + max(0, (0.5 - clumpWave)) * 0.7
 
                 return JourneyGrassBlade(
@@ -979,11 +1092,6 @@ struct PathJourneyArtwork: View {
                 )
             }
         }
-    }
-
-    private func breezePhase(for date: Date) -> Double {
-        let time = date.timeIntervalSinceReferenceDate
-        return sin(time * 1.1) * 0.8 + sin(time * 0.33) * 0.35
     }
 
     @ViewBuilder
@@ -1017,16 +1125,7 @@ struct PathJourneyArtwork: View {
 
     @ViewBuilder
     private func cloudHaze(size: CGSize, scene: PathSkyScene) -> some View {
-        ForEach(0..<3, id: \.self) { index in
-            Capsule()
-                .fill(scene.cloudColor.opacity(scene.isNight ? 0.12 : 0.18))
-                .frame(width: compact ? 72 : 110, height: compact ? 16 : 22)
-                .blur(radius: compact ? 6 : 9)
-                .position(
-                    x: size.width * [0.24, 0.50, 0.70][index],
-                    y: size.height * [0.12, 0.18, 0.10][index]
-                )
-        }
+        EmptyView()
     }
 
     @ViewBuilder
@@ -1043,7 +1142,7 @@ struct PathJourneyArtwork: View {
     }
 
     @ViewBuilder
-    private func flowerDots(size: CGSize, phase: Double) -> some View {
+    private func flowerDots(size: CGSize) -> some View {
         ForEach(flowerNodes(for: size)) { flower in
             ZStack {
                 ForEach(0..<4, id: \.self) { petal in
@@ -1059,26 +1158,51 @@ struct PathJourneyArtwork: View {
                     .fill(Color(red: 0.99, green: 0.88, blue: 0.42))
                     .frame(width: flower.size * 0.24, height: flower.size * 0.24)
             }
-            .rotationEffect(.degrees(phase * flower.sway))
             .position(flower.position)
             .opacity(flower.opacity)
         }
     }
 
     private func flowerNodes(for size: CGSize) -> [JourneyFlowerNode] {
-        let values: [(Double, Double, Color, Double)] = [
-            (0.16, 0.82, Color.white, 0.58),
-            (0.22, 0.88, Color.white, 0.52),
-            (0.29, 0.84, Color(red: 0.98, green: 0.96, blue: 0.88), 0.48),
-            (0.70, 0.82, Color(red: 0.98, green: 0.96, blue: 0.88), 0.46),
-            (0.76, 0.79, Color.white, 0.54),
-            (0.84, 0.86, Color.white, 0.50),
-            (0.88, 0.81, Color(red: 0.98, green: 0.96, blue: 0.88), 0.44)
+        let progress = snapshot.revealProgress
+        let streakBoost = min(8, max(0, snapshot.streak))
+        let yellow = Color(red: 0.98, green: 0.88, blue: 0.32)
+        let softYellow = Color(red: 0.96, green: 0.92, blue: 0.50)
+
+        // Flowers stay light at low progress, then thicken as reveal progress and streak both rise.
+        let allFlowers: [(Double, Double, Color, Double)] = [
+            (0.14, 0.68, Color.white, 0.50),
+            (0.86, 0.74, yellow, 0.48),
+            (0.78, 0.64, Color.white, 0.46),
+            (0.22, 0.80, softYellow, 0.44),
+            (0.90, 0.86, Color.white, 0.44),
+            (0.10, 0.88, yellow, 0.42),
+            (0.68, 0.70, softYellow, 0.40),
+            (0.30, 0.66, Color.white, 0.42),
+            (0.82, 0.82, yellow, 0.40),
+            (0.18, 0.76, softYellow, 0.40),
+            (0.72, 0.90, Color.white, 0.38),
+            (0.08, 0.72, yellow, 0.38),
+            (0.24, 0.71, Color.white, 0.42),
+            (0.76, 0.78, softYellow, 0.40),
+            (0.58, 0.86, Color.white, 0.38),
+            (0.40, 0.83, yellow, 0.40),
+            (0.12, 0.81, softYellow, 0.38),
+            (0.88, 0.69, Color.white, 0.38),
+            (0.63, 0.75, yellow, 0.36),
+            (0.36, 0.91, Color.white, 0.36),
         ]
-        return values.map { x, y, color, opacity in
+
+        let minCount = 2
+        let maxCount = allFlowers.count
+        let progressCount = minCount + Int(progress * Double(maxCount - minCount - streakBoost))
+        let visibleCount = progressCount + streakBoost
+        let clamped = min(maxCount, visibleCount)
+
+        return allFlowers.prefix(clamped).map { x, y, color, opacity in
             JourneyFlowerNode(
                 position: CGPoint(x: size.width * x, y: size.height * y),
-                size: compact ? 6 : 8,
+                size: compact ? 5 : 7,
                 color: color,
                 opacity: opacity,
                 sway: compact ? 4 : 6
@@ -1088,8 +1212,8 @@ struct PathJourneyArtwork: View {
 
     private func pathHalfWidth(at normalizedY: Double, compact: Bool) -> Double {
         let t = max(0, min(1, normalizedY))
-        let base = compact ? 0.20 : 0.23
-        let horizon = compact ? 0.016 : 0.024
+        let base = compact ? 0.22 : 0.25
+        let horizon = compact ? 0.018 : 0.026
         return horizon + ((base - horizon) * pow(t, 1.35))
     }
 
@@ -1112,18 +1236,18 @@ struct PathJourneyArtwork: View {
     }
 
     private func fieldPatches(for size: CGSize) -> [FieldPatch] {
-        let rows = compact ? 6 : 9
-        let columns = compact ? 8 : 12
+        let rows = compact ? 3 : 4
+        let columns = compact ? 4 : 5
         var patches: [FieldPatch] = []
 
         for row in 0..<rows {
             for column in 0..<columns {
                 let depth = Double(row) / Double(max(1, rows - 1))
                 let x = (Double(column) + 0.45) / Double(columns)
-                let y = 0.34 + depth * 0.56
+                let y = 0.58 + depth * 0.32
                 let noise = sin((Double(column) * 1.9) + (Double(row) * 1.3))
-                let width = (compact ? 22.0 : 34.0) + (depth * (compact ? 18.0 : 36.0))
-                let height = (compact ? 10.0 : 14.0) + (depth * (compact ? 10.0 : 20.0))
+                let width = (compact ? 20.0 : 28.0) + (depth * (compact ? 14.0 : 24.0))
+                let height = (compact ? 8.0 : 12.0) + (depth * (compact ? 8.0 : 14.0))
                 let color: Color = noise > 0
                     ? Color(red: 0.76, green: 0.73, blue: 0.49)
                     : Color(red: 0.46, green: 0.58, blue: 0.24)
@@ -1135,7 +1259,7 @@ struct PathJourneyArtwork: View {
                         height: height,
                         rotation: noise * 12,
                         color: color,
-                        opacity: 0.06 + (depth * 0.08)
+                        opacity: 0.05 + (depth * 0.05)
                     )
                 )
             }
@@ -1148,72 +1272,119 @@ struct PathJourneyArtwork: View {
     private func distantTrees(size: CGSize) -> some View {
         ZStack {
             ForEach(treeSilhouettes(for: size)) { tree in
+                let frameH = tree.crownHeight + tree.trunkHeight
                 ZStack(alignment: .bottom) {
-                    HStack(spacing: tree.crownWidth * 0.02) {
-                        ForEach(0..<tree.clusterCount, id: \.self) { index in
-                            ZStack {
-                                UnevenRoundedEllipseShape(
-                                    topInset: 0.12 + (Double(index % 2) * 0.05),
-                                    sideInset: 0.08 + (Double((index + 1) % 2) * 0.06)
-                                )
-                                    .fill(tree.color.opacity(tree.opacity * (0.98 - (Double(index) * 0.03))))
-                                    .frame(
-                                        width: tree.crownWidth * (0.62 + (Double(index % 3) * 0.10)),
-                                        height: tree.crownHeight * (0.76 + (Double((index + 1) % 3) * 0.07))
-                                    )
-
-                                // Break up the canopy so the treeline reads less like flat circles.
-                                ForEach(0..<4, id: \.self) { textureIndex in
-                                    UnevenRoundedEllipseShape(
-                                        topInset: 0.20 + (Double(textureIndex) * 0.03),
-                                        sideInset: 0.16 + (Double(textureIndex) * 0.02)
-                                    )
-                                        .fill(tree.highlight.opacity(tree.opacity * 0.34))
-                                        .frame(
-                                            width: tree.crownWidth * (0.14 + (Double(textureIndex) * 0.035)),
-                                            height: tree.crownHeight * (0.12 + (Double(textureIndex) * 0.025))
-                                        )
-                                        .offset(
-                                            x: tree.crownWidth * [-0.18, -0.02, 0.14, 0.24][textureIndex],
-                                            y: tree.crownHeight * [-0.08, -0.18, -0.04, -0.14][textureIndex]
-                                        )
-                                }
-                            }
-                            .offset(
-                                x: CGFloat(index) * tree.crownWidth * 0.02,
-                                y: CGFloat(index.isMultiple(of: 2) ? -tree.crownHeight * 0.05 : tree.crownHeight * 0.01)
+                    // Brown trunk
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    tree.trunkColor,
+                                    tree.trunkColor.opacity(0.80)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
                             )
-                        }
-                    }
-
-                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                        .fill(Color(red: 0.26, green: 0.22, blue: 0.15).opacity(tree.opacity * 0.78))
+                        )
                         .frame(width: tree.trunkWidth, height: tree.trunkHeight)
+
+                    canopyView(for: tree)
+                    .frame(width: tree.crownWidth, height: tree.crownHeight)
+                    .offset(y: -tree.trunkHeight + tree.crownHeight * 0.12)
                 }
+                .frame(width: tree.crownWidth, height: frameH)
                 .position(tree.position)
             }
         }
     }
 
+    private func canopyGradient(for tree: FieldTreeNode) -> LinearGradient {
+        LinearGradient(
+            colors: [tree.highlight, tree.color, tree.color.opacity(0.90)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private func canopyHighlight(for tree: FieldTreeNode) -> LinearGradient {
+        LinearGradient(
+            colors: [tree.highlight.opacity(0.28), Color.clear],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    @ViewBuilder
+    private func canopyView(for tree: FieldTreeNode) -> some View {
+        switch tree.variety {
+        case .round:
+            TreeCanopyShape()
+                .fill(canopyGradient(for: tree))
+                .overlay {
+                    TreeCanopyShape()
+                        .fill(canopyHighlight(for: tree))
+                }
+        case .pointed:
+            PointedCanopyShape()
+                .fill(canopyGradient(for: tree))
+                .overlay {
+                    PointedCanopyShape()
+                        .fill(canopyHighlight(for: tree))
+                }
+        case .layered:
+            LayeredCanopyShape()
+                .fill(canopyGradient(for: tree))
+                .overlay {
+                    LayeredCanopyShape()
+                        .fill(canopyHighlight(for: tree))
+                }
+        }
+    }
+
     private func treeSilhouettes(for size: CGSize) -> [FieldTreeNode] {
-        let values: [(Double, Double, Double)] = [
-            (0.04, 0.455, 1.65),
-            (0.11, 0.425, 2.35),
-            (0.17, 0.448, 1.58),
-            (0.22, 0.438, 1.62),
-            (0.78, 0.444, 1.58),
-            (0.81, 0.430, 1.98),
-            (0.88, 0.418, 2.42),
-            (0.94, 0.438, 1.92),
-            (0.985, 0.452, 1.62)
+        let field = fieldMetrics(for: size)
+
+        // (x, scale, depthInField, variety) — depthInField 0 = horizon, >0 = further into field.
+        // Scale range is tight so the line stays cohesive while still feeling organic.
+        // Deeper trees sit closer to the path, creating a corridor/depth effect.
+        let values: [(Double, Double, Double, TreeVariety)] = [
+            // Horizon row — the main tree-line
+            (0.04,  1.00, 0, .pointed),
+            (0.10,  1.10, 0, .round),
+            (0.17,  0.95, 0, .layered),
+            (0.23,  1.05, 0, .round),
+            (0.77,  1.00, 0, .layered),
+            (0.82,  1.08, 0, .pointed),
+            (0.89,  1.10, 0, .round),
+            (0.95,  1.02, 0, .layered),
+            (0.985, 0.92, 0, .pointed),
+            // Mid-field trees — closer to the path for depth
+            (0.28, 0.95, 0.18, .layered),
+            (0.72, 0.98, 0.18, .round),
+            (0.15, 0.92, 0.28, .pointed),
+            (0.85, 0.95, 0.28, .layered),
+            // Deep field trees — even closer to path
+            (0.34, 0.90, 0.42, .round),
+            (0.66, 0.92, 0.42, .layered),
         ]
 
-        return values.map { x, y, scale in
-            let crownWidth = (compact ? 22 : 38) * scale
-            let clusterCount = scale > 2.3 ? 4 : 2
-            let canopyHalfWidth = crownWidth * (clusterCount == 4 ? 1.45 : 0.82)
-            let exclusionLeft = size.width * 0.35
-            let exclusionRight = size.width * 0.65
+        return values.map { x, scale, depthInField, variety in
+            // Gentle perspective shrink — max 20% reduction at deepest
+            let perspectiveFactor = 1.0 - (depthInField * 0.20)
+            let effectiveScale = scale * perspectiveFactor
+
+            let crownW = (compact ? 24.0 : 40.0) * effectiveScale
+            let crownH = (compact ? 26.0 : 48.0) * effectiveScale * 1.25
+            let trunkW = (compact ? 3.0 : 5.0) * effectiveScale
+            let trunkH = (compact ? 10.0 : 18.0) * effectiveScale * 1.25
+            let totalH = crownH + trunkH
+
+            let canopyHalfWidth = crownW * 0.55
+            // Deeper trees have a narrower exclusion zone so they sit closer
+            // to the path, giving a natural corridor perspective.
+            let exclusionHalf = 0.13 - (depthInField * 0.07)
+            let exclusionLeft = size.width * (0.5 - exclusionHalf)
+            let exclusionRight = size.width * (0.5 + exclusionHalf)
             var positionX = size.width * x
 
             if positionX < size.width * 0.5 {
@@ -1222,16 +1393,31 @@ struct PathJourneyArtwork: View {
                 positionX = max(positionX, exclusionRight + canopyHalfWidth)
             }
 
+            // Vertical position: horizon trees sit at field.top, deeper trees
+            // move downward into the field.
+            let baseY = field.top + (depthInField * field.height * 0.45)
+            let centerY = baseY - (totalH * 0.5) + trunkH + (compact ? 4 : 6)
+
+            // Slightly lighter/hazier green for trees further into the field
+            let haze = depthInField * 0.10
+            let treeColor = Color(
+                red: 0.20 + haze, green: 0.34 + haze * 0.4, blue: 0.12 + haze * 0.3
+            )
+            let treeHighlight = Color(
+                red: 0.30 + haze, green: 0.46 + haze * 0.3, blue: 0.18 + haze * 0.2
+            )
+
             return FieldTreeNode(
-                position: CGPoint(x: positionX, y: size.height * y),
-                crownWidth: crownWidth,
-                crownHeight: (compact ? 26 : 52) * scale,
-                trunkWidth: (compact ? 2.8 : 5.4) * scale,
-                trunkHeight: (compact ? 10 : 20) * scale,
-                color: Color(red: 0.26, green: 0.38, blue: 0.14),
-                highlight: Color(red: 0.36, green: 0.50, blue: 0.20),
+                position: CGPoint(x: positionX, y: centerY),
+                crownWidth: crownW,
+                crownHeight: crownH,
+                trunkWidth: trunkW,
+                trunkHeight: trunkH,
+                color: treeColor,
+                highlight: treeHighlight,
+                trunkColor: Color(red: 0.40, green: 0.28, blue: 0.16),
                 opacity: 1.0,
-                clusterCount: clusterCount
+                variety: variety
             )
         }
     }
@@ -1272,6 +1458,12 @@ private struct FieldPatch: Identifiable {
     let opacity: Double
 }
 
+private enum TreeVariety {
+    case round
+    case pointed
+    case layered
+}
+
 private struct FieldTreeNode: Identifiable {
     let id = UUID()
     let position: CGPoint
@@ -1281,8 +1473,9 @@ private struct FieldTreeNode: Identifiable {
     let trunkHeight: CGFloat
     let color: Color
     let highlight: Color
+    let trunkColor: Color
     let opacity: Double
-    let clusterCount: Int
+    let variety: TreeVariety
 }
 
 private struct UnevenRoundedEllipseShape: Shape {
@@ -1653,17 +1846,153 @@ private struct JourneyFlowerNode: Identifiable {
 private struct PerspectivePathShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.width * 0.37, y: rect.height))
+        // Gentle S-curve gives the trail a natural, wandering feel.
+        path.move(to: CGPoint(x: rect.width * 0.36, y: rect.height))
         path.addCurve(
             to: CGPoint(x: rect.width * 0.48, y: rect.height * 0.24),
-            control1: CGPoint(x: rect.width * 0.40, y: rect.height * 0.72),
-            control2: CGPoint(x: rect.width * 0.45, y: rect.height * 0.42)
+            control1: CGPoint(x: rect.width * 0.38, y: rect.height * 0.74),
+            control2: CGPoint(x: rect.width * 0.52, y: rect.height * 0.44)
         )
         path.addLine(to: CGPoint(x: rect.width * 0.54, y: rect.height * 0.24))
         path.addCurve(
-            to: CGPoint(x: rect.width * 0.63, y: rect.height),
-            control1: CGPoint(x: rect.width * 0.55, y: rect.height * 0.42),
-            control2: CGPoint(x: rect.width * 0.60, y: rect.height * 0.72)
+            to: CGPoint(x: rect.width * 0.64, y: rect.height),
+            control1: CGPoint(x: rect.width * 0.50, y: rect.height * 0.44),
+            control2: CGPoint(x: rect.width * 0.62, y: rect.height * 0.74)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A rounded tree canopy shape (no trunk).
+private struct TreeCanopyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let midX = rect.midX
+        let top = rect.minY
+        let bottom = rect.maxY
+        let midY = top + (bottom - top) * 0.45
+
+        path.move(to: CGPoint(x: midX, y: bottom))
+        // Right side up
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: midY),
+            control1: CGPoint(x: midX + rect.width * 0.35, y: bottom),
+            control2: CGPoint(x: rect.maxX + rect.width * 0.05, y: midY + (bottom - top) * 0.32)
+        )
+        // Right side to top
+        path.addCurve(
+            to: CGPoint(x: midX, y: top),
+            control1: CGPoint(x: rect.maxX - rect.width * 0.02, y: midY - (bottom - top) * 0.22),
+            control2: CGPoint(x: midX + rect.width * 0.18, y: top - (bottom - top) * 0.02)
+        )
+        // Top to left side
+        path.addCurve(
+            to: CGPoint(x: rect.minX, y: midY),
+            control1: CGPoint(x: midX - rect.width * 0.18, y: top - (bottom - top) * 0.02),
+            control2: CGPoint(x: rect.minX + rect.width * 0.02, y: midY - (bottom - top) * 0.22)
+        )
+        // Left side down
+        path.addCurve(
+            to: CGPoint(x: midX, y: bottom),
+            control1: CGPoint(x: rect.minX - rect.width * 0.05, y: midY + (bottom - top) * 0.32),
+            control2: CGPoint(x: midX - rect.width * 0.35, y: bottom)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct PointedCanopyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+
+        path.move(to: CGPoint(x: rect.width * 0.22, y: rect.height))
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.10, y: rect.height * 0.56),
+            control1: CGPoint(x: rect.width * 0.08, y: rect.height * 0.92),
+            control2: CGPoint(x: rect.width * 0.02, y: rect.height * 0.76)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.50, y: rect.height * 0.02),
+            control1: CGPoint(x: rect.width * 0.18, y: rect.height * 0.28),
+            control2: CGPoint(x: rect.width * 0.34, y: rect.height * 0.06)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.90, y: rect.height * 0.56),
+            control1: CGPoint(x: rect.width * 0.66, y: rect.height * 0.06),
+            control2: CGPoint(x: rect.width * 0.82, y: rect.height * 0.28)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.78, y: rect.height),
+            control1: CGPoint(x: rect.width * 0.98, y: rect.height * 0.76),
+            control2: CGPoint(x: rect.width * 0.92, y: rect.height * 0.92)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A fuller canopy with a shallow central dip to break up the skyline.
+private struct LayeredCanopyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let bottom = rect.maxY
+
+        path.move(to: CGPoint(x: rect.width * 0.18, y: bottom))
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.08, y: rect.height * 0.48),
+            control1: CGPoint(x: rect.width * 0.05, y: rect.height * 0.90),
+            control2: CGPoint(x: rect.width * 0.00, y: rect.height * 0.68)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.30, y: rect.height * 0.14),
+            control1: CGPoint(x: rect.width * 0.10, y: rect.height * 0.22),
+            control2: CGPoint(x: rect.width * 0.18, y: rect.height * 0.06)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.50, y: rect.height * 0.22),
+            control1: CGPoint(x: rect.width * 0.38, y: rect.height * 0.04),
+            control2: CGPoint(x: rect.width * 0.44, y: rect.height * 0.20)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.08),
+            control1: CGPoint(x: rect.width * 0.56, y: rect.height * 0.08),
+            control2: CGPoint(x: rect.width * 0.63, y: rect.height * 0.00)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.92, y: rect.height * 0.50),
+            control1: CGPoint(x: rect.width * 0.84, y: rect.height * 0.12),
+            control2: CGPoint(x: rect.width, y: rect.height * 0.28)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.82, y: bottom),
+            control1: CGPoint(x: rect.width, y: rect.height * 0.70),
+            control2: CGPoint(x: rect.width * 0.95, y: rect.height * 0.92)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.18, y: bottom))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A triangular pennant flag that attaches on its left edge.
+private struct FlagPennantShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        // Top-left anchor (attached to pole)
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        // Top edge to right tip with a slight wave
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.midY),
+            control1: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.04),
+            control2: CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.midY - rect.height * 0.10)
+        )
+        // Bottom edge back with a slight wave
+        path.addCurve(
+            to: CGPoint(x: rect.minX, y: rect.maxY),
+            control1: CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.midY + rect.height * 0.10),
+            control2: CGPoint(x: rect.midX, y: rect.maxY + rect.height * 0.04)
         )
         path.closeSubpath()
         return path

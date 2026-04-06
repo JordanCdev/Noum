@@ -126,15 +126,7 @@ struct PracticeModeSelectionView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.92, blue: 0.87),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
@@ -166,8 +158,9 @@ struct PracticeModeSelectionView: View {
                 .padding(20)
             }
         }
-        .navigationTitle("Practice Modes")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("practiceModes.screen")
         .safeAreaInset(edge: .bottom) {
             bottomCTA
         }
@@ -242,14 +235,7 @@ struct PracticeModeSelectionView: View {
         }
         .padding(18)
         .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.94),
-                    Color(red: 0.91, green: 0.95, blue: 1.0).opacity(0.88)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
+            Color.white,
             in: RoundedRectangle(cornerRadius: 26, style: .continuous)
         )
         .overlay(
@@ -288,7 +274,7 @@ struct PracticeModeSelectionView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .stroke(Color.white.opacity(0.72), lineWidth: 1)
@@ -361,14 +347,7 @@ struct PracticeModeSelectionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(18)
             .background(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.95),
-                        option.tint.opacity(0.10)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
+                Color.white,
                 in: RoundedRectangle(cornerRadius: 28, style: .continuous)
             )
             .overlay(
@@ -451,14 +430,7 @@ struct PracticeModeSelectionView: View {
             }
             .padding(18)
             .background(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.95),
-                        option.tint.opacity(isSelected ? 0.08 : 0.03)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
+                Color.white,
                 in: RoundedRectangle(cornerRadius: 26, style: .continuous)
             )
             .overlay(

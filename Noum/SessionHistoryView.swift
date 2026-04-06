@@ -121,15 +121,7 @@ struct SessionHistoryView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.95, blue: 0.91),
-                    Color.white,
-                    Color(red: 0.93, green: 0.96, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             if sessions.isEmpty {
@@ -165,8 +157,9 @@ struct SessionHistoryView: View {
                 }
             }
         }
-        .navigationTitle("Practice History")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("history.screen")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
@@ -187,7 +180,7 @@ struct SessionHistoryView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(28)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .padding(24)
     }
 
@@ -207,7 +200,7 @@ struct SessionHistoryView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var progressOverTimePanel: some View {
@@ -254,7 +247,7 @@ struct SessionHistoryView: View {
             .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var journeyPanel: some View {
@@ -270,7 +263,7 @@ struct SessionHistoryView: View {
             achievementsCard
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func sessionCard(_ session: PracticeSession) -> some View {
@@ -320,7 +313,7 @@ struct SessionHistoryView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private func overviewMetric(title: String, value: String, tint: Color) -> some View {
@@ -629,6 +622,7 @@ private struct SessionHistoryDetailView: View {
     let insights: [String]
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @State private var showsFullReview = false
 
     private var imSessionStreak: Int {
         guard let scenario = session.imConversationDetails?.setup.scenario else { return 0 }
@@ -673,26 +667,31 @@ private struct SessionHistoryDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     heroCard
 
-                    if let imDetails = session.imConversationDetails {
-                        conversationReadCard(imDetails)
-                    } else {
-                        sessionMetricsCard
-                    }
+                    focusCard
+                    fullReviewToggle
 
-                    if !insights.isEmpty {
-                        insightsCard
-                    }
+                    if showsFullReview {
+                        if let imDetails = session.imConversationDetails {
+                            conversationReadCard(imDetails)
+                        } else {
+                            sessionMetricsCard
+                        }
 
-                    if let aiFeedback = session.aiCoachFeedback {
-                        coachReadCard(aiFeedback)
-                    }
+                        if !insights.isEmpty {
+                            insightsCard
+                        }
 
-                    transcriptCard
+                        if let aiFeedback = session.aiCoachFeedback {
+                            coachReadCard(aiFeedback)
+                        }
+
+                        transcriptCard
+                    }
                 }
                 .padding(18)
             }
         }
-        .navigationTitle(session.date.formatted(date: .abbreviated, time: .shortened))
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -701,18 +700,86 @@ private struct SessionHistoryDetailView: View {
             Text(session.headline ?? "Session Detail")
                 .font(.title2.weight(.bold))
 
-            Text(session.coachSummary ?? "Review the strongest signal from this practice run and what to improve next.")
+            Text(primarySummary)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                detailMetric(title: "Mode", value: modeLabel, tint: .purple)
                 detailMetric(title: "Score", value: session.score.map { "\($0)/10" } ?? "Pending", tint: .green)
-                detailMetric(title: "Duration", value: "\(Int(session.duration))s", tint: .blue)
+                detailMetric(title: "Focus", value: focusLabel, tint: .blue)
+                detailMetric(title: "Mode", value: modeLabel, tint: .purple)
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var focusCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Focus Next")
+                .font(.headline)
+
+            Text(nextFocusText)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let imDetails = session.imConversationDetails {
+                HStack(spacing: 10) {
+                    detailMetric(title: "Target Tone", value: imDetails.setup.targetTone.title, tint: .blue)
+                    if let finalState = imDetails.finalState {
+                        detailMetric(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .teal)
+                        detailMetric(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
+                    }
+                }
+
+                if let outcome = imDetails.outcome {
+                    Text(outcome.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if let beat = imDetails.finalState?.beat {
+                    Text(beat)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    detailMetric(title: "Duration", value: "\(Int(session.duration))s", tint: .blue)
+                    detailMetric(title: "Fillers", value: "\(session.fillerWordCount)", tint: .red)
+                    detailMetric(title: "WPM", value: "\(session.wordsPerMinute)", tint: .indigo)
+                }
+            }
+        }
+        .padding(18)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private var fullReviewToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showsFullReview.toggle()
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(showsFullReview ? "Hide Full Review" : "See Full Review")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Open the deeper breakdown only when you want more detail.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: showsFullReview ? "chevron.up" : "chevron.down")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.blue)
+            }
+            .padding(18)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var sessionMetricsCard: some View {
@@ -727,24 +794,18 @@ private struct SessionHistoryDetailView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private func conversationReadCard(_ imDetails: IMConversationDetails) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("What Changed")
+            Text("Full IM Review")
                 .font(.headline)
-
-            HStack(spacing: 10) {
-                detailMetric(title: "Target Tone", value: imDetails.setup.targetTone.title, tint: .blue)
-                if let finalState = imDetails.finalState {
-                    detailMetric(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .teal)
-                    detailMetric(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
-                }
-            }
 
             if let outcome = imDetails.outcome {
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("Main read")
+                        .font(.subheadline.weight(.semibold))
                     Text(outcome.title)
                         .font(.subheadline.weight(.semibold))
                     Text(outcome.summary)
@@ -762,7 +823,7 @@ private struct SessionHistoryDetailView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private func relationshipBlock(_ relationship: IMRelationshipProfile) -> some View {
@@ -776,6 +837,10 @@ private struct SessionHistoryDetailView: View {
                 detailMetric(title: "Milestone", value: relationship.activeMilestone.title, tint: .teal)
                 detailMetric(title: "Momentum", value: relationship.nextMilestoneProgressLabel, tint: .orange)
             }
+
+            Text(relationship.activeMilestone.description)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
 
             Text(relationship.continuitySummary)
                 .font(.subheadline)
@@ -798,11 +863,6 @@ private struct SessionHistoryDetailView: View {
                 }
                 .padding(12)
                 .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            }
-
-            if let profile = coachingProfileStore.profile {
-                Text("North star: \(profile.communicationNorthStar)")
-                    .font(.subheadline.weight(.semibold))
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -834,7 +894,7 @@ private struct SessionHistoryDetailView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private func coachReadCard(_ aiFeedback: AICoachFeedback) -> some View {
@@ -861,7 +921,7 @@ private struct SessionHistoryDetailView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private var transcriptCard: some View {
@@ -876,7 +936,7 @@ private struct SessionHistoryDetailView: View {
                 .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private func coachSection(title: String, lines: [String]) -> some View {
@@ -889,6 +949,39 @@ private struct SessionHistoryDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var primarySummary: String {
+        if let coachSummary = session.coachSummary, !coachSummary.isEmpty {
+            return coachSummary
+        }
+        if let firstInsight = insights.first {
+            return firstInsight
+        }
+        return "Review the strongest signal from this practice run and what to improve next."
+    }
+
+    private var nextFocusText: String {
+        if let relationship = session.imConversationDetails?.relationshipSnapshot {
+            return relationship.nextSessionHook(profile: coachingProfileStore.profile)
+        }
+        if let aiFeedback = session.aiCoachFeedback {
+            return aiFeedback.keyImprovement
+        }
+        if let firstInsight = insights.first {
+            return firstInsight
+        }
+        return "Focus on saying one clear thing cleanly before adding more detail."
+    }
+
+    private var focusLabel: String {
+        if session.imConversationDetails != nil {
+            return "Next Rep"
+        }
+        if let xpEarned = session.xpEarned {
+            return "+\(xpEarned) XP"
+        }
+        return "\(Int(session.duration))s"
     }
 
     private func detailMetric(title: String, value: String, tint: Color) -> some View {

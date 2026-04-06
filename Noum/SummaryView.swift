@@ -145,6 +145,10 @@ struct SummaryView: View {
         return .timed
     }
 
+    private var isIMSummary: Bool {
+        currentMode == .imConversation
+    }
+
     private var shouldPushRecommendedMode: Bool {
         summaryRecommendation.recommendedMode != currentMode
     }
@@ -347,27 +351,25 @@ struct SummaryView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.95, blue: 0.90),
-                    Color.white,
-                    Color(red: 0.92, green: 0.96, blue: 1.0)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 12) {
                     headerCard
-                    nextRepPanel
-                    metricRow
+                    if !isIMSummary {
+                        metricRow
+                    }
                     tabPicker
                     detailPanel
-                        .frame(height: 280)
-                    xpPanel
-                    retentionPanel
+                        .frame(minHeight: isIMSummary ? 470 : 280, alignment: .top)
+                    if isIMSummary {
+                        sessionBoostPanel
+                    } else {
+                        nextRepPanel
+                        xpPanel
+                        retentionPanel
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -377,7 +379,7 @@ struct SummaryView: View {
                 actionButtons
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
+                    .background(.regularMaterial)
             }
 
             if celebrationVisible && !reduceMotion {
@@ -386,20 +388,13 @@ struct SummaryView: View {
                     .transition(.opacity)
             }
         }
-        .navigationTitle("Summary")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .disableSwipeBack()
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Practice Mode") { onSelectPracticeMode() }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Home") { onHome() }
-            }
-        }
         .onAppear(perform: setup)
 #if canImport(UIKit)
-        .onChange(of: celebrationVisible) { visible in
+        .onChange(of: celebrationVisible) { _, visible in
             if visible {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
@@ -415,25 +410,64 @@ struct SummaryView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                Text("\(scoreValue)/10")
-                    .font(.system(size: compactSummary ? 32 : 38, weight: .bold, design: .rounded))
-                    .foregroundStyle(scoreAccent)
-                    .scaleEffect(celebrationVisible ? 1.04 : 1.0)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.65), value: celebrationVisible)
-                Text(headline)
-                    .font(.headline)
-            }
+            if isIMSummary {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 14) {
+                        Text("\(scoreValue)/10")
+                            .font(.system(size: 52, weight: .bold, design: .rounded))
+                            .foregroundStyle(scoreAccent)
+                            .scaleEffect(celebrationVisible ? 1.04 : 1.0)
+                            .animation(.spring(response: 0.4, dampingFraction: 0.65), value: celebrationVisible)
 
-            Text(feedback)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(headline)
+                                .font(.title3.weight(.bold))
+                            if let details = imConversationDetails {
+                                HStack(spacing: 8) {
+                                    chip(details.setup.targetTone.title, tint: .blue)
+                                    chip(details.setup.scenario.title, tint: .purple)
+                                }
+                            }
+                        }
+                    }
+
+                    Text(feedback)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(alignment: .lastTextBaseline, spacing: 10) {
+                    Text("\(scoreValue)/10")
+                        .font(.system(size: compactSummary ? 32 : 38, weight: .bold, design: .rounded))
+                        .foregroundStyle(scoreAccent)
+                        .scaleEffect(celebrationVisible ? 1.04 : 1.0)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.65), value: celebrationVisible)
+                    Text(headline)
+                        .font(.headline)
+                }
+
+                Text(feedback)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compactSummary ? 16 : 18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(isIMSummary ? 22 : (compactSummary ? 16 : 18))
+        .background(
+            LinearGradient(
+                colors: isIMSummary ? [Color.white, scoreAccent.opacity(0.05)] : [Color.white, Color.white],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(isIMSummary ? scoreAccent.opacity(0.10) : Color.clear, lineWidth: 1)
+        )
     }
 
     private var metricRow: some View {
@@ -457,7 +491,7 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(compactSummary ? 12 : 14)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var tabPicker: some View {
@@ -471,13 +505,15 @@ struct SummaryView: View {
                     Text(tab.rawValue)
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(selectedTab == tab ? Color.blue : Color.white.opacity(0.72), in: Capsule())
+                        .padding(.vertical, 14)
+                        .background(selectedTab == tab ? Color.blue : Color.white.opacity(0.88), in: Capsule())
                         .foregroundStyle(selectedTab == tab ? .white : .primary)
                 }
                 .buttonStyle(.plain)
             }
         }
+        .padding(6)
+        .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     @ViewBuilder
@@ -495,7 +531,7 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .scrollBounceBehavior(.basedOnSize)
         .padding(compactSummary ? 16 : 18)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     private var overviewPanel: some View {
@@ -571,79 +607,25 @@ struct SummaryView: View {
                     metricCard(title: "Momentum", value: relationship.nextMilestoneProgressLabel, tint: .orange)
                 }
 
-                Text(relationship.activeMilestone.description)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Text(relationship.continuitySummary)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                if let activeArcTitle = relationship.activeArcTitle,
-                   let activeArcStageLabel = relationship.activeArcStageLabel {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Active Arc")
-                            .font(.subheadline.weight(.semibold))
-                        Text("\(activeArcTitle) • \(activeArcStageLabel)")
-                            .font(.subheadline.weight(.semibold))
-                        if let activeArcGuidance = relationship.activeArcGuidance {
-                            Text(activeArcGuidance)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        ProgressView(value: relationship.activeArcProgress)
-                            .tint(.purple)
-                    }
-                    .padding(12)
-                    .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-
-                if let nextRelationshipChallenge {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Best Next Move")
-                        .font(.subheadline.weight(.semibold))
-                        Text(nextRelationshipChallenge)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(12)
-                    .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-
-                if communicationNorthStar != nil || motivationSummary != nil {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Why This Matters")
-                            .font(.subheadline.weight(.semibold))
-                        if let communicationNorthStar {
-                            Text(communicationNorthStar)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                        }
-                        if let motivationSummary {
-                            Text(motivationSummary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(12)
-                    .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Keep This Moving")
+                    Text(relationship.activeMilestone.description)
                         .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
 
-                    metricCard(title: "IM Streak", value: "\(imSessionStreak) days", tint: .orange)
+                    Text(relationship.continuitySummary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     ProgressView(value: relationship.nextMilestoneProgress)
                         .tint(.teal)
 
-                    Text(relationship.unlockTeaser)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        metricCard(title: "IM Streak", value: "\(imSessionStreak) days", tint: .orange)
+                        metricCard(title: "Next Unlock", value: relationship.unlockTeaser, tint: .purple)
+                    }
                 }
                 .padding(12)
-                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
     }
@@ -673,6 +655,16 @@ struct SummaryView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            }
+            if isIMSummary, let details = imConversationDetails, let relationship = details.relationshipSnapshot {
+                Divider()
+                    .padding(.vertical, 4)
+                relationshipCoachPanel(relationship)
+            }
+            if isIMSummary, shouldPushRecommendedMode {
+                Divider()
+                    .padding(.vertical, 4)
+                continuationPanel
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -820,7 +812,49 @@ struct SummaryView: View {
             .foregroundStyle(.secondary)
         }
         .padding(compactSummary ? 12 : 14)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var sessionBoostPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                PulseBadge(systemImage: "sparkles", tint: .orange)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Session Boost")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Text("+\(xpEarned) XP earned")
+                        .font(.headline)
+                    Text(retentionSnapshot.motivationLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                boostChip(title: currentLevel, value: "\(displayedXP) XP", tint: .blue)
+                boostChip(title: "Streak", value: retentionSnapshot.activeChallenge.progressLabel, tint: .orange)
+                boostChip(title: "Reward", value: retentionSnapshot.activeChallenge.rewardLabel, tint: .teal)
+            }
+        }
+        .padding(compactSummary ? 12 : 14)
+        .background(
+            LinearGradient(
+                colors: [Color.white, Color.orange.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.orange.opacity(0.14), lineWidth: 1)
+        )
     }
 
     private var retentionPanel: some View {
@@ -870,7 +904,7 @@ struct SummaryView: View {
             }
         }
         .padding(compactSummary ? 12 : 14)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var nextRepPanel: some View {
@@ -913,20 +947,116 @@ struct SummaryView: View {
         }
         .padding(compactSummary ? 12 : 14)
         .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.94),
-                    tint(for: summaryRecommendation.recommendedMode).opacity(0.08)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
+            Color.white,
             in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(tint(for: summaryRecommendation.recommendedMode).opacity(0.18), lineWidth: 1)
         )
+    }
+
+    private var continuationPanel: some View {
+        Button {
+            onSelectPracticeMode()
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    PulseBadge(systemImage: systemImage(for: summaryRecommendation.recommendedMode), tint: tint(for: summaryRecommendation.recommendedMode), animated: false)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Recommended Next Rep")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                        Text(title(for: summaryRecommendation.recommendedMode))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "arrow.right")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(tint(for: summaryRecommendation.recommendedMode))
+                }
+
+                Text(summaryRecommendation.whyMode)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    chip(summaryRecommendation.focus, tint: tint(for: summaryRecommendation.recommendedMode))
+                    chip(summaryRecommendation.target, tint: .blue)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color(red: 0.98, green: 0.99, blue: 1.0), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(tint(for: summaryRecommendation.recommendedMode).opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func relationshipCoachPanel(_ relationship: IMRelationshipProfile) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Relationship Guidance")
+                .font(.headline)
+
+            if let activeArcTitle = relationship.activeArcTitle,
+               let activeArcStageLabel = relationship.activeArcStageLabel {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Active Arc")
+                        .font(.subheadline.weight(.semibold))
+                    Text("\(activeArcTitle) • \(activeArcStageLabel)")
+                        .font(.subheadline.weight(.semibold))
+                    if let activeArcGuidance = relationship.activeArcGuidance {
+                        Text(activeArcGuidance)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    ProgressView(value: relationship.activeArcProgress)
+                        .tint(.purple)
+                }
+                .padding(12)
+                .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+
+            if let nextRelationshipChallenge {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Best Next Move")
+                        .font(.subheadline.weight(.semibold))
+                    Text(nextRelationshipChallenge)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+
+            if communicationNorthStar != nil || motivationSummary != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Why This Matters")
+                        .font(.subheadline.weight(.semibold))
+                    if let communicationNorthStar {
+                        Text(communicationNorthStar)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    if let motivationSummary {
+                        Text(motivationSummary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var summaryCelebrationOverlay: some View {
@@ -953,34 +1083,50 @@ struct SummaryView: View {
     }
 
     private var actionButtons: some View {
-        VStack(spacing: 8) {
-            Button(primaryActionTitle) {
-                if shouldPushRecommendedMode {
+        VStack(spacing: 10) {
+            Button(isIMSummary ? "Practice Again" : primaryActionTitle) {
+                if isIMSummary {
+                    onPracticeAgain()
+                } else if shouldPushRecommendedMode {
                     onSelectPracticeMode()
                 } else {
                     onPracticeAgain()
                 }
             }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, compactSummary ? 13 : 15)
-                .background(Color.blue, in: Capsule())
-                .foregroundStyle(.white)
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, compactSummary ? 13 : 15)
+            .background(Color.blue, in: Capsule())
+            .foregroundStyle(.white)
 
-            Button(secondaryActionTitle) {
-                if shouldPushRecommendedMode {
+            Button(isIMSummary ? "Choose Another Mode" : secondaryActionTitle) {
+                if isIMSummary {
+                    onSelectPracticeMode()
+                } else if shouldPushRecommendedMode {
                     onPracticeAgain()
                 } else {
                     onSelectPracticeMode()
                 }
             }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-
-            Button("Home") { onHome() }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
         }
+    }
+
+    private func boostChip(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.white.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var compactSummary: Bool {

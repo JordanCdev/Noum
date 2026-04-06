@@ -88,19 +88,12 @@ struct SpeakingRankView: View {
             .padding(18)
         }
         .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.96, green: 0.93, blue: 0.88),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
         )
-        .navigationTitle("Speaking Rank")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("rank.screen")
     }
 
     private var heroPanel: some View {
@@ -152,14 +145,7 @@ struct SpeakingRankView: View {
         }
         .padding(20)
         .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.95),
-                    rankTint.opacity(0.08)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
+            Color.white,
             in: RoundedRectangle(cornerRadius: 28, style: .continuous)
         )
     }
@@ -177,7 +163,7 @@ struct SpeakingRankView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var activeChallengePanel: some View {
@@ -220,7 +206,7 @@ struct SpeakingRankView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var achievementsPanel: some View {
@@ -254,7 +240,7 @@ struct SpeakingRankView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var coachingReadPanel: some View {
@@ -286,7 +272,7 @@ struct SpeakingRankView: View {
             }
         }
         .padding(18)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private func statCard(title: String, value: String, tint: Color) -> some View {

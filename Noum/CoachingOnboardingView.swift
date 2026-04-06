@@ -139,15 +139,7 @@ struct CoachingOnboardingView: View {
 
     private var backgroundLayer: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.94, blue: 0.89),
-                    Color(red: 0.99, green: 0.98, blue: 0.96),
-                    Color(red: 0.93, green: 0.96, blue: 1.00)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             Circle()

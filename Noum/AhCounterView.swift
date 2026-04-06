@@ -14,15 +14,7 @@ struct AhCounterView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.93, green: 0.96, blue: 0.90),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
@@ -40,7 +32,7 @@ struct AhCounterView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
 
                     HStack(spacing: 12) {
                         statCard(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
@@ -64,7 +56,7 @@ struct AhCounterView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)
-                    .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
@@ -90,10 +82,11 @@ struct AhCounterView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
+                .background(.regularMaterial)
             }
         }
-        .navigationTitle("Ah-Counter")
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("ahCounter.screen")
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
@@ -135,7 +128,7 @@ struct AhCounterView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func errorCard(_ message: String) -> some View {

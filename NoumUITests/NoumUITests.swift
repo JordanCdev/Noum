@@ -1,44 +1,60 @@
-//
-//  NoumUITests.swift
-//  NoumUITests
-//
-//  Created by Jordan Coaten on 25/01/2025.
-//
-
 import XCTest
 
 final class NoumUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testLaunchToTimedPracticeSmoke() throws {
-        let app = XCUIApplication()
-        app.launchArguments.append("UI_TESTING")
-        app.launch()
+    func testHomeScreenAndPrimaryNavigation() throws {
+        let app = launchApp()
 
-        XCTAssertTrue(app.buttons["home.startPracticing"].waitForExistence(timeout: 5))
-        app.buttons["home.startPracticing"].tap()
+        XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 5))
 
-        XCTAssertTrue(app.navigationBars["Practice Modes"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["practiceMode.timed"].waitForExistence(timeout: 5))
-        app.buttons["practiceMode.timed"].tap()
+        app.otherElements["home.path"].tap()
+        XCTAssertTrue(app.otherElements["journey.screen"].waitForExistence(timeout: 5))
 
-        XCTAssertTrue(app.buttons["practiceModes.start"].waitForExistence(timeout: 5))
-        app.buttons["practiceModes.start"].tap()
+        app.terminate()
+        let rankApp = launchApp()
+        XCTAssertTrue(rankApp.otherElements["home.rank"].waitForExistence(timeout: 5))
+        rankApp.otherElements["home.rank"].tap()
+        XCTAssertTrue(rankApp.otherElements["rank.screen"].waitForExistence(timeout: 5))
 
-        XCTAssertTrue(app.otherElements["timedPractice.screen"].waitForExistence(timeout: 5))
+        rankApp.terminate()
+        let historyApp = launchApp()
+        XCTAssertTrue(historyApp.buttons["nav.history"].waitForExistence(timeout: 5))
+        historyApp.buttons["nav.history"].tap()
+        XCTAssertTrue(historyApp.otherElements["history.screen"].waitForExistence(timeout: 5))
+
+        historyApp.terminate()
+        let settingsApp = launchApp()
+        XCTAssertTrue(settingsApp.buttons["nav.settings"].waitForExistence(timeout: 5))
+        settingsApp.buttons["nav.settings"].tap()
+        XCTAssertTrue(settingsApp.otherElements["settings.screen"].waitForExistence(timeout: 5))
+
+        settingsApp.terminate()
+        let practiceApp = launchApp()
+        openPracticeModes(in: practiceApp)
+        XCTAssertTrue(practiceApp.otherElements["practiceModes.screen"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testPracticeModesOpenAvailableScreens() throws {
+        assertPracticeModeLaunches(modeIdentifier: "practiceMode.timed", screenIdentifier: "timedPractice.screen")
+        assertPracticeModeLaunches(modeIdentifier: "practiceMode.suddenDeath", screenIdentifier: "suddenDeath.screen")
+        assertPracticeModeLaunches(modeIdentifier: "practiceMode.ahCounter", screenIdentifier: "ahCounter.screen")
+
+        let imApp = launchApp()
+        openPracticeModes(in: imApp)
+
+        let imButton = imApp.buttons["practiceMode.imConversation"]
+        if imButton.waitForExistence(timeout: 2) {
+            imButton.tap()
+            XCTAssertTrue(imApp.buttons["practiceModes.start"].waitForExistence(timeout: 5))
+            imApp.buttons["practiceModes.start"].tap()
+            XCTAssertTrue(imApp.otherElements["imPractice.screen"].waitForExistence(timeout: 5))
+        }
     }
 
     @MainActor
@@ -59,21 +75,21 @@ final class NoumUITests: XCTestCase {
         XCTAssertTrue(goalField.waitForExistence(timeout: 5))
         goalField.tap()
         goalField.typeText("Lead updates in meetings without second-guessing every sentence.")
-        app.buttons["Done"].tap()
+        dismissKeyboardIfNeeded(in: app)
         app.buttons["coaching.continue"].tap()
 
         let whyNowField = app.textViews["coaching.whyNow"]
         XCTAssertTrue(whyNowField.waitForExistence(timeout: 5))
         whyNowField.tap()
         whyNowField.typeText("I need to sound sharper in high-visibility conversations.")
-        app.buttons["Done"].tap()
+        dismissKeyboardIfNeeded(in: app)
         app.buttons["coaching.continue"].tap()
 
         let successVisionField = app.textViews["coaching.successVision"]
         XCTAssertTrue(successVisionField.waitForExistence(timeout: 5))
         successVisionField.tap()
         successVisionField.typeText("I will feel calmer, clearer, and more credible at work.")
-        app.buttons["Done"].tap()
+        dismissKeyboardIfNeeded(in: app)
         app.buttons["coaching.continue"].tap()
 
         XCTAssertTrue(app.buttons["coaching.save"].isEnabled)
@@ -83,10 +99,46 @@ final class NoumUITests: XCTestCase {
     @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 17.0, tvOS 13.0, watchOS 7.0, *) {
-            // This measures how long it takes to launch your application.
             measure(metrics: [XCTApplicationLaunchMetric()]) {
-                XCUIApplication().launch()
+                _ = launchApp()
             }
+        }
+    }
+
+    @MainActor
+    private func assertPracticeModeLaunches(modeIdentifier: String, screenIdentifier: String) {
+        let app = launchApp()
+        openPracticeModes(in: app)
+
+        XCTAssertTrue(app.buttons[modeIdentifier].waitForExistence(timeout: 5))
+        app.buttons[modeIdentifier].tap()
+
+        XCTAssertTrue(app.buttons["practiceModes.start"].waitForExistence(timeout: 5))
+        app.buttons["practiceModes.start"].tap()
+
+        XCTAssertTrue(app.otherElements[screenIdentifier].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments.append("UI_TESTING")
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func openPracticeModes(in app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["nav.practice"].waitForExistence(timeout: 5))
+        app.buttons["nav.practice"].tap()
+    }
+
+    @MainActor
+    private func dismissKeyboardIfNeeded(in app: XCUIApplication) {
+        if app.buttons["Done"].exists {
+            app.buttons["Done"].tap()
+        } else if app.keyboards.count > 0 {
+            app.tap()
         }
     }
 }

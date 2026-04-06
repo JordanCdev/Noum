@@ -7,15 +7,7 @@ struct SplashScreenView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.96, green: 0.93, blue: 0.88),
-                    Color.white,
-                    Color(red: 0.90, green: 0.95, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Color(UIColor.systemGroupedBackground)
             .ignoresSafeArea()
 
             Circle()
@@ -46,7 +38,7 @@ struct SplashScreenView: View {
                     .scaleEffect(1.1)
             }
             .padding(34)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
