@@ -137,9 +137,9 @@ struct SummaryView: View {
 
     private var scoreAccent: Color {
         switch scoreValue {
-        case 8...10: return Color(red: 0.10, green: 0.56, blue: 0.40)
-        case 5...7: return Color(red: 0.83, green: 0.52, blue: 0.10)
-        default: return Color(red: 0.74, green: 0.22, blue: 0.20)
+        case 8...10: return AppColor.positive
+        case 5...7: return AppColor.caution
+        default: return AppColor.warning
         }
     }
 
@@ -283,7 +283,7 @@ struct SummaryView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
@@ -386,7 +386,7 @@ struct SummaryView: View {
                 }
             }
             .scaleEffect(celebrationVisible ? 1.06 : 1.0)
-            .animation(.spring(response: 0.4, dampingFraction: 0.65), value: celebrationVisible)
+            .animation(.bouncySpring, value: celebrationVisible)
 
             // Headline
             HStack(spacing: 8) {
@@ -417,14 +417,14 @@ struct SummaryView: View {
         .padding(24)
         .background(
             LinearGradient(
-                colors: [Color.white, scoreAccent.opacity(0.04)],
+                colors: [AppColor.cardBackground, scoreAccent.opacity(0.04)],
                 startPoint: .top,
                 endPoint: .bottom
             ),
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .stroke(scoreAccent.opacity(0.12), lineWidth: 1)
         )
     }
@@ -457,8 +457,8 @@ struct SummaryView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     // MARK: - Category Grid (7 dimensions)
@@ -498,15 +498,15 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func ratingColor(_ rating: FeedbackRating) -> Color {
         switch rating {
-        case .good: return Color(red: 0.14, green: 0.60, blue: 0.38)
-        case .ok: return Color(red: 0.83, green: 0.65, blue: 0.10)
-        case .couldImprove: return Color(red: 0.85, green: 0.42, blue: 0.12)
+        case .good: return AppColor.positive
+        case .ok: return AppColor.caution
+        case .couldImprove: return AppColor.caution
         }
     }
 
@@ -532,8 +532,8 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     // MARK: - AI Moments (Strong + Weak)
@@ -560,8 +560,8 @@ struct SummaryView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(18)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .padding(Spacing.lg)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             }
         }
     }
@@ -615,8 +615,8 @@ struct SummaryView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .padding(14)
-                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(Spacing.cardGap)
+                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 .foregroundStyle(.blue)
             }
             .buttonStyle(.plain)
@@ -635,7 +635,7 @@ struct SummaryView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                         .foregroundStyle(.green)
                     }
                     .buttonStyle(.plain)
@@ -649,7 +649,7 @@ struct SummaryView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Color.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(Color.green.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
 
                 // AI Video Analysis (premium)
@@ -671,7 +671,7 @@ struct SummaryView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                         .foregroundStyle(.purple)
                     }
                     .buttonStyle(.plain)
@@ -702,8 +702,8 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func videoAnalysisResultView(_ result: VideoAnalysisResult) -> some View {
@@ -724,7 +724,7 @@ struct SummaryView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(10)
-                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
         }
     }
 
@@ -790,7 +790,7 @@ struct SummaryView: View {
                             .font(.subheadline.italic())
                             .foregroundStyle(.secondary)
                             .padding(10)
-                            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                     }
                 }
             } else {
@@ -825,8 +825,8 @@ struct SummaryView: View {
             .disabled(isRequestingAIFeedback)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     // MARK: - XP Progress Card
@@ -852,7 +852,7 @@ struct SummaryView: View {
             .foregroundStyle(.secondary)
         }
         .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     // MARK: - Retention Card
@@ -889,7 +889,7 @@ struct SummaryView: View {
             }
         }
         .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     // MARK: - Action Bar (Retry Loop)
@@ -907,10 +907,11 @@ struct SummaryView: View {
                         .font(.headline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .padding(.vertical, Spacing.md)
                 .background(Color.blue, in: Capsule())
                 .foregroundStyle(.white)
             }
+            .buttonStyle(.pressable)
 
             HStack(spacing: 10) {
                 // Secondary: Try New Prompt
@@ -991,7 +992,7 @@ struct SummaryView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func shareStatPill(label: String, value: String) -> some View {
@@ -1097,13 +1098,13 @@ struct SummaryView: View {
                     .foregroundStyle(.green)
             }
         }
-        .padding(14)
+        .padding(Spacing.cardGap)
         .background(
             (improved ? Color.green : Color.orange).opacity(0.06),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke((improved ? Color.green : Color.orange).opacity(0.12), lineWidth: 1)
         )
     }
@@ -1157,8 +1158,8 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func statCard(title: String, value: String, tint: Color) -> some View {
@@ -1172,7 +1173,7 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
     // MARK: - Celebration Overlay

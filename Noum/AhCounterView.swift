@@ -14,74 +14,76 @@ struct AhCounterView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
+                VStack(spacing: Spacing.lg) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Live Monitor")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
                         Text("Track filler words as you speak")
-                            .font(.largeTitle.weight(.bold))
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
                         Text("Use this mode for open-ended reps without a fixed countdown.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .padding(Spacing.lg)
+                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
 
-                    HStack(spacing: 12) {
-                        statCard(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
-                        statCard(title: "Status", value: speechVM.isRecording ? "Live" : "Ready", tint: speechVM.isRecording ? .green : .blue)
+                    HStack(spacing: Spacing.sm) {
+                        StatCard(title: "Filler Words", value: "\(speechVM.fillerWordCount)", tint: .red)
+                        StatCard(title: "Status", value: speechVM.isRecording ? "Live" : "Ready", tint: speechVM.isRecording ? .green : AppColor.brandBlue)
                     }
 
                     if let error = speechVM.connectionError {
-                        errorCard(error)
+                        ErrorCard(message: error)
                     }
 
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("Transcript")
                             .font(.headline)
                         ScrollView {
                             Text(speechVM.highlightedText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(16)
-                                .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                .padding(Spacing.md)
+                                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                         }
                         .frame(minHeight: 260)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .padding(Spacing.lg)
+                    .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.md)
                 .padding(.bottom, 90)
             }
             .safeAreaInset(edge: .bottom) {
                 Group {
                     if speechVM.isRecording {
                         Button("Stop") { stopSession() }
-                            .font(.headline)
+                            .font(.headline.weight(.semibold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                            .background(Color.red, in: Capsule())
+                            .padding(.vertical, Spacing.md)
+                            .background(Color.red.gradient, in: Capsule(style: .continuous))
                             .foregroundStyle(.white)
+                            .buttonStyle(.pressable)
                     } else {
                         Button("Start") { startRecording() }
-                            .font(.headline)
+                            .font(.headline.weight(.semibold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                            .background(Color(red: 0.14, green: 0.60, blue: 0.44), in: Capsule())
+                            .padding(.vertical, Spacing.md)
+                            .background(AppColor.modeAhCounter.gradient, in: Capsule(style: .continuous))
                             .foregroundStyle(.white)
+                            .buttonStyle(.pressable)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.sm)
                 .background(.regularMaterial)
             }
         }
@@ -118,33 +120,7 @@ struct AhCounterView: View {
         }
     }
 
-    private func statCard(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(tint)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
-    private func errorCard(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Transcription error")
-                .font(.headline)
-                .foregroundStyle(.red)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
+    // statCard and errorCard replaced by shared StatCard and ErrorCard from DesignSystem.swift
 
     private func startRecording() {
         speechVM.prepareSession(mode: .ahCounter)
@@ -177,11 +153,7 @@ struct AhCounterView: View {
     }
 
     private func dismiss(times: Int) {
-        guard times > 0 else { return }
-        withAnimation(.none) { dismiss() }
-        if times > 1 {
-            DispatchQueue.main.async { dismiss(times: times - 1) }
-        }
+        dismissRecursively(from: dismiss, times: times)
     }
 }
 #endif

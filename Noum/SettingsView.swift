@@ -28,7 +28,7 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
@@ -45,7 +45,7 @@ struct SettingsView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(18)
+                .padding(Spacing.lg)
             }
         }
         .navigationTitle("")
@@ -92,11 +92,11 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    private let proColor = Color(red: 0.56, green: 0.28, blue: 0.92)
+    private let proColor = AppColor.pro
 
     private var subscriptionCard: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -107,7 +107,7 @@ struct SettingsView: View {
                         .font(.title2)
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [proColor, Color(red: 0.82, green: 0.52, blue: 1.0)],
+                                colors: [proColor, AppColor.proLight],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -183,7 +183,7 @@ struct SettingsView: View {
                             .font(.headline.weight(.semibold))
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [proColor, proColor.opacity(0.8)],
@@ -195,6 +195,7 @@ struct SettingsView: View {
                     .foregroundStyle(.white)
                     .shadow(color: proColor.opacity(0.3), radius: 12, y: 4)
                 }
+                .buttonStyle(.pressable)
 
                 Button("Restore Purchase") {
                     Task { await premium.restorePurchases() }
@@ -205,11 +206,11 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .overlay(
             premium.isPremium
-                ? RoundedRectangle(cornerRadius: 28, style: .continuous)
+                ? RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(proColor.opacity(0.15), lineWidth: 1)
                 : nil
         )
@@ -258,7 +259,7 @@ struct SettingsView: View {
                             .foregroundStyle(practiceSettings.timedDifficulty == difficulty ? .blue : .secondary)
                     }
                     .padding(14)
-                    .background(Color.blue.opacity(practiceSettings.timedDifficulty == difficulty ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(Color.blue.opacity(practiceSettings.timedDifficulty == difficulty ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -307,7 +308,7 @@ struct SettingsView: View {
                                     .foregroundStyle(imVoicePlaybackSettings.engine == engine ? .blue : .secondary)
                             }
                             .padding(14)
-                            .background(Color.blue.opacity(imVoicePlaybackSettings.engine == engine ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .background(Color.blue.opacity(imVoicePlaybackSettings.engine == engine ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
@@ -333,13 +334,13 @@ struct SettingsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var coachingCard: some View {
@@ -359,7 +360,7 @@ struct SettingsView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(14)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
                 if !profile.whyNowReference.isEmpty || !profile.successVisionReference.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -384,13 +385,14 @@ struct SettingsView: View {
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
+            .padding(.vertical, Spacing.md)
             .background(Color.blue, in: Capsule())
             .foregroundStyle(.white)
+            .buttonStyle(.pressable)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var remindersCard: some View {
@@ -398,7 +400,7 @@ struct SettingsView: View {
             Text("Practice Reminders")
                 .font(.headline)
 
-            Text("Tie the return loop to what the user actually cares about, not a generic streak banner.")
+            Text("Set reminders that keep your practice habit consistent and goal-aligned.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -423,8 +425,8 @@ struct SettingsView: View {
             compactTag(title: "Notification access", value: notificationManager.authorizationLabel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var accountPrivacyCard: some View {
@@ -481,8 +483,8 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var debugCard: some View {
@@ -499,22 +501,24 @@ struct SettingsView: View {
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
+            .padding(.vertical, Spacing.md)
             .background(Color.blue, in: Capsule())
             .foregroundStyle(.white)
+            .buttonStyle(.pressable)
 
             Button("Create 3 Session Run") {
                 seedSessionRun()
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
+            .padding(.vertical, Spacing.md)
             .background(Color.orange, in: Capsule())
             .foregroundStyle(.white)
+            .buttonStyle(.pressable)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var recommendationDiagnosticsCard: some View {
@@ -539,7 +543,7 @@ struct SettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
             }
 
             HStack(spacing: 10) {
@@ -567,7 +571,7 @@ struct SettingsView: View {
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 .foregroundStyle(.red)
             }
 
@@ -588,8 +592,8 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private func compactTag(title: String, value: String) -> some View {
@@ -605,7 +609,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
     private func actionRow(title: String, tint: Color) -> some View {
@@ -621,9 +625,9 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(tint.opacity(0.14), lineWidth: 1)
         )
     }
@@ -644,7 +648,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
     private var followedRecommendationCount: Int {

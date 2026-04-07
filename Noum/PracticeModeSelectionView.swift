@@ -40,7 +40,7 @@ struct PracticeModeSelectionView: View {
                 title: "Timed Practice",
                 subtitle: "Choose a difficulty, take a beat, and build a full answer with structure.",
                 systemImage: "clock.fill",
-                tint: Color(red: 0.20, green: 0.47, blue: 0.96),
+                tint: AppColor.modeTimed,
                 outcome: "Best for fuller, cleaner complete answers.",
                 challengeFit: "Helps when your answers end early or lose structure."
             ),
@@ -49,7 +49,7 @@ struct PracticeModeSelectionView: View {
                 title: "Sudden Death",
                 subtitle: "Start immediately and stay alive without a single filler word.",
                 systemImage: "bolt.fill",
-                tint: Color(red: 0.95, green: 0.55, blue: 0.15),
+                tint: AppColor.modeSuddenDeath,
                 outcome: "Best for pressure tolerance and quick thinking.",
                 challengeFit: "Strong when you freeze or want sharper composure on the spot."
             ),
@@ -58,7 +58,7 @@ struct PracticeModeSelectionView: View {
                 title: "Ah-Counter",
                 subtitle: "Speak freely while Noum tracks fillers and pacing in real time.",
                 systemImage: "waveform.and.mic",
-                tint: Color(red: 0.14, green: 0.60, blue: 0.44),
+                tint: AppColor.modeAhCounter,
                 outcome: "Best for reducing fillers and calming rushed delivery.",
                 challengeFit: "Strong when you need cleaner openings and steadier rhythm."
             )
@@ -68,7 +68,7 @@ struct PracticeModeSelectionView: View {
                 title: "IM Mode",
                 subtitle: "Train tone, pacing, realism, and relationship impact inside a live conversation.",
                 systemImage: "message.badge.waveform.fill",
-                tint: Color(red: 0.32, green: 0.43, blue: 0.94),
+                tint: AppColor.modeIM,
                 outcome: "Best for real-world communication and tone control.",
                 challengeFit: "Strong when you want realistic social, work, or pressure reps."
             )
@@ -146,11 +146,11 @@ struct PracticeModeSelectionView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
+                VStack(spacing: Spacing.lg) {
                     headerCard
 
                     if let recommendedOption {
@@ -175,7 +175,7 @@ struct PracticeModeSelectionView: View {
 
                     Spacer(minLength: 10)
                 }
-                .padding(20)
+                .padding(Spacing.lg)
             }
         }
         .navigationTitle("")
@@ -219,7 +219,7 @@ struct PracticeModeSelectionView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -254,13 +254,13 @@ struct PracticeModeSelectionView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(18)
+        .padding(Spacing.lg)
         .background(
-            Color.white,
-            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.blue.opacity(0.12), lineWidth: 1)
         )
     }
@@ -288,16 +288,16 @@ struct PracticeModeSelectionView: View {
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 22)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, Spacing.md)
                         .background(primaryCTAOption.tint, in: Capsule())
                 }
                 .accessibilityIdentifier("practiceModes.start")
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(.vertical, Spacing.md)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(Color.white.opacity(0.72), lineWidth: 1)
             )
             .padding(.horizontal, 20)
@@ -319,7 +319,7 @@ struct PracticeModeSelectionView: View {
 
     private func featuredRecommendationCard(_ option: ModeOption) -> some View {
         Button {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            withAnimation(.standardSpring) {
                 selectedMode = option.mode
                 highlightedMode = option.mode
             }
@@ -366,13 +366,13 @@ struct PracticeModeSelectionView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18)
+            .padding(Spacing.lg)
             .background(
-                Color.white,
-                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(option.tint.opacity(0.25), lineWidth: 1)
             )
         }
@@ -382,7 +382,7 @@ struct PracticeModeSelectionView: View {
     private func practiceModeCard(_ option: ModeOption) -> some View {
         let isSelected = selectedMode == option.mode
         return Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+            withAnimation(.snappySpring) {
                 selectedMode = option.mode
                 highlightedMode = option.mode
             }
@@ -393,7 +393,7 @@ struct PracticeModeSelectionView: View {
                         PulseBadge(systemImage: option.systemImage, tint: option.tint)
                     } else {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                                 .fill(option.tint.opacity(0.14))
                                 .frame(width: 54, height: 54)
                             Image(systemName: option.systemImage)
@@ -449,13 +449,13 @@ struct PracticeModeSelectionView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .padding(18)
+            .padding(Spacing.lg)
             .background(
-                Color.white,
-                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(isSelected ? option.tint.opacity(0.26) : Color.white.opacity(0.72), lineWidth: 1)
             )
             .shadow(color: isSelected ? option.tint.opacity(0.10) : .clear, radius: 16, x: 0, y: 8)
@@ -486,14 +486,7 @@ struct PracticeModeSelectionView: View {
         let recent = sessionStore.sessions.prefix(4)
         guard !recent.isEmpty else { return "No recent sessions yet." }
         return recent.map { session in
-            let modeLabel: String
-            switch session.mode {
-            case .timed: modeLabel = "Timed"
-            case .suddenDeath: modeLabel = "Sudden Death"
-            case .ahCounter: modeLabel = "Ah-Counter"
-            case .imConversation: modeLabel = "IM"
-            }
-            return "\(modeLabel): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
+            return "\(session.mode.displayLabel): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
         }.joined(separator: " • ")
     }
 

@@ -280,7 +280,7 @@ struct PaywallView: View {
         }
     }
 
-    private let proColor = Color(red: 0.56, green: 0.28, blue: 0.92)
+    private let proColor = AppColor.pro
 
     private func priceText(for plan: PlanOption) -> String {
         switch plan {
@@ -326,7 +326,7 @@ struct PaywallView: View {
                             .font(.system(size: 48))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [proColor, Color(red: 0.82, green: 0.52, blue: 1.0)],
+                                    colors: [proColor, AppColor.proLight],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -354,9 +354,9 @@ struct PaywallView: View {
                         featureRow(icon: "tray.full.fill", title: "Saved Transcripts", description: "Review and compare past sessions")
                     }
                     .padding(4)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                             .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     )
 
@@ -384,7 +384,7 @@ struct PaywallView: View {
                                     .font(.headline.weight(.bold))
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
+                            .padding(.vertical, Spacing.md)
                             .background(
                                 LinearGradient(
                                     colors: [proColor, proColor.opacity(0.8)],
@@ -396,6 +396,7 @@ struct PaywallView: View {
                             .foregroundStyle(.white)
                             .shadow(color: proColor.opacity(0.4), radius: 16, y: 6)
                         }
+                        .buttonStyle(.pressable)
                         .disabled(isPurchasing)
 
                         if let errorMessage {
@@ -446,7 +447,7 @@ struct PaywallView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(proColor)
                 .frame(width: 36, height: 36)
-                .background(proColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(proColor.opacity(0.15), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -464,7 +465,7 @@ struct PaywallView: View {
                 .foregroundStyle(proColor)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, Spacing.md)
     }
 
     private func planCard(_ plan: PlanOption) -> some View {
@@ -503,10 +504,10 @@ struct PaywallView: View {
             .padding(.vertical, 16)
             .background(
                 isSelected ? Color.white.opacity(0.12) : Color.white.opacity(0.04),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     .stroke(isSelected ? proColor : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
             )
         }
@@ -572,7 +573,7 @@ struct PremiumGateOverlay: View {
     var feature: String = "This feature"
     @State private var showPaywall = false
 
-    private let proColor = Color(red: 0.56, green: 0.28, blue: 0.92)
+    private let proColor = AppColor.pro
 
     var body: some View {
         VStack(spacing: 14) {
@@ -613,10 +614,10 @@ struct PremiumGateOverlay: View {
                 startPoint: .top,
                 endPoint: .bottom
             ),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(proColor.opacity(0.12), lineWidth: 1)
         )
         .sheet(isPresented: $showPaywall) {

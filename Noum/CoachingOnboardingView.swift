@@ -139,7 +139,7 @@ struct CoachingOnboardingView: View {
 
     private var backgroundLayer: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             Circle()
@@ -224,7 +224,7 @@ struct CoachingOnboardingView: View {
                 progressPills(activeCount: 0)
 
                 Button {
-                    withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) {
+                    withAnimation(.standardSpring) {
                         screen = .question(.context)
                     }
                 } label: {
@@ -247,12 +247,12 @@ struct CoachingOnboardingView: View {
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.14, green: 0.51, blue: 0.98),
-                                Color(red: 0.26, green: 0.63, blue: 1.00)
+                                AppColor.brandBlue,
+                                AppColor.brandBlueLight
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
@@ -313,12 +313,12 @@ struct CoachingOnboardingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(stage.title)
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                    .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(stage.subtitle)
                     .font(.footnote)
-                    .foregroundStyle(Color(red: 0.41, green: 0.45, blue: 0.52))
+                    .foregroundStyle(AppColor.textSecondary)
             }
 
             ScrollView {
@@ -392,8 +392,8 @@ struct CoachingOnboardingView: View {
                         LinearGradient(
                             colors: canAdvance(from: stage)
                                 ? [
-                                    Color(red: 0.14, green: 0.51, blue: 0.98),
-                                    Color(red: 0.26, green: 0.63, blue: 1.00)
+                                    AppColor.brandBlue,
+                                    AppColor.brandBlueLight
                                 ]
                                 : [
                                     Color(red: 0.70, green: 0.73, blue: 0.78),
@@ -419,11 +419,11 @@ struct CoachingOnboardingView: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .fill(Color.white.opacity(0.95))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .stroke(Color.white.opacity(0.90), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.08), radius: 18, y: 10)
@@ -441,7 +441,7 @@ struct CoachingOnboardingView: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color(red: 0.14, green: 0.51, blue: 0.98),
+                                        AppColor.brandBlue,
                                         Color(red: 0.33, green: 0.70, blue: 1.00)
                                     ],
                                     startPoint: .topLeading,
@@ -449,7 +449,7 @@ struct CoachingOnboardingView: View {
                                 )
                             )
                             .frame(width: 120, height: 120)
-                            .shadow(color: Color(red: 0.14, green: 0.51, blue: 0.98).opacity(0.3), radius: 30, y: 10)
+                            .shadow(color: AppColor.brandBlue.opacity(0.3), radius: 30, y: 10)
 
                         Image(systemName: "checkmark")
                             .font(.system(size: 44, weight: .bold))
@@ -460,7 +460,7 @@ struct CoachingOnboardingView: View {
                     VStack(spacing: 8) {
                         Text(isEditingExistingProfile ? "Profile updated!" : "Welcome to Noum!")
                             .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                            .foregroundStyle(AppColor.textPrimary)
 
                         Text(isEditingExistingProfile
                             ? "Your coaching is now recalibrated."
@@ -485,7 +485,7 @@ struct CoachingOnboardingView: View {
                                 AngularGradient(
                                     colors: [
                                         Color(red: 1.00, green: 0.79, blue: 0.42),
-                                        Color(red: 0.14, green: 0.51, blue: 0.98),
+                                        AppColor.brandBlue,
                                         Color(red: 0.33, green: 0.70, blue: 1.00)
                                     ],
                                     center: .center
@@ -497,14 +497,14 @@ struct CoachingOnboardingView: View {
 
                         Image(systemName: "waveform")
                             .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(Color(red: 0.14, green: 0.51, blue: 0.98))
+                            .foregroundStyle(AppColor.brandBlue)
                             .symbolEffect(.variableColor.iterative, options: .repeating, value: processingMessageIndex)
                     }
                     .scaleEffect(processingCircleScale)
 
                     Text(processingMessages[processingMessageIndex])
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color(red: 0.41, green: 0.45, blue: 0.52))
+                        .foregroundStyle(AppColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .id(processingMessageIndex)
                         .transition(.asymmetric(
@@ -543,7 +543,7 @@ struct CoachingOnboardingView: View {
 
         // Transition to welcome
         DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration) {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            withAnimation(.standardSpring) {
                 showWelcome = true
             }
         }
@@ -566,7 +566,7 @@ struct CoachingOnboardingView: View {
                 let detail = optionDetail(for: option)
 
                 Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.90)) {
+                    withAnimation(.snappySpring) {
                         onSelect(option)
                     }
                 } label: {
@@ -591,10 +591,10 @@ struct CoachingOnboardingView: View {
 
                         ZStack {
                             Circle()
-                                .fill(isSelected ? Color(red: 0.14, green: 0.51, blue: 0.98) : Color.clear)
+                                .fill(isSelected ? AppColor.brandBlue : Color.clear)
                                 .frame(width: 28, height: 28)
                             Circle()
-                                .stroke(isSelected ? Color(red: 0.14, green: 0.51, blue: 0.98) : Color(red: 0.80, green: 0.83, blue: 0.88), lineWidth: 2)
+                                .stroke(isSelected ? AppColor.brandBlue : Color(red: 0.80, green: 0.83, blue: 0.88), lineWidth: 2)
                                 .frame(width: 28, height: 28)
                             if isSelected {
                                 Image(systemName: "checkmark")
@@ -608,11 +608,11 @@ struct CoachingOnboardingView: View {
                     .frame(minHeight: 54)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                             .fill(isSelected ? Color(red: 0.92, green: 0.96, blue: 1.00) : Color(red: 0.97, green: 0.98, blue: 1.00))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                             .stroke(
                                 isSelected ? Color(red: 0.57, green: 0.76, blue: 0.98) : Color(red: 0.89, green: 0.92, blue: 0.96),
                                 lineWidth: isSelected ? 2 : 1
@@ -647,7 +647,7 @@ struct CoachingOnboardingView: View {
 
             Button {
                 editorOverlayText = text.wrappedValue
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                withAnimation(.standardSpring) {
                     editorOverlayField = field
                 }
             } label: {
@@ -659,7 +659,7 @@ struct CoachingOnboardingView: View {
                     } else {
                         Text(text.wrappedValue)
                             .font(.body)
-                            .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                            .foregroundStyle(AppColor.textPrimary)
                     }
                 }
                 .multilineTextAlignment(.leading)
@@ -667,11 +667,11 @@ struct CoachingOnboardingView: View {
                 .padding(.vertical, 16)
                 .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
                 .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                         .fill(Color(red: 0.97, green: 0.98, blue: 1.00))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                         .stroke(Color(red: 0.88, green: 0.91, blue: 0.95), lineWidth: 1)
                 )
             }
@@ -715,7 +715,7 @@ struct CoachingOnboardingView: View {
                 HStack {
                     Text(title)
                         .font(.headline.weight(.bold))
-                        .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                        .foregroundStyle(AppColor.textPrimary)
                         .lineLimit(2)
 
                     Spacer()
@@ -730,7 +730,7 @@ struct CoachingOnboardingView: View {
                             .padding(.vertical, 10)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(Color(red: 0.14, green: 0.51, blue: 0.98))
+                                    .fill(AppColor.brandBlue)
                             )
                     }
                     .buttonStyle(.plain)
@@ -762,7 +762,7 @@ struct CoachingOnboardingView: View {
                     TextEditor(text: limitedOverlay)
                         .focused($overlayEditorFocused)
                         .font(.body)
-                        .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                        .foregroundStyle(AppColor.textPrimary)
                         .scrollContentBackground(.hidden)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -773,7 +773,7 @@ struct CoachingOnboardingView: View {
                 .padding(.bottom, 16)
             }
             .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .fill(Color.white)
                     .shadow(color: Color.black.opacity(0.15), radius: 30, y: 15)
             )
@@ -789,13 +789,13 @@ struct CoachingOnboardingView: View {
     private func commitOverlayText(to binding: Binding<String>) {
         binding.wrappedValue = editorOverlayText
         overlayEditorFocused = false
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+        withAnimation(.snappySpring) {
             editorOverlayField = nil
         }
     }
 
     private var heroCardBackground: some View {
-        RoundedRectangle(cornerRadius: 32, style: .continuous)
+        RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
             .fill(
                 LinearGradient(
                     colors: [
@@ -807,7 +807,7 @@ struct CoachingOnboardingView: View {
                 )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(Color.white.opacity(0.10), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.12), radius: 20, y: 12)
@@ -844,7 +844,7 @@ struct CoachingOnboardingView: View {
         HStack(spacing: 8) {
             ForEach(0..<OnboardingStage.allCases.count, id: \.self) { index in
                 Capsule(style: .continuous)
-                    .fill(index < activeCount ? Color(red: 0.14, green: 0.51, blue: 0.98) : Color.white.opacity(0.22))
+                    .fill(index < activeCount ? AppColor.brandBlue : Color.white.opacity(0.22))
                     .frame(height: 6)
             }
         }
@@ -881,11 +881,11 @@ struct CoachingOnboardingView: View {
         focusedField = nil
 
         if let next = OnboardingStage(rawValue: stage.rawValue + 1) {
-            withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+            withAnimation(.standardSpring) {
                 screen = .question(next)
             }
         } else {
-            withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+            withAnimation(.standardSpring) {
                 screen = .summary
             }
         }
@@ -899,11 +899,11 @@ struct CoachingOnboardingView: View {
             dismiss()
         case let .question(stage):
             if let previous = OnboardingStage(rawValue: stage.rawValue - 1) {
-                withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+                withAnimation(.standardSpring) {
                     screen = .question(previous)
                 }
             } else {
-                withAnimation(.spring(response: 0.40, dampingFraction: 0.88)) {
+                withAnimation(.standardSpring) {
                     screen = .intro
                 }
             }

@@ -117,10 +117,7 @@ struct IMPracticeView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.97, blue: 0.99),
-                    Color(red: 0.93, green: 0.94, blue: 0.98)
-                ],
+                colors: [AppColor.lightGradientStart, AppColor.lightGradientEnd],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -306,10 +303,10 @@ struct IMPracticeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .fill(Color.white.opacity(0.94))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                         .stroke(Color.white.opacity(0.9), lineWidth: 1)
                 )
         )
@@ -333,7 +330,7 @@ struct IMPracticeView: View {
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .padding(.vertical, 15)
+                .padding(.vertical, Spacing.md)
                 .padding(.horizontal, 24)
                 .background(Color.white.opacity(0.95), in: Capsule())
 
@@ -342,9 +339,10 @@ struct IMPracticeView: View {
                 }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .padding(.vertical, Spacing.md)
                 .background(canStartConversation ? Color.blue : Color.gray.opacity(0.35), in: Capsule())
                 .foregroundStyle(.white)
+                .buttonStyle(.pressable)
                 .disabled(!canStartConversation)
             }
         }
@@ -392,7 +390,7 @@ struct IMPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var setupCard: some View {
@@ -412,7 +410,7 @@ struct IMPracticeView: View {
             }
         }
         .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var guidanceCard: some View {
@@ -455,8 +453,8 @@ struct IMPracticeView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var conversationCard: some View {
@@ -477,8 +475,8 @@ struct IMPracticeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 12)
-            .padding(.vertical, 14)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(.vertical, Spacing.md)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
             .onChange(of: turns.count) { _, _ in
                 if let last = turns.last?.id {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -527,8 +525,8 @@ struct IMPracticeView: View {
                 .multilineTextAlignment(isLeading ? .leading : .trailing)
         }
         .frame(maxWidth: 250, alignment: isLeading ? .leading : .trailing)
-        .padding(14)
-        .background(tint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(tint, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var typingBubble: some View {
@@ -549,8 +547,8 @@ struct IMPracticeView: View {
                 }
             }
             .frame(maxWidth: 120, alignment: .leading)
-            .padding(14)
-            .background(Color(red: 0.92, green: 0.94, blue: 0.98), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(Spacing.cardGap)
+            .background(Color(red: 0.92, green: 0.94, blue: 0.98), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             Spacer(minLength: 72)
         }
     }
@@ -652,7 +650,7 @@ struct IMPracticeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .padding(18)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
@@ -660,10 +658,10 @@ struct IMPracticeView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.white.opacity(0.9), lineWidth: 1)
         )
     }
@@ -679,7 +677,7 @@ struct IMPracticeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.white.opacity(0.9), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private var composerBar: some View {
@@ -693,7 +691,7 @@ struct IMPracticeView: View {
                     }
                 } label: {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                             .fill(speechVM.isRecording ? Color.red.opacity(0.16) : Color.blue.opacity(0.14))
                             .frame(width: 48, height: 48)
                         Image(systemName: speechVM.isRecording ? "stop.fill" : "mic.fill")
@@ -745,7 +743,7 @@ struct IMPracticeView: View {
             .disabled(speechVM.isRecording || isAwaitingNPC || isEndingConversation)
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if isEndingConversation {
                 HStack(spacing: 8) {
@@ -786,7 +784,7 @@ struct IMPracticeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
     private func scenarioCard(for option: IMConversationScenario) -> some View {
@@ -797,7 +795,7 @@ struct IMPracticeView: View {
         } label: {
             HStack(spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                         .fill((scenario == option ? Color.blue : Color.gray).opacity(scenario == option ? 0.14 : 0.10))
                         .frame(width: 50, height: 50)
                     Image(systemName: scenarioIconName(for: option))
@@ -826,13 +824,13 @@ struct IMPracticeView: View {
                     .font(.title3)
                     .foregroundStyle(scenario == option ? .blue : .secondary)
             }
-            .padding(14)
+            .padding(Spacing.cardGap)
             .background(
                 (scenario == option ? Color.blue.opacity(0.08) : Color.white.opacity(0.8)),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(scenario == option ? Color.blue.opacity(0.35) : Color.black.opacity(0.05), lineWidth: 1)
             )
         }
@@ -851,10 +849,10 @@ struct IMPracticeView: View {
                 .padding(.horizontal, 12)
                 .background(
                     targetTone == tone ? Color.blue : Color.white.opacity(0.92),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                         .stroke(targetTone == tone ? Color.clear : Color.black.opacity(0.06), lineWidth: 1)
                 )
         }
@@ -873,7 +871,7 @@ struct IMPracticeView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(red: 0.96, green: 0.97, blue: 0.99), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color(red: 0.96, green: 0.97, blue: 0.99), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private func detailPill(title: String, systemImage: String) -> some View {

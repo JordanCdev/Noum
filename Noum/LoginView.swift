@@ -132,7 +132,7 @@ struct LoginView: View {
             }
             .signInWithAppleButtonStyle(.white)
             .frame(height: 54)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 #endif
 
             googleButton
@@ -168,16 +168,16 @@ struct LoginView: View {
             authManager.startGoogleSignIn()
         }
         .frame(height: 54)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 #else
         Button {
             authManager.startGoogleSignIn()
         } label: {
             Text("Continue with Google")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color(red: 0.13, green: 0.15, blue: 0.20))
+                .foregroundStyle(AppColor.textPrimary)
                 .frame(maxWidth: .infinity, minHeight: 54)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Color.white, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
         .buttonStyle(.plain)
 #endif

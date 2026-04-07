@@ -61,7 +61,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
-                Color(UIColor.systemGroupedBackground)
+                AppColor.screenBackground
                 .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
@@ -71,13 +71,13 @@ struct ContentView: View {
                     }
                     .frame(height: 0)
 
-                    VStack(spacing: 14) {
+                    VStack(spacing: Spacing.cardGap) {
                         heroCard
                         progressCard
                         journeyPreviewCard
                         suggestedPracticeCard
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, Spacing.screenH)
                     .padding(.top, 12)
                     .padding(.bottom, 24)
                 }
@@ -151,7 +151,7 @@ struct ContentView: View {
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(rankTint)
                         .frame(width: 46, height: 46)
-                        .background(rankTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(rankTint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Speaking Rank")
@@ -208,16 +208,16 @@ struct ContentView: View {
 
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: 164)
-            .padding(20)
+            .padding(Spacing.lg)
             .background(
-                Color.white,
-                in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(Color.white.opacity(0.72), lineWidth: 1)
             )
         }
@@ -237,7 +237,7 @@ struct ContentView: View {
             
             suggestionLink(
                 suggestion: primary,
-                systemImage: iconName(for: primary.mode)
+                systemImage: primary.mode.iconName
             )
 
             coachingFocusCard
@@ -246,16 +246,16 @@ struct ContentView: View {
         .padding(16)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .fill(AppColor.cardBackground)
                     .shadow(color: primary.tint.opacity(0.08), radius: 12, x: 0, y: 4)
 
-                Color.white
+                AppColor.cardBackground
             }
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [Color.white.opacity(0.8), primary.tint.opacity(0.12)],
@@ -273,11 +273,11 @@ struct ContentView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color(red: 0.34, green: 0.56, blue: 0.25))
+                        .foregroundStyle(AppColor.positive)
                         .frame(width: 46, height: 46)
                         .background(
-                            Color(red: 0.34, green: 0.56, blue: 0.25).opacity(0.12),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            AppColor.positive.opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                         )
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -286,7 +286,7 @@ struct ContentView: View {
                             .foregroundStyle(.primary)
                         Text(journeySnapshot.progressLabel)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.30, green: 0.54, blue: 0.24))
+                            .foregroundStyle(AppColor.positive)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -300,14 +300,14 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: 78)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.md)
             .padding(.vertical, 12)
             .background(
-                Color.white,
-                in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(Color.white.opacity(0.75), lineWidth: 1)
             )
         }
@@ -339,7 +339,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("nav.settings")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.md)
         .padding(.vertical, 12)
         .background(.regularMaterial, in: Capsule())
         .overlay(
@@ -395,10 +395,10 @@ struct ContentView: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     .stroke(suggestion.tint.opacity(0.10), lineWidth: 1)
             )
         }
@@ -418,7 +418,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private func navItem(title: String, systemImage: String, accent: Color) -> some View {
@@ -485,7 +485,7 @@ struct ContentView: View {
                 recommendedTone: nil,
                 recommendedScenario: nil,
                 benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == mode })?.benefit ?? "",
-                tint: tint(for: mode)
+                tint: AppColor.tint(for: mode)
             )
         }
 
@@ -569,7 +569,7 @@ struct ContentView: View {
             recommendedTone: bias.recommendedTone,
             recommendedScenario: bias.recommendedScenario,
             benefit: bias.modeBenefit,
-            tint: tint(for: bias.recommendedMode)
+            tint: AppColor.tint(for: bias.recommendedMode)
         )
     }
 
@@ -589,7 +589,7 @@ struct ContentView: View {
             recommendedTone: aiRecommendation.recommendedTone.flatMap(IMTargetTone.init(rawValue:)) ?? bias.recommendedTone,
             recommendedScenario: aiRecommendation.recommendedScenario.flatMap(IMConversationScenario.init(rawValue:)) ?? bias.recommendedScenario,
             benefit: aiRecommendation.modeBenefit.isEmpty ? bias.modeBenefit : aiRecommendation.modeBenefit,
-            tint: tint(for: mode)
+            tint: AppColor.tint(for: mode)
         ))
     }
 
@@ -924,9 +924,9 @@ struct ContentView: View {
         guard suggestion.mode == .imConversation,
               let scenario = suggestion.recommendedScenario,
               let tone = suggestion.recommendedTone else {
-            return "Mode: \(modeLabel(for: suggestion.mode))"
+            return "Mode: \(suggestion.mode.displayLabel)"
         }
-        return "Mode: \(modeLabel(for: suggestion.mode)) • \(scenario.title) • \(tone.title)"
+        return "Mode: \(suggestion.mode.displayLabel) • \(scenario.title) • \(tone.title)"
     }
 
     private var levelProgressLabel: String {
@@ -968,44 +968,6 @@ struct ContentView: View {
         "Next: Speaker \(max(2, (profile.xp / 1000) + 2))"
     }
 
-    private func modeLabel(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed:
-            return "Timed"
-        case .suddenDeath:
-            return "Sudden Death"
-        case .ahCounter:
-            return "Ah-Counter"
-        case .imConversation:
-            return "IM Mode"
-        }
-    }
-
-    private func iconName(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed:
-            return "clock.fill"
-        case .suddenDeath:
-            return "bolt.fill"
-        case .ahCounter:
-            return "waveform.and.mic"
-        case .imConversation:
-            return "message.badge.waveform.fill"
-        }
-    }
-
-    private func tint(for mode: PracticeMode) -> Color {
-        switch mode {
-        case .timed:
-            return .blue
-        case .suddenDeath:
-            return .orange
-        case .ahCounter:
-            return .green
-        case .imConversation:
-            return .purple
-        }
-    }
 }
 #endif
 

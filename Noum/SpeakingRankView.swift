@@ -85,10 +85,10 @@ struct SpeakingRankView: View {
                 achievementsPanel
                 coachingReadPanel
             }
-            .padding(18)
+            .padding(Spacing.lg)
         }
         .background(
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
         )
         .navigationTitle("")
@@ -103,7 +103,7 @@ struct SpeakingRankView: View {
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(rankTint)
                     .frame(width: 52, height: 52)
-                    .background(rankTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(rankTint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(rankTitle)
@@ -146,7 +146,7 @@ struct SpeakingRankView: View {
         .padding(20)
         .background(
             Color.white,
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         )
     }
 
@@ -162,8 +162,8 @@ struct SpeakingRankView: View {
                 statCard(title: "Unlocked", value: "\(unlockedAchievements.count)", tint: .orange)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var activeChallengePanel: some View {
@@ -176,7 +176,7 @@ struct SpeakingRankView: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.orange)
                     .frame(width: 42, height: 42)
-                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(retentionSnapshot.activeChallenge.title)
@@ -205,8 +205,8 @@ struct SpeakingRankView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var achievementsPanel: some View {
@@ -239,8 +239,8 @@ struct SpeakingRankView: View {
                 }
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var coachingReadPanel: some View {
@@ -267,12 +267,12 @@ struct SpeakingRankView: View {
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(14)
-                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .padding(Spacing.cardGap)
+                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private func statCard(title: String, value: String, tint: Color) -> some View {
@@ -286,13 +286,13 @@ struct SpeakingRankView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
-        .padding(14)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func achievementRow(_ achievement: PracticeAchievementStatus, expanded: Bool) -> some View {
         Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            withAnimation(.standardSpring) {
                 selectedAchievementID = expanded ? nil : achievement.id
             }
         } label: {
@@ -350,7 +350,7 @@ struct SpeakingRankView: View {
                 }
             }
             .padding(12)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
         .buttonStyle(.plain)
     }

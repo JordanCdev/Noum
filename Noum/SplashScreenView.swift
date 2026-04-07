@@ -7,7 +7,7 @@ struct SplashScreenView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             Circle()
@@ -38,7 +38,7 @@ struct SplashScreenView: View {
                     .scaleEffect(1.1)
             }
             .padding(34)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {

@@ -121,7 +121,7 @@ struct SessionHistoryView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemGroupedBackground)
+            AppColor.screenBackground
             .ignoresSafeArea()
 
             if sessions.isEmpty {
@@ -153,7 +153,7 @@ struct SessionHistoryView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(18)
+                    .padding(Spacing.lg)
                 }
             }
         }
@@ -180,7 +180,7 @@ struct SessionHistoryView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(28)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .padding(24)
     }
 
@@ -199,8 +199,8 @@ struct SessionHistoryView: View {
                 overviewMetric(title: "Best Mode", value: strongestModeText, tint: .purple)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var progressOverTimePanel: some View {
@@ -243,11 +243,11 @@ struct SessionHistoryView: View {
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(Spacing.cardGap)
+            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private var journeyPanel: some View {
@@ -262,8 +262,8 @@ struct SessionHistoryView: View {
             activeChallengeCard
             achievementsCard
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
     private func sessionCard(_ session: PracticeSession) -> some View {
@@ -312,8 +312,8 @@ struct SessionHistoryView: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func overviewMetric(title: String, value: String, tint: Color) -> some View {
@@ -328,8 +328,8 @@ struct SessionHistoryView: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
-        .padding(14)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func trendCard(
@@ -352,8 +352,8 @@ struct SessionHistoryView: View {
                 .frame(height: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func compactMetric(label: String, value: String) -> some View {
@@ -368,7 +368,7 @@ struct SessionHistoryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
     private var activeChallengeCard: some View {
@@ -416,8 +416,8 @@ struct SessionHistoryView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(14)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var achievementsCard: some View {
@@ -429,7 +429,7 @@ struct SessionHistoryView: View {
 
             ForEach(retentionSnapshot.achievements.prefix(3)) { achievement in
                 Button {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                    withAnimation(.standardSpring) {
                         selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
                     }
                 } label: {
@@ -487,7 +487,7 @@ struct SessionHistoryView: View {
                         }
                     }
                     .padding(12)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -688,7 +688,7 @@ private struct SessionHistoryDetailView: View {
                         transcriptCard
                     }
                 }
-                .padding(18)
+                .padding(Spacing.lg)
             }
         }
         .navigationTitle("")
@@ -710,8 +710,8 @@ private struct SessionHistoryDetailView: View {
                 detailMetric(title: "Mode", value: modeLabel, tint: .purple)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var focusCard: some View {
@@ -750,8 +750,8 @@ private struct SessionHistoryDetailView: View {
                 }
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var fullReviewToggle: some View {
@@ -776,8 +776,8 @@ private struct SessionHistoryDetailView: View {
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.blue)
             }
-            .padding(18)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -793,8 +793,8 @@ private struct SessionHistoryDetailView: View {
                 detailMetric(title: "XP", value: session.xpEarned.map(String.init) ?? "Pending", tint: .orange)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func conversationReadCard(_ imDetails: IMConversationDetails) -> some View {
@@ -822,8 +822,8 @@ private struct SessionHistoryDetailView: View {
                 relationshipBlock(relationship)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func relationshipBlock(_ relationship: IMRelationshipProfile) -> some View {
@@ -862,7 +862,7 @@ private struct SessionHistoryDetailView: View {
                         .tint(.purple)
                 }
                 .padding(12)
-                .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -893,8 +893,8 @@ private struct SessionHistoryDetailView: View {
                 }
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func coachReadCard(_ aiFeedback: AICoachFeedback) -> some View {
@@ -920,8 +920,8 @@ private struct SessionHistoryDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var transcriptCard: some View {
@@ -933,10 +933,10 @@ private struct SessionHistoryDetailView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
-                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private func coachSection(title: String, lines: [String]) -> some View {
@@ -996,8 +996,8 @@ private struct SessionHistoryDetailView: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private func historyBubble(speaker: String, text: String, tint: Color, isLeading: Bool) -> some View {
@@ -1011,7 +1011,7 @@ private struct SessionHistoryDetailView: View {
         }
         .frame(maxWidth: 270, alignment: isLeading ? .leading : .trailing)
         .padding(12)
-        .background(tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private var modeLabel: String {

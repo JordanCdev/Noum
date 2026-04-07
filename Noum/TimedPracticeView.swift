@@ -203,8 +203,8 @@ private enum ImpromptuSetupMode: String, CaseIterable, Identifiable {
 
     var badgeColor: Color {
         switch self {
-        case .classic: return Color(red: 0.20, green: 0.47, blue: 0.96)
-        case .coach: return Color(red: 0.56, green: 0.28, blue: 0.92)
+        case .classic: return AppColor.brandBlue
+        case .coach: return AppColor.pro
         }
     }
 }
@@ -333,7 +333,7 @@ private struct SpotlightOrbView: View {
                     x: (orbSize / 2) * cos(angle.radians),
                     y: (orbSize / 2) * sin(angle.radians)
                 )
-                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: reached)
+                .animation(.bouncySpring, value: reached)
         }
     }
 
@@ -489,7 +489,7 @@ private struct SettingsCardView: View {
 
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(Color(red: 0.56, green: 0.28, blue: 0.92))
+                        .foregroundStyle(AppColor.pro)
                     Text("Live transcript · Video · AI feedback · Score breakdown")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -497,16 +497,16 @@ private struct SettingsCardView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(red: 0.56, green: 0.28, blue: 0.92).opacity(0.05))
+                .background(AppColor.pro.opacity(0.05))
             }
         }
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: selectedMode)
+        .animation(.standardSpring, value: selectedMode)
     }
 
     private var timerPicker: some View {
@@ -515,7 +515,7 @@ private struct SettingsCardView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
                 .frame(width: 32, height: 32)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Timer display")
@@ -536,7 +536,7 @@ private struct SettingsCardView: View {
             .tint(.blue)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, Spacing.md)
     }
 
     private func toggleRow(icon: String, iconColor: Color, title: String, caption: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
@@ -545,7 +545,7 @@ private struct SettingsCardView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(disabled ? iconColor.opacity(0.4) : iconColor)
                 .frame(width: 32, height: 32)
-                .background((disabled ? iconColor.opacity(0.04) : iconColor.opacity(0.1)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background((disabled ? iconColor.opacity(0.04) : iconColor.opacity(0.1)), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -564,7 +564,7 @@ private struct SettingsCardView: View {
                 .disabled(disabled)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, Spacing.md)
     }
 
     private var thinDivider: some View {
@@ -803,9 +803,9 @@ struct TimedPracticeView: View {
 
                         CameraPreviewView(session: session)
                             .frame(height: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                                     .stroke(Color.pink.opacity(0.2), lineWidth: 1)
                             )
 
@@ -852,7 +852,7 @@ struct TimedPracticeView: View {
         let isSelected = selectedTheme == theme
         return Button {
             UISelectionFeedbackGenerator().selectionChanged()
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(.snappySpring) {
                 selectedTheme = theme
             }
         } label: {
@@ -879,7 +879,7 @@ struct TimedPracticeView: View {
         let isSelected = selectedMode == mode
         return Button {
             UISelectionFeedbackGenerator().selectionChanged()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            withAnimation(.standardSpring) {
                 selectedMode = mode
                 applyModeDefaults(mode)
             }
@@ -892,7 +892,7 @@ struct TimedPracticeView: View {
                         .frame(width: 36, height: 36)
                         .background(
                             isSelected ? mode.badgeColor : mode.badgeColor.opacity(0.12),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                         )
 
                     Spacer()
@@ -943,9 +943,9 @@ struct TimedPracticeView: View {
                     )
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                     .stroke(isSelected ? Color.clear : Color.black.opacity(0.06), lineWidth: 1)
             )
             .shadow(color: isSelected ? mode.badgeColor.opacity(0.25) : Color.black.opacity(0.04), radius: isSelected ? 12 : 6, y: isSelected ? 6 : 3)
@@ -1034,10 +1034,10 @@ struct TimedPracticeView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                         .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 )
             }
@@ -1096,7 +1096,7 @@ struct TimedPracticeView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(28)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             .shadow(color: Color.black.opacity(0.06), radius: 20, y: 8)
             .padding(.horizontal, 20)
 
@@ -1213,7 +1213,7 @@ struct TimedPracticeView: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
 
                 // Live transcript snippet (last few words)
@@ -1225,7 +1225,7 @@ struct TimedPracticeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(.ultraThinMaterial.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(.ultraThinMaterial.opacity(0.5), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
 
                 // Filler words chip
@@ -1290,7 +1290,7 @@ struct TimedPracticeView: View {
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
 
                 if speechVM.connectionError != nil {
@@ -1336,7 +1336,7 @@ struct TimedPracticeView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color(.systemGray6).opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color(.systemGray6).opacity(0.7), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             }
@@ -1362,12 +1362,12 @@ struct TimedPracticeView: View {
             .frame(maxWidth: .infinity)
             .frame(maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .fill(Color(.systemBackground))
                     .shadow(color: Color.black.opacity(0.06), radius: 12, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(Color(.systemGray5).opacity(0.6), lineWidth: 0.5)
             )
             .padding(.horizontal, 16)
@@ -1509,11 +1509,11 @@ struct TimedPracticeView: View {
     // MARK: - Milestone Animation
 
     private func triggerMilestoneAnimation() {
-        withAnimation(.spring(response: 0.2, dampingFraction: 0.4)) {
+        withAnimation(.bouncySpring) {
             milestoneScale = 1.15
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            withAnimation(.standardSpring) {
                 milestoneScale = 1.0
             }
         }
@@ -1726,7 +1726,7 @@ struct TimedPracticeView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
         .padding(.horizontal, 16)
     }
 
@@ -1786,6 +1786,7 @@ struct TimedPracticeView: View {
             )
             .foregroundStyle(.white)
             .shadow(color: selectedMode.badgeColor.opacity(0.3), radius: 12, y: 4)
+            .buttonStyle(.pressable)
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -1807,6 +1808,7 @@ struct TimedPracticeView: View {
             }
             .background(Color.white, in: Capsule())
             .foregroundStyle(Color(red: 0.06, green: 0.06, blue: 0.12))
+            .buttonStyle(.pressable)
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -1842,6 +1844,7 @@ struct TimedPracticeView: View {
                 Capsule()
                     .stroke(Color.white.opacity(isImmersive || isCamera ? 0.2 : 0), lineWidth: 1)
             )
+            .buttonStyle(.pressable)
             .disabled(isStopping)
             .opacity(isStopping ? 0.5 : 1)
         }
@@ -2002,7 +2005,7 @@ struct TimedPracticeView: View {
                     let gen = UINotificationFeedbackGenerator()
                     gen.prepare()
                     gen.notificationOccurred(.success)
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                    withAnimation(.bouncySpring) {
                         showCelebration = true
                     }
                     // Auto-dismiss celebration

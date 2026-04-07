@@ -65,7 +65,7 @@ struct SocialProfileView: View {
     @State private var showChallengePickFriend = false
     @Environment(\.openURL) private var openURL
 
-    private let proColor = Color(red: 0.56, green: 0.28, blue: 0.92)
+    private let proColor = AppColor.pro
 
     private var displayName: String {
         authManager.currentAccountName ?? "Speaker"
@@ -92,10 +92,7 @@ struct SocialProfileView: View {
         }
         .background(
             LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.97, blue: 1.0),
-                    Color(red: 0.93, green: 0.95, blue: 1.0)
-                ],
+                colors: [AppColor.lightGradientStart, AppColor.lightGradientEnd],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -182,9 +179,9 @@ struct SocialProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
     }
@@ -205,7 +202,7 @@ struct SocialProfileView: View {
                 .font(.headline)
                 .foregroundStyle(tint)
                 .frame(width: 36, height: 36)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
             Text(value)
                 .font(.title3.weight(.bold))
             Text(title)
@@ -214,9 +211,9 @@ struct SocialProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                 .stroke(Color.black.opacity(0.04), lineWidth: 1)
         )
     }
@@ -299,9 +296,9 @@ struct SocialProfileView: View {
             }
         }
         .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
     }
@@ -319,7 +316,7 @@ struct SocialProfileView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.teal)
                     .frame(width: 36, height: 36)
-                    .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -383,9 +380,9 @@ struct SocialProfileView: View {
             }
         }
         .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
     }
@@ -396,7 +393,7 @@ struct SocialProfileView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(challenge.category.tint)
                 .frame(width: 36, height: 36)
-                .background(challenge.category.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(challenge.category.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -496,9 +493,9 @@ struct SocialProfileView: View {
             }
         }
         .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
     }
@@ -562,9 +559,9 @@ struct SocialProfileView: View {
             }
         }
         .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
         .alert("Contacts Access", isPresented: $contactsAccessDenied) {
@@ -586,7 +583,7 @@ struct SocialProfileView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(iconColor)
                     .frame(width: 36, height: 36)
-                    .background(iconColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(iconColor.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -629,7 +626,7 @@ struct SocialProfileView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.indigo)
                         .frame(width: 36, height: 36)
-                        .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Find a Toastmasters Club")
@@ -664,7 +661,7 @@ struct SocialProfileView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.orange)
                         .frame(width: 36, height: 36)
-                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Speaking Events on Eventbrite")
@@ -686,9 +683,9 @@ struct SocialProfileView: View {
             .buttonStyle(.plain)
         }
         .padding(20)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
         )
     }
@@ -747,7 +744,7 @@ struct SocialProfileView: View {
                 Spacer()
 
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                         .fill(Color.white)
                         .frame(width: 220, height: 220)
                         .shadow(color: Color.black.opacity(0.08), radius: 16, y: 6)
@@ -757,7 +754,7 @@ struct SocialProfileView: View {
                             .interpolation(.none)
                             .resizable()
                             .frame(width: 180, height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.small))
                     } else {
                         VStack(spacing: 12) {
                             Image(systemName: "qrcode")
@@ -790,7 +787,7 @@ struct SocialProfileView: View {
                                 .font(.subheadline.weight(.semibold))
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, Spacing.md)
                         .background(Color.blue, in: Capsule())
                         .foregroundStyle(.white)
                     }
@@ -805,7 +802,7 @@ struct SocialProfileView: View {
                                 .font(.subheadline.weight(.semibold))
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, Spacing.md)
                         .background(Color(.systemGray5), in: Capsule())
                         .foregroundStyle(.primary)
                     }
@@ -937,9 +934,9 @@ struct AsyncChallengeDetailSheet: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(24)
-                    .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                             .stroke(Color.teal.opacity(0.15), lineWidth: 1)
                     )
 
@@ -1050,7 +1047,7 @@ struct AsyncChallengeDetailSheet: View {
         }
         .frame(maxWidth: .infinity)
         .padding(16)
-        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 }
 
@@ -1092,9 +1089,9 @@ struct ChallengePickFriendSheet: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(24)
-                        .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
                                 .stroke(Color.teal.opacity(0.15), lineWidth: 1)
                         )
                         .padding(.horizontal, 20)
@@ -1154,7 +1151,7 @@ struct ChallengePickFriendSheet: View {
                             ForEach(friends.friends) { friend in
                                 Button {
                                     let challenge = challenges.createAsyncChallenge(opponentID: friend.id, opponentName: friend.displayName)
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    withAnimation(.standardSpring) {
                                         createdChallenge = challenge
                                     }
                                 } label: {
@@ -1248,7 +1245,7 @@ struct AddFriendSheet: View {
                 TextField("Friend's name", text: $friendName)
                     .font(.body)
                     .padding(16)
-                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                     .padding(.horizontal, 20)
                     .focused($nameFieldFocused)
                     .submitLabel(.done)
@@ -1300,7 +1297,7 @@ struct AddFriendSheet: View {
         guard !trimmed.isEmpty else { return }
         friends.addFriend(name: trimmed, method: .manual)
         challenges.recordSocialAction()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        withAnimation(.standardSpring) {
             didAdd = true
         }
         friendName = ""

@@ -36,7 +36,7 @@ struct PathJourneyView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color(UIColor.systemGroupedBackground)
+                AppColor.screenBackground
                 .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
@@ -89,10 +89,10 @@ struct PathJourneyView: View {
                         .padding(16)
                         .background(
                             Color.white,
-                            in: RoundedRectangle(cornerRadius: 30, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                                 .stroke(Color.white.opacity(0.72), lineWidth: 1)
                         )
 
@@ -194,10 +194,10 @@ struct PathJourneyView: View {
         .padding(16)
         .background(
             Color.orange.opacity(0.06),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.orange.opacity(0.2), lineWidth: 1)
         )
     }
@@ -219,7 +219,7 @@ struct PathJourneyView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
     private var activeChallengeCard: some View {
@@ -264,8 +264,8 @@ struct PathJourneyView: View {
                     .multilineTextAlignment(.trailing)
             }
         }
-        .padding(14)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(Spacing.cardGap)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var achievementsCard: some View {
@@ -336,7 +336,7 @@ struct PathJourneyView: View {
                         }
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
