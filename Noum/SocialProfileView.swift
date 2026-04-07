@@ -655,7 +655,7 @@ struct SocialProfileView: View {
 
             // Eventbrite — speaking events
             Button {
-                if let url = URL(string: "https://www.eventbrite.com/d/online/public-speaking-workshop/") {
+                if let url = URL(string: "https://www.eventbrite.com/d/online/public-speaking/") {
                     openURL(url)
                 }
             } label: {
@@ -670,7 +670,7 @@ struct SocialProfileView: View {
                         Text("Speaking Events on Eventbrite")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
-                        Text("Find public speaking workshops, open mics, and events nearby")
+                        Text("Find public speaking events, workshops, and open mics")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)

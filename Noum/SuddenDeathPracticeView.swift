@@ -7,9 +7,9 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathPracticeView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @State private var question: String = PracticeTopics.random()
+    @State private var question: String = ""
     @State private var elapsed: Int = 0
     @State private var showSummary = false
     @State private var timerTask: Task<Void, Never>? = nil
@@ -107,6 +107,10 @@ struct SuddenDeathPracticeView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("suddenDeath.screen")
+        .task {
+            if question.isEmpty { question = PracticeTopics.random() }
+            speechVM.prepareForInteractiveUse()
+        }
         .onChange(of: speechVM.fillerWordCount) { _, count in
             if count > 0 { stopSession() }
         }

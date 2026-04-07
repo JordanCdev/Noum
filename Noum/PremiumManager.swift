@@ -15,8 +15,12 @@ final class PremiumManager: ObservableObject {
     @Published private(set) var isPremium: Bool
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
+    @Published private(set) var videoAnalysisCreditsRemaining: Int
 
     private let storageKey = "NoumPremiumEntitlement"
+    private let creditsKey = "NoumVideoAnalysisCredits"
+    private let creditsResetKey = "NoumVideoAnalysisResetDate"
+    static let monthlyVideoAnalysisLimit = 5
 
     /// StoreKit product identifiers
     static let monthlyID = "com.noum.pro.monthly"
@@ -27,10 +31,18 @@ final class PremiumManager: ObservableObject {
 
     private init() {
         isPremium = UserDefaults.standard.bool(forKey: storageKey)
-        transactionListener = listenForTransactions()
-        Task {
-            await loadProducts()
-            await updatePurchasedProducts()
+        videoAnalysisCreditsRemaining = UserDefaults.standard.object(forKey: creditsKey) as? Int ?? Self.monthlyVideoAnalysisLimit
+        resetCreditsIfNeeded()
+        // Defer StoreKit work so it doesn't block the first frame.
+        // The transaction listener and product loading involve XPC calls
+        // that trigger heavy plist decoding on the main thread.
+        Task { @MainActor [weak self] in
+            // Yield once so the current run-loop cycle (view init) completes first
+            await Task.yield()
+            guard let self else { return }
+            self.transactionListener = self.listenForTransactions()
+            await self.loadProducts()
+            await self.updatePurchasedProducts()
         }
     }
 
@@ -152,6 +164,37 @@ final class PremiumManager: ObservableObject {
     func revokePremium() {
         isPremium = false
         UserDefaults.standard.set(false, forKey: storageKey)
+    }
+
+    // MARK: - Video Analysis Credits
+
+    var canUseVideoAnalysis: Bool { isPremium && videoAnalysisCreditsRemaining > 0 }
+
+    func consumeVideoAnalysisCredit() -> Bool {
+        guard canUseVideoAnalysis else { return false }
+        videoAnalysisCreditsRemaining -= 1
+        UserDefaults.standard.set(videoAnalysisCreditsRemaining, forKey: creditsKey)
+        return true
+    }
+
+    private func resetCreditsIfNeeded() {
+        let defaults = UserDefaults.standard
+        if let resetDate = defaults.object(forKey: creditsResetKey) as? Date {
+            if Date() >= resetDate {
+                videoAnalysisCreditsRemaining = Self.monthlyVideoAnalysisLimit
+                defaults.set(videoAnalysisCreditsRemaining, forKey: creditsKey)
+                defaults.set(nextMonthlyReset(), forKey: creditsResetKey)
+            }
+        } else {
+            // First launch — set initial reset date
+            defaults.set(nextMonthlyReset(), forKey: creditsResetKey)
+            defaults.set(Self.monthlyVideoAnalysisLimit, forKey: creditsKey)
+            videoAnalysisCreditsRemaining = Self.monthlyVideoAnalysisLimit
+        }
+    }
+
+    private func nextMonthlyReset() -> Date {
+        Calendar.current.date(byAdding: .month, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
     }
 
     // MARK: - Feature Gating
@@ -307,6 +350,7 @@ struct PaywallView: View {
                         featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler Tracking", description: "Detect and reduce verbal crutches")
                         featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend Analytics", description: "Track improvement across sessions")
                         featureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges", description: "Challenge friends to the same prompt")
+                        featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI Video Analysis", description: "Nonverbal coaching — 5 analyses/month")
                         featureRow(icon: "tray.full.fill", title: "Saved Transcripts", description: "Review and compare past sessions")
                     }
                     .padding(4)

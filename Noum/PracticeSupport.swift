@@ -2947,7 +2947,10 @@ final class CoachingProfileStore: ObservableObject {
     private let onboardingCompletionKeyPrefix = "coachingProfileOnboardingComplete."
 
     private init() {
-        reloadForCurrentAccount()
+        // Start with nil profile; AuthManager.deferStoreReloadForCurrentAccount()
+        // will call reloadForCurrentAccount() after the first run-loop cycle,
+        // avoiding synchronous Keychain + UserDefaults + JSON decode during
+        // @StateObject creation.
     }
 
     var needsOnboarding: Bool {
@@ -3046,7 +3049,10 @@ final class IMRelationshipStore: ObservableObject {
     private let providerKey = "NoumAccountProvider"
 
     private init() {
-        profiles = Self.loadProfiles(forKey: Self.storageKey(for: KeychainHelper.load(key: "NoumAccountID")))
+        // Start with empty profiles; reloadForCurrentAccount() is called
+        // after the first run-loop cycle via AuthManager, avoiding synchronous
+        // Keychain + UserDefaults + JSON decode during @StateObject creation.
+        profiles = [:]
     }
 
     func reloadForCurrentAccount() {
@@ -4108,6 +4114,9 @@ struct PracticeEvaluation {
     let feedback: String
     let segments: [PracticeScoreSegment]
     let insights: [String]
+    var categories: [FeedbackCategory] = []
+    var strongMoments: [String] = []
+    var weakMoments: [String] = []
 }
 
 struct PracticeScoreSegment: Identifiable {
@@ -4115,6 +4124,57 @@ struct PracticeScoreSegment: Identifiable {
     let title: String
     let value: String
     let tintName: String
+}
+
+// MARK: - Feedback Categories (7 dimensions)
+
+enum FeedbackRating: String, Codable, CaseIterable {
+    case good = "Good"
+    case ok = "OK"
+    case couldImprove = "Could improve"
+
+    var tint: String {
+        switch self {
+        case .good: return "green"
+        case .ok: return "yellow"
+        case .couldImprove: return "orange"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .good: return "checkmark.circle.fill"
+        case .ok: return "minus.circle.fill"
+        case .couldImprove: return "arrow.up.circle.fill"
+        }
+    }
+}
+
+struct FeedbackCategory: Identifiable, Codable {
+    var id: String { dimension }
+    let dimension: String   // Opening, Structure, Relevance, Depth, Clarity, Pace, Close
+    let rating: FeedbackRating
+    let note: String        // Short coaching note, e.g. "Strong hook" or "Try a clearer opening line"
+
+    static let dimensions = ["Opening", "Structure", "Relevance", "Depth", "Clarity", "Pace", "Close"]
+}
+
+// MARK: - AI Video Analysis Result
+
+struct VideoAnalysisResult: Codable {
+    let posture: FeedbackRating
+    let postureNote: String
+    let eyeContact: FeedbackRating
+    let eyeContactNote: String
+    let facialExpression: FeedbackRating
+    let facialExpressionNote: String
+    let gestureUse: FeedbackRating
+    let gestureNote: String
+    let energyConfidence: FeedbackRating
+    let energyNote: String
+    let presenceDelivery: FeedbackRating
+    let presenceNote: String
+    let overallNote: String
 }
 
 struct PaceSnapshot {
@@ -4235,14 +4295,90 @@ enum PracticeEvaluator {
         }
         insights.append(styleSnapshot.coachingNote)
 
+        // Generate 7-dimension feedback categories
+        let categories = buildFeedbackCategories(
+            wordCount: wordCount,
+            duration: duration,
+            fillerCount: fillerCount,
+            wordsPerMinute: wordsPerMinute,
+            durationProgress: durationProgress,
+            contentProgress: contentProgress,
+            paceProgress: paceProgress,
+            transcript: cleanTranscript
+        )
+
+        // Strong and weak moments
+        let strongMoments = buildStrongMoments(score: score, fillerCount: fillerCount, duration: duration, wordsPerMinute: wordsPerMinute)
+        let weakMoments = buildWeakMoments(score: score, fillerCount: fillerCount, duration: duration, wordsPerMinute: wordsPerMinute)
+
         return PracticeEvaluation(
             score: score,
             xpEarned: xpEarned,
             headline: headline,
             feedback: feedback,
             segments: segments,
-            insights: Array(insights.prefix(3))
+            insights: Array(insights.prefix(3)),
+            categories: categories,
+            strongMoments: strongMoments,
+            weakMoments: weakMoments
         )
+    }
+
+    // MARK: - Feedback Category Builder
+
+    private static func buildFeedbackCategories(
+        wordCount: Int, duration: TimeInterval, fillerCount: Int,
+        wordsPerMinute: Double, durationProgress: Double, contentProgress: Double,
+        paceProgress: Double, transcript: String
+    ) -> [FeedbackCategory] {
+        let sentences = transcript.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let sentenceCount = sentences.count
+        let hasStrongOpen = sentenceCount > 0 && sentences[0].split(separator: " ").count >= 5
+        let hasClose = sentenceCount > 1 && (
+            transcript.lowercased().hasSuffix(".") ||
+            transcript.lowercased().contains("in conclusion") ||
+            transcript.lowercased().contains("to sum up") ||
+            transcript.lowercased().contains("overall") ||
+            duration >= 40
+        )
+
+        let opening: FeedbackRating = hasStrongOpen && fillerCount <= 1 ? .good : (hasStrongOpen ? .ok : .couldImprove)
+        let structure: FeedbackRating = sentenceCount >= 3 && duration >= 20 ? .good : (sentenceCount >= 2 ? .ok : .couldImprove)
+        let relevance: FeedbackRating = contentProgress >= 0.7 ? .good : (contentProgress >= 0.4 ? .ok : .couldImprove)
+        let depth: FeedbackRating = durationProgress >= 0.7 && wordCount >= 40 ? .good : (durationProgress >= 0.4 ? .ok : .couldImprove)
+        let clarity: FeedbackRating = fillerCount <= 1 && wordsPerMinute <= 160 ? .good : (fillerCount <= 3 ? .ok : .couldImprove)
+        let pace: FeedbackRating = paceProgress >= 0.7 ? .good : (paceProgress >= 0.4 ? .ok : .couldImprove)
+        let close: FeedbackRating = hasClose && duration >= 25 ? .good : (hasClose || duration >= 20 ? .ok : .couldImprove)
+
+        return [
+            FeedbackCategory(dimension: "Opening", rating: opening, note: opening == .good ? "Clear, confident start" : opening == .ok ? "Decent start — tighten the first sentence" : "Try a stronger opening line"),
+            FeedbackCategory(dimension: "Structure", rating: structure, note: structure == .good ? "Well-organized answer" : structure == .ok ? "Add one more supporting point" : "Break into intro → point → close"),
+            FeedbackCategory(dimension: "Relevance", rating: relevance, note: relevance == .good ? "Stayed on topic" : relevance == .ok ? "Mostly relevant" : "Connect more directly to the prompt"),
+            FeedbackCategory(dimension: "Depth", rating: depth, note: depth == .good ? "Good detail and development" : depth == .ok ? "Push for more examples" : "Expand your supporting points"),
+            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Too many verbal crutches"),
+            FeedbackCategory(dimension: "Pace", rating: pace, note: pace == .good ? "Comfortable, natural pace" : pace == .ok ? "Slightly rushed" : "Slow down and use pauses"),
+            FeedbackCategory(dimension: "Close", rating: close, note: close == .good ? "Strong finish" : close == .ok ? "Ended a bit abruptly" : "Add a deliberate closing sentence"),
+        ]
+    }
+
+    private static func buildStrongMoments(score: Int, fillerCount: Int, duration: TimeInterval, wordsPerMinute: Double) -> [String] {
+        var moments: [String] = []
+        if fillerCount == 0 { moments.append("Zero filler words — clean delivery") }
+        if duration >= 50 { moments.append("Sustained a full-length answer") }
+        if wordsPerMinute >= 120 && wordsPerMinute <= 155 { moments.append("Natural, well-paced delivery") }
+        if score >= 8 { moments.append("Confident structure from open to close") }
+        return Array(moments.prefix(3))
+    }
+
+    private static func buildWeakMoments(score: Int, fillerCount: Int, duration: TimeInterval, wordsPerMinute: Double) -> [String] {
+        var moments: [String] = []
+        if fillerCount >= 4 { moments.append("Filler words disrupted flow (\(fillerCount) counted)") }
+        if duration < 15 { moments.append("Answer ended too quickly to develop") }
+        if wordsPerMinute > 170 { moments.append("Pace was rushed — slow down") }
+        if score <= 3 { moments.append("Structure needs work — try intro → point → close") }
+        return Array(moments.prefix(3))
     }
 
     static func evaluateSuddenDeathPractice(
@@ -4871,7 +5007,11 @@ final class PracticeSessionStore: ObservableObject {
     private let providerKey = "NoumAccountProvider"
 
     private init() {
-        sessions = Self.loadSessions(forKey: Self.storageKey(for: KeychainHelper.load(key: "NoumAccountID")))
+        // Start with empty sessions; AuthManager.deferStoreReloadForCurrentAccount()
+        // will call reloadForCurrentAccount() after the first run-loop cycle,
+        // avoiding synchronous Keychain + UserDefaults + JSON decode during
+        // @StateObject creation.
+        sessions = []
     }
 
     func reload() {
@@ -5013,9 +5153,11 @@ final class RecommendationLearningStore: ObservableObject {
     private let providerKey = "NoumAccountProvider"
 
     private init() {
-        let accountID = KeychainHelper.load(key: "NoumAccountID")
-        pendingExposure = Self.loadPending(forKey: Self.pendingKey(for: accountID))
-        outcomes = Self.loadOutcomes(forKey: Self.outcomesKey(for: accountID))
+        // Start with empty state; reloadForCurrentAccount() is called
+        // after the first run-loop cycle via AuthManager, avoiding synchronous
+        // Keychain + UserDefaults + JSON decode during @StateObject creation.
+        pendingExposure = nil
+        outcomes = []
     }
 
     func reloadForCurrentAccount() {

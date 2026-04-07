@@ -7,7 +7,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct AhCounterView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var showSummary = false
     @State private var evaluation: PracticeEvaluation?
@@ -88,6 +88,7 @@ struct AhCounterView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("ahCounter.screen")
+        .task { speechVM.prepareForInteractiveUse() }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: speechVM.highlightedText,

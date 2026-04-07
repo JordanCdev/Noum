@@ -39,8 +39,8 @@ class SpeechRecognizerViewModel: ObservableObject {
 
 
     init(preloadOnInit: Bool = true) {
-        loadSessions()
         guard preloadOnInit else { return }
+        loadSessions()
         prepareForInteractiveUse()
     }
 
@@ -65,6 +65,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     func prepareForInteractiveUse() {
         guard !hasPreparedInteractiveUse else { return }
         hasPreparedInteractiveUse = true
+        loadSessions()
         requestRecordAuthorization()
         Task(priority: .utility) { await preloadTranscribeClient() }
     }

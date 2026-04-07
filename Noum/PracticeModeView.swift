@@ -7,9 +7,9 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @State private var question: String = PracticeTopics.random()
+    @State private var question: String = ""
     @State private var thinkingCountdown: Int = 15
     @State private var speakingCountdown: Int = 60
     @State private var showSummary = false
@@ -56,7 +56,11 @@ struct PracticeModeView: View {
         
         .padding()
         .navigationTitle("Practice Mode")
-        .onAppear { startThinkingCountdown() }
+        .task {
+            if question.isEmpty { question = PracticeTopics.random() }
+            speechVM.prepareForInteractiveUse()
+            startThinkingCountdown()
+        }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
                 transcript: speechVM.highlightedText,

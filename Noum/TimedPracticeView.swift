@@ -209,20 +209,384 @@ private enum ImpromptuSetupMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Background Layer (extracted for render isolation)
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct BackgroundLayerView: View {
+    let phase: TimedSessionPhase
+    let timingState: ImpromptuTimingState
+    let isFullScreenCameraActive: Bool
+    let showLiveTranscript: Bool
+
+    var body: some View {
+        if phase == .speaking && isFullScreenCameraActive {
+            Color.black.ignoresSafeArea()
+        } else if phase == .speaking && !showLiveTranscript {
+            ZStack {
+                LinearGradient(
+                    colors: [timingState.immersiveGradientStart, timingState.immersiveGradientEnd],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 1.8), value: timingState)
+
+                RadialGradient(
+                    colors: [timingState.vividColor.opacity(timingState.glowOpacity * 0.3), .clear],
+                    center: .center,
+                    startRadius: 40,
+                    endRadius: 360
+                )
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 1.4), value: timingState)
+            }
+        } else if phase == .thinking {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.06, green: 0.06, blue: 0.12),
+                    Color(red: 0.03, green: 0.03, blue: 0.08)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        } else {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.97, green: 0.97, blue: 1.0),
+                    Color(red: 0.93, green: 0.95, blue: 1.0)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        }
+    }
+}
+
+// MARK: - Spotlight Orb (extracted for render isolation)
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct SpotlightOrbView: View {
+    let timingState: ImpromptuTimingState
+    let elapsedSeconds: Int
+    let totalDuration: Int
+    @Binding var spotlightPulse: Bool
+
+    private let orbSize: CGFloat = 240
+
+    var body: some View {
+        ZStack {
+            // Outer glow halo
+            Circle()
+                .fill(timingState.vividColor)
+                .frame(width: orbSize * 1.4, height: orbSize * 1.4)
+                .blur(radius: 50)
+                .opacity(spotlightPulse ? timingState.glowOpacity : timingState.glowOpacity * 0.4)
+                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: spotlightPulse)
+
+            // Track ring
+            Circle()
+                .stroke(Color.white.opacity(0.08), lineWidth: 6)
+                .frame(width: orbSize, height: orbSize)
+
+            // Milestone markers
+            milestoneMarkers
+
+            // Progress arc
+            Circle()
+                .trim(from: 0, to: CGFloat(min(elapsedSeconds, totalDuration)) / CGFloat(totalDuration))
+                .stroke(
+                    AngularGradient(
+                        colors: [timingState.vividColor.opacity(0.3), timingState.vividColor],
+                        center: .center,
+                        startAngle: .degrees(-90),
+                        endAngle: .degrees(-90 + 360 * Double(min(elapsedSeconds, totalDuration)) / Double(totalDuration))
+                    ),
+                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                )
+                .frame(width: orbSize, height: orbSize)
+                .rotationEffect(.degrees(-90))
+                .shadow(color: timingState.vividColor.opacity(timingState == .neutral ? 0 : 0.5), radius: 12)
+                .animation(.linear(duration: 0.9), value: elapsedSeconds)
+
+            // Center content
+            centerContent
+        }
+        .onAppear { spotlightPulse = true }
+    }
+
+    private var milestoneMarkers: some View {
+        let milestones: [(seconds: Int, state: ImpromptuTimingState)] = [
+            (60, .green), (90, .yellow), (120, .red)
+        ]
+
+        return ForEach(milestones, id: \.seconds) { milestone in
+            let angle = Angle.degrees(Double(milestone.seconds) / Double(totalDuration) * 360 - 90)
+            let reached = elapsedSeconds >= milestone.seconds
+
+            Circle()
+                .fill(reached ? milestone.state.vividColor : Color.white.opacity(0.15))
+                .frame(width: reached ? 12 : 6, height: reached ? 12 : 6)
+                .shadow(color: reached ? milestone.state.vividColor.opacity(0.7) : .clear, radius: 6)
+                .offset(
+                    x: (orbSize / 2) * cos(angle.radians),
+                    y: (orbSize / 2) * sin(angle.radians)
+                )
+                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: reached)
+        }
+    }
+
+    private var centerContent: some View {
+        VStack(spacing: 6) {
+            Text(formattedTime(elapsedSeconds))
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+
+            Text(timingState == .neutral ? "Keep going" : timingState.spotlightLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(timingState == .neutral ? .white.opacity(0.35) : timingState.vividColor)
+                .contentTransition(.interpolate)
+        }
+        .animation(.easeInOut(duration: 0.4), value: timingState)
+    }
+
+    private func formattedTime(_ seconds: Int) -> String {
+        let m = seconds / 60
+        let s = seconds % 60
+        return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - Settings Card (extracted for render isolation)
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct SettingsCardView: View {
+    @Binding var selectedMode: ImpromptuSetupMode
+    @Binding var keepPromptVisible: Bool
+    @Binding var timerDisplay: TimerDisplayOption
+    @Binding var enableThinkingTime: Bool
+    @Binding var showLiveTranscript: Bool
+    @Binding var showFillerWords: Bool
+    @Binding var enableVideoRecording: Bool
+    @ObservedObject var videoManager: VideoRecordingManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Preferences")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+
+            Divider()
+                .padding(.horizontal, 16)
+
+            if selectedMode == .classic {
+                toggleRow(
+                    icon: "eye",
+                    iconColor: .indigo,
+                    title: "Show prompt while speaking",
+                    caption: "Keep the topic visible",
+                    isOn: $keepPromptVisible
+                )
+
+                thinDivider
+
+                timerPicker
+            }
+
+            if selectedMode == .coach {
+                toggleRow(
+                    icon: "brain.head.profile",
+                    iconColor: .blue,
+                    title: "Thinking time",
+                    caption: "15 seconds to prepare",
+                    isOn: $enableThinkingTime
+                )
+
+                thinDivider
+
+                toggleRow(
+                    icon: "eye",
+                    iconColor: .indigo,
+                    title: "Show prompt while speaking",
+                    caption: "Keep the topic visible",
+                    isOn: $keepPromptVisible
+                )
+
+                thinDivider
+
+                toggleRow(
+                    icon: "waveform.badge.magnifyingglass",
+                    iconColor: .red,
+                    title: "Filler word tracking",
+                    caption: "Counts verbal crutches live",
+                    isOn: $showFillerWords
+                )
+
+                thinDivider
+
+                timerPicker
+
+                thinDivider
+
+                toggleRow(
+                    icon: "text.quote",
+                    iconColor: .teal,
+                    title: "Live transcript",
+                    caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
+                    isOn: Binding(
+                        get: { showLiveTranscript },
+                        set: { newValue in
+                            showLiveTranscript = newValue
+                            if newValue { enableVideoRecording = false }
+                        }
+                    ),
+                    disabled: enableVideoRecording
+                )
+
+                thinDivider
+
+                toggleRow(
+                    icon: "video.fill",
+                    iconColor: .pink,
+                    title: "Record video",
+                    caption: showLiveTranscript ? "Not available with transcript" : "Review your delivery after",
+                    isOn: Binding(
+                        get: { enableVideoRecording },
+                        set: { newValue in
+                            enableVideoRecording = newValue
+                            if newValue {
+                                showLiveTranscript = false
+                                Task {
+                                    let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                                    guard hasPermission else {
+                                        await MainActor.run { enableVideoRecording = false }
+                                        return
+                                    }
+                                    let ready = await videoManager.prepareSession()
+                                    if ready, let session = videoManager.captureSession, !session.isRunning {
+                                        DispatchQueue.global(qos: .userInitiated).async {
+                                            session.startRunning()
+                                        }
+                                    }
+                                }
+                            } else {
+                                videoManager.cleanup()
+                            }
+                        }
+                    ),
+                    disabled: showLiveTranscript
+                )
+
+                thinDivider
+
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(Color(red: 0.56, green: 0.28, blue: 0.92))
+                    Text("Live transcript · Video · AI feedback · Score breakdown")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(red: 0.56, green: 0.28, blue: 0.92).opacity(0.05))
+            }
+        }
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: selectedMode)
+    }
+
+    private var timerPicker: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "timer")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.orange)
+                .frame(width: 32, height: 32)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Timer display")
+                    .font(.subheadline.weight(.medium))
+                Text("Choose timing visibility")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Picker("Timer", selection: $timerDisplay) {
+                ForEach(TimerDisplayOption.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(.blue)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    private func toggleRow(icon: String, iconColor: Color, title: String, caption: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(disabled ? iconColor.opacity(0.4) : iconColor)
+                .frame(width: 32, height: 32)
+                .background((disabled ? iconColor.opacity(0.04) : iconColor.opacity(0.1)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(disabled ? .secondary : .primary)
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(disabled ? .tertiary : .secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(.blue)
+                .disabled(disabled)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    private var thinDivider: some View {
+        Divider()
+            .padding(.horizontal, 16)
+    }
+}
+
 // MARK: - TimedPracticeView
 
 @available(iOS 17.0, macOS 12.0, *)
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     var goHome: (() -> Void)?
-    @StateObject private var speechVM = SpeechRecognizerViewModel()
+    @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var premium = PremiumManager.shared
 
     // Session state
     @State private var selectedTheme: PromptTheme = .all
-    @State private var question: String = PracticeTopics.random()
+    @State private var question: String = ""
     @State private var phase: TimedSessionPhase = .setup
     @State private var thinkingCountdown: Int = 15
     @State private var elapsedSeconds: Int = 0
@@ -304,8 +668,19 @@ struct TimedPracticeView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(phase == .setup ? .visible : .hidden, for: .navigationBar)
         .accessibilityIdentifier("timedPractice.screen")
-        .onAppear { prewarmTTS() }
+        .task {
+            // Batch initial setup into a single Task so SwiftUI
+            // processes the state changes in one transaction.
+            // Yield first so the view renders its initial frame immediately.
+            await Task.yield()
+            if question.isEmpty {
+                question = PracticeTopics.random()
+            }
+            speechVM.prepareForInteractiveUse()
+            prewarmTTS()
+        }
         .onDisappear { cleanup() }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
@@ -328,6 +703,9 @@ struct TimedPracticeView: View {
                 recordingURL: videoManager.recordingURL,
                 sessionPrompt: question,
                 sessionTheme: selectedTheme,
+                feedbackCategories: evaluation?.categories ?? [],
+                strongMoments: evaluation?.strongMoments ?? [],
+                weakMoments: evaluation?.weakMoments ?? [],
                 onSelectPracticeMode: {
                     showSummary = false
                     if let goHome { goHome() } else { dismiss() }
@@ -346,55 +724,13 @@ struct TimedPracticeView: View {
 
     // MARK: - Background
 
-    @ViewBuilder
     private var backgroundLayer: some View {
-        if phase == .speaking && isFullScreenCameraActive {
-            // Camera provides its own background — just use black as fallback
-            Color.black.ignoresSafeArea()
-        } else if phase == .speaking && !showLiveTranscript {
-            // Immersive dark background for Classic live mode
-            ZStack {
-                LinearGradient(
-                    colors: [timingState.immersiveGradientStart, timingState.immersiveGradientEnd],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 1.8), value: timingState)
-
-                // Ambient glow
-                RadialGradient(
-                    colors: [timingState.vividColor.opacity(timingState.glowOpacity * 0.3), .clear],
-                    center: .center,
-                    startRadius: 40,
-                    endRadius: 360
-                )
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 1.4), value: timingState)
-            }
-        } else if phase == .thinking {
-            // Focused warm background for thinking
-            LinearGradient(
-                colors: [
-                    Color(red: 0.06, green: 0.06, blue: 0.12),
-                    Color(red: 0.03, green: 0.03, blue: 0.08)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        } else {
-            // Light setup/coach background
-            LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.97, blue: 1.0),
-                    Color(red: 0.93, green: 0.95, blue: 1.0)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        }
+        BackgroundLayerView(
+            phase: phase,
+            timingState: timingState,
+            isFullScreenCameraActive: isFullScreenCameraActive,
+            showLiveTranscript: showLiveTranscript
+        )
     }
 
     // MARK: - Computed
@@ -456,6 +792,29 @@ struct TimedPracticeView: View {
 
                 // Settings card
                 settingsCard
+
+                // Camera preview (when video recording is enabled)
+                if enableVideoRecording, let session = videoManager.captureSession {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Camera Preview")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+
+                        CameraPreviewView(session: session)
+                            .frame(height: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(Color.pink.opacity(0.2), lineWidth: 1)
+                            )
+
+                        Text("You'll see yourself full-screen during the session")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 4)
+                    }
+                }
 
                 Spacer(minLength: 100)
             }
@@ -613,209 +972,16 @@ struct TimedPracticeView: View {
     }
 
     private var settingsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Section header
-            HStack {
-                Text("Preferences")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
-
-            Divider()
-                .padding(.horizontal, 16)
-
-            if selectedMode == .classic {
-                // Classic: simplified options only
-                settingsToggleRow(
-                    icon: "eye",
-                    iconColor: .indigo,
-                    title: "Show prompt while speaking",
-                    caption: "Keep the topic visible",
-                    isOn: $keepPromptVisible
-                )
-
-                thinDivider
-
-                // Timer picker for Classic
-                HStack(spacing: 12) {
-                    Image(systemName: "timer")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .frame(width: 32, height: 32)
-                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Timer display")
-                            .font(.subheadline.weight(.medium))
-                        Text("Choose timing visibility")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Picker("Timer", selection: $timerDisplay) {
-                        ForEach(TimerDisplayOption.allCases) { option in
-                            Text(option.label).tag(option)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.blue)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-            }
-
-            // Coach-specific settings
-            if selectedMode == .coach {
-                settingsToggleRow(
-                    icon: "brain.head.profile",
-                    iconColor: .blue,
-                    title: "Thinking time",
-                    caption: "15 seconds to prepare",
-                    isOn: $enableThinkingTime
-                )
-
-                thinDivider
-
-                settingsToggleRow(
-                    icon: "eye",
-                    iconColor: .indigo,
-                    title: "Show prompt while speaking",
-                    caption: "Keep the topic visible",
-                    isOn: $keepPromptVisible
-                )
-
-                thinDivider
-
-                settingsToggleRow(
-                    icon: "waveform.badge.magnifyingglass",
-                    iconColor: .red,
-                    title: "Filler word tracking",
-                    caption: "Counts verbal crutches live",
-                    isOn: $showFillerWords
-                )
-
-                thinDivider
-
-                // Timer picker
-                HStack(spacing: 12) {
-                    Image(systemName: "timer")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .frame(width: 32, height: 32)
-                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Timer display")
-                            .font(.subheadline.weight(.medium))
-                        Text("Choose timing visibility")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Picker("Timer", selection: $timerDisplay) {
-                        ForEach(TimerDisplayOption.allCases) { option in
-                            Text(option.label).tag(option)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.blue)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-
-                thinDivider
-
-                settingsToggleRow(
-                    icon: "text.quote",
-                    iconColor: .teal,
-                    title: "Live transcript",
-                    caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
-                    isOn: Binding(
-                        get: { showLiveTranscript },
-                        set: { newValue in
-                            showLiveTranscript = newValue
-                            if newValue { enableVideoRecording = false }
-                        }
-                    ),
-                    disabled: enableVideoRecording
-                )
-
-                thinDivider
-
-                settingsToggleRow(
-                    icon: "video.fill",
-                    iconColor: .pink,
-                    title: "Record video",
-                    caption: showLiveTranscript ? "Not available with transcript" : "Review your delivery after",
-                    isOn: Binding(
-                        get: { enableVideoRecording },
-                        set: { newValue in
-                            enableVideoRecording = newValue
-                            if newValue { showLiveTranscript = false }
-                        }
-                    ),
-                    disabled: showLiveTranscript
-                )
-
-                thinDivider
-
-                // Coach features callout
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(Color(red: 0.56, green: 0.28, blue: 0.92))
-                    Text("Live transcript · Video · AI feedback · Score breakdown")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(red: 0.56, green: 0.28, blue: 0.92).opacity(0.05))
-            }
-        }
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        SettingsCardView(
+            selectedMode: $selectedMode,
+            keepPromptVisible: $keepPromptVisible,
+            timerDisplay: $timerDisplay,
+            enableThinkingTime: $enableThinkingTime,
+            showLiveTranscript: $showLiveTranscript,
+            showFillerWords: $showFillerWords,
+            enableVideoRecording: $enableVideoRecording,
+            videoManager: videoManager
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: selectedMode)
-    }
-
-    private func settingsToggleRow(icon: String, iconColor: Color, title: String, caption: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(disabled ? iconColor.opacity(0.4) : iconColor)
-                .frame(width: 32, height: 32)
-                .background((disabled ? iconColor.opacity(0.04) : iconColor.opacity(0.1)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(disabled ? .secondary : .primary)
-                Text(caption)
-                    .font(.caption)
-                    .foregroundStyle(disabled ? .tertiary : .secondary)
-            }
-
-            Spacer()
-
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .tint(.blue)
-                .disabled(disabled)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
     }
 
     private var thinDivider: some View {
@@ -1177,17 +1343,18 @@ struct TimedPracticeView: View {
 
             // Transcript area — premium card
             ScrollViewReader { proxy in
-                ScrollView {
+                ScrollView(showsIndicators: false) {
                     Text(speechVM.highlightedText)
-                        .font(.system(size: 17, weight: .regular, design: .default))
-                        .lineSpacing(6)
+                        .font(.system(size: 18, weight: .regular, design: .serif))
+                        .lineSpacing(8)
+                        .tracking(0.2)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 20)
                         .id("transcriptEnd")
                 }
                 .onChange(of: speechVM.highlightedText) {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo("transcriptEnd", anchor: .bottom)
                     }
                 }
@@ -1195,13 +1362,13 @@ struct TimedPracticeView: View {
             .frame(maxWidth: .infinity)
             .frame(maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(Color(.systemBackground))
-                    .shadow(color: Color.black.opacity(0.04), radius: 8, y: 2)
+                    .shadow(color: Color.black.opacity(0.06), radius: 12, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color(.systemGray5), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color(.systemGray5).opacity(0.6), lineWidth: 0.5)
             )
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -1233,8 +1400,6 @@ struct TimedPracticeView: View {
     }
 
     // MARK: - Classic / Immersive Layout
-
-    private let orbSize: CGFloat = 240
 
     private var speakingImmersiveLayout: some View {
         ZStack {
@@ -1297,82 +1462,12 @@ struct TimedPracticeView: View {
     // MARK: Spotlight Orb
 
     private var spotlightOrb: some View {
-        ZStack {
-            // Outer glow halo
-            Circle()
-                .fill(timingState.vividColor)
-                .frame(width: orbSize * 1.4, height: orbSize * 1.4)
-                .blur(radius: 50)
-                .opacity(spotlightPulse ? timingState.glowOpacity : timingState.glowOpacity * 0.4)
-                .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: spotlightPulse)
-
-            // Track ring
-            Circle()
-                .stroke(Color.white.opacity(0.08), lineWidth: 6)
-                .frame(width: orbSize, height: orbSize)
-
-            // Milestone markers
-            spotlightMilestoneMarkers
-
-            // Progress arc
-            Circle()
-                .trim(from: 0, to: CGFloat(min(elapsedSeconds, totalDuration)) / CGFloat(totalDuration))
-                .stroke(
-                    AngularGradient(
-                        colors: [timingState.vividColor.opacity(0.3), timingState.vividColor],
-                        center: .center,
-                        startAngle: .degrees(-90),
-                        endAngle: .degrees(-90 + 360 * Double(min(elapsedSeconds, totalDuration)) / Double(totalDuration))
-                    ),
-                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                )
-                .frame(width: orbSize, height: orbSize)
-                .rotationEffect(.degrees(-90))
-                .shadow(color: timingState.vividColor.opacity(timingState == .neutral ? 0 : 0.5), radius: 12)
-                .animation(.linear(duration: 0.9), value: elapsedSeconds)
-
-            // Center content
-            spotlightCenterContent
-        }
-        .onAppear { spotlightPulse = true }
-    }
-
-    private var spotlightMilestoneMarkers: some View {
-        let milestones: [(seconds: Int, state: ImpromptuTimingState)] = [
-            (60, .green), (90, .yellow), (120, .red)
-        ]
-
-        return ForEach(milestones, id: \.seconds) { milestone in
-            let angle = Angle.degrees(Double(milestone.seconds) / Double(totalDuration) * 360 - 90)
-            let reached = elapsedSeconds >= milestone.seconds
-
-            Circle()
-                .fill(reached ? milestone.state.vividColor : Color.white.opacity(0.15))
-                .frame(width: reached ? 12 : 6, height: reached ? 12 : 6)
-                .shadow(color: reached ? milestone.state.vividColor.opacity(0.7) : .clear, radius: 6)
-                .offset(
-                    x: (orbSize / 2) * cos(angle.radians),
-                    y: (orbSize / 2) * sin(angle.radians)
-                )
-                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: reached)
-        }
-    }
-
-    private var spotlightCenterContent: some View {
-        VStack(spacing: 6) {
-            // Always show the elapsed time as the primary number in classic
-            Text(formattedTime(elapsedSeconds))
-                .font(.system(size: 48, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .contentTransition(.numericText())
-
-            // Timing phase label
-            Text(timingState == .neutral ? "Keep going" : timingState.spotlightLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(timingState == .neutral ? .white.opacity(0.35) : timingState.vividColor)
-                .contentTransition(.interpolate)
-        }
-        .animation(.easeInOut(duration: 0.4), value: timingState)
+        SpotlightOrbView(
+            timingState: timingState,
+            elapsedSeconds: elapsedSeconds,
+            totalDuration: totalDuration,
+            spotlightPulse: $spotlightPulse
+        )
     }
 
     // MARK: Spotlight Prompt Pill
@@ -1522,33 +1617,36 @@ struct TimedPracticeView: View {
 
     /// Prewarm TTS engine with a silent utterance so the first real speak is instant.
     /// Also pre-configures the audio session so there's zero delay on first tap.
+    /// Deferred to a background-priority task so it doesn't block the initial render.
     private func prewarmTTS() {
         guard !ttsReady else { return }
         configureTTSDelegate()
 
-        // Pre-configure audio session on a background queue so it doesn't block UI
+        // Defer the entire prewarm sequence so it doesn't block the first frame.
+        // Audio session setup runs off-main, then the silent utterance fires on main
+        // after a short yield so the view is already interactive.
         Task.detached(priority: .utility) {
             let session = AVAudioSession.sharedInstance()
             try? session.setCategory(.playback, options: [.mixWithOthers, .duckOthers])
             try? session.setActive(true)
-        }
 
-        // Speak an empty string at zero volume to force iOS to load the voice engine
-        let warmup = AVSpeechUtterance(string: " ")
-        warmup.volume = 0
-        warmup.voice = prewarmedVoice
-        ttsDelegate.onFinish = { [self] in
-            ttsReady = true
-            // Deactivate after prewarm so we don't hold the session unnecessarily
-            deactivateTTSAudioSession()
-            // Restore normal delegate behavior
-            ttsDelegate.onFinish = { [self] in
-                isSpeakingPrompt = false
-                // Release audio session after speech completes so recognizer can use it
-                deactivateTTSAudioSession()
+            // Yield back to main to issue the silent utterance (AVSpeechSynthesizer
+            // must be called from the thread that created it — typically main)
+            await MainActor.run {
+                let warmup = AVSpeechUtterance(string: " ")
+                warmup.volume = 0
+                warmup.voice = prewarmedVoice
+                ttsDelegate.onFinish = { [self] in
+                    ttsReady = true
+                    deactivateTTSAudioSession()
+                    ttsDelegate.onFinish = { [self] in
+                        isSpeakingPrompt = false
+                        deactivateTTSAudioSession()
+                    }
+                }
+                ttsEngine.speak(warmup)
             }
         }
-        ttsEngine.speak(warmup)
     }
 
     // MARK: - Shared Speaking Components
@@ -1838,12 +1936,17 @@ struct TimedPracticeView: View {
         speechVM.startRecording()
 
         // Start video recording if enabled (Coach mode, premium only)
+        // Camera session was already prepared when the user toggled the switch
         if enableVideoRecording && selectedMode == .coach && premium.canRecordVideo {
             Task {
-                let hasPermission = await VideoRecordingManager.requestCameraPermission()
-                guard hasPermission else { return }
-                let ready = await videoManager.prepareSession()
-                if ready { videoManager.startRecording() }
+                if videoManager.captureSession == nil {
+                    // Fallback: prepare if not already done
+                    let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                    guard hasPermission else { return }
+                    let ready = await videoManager.prepareSession()
+                    guard ready else { return }
+                }
+                videoManager.startRecording()
             }
         }
 

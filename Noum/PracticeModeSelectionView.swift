@@ -18,6 +18,8 @@ struct PracticeModeSelectionView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @State private var highlightedMode: PracticeMode?
+    @State private var cachedRecommendedMode: PracticeMode?
+    @State private var cachedRetentionSnapshot: RetentionLoopSnapshot?
 
     private struct ModeOption: Identifiable {
         let mode: PracticeMode
@@ -74,31 +76,7 @@ struct PracticeModeSelectionView: View {
     }
 
     private var recommendedMode: PracticeMode {
-        let blueprint = RecommendationBiasEngine.blueprint(
-            profile: coachingProfileStore.profile,
-            input: AIHomeRecommendationInput(
-                recentSessionSummary: recentSessionSummary,
-                averageFillers: averageFillers,
-                averageDuration: averageDuration,
-                averageWordsPerMinute: averagePace,
-                fillerTrendDelta: 0,
-                durationTrendDelta: 0,
-                paceTrendDelta: 0,
-                averageWordCount: averageWordCount,
-                strongestMode: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode,
-                currentIdentity: currentIdentity,
-                currentIdentityEvidence: currentIdentityEvidence,
-                styleAlignmentScore: 0,
-                sessionStreak: sessionStreak,
-                daysSinceLastSession: daysSinceLastSession,
-                preferredModeBias: "",
-                preferredToneBias: "",
-                preferredScenarioBias: "",
-                modeBenefitBias: ""
-            ),
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
-        )
-        return blueprint.recommendedMode
+        cachedRecommendedMode ?? .timed
     }
 
     private var recommendedOption: ModeOption? {
@@ -106,9 +84,12 @@ struct PracticeModeSelectionView: View {
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
-        RetentionLoopEngine.snapshot(
-            sessions: sessionStore.sessions,
-            profile: coachingProfileStore.profile
+        cachedRetentionSnapshot ?? RetentionLoopSnapshot(
+            activeChallenge: PracticeChallengeStatus(
+                title: "", summary: "", progress: 0, progressLabel: "", rewardLabel: ""
+            ),
+            achievements: [],
+            motivationLine: ""
         )
     }
 
@@ -123,6 +104,44 @@ struct PracticeModeSelectionView: View {
             return "Pick the rep that moves your communication forward fastest."
         }
         return "Built around your goal to \(goal.lowercased())."
+    }
+
+    /// Compute expensive recommendations once, not on every body evaluation
+    private func computeRecommendations() {
+        let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+        let identity = PracticeEvaluator.speakingIdentity(
+            for: sessionStore.sessions.first?.transcript ?? "",
+            profile: coachingProfileStore.profile
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: coachingProfileStore.profile,
+            input: AIHomeRecommendationInput(
+                recentSessionSummary: recentSessionSummary,
+                averageFillers: averageFillers,
+                averageDuration: averageDuration,
+                averageWordsPerMinute: averagePace,
+                fillerTrendDelta: 0,
+                durationTrendDelta: 0,
+                paceTrendDelta: 0,
+                averageWordCount: averageWordCount,
+                strongestMode: plan?.strongestMode,
+                currentIdentity: identity.identity,
+                currentIdentityEvidence: identity.evidence,
+                styleAlignmentScore: 0,
+                sessionStreak: sessionStreak,
+                daysSinceLastSession: daysSinceLastSession,
+                preferredModeBias: "",
+                preferredToneBias: "",
+                preferredScenarioBias: "",
+                modeBenefitBias: ""
+            ),
+            plan: plan
+        )
+        cachedRecommendedMode = blueprint.recommendedMode
+        cachedRetentionSnapshot = RetentionLoopEngine.snapshot(
+            sessions: sessionStore.sessions,
+            profile: coachingProfileStore.profile
+        )
     }
 
     var body: some View {
@@ -165,7 +184,8 @@ struct PracticeModeSelectionView: View {
         .safeAreaInset(edge: .bottom) {
             bottomCTA
         }
-        .onAppear {
+        .task {
+            computeRecommendations()
             highlightedMode = recommendedMode
             if options.contains(where: { $0.mode == recommendedMode }) {
                 selectedMode = recommendedMode
@@ -521,18 +541,7 @@ struct PracticeModeSelectionView: View {
         return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: last), to: Calendar.current.startOfDay(for: Date())).day ?? 0
     }
 
-    private var currentIdentity: String {
-        PracticeEvaluator.speakingIdentity(
-            for: sessionStore.sessions.first?.transcript ?? "",
-            profile: coachingProfileStore.profile
-        ).identity
-    }
-
-    private var currentIdentityEvidence: String {
-        PracticeEvaluator.speakingIdentity(
-            for: sessionStore.sessions.first?.transcript ?? "",
-            profile: coachingProfileStore.profile
-        ).evidence
-    }
+    // currentIdentity and currentIdentityEvidence are now computed
+    // once inside computeRecommendations() to avoid redundant calls
 }
 #endif
