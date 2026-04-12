@@ -18,10 +18,16 @@ struct SessionHistoryView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var selectedAchievementID: String?
+    @State private var selectedModeFilter: PracticeMode? = nil
     @Environment(\.dismiss) private var dismiss
 
     private var sessions: [PracticeSession] {
         sessionStore.sessions.sorted { $0.date > $1.date }
+    }
+
+    private var filteredSessions: [PracticeSession] {
+        guard let filter = selectedModeFilter else { return sessions }
+        return sessions.filter { $0.mode == filter }
     }
 
     private var totalSessions: Int { sessions.count }
@@ -133,11 +139,21 @@ struct SessionHistoryView: View {
                         journeyPanel
                         progressOverTimePanel
 
+                        modeFilterChips
+
                         Text("Recent Sessions")
                             .font(.title3.weight(.bold))
                             .padding(.horizontal, 2)
 
-                        ForEach(sessions) { session in
+                        if filteredSessions.isEmpty {
+                            Text("No sessions for this mode yet")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 32)
+                        }
+
+                        ForEach(filteredSessions) { session in
                             NavigationLink {
                                 SessionHistoryDetailView(
                                     session: session,
@@ -182,6 +198,36 @@ struct SessionHistoryView: View {
         .padding(28)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .padding(24)
+    }
+
+    private var modeFilterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                filterChip(label: "All", mode: nil)
+                filterChip(label: PracticeMode.timed.displayLabel, mode: .timed)
+                filterChip(label: PracticeMode.suddenDeath.displayLabel, mode: .suddenDeath)
+                filterChip(label: PracticeMode.ahCounter.displayLabel, mode: .ahCounter)
+                filterChip(label: PracticeMode.imConversation.displayLabel, mode: .imConversation)
+            }
+            .padding(.horizontal, Spacing.screenH)
+        }
+    }
+
+    private func filterChip(label: String, mode: PracticeMode?) -> some View {
+        Button {
+            withAnimation(.standardSpring) { selectedModeFilter = mode }
+        } label: {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    selectedModeFilter == mode ? AppColor.brandBlue : Color(.systemGray5),
+                    in: Capsule(style: .continuous)
+                )
+                .foregroundStyle(selectedModeFilter == mode ? .white : .primary)
+        }
+        .buttonStyle(.plain)
     }
 
     private var overviewPanel: some View {

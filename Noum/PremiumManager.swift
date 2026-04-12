@@ -342,6 +342,28 @@ struct PaywallView: View {
                             .foregroundStyle(.white.opacity(0.6))
                     }
 
+                    // Already included — free
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Already included — free")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.5))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            freeFeatureRow(icon: "mic.fill", text: "Classic practice mode")
+                            freeFeatureRow(icon: "brain.head.profile", text: "AI-powered scoring")
+                            freeFeatureRow(icon: "waveform.badge.magnifyingglass", text: "Filler word detection")
+                            freeFeatureRow(icon: "clock.arrow.circlepath", text: "Session history")
+                            freeFeatureRow(icon: "flame.fill", text: "Streaks & daily challenges")
+                            freeFeatureRow(icon: "person.fill.checkmark", text: "Coaching onboarding")
+                        }
+                    }
+                    .padding(Spacing.lg)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+
                     // Features
                     VStack(spacing: 0) {
                         featureRow(icon: "text.magnifyingglass", title: "Coach Mode", description: "Full transcript-led practice with deeper feedback")
@@ -466,6 +488,18 @@ struct PaywallView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, Spacing.md)
+    }
+
+    private func freeFeatureRow(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(AppColor.positive)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+        }
     }
 
     private func planCard(_ plan: PlanOption) -> some View {

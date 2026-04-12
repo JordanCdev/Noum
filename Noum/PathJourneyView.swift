@@ -538,18 +538,7 @@ enum RetentionLoopEngine {
     }
 
     private static func currentStreak(from sessions: [PracticeSession]) -> Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        PracticeSession.calculateStreak(from: sessions)
     }
 }
 
@@ -707,17 +696,7 @@ struct PracticeJourneySnapshot {
     }
 
     private static func currentStreak(from sessions: [PracticeSession], calendar: Calendar) -> Int {
-        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        PracticeSession.calculateStreak(from: sessions)
     }
 }
 

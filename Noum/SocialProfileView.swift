@@ -878,18 +878,7 @@ struct SocialProfileView: View {
     }
 
     private var currentStreak: Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(PracticeSessionStore.shared.sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
     }
 
     private func shareInviteLink() {

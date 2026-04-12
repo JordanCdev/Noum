@@ -4254,9 +4254,9 @@ enum PracticeEvaluator {
         case 7...8:
             headline = "Solid response"
         case 4...6:
-            headline = "Getting there"
+            headline = "Building momentum"
         default:
-            headline = "Needs another rep"
+            headline = "Good warmup"
         }
 
         let feedback: String
@@ -4357,7 +4357,7 @@ enum PracticeEvaluator {
             FeedbackCategory(dimension: "Structure", rating: structure, note: structure == .good ? "Well-organized answer" : structure == .ok ? "Add one more supporting point" : "Break into intro → point → close"),
             FeedbackCategory(dimension: "Relevance", rating: relevance, note: relevance == .good ? "Stayed on topic" : relevance == .ok ? "Mostly relevant" : "Connect more directly to the prompt"),
             FeedbackCategory(dimension: "Depth", rating: depth, note: depth == .good ? "Good detail and development" : depth == .ok ? "Push for more examples" : "Expand your supporting points"),
-            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Too many verbal crutches"),
+            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Filler words interrupted flow"),
             FeedbackCategory(dimension: "Pace", rating: pace, note: pace == .good ? "Comfortable, natural pace" : pace == .ok ? "Slightly rushed" : "Slow down and use pauses"),
             FeedbackCategory(dimension: "Close", rating: close, note: close == .good ? "Strong finish" : close == .ok ? "Ended a bit abruptly" : "Add a deliberate closing sentence"),
         ]
@@ -4421,9 +4421,9 @@ enum PracticeEvaluator {
         case 9...10:
             headline = level >= 3 ? "High-pressure composure" : "Composed under pressure"
         case 6...8:
-            headline = "Pressure exposed a few cracks"
+            headline = "Held up under pressure"
         default:
-            headline = "Needs another rep"
+            headline = "Good warmup"
         }
         let feedback: String
         if wordCount < 3 || duration < 3 {
@@ -4511,7 +4511,7 @@ enum PracticeEvaluator {
         switch score {
         case 8...10: headline = "Good awareness"
         case 5...7: headline = "Useful awareness rep"
-        default: headline = "Needs another rep"
+        default: headline = "Good warmup"
         }
 
         let feedback: String
@@ -4950,6 +4950,49 @@ extension PracticeSession {
     var wordsPerMinute: Int {
         guard duration > 0 else { return 0 }
         return Int((Double(wordCount) / duration * 60).rounded())
+    }
+
+    // MARK: - Streak Calculation
+
+    /// Calculates the current practice streak from a list of sessions.
+    ///
+    /// A streak counts consecutive days with at least one session, starting from
+    /// today and walking backward. A **one-day grace period** allows a single
+    /// missed day inside the streak without breaking it (two consecutive missed
+    /// days end the streak).
+    static func calculateStreak(from sessions: [PracticeSession]) -> Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        var gracePeriodUsed = false
+
+        // Check if today has a session; if not, start from yesterday
+        if !uniqueDays.contains(cursor) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor) else { return 0 }
+            // If yesterday also doesn't have a session, streak is 0
+            guard uniqueDays.contains(yesterday) else { return 0 }
+            cursor = yesterday
+        }
+
+        while true {
+            if uniqueDays.contains(cursor) {
+                streak += 1
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                cursor = previousDay
+            } else if !gracePeriodUsed {
+                // One grace day — skip this day but keep counting
+                gracePeriodUsed = true
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                cursor = previousDay
+            } else {
+                break
+            }
+        }
+
+        return streak
     }
 }
 

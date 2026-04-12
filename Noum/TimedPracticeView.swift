@@ -371,134 +371,138 @@ private struct SettingsCardView: View {
     @Binding var showFillerWords: Bool
     @Binding var enableVideoRecording: Bool
     @ObservedObject var videoManager: VideoRecordingManager
+    @State private var showSettings: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Preferences")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            DisclosureGroup(isExpanded: $showSettings) {
+                Divider()
+                    .padding(.horizontal, 16)
 
-            Divider()
-                .padding(.horizontal, 16)
+                if selectedMode == .classic {
+                    toggleRow(
+                        icon: "eye",
+                        iconColor: .indigo,
+                        title: "Show prompt while speaking",
+                        caption: "Keep the topic visible",
+                        isOn: $keepPromptVisible
+                    )
 
-            if selectedMode == .classic {
-                toggleRow(
-                    icon: "eye",
-                    iconColor: .indigo,
-                    title: "Show prompt while speaking",
-                    caption: "Keep the topic visible",
-                    isOn: $keepPromptVisible
-                )
+                    thinDivider
 
-                thinDivider
+                    timerPicker
+                }
 
-                timerPicker
-            }
+                if selectedMode == .coach {
+                    toggleRow(
+                        icon: "brain.head.profile",
+                        iconColor: .blue,
+                        title: "Thinking time",
+                        caption: "15 seconds to prepare",
+                        isOn: $enableThinkingTime
+                    )
 
-            if selectedMode == .coach {
-                toggleRow(
-                    icon: "brain.head.profile",
-                    iconColor: .blue,
-                    title: "Thinking time",
-                    caption: "15 seconds to prepare",
-                    isOn: $enableThinkingTime
-                )
+                    thinDivider
 
-                thinDivider
+                    toggleRow(
+                        icon: "eye",
+                        iconColor: .indigo,
+                        title: "Show prompt while speaking",
+                        caption: "Keep the topic visible",
+                        isOn: $keepPromptVisible
+                    )
 
-                toggleRow(
-                    icon: "eye",
-                    iconColor: .indigo,
-                    title: "Show prompt while speaking",
-                    caption: "Keep the topic visible",
-                    isOn: $keepPromptVisible
-                )
+                    thinDivider
 
-                thinDivider
+                    toggleRow(
+                        icon: "waveform.badge.magnifyingglass",
+                        iconColor: .red,
+                        title: "Filler word tracking",
+                        caption: "Counts verbal crutches live",
+                        isOn: $showFillerWords
+                    )
 
-                toggleRow(
-                    icon: "waveform.badge.magnifyingglass",
-                    iconColor: .red,
-                    title: "Filler word tracking",
-                    caption: "Counts verbal crutches live",
-                    isOn: $showFillerWords
-                )
+                    thinDivider
 
-                thinDivider
+                    timerPicker
 
-                timerPicker
+                    thinDivider
 
-                thinDivider
+                    toggleRow(
+                        icon: "text.quote",
+                        iconColor: .teal,
+                        title: "Live transcript",
+                        caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
+                        isOn: Binding(
+                            get: { showLiveTranscript },
+                            set: { newValue in
+                                showLiveTranscript = newValue
+                                if newValue { enableVideoRecording = false }
+                            }
+                        ),
+                        disabled: enableVideoRecording
+                    )
 
-                toggleRow(
-                    icon: "text.quote",
-                    iconColor: .teal,
-                    title: "Live transcript",
-                    caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
-                    isOn: Binding(
-                        get: { showLiveTranscript },
-                        set: { newValue in
-                            showLiveTranscript = newValue
-                            if newValue { enableVideoRecording = false }
-                        }
-                    ),
-                    disabled: enableVideoRecording
-                )
+                    thinDivider
 
-                thinDivider
-
-                toggleRow(
-                    icon: "video.fill",
-                    iconColor: .pink,
-                    title: "Record video",
-                    caption: showLiveTranscript ? "Not available with transcript" : "Review your delivery after",
-                    isOn: Binding(
-                        get: { enableVideoRecording },
-                        set: { newValue in
-                            enableVideoRecording = newValue
-                            if newValue {
-                                showLiveTranscript = false
-                                Task {
-                                    let hasPermission = await VideoRecordingManager.requestCameraPermission()
-                                    guard hasPermission else {
-                                        await MainActor.run { enableVideoRecording = false }
-                                        return
-                                    }
-                                    let ready = await videoManager.prepareSession()
-                                    if ready, let session = videoManager.captureSession, !session.isRunning {
-                                        DispatchQueue.global(qos: .userInitiated).async {
-                                            session.startRunning()
+                    toggleRow(
+                        icon: "video.fill",
+                        iconColor: .pink,
+                        title: "Record video",
+                        caption: showLiveTranscript ? "Not available with transcript" : "Review your delivery after",
+                        isOn: Binding(
+                            get: { enableVideoRecording },
+                            set: { newValue in
+                                enableVideoRecording = newValue
+                                if newValue {
+                                    showLiveTranscript = false
+                                    Task {
+                                        let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                                        guard hasPermission else {
+                                            await MainActor.run { enableVideoRecording = false }
+                                            return
+                                        }
+                                        let ready = await videoManager.prepareSession()
+                                        if ready, let session = videoManager.captureSession, !session.isRunning {
+                                            DispatchQueue.global(qos: .userInitiated).async {
+                                                session.startRunning()
+                                            }
                                         }
                                     }
+                                } else {
+                                    videoManager.cleanup()
                                 }
-                            } else {
-                                videoManager.cleanup()
                             }
-                        }
-                    ),
-                    disabled: showLiveTranscript
-                )
+                        ),
+                        disabled: showLiveTranscript
+                    )
 
-                thinDivider
+                    thinDivider
 
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(AppColor.pro)
-                    Text("Live transcript · Video · AI feedback · Score breakdown")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(AppColor.pro)
+                        Text("Live transcript · Video · AI feedback · Score breakdown")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppColor.pro.opacity(0.05))
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.pro.opacity(0.05))
+            } label: {
+                HStack {
+                    Text("Preferences")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
+            .tint(.secondary)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, showSettings ? 0 : 18)
         }
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
@@ -507,6 +511,7 @@ private struct SettingsCardView: View {
         )
         .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
         .animation(.standardSpring, value: selectedMode)
+        .animation(.standardSpring, value: showSettings)
     }
 
     private var timerPicker: some View {
@@ -593,6 +598,7 @@ struct TimedPracticeView: View {
     @State private var showSummary = false
     @State private var evaluation: PracticeEvaluation?
     @State private var isStopping = false
+    @State private var showExitConfirmation = false
 
     // Tasks
     @State private var thinkingTask: Task<Void, Never>?
@@ -668,7 +674,29 @@ struct TimedPracticeView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(phase == .speaking || phase == .thinking)
+        .toolbar {
+            if phase == .speaking || phase == .thinking {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showExitConfirmation = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.body.weight(.semibold))
+                            Text("Back")
+                        }
+                    }
+                }
+            }
+        }
         .toolbar(phase == .setup ? .visible : .hidden, for: .navigationBar)
+        .alert("End session?", isPresented: $showExitConfirmation) {
+            Button("Keep Practicing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("Your current session will be lost.")
+        }
         .accessibilityIdentifier("timedPractice.screen")
         .task {
             // Batch initial setup into a single Task so SwiftUI

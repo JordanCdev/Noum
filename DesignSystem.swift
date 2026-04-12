@@ -317,4 +317,103 @@ func dismissRecursively(from dismiss: DismissAction, times: Int = 2) {
         }
     }
 }
+
+// MARK: - Milestone Celebration Overlay
+
+/// A full-screen milestone celebration that interrupts to celebrate achievements.
+struct MilestoneCelebrationOverlay: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    let detail: String?
+    let onDismiss: () -> Void
+
+    @State private var appeared = false
+    @State private var dismissed = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(appeared ? 0.45 : 0)
+                .ignoresSafeArea()
+                .onTapGesture { dismissCelebration() }
+
+            VStack(spacing: 20) {
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(0.15))
+                        .frame(width: 100, height: 100)
+                        .scaleEffect(appeared ? 1.2 : 0.5)
+                    Circle()
+                        .stroke(tint.opacity(0.25), lineWidth: 2)
+                        .frame(width: 110, height: 110)
+                        .scaleEffect(appeared ? 1.3 : 0.4)
+                    Image(systemName: icon)
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundStyle(tint)
+                        .scaleEffect(appeared ? 1.0 : 0.3)
+                }
+
+                Text(title)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+
+                Text(subtitle)
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+
+                if let detail {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                }
+
+                Button {
+                    dismissCelebration()
+                } label: {
+                    Text("Continue")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(tint)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, Spacing.sm)
+                        .background(.white, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .padding(.top, 8)
+            }
+            .padding(32)
+            .scaleEffect(appeared ? 1.0 : 0.7)
+            .opacity(appeared ? 1.0 : 0)
+        }
+        .opacity(dismissed ? 0 : 1)
+        .onAppear {
+            withAnimation(.bouncySpring) { appeared = true }
+#if canImport(UIKit)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+#endif
+        }
+    }
+
+    private func dismissCelebration() {
+        withAnimation(.easeOut(duration: 0.25)) { dismissed = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onDismiss() }
+    }
+}
+
+/// Represents a milestone event to celebrate.
+struct MilestoneEvent: Identifiable, Equatable {
+    let id = UUID()
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    let detail: String?
+
+    static func == (lhs: MilestoneEvent, rhs: MilestoneEvent) -> Bool {
+        lhs.id == rhs.id
+    }
+}
 #endif

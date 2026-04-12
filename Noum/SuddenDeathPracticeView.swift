@@ -25,6 +25,9 @@ struct SuddenDeathPracticeView: View {
     @State private var isEndingSession = false
     @State private var activePressureEvent: PressureEvent?
     @State private var pressureEventsHandled = 0
+    @State private var showGameOver = false
+    @State private var gameOverAppeared = false
+    @State private var showExitConfirmation = false
 
     var body: some View {
         ZStack {
@@ -105,16 +108,44 @@ struct SuddenDeathPracticeView: View {
                 countdownOverlay(value: transitionCue.title, subtitle: transitionCue.subtitle)
                     .transition(.opacity.combined(with: .scale))
             }
+
+            if showGameOver {
+                gameOverOverlay
+                    .transition(.opacity)
+                    .zIndex(20)
+            }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(speechVM.isRecording)
+        .toolbar {
+            if speechVM.isRecording {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showExitConfirmation = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.body.weight(.semibold))
+                            Text("Back")
+                        }
+                    }
+                }
+            }
+        }
+        .alert("End session?", isPresented: $showExitConfirmation) {
+            Button("Keep Practicing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("Your current session will be lost.")
+        }
         .accessibilityIdentifier("suddenDeath.screen")
         .task {
             if question.isEmpty { question = PracticeTopics.random() }
             speechVM.prepareForInteractiveUse()
         }
         .onChange(of: speechVM.fillerWordCount) { _, count in
-            if count > 0 { stopSession() }
+            if count > 0 { stopSession(fillerTriggered: true) }
         }
         .navigationDestination(isPresented: $showSummary) {
             SummaryView(
@@ -398,7 +429,7 @@ struct SuddenDeathPracticeView: View {
         }
     }
 
-    private func stopSession() {
+    private func stopSession(fillerTriggered: Bool = false) {
         guard !isEndingSession else { return }
         isEndingSession = true
         timerTask?.cancel()
@@ -441,7 +472,17 @@ struct SuddenDeathPracticeView: View {
                         coachSummary: result.feedback
                     )
                 }
-                showSummary = true
+
+                if fillerTriggered {
+                    showGameOver = true
+                    gameOverAppeared = false
+                    withAnimation(.bouncySpring) { gameOverAppeared = true }
+#if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+#endif
+                } else {
+                    showSummary = true
+                }
             }
         }
     }
@@ -463,6 +504,8 @@ struct SuddenDeathPracticeView: View {
         isEndingSession = false
         activePressureEvent = nil
         pressureEventsHandled = 0
+        showGameOver = false
+        gameOverAppeared = false
     }
 
     private var levelTint: Color {
@@ -843,6 +886,108 @@ struct SuddenDeathPracticeView: View {
         .background(levelTint.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .shadow(color: levelTint.opacity(0.20), radius: 18, y: 12)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    // MARK: - Game Over
+
+    private var suddenDeathPersonalBest: Int {
+        let pastSD = PracticeSessionStore.shared.sessions
+            .filter { $0.mode == .suddenDeath }
+            .dropFirst() // exclude current
+        return pastSD.map { Int($0.duration) }.max() ?? 0
+    }
+
+    private var isNewPersonalBest: Bool {
+        elapsed > suddenDeathPersonalBest && suddenDeathPersonalBest > 0
+    }
+
+    private var gameOverOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.65)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                // Icon
+                Image(systemName: "stopwatch.fill")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(.orange)
+                    .scaleEffect(gameOverAppeared ? 1.0 : 0.3)
+
+                // Title
+                Text("Run Complete")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                // Survival time — big and prominent
+                VStack(spacing: 4) {
+                    Text("\(elapsed)")
+                        .font(.system(size: 72, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("seconds survived")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+
+                // Personal best comparison
+                if isNewPersonalBest {
+                    HStack(spacing: 8) {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                        Text("New Personal Best!")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.yellow)
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                    .padding(.vertical, 6)
+                } else if suddenDeathPersonalBest > 0 {
+                    Text("Personal best: \(suddenDeathPersonalBest)s")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+
+                // Level reached
+                Text("Reached Level \(pressureLevel)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(levelTint)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(levelTint.opacity(0.2), in: Capsule())
+
+                // Actions
+                VStack(spacing: 12) {
+                    Button {
+                        showGameOver = false
+                        reset()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.headline.weight(.bold))
+                            Text("Try Again")
+                                .font(.headline.weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md)
+                        .background(Color.orange.gradient, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+
+                    Button {
+                        showGameOver = false
+                        showSummary = true
+                    } label: {
+                        Text("See Full Summary")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+            }
+            .scaleEffect(gameOverAppeared ? 1.0 : 0.8)
+            .opacity(gameOverAppeared ? 1.0 : 0)
+        }
     }
 
     private func dismiss(times: Int) {

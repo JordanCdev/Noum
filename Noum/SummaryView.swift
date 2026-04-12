@@ -67,6 +67,7 @@ struct SummaryView: View {
     @State private var showShareSheet = false
     @State private var videoAnalysisResult: VideoAnalysisResult?
     @State private var isAnalyzingVideo = false
+    @State private var activeMilestone: MilestoneEvent?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let aiCoachService: AICoachServicing = AICoachService()
@@ -113,8 +114,8 @@ struct SummaryView: View {
         switch scoreValue {
         case 9...10: return "Strong delivery"
         case 7...8: return "Good control"
-        case 4...6: return "Room to sharpen"
-        default: return "Needs another rep"
+        case 4...6: return "Building momentum"
+        default: return "Good warmup"
         }
     }
 
@@ -122,16 +123,16 @@ struct SummaryView: View {
         if let lockedFeedbackOverride { return lockedFeedbackOverride }
         if let feedbackOverride { return feedbackOverride }
         if effectiveDuration < 4 || transcriptWordCount < 4 {
-            return "That rep ended before the answer really began. Go again with a clear opening, one point, and a clean finish."
+            return "Short session — that's normal early on. The next rep is where the real practice starts."
         }
         if effectiveDuration < 8 || transcriptWordCount < 8 {
-            return "This was too brief to show control yet. Push the next answer further so the idea has time to land."
+            return "Brief answer — try pushing past the opening sentence next time. Even 10 more seconds makes a difference."
         }
         switch scoreValue {
         case 8...10: return "A convincing rep. Keep that same control while raising the difficulty."
         case 6...7: return "There is a solid response in here. One stronger opening sentence would make it feel more complete."
         case 4...5: return "The idea started to form, but it needs more structure and follow-through."
-        default: return "Go again straight away and aim for a steadier opening with one clear supporting point."
+        default: return "Every rep builds the habit. Go again and focus on one strong opening sentence."
         }
     }
 
@@ -260,7 +261,7 @@ struct SummaryView: View {
         if !insights.isEmpty { return insights }
         let previousSessions = Array(recentSessions.dropFirst())
         guard !previousSessions.isEmpty else {
-            return ["Finish a few more sessions and this screen will start surfacing trend-based coaching."]
+            return ["First rep complete — your baseline is set. From here, every session gives you something to compare against."]
         }
         let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
         let averageFillers = previousSessions.map(\.fillerWordCount).reduce(0, +) / previousSessions.count
@@ -290,6 +291,7 @@ struct SummaryView: View {
                 VStack(spacing: 16) {
                     heroScoreCard
                     verdictCard
+                    freeInsightCard
 
                     if isIMSummary, let details = imConversationDetails {
                         imConversationOverview(details)
@@ -333,6 +335,19 @@ struct SummaryView: View {
                 celebrationOverlay
                     .allowsHitTesting(false)
                     .transition(.opacity)
+            }
+
+            if let milestone = activeMilestone {
+                MilestoneCelebrationOverlay(
+                    icon: milestone.icon,
+                    tint: milestone.tint,
+                    title: milestone.title,
+                    subtitle: milestone.subtitle,
+                    detail: milestone.detail,
+                    onDismiss: { activeMilestone = nil }
+                )
+                .transition(.opacity)
+                .zIndex(10)
             }
         }
         .navigationTitle("")
@@ -406,11 +421,11 @@ struct SummaryView: View {
                     .padding(.horizontal, 12)
             }
 
-            // Quick stats row
+            // Quick stats row with trend deltas
             HStack(spacing: 20) {
-                statPill(label: "Fillers", value: "\(effectiveFillerCount)", tint: effectiveFillerCount == 0 ? .green : .red)
-                statPill(label: "Duration", value: "\(Int(effectiveDuration))s", tint: .blue)
-                statPill(label: "XP", value: "+\(xpEarned)", tint: .orange)
+                statPill(label: "Fillers", value: "\(effectiveFillerCount)", delta: fillerDelta, tint: fillerTint, invertDelta: true)
+                statPill(label: "Duration", value: "\(Int(effectiveDuration))s", delta: durationDelta, tint: .blue, invertDelta: false)
+                statPill(label: "XP", value: "+\(xpEarned)", delta: nil, tint: .orange, invertDelta: false)
             }
         }
         .frame(maxWidth: .infinity)
@@ -429,7 +444,7 @@ struct SummaryView: View {
         )
     }
 
-    private func statPill(label: String, value: String, tint: Color) -> some View {
+    private func statPill(label: String, value: String, delta: Int?, tint: Color, invertDelta: Bool) -> some View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.headline.weight(.bold))
@@ -437,8 +452,47 @@ struct SummaryView: View {
             Text(label)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
+            if let delta, delta != 0 {
+                let improved = invertDelta ? delta < 0 : delta > 0
+                HStack(spacing: 2) {
+                    Image(systemName: improved ? "arrow.down" : "arrow.up")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("\(abs(delta))")
+                        .font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(improved ? AppColor.positive : AppColor.caution)
+            }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Filler count tint: green if zero or better than average, orange if slightly above, red only if significantly worse.
+    private var fillerTint: Color {
+        if effectiveFillerCount == 0 { return AppColor.positive }
+        let pastFillers = recentWindow.dropFirst().map(\.fillerWordCount)
+        guard !pastFillers.isEmpty else { return AppColor.caution }
+        let avg = Double(pastFillers.reduce(0, +)) / Double(pastFillers.count)
+        if Double(effectiveFillerCount) <= avg { return AppColor.positive }
+        if Double(effectiveFillerCount) <= avg + 2 { return AppColor.caution }
+        return AppColor.warning
+    }
+
+    /// Delta vs recent average fillers (negative = improved)
+    private var fillerDelta: Int? {
+        let past = recentWindow.dropFirst().map(\.fillerWordCount)
+        guard !past.isEmpty else { return nil }
+        let avg = Double(past.reduce(0, +)) / Double(past.count)
+        let delta = effectiveFillerCount - Int(avg.rounded())
+        return delta
+    }
+
+    /// Delta vs recent average duration (positive = improved)
+    private var durationDelta: Int? {
+        let past = recentWindow.dropFirst().map(\.duration)
+        guard !past.isEmpty else { return nil }
+        let avg = past.reduce(0, +) / Double(past.count)
+        let delta = Int(effectiveDuration) - Int(avg.rounded())
+        return abs(delta) >= 3 ? delta : nil // only show if meaningful (3+ seconds)
     }
 
     // MARK: - Verdict Card
@@ -459,6 +513,125 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    // MARK: - Free Insight Card
+
+    private var freeInsightCard: some View {
+        let insight = primaryFreeInsight
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: insight.icon)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(insight.tint)
+                Text("Your Biggest Opportunity")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+            }
+
+            Text(insight.message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(insight.action)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(insight.tint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(
+            insight.tint.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(insight.tint.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private struct FreeInsight {
+        let icon: String
+        let tint: Color
+        let message: String
+        let action: String
+    }
+
+    private var primaryFreeInsight: FreeInsight {
+        let wpm = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+        let fillers = effectiveFillerCount
+        let dur = effectiveDuration
+
+        // High filler count is the most impactful thing to fix
+        if fillers >= 5 {
+            return FreeInsight(
+                icon: "waveform.path",
+                tint: .red,
+                message: "You used \(fillers) filler words. Most appeared in quick transitions between ideas — the moments where your brain is searching for the next thought.",
+                action: "Try this: pause silently for one beat before each new point. Silence feels longer to you than to your audience."
+            )
+        }
+
+        // Very short answers
+        if dur < 15 {
+            return FreeInsight(
+                icon: "timer",
+                tint: .orange,
+                message: "Your answer was only \(Int(dur)) seconds. That's too short to develop a complete thought and show control.",
+                action: "Try this: after your opening sentence, add one concrete example and then close with a summary."
+            )
+        }
+
+        // Rushed pace
+        if wpm > 160 {
+            return FreeInsight(
+                icon: "hare.fill",
+                tint: .orange,
+                message: "Your pace hit \(wpm) words per minute — noticeably fast. Rapid delivery can undermine clarity even when the content is strong.",
+                action: "Try this: deliberately slow your first two sentences. That sets a calmer tempo for the rest."
+            )
+        }
+
+        // Moderate fillers
+        if fillers >= 2 {
+            return FreeInsight(
+                icon: "waveform.path",
+                tint: AppColor.caution,
+                message: "You used \(fillers) filler words. They tend to cluster when you're transitioning between ideas or thinking out loud.",
+                action: "Try this: replace each \"um\" with a silent pause. The silence sounds confident to your audience."
+            )
+        }
+
+        // Very slow pace
+        if wpm > 0 && wpm < 100 && dur >= 15 {
+            return FreeInsight(
+                icon: "tortoise.fill",
+                tint: .blue,
+                message: "Your pace was \(wpm) WPM — quite slow. While pausing is good, too much hesitation can make you sound uncertain.",
+                action: "Try this: commit to each sentence before starting it, then deliver it at a natural conversational speed."
+            )
+        }
+
+        // Clean session — reinforce what worked
+        if fillers == 0 && dur >= 20 {
+            return FreeInsight(
+                icon: "checkmark.circle.fill",
+                tint: AppColor.positive,
+                message: "Zero filler words and \(Int(dur)) seconds of clean delivery. That's genuine control under pressure.",
+                action: "Next step: try a harder mode or a longer duration to push this control further."
+            )
+        }
+
+        // Default — general improvement
+        return FreeInsight(
+            icon: "lightbulb.fill",
+            tint: .blue,
+            message: "Your delivery had \(fillers) filler\(fillers == 1 ? "" : "s") across \(Int(dur)) seconds at \(wpm) WPM.",
+            action: "Try this: focus on a strong opening sentence. A confident start sets the tone for everything after."
+        )
     }
 
     // MARK: - Category Grid (7 dimensions)
@@ -666,7 +839,7 @@ struct SummaryView: View {
                                 Image(systemName: "sparkles.rectangle.stack.fill")
                                     .font(.caption)
                             }
-                            Text(isAnalyzingVideo ? "Analyzing..." : "Analyze with AI")
+                            Text(isAnalyzingVideo ? "Analyzing..." : "Preview Analysis")
                                 .font(.caption.weight(.semibold))
                         }
                         .frame(maxWidth: .infinity)
@@ -675,13 +848,13 @@ struct SummaryView: View {
                         .foregroundStyle(.purple)
                     }
                     .buttonStyle(.plain)
-                    .disabled(isAnalyzingVideo || !premium.canUseVideoAnalysis)
+                    .disabled(isAnalyzingVideo)
                 }
             }
 
-            // Credits remaining
+            // Preview note (no credits consumed)
             if premium.isPremium {
-                Text("\(premium.videoAnalysisCreditsRemaining) AI analysis credit\(premium.videoAnalysisCreditsRemaining == 1 ? "" : "s") remaining this month")
+                Text("Preview — results are simulated while full AI analysis is in development")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -712,6 +885,10 @@ struct SummaryView: View {
 
             Text("AI Video Analysis")
                 .font(.subheadline.weight(.bold))
+
+            Text("Preview — full AI analysis coming soon")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             videoAnalysisRow(label: "Posture", rating: result.posture, note: result.postureNote)
             videoAnalysisRow(label: "Eye Contact", rating: result.eyeContact, note: result.eyeContactNote)
@@ -1024,15 +1201,30 @@ struct SummaryView: View {
               let prompt = sessionPrompt else { return nil }
 
         let past = recentSessions.dropFirst()
+
+        // Same prompt match — always show when available
         if let match = past.first(where: { $0.prompt == prompt && $0.score != nil }) {
-            let scoreDelta = currentScore - (match.score ?? 0)
             let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
             let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
-            let fillerDelta = (lockedFillerCount ?? fillerCount) - match.fillerWordCount
+            return SessionComparison(
+                reason: "Same prompt",
+                previousScore: match.score ?? 0,
+                currentScore: currentScore,
+                previousWPM: matchWPM,
+                currentWPM: currentWPM,
+                previousFillers: match.fillerWordCount,
+                currentFillers: lockedFillerCount ?? fillerCount,
+                previousDate: match.date
+            )
+        }
 
-            if abs(scoreDelta) >= 5 || fillerDelta <= -2 {
+        // Same theme match — show whenever there's a theme match
+        if let theme = sessionTheme, theme != .all {
+            if let match = past.first(where: { $0.theme == theme && $0.score != nil }) {
+                let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+                let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
                 return SessionComparison(
-                    reason: "Same prompt",
+                    reason: "Same theme: \(theme.rawValue)",
                     previousScore: match.score ?? 0,
                     currentScore: currentScore,
                     previousWPM: matchWPM,
@@ -1044,25 +1236,20 @@ struct SummaryView: View {
             }
         }
 
-        if let theme = sessionTheme, theme != .all {
-            if let match = past.first(where: { $0.theme == theme && $0.score != nil }) {
-                let scoreDelta = currentScore - (match.score ?? 0)
-                let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
-                let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
-
-                if scoreDelta >= 10 {
-                    return SessionComparison(
-                        reason: "Same theme: \(theme.rawValue)",
-                        previousScore: match.score ?? 0,
-                        currentScore: currentScore,
-                        previousWPM: matchWPM,
-                        currentWPM: currentWPM,
-                        previousFillers: match.fillerWordCount,
-                        currentFillers: lockedFillerCount ?? fillerCount,
-                        previousDate: match.date
-                    )
-                }
-            }
+        // Same mode match — fallback comparison
+        if let match = past.first(where: { $0.mode == currentMode && $0.score != nil }) {
+            let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+            let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
+            return SessionComparison(
+                reason: "Previous \(currentMode.displayLabel) session",
+                previousScore: match.score ?? 0,
+                currentScore: currentScore,
+                previousWPM: matchWPM,
+                currentWPM: currentWPM,
+                previousFillers: match.fillerWordCount,
+                currentFillers: lockedFillerCount ?? fillerCount,
+                previousDate: match.date
+            )
         }
 
         return nil
@@ -1095,7 +1282,11 @@ struct SummaryView: View {
             if improved {
                 Text("You're improving. Keep going.")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AppColor.positive)
+            } else if scoreDelta == 0 {
+                Text("Consistency is progress. Same score, building the habit.")
+                    .font(.caption)
+                    .foregroundStyle(.blue)
             }
         }
         .padding(Spacing.cardGap)
@@ -1244,7 +1435,9 @@ struct SummaryView: View {
         xpToNext = ProfileManager.xpNeededToNextLevel(forXP: profile.xp)
         progress = ProfileManager.progressTowardsNextLevel(forXP: profile.xp)
 
+        let levelBefore = ProfileManager.levelTitle(forXP: profile.xp)
         profile.addXP(xpEarned)
+        let levelAfter = ProfileManager.levelTitle(forXP: profile.xp)
         animateXP(to: profile.xp)
         animateSegments()
         withAnimation(.easeInOut(duration: 0.35)) {
@@ -1255,6 +1448,17 @@ struct SummaryView: View {
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.35)) {
                     celebrationVisible = false
+                }
+            }
+        }
+
+        // Milestone detection
+        let milestone = detectMilestone(levelBefore: levelBefore, levelAfter: levelAfter)
+        if let milestone {
+            Task {
+                try? await Task.sleep(for: .seconds(2.2))
+                await MainActor.run {
+                    withAnimation(.standardSpring) { activeMilestone = milestone }
                 }
             }
         }
@@ -1316,7 +1520,6 @@ struct SummaryView: View {
     }
 
     private func analyzeVideo() {
-        guard premium.consumeVideoAnalysisCredit() else { return }
         isAnalyzingVideo = true
 
         // Simulated analysis — in production this would upload to a backend
@@ -1341,6 +1544,60 @@ struct SummaryView: View {
                 isAnalyzingVideo = false
             }
         }
+    }
+
+    private func detectMilestone(levelBefore: String, levelAfter: String) -> MilestoneEvent? {
+        // 1. Level-up
+        if levelBefore != levelAfter {
+            return MilestoneEvent(
+                icon: "arrow.up.circle.fill",
+                tint: .blue,
+                title: "Level Up!",
+                subtitle: levelAfter,
+                detail: "Keep practicing to reach the next rank."
+            )
+        }
+
+        // 2. Personal best score (across all sessions in the same mode)
+        let pastScores = sessionStore.sessions
+            .filter { $0.mode == currentMode }
+            .dropFirst() // exclude the session we just saved
+            .compactMap(\.score)
+        let previousBest = pastScores.max() ?? 0
+        if scoreValue > previousBest && scoreValue >= 6 && !pastScores.isEmpty {
+            return MilestoneEvent(
+                icon: "star.fill",
+                tint: .orange,
+                title: "New Personal Best!",
+                subtitle: "\(scoreValue)/10 in \(currentMode.displayLabel)",
+                detail: previousBest > 0 ? "Previous best: \(previousBest)/10" : nil
+            )
+        }
+
+        // 3. Streak milestones (3, 7, 14, 30 days)
+        let streak = sessionStreak
+        if [3, 7, 14, 30].contains(streak) {
+            return MilestoneEvent(
+                icon: "flame.fill",
+                tint: .orange,
+                title: "\(streak)-Day Streak!",
+                subtitle: "You've practiced \(streak) days in a row",
+                detail: streak < 30 ? "Next milestone: \(streak == 3 ? 7 : streak == 7 ? 14 : 30) days" : "Incredible consistency."
+            )
+        }
+
+        // 4. First session ever
+        if sessionStore.sessions.count == 1 {
+            return MilestoneEvent(
+                icon: "sparkles",
+                tint: .blue,
+                title: "First Rep Complete!",
+                subtitle: "Your speaking journey starts now",
+                detail: "Come back tomorrow to start building a streak."
+            )
+        }
+
+        return nil
     }
 
     private func animateXP(to endXP: Int) {

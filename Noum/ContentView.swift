@@ -72,10 +72,17 @@ struct ContentView: View {
                     .frame(height: 0)
 
                     VStack(spacing: Spacing.cardGap) {
-                        heroCard
-                        progressCard
-                        journeyPreviewCard
-                        suggestedPracticeCard
+                        if sessionStore.sessions.isEmpty {
+                            heroCard
+                            firstSessionCard
+                        } else {
+                            heroCard
+                            quickStartCard
+                            streakChallengeCard
+                            progressCard
+                            journeyPreviewCard
+                            suggestedPracticeCard
+                        }
                     }
                     .padding(.horizontal, Spacing.screenH)
                     .padding(.top, 12)
@@ -127,13 +134,75 @@ struct ContentView: View {
         displayName == "Guest Speaker" ? "Guest" : displayName
     }
 
+    private var heroSubtitle: String {
+        let sessions = sessionStore.sessions
+
+        // 1. No sessions at all
+        if sessions.isEmpty {
+            return "Let's find your baseline"
+        }
+
+        // 2. Seven-day streak or higher
+        if sessionStreak >= 7 {
+            return "\u{1F525} \(sessionStreak)-day streak — unstoppable"
+        }
+
+        // 3. Three-day streak or higher
+        if sessionStreak >= 3 {
+            return "\(sessionStreak) days in a row — building a habit"
+        }
+
+        // 4. Filler trend (need at least 10 sessions for two groups of 5)
+        if sessions.count >= 10 {
+            let recentFillers = sessions.prefix(5).map { Double($0.fillerWordCount) }
+            let previousFillers = sessions.dropFirst(5).prefix(5).map { Double($0.fillerWordCount) }
+            let recentAvg = recentFillers.reduce(0, +) / Double(recentFillers.count)
+            let previousAvg = previousFillers.reduce(0, +) / Double(previousFillers.count)
+            if recentAvg < previousAvg {
+                return "Your filler count is trending down"
+            }
+        }
+
+        // 5. Score trend (need at least 6 scored sessions for two groups of 3)
+        let scored = sessions.filter { $0.score != nil }
+        if scored.count >= 6 {
+            let recentScores = scored.prefix(3).compactMap(\.score).map(Double.init)
+            let previousScores = scored.dropFirst(3).prefix(3).compactMap(\.score).map(Double.init)
+            if !recentScores.isEmpty && !previousScores.isEmpty {
+                let recentAvg = recentScores.reduce(0, +) / Double(recentScores.count)
+                let previousAvg = previousScores.reduce(0, +) / Double(previousScores.count)
+                if recentAvg > previousAvg {
+                    return "Your scores are climbing"
+                }
+            }
+        }
+
+        // 6. Practiced today
+        if sessionStreak == 1 {
+            return "Already practiced today — nice"
+        }
+
+        // 7. Last session was yesterday
+        if daysSinceLastSession == 1 {
+            return "Welcome back — let's keep the momentum"
+        }
+
+        // 8. Been a few days
+        if daysSinceLastSession >= 3 {
+            return "Ready to pick up where you left off?"
+        }
+
+        // 9. Default
+        return "Every rep makes you sharper"
+    }
+
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Hello, \(heroTitle)")
                 .font(.system(size: 26, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
             
-            Text("Ready to level up your speaking?")
+            Text(heroSubtitle)
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -141,6 +210,197 @@ struct ContentView: View {
         .frame(height: max(0, 64 + min(0, homeScrollOffset)))
         .opacity(max(0, 1 + (homeScrollOffset / 42)))
         .clipped()
+    }
+
+    // MARK: - First Session
+
+    private var firstSessionWelcomeMessage: String {
+        if let profile = coachingProfileStore.profile {
+            let challenge: String
+            switch profile.biggestChallenge {
+            case .fillerWords:
+                challenge = "cleaning up filler words"
+            case .rambling:
+                challenge = "tightening your structure"
+            case .freezing:
+                challenge = "thinking faster on the spot"
+            case .rushing:
+                challenge = "slowing down under pressure"
+            }
+            return "You said you want to work on \(challenge). Let's see where you stand."
+        }
+        return "One short rep is all it takes to set your starting line."
+    }
+
+    private var firstSessionCard: some View {
+        NavigationLink(destination: TimedPracticeView(goHome: { navigationPath = NavigationPath() })) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Let's find your starting point")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+
+                    Text(firstSessionWelcomeMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 12) {
+                    Text("Start your first rep")
+                        .font(.headline.weight(.semibold))
+
+                    Spacer()
+
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.16))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: "arrow.right")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, Spacing.md)
+                .background(
+                    LinearGradient(
+                        colors: [.blue, Color.blue.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: Capsule(style: .continuous)
+                )
+
+                Text("Your first rep sets your baseline \u{2014} no pressure")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.lg)
+            .background(
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("home.firstSession")
+    }
+
+    // MARK: - Quick Start
+
+    private var quickStartCard: some View {
+        let suggestion = effectiveSuggestion
+        return NavigationLink(destination: practiceDestination(for: suggestion)) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(suggestion.tint.gradient)
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Quick Start")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text(suggestion.title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "arrow.right")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(suggestion.tint)
+            }
+            .padding(Spacing.md)
+            .background(
+                LinearGradient(
+                    colors: [suggestion.tint.opacity(0.10), suggestion.tint.opacity(0.04)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(suggestion.tint.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .simultaneousGesture(TapGesture().onEnded {
+            selectedPracticeMode = suggestion.mode
+            recommendationLearningStore.markTapped(mode: suggestion.mode)
+        })
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("home.quickStart")
+    }
+
+    // MARK: - Streak & Challenge Card
+
+    private var streakChallengeCard: some View {
+        let streak = sessionStreak
+        let challenge = retentionSnapshot.activeChallenge
+
+        return HStack(spacing: 12) {
+            // Streak pill
+            HStack(spacing: 8) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(streak > 0 ? .orange : .gray)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(streak)")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(streak > 0 ? .orange : .secondary)
+                    Text("day streak")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.sm)
+            .background(
+                (streak > 0 ? Color.orange : Color.gray).opacity(0.08),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+
+            // Today's challenge pill
+            VStack(alignment: .leading, spacing: 4) {
+                Text(challenge.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                ShimmerProgressBar(
+                    progress: challenge.progress,
+                    tint: .blue,
+                    animated: challenge.progress > 0 && challenge.progress < 1
+                )
+                HStack {
+                    Text(challenge.progressLabel)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.blue)
+                    Spacer()
+                    Text(challenge.rewardLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(Spacing.sm)
+            .background(
+                Color.blue.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+        }
     }
 
     private var progressCard: some View {
@@ -832,18 +1092,7 @@ struct ContentView: View {
     }
 
     private var sessionStreak: Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        PracticeSession.calculateStreak(from: sessionStore.sessions)
     }
 
     private var daysSinceLastSession: Int {

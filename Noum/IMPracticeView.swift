@@ -36,6 +36,7 @@ struct IMPracticeView: View {
     @State private var sessionContext = IMSessionContextProvider.current()
     @State private var latestUserSignal: IMUserMessageSignal?
     @State private var cachedRelationshipProfile = IMRelationshipProfile.initial(for: .socialCatchUp)
+    @State private var showExitConfirmation = false
 
     private let preferredScenario: IMConversationScenario?
     private let preferredTone: IMTargetTone?
@@ -154,6 +155,29 @@ struct IMPracticeView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    if isSessionActive {
+                        showExitConfirmation = true
+                    } else {
+                        dismiss()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                        Text("Back")
+                    }
+                }
+            }
+        }
+        .alert("End session?", isPresented: $showExitConfirmation) {
+            Button("Keep Practicing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("Your current session will be lost.")
+        }
         .alert("IM Mode Unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
             Button("OK", role: .cancel) { serviceErrorMessage = nil }
         }, message: {
