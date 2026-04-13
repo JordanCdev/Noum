@@ -7,6 +7,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    var goHome: (() -> Void)?
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var question: String = ""
@@ -162,11 +163,13 @@ struct SuddenDeathPracticeView: View {
                 insights: evaluation?.insights ?? [],
                 onSelectPracticeMode: {
                     showSummary = false
-                    dismiss(times: 2)
+                    if let goHome { goHome() } else { dismiss() }
                 },
                 onHome: {
                     showSummary = false
-                    dismiss(times: 3)
+                    if let goHome {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { goHome() }
+                    } else { dismiss() }
                 },
                 onPracticeAgain: {
                     showSummary = false
@@ -990,9 +993,6 @@ struct SuddenDeathPracticeView: View {
         }
     }
 
-    private func dismiss(times: Int) {
-        dismissRecursively(from: dismiss, times: times)
-    }
 }
 
 private struct PressureDirective {

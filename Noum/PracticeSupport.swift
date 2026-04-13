@@ -63,6 +63,71 @@ enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
         case .hard: return 1.35
         }
     }
+
+    /// Target duration range: (minimum acceptable, ideal target, maximum acceptable) in seconds.
+    /// Duration within this range scores highest. Too short or too long both reduce the score.
+    var targetRange: (min: Double, target: Double, max: Double) {
+        switch self {
+        case .free:   return (min: 30, target: 60,  max: 120)  // Free: aim for 30–120s, sweet spot 60s
+        case .easy:   return (min: 45, target: 60,  max: 90)   // Easy (60s): aim for 45–90s
+        case .medium: return (min: 20, target: 30,  max: 50)   // Medium (30s): aim for 20–50s
+        case .hard:   return (min: 10, target: 15,  max: 25)   // Hard (15s): aim for 10–25s
+        }
+    }
+}
+
+/// How the speaker's duration compares to the target range.
+enum DurationAssessment: String {
+    case tooShort = "Too short"
+    case onTarget = "On target"
+    case tooLong = "Too long"
+
+    var icon: String {
+        switch self {
+        case .tooShort: return "arrow.down.circle.fill"
+        case .onTarget: return "checkmark.circle.fill"
+        case .tooLong: return "arrow.up.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .tooShort: return AppColor.caution
+        case .onTarget: return AppColor.positive
+        case .tooLong: return AppColor.caution
+        }
+    }
+}
+
+extension PracticeEvaluator {
+    /// Assess how the actual duration compares to the difficulty's target range.
+    static func assessDuration(_ duration: TimeInterval, difficulty: TimedPracticeDifficulty) -> DurationAssessment {
+        let range = difficulty.targetRange
+        if duration < range.min { return .tooShort }
+        if duration > range.max { return .tooLong }
+        return .onTarget
+    }
+
+    /// Score duration on a 0–1 scale using the target range. 1.0 = ideal, tapering toward 0 outside range.
+    static func durationRangeScore(_ duration: TimeInterval, difficulty: TimedPracticeDifficulty) -> Double {
+        let range = difficulty.targetRange
+        if duration >= range.min && duration <= range.max {
+            // Within acceptable range — score based on closeness to target
+            let distanceFromTarget = abs(duration - range.target)
+            let maxDistance = max(range.target - range.min, range.max - range.target)
+            return maxDistance > 0 ? 1.0 - (distanceFromTarget / maxDistance) * 0.2 : 1.0
+        } else if duration < range.min {
+            // Too short — linear taper from min down to 0
+            let shortfall = range.min - duration
+            let maxShortfall = range.min // At 0s, score = 0
+            return max(0, 1.0 - (shortfall / maxShortfall))
+        } else {
+            // Too long — gentler penalty, max penalty at 2x max
+            let overshoot = duration - range.max
+            let maxOvershoot = range.max // At 2x max, score ≈ 0
+            return max(0, 1.0 - (overshoot / maxOvershoot))
+        }
+    }
 }
 
 enum SpeakingContext: String, CaseIterable, Codable, Identifiable {
@@ -370,7 +435,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
     var model: String {
         switch self {
         case .none: return ""
-        case .openAI: return "gpt-5-mini"
+        case .openAI: return "gpt-4o-mini"
         case .deepSeek: return "deepseek-chat"
         case .gemini: return "gemini-2.5-flash"
         }
@@ -3175,7 +3240,16 @@ final class AISettingsManager: ObservableObject {
 
     private let countKey = "aiMonthlyAnalysisCount"
     private let monthKey = "aiMonthlyAnalysisMonth"
-    private let monthlyAnalysisLimit = 20
+
+    // MARK: - Usage Tiers
+    // Premium: generous 100/month — most active users won't hit this.
+    // Free: 20/month — enough to experience value, encourages upgrade.
+    private static let premiumMonthlyLimit = 100
+    private static let freeMonthlyLimit = 20
+
+    /// The threshold (as fraction of limit) at which we surface a gentle heads-up.
+    /// Set at 90% so users get a soft nudge, not a wall.
+    static let usageAwarenessThreshold: Double = 0.90
 
     private init() {
         analysisCountThisMonth = UserDefaults.standard.integer(forKey: countKey)
@@ -3186,12 +3260,48 @@ final class AISettingsManager: ObservableObject {
         [.gemini, .openAI, .deepSeek].first(where: hasAPIKey(for:))
     }
 
+    /// Current monthly limit based on subscription tier.
+    var monthlyLimit: Int {
+        PremiumManager.shared.isPremium ? Self.premiumMonthlyLimit : Self.freeMonthlyLimit
+    }
+
     var remainingAnalyses: Int {
-        max(0, monthlyAnalysisLimit - analysisCountThisMonth)
+        max(0, monthlyLimit - analysisCountThisMonth)
     }
 
     var canRequestAnalysis: Bool {
         activeProvider != nil && remainingAnalyses > 0
+    }
+
+    /// Whether the user is approaching their limit (≥90% used).
+    /// Returns false if they still have plenty of headroom.
+    var isApproachingLimit: Bool {
+        let limit = monthlyLimit
+        guard limit > 0 else { return true }
+        return Double(analysisCountThisMonth) / Double(limit) >= Self.usageAwarenessThreshold
+    }
+
+    /// True when the monthly cap has been reached.
+    var hasReachedLimit: Bool {
+        analysisCountThisMonth >= monthlyLimit
+    }
+
+    /// Estimated date when the counter resets (first of next month).
+    var resetDate: Date {
+        let cal = Calendar.current
+        let now = Date()
+        if let nextMonth = cal.date(byAdding: .month, value: 1, to: cal.startOfDay(for: now)) {
+            let comps = cal.dateComponents([.year, .month], from: nextMonth)
+            return cal.date(from: comps) ?? nextMonth
+        }
+        return now
+    }
+
+    /// Human-readable reset date (e.g., "May 1").
+    var resetDateFormatted: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMMM d"
+        return fmt.string(from: resetDate)
     }
 
     func recordAnalysis() {
@@ -3452,6 +3562,79 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     func resetSessionPlaybackState() { stop() }
+
+    // MARK: - Prompt Readout (Timed Practice Mode)
+
+    /// Speak a practice prompt using the best available cloud TTS provider.
+    /// Returns true if cloud audio was successfully played, false if caller should fall back to on-device TTS.
+    func speakPrompt(_ text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        stop()
+
+        // Build a minimal setup for voice selection — use a calm, coaching-like persona
+        let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .confident)
+        let engines = candidateEngines(for: setup)
+        guard !engines.isEmpty else { return false }
+
+        for engine in engines {
+            if await playPrompt(trimmed, using: engine, setup: setup) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func playPrompt(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+        switch engine {
+        case .openAI:
+            return await playPromptWithOpenAI(text)
+        case .googleCloud:
+            return await playWithGoogleCloud(text, setup: setup)
+        case .elevenLabs:
+            return await playWithElevenLabs(text, setup: setup)
+        case .backend:
+            return await playWithBackend(text, setup: setup)
+        case .auto:
+            return false
+        }
+    }
+
+    /// OpenAI TTS specifically tuned for prompt readout — calm, clear coaching voice
+    private func playPromptWithOpenAI(_ text: String) async -> Bool {
+        guard let apiKey = openAIAPIKey(),
+              let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+            return false
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8
+
+        let body = OpenAITTSSpeechRequest(
+            model: "tts-1",
+            voice: "nova",
+            input: text,
+            responseFormat: "mp3",
+            instructions: "Read this speaking prompt clearly and warmly, like a calm speaking coach presenting a question. Natural pace, confident tone, slight warmth. Do not rush."
+        )
+        request.httpBody = try? JSONEncoder().encode(body)
+        guard request.httpBody != nil else { return false }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+            return playAudioData(data)
+        } catch {
+            return false
+        }
+    }
 
     func stop() {
         speechTask?.cancel()
@@ -4117,6 +4300,8 @@ struct PracticeEvaluation {
     var categories: [FeedbackCategory] = []
     var strongMoments: [String] = []
     var weakMoments: [String] = []
+    var durationAssessment: DurationAssessment = .onTarget
+    var targetRange: (min: Double, target: Double, max: Double) = (30, 60, 120)
 }
 
 struct PracticeScoreSegment: Identifiable {
@@ -4214,8 +4399,7 @@ enum PracticeEvaluator {
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
-        let targetDuration = Double(difficulty.duration ?? 45)
-        let durationProgress = min(duration / targetDuration, 1.0)
+        let durationProgress = durationRangeScore(duration, difficulty: difficulty)
         let contentProgress = min(Double(wordCount) / 35.0, 1.0)
         let wordsPerMinute = paceValue(wordCount: wordCount, duration: duration)
         let paceSnapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
@@ -4259,9 +4443,17 @@ enum PracticeEvaluator {
             headline = "Good warmup"
         }
 
+        let durationAssessment = assessDuration(duration, difficulty: difficulty)
+
         let feedback: String
         if wordCount < 3 || duration < 3 {
             feedback = "This response ended before the answer could develop. Aim for a clear opening, one supporting point, and a brief close."
+        } else if durationAssessment == .tooShort && fillerCount <= 2 {
+            let range = difficulty.targetRange
+            feedback = "Your answer was only \(Int(duration))s — the target range is \(Int(range.min))–\(Int(range.max))s. Give your answer more room to develop."
+        } else if durationAssessment == .tooLong {
+            let range = difficulty.targetRange
+            feedback = "At \(Int(duration))s you went well past the \(Int(range.max))s mark. Tighten the structure: opening, one strong point, then close."
         } else if fillerCount == 0 && durationProgress >= 0.8 {
             feedback = "Strong control. You kept the answer clean while giving it enough shape to sound complete."
         } else if fillerCount <= 2 && durationProgress >= 0.6 {
@@ -4273,7 +4465,7 @@ enum PracticeEvaluator {
         }
 
         let segments = [
-            PracticeScoreSegment(title: "Depth", value: "+\(Int(round(durationProgress * 3)))", tintName: "blue"),
+            PracticeScoreSegment(title: "Timing", value: durationAssessment.rawValue, tintName: durationAssessment == .onTarget ? "green" : "orange"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 3)))", tintName: "orange"),
             PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green"),
             PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"),
@@ -4320,7 +4512,9 @@ enum PracticeEvaluator {
             insights: Array(insights.prefix(3)),
             categories: categories,
             strongMoments: strongMoments,
-            weakMoments: weakMoments
+            weakMoments: weakMoments,
+            durationAssessment: durationAssessment,
+            targetRange: difficulty.targetRange
         )
     }
 
@@ -5067,6 +5261,8 @@ final class PracticeSessionStore: ObservableObject {
 
     func endSession() {
         sessions = []
+        // Also clear persisted data so old sessions don't reappear on reload
+        UserDefaults.standard.removeObject(forKey: Self.storageKey(for: currentAccountID))
     }
 
     @discardableResult
@@ -7061,3 +7257,292 @@ private struct GeminiErrorResponse: Codable {
 
     let error: ErrorBody
 }
+// MARK: - Video Analysis Service
+
+#if canImport(AVFoundation) && canImport(UIKit)
+import AVFoundation
+import UIKit
+
+@MainActor
+final class VideoAnalysisService {
+    static let shared = VideoAnalysisService()
+
+    private let settings = AISettingsManager.shared
+    private let frameCount = 4  // Extract 4 frames evenly spaced
+
+    private init() {}
+
+    func analyzeRecording(at url: URL) async throws -> VideoAnalysisResult {
+        guard let provider = settings.activeProvider else {
+            throw AICoachError.missingAPIKey
+        }
+        guard settings.canRequestAnalysis else {
+            throw AICoachError.providerDisabled
+        }
+        guard let apiKey = apiKey(for: provider) else {
+            throw AICoachError.missingAPIKey
+        }
+
+        // Extract frames from video
+        let frames = try await extractFrames(from: url)
+        guard !frames.isEmpty else {
+            throw AICoachError.invalidResponse
+        }
+
+        // Encode frames to base64 JPEG
+        let base64Frames = frames.compactMap { image -> String? in
+            guard let data = image.jpegData(compressionQuality: 0.6) else { return nil }
+            return data.base64EncodedString()
+        }
+
+        // Build API request based on provider
+        let jsonData: Data
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI:
+            jsonData = try await callOpenAIVision(apiKey: apiKey, frames: base64Frames)
+        case .deepSeek:
+            // DeepSeek doesn't support vision — fall back to text-only analysis prompt
+            jsonData = try await callTextOnlyAnalysis(provider: provider, apiKey: apiKey)
+        case .gemini:
+            jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
+        }
+
+        let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
+        await MainActor.run { settings.recordAnalysis() }
+        return result
+    }
+
+    // MARK: - Frame Extraction
+
+    private func extractFrames(from url: URL) async throws -> [UIImage] {
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration)
+        let durationSeconds = CMTimeGetSeconds(duration)
+        guard durationSeconds > 0 else { return [] }
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 512, height: 512)
+
+        var frames: [UIImage] = []
+        let interval = durationSeconds / Double(frameCount + 1)
+
+        for i in 1...frameCount {
+            let time = CMTime(seconds: interval * Double(i), preferredTimescale: 600)
+            do {
+                let (cgImage, _) = try await generator.image(at: time)
+                frames.append(UIImage(cgImage: cgImage))
+            } catch {
+                continue
+            }
+        }
+        return frames
+    }
+
+    // MARK: - OpenAI Vision
+
+    private func callOpenAIVision(apiKey: String, frames: [String]) async throws -> Data {
+        let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 60
+
+        // Build multimodal content array
+        var contentParts: [[String: Any]] = [
+            ["type": "text", "text": videoAnalysisPrompt]
+        ]
+        for base64 in frames {
+            contentParts.append([
+                "type": "image_url",
+                "image_url": ["url": "data:image/jpeg;base64,\(base64)", "detail": "low"]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "model": "gpt-4o-mini",
+            "messages": [
+                ["role": "system", "content": videoAnalysisSystemPrompt],
+                ["role": "user", "content": contentParts]
+            ],
+            "temperature": 0.3,
+            "response_format": ["type": "json_object"]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+        guard let content = chatResponse.choices.first?.message.content,
+              let jsonData = content.data(using: .utf8) else {
+            throw AICoachError.invalidResponse
+        }
+        return jsonData
+    }
+
+    // MARK: - Gemini Vision
+
+    private func callGeminiVision(apiKey: String, frames: [String]) async throws -> Data {
+        let model = "gemini-2.5-flash"
+        let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.timeoutInterval = 60
+
+        // Build parts with text + images
+        var parts: [[String: Any]] = [
+            ["text": videoAnalysisPrompt]
+        ]
+        for base64 in frames {
+            parts.append([
+                "inline_data": [
+                    "mime_type": "image/jpeg",
+                    "data": base64
+                ]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "system_instruction": ["parts": [["text": videoAnalysisSystemPrompt]]],
+            "contents": [["parts": parts]],
+            "generationConfig": [
+                "temperature": 0.3,
+                "responseMimeType": "application/json"
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
+              let jsonData = content.data(using: .utf8) else {
+            throw AICoachError.invalidResponse
+        }
+        return jsonData
+    }
+
+    // MARK: - Text-Only Fallback (for providers without vision)
+
+    private func callTextOnlyAnalysis(provider: AIProvider, apiKey: String) async throws -> Data {
+        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+
+        let fallbackPrompt = """
+        I recorded a speaking practice session on video but cannot share the frames with you.
+        Please provide a balanced, generic video analysis based on common areas speakers should focus on.
+        Rate each dimension as "good", "ok", or "couldImprove" and provide brief, actionable notes.
+        """
+
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body = OpenAICompatibleChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: videoAnalysisSystemPrompt),
+                    .init(role: "user", content: fallbackPrompt)
+                ],
+                temperature: 0.3,
+                responseFormat: .jsonObject
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiGenerateContentRequest(
+                systemInstruction: .init(parts: [.init(text: videoAnalysisSystemPrompt)]),
+                contents: [.init(parts: [.init(text: fallbackPrompt)])],
+                generationConfig: .init(temperature: 0.3, responseMimeType: "application/json")
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            guard let content = chatResponse.choices.first?.message.content,
+                  let jsonData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return jsonData
+        case .gemini:
+            let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
+                  let jsonData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return jsonData
+        }
+    }
+
+    // MARK: - Prompts
+
+    private var videoAnalysisSystemPrompt: String {
+        """
+        You are an expert speaking coach analyzing video frames from a practice speaking session.
+        Evaluate the speaker's visual delivery across six dimensions.
+        Return JSON only with these exact keys:
+        posture, postureNote, eyeContact, eyeContactNote, facialExpression, facialExpressionNote,
+        gestureUse, gestureNote, energyConfidence, energyNote, presenceDelivery, presenceNote, overallNote.
+        Rating values must be exactly one of: "good", "ok", "couldImprove".
+        Notes should be 1 sentence, specific, and actionable.
+        overallNote should be 2 sentences summarizing the key strength and primary improvement area.
+        Be encouraging but honest. Focus on what's observable.
+        """
+    }
+
+    private var videoAnalysisPrompt: String {
+        """
+        Analyze these frames from a speaking practice session. Evaluate:
+        1. Posture — upright, stable, open body position
+        2. Eye Contact — looking at camera/audience, avoiding looking down
+        3. Facial Expression — warmth, engagement, appropriate emotion
+        4. Gesture Use — deliberate hand movements, not fidgeting or frozen
+        5. Energy & Confidence — vocal projection visible in body, forward lean, engagement
+        6. Presence & Delivery — overall command, use of space, intentional pauses reflected in stillness
+
+        Rate each as "good", "ok", or "couldImprove" and provide a brief actionable note.
+        End with an overall note summarizing the biggest strength and the #1 thing to improve.
+        """
+    }
+
+    // MARK: - Helpers
+
+    private func apiKey(for provider: AIProvider) -> String? {
+        if let keyName = provider.environmentKey,
+           let value = ProcessInfo.processInfo.environment[keyName],
+           !value.isEmpty {
+            return value
+        }
+        if let keyName = provider.environmentKey,
+           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
+            return value
+        }
+        return nil
+    }
+}
+#endif
+

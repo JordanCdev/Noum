@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 #endif
 #if canImport(AVFoundation)
-import AVFoundation
+@preconcurrency import AVFoundation
 #endif
 
 #if canImport(SwiftUI)
@@ -371,7 +371,7 @@ private struct SettingsCardView: View {
     @Binding var showFillerWords: Bool
     @Binding var enableVideoRecording: Bool
     @ObservedObject var videoManager: VideoRecordingManager
-    @State private var showSettings: Bool = false
+    @AppStorage("timedPractice.showSettings") private var showSettings: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -379,20 +379,7 @@ private struct SettingsCardView: View {
                 Divider()
                     .padding(.horizontal, 16)
 
-                if selectedMode == .classic {
-                    toggleRow(
-                        icon: "eye",
-                        iconColor: .indigo,
-                        title: "Show prompt while speaking",
-                        caption: "Keep the topic visible",
-                        isOn: $keepPromptVisible
-                    )
-
-                    thinDivider
-
-                    timerPicker
-                }
-
+                // Shared settings — available in all modes
                 if selectedMode == .coach {
                     toggleRow(
                         icon: "brain.head.profile",
@@ -403,17 +390,19 @@ private struct SettingsCardView: View {
                     )
 
                     thinDivider
+                }
 
-                    toggleRow(
-                        icon: "eye",
-                        iconColor: .indigo,
-                        title: "Show prompt while speaking",
-                        caption: "Keep the topic visible",
-                        isOn: $keepPromptVisible
-                    )
+                toggleRow(
+                    icon: "eye",
+                    iconColor: .indigo,
+                    title: "Show prompt while speaking",
+                    caption: "Keep the topic visible",
+                    isOn: $keepPromptVisible
+                )
 
-                    thinDivider
+                thinDivider
 
+                if selectedMode == .coach {
                     toggleRow(
                         icon: "waveform.badge.magnifyingglass",
                         iconColor: .red,
@@ -423,74 +412,57 @@ private struct SettingsCardView: View {
                     )
 
                     thinDivider
-
-                    timerPicker
-
-                    thinDivider
-
-                    toggleRow(
-                        icon: "text.quote",
-                        iconColor: .teal,
-                        title: "Live transcript",
-                        caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
-                        isOn: Binding(
-                            get: { showLiveTranscript },
-                            set: { newValue in
-                                showLiveTranscript = newValue
-                                if newValue { enableVideoRecording = false }
-                            }
-                        ),
-                        disabled: enableVideoRecording
-                    )
-
-                    thinDivider
-
-                    toggleRow(
-                        icon: "video.fill",
-                        iconColor: .pink,
-                        title: "Record video",
-                        caption: showLiveTranscript ? "Not available with transcript" : "Review your delivery after",
-                        isOn: Binding(
-                            get: { enableVideoRecording },
-                            set: { newValue in
-                                enableVideoRecording = newValue
-                                if newValue {
-                                    showLiveTranscript = false
-                                    Task {
-                                        let hasPermission = await VideoRecordingManager.requestCameraPermission()
-                                        guard hasPermission else {
-                                            await MainActor.run { enableVideoRecording = false }
-                                            return
-                                        }
-                                        let ready = await videoManager.prepareSession()
-                                        if ready, let session = videoManager.captureSession, !session.isRunning {
-                                            DispatchQueue.global(qos: .userInitiated).async {
-                                                session.startRunning()
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    videoManager.cleanup()
-                                }
-                            }
-                        ),
-                        disabled: showLiveTranscript
-                    )
-
-                    thinDivider
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .foregroundStyle(AppColor.pro)
-                        Text("Live transcript · Video · AI feedback · Score breakdown")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppColor.pro.opacity(0.05))
                 }
+
+                timerPicker
+
+                thinDivider
+
+                toggleRow(
+                    icon: "text.quote",
+                    iconColor: .teal,
+                    title: "Live transcript",
+                    caption: enableVideoRecording ? "Not available with video" : "See your words in real time",
+                    isOn: Binding(
+                        get: { showLiveTranscript },
+                        set: { newValue in
+                            showLiveTranscript = newValue
+                            if newValue { enableVideoRecording = false }
+                        }
+                    ),
+                    disabled: enableVideoRecording
+                )
+
+                thinDivider
+
+                toggleRow(
+                    icon: "video.fill",
+                    iconColor: .pink,
+                    title: "Record video",
+                    caption: showLiveTranscript ? "Not available with transcript" : "Full-screen camera while speaking",
+                    isOn: Binding(
+                        get: { enableVideoRecording },
+                        set: { newValue in
+                            enableVideoRecording = newValue
+                            if newValue {
+                                showLiveTranscript = false
+                                Task {
+                                    let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                                    guard hasPermission else {
+                                        await MainActor.run { enableVideoRecording = false }
+                                        return
+                                    }
+                                    _ = await videoManager.prepareSession()
+                                }
+                            } else {
+                                videoManager.cleanup()
+                            }
+                        }
+                    ),
+                    disabled: showLiveTranscript
+                )
+
+                // Removed classic-only coach upsell since recording is now available in all modes
             } label: {
                 HStack {
                     Text("Preferences")
@@ -590,7 +562,7 @@ struct TimedPracticeView: View {
     @StateObject private var premium = PremiumManager.shared
 
     // Session state
-    @State private var selectedTheme: PromptTheme = .all
+    @AppStorage("timedPractice.selectedTheme") private var selectedThemeRaw: String = PromptTheme.all.rawValue
     @State private var question: String = ""
     @State private var phase: TimedSessionPhase = .setup
     @State private var thinkingCountdown: Int = 15
@@ -604,18 +576,50 @@ struct TimedPracticeView: View {
     @State private var thinkingTask: Task<Void, Never>?
     @State private var speakingTask: Task<Void, Never>?
 
-    // Settings (defaults = immersive "Classic" experience)
-    @State private var selectedMode: ImpromptuSetupMode = .classic
-    @State private var keepPromptVisible: Bool = false
-    @State private var timerDisplay: TimerDisplayOption = .none
-    @State private var enableThinkingTime: Bool = true
-    @State private var showLiveTranscript: Bool = false
-    @State private var showFillerWords: Bool = false
+    // Settings (persisted via @AppStorage)
+    @AppStorage("timedPractice.selectedMode") private var selectedModeRaw: String = ImpromptuSetupMode.classic.rawValue
+    @AppStorage("timedPractice.keepPromptVisible") private var keepPromptVisible: Bool = false
+    @AppStorage("timedPractice.timerDisplay") private var timerDisplayRaw: String = TimerDisplayOption.none.rawValue
+    @AppStorage("timedPractice.enableThinkingTime") private var enableThinkingTime: Bool = true
+    @AppStorage("timedPractice.showLiveTranscript") private var showLiveTranscript: Bool = false
+    @AppStorage("timedPractice.showFillerWords") private var showFillerWords: Bool = false
+    @AppStorage("timedPractice.classicInitialized") private var classicInitialized: Bool = false
+    @AppStorage("timedPractice.coachInitialized") private var coachInitialized: Bool = false
 
-    // TTS — persistent synthesizer + delegate, prewarmed voice for instant playback
+    private var selectedMode: ImpromptuSetupMode {
+        get { ImpromptuSetupMode(rawValue: selectedModeRaw) ?? .classic }
+        nonmutating set { selectedModeRaw = newValue.rawValue }
+    }
+
+    private var timerDisplay: TimerDisplayOption {
+        get { TimerDisplayOption(rawValue: timerDisplayRaw) ?? .none }
+        nonmutating set { timerDisplayRaw = newValue.rawValue }
+    }
+
+    private var selectedTheme: PromptTheme {
+        get { PromptTheme(rawValue: selectedThemeRaw) ?? .all }
+        nonmutating set { selectedThemeRaw = newValue.rawValue }
+    }
+
+    // TTS — persistent synthesizer + delegate, premium voice for warm, coach-like delivery
     private let ttsEngine = AVSpeechSynthesizer()
     private let ttsDelegate = TTSDelegate()
-    private let prewarmedVoice = AVSpeechSynthesisVoice(language: "en-US")
+    /// Select the best available English voice — prefer premium/enhanced quality voices
+    private let prewarmedVoice: AVSpeechSynthesisVoice? = {
+        let allVoices = AVSpeechSynthesisVoice.speechVoices()
+        let enVoices = allVoices.filter { $0.language.hasPrefix("en") }
+
+        // Prefer premium quality voices (user-downloaded enhanced voices)
+        if let premium = enVoices.first(where: { $0.quality == .premium }) {
+            return premium
+        }
+        // Fall back to enhanced quality
+        if let enhanced = enVoices.first(where: { $0.quality == .enhanced }) {
+            return enhanced
+        }
+        // Fall back to any en-US voice
+        return AVSpeechSynthesisVoice(language: "en-US")
+    }()
     @State private var isSpeakingPrompt = false
     @State private var ttsReady = false
 
@@ -624,7 +628,7 @@ struct TimedPracticeView: View {
 
     // Video recording (Coach mode only)
     @StateObject private var videoManager = VideoRecordingManager.shared
-    @State private var enableVideoRecording = false
+    @AppStorage("timedPractice.enableVideoRecording") private var enableVideoRecording: Bool = false
     @State private var showVideoPlayback = false
 
     // Immersive state
@@ -708,6 +712,17 @@ struct TimedPracticeView: View {
             }
             speechVM.prepareForInteractiveUse()
             prewarmTTS()
+
+            // If video recording was previously enabled, prepare the camera session
+            // prepareSession() starts the session internally before publishing captureSession
+            if enableVideoRecording && videoManager.captureSession == nil {
+                let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                if hasPermission {
+                    _ = await videoManager.prepareSession()
+                } else {
+                    enableVideoRecording = false
+                }
+            }
         }
         .onDisappear { cleanup() }
         .sheet(isPresented: $showPaywall) {
@@ -734,13 +749,25 @@ struct TimedPracticeView: View {
                 feedbackCategories: evaluation?.categories ?? [],
                 strongMoments: evaluation?.strongMoments ?? [],
                 weakMoments: evaluation?.weakMoments ?? [],
+                durationAssessment: evaluation?.durationAssessment ?? .onTarget,
+                targetRange: evaluation?.targetRange ?? practiceSettings.timedDifficulty.targetRange,
                 onSelectPracticeMode: {
                     showSummary = false
-                    if let goHome { goHome() } else { dismiss() }
+                    newPromptSession()
                 },
                 onHome: {
+                    // Dismiss the summary first, then reset the navigation stack.
+                    // Order matters: showSummary must be false before navigationPath
+                    // is cleared, otherwise the isPresented binding can re-push.
                     showSummary = false
-                    if let goHome { goHome() } else { dismiss() }
+                    if let goHome {
+                        // Small delay to let the binding settle before clearing the path
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            goHome()
+                        }
+                    } else {
+                        dismiss()
+                    }
                 },
                 onPracticeAgain: {
                     showSummary = false
@@ -820,29 +847,6 @@ struct TimedPracticeView: View {
 
                 // Settings card
                 settingsCard
-
-                // Camera preview (when video recording is enabled)
-                if enableVideoRecording, let session = videoManager.captureSession {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Camera Preview")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-
-                        CameraPreviewView(session: session)
-                            .frame(height: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                    .stroke(Color.pink.opacity(0.2), lineWidth: 1)
-                            )
-
-                        Text("You'll see yourself full-screen during the session")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 4)
-                    }
-                }
 
                 Spacer(minLength: 100)
             }
@@ -984,12 +988,16 @@ struct TimedPracticeView: View {
     private func applyModeDefaults(_ mode: ImpromptuSetupMode) {
         switch mode {
         case .classic:
+            guard !classicInitialized else { return }
+            classicInitialized = true
             showLiveTranscript = false
             showFillerWords = false
             keepPromptVisible = false
             timerDisplay = .none
             enableThinkingTime = true
         case .coach:
+            guard !coachInitialized else { return }
+            coachInitialized = true
             showLiveTranscript = true
             showFillerWords = true
             keepPromptVisible = true
@@ -1001,9 +1009,9 @@ struct TimedPracticeView: View {
 
     private var settingsCard: some View {
         SettingsCardView(
-            selectedMode: $selectedMode,
+            selectedMode: Binding(get: { selectedMode }, set: { selectedMode = $0 }),
             keepPromptVisible: $keepPromptVisible,
-            timerDisplay: $timerDisplay,
+            timerDisplay: Binding(get: { timerDisplay }, set: { timerDisplay = $0 }),
             enableThinkingTime: $enableThinkingTime,
             showLiveTranscript: $showLiveTranscript,
             showFillerWords: $showFillerWords,
@@ -1134,21 +1142,22 @@ struct TimedPracticeView: View {
 
     // MARK: - Speaking Phase
 
-    /// Whether Coach mode's full-screen camera is active
+    /// Whether full-screen camera background is active.
+    /// True whenever recording is enabled and the camera session is prepared — any mode.
     private var isFullScreenCameraActive: Bool {
-        enableVideoRecording && videoManager.isRecording && videoManager.captureSession != nil && selectedMode == .coach
+        enableVideoRecording && videoManager.captureSession != nil
     }
 
     private var speakingContent: some View {
         ZStack {
-            // Full-screen camera background (Coach mode with video)
+            // Full-screen camera background (any mode with recording enabled)
             if isFullScreenCameraActive, let session = videoManager.captureSession {
                 CameraPreviewView(session: session)
                     .ignoresSafeArea()
                     .overlay {
-                        // Dark gradient vignette so HUD text is readable over any background
+                        // Top-to-bottom vignette for readability
                         LinearGradient(
-                            colors: [.black.opacity(0.6), .clear, .clear, .black.opacity(0.7)],
+                            colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.75)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -1158,7 +1167,7 @@ struct TimedPracticeView: View {
 
             VStack(spacing: 0) {
                 if isFullScreenCameraActive {
-                    coachHUDLayout
+                    cameraOverlayLayout
                 } else if showLiveTranscript {
                     speakingTranscriptLayout
                 } else {
@@ -1168,13 +1177,13 @@ struct TimedPracticeView: View {
         }
     }
 
-    // MARK: - Coach HUD Layout (full-screen camera with overlay)
+    // MARK: - Camera Overlay Layout (full-screen camera with minimal overlay)
 
-    private var coachHUDLayout: some View {
+    private var cameraOverlayLayout: some View {
         VStack(spacing: 0) {
-            // Top bar: REC indicator + timing state
-            HStack {
-                // REC badge
+            // Top bar: minimal — REC dot + timing + flip
+            HStack(spacing: 12) {
+                // REC indicator (no "LIVE" label)
                 HStack(spacing: 6) {
                     Circle()
                         .fill(.red)
@@ -1183,100 +1192,128 @@ struct TimedPracticeView: View {
                         .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: recPulse)
                         .onAppear { recPulse = true }
                     Text("REC")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.8))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(.red.opacity(0.25), in: Capsule())
-
-                Spacer()
-
-                // Timing state badge
-                Text(timingState.spotlightLabel)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(timingState == .neutral ? .white.opacity(0.7) : timingState.vividColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.12), in: Capsule())
-                    .contentTransition(.interpolate)
-                    .animation(.easeInOut(duration: 0.3), value: timingState)
+                .background(Color.red.opacity(0.2), in: Capsule())
 
                 if speechVM.connectionError != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
                         .foregroundStyle(.red)
-                        .padding(.leading, 4)
                 }
+
+                Spacer()
+
+                // Flip camera
+                Button { videoManager.flipCamera() } label: {
+                    Image(systemName: "camera.rotate")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial.opacity(0.3), in: Circle())
+                }
+                .buttonStyle(.pressable)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            // Compact timing bar
-            timingIndicator
-                .padding(.top, 8)
-
-            // Timer
-            Text(formattedTime(elapsedSeconds))
-                .font(.system(size: 56, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
-                .contentTransition(.numericText())
-                .padding(.top, 12)
+            .padding(.top, 8)
 
             Spacer()
 
-            // Bottom HUD: prompt + filler count + transcript snippet
-            VStack(spacing: 10) {
-                // Optional prompt pill
-                if keepPromptVisible {
-                    HStack(spacing: 8) {
-                        Image(systemName: "quote.opening")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.4))
-                        Text(question)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.8))
-                            .lineLimit(2)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                }
+            // Bottom overlay panel — elegant, glass-style
+            cameraBottomPanel
+        }
+    }
 
-                // Live transcript snippet (last few words)
-                if showLiveTranscript {
-                    Text(speechVM.highlightedText)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial.opacity(0.5), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                }
-
-                // Filler words chip
-                if showFillerWords && speechVM.fillerWordCount > 0 {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color.red.opacity(0.6))
-                            .frame(width: 6, height: 6)
-                        Text("Fillers")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text("\(speechVM.fillerWordCount)")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.red)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial.opacity(0.5), in: Capsule())
+    private var cameraBottomPanel: some View {
+        VStack(spacing: 0) {
+            // Timing progress bar — thin accent line
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(timingState == .neutral ? .white.opacity(0.4) : timingState.vividColor)
+                        .frame(width: geo.size.width * CGFloat(min(elapsedSeconds, totalDuration)) / CGFloat(max(totalDuration, 1)))
+                        .animation(.easeInOut(duration: 0.5), value: elapsedSeconds)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
+            .frame(height: 2)
+
+            VStack(spacing: 10) {
+                // Timer — large, cinematic
+                Text(formattedTime(elapsedSeconds))
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+
+                // Timing state label
+                if timingState != .neutral {
+                    Text(timingState.spotlightLabel)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(timingState.vividColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(timingState.vividColor.opacity(0.15), in: Capsule())
+                        .contentTransition(.interpolate)
+                        .transition(.opacity.combined(with: .scale))
+                }
+
+                // Optional prompt — compact
+                if keepPromptVisible {
+                    Text(question)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                }
+
+                // Filler count — subtle
+                if showFillerWords && speechVM.fillerWordCount > 0 {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Color.red.opacity(0.6))
+                            .frame(width: 5, height: 5)
+                        Text("Fillers")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.3))
+                        Text("\(speechVM.fillerWordCount)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
+                }
+
+                // Inline stop button — integrated into the panel
+                Button(action: { stopSession() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12))
+                        Text("End")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 10)
+                    .background(Color.red.opacity(0.8), in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .disabled(isStopping)
+                .opacity(isStopping ? 0.5 : 1)
+            }
+            .padding(.top, 14)
+            .padding(.bottom, 20)
+            .padding(.horizontal, 24)
         }
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.45), .black.opacity(0.7)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     // MARK: - Coach / Transcript Layout
@@ -1616,31 +1653,42 @@ struct TimedPracticeView: View {
     }
 
     private func speakPromptAloud() {
-        // Ensure delegate is wired up
-        if ttsEngine.delegate == nil {
-            configureTTSDelegate()
-        }
-
         // Toggle off if already speaking
-        if ttsEngine.isSpeaking {
+        let speaker = IMMessageSpeaker.shared
+        if ttsEngine.isSpeaking || isSpeakingPrompt {
             ttsEngine.stopSpeaking(at: .immediate)
+            speaker.stop()
             isSpeakingPrompt = false
             return
         }
 
-        // Activate audio session before speaking — this is the root fix for
-        // delayed / silent TTS on first invocation
-        activateTTSAudioSession()
-
-        let utterance = AVSpeechUtterance(string: question)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
-        utterance.pitchMultiplier = 1.04
-        utterance.prefersAssistiveTechnologySettings = false
-        // Use prewarmed voice to avoid first-call latency
-        utterance.voice = prewarmedVoice
-
         isSpeakingPrompt = true
-        ttsEngine.speak(utterance)
+
+        // Try cloud TTS first (natural, high quality voice) with on-device fallback
+        Task {
+            let didPlayCloud = await speaker.speakPrompt(question)
+            if didPlayCloud {
+                // Cloud audio played successfully — wait for it to finish
+                // The speaker's AVAudioPlayer will handle playback completion
+                await MainActor.run { isSpeakingPrompt = false }
+                return
+            }
+
+            // Fallback: on-device AVSpeechSynthesizer
+            await MainActor.run {
+                if ttsEngine.delegate == nil { configureTTSDelegate() }
+                activateTTSAudioSession()
+
+                let utterance = AVSpeechUtterance(string: question)
+                utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
+                utterance.pitchMultiplier = 0.98
+                utterance.preUtteranceDelay = 0.15
+                utterance.postUtteranceDelay = 0.3
+                utterance.prefersAssistiveTechnologySettings = false
+                utterance.voice = prewarmedVoice
+                ttsEngine.speak(utterance)
+            }
+        }
     }
 
     /// Prewarm TTS engine with a silent utterance so the first real speak is instant.
@@ -1848,44 +1896,47 @@ struct TimedPracticeView: View {
         let isImmersive = phase == .speaking && !showLiveTranscript && !isFullScreenCameraActive
         let isCamera = isFullScreenCameraActive
 
-        return VStack(spacing: 8) {
-            Button(action: { stopSession() }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "stop.fill")
-                        .font(.subheadline)
-                    Text("End Session")
-                        .font(.headline.weight(.semibold))
+        return Group {
+            if isCamera {
+                // Camera mode: stop button is in the overlay panel, no bottom bar needed
+                Color.clear.frame(height: 0)
+            } else {
+                VStack(spacing: 8) {
+                    Button(action: { stopSession() }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "stop.fill")
+                                .font(.subheadline)
+                            Text("End Session")
+                                .font(.headline.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                    }
+                    .background(
+                        isImmersive
+                            ? AnyShapeStyle(Color.white.opacity(0.15))
+                            : AnyShapeStyle(Color.red),
+                        in: Capsule()
+                    )
+                    .foregroundStyle(.white)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(isImmersive ? 0.2 : 0), lineWidth: 1)
+                    )
+                    .buttonStyle(.pressable)
+                    .disabled(isStopping)
+                    .opacity(isStopping ? 0.5 : 1)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+                .background(
+                    showLiveTranscript
+                        ? AnyShapeStyle(.regularMaterial)
+                        : AnyShapeStyle(Color.clear)
+                )
             }
-            .background(
-                isImmersive
-                    ? AnyShapeStyle(Color.white.opacity(0.15))
-                    : isCamera
-                        ? AnyShapeStyle(Color.red.opacity(0.85))
-                        : AnyShapeStyle(Color.red),
-                in: Capsule()
-            )
-            .foregroundStyle(.white)
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(isImmersive || isCamera ? 0.2 : 0), lineWidth: 1)
-            )
-            .buttonStyle(.pressable)
-            .disabled(isStopping)
-            .opacity(isStopping ? 0.5 : 1)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 16)
-        .background(
-            isCamera
-                ? AnyShapeStyle(.ultraThinMaterial)
-                : showLiveTranscript
-                    ? AnyShapeStyle(.regularMaterial)
-                    : AnyShapeStyle(Color.clear)
-        )
     }
 
     // MARK: - Actions
@@ -1966,12 +2017,11 @@ struct TimedPracticeView: View {
         speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
 
-        // Start video recording if enabled (Coach mode, premium only)
+        // Start video recording if enabled (any mode)
         // Camera session was already prepared when the user toggled the switch
-        if enableVideoRecording && selectedMode == .coach && premium.canRecordVideo {
+        if enableVideoRecording {
             Task {
                 if videoManager.captureSession == nil {
-                    // Fallback: prepare if not already done
                     let hasPermission = await VideoRecordingManager.requestCameraPermission()
                     guard hasPermission else { return }
                     let ready = await videoManager.prepareSession()
@@ -2007,6 +2057,14 @@ struct TimedPracticeView: View {
         if videoManager.isRecording { videoManager.stopRecording() }
 
         Task {
+            // Wait for video recording delegate to finish writing the file
+            // The delegate sets recordingURL when the file is ready
+            if enableVideoRecording {
+                for _ in 0..<20 {
+                    if videoManager.recordingURL != nil { break }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
             try? await Task.sleep(for: .milliseconds(650))
             await MainActor.run {
                 let result = PracticeEvaluator.evaluateTimedPractice(
@@ -2047,12 +2105,23 @@ struct TimedPracticeView: View {
         }
     }
 
+    /// Retry with the same prompt — skip setup and go straight to thinking/speaking.
     private func restartSession() {
         cleanup()
-        resetState()
+        resetState(keepPrompt: true)
+        // Go straight into the session flow (skip setup page)
+        launchSessionFlow()
     }
 
-    private func resetState() {
+    /// Pick a new random prompt and start a new session.
+    private func newPromptSession() {
+        cleanup()
+        resetState(keepPrompt: false)
+        question = PracticeTopics.random(theme: selectedTheme)
+        launchSessionFlow()
+    }
+
+    private func resetState(keepPrompt: Bool) {
         speakingTask?.cancel()
         thinkingTask?.cancel()
         speechVM.resetCurrentSession()
@@ -2066,7 +2135,34 @@ struct TimedPracticeView: View {
         milestoneScale = 1.0
         recPulse = false
         showCelebration = false
+        // Reset video recording state for the new session
+        videoManager.cleanup()
+        // Don't reset phase yet — launchSessionFlow will set it
         phase = .setup
+    }
+
+    /// Shared logic for starting a session from retry/new prompt flows.
+    /// Bypasses the setup page guard in beginSession().
+    private func launchSessionFlow() {
+        if ttsEngine.delegate == nil { configureTTSDelegate() }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+        if useThinkingTime {
+            thinkingCountdown = 15
+            withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+            startThinkingCountdown()
+        } else if !keepPromptVisible {
+            withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                if phase == .briefReveal {
+                    await MainActor.run { startSpeaking() }
+                }
+            }
+        } else {
+            startSpeaking()
+        }
     }
 
     private func cleanup() {

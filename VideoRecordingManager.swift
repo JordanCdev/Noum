@@ -11,6 +11,9 @@ import UIKit
 #if canImport(AVKit)
 import AVKit
 #endif
+#if canImport(Photos)
+import Photos
+#endif
 
 #if canImport(AVFoundation) && canImport(UIKit)
 
@@ -25,7 +28,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published var recordingError: String?
 
-    private(set) var captureSession: AVCaptureSession?
+    @Published private(set) var captureSession: AVCaptureSession?
     private var movieOutput: AVCaptureMovieFileOutput?
     private var durationTimer: Task<Void, Never>?
 
@@ -66,10 +69,49 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         }
         session.addOutput(output)
 
-        captureSession = session
         movieOutput = output
 
+        // Start the session on a background thread BEFORE publishing it.
+        // This ensures the preview layer receives video frames immediately when
+        // SwiftUI renders the CameraPreviewView, preventing the flash-then-disappear.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                session.startRunning()
+                continuation.resume()
+            }
+        }
+
+        captureSession = session
+
         return true
+    }
+
+    // MARK: - Camera Flip
+
+    @Published private(set) var usingFrontCamera: Bool = true
+
+    func flipCamera() {
+        guard let session = captureSession else { return }
+
+        // Find the current video input
+        guard let currentInput = session.inputs
+            .compactMap({ $0 as? AVCaptureDeviceInput })
+            .first(where: { $0.device.hasMediaType(.video) }) else { return }
+
+        let newPosition: AVCaptureDevice.Position = usingFrontCamera ? .back : .front
+        guard let newCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: newPosition),
+              let newInput = try? AVCaptureDeviceInput(device: newCamera) else { return }
+
+        session.beginConfiguration()
+        session.removeInput(currentInput)
+        if session.canAddInput(newInput) {
+            session.addInput(newInput)
+            usingFrontCamera = !usingFrontCamera
+        } else {
+            // Fallback: re-add original input
+            session.addInput(currentInput)
+        }
+        session.commitConfiguration()
     }
 
     // MARK: - Start / Stop
@@ -80,24 +122,24 @@ final class VideoRecordingManager: NSObject, ObservableObject {
             return
         }
 
-        if !session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async {
-                session.startRunning()
-            }
-        }
-
         let filename = "noum_session_\(Int(Date().timeIntervalSince1970)).mov"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
 
-        // Small delay to ensure session is running
-        Task {
-            try? await Task.sleep(for: .milliseconds(300))
+        // Ensure session is running, then begin recording on a background thread.
+        // AVCaptureMovieFileOutput.startRecording must be called after the session
+        // is actually running — we use a background dispatch to avoid blocking main.
+        Task.detached(priority: .userInitiated) {
+            if !session.isRunning {
+                session.startRunning()
+            }
+            // Brief yield to let the session stabilize
+            try? await Task.sleep(for: .milliseconds(200))
             output.startRecording(to: url, recordingDelegate: self)
-            await MainActor.run {
-                isRecording = true
-                recordingDuration = 0
-                recordingURL = nil
-                startDurationTimer()
+            await MainActor.run { [weak self] in
+                self?.isRecording = true
+                self?.recordingDuration = 0
+                self?.recordingURL = nil
+                self?.startDurationTimer()
             }
         }
     }
@@ -109,10 +151,46 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         isRecording = false
     }
 
-    /// Save the current recording to Documents for permanent storage
-    @discardableResult
-    func saveRecording() -> URL? {
-        guard let sourceURL = recordingURL else { return nil }
+    @Published private(set) var isSaving = false
+    @Published var savedRecordingURL: URL?
+
+    /// Save the current recording to the Photos library for permanent storage.
+    func saveRecording() {
+        guard let sourceURL = recordingURL else {
+            recordingError = "No recording to save."
+            return
+        }
+        guard !isSaving else { return }
+        isSaving = true
+
+        // Save to Photos library
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if status == .authorized || status == .limited {
+                    PHPhotoLibrary.shared().performChanges({
+                        PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: sourceURL)
+                    }) { success, error in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.isSaving = false
+                            if success {
+                                self.savedRecordingURL = sourceURL
+                            } else {
+                                self.recordingError = "Could not save to Photos: \(error?.localizedDescription ?? "Unknown error")"
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback: save to Documents
+                    self.isSaving = false
+                    self.saveToDocuments(sourceURL: sourceURL)
+                }
+            }
+        }
+    }
+
+    private func saveToDocuments(sourceURL: URL) {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let savedDir = docs.appendingPathComponent("Recordings", isDirectory: true)
         try? FileManager.default.createDirectory(at: savedDir, withIntermediateDirectories: true)
@@ -121,14 +199,10 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         do {
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
             savedRecordingURL = destURL
-            return destURL
         } catch {
             recordingError = "Could not save recording: \(error.localizedDescription)"
-            return nil
         }
     }
-
-    @Published var savedRecordingURL: URL?
 
     func cleanup() {
         stopRecording()
@@ -185,7 +259,15 @@ extension VideoRecordingManager: AVCaptureFileOutputRecordingDelegate {
     nonisolated func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
         Task { @MainActor in
             if let error {
-                recordingError = "Recording failed: \(error.localizedDescription)"
+                // AVFoundation often reports a "stopped" error even when the file was written successfully.
+                // Check if the file exists and has content before treating it as a real failure.
+                let fileExists = FileManager.default.fileExists(atPath: outputFileURL.path)
+                let fileSize = (try? FileManager.default.attributesOfItem(atPath: outputFileURL.path)[.size] as? UInt64) ?? 0
+                if fileExists && fileSize > 0 {
+                    recordingURL = outputFileURL
+                } else {
+                    recordingError = "Recording failed: \(error.localizedDescription)"
+                }
             } else {
                 recordingURL = outputFileURL
             }
@@ -196,38 +278,45 @@ extension VideoRecordingManager: AVCaptureFileOutputRecordingDelegate {
 
 // MARK: - Camera Preview (UIViewRepresentable)
 
+/// A stable camera preview that survives SwiftUI re-renders.
+/// The UIView is created once in `makeUIView` and reused; `updateUIView` handles
+/// session swaps without recreating the preview layer, preventing flash/disappear artifacts.
 @available(iOS 17.0, *)
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
 
-    func makeUIView(context: Context) -> UIView {
+    func makeUIView(context: Context) -> CameraPreviewUIView {
         let view = CameraPreviewUIView()
         view.backgroundColor = .black
         view.clipsToBounds = true
-
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
-        view.previewLayer = previewLayer
-        view.layer.addSublayer(previewLayer)
-
-        // Start the session on a background thread
-        if !session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async {
-                session.startRunning()
-            }
-        }
-
+        view.attachSession(session)
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        if let view = uiView as? CameraPreviewUIView {
-            view.previewLayer?.frame = view.bounds
+    func updateUIView(_ uiView: CameraPreviewUIView, context: Context) {
+        // Only swap the layer's session if it actually changed (identity check)
+        if uiView.previewLayer?.session !== session {
+            uiView.attachSession(session)
         }
+        // Ensure the layer fills the view on every layout pass
+        uiView.previewLayer?.frame = uiView.bounds
     }
 
     class CameraPreviewUIView: UIView {
         var previewLayer: AVCaptureVideoPreviewLayer?
+
+        func attachSession(_ session: AVCaptureSession) {
+            // Reuse existing layer when possible — just swap the session
+            if let existing = previewLayer {
+                existing.session = session
+            } else {
+                let layer = AVCaptureVideoPreviewLayer(session: session)
+                layer.videoGravity = .resizeAspectFill
+                self.layer.addSublayer(layer)
+                previewLayer = layer
+            }
+            setNeedsLayout()
+        }
 
         override func layoutSubviews() {
             super.layoutSubviews()

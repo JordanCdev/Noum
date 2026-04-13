@@ -221,12 +221,13 @@ struct SectionHeader<Trailing: View>: View {
 }
 
 /// Button style that provides a subtle press-down effect for tactile feedback.
+/// Uses only opacity (no scaleEffect) to avoid shrinking the hit-test area on press.
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .opacity(configuration.isPressed ? 0.85 : 1.0)
-            .animation(.snappySpring, value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 

@@ -84,7 +84,9 @@ final class PremiumManager: ObservableObject {
 
     /// Fallback purchase for when StoreKit products aren't loaded (simulated)
     func purchaseSimulated() {
+        #if DEBUG
         upgradeToPremium()
+        #endif
     }
 
     // MARK: - Restore
@@ -373,6 +375,7 @@ struct PaywallView: View {
                         featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend Analytics", description: "Track improvement across sessions")
                         featureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges", description: "Challenge friends to the same prompt")
                         featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI Video Analysis", description: "Nonverbal coaching — 5 analyses/month")
+                        featureRow(icon: "brain.fill", title: "100 AI Coaching Reads", description: "5× more monthly AI analyses than free tier")
                         featureRow(icon: "tray.full.fill", title: "Saved Transcripts", description: "Review and compare past sessions")
                     }
                     .padding(4)
@@ -572,12 +575,20 @@ struct PaywallView: View {
                     }
                 }
             } else {
-                // Products not available (sandbox/dev) — simulate purchase
+                // Products not available
+                #if DEBUG
+                // Simulate purchase in development
                 try? await Task.sleep(for: .seconds(1.0))
                 await MainActor.run {
                     premium.purchaseSimulated()
                     isPurchasing = false
                 }
+                #else
+                await MainActor.run {
+                    errorMessage = "Unable to connect to the App Store. Please check your connection and try again."
+                    isPurchasing = false
+                }
+                #endif
             }
         }
     }

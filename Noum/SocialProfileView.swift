@@ -249,6 +249,9 @@ struct SocialProfileView: View {
             Text("Challenge a friend to the same prompt. Both speak, then compare scores.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Text("Practice mode — opponent scores are simulated")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
 
             let active = challenges.activeAsyncChallenges
             if active.isEmpty {
@@ -882,9 +885,9 @@ struct SocialProfileView: View {
     }
 
     private func shareInviteLink() {
-        let url = "https://noum.app/invite"
+        let url = "https://apps.apple.com/app/noum/id6740486498"
         let activityVC = UIActivityViewController(
-            activityItems: ["Join me on Noum — a speaking practice app that makes you a better communicator.", URL(string: url)!],
+            activityItems: ["Practice speaking with me on Noum — it's like a gym for your voice.", URL(string: url)!],
             applicationActivities: nil
         )
         presentActivity(activityVC)
@@ -948,6 +951,9 @@ struct AsyncChallengeDetailSheet: View {
                                 reaction: challenge.creatorReaction
                             )
                         }
+                        Text("Opponent score is simulated for practice")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
 
                         // Reaction buttons
                         VStack(spacing: 10) {
@@ -1062,7 +1068,7 @@ struct ChallengePickFriendSheet: View {
                             Image(systemName: "bolt.circle.fill")
                                 .font(.system(size: 48))
                                 .foregroundStyle(.teal)
-                            Text("Speak-off Created!")
+                            Text("Practice Speak-off Created!")
                                 .font(.title2.weight(.bold))
                         }
 

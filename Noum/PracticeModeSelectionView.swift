@@ -470,12 +470,12 @@ struct PracticeModeSelectionView: View {
         case .timed:
             TimedPracticeView(goHome: goHome)
         case .suddenDeath:
-            SuddenDeathPracticeView()
+            SuddenDeathPracticeView(goHome: goHome)
         case .ahCounter:
-            AhCounterView()
+            AhCounterView(goHome: goHome)
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                IMPracticeView()
+                IMPracticeView(goHome: goHome)
             } else {
                 TimedPracticeView(goHome: goHome)
             }

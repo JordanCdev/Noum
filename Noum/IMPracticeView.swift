@@ -7,6 +7,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct IMPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    var goHome: (() -> Void)?
     @StateObject private var speechVM: SpeechRecognizerViewModel
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
@@ -45,9 +46,11 @@ struct IMPracticeView: View {
     private let evaluationService: IMConversationEvaluatorServicing = IMConversationEvaluationService()
 
     init(
+        goHome: (() -> Void)? = nil,
         preferredScenario: IMConversationScenario? = nil,
         preferredTone: IMTargetTone? = nil
     ) {
+        self.goHome = goHome
         _speechVM = StateObject(wrappedValue: SpeechRecognizerViewModel(preloadOnInit: false))
         self.preferredScenario = preferredScenario
         self.preferredTone = preferredTone
@@ -237,11 +240,13 @@ struct IMPracticeView: View {
                 ), 
                 onSelectPracticeMode: {
                     showSummary = false
-                    dismiss(times: 2)
+                    if let goHome { goHome() } else { dismiss() }
                 },
                 onHome: {
                     showSummary = false
-                    dismiss(times: 3)
+                    if let goHome {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { goHome() }
+                    } else { dismiss() }
                 },
                 onPracticeAgain: {
                     showSummary = false
@@ -1237,13 +1242,6 @@ struct IMPracticeView: View {
             .filter { !$0.normalized.isEmpty }
     }
 
-    private func dismiss(times: Int) {
-        guard times > 0 else { return }
-        withAnimation(.none) { dismiss() }
-        if times > 1 {
-            DispatchQueue.main.async { dismiss(times: times - 1) }
-        }
-    }
 }
 
 private enum SetupStep {

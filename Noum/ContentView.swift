@@ -1136,12 +1136,13 @@ struct ContentView: View {
         case .timed:
             TimedPracticeView(goHome: home)
         case .suddenDeath:
-            SuddenDeathPracticeView()
+            SuddenDeathPracticeView(goHome: home)
         case .ahCounter:
-            AhCounterView()
+            AhCounterView(goHome: home)
         case .imConversation:
             if IMModeAvailability.isAvailable {
                 IMPracticeView(
+                    goHome: home,
                     preferredScenario: suggestion.recommendedScenario,
                     preferredTone: suggestion.recommendedTone
                 )

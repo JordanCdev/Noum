@@ -236,7 +236,7 @@ private extension BackendSyncManager {
                 data: data,
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func syncFirebaseXP(_ xp: Int, accountID: String, providerRawValue: String) async {
@@ -247,7 +247,7 @@ private extension BackendSyncManager {
                 data: ["xp": xp],
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func syncFirebaseSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
@@ -259,7 +259,7 @@ private extension BackendSyncManager {
                 data: data,
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func syncFirebaseRecommendationState(
@@ -280,7 +280,7 @@ private extension BackendSyncManager {
                 ],
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func deleteFirebaseAccount(accountID: String) async {
@@ -292,7 +292,7 @@ private extension BackendSyncManager {
             try await deleteDocument(userRef.collection("progress").document("main"))
             try await deleteDocument(userRef.collection("recommendations").document("state"))
             try await deleteDocument(userRef)
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func ensureFirebaseUserDocument(accountID: String, providerRawValue: String) async {
@@ -307,7 +307,7 @@ private extension BackendSyncManager {
                 ],
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func userDocument(accountID: String) -> DocumentReference {
