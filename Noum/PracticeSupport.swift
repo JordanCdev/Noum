@@ -3240,6 +3240,7 @@ final class AISettingsManager: ObservableObject {
 
     private let countKey = "aiMonthlyAnalysisCount"
     private let monthKey = "aiMonthlyAnalysisMonth"
+    private let disclosureKeyPrefix = "hasAcknowledgedAIDisclosure."
 
     // MARK: - Usage Tiers
     // Premium: generous 100/month — most active users won't hit this.
@@ -3257,7 +3258,7 @@ final class AISettingsManager: ObservableObject {
     }
 
     var activeProvider: AIProvider? {
-        [.gemini, .openAI, .deepSeek].first(where: hasAPIKey(for:))
+        [.gemini, .openAI].first(where: hasAPIKey(for:))
     }
 
     /// Current monthly limit based on subscription tier.
@@ -3317,6 +3318,28 @@ final class AISettingsManager: ObservableObject {
         if savedMonth != currentMonth {
             UserDefaults.standard.set(currentMonth, forKey: monthKey)
             analysisCountThisMonth = 0
+        }
+    }
+
+    // MARK: - AI Transcript Disclosure
+
+    /// Whether the current user has acknowledged that speech transcripts are sent to cloud AI.
+    var hasAcknowledgedAIDisclosure: Bool {
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        return UserDefaults.standard.bool(forKey: disclosureKeyPrefix + accountID)
+    }
+
+    func acknowledgeAIDisclosure() {
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        UserDefaults.standard.set(true, forKey: disclosureKeyPrefix + accountID)
+    }
+
+    /// The user-facing name of the active AI provider (e.g., "Google Gemini", "OpenAI").
+    var activeProviderDisplayName: String {
+        switch activeProvider {
+        case .gemini: return "Google Gemini"
+        case .openAI: return "OpenAI"
+        default: return "a cloud AI provider"
         }
     }
 
@@ -5313,6 +5336,11 @@ final class PracticeSessionStore: ObservableObject {
         sessions[index].aiCoachFeedback = feedback
         persist()
         syncSessionIfPossible(sessions[index])
+    }
+
+    func deleteSession(id: UUID) {
+        sessions.removeAll { $0.id == id }
+        persist()
     }
 
     func replaceFromRemote(_ remoteSessions: [PracticeSession]) {

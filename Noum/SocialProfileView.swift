@@ -832,8 +832,8 @@ struct SocialProfileView: View {
 
     private var contactsPickerView: some View {
         NavigationStack {
-            ContactsListView(onAdd: { name, phone in
-                friends.addFriend(name: name, phoneNumber: phone, method: .contacts)
+            ContactsListView(onAdd: { name in
+                friends.addFriend(name: name, method: .contacts)
                 challenges.recordSocialAction()
             })
             .toolbar {
@@ -1306,15 +1306,15 @@ struct AddFriendSheet: View {
 
 @available(iOS 17.0, *)
 private struct ContactsListView: View {
-    var onAdd: (String, String?) -> Void
+    var onAdd: (String) -> Void
 
-    @State private var contacts: [(name: String, phone: String?)] = []
+    @State private var contacts: [String] = []
     @State private var searchText = ""
     @State private var addedNames: Set<String> = []
 
-    var filteredContacts: [(name: String, phone: String?)] {
+    var filteredContacts: [String] {
         if searchText.isEmpty { return contacts }
-        return contacts.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return contacts.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
 
     var body: some View {
@@ -1330,27 +1330,20 @@ private struct ContactsListView: View {
                 .padding(.vertical, 40)
                 .listRowSeparator(.hidden)
             } else {
-                ForEach(filteredContacts, id: \.name) { contact in
+                ForEach(filteredContacts, id: \.self) { name in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(contact.name)
-                                .font(.subheadline.weight(.medium))
-                            if let phone = contact.phone {
-                                Text(phone)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text(name)
+                            .font(.subheadline.weight(.medium))
 
                         Spacer()
 
-                        if addedNames.contains(contact.name) {
+                        if addedNames.contains(name) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                         } else {
                             Button {
-                                onAdd(contact.name, contact.phone)
-                                addedNames.insert(contact.name)
+                                onAdd(name)
+                                addedNames.insert(name)
                             } label: {
                                 Text("Add")
                                     .font(.caption.weight(.semibold))
@@ -1373,18 +1366,17 @@ private struct ContactsListView: View {
 
     private func loadContacts() async {
         let store = CNContactStore()
-        let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
+        let keys = [CNContactGivenNameKey, CNContactFamilyNameKey] as [CNKeyDescriptor]
         let request = CNContactFetchRequest(keysToFetch: keys)
         request.sortOrder = .givenName
 
-        var results: [(name: String, phone: String?)] = []
+        var results: [String] = []
 
         do {
             try store.enumerateContacts(with: request) { contact, _ in
                 let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                let phone = contact.phoneNumbers.first?.value.stringValue
-                results.append((name: name, phone: phone))
+                results.append(name)
             }
         } catch {
             // Contact enumeration failed

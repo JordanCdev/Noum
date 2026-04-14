@@ -19,6 +19,7 @@ struct SessionHistoryView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var selectedAchievementID: String?
     @State private var selectedModeFilter: PracticeMode? = nil
+    @State private var sessionToDelete: PracticeSession?
     @Environment(\.dismiss) private var dismiss
 
     private var sessions: [PracticeSession] {
@@ -167,6 +168,13 @@ struct SessionHistoryView: View {
                                 sessionCard(session)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    sessionToDelete = session
+                                } label: {
+                                    Label("Delete Session", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .padding(Spacing.lg)
@@ -180,6 +188,20 @@ struct SessionHistoryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
             }
+        }
+        .alert("Delete Session?", isPresented: .init(
+            get: { sessionToDelete != nil },
+            set: { if !$0 { sessionToDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let session = sessionToDelete {
+                    sessionStore.deleteSession(id: session.id)
+                    sessionToDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { sessionToDelete = nil }
+        } message: {
+            Text("This permanently removes this practice session from your history. This cannot be undone.")
         }
     }
 

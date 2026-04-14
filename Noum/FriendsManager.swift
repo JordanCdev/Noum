@@ -8,7 +8,6 @@ import SwiftUI
 struct NoumFriend: Codable, Identifiable, Equatable {
     let id: UUID
     var displayName: String
-    var phoneNumber: String?
     var addedAt: Date
     var addedVia: AddMethod
 
@@ -51,11 +50,10 @@ final class FriendsManager: ObservableObject {
         persist()
     }
 
-    func addFriend(name: String, phoneNumber: String? = nil, method: NoumFriend.AddMethod = .manual) {
+    func addFriend(name: String, method: NoumFriend.AddMethod = .manual) {
         let friend = NoumFriend(
             id: UUID(),
             displayName: name,
-            phoneNumber: phoneNumber,
             addedAt: Date(),
             addedVia: method
         )

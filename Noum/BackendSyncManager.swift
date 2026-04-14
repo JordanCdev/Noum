@@ -119,6 +119,16 @@ actor BackendSyncManager {
             return
         }
 #endif
+        // REST backend path: send a DELETE request to remove server-side data
+        guard let request = request(
+            path: "/v1/me",
+            method: "DELETE",
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else {
+            return
+        }
+        _ = try? await URLSession.shared.data(for: request)
     }
 
     private func send<Payload: Encodable>(
@@ -286,8 +296,15 @@ private extension BackendSyncManager {
     func deleteFirebaseAccount(accountID: String) async {
         let userRef = userDocument(accountID: accountID)
         do {
-            let sessionDocs = try await getDocuments(userRef.collection("sessions").limit(to: 200))
-            try await deleteDocuments(sessionDocs.map(\.reference))
+            // Paginate session deletion to handle accounts with >200 sessions
+            let sessionsCollection = userRef.collection("sessions")
+            var hasMore = true
+            while hasMore {
+                let batch = try await getDocuments(sessionsCollection.limit(to: 200))
+                guard !batch.isEmpty else { break }
+                try await deleteDocuments(batch.map(\.reference))
+                hasMore = batch.count == 200
+            }
             try await deleteDocument(userRef.collection("profile").document("main"))
             try await deleteDocument(userRef.collection("progress").document("main"))
             try await deleteDocument(userRef.collection("recommendations").document("state"))

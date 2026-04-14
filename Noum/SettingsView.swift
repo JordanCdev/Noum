@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var showPaywall = false
     @State private var debugMessage: String?
     @State private var showDeleteConfirmation = false
+    @State private var showYourData = false
 
     var body: some View {
         ZStack {
@@ -68,18 +69,28 @@ struct SettingsView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+        .sheet(isPresented: $showYourData) {
+            NavigationStack {
+                YourDataView(isBackendConfigured: isBackendConfigured)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showYourData = false }
+                        }
+                    }
+            }
+        }
         .alert("Debug Tools", isPresented: .constant(debugMessage != nil), actions: {
             Button("OK", role: .cancel) { debugMessage = nil }
         }, message: {
             Text(debugMessage ?? "")
         })
         .alert("Delete Account?", isPresented: $showDeleteConfirmation) {
-            Button("Delete", role: .destructive) {
+            Button("Delete Everything", role: .destructive) {
                 authManager.deleteCurrentAccount()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the current account and its synced practice data from this app session.")
+            Text("This permanently deletes your account and all associated data, including practice sessions, coaching profile, AI analysis history, and any synced data on our servers. This cannot be undone.")
         }
     }
 
@@ -475,6 +486,13 @@ struct SettingsView: View {
                     actionRow(title: "Delete Account", tint: .black)
                 }
                 .buttonStyle(.plain)
+
+                Button {
+                    showYourData = true
+                } label: {
+                    actionRow(title: "Your Data", tint: .blue)
+                }
+                .buttonStyle(.plain)
             } else {
                 Text("No active session")
                     .font(.subheadline)
@@ -807,4 +825,237 @@ struct SettingsView: View {
         profileManager.addXP(evaluation.xpEarned)
     }
 }
+
+// MARK: - Your Data View
+
+@available(iOS 17.0, macOS 12.0, *)
+struct YourDataView: View {
+    var isBackendConfigured: Bool
+
+    @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var profileManager = ProfileManager.shared
+    @StateObject private var friendsManager = FriendsManager.shared
+    @State private var showExportSheet = false
+    @State private var exportURL: URL?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Your Data")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                Text("Here's what Noum stores and where. Your data is yours — you can export or delete it at any time.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                onDeviceSection
+                cloudProcessingSection
+                actionsSection
+            }
+            .padding(Spacing.lg)
+        }
+        .background(AppColor.screenBackground)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showExportSheet) {
+            if let exportURL {
+                ShareSheet(activityItems: [exportURL])
+            }
+        }
+    }
+
+    private var onDeviceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("On This Device")
+                .font(.headline)
+
+            dataRow(
+                label: "Practice Sessions",
+                detail: "\(sessionStore.sessions.count) sessions stored locally"
+            )
+            dataRow(
+                label: "Coaching Profile",
+                detail: coachingProfileStore.profile != nil ? "Active — includes your goals, preferences, and speaking context" : "Not set up"
+            )
+            dataRow(
+                label: "XP & Progress",
+                detail: "\(profileManager.xp) XP earned"
+            )
+            dataRow(
+                label: "Friends",
+                detail: "\(friendsManager.friendCount) friends (names only — no phone numbers)"
+            )
+            dataRow(
+                label: "Recordings",
+                detail: "Saved to your Photos library (not stored by Noum)"
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    private var cloudProcessingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cloud Processing")
+                .font(.headline)
+
+            Text("When you use certain features, data is sent to these services:")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            processorRow(
+                name: "AWS Transcribe",
+                purpose: "Real-time speech-to-text during practice sessions",
+                data: "Audio stream (not stored after transcription)"
+            )
+            processorRow(
+                name: "Google Gemini / OpenAI",
+                purpose: "AI coaching analysis (Coach Read)",
+                data: "Speech transcript sent for analysis (not used to train AI models)"
+            )
+            processorRow(
+                name: "Google Cloud TTS",
+                purpose: "Voice playback for prompts and coaching",
+                data: "Text sent for speech synthesis"
+            )
+            if isBackendConfigured {
+                processorRow(
+                    name: "Noum Backend / Firebase",
+                    purpose: "Syncing sessions and profile across devices",
+                    data: "Practice sessions, coaching profile, progress"
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    private var actionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Data Actions")
+                .font(.headline)
+
+            Button {
+                exportData()
+            } label: {
+                HStack {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Export All My Data")
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.blue, in: Capsule())
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+
+            Text("Exports a JSON file containing all your locally stored data — sessions, coaching profile, preferences, and progress.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    private func dataRow(label: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func processorRow(name: String, purpose: String, data: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+                .font(.subheadline.weight(.semibold))
+            Text(purpose)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Data sent: \(data)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func exportData() {
+        let accountID = AuthManager.shared.currentAccountID ?? "guest"
+        let defaults = UserDefaults.standard
+
+        var export: [String: Any] = [
+            "exportDate": ISO8601DateFormatter().string(from: Date()),
+            "accountID": accountID,
+        ]
+
+        // Coaching profile
+        if let data = defaults.data(forKey: "coachingProfile.\(accountID)"),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            export["coachingProfile"] = json
+        }
+
+        // Practice sessions
+        if let data = defaults.data(forKey: "practiceSessions.\(accountID)"),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            export["practiceSessions"] = json
+        }
+
+        // IM relationship profiles
+        if let data = defaults.data(forKey: "imRelationshipProfiles.\(accountID)"),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            export["relationshipProfiles"] = json
+        }
+
+        // Recommendations
+        if let data = defaults.data(forKey: "recommendation.pending.\(accountID)"),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            export["recommendationPending"] = json
+        }
+        if let data = defaults.data(forKey: "recommendation.outcomes.\(accountID)"),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            export["recommendationOutcomes"] = json
+        }
+
+        // XP
+        export["xp"] = defaults.integer(forKey: "profileXP.\(accountID)")
+
+        // Friends
+        if let data = defaults.data(forKey: "NoumFriendsList"),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            export["friends"] = json
+        }
+
+        // Write to temp file
+        guard let jsonData = try? JSONSerialization.data(
+            withJSONObject: export,
+            options: [.prettyPrinted, .sortedKeys]
+        ) else { return }
+
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("noum-data-export.json")
+        try? jsonData.write(to: fileURL)
+        exportURL = fileURL
+        showExportSheet = true
+    }
+}
+
+/// Minimal UIActivityViewController wrapper for sharing the export file.
+@available(iOS 17.0, *)
+private struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 #endif

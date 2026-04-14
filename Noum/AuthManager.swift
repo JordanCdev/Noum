@@ -46,7 +46,7 @@ class AuthManager: ObservableObject {
     static let shared = AuthManager()
 
     static let missingCredentialsMessage =
-        "AWS Transcribe credentials are missing. For local development, add AWS credentials to your Xcode scheme environment, Info.plist, or a local Transcribe.plist that stays out of git. Do not ship static AWS secrets in a public app."
+        "Speech-to-text is not configured. For local development, add AWS credentials to your Xcode scheme environment or a local Transcribe.plist that stays out of git."
 
     @Published var isSignedIn: Bool = false
     @Published var signInError: String?
@@ -307,26 +307,125 @@ class AuthManager: ObservableObject {
     }
 
     func credentialResolver() throws -> any AWSCredentialIdentityResolver {
-        if let cred = credentialIdentity {
+        if let cred = credentialIdentity, !isCredentialExpired {
             return try StaticAWSCredentialIdentityResolver(cred)
         }
         return DefaultAWSCredentialIdentityResolverChain()
     }
 
     func currentCredentials() async throws -> AWSCredentialIdentity {
-        if let cred = credentialIdentity {
+        // 1. Use cached credentials if available and not expired
+        if let cred = credentialIdentity, !isCredentialExpired {
             return cred
         }
+
+        // 2. Try backend-vended temporary credentials (production path)
+        if let backendCreds = try? await fetchBackendCredentials() {
+            self.credentialIdentity = backendCreds.identity
+            self.region = backendCreds.region
+            self.credentialExpiresAt = backendCreds.expiresAt
+            return backendCreds.identity
+        }
+
+        // 3. Fall back to local credentials (development path)
         if let creds = Self.loadCredentials() {
             self.credentialIdentity = creds.identity
             self.region = creds.region
             return creds.identity
         }
+
         throw NSError(
             domain: "AuthManager",
             code: 1,
             userInfo: [NSLocalizedDescriptionKey: Self.missingCredentialsMessage]
         )
+    }
+
+    // MARK: - Backend-Vended Temporary Credentials
+
+    private var credentialExpiresAt: Date?
+
+    private var isCredentialExpired: Bool {
+        guard let expiresAt = credentialExpiresAt else { return false }
+        // Refresh 60 seconds before expiry to avoid mid-stream failures
+        return Date().addingTimeInterval(60) >= expiresAt
+    }
+
+    /// Fetches short-lived AWS credentials from your backend.
+    /// Backend endpoint: GET /v1/transcribe/credentials
+    /// Expected response: { "accessKeyId": "...", "secretAccessKey": "...", "sessionToken": "...", "region": "...", "expiresAt": "ISO8601" }
+    private func fetchBackendCredentials() async throws -> (identity: AWSCredentialIdentity, region: String, expiresAt: Date)? {
+        guard let accountID = currentAccountID,
+              let providerRawValue = currentAuthProviderRawValue else {
+            return nil
+        }
+
+        let baseURLString = ProcessInfo.processInfo.environment["BACKEND_BASE_URL"]
+            ?? LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+
+        guard let baseURLString, !baseURLString.isEmpty,
+              let baseURL = URL(string: baseURLString) else {
+            return nil
+        }
+
+        let endpoint = baseURL.appending(path: "/v1/transcribe/credentials")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        request.setValue(providerRawValue, forHTTPHeaderField: "X-Noum-Auth-Provider")
+
+        let backendAPIKey = ProcessInfo.processInfo.environment["BACKEND_API_KEY"]
+            ?? LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
+        if let backendAPIKey, !backendAPIKey.isEmpty {
+            request.setValue(backendAPIKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        let decoded = try JSONDecoder().decode(TemporaryCredentialsResponse.self, from: data)
+        let identity = AWSCredentialIdentity(
+            accessKey: decoded.accessKeyId,
+            secret: decoded.secretAccessKey,
+            sessionToken: decoded.sessionToken
+        )
+        return (identity: identity, region: decoded.region, expiresAt: decoded.expiresAt)
+    }
+
+    private struct TemporaryCredentialsResponse: Decodable {
+        let accessKeyId: String
+        let secretAccessKey: String
+        let sessionToken: String
+        let region: String
+        let expiresAt: Date
+
+        enum CodingKeys: String, CodingKey {
+            case accessKeyId, secretAccessKey, sessionToken, region
+            case expiresAt, expiration
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            accessKeyId = try container.decode(String.self, forKey: .accessKeyId)
+            secretAccessKey = try container.decode(String.self, forKey: .secretAccessKey)
+            sessionToken = try container.decode(String.self, forKey: .sessionToken)
+            region = try container.decode(String.self, forKey: .region)
+            // Accept either "expiresAt" or "expiration" from the backend
+            let dateString = try (container.decodeIfPresent(String.self, forKey: .expiresAt)
+                ?? container.decode(String.self, forKey: .expiration))
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let date = formatter.date(from: dateString)
+                    ?? ISO8601DateFormatter().date(from: dateString) else {
+                throw DecodingError.dataCorrupted(
+                    .init(codingPath: [CodingKeys.expiresAt], debugDescription: "Invalid ISO8601 date")
+                )
+            }
+            expiresAt = date
+        }
     }
 
     func signOut() {
@@ -352,7 +451,10 @@ class AuthManager: ObservableObject {
         }
 
         Task {
+            // 1. Delete server-side data (Firebase Firestore or REST backend)
             await BackendSyncManager.shared.deleteAccount(accountID: accountID, providerRawValue: providerRawValue)
+
+            // 2. Delete Firebase Auth user
 #if canImport(FirebaseAuth)
             if isFirebaseAuthConfigured, let user = Auth.auth().currentUser {
                 try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -366,10 +468,35 @@ class AuthManager: ObservableObject {
                 }
             }
 #endif
+
+            // 3. Clear all per-account UserDefaults data BEFORE signOut
             await MainActor.run {
+                Self.clearAllUserData(for: accountID)
                 self.signOut()
             }
         }
+    }
+
+    /// Removes all per-account UserDefaults keys so no personal data remains on device.
+    private static func clearAllUserData(for accountID: String) {
+        let defaults = UserDefaults.standard
+        let keysToRemove = [
+            "coachingProfile.\(accountID)",
+            "coachingProfileOnboardingComplete.\(accountID)",
+            "practiceSessions.\(accountID)",
+            "imRelationshipProfiles.\(accountID)",
+            "recommendation.pending.\(accountID)",
+            "recommendation.outcomes.\(accountID)",
+            "profileXP.\(accountID)",
+        ]
+        for key in keysToRemove {
+            defaults.removeObject(forKey: key)
+        }
+        // Global keys that are not per-account but should be cleared on deletion
+        defaults.removeObject(forKey: "NoumFriendsList")
+        defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
+        defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
+        defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")
     }
 
     func supportReportPayload() -> String {
@@ -644,16 +771,6 @@ class AuthManager: ObservableObject {
             return (AWSCredentialIdentity(accessKey: access, secret: secret, sessionToken: token), region)
         }
         #if canImport(Foundation)
-        if let access = Bundle.main.object(forInfoDictionaryKey: "AWS_ACCESS_KEY_ID") as? String,
-           let secret = Bundle.main.object(forInfoDictionaryKey: "AWS_SECRET_ACCESS_KEY") as? String,
-           !access.isEmpty,
-           !secret.isEmpty {
-            let token = Bundle.main.object(forInfoDictionaryKey: "AWS_SESSION_TOKEN") as? String
-            let region = (Bundle.main.object(forInfoDictionaryKey: "AWS_REGION") as? String).flatMap {
-                $0.isEmpty ? nil : $0
-            } ?? "eu-west-2"
-            return (AWSCredentialIdentity(accessKey: access, secret: secret, sessionToken: token), region)
-        }
         if let url = Bundle.main.url(forResource: "Transcribe", withExtension: "plist"),
            let data = try? Data(contentsOf: url),
            let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],

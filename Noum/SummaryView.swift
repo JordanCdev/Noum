@@ -796,6 +796,7 @@ struct SummaryView: View {
     @State private var levelUpPreviousLevel: String = ""
     @State private var levelUpNewLevel: String = ""
     @State private var showSecondaryDetails = false
+    @State private var showAIDisclosure = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let aiCoachService: AICoachServicing = AICoachService()
@@ -1808,7 +1809,11 @@ struct SummaryView: View {
                 .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
             } else {
                 Button {
-                    Task { await requestDeeperFeedback() }
+                    if aiSettings.hasAcknowledgedAIDisclosure {
+                        Task { await requestDeeperFeedback() }
+                    } else {
+                        showAIDisclosure = true
+                    }
                 } label: {
                     HStack {
                         if isRequestingAIFeedback {
@@ -1997,6 +2002,15 @@ struct SummaryView: View {
                 aiFeedback: aiFeedback,
                 recordingURL: recordingURL
             )
+        }
+        .alert("AI Coaching Disclosure", isPresented: $showAIDisclosure) {
+            Button("Continue") {
+                aiSettings.acknowledgeAIDisclosure()
+                Task { await requestDeeperFeedback() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("To generate coaching feedback, your speech transcript is sent to \(aiSettings.activeProviderDisplayName) for analysis. Your transcript is processed under their API data terms and is not used to train their AI models. Noum does not sell or share your data with advertisers.")
         }
     }
 

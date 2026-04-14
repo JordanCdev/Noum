@@ -86,16 +86,15 @@ final class NotificationManager: ObservableObject {
         practiceTitle: String,
         challenge: PracticeChallengeStatus
     ) -> String {
-        if let relationship {
-            return "\(relationship.scenario.personaName) still has a thread with you"
+        // Titles are always visible on the lock screen — keep them motivational
+        // but never include user-authored text (goals, whyNow, successVision).
+        if relationship != nil {
+            return "Your conversation practice is waiting"
         }
         if challenge.progress < 1 {
             return challenge.title
         }
-        if let profile, !profile.personalGoalReference.isEmpty {
-            return "Keep building toward \(profile.personalGoalReference)"
-        }
-        return "Follow up on \(practiceTitle)"
+        return "Time for a quick practice rep"
     }
 
     private func reminderBody(
@@ -104,20 +103,22 @@ final class NotificationManager: ObservableObject {
         nextMove: String?,
         challenge: PracticeChallengeStatus
     ) -> String {
-        if relationship != nil, let nextMove, !nextMove.isEmpty {
-            return nextMove
+        // Body text is also visible on the lock screen by default.
+        // Reference the user's coaching context without quoting their exact words.
+        if let relationship {
+            return "\(relationship.scenario.personaName) is ready for another round. A quick rep keeps the momentum going."
         }
 
         if challenge.progress < 1 {
             return "\(challenge.summary) You're at \(challenge.progressLabel.lowercased()) right now."
         }
 
-        if let profile, !profile.whyNowReference.isEmpty, !profile.successVisionReference.isEmpty {
-            return "You said this matters now because \(profile.whyNowReference). One more rep moves you closer to \(profile.successVisionReference)."
+        if let profile, !profile.personalGoalReference.isEmpty {
+            return "You set a goal that matters to you. One more rep moves you closer."
         }
 
-        if let profile, !profile.personalGoalReference.isEmpty {
-            return "A short session is enough to keep moving toward \(profile.personalGoalReference)."
+        if profile != nil {
+            return "You've got a reason to practice today. A short session keeps you moving forward."
         }
 
         return "A short follow-up rep now will make the next conversation feel easier."

@@ -141,19 +141,19 @@ class SpeechRecognizerViewModel: ObservableObject {
             mediaSampleRateHertz: sampleRate
         )
 
-        // Configure client with custom credentials if needed
-        if transcribeClient == nil {
-            do {
-                let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                    awsCredentialIdentityResolver: authManager.credentialResolver(),
-                    region: authManager.region
-                )
-                transcribeClient = TranscribeStreamingClient(config: config)
-            } catch {
-                print("Failed to create AWS client: \(error)")
-                failStartRecording(with: error)
-                return
-            }
+        // Always create a fresh client to ensure credentials are current
+        // (temporary backend-vended credentials may have been refreshed)
+        do {
+            _ = try await authManager.currentCredentials()
+            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
+                awsCredentialIdentityResolver: authManager.credentialResolver(),
+                region: authManager.region
+            )
+            transcribeClient = TranscribeStreamingClient(config: config)
+        } catch {
+            print("Failed to create AWS client: \(error)")
+            failStartRecording(with: error)
+            return
         }
 
         do {
