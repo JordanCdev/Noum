@@ -555,7 +555,7 @@ private struct SettingsCardView: View {
 @available(iOS 17.0, macOS 12.0, *)
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
-    var goHome: (() -> Void)?
+    @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -567,10 +567,16 @@ struct TimedPracticeView: View {
     @State private var phase: TimedSessionPhase = .setup
     @State private var thinkingCountdown: Int = 15
     @State private var elapsedSeconds: Int = 0
-    @State private var showSummary = false
     @State private var evaluation: PracticeEvaluation?
     @State private var isStopping = false
     @State private var showExitConfirmation = false
+    @State private var activeDrill: DrillRecommendation?
+
+    // Mini-drill navigation
+    @State private var showMiniDrill = false
+    @State private var activeMiniDrill: DrillRecommendationV2?
+    @State private var miniDrillOutcome: MiniDrillOutcome?
+    @State private var showMiniDrillResult = false
 
     // Tasks
     @State private var thinkingTask: Task<Void, Never>?
@@ -728,52 +734,60 @@ struct TimedPracticeView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
-        .navigationDestination(isPresented: $showSummary) {
-            SummaryView(
-                transcript: speechVM.highlightedText,
-                fillerCount: speechVM.fillerWordCount,
-                duration: speechVM.lastSessionDuration,
-                score: evaluation?.score,
-                progressSegments: progressSegments,
-                xpEarned: evaluation?.xpEarned ?? 0,
-                showDuration: false,
-                practiceTitle: "Impromptu Practice",
-                feedbackOverride: evaluation?.feedback,
-                headlineOverride: evaluation?.headline,
-                scoreBreakdown: evaluation?.segments ?? [],
-                insights: evaluation?.insights ?? [],
-                recentSessions: speechVM.pastSessions,
-                recordingURL: videoManager.recordingURL,
-                sessionPrompt: question,
-                sessionTheme: selectedTheme,
-                feedbackCategories: evaluation?.categories ?? [],
-                strongMoments: evaluation?.strongMoments ?? [],
-                weakMoments: evaluation?.weakMoments ?? [],
-                durationAssessment: evaluation?.durationAssessment ?? .onTarget,
-                targetRange: evaluation?.targetRange ?? practiceSettings.timedDifficulty.targetRange,
-                onSelectPracticeMode: {
-                    showSummary = false
-                    newPromptSession()
-                },
-                onHome: {
-                    // Dismiss the summary first, then reset the navigation stack.
-                    // Order matters: showSummary must be false before navigationPath
-                    // is cleared, otherwise the isPresented binding can re-push.
-                    showSummary = false
-                    if let goHome {
-                        // Small delay to let the binding settle before clearing the path
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            goHome()
+        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
+        .sheet(isPresented: $showMiniDrill) {
+            if let drill = activeMiniDrill {
+                MiniDrillView(
+                    drill: drill,
+                    prompt: question,
+                    onComplete: { outcome in
+                        miniDrillOutcome = outcome
+                        // Record drill history
+                        DrillHistoryStore.shared.record(
+                            .init(variationId: outcome.drill.variation.id,
+                                  skillArea: outcome.drill.skillArea,
+                                  succeeded: outcome.succeeded,
+                                  sessionId: UUID())
+                        )
+                        showMiniDrill = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            showMiniDrillResult = true
                         }
-                    } else {
-                        dismiss()
+                    },
+                    onCancel: {
+                        showMiniDrill = false
+                        // Summary is still on the nav path; no action needed
                     }
-                },
-                onPracticeAgain: {
-                    showSummary = false
-                    restartSession()
-                }
-            )
+                )
+            }
+        }
+        .sheet(isPresented: $showMiniDrillResult) {
+            if let outcome = miniDrillOutcome {
+                MiniDrillResultView(
+                    outcome: outcome,
+                    xpEarned: outcome.succeeded ? 50 : 20,
+                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                    onDone: {
+                        showMiniDrillResult = false
+                    },
+                    onTryAnother: {
+                        showMiniDrillResult = false
+                        // Select a fresh drill for the same skill area
+                        if let nextDrill = activeMiniDrill,
+                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
+                            activeMiniDrill = DrillRecommendationV2(
+                                variation: freshVariation,
+                                reason: "Keep building on this skill",
+                                trendContext: nil,
+                                alternateFormat: nil
+                            )
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            showMiniDrill = true
+                        }
+                    }
+                )
+            }
         }
     }
 
@@ -931,9 +945,12 @@ struct TimedPracticeView: View {
 
                     HStack(spacing: 4) {
                         if mode == .coach && !premium.canUseCoachMode {
-                            Image(systemName: "lock.fill")
-                                .font(.caption2)
-                                .foregroundStyle(isSelected ? .white.opacity(0.9) : mode.badgeColor)
+                            Text("PRO")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.orange, in: Capsule())
                         }
                         Text(mode.badge)
                             .font(.caption2.weight(.bold))
@@ -1166,6 +1183,11 @@ struct TimedPracticeView: View {
             }
 
             VStack(spacing: 0) {
+                // Drill constraint banner (shown during Next Rep sessions)
+                if let drill = activeDrill {
+                    drillBanner(drill)
+                }
+
                 if isFullScreenCameraActive {
                     cameraOverlayLayout
                 } else if showLiveTranscript {
@@ -1175,6 +1197,30 @@ struct TimedPracticeView: View {
                 }
             }
         }
+    }
+
+    /// Compact banner shown at top during a drill session, reminding the user of their constraint.
+    private func drillBanner(_ drill: DrillRecommendation) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: drill.icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(drill.tint)
+            Text(drill.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("·")
+                .foregroundStyle(.secondary)
+            Text(drill.constraint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 
     // MARK: - Camera Overlay Layout (full-screen camera with minimal overlay)
@@ -2050,7 +2096,7 @@ struct TimedPracticeView: View {
     private func stopSession() {
         guard !isStopping else { return }
         isStopping = true
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        CoachHaptic.sessionComplete()
         speakingTask?.cancel()
         speakingTask = nil
         speechVM.stopRecording()
@@ -2100,7 +2146,7 @@ struct TimedPracticeView: View {
                     }
                 }
 
-                showSummary = true
+                pushSummary()
             }
         }
     }
@@ -2174,6 +2220,49 @@ struct TimedPracticeView: View {
         if videoManager.isRecording { videoManager.stopRecording() }
     }
 
+    // MARK: - Navigation
+
+    private func pushSummary() {
+        let payloadId = UUID()
+        let entry = SummaryDataStore.Entry(
+            transcript: speechVM.highlightedText,
+            fillerCount: speechVM.fillerWordCount,
+            duration: speechVM.lastSessionDuration,
+            score: evaluation?.score,
+            progressSegments: progressSegments,
+            xpEarned: evaluation?.xpEarned ?? 0,
+            showDuration: false,
+            practiceTitle: "Impromptu Practice",
+            feedbackOverride: evaluation?.feedback,
+            headlineOverride: evaluation?.headline,
+            scoreBreakdown: evaluation?.segments ?? [],
+            insights: evaluation?.insights ?? [],
+            recentSessions: speechVM.pastSessions,
+            imConversationDetails: nil,
+            explicitMode: .timed,
+            recordingURL: videoManager.recordingURL,
+            sessionPrompt: question,
+            sessionTheme: selectedTheme,
+            feedbackCategories: evaluation?.categories ?? [],
+            strongMoments: evaluation?.strongMoments ?? [],
+            weakMoments: evaluation?.weakMoments ?? [],
+            durationAssessment: evaluation?.durationAssessment ?? .onTarget,
+            targetRange: evaluation?.targetRange ?? practiceSettings.timedDifficulty.targetRange,
+            onStartDrill: { [self] drill in
+                activeDrill = drill
+                restartSession()
+            },
+            onStartMiniDrill: { [self] drill in
+                activeMiniDrill = drill
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    showMiniDrill = true
+                }
+            }
+        )
+        SummaryDataStore.shared.store(entry, for: payloadId)
+        let payload = SummaryPayload(id: payloadId, mode: .timed)
+        navigationPath.append(AppDestination.summary(payload))
+    }
 
 }
 #endif

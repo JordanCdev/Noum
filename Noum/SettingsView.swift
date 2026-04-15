@@ -41,6 +41,7 @@ struct SettingsView: View {
                     remindersCard
                     accountPrivacyCard
                     if authManager.isDeveloper {
+                        transcriptionProviderCard
                         debugCard
                         recommendationDiagnosticsCard
                     }
@@ -498,6 +499,54 @@ struct SettingsView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    @AppStorage("transcriptionProvider") private var selectedProvider: String = "aws"
+
+    private var transcriptionProviderCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Transcription Provider")
+                .font(.headline)
+
+            Text("Switch between speech-to-text backends for testing and comparison.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Picker("Provider", selection: $selectedProvider) {
+                ForEach(TranscriptionProviderID.allCases) { provider in
+                    Text(provider.displayName).tag(provider.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            let qualityStore = TranscriptionQualityStore.shared
+            if let avgLatency = qualityStore.averageLatency(for: selectedProvider) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Avg Latency")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text("\(avgLatency)ms")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    Spacer()
+                    if let avgConf = qualityStore.averageConfidence(for: selectedProvider) {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Avg Confidence")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "%.0f%%", avgConf * 100))
+                                .font(.subheadline.weight(.bold))
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

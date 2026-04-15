@@ -126,6 +126,25 @@ extension Animation {
     static let snappySpring = Animation.spring(response: 0.26, dampingFraction: 0.88)
     /// Bouncy spring for celebrations, emphasis
     static let bouncySpring = Animation.spring(response: 0.40, dampingFraction: 0.65)
+
+    // MARK: Reward & Progress Animations
+
+    /// Score number count-up landing — smooth deceleration
+    static let scoreReveal = Animation.easeOut(duration: 0.8)
+    /// Stat delta badge pop-in — delayed bouncy spring
+    static let statDelta = Animation.spring(response: 0.4, dampingFraction: 0.65).delay(0.3)
+    /// Achievement badge or icon appearance
+    static let achievementPop = Animation.spring(response: 0.5, dampingFraction: 0.55)
+    /// Progress bar fill — smooth linear-to-ease
+    static let progressFill = Animation.easeOut(duration: 0.6)
+    /// Staggered list item entrance — pass index for delay
+    static func stagger(_ index: Int) -> Animation {
+        .spring(response: 0.34, dampingFraction: 0.84).delay(Double(index) * 0.08)
+    }
+    /// Coach note line appearance — staggered reading rhythm
+    static func coachLineStagger(_ index: Int) -> Animation {
+        .easeOut(duration: 0.3).delay(0.15 + Double(index) * 0.15)
+    }
 }
 
 // MARK: - Shared View Components

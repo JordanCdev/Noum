@@ -1055,9 +1055,10 @@ struct ChallengePickFriendSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var createdChallenge: AsyncChallenge?
     @State private var showPractice = false
+    @State private var speakOffNavPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $speakOffNavPath) {
             Group {
                 if let challenge = createdChallenge {
                     // Speak-off ready screen — user sees the prompt and starts
@@ -1098,7 +1099,7 @@ struct ChallengePickFriendSheet: View {
                         Spacer()
 
                         Button {
-                            showPractice = true
+                            speakOffNavPath.append(AppDestination.timedPractice)
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "mic.fill")
@@ -1125,8 +1126,10 @@ struct ChallengePickFriendSheet: View {
                             Button("Done") { dismiss() }
                         }
                     }
-                    .navigationDestination(isPresented: $showPractice) {
-                        TimedPracticeView(goHome: { dismiss() })
+                    .navigationDestination(for: AppDestination.self) { destination in
+                        if case .timedPractice = destination {
+                            TimedPracticeView(navigationPath: $speakOffNavPath)
+                        }
                     }
                 } else {
                     List {

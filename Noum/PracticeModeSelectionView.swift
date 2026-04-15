@@ -14,7 +14,7 @@ enum PracticeMode: String, Codable {
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
     @Binding var selectedMode: PracticeMode
-    var goHome: (() -> Void)?
+    @Binding var navigationPath: NavigationPath
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @State private var highlightedMode: PracticeMode?
@@ -281,8 +281,8 @@ struct PracticeModeSelectionView: View {
 
                 Spacer()
 
-                NavigationLink {
-                    destinationView(for: selectedMode)
+                Button {
+                    navigationPath.append(appDestination(for: selectedMode))
                 } label: {
                     Text("Start")
                         .font(.headline.weight(.semibold))
@@ -464,20 +464,19 @@ struct PracticeModeSelectionView: View {
         .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
     }
 
-    @ViewBuilder
-    private func destinationView(for mode: PracticeMode) -> some View {
+    private func appDestination(for mode: PracticeMode) -> AppDestination {
         switch mode {
         case .timed:
-            TimedPracticeView(goHome: goHome)
+            return .timedPractice
         case .suddenDeath:
-            SuddenDeathPracticeView(goHome: goHome)
+            return .suddenDeathPractice
         case .ahCounter:
-            AhCounterView(goHome: goHome)
+            return .ahCounterPractice
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                IMPracticeView(goHome: goHome)
+                return .imPractice(scenario: nil, tone: nil)
             } else {
-                TimedPracticeView(goHome: goHome)
+                return .timedPractice
             }
         }
     }

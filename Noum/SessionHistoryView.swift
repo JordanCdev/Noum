@@ -4,23 +4,19 @@ import SwiftUI
 #endif
 
 #if canImport(SwiftUI)
+
+// MARK: - Session History View (Redesigned)
+
 struct SessionHistoryView: View {
-    private let overviewColumns = [
-        GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)
-    ]
-    private let trendColumns = [
-        GridItem(.adaptive(minimum: 150), spacing: 10, alignment: .top)
-    ]
-    private let metricColumns = [
-        GridItem(.adaptive(minimum: 88), spacing: 10, alignment: .top)
-    ]
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @State private var selectedAchievementID: String?
     @State private var selectedModeFilter: PracticeMode? = nil
     @State private var sessionToDelete: PracticeSession?
+    @State private var showTrends = false
     @Environment(\.dismiss) private var dismiss
+
+    // MARK: - Derived Data
 
     private var sessions: [PracticeSession] {
         sessionStore.sessions.sorted { $0.date > $1.date }
@@ -32,152 +28,108 @@ struct SessionHistoryView: View {
     }
 
     private var totalSessions: Int { sessions.count }
+
     private var averageScoreText: String {
         let scores = sessions.compactMap(\.score)
-        guard !scores.isEmpty else { return "N/A" }
+        guard !scores.isEmpty else { return "--" }
         let average = Double(scores.reduce(0, +)) / Double(scores.count)
-        return String(format: "%.1f/10", average)
+        return String(format: "%.1f", average)
     }
 
     private var strongestModeText: String {
         let grouped = Dictionary(grouping: sessions, by: \.mode)
         let ranked = grouped.max { lhs, rhs in
-            let lhsAverage = averageScore(for: lhs.value)
-            let rhsAverage = averageScore(for: rhs.value)
-            return lhsAverage < rhsAverage
+            averageScore(for: lhs.value) < averageScore(for: rhs.value)
         }?.key
-        return ranked.map(label(for:)) ?? "Still forming"
+        return ranked.map(modeLabel(for:)) ?? "--"
     }
 
-    private var primaryInsight: String {
-        if let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile) {
-            return plan.encouragement
-        }
-        return "Your session history turns into clearer coaching once a few more reps are logged."
-    }
-
-    private var retentionSnapshot: RetentionLoopSnapshot {
-        RetentionLoopEngine.snapshot(
-            sessions: sessions,
-            profile: coachingProfileStore.profile
-        )
-    }
-
-    private var recentSessionsForProgress: [PracticeSession] {
+    private var recentForTrends: [PracticeSession] {
         Array(sessions.prefix(8).reversed())
     }
 
-    private var scoreTrendValues: [Double] {
-        recentSessionsForProgress.compactMap { session in
-            guard let score = session.score else { return nil }
-            return Double(score)
-        }
+    private var scoreTrend: [Double] {
+        recentForTrends.compactMap { $0.score.map(Double.init) }
     }
 
-    private var fillerControlValues: [Double] {
-        recentSessionsForProgress.map { session in
-            Double(max(0, 10 - min(session.fillerWordCount, 10)))
-        }
+    private var fillerTrend: [Double] {
+        recentForTrends.map { Double(max(0, 10 - min($0.fillerWordCount, 10))) }
     }
 
-    private var pacingStabilityValues: [Double] {
-        recentSessionsForProgress.map { session in
+    private var pacingTrend: [Double] {
+        recentForTrends.map { session in
             let distance = abs(Double(session.wordsPerMinute) - 130)
             return max(0, 10 - min(distance / 12, 10))
         }
     }
 
-    private var progressionSummary: String {
-        guard let first = recentSessionsForProgress.first,
-              let last = recentSessionsForProgress.last else {
-            return "A few more sessions will make your communication trend easier to read."
-        }
-
-        let scoreDelta = (last.score ?? 0) - (first.score ?? 0)
-        let fillerDelta = first.fillerWordCount - last.fillerWordCount
-        let paceDelta = abs(last.wordsPerMinute - 130) - abs(first.wordsPerMinute - 130)
-
-        if scoreDelta >= 2 || fillerDelta >= 3 {
-            return "Your recent sessions show real movement. Delivery is getting sharper, and your speaking habits are starting to look more controlled."
-        }
-
-        if scoreDelta <= -2 || fillerDelta <= -3 || paceDelta > 20 {
-            return "Your results are still uneven. You’re capable of strong moments, but the consistency piece has not settled yet."
-        }
-
-        return "You’re building a base, but the main story right now is consistency. The next few sessions should focus on keeping your quality steady under different conditions."
-    }
-
-    private var identityEvolutionText: String {
-        let identities = recentSessionsForProgress.compactMap { session -> String? in
-            let identity = PracticeEvaluator.speakingIdentity(
-                for: session.transcript,
-                profile: coachingProfileStore.profile
-            ).identity
-            return identity.isEmpty ? nil : identity
-        }
-
-        guard !identities.isEmpty else { return "Still taking shape" }
-
-        var compact: [String] = []
-        for identity in identities where compact.last != identity {
-            compact.append(identity)
-        }
-        return compact.joined(separator: " -> ")
-    }
+    // MARK: - Body
 
     var body: some View {
         ZStack {
-            AppColor.screenBackground
-            .ignoresSafeArea()
+            AppColor.screenBackground.ignoresSafeArea()
 
             if sessions.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        overviewPanel
-                        journeyPanel
-                        progressOverTimePanel
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
 
+                        // --- Summary Strip ---
+                        summaryStrip
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.top, 8)
+                            .padding(.bottom, 20)
+
+                        // --- Trends (collapsible) ---
+                        trendsSection
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.bottom, 20)
+
+                        // --- Mode Filter ---
                         modeFilterChips
+                            .padding(.bottom, 12)
 
-                        Text("Recent Sessions")
-                            .font(.title3.weight(.bold))
-                            .padding(.horizontal, 2)
+                        // --- Section Header ---
+                        Text(sectionTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.bottom, 8)
 
+                        // --- Session List ---
                         if filteredSessions.isEmpty {
-                            Text("No sessions for this mode yet")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 32)
-                        }
-
-                        ForEach(filteredSessions) { session in
-                            NavigationLink {
-                                SessionHistoryDetailView(
-                                    session: session,
-                                    insights: CoachingPlanner.sessionInsights(
-                                        for: session,
-                                        comparedTo: sessions,
-                                        profile: coachingProfileStore.profile
+                            emptyFilterState
+                                .padding(.horizontal, Spacing.screenH)
+                        } else {
+                            ForEach(filteredSessions) { session in
+                                NavigationLink {
+                                    SessionHistoryDetailView(
+                                        session: session,
+                                        insights: CoachingPlanner.sessionInsights(
+                                            for: session,
+                                            comparedTo: sessions,
+                                            profile: coachingProfileStore.profile
+                                        )
                                     )
-                                )
-                            } label: {
-                                sessionCard(session)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    sessionToDelete = session
                                 } label: {
-                                    Label("Delete Session", systemImage: "trash")
+                                    sessionRow(session)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        sessionToDelete = session
+                                    } label: {
+                                        Label("Delete Session", systemImage: "trash")
+                                    }
                                 }
                             }
+                            .padding(.horizontal, Spacing.screenH)
                         }
+
+                        Spacer(minLength: 40)
                     }
-                    .padding(Spacing.lg)
                 }
             }
         }
@@ -205,22 +157,91 @@ struct SessionHistoryView: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 42))
-                .foregroundStyle(.secondary)
-            Text("No sessions yet")
-                .font(.title3.weight(.bold))
-            Text("Your practice runs will show up here with the key takeaways, strongest sessions, and what to work on next.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+    // MARK: - Summary Strip
+
+    private var summaryStrip: some View {
+        HStack(spacing: 0) {
+            statPill(value: "\(totalSessions)", label: "Sessions", tint: .blue)
+            Spacer(minLength: 0)
+            statPill(value: averageScoreText, label: "Avg Score", tint: .green)
+            Spacer(minLength: 0)
+            statPill(value: strongestModeText, label: "Strongest", tint: .purple)
         }
-        .padding(28)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .padding(24)
+        .padding(14)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
+
+    private func statPill(value: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(tint)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Trends Section
+
+    private var trendsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) { showTrends.toggle() }
+            } label: {
+                HStack {
+                    Text("Progress Trends")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(showTrends ? 90 : 0))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            if showTrends {
+                VStack(spacing: 12) {
+                    HStack(spacing: 10) {
+                        miniTrend(title: "Score", values: scoreTrend, tint: .green)
+                        miniTrend(title: "Filler Control", values: fillerTrend, tint: .orange)
+                    }
+                    miniTrend(title: "Pacing", values: pacingTrend, tint: .blue)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    private func miniTrend(title: String, values: [Double], tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(trendDelta(for: values))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(tint)
+            }
+            SparklineView(values: values, color: tint)
+                .frame(height: 32)
+        }
+        .padding(10)
+        .background(tint.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    // MARK: - Mode Filter Chips
 
     private var modeFilterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -237,14 +258,14 @@ struct SessionHistoryView: View {
 
     private func filterChip(label: String, mode: PracticeMode?) -> some View {
         Button {
-            withAnimation(.standardSpring) { selectedModeFilter = mode }
+            withAnimation(.easeInOut(duration: 0.2)) { selectedModeFilter = mode }
         } label: {
             Text(label)
-                .font(.subheadline.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
                 .background(
-                    selectedModeFilter == mode ? AppColor.brandBlue : Color(.systemGray5),
+                    selectedModeFilter == mode ? AppColor.brandBlue : Color(.systemGray6),
                     in: Capsule(style: .continuous)
                 )
                 .foregroundStyle(selectedModeFilter == mode ? .white : .primary)
@@ -252,335 +273,105 @@ struct SessionHistoryView: View {
         .buttonStyle(.plain)
     }
 
-    private var overviewPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Your Communication Read")
-                .font(.title3.weight(.bold))
+    // MARK: - Session Row (Compact, Premium Feel)
 
-            Text(primaryInsight)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private func sessionRow(_ session: PracticeSession) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Mode accent bar
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(modeColor(for: session.mode))
+                .frame(width: 4, height: 48)
+                .padding(.top, 4)
 
-            LazyVGrid(columns: overviewColumns, alignment: .leading, spacing: 10) {
-                overviewMetric(title: "Sessions", value: "\(totalSessions)", tint: .blue)
-                overviewMetric(title: "Average", value: averageScoreText, tint: .green)
-                overviewMetric(title: "Best Mode", value: strongestModeText, tint: .purple)
-            }
-        }
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private var progressOverTimePanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Progress Over Time")
-                .font(.title3.weight(.bold))
-
-            Text(progressionSummary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: trendColumns, alignment: .leading, spacing: 10) {
-                trendCard(
-                    title: "Session Score",
-                    subtitle: trendDeltaText(for: scoreTrendValues, positiveIsImprovement: true, suffix: " pts"),
-                    values: scoreTrendValues,
-                    tint: .green
-                )
-                trendCard(
-                    title: "Filler Control",
-                    subtitle: trendDeltaText(for: fillerControlValues, positiveIsImprovement: true, suffix: " pts"),
-                    values: fillerControlValues,
-                    tint: .orange
-                )
-            }
-
-            trendCard(
-                title: "Pacing Stability",
-                subtitle: "\(recentSessionsForProgress.last?.wordsPerMinute ?? 0) WPM recently",
-                values: pacingStabilityValues,
-                tint: .blue
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Speaking Identity Evolution")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(identityEvolutionText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(Spacing.cardGap)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        }
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private var journeyPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Challenges + Achievements")
-                .font(.title3.weight(.bold))
-
-            Text(retentionSnapshot.motivationLine)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            activeChallengeCard
-            achievementsCard
-        }
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private func sessionCard(_ session: PracticeSession) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(sessionTitle(for: session))
-                        .font(.headline.weight(.bold))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(session.headline ?? modeLabel(for: session.mode))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text(sessionSubtitle(for: session))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if let score = session.score {
+                        Text("\(score)/10")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(scoreColor(score))
+                    }
                 }
 
-                Spacer(minLength: 12)
+                HStack(spacing: 6) {
+                    Text(session.date.formatted(date: .abbreviated, time: .shortened))
+                    Text("·")
+                    Text("\(Int(session.duration))s")
+                    if session.fillerWordCount > 0 {
+                        Text("·")
+                        Text("\(session.fillerWordCount) fillers")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.tertiary)
 
-                Text(label(for: session.mode))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(sessionColor(for: session.mode))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(sessionColor(for: session.mode).opacity(0.12), in: Capsule())
+                if let summary = sessionOneLiner(for: session) {
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
-            Text(sessionSummary(for: session))
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.quaternary)
+                .padding(.top, 6)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Empty States
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 42))
+                .foregroundStyle(.secondary)
+            Text("No sessions yet")
+                .font(.title3.weight(.bold))
+            Text("Your practice sessions will appear here with key takeaways and trends.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
-
-            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
-                compactMetric(label: "Score", value: session.score.map { "\($0)/10" } ?? "Pending")
-                compactMetric(label: "Duration", value: "\(Int(session.duration))s")
-                compactMetric(label: "Fillers", value: "\(session.fillerWordCount)")
-                if let imDetails = session.imConversationDetails {
-                    compactMetric(label: "Tone", value: imDetails.actualTone ?? imDetails.setup.targetTone.title)
-                }
-            }
-
-            if let outcome = session.imConversationDetails?.outcome {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.caption.weight(.bold))
-                    Text(outcome.title)
-                        .font(.caption.weight(.semibold))
-                }
-                .foregroundStyle(.secondary)
-            }
+                .multilineTextAlignment(.center)
         }
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .padding(28)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .padding(24)
     }
 
-    private func overviewMetric(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.headline.weight(.bold))
-                .foregroundStyle(tint)
-                .fixedSize(horizontal: false, vertical: true)
-                .minimumScaleFactor(0.8)
+    private var emptyFilterState: some View {
+        Text("No sessions for this mode yet")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
+    }
+
+    private var sectionTitle: String {
+        if let mode = selectedModeFilter {
+            return "\(modeLabel(for: mode)) Sessions"
         }
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
-        .padding(Spacing.cardGap)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        return "All Sessions"
     }
 
-    private func trendCard(
-        title: String,
-        subtitle: String,
-        values: [Double],
-        tint: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+    // MARK: - Helpers
 
-            Text(subtitle)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-                .fixedSize(horizontal: false, vertical: true)
-
-            SparklineView(values: values, color: tint)
-                .frame(height: 48)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.cardGap)
-        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    private func sessionOneLiner(for session: PracticeSession) -> String? {
+        if let summary = session.coachSummary, !summary.isEmpty { return summary }
+        if let outcome = session.imConversationDetails?.outcome?.summary, !outcome.isEmpty { return outcome }
+        let trimmed = session.transcript.prefix(80)
+        return trimmed.isEmpty ? nil : String(trimmed)
     }
 
-    private func compactMetric(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-    }
-
-    private var activeChallengeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Active Challenge")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            HStack(alignment: .top, spacing: 10) {
-                PulseBadge(systemImage: "bolt.fill", tint: .orange)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(retentionSnapshot.activeChallenge.title)
-                        .font(.headline)
-                    Text(retentionSnapshot.activeChallenge.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            HStack {
-                Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(retentionSnapshot.activeChallenge.rewardLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.orange.opacity(0.12), in: Capsule())
-                    SparkleRibbon(tint: .orange)
-                }
-            }
-
-            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(retentionSnapshot.activeChallenge.progressLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
-                Text(retentionSnapshot.motivationLine)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(Spacing.cardGap)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-    }
-
-    private var achievementsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Achievements")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            ForEach(retentionSnapshot.achievements.prefix(3)) { achievement in
-                Button {
-                    withAnimation(.standardSpring) {
-                        selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
-                    }
-                } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 10) {
-                            Group {
-                                if achievement.isUnlocked {
-                                    PulseBadge(systemImage: achievement.symbolName, tint: .green)
-                                } else {
-                                    Image(systemName: achievement.symbolName)
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 24, height: 24)
-                                        .padding(12)
-                                        .background(Color.black.opacity(0.06), in: Circle())
-                                }
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(achievement.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text(achievement.summary)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            VStack(alignment: .trailing, spacing: 6) {
-                                Text(achievement.progressLabel)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
-                                Image(systemName: selectedAchievementID == achievement.id ? "chevron.up" : "chevron.down")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        if selectedAchievementID == achievement.id {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ShimmerProgressBar(
-                                    progress: achievement.progress,
-                                    tint: achievement.isUnlocked ? .green : .blue
-                                )
-                                Text(
-                                    achievement.isUnlocked
-                                        ? "Unlocked. This is now part of your communication identity."
-                                        : "Keep going. This one unlocks once the habit becomes repeatable."
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                    }
-                    .padding(12)
-                    .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func sessionTitle(for session: PracticeSession) -> String {
-        session.headline ?? label(for: session.mode)
-    }
-
-    private func sessionSubtitle(for session: PracticeSession) -> String {
-        session.date.formatted(date: .abbreviated, time: .shortened)
-    }
-
-    private func sessionSummary(for session: PracticeSession) -> String {
-        if let coachSummary = session.coachSummary, !coachSummary.isEmpty {
-            return coachSummary
-        }
-        if let outcome = session.imConversationDetails?.outcome?.summary, !outcome.isEmpty {
-            return outcome
-        }
-        return session.transcript
-    }
-
-    private func sessionColor(for mode: PracticeMode) -> Color {
+    private func modeColor(for mode: PracticeMode) -> Color {
         switch mode {
         case .timed: return .blue
         case .suddenDeath: return .orange
@@ -589,12 +380,20 @@ struct SessionHistoryView: View {
         }
     }
 
-    private func label(for mode: PracticeMode) -> String {
+    private func modeLabel(for mode: PracticeMode) -> String {
         switch mode {
         case .timed: return "Timed"
         case .suddenDeath: return "Sudden Death"
         case .ahCounter: return "Ah-Counter"
         case .imConversation: return "IM Mode"
+        }
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        switch score {
+        case 8...10: return .green
+        case 5...7: return .primary
+        default: return .orange
         }
     }
 
@@ -604,28 +403,11 @@ struct SessionHistoryView: View {
         return Double(scores.reduce(0, +)) / Double(scores.count)
     }
 
-    private func trendDeltaText(
-        for values: [Double],
-        positiveIsImprovement: Bool,
-        suffix: String
-    ) -> String {
-        guard let first = values.first, let last = values.last else {
-            return "Still gathering data"
-        }
-
-        let rawDelta = last - first
-        let improvementDelta = positiveIsImprovement ? rawDelta : -rawDelta
-        let rounded = Int(abs(improvementDelta).rounded())
-
-        if rounded == 0 {
-            return "Holding steady"
-        }
-
-        if improvementDelta > 0 {
-            return "Up \(rounded)\(suffix)"
-        }
-
-        return "Down \(rounded)\(suffix)"
+    private func trendDelta(for values: [Double]) -> String {
+        guard let first = values.first, let last = values.last else { return "" }
+        let delta = Int((last - first).rounded())
+        if delta == 0 { return "Steady" }
+        return delta > 0 ? "+\(delta)" : "\(delta)"
     }
 }
 

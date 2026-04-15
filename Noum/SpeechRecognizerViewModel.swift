@@ -5,11 +5,6 @@ import SwiftUI
 #if canImport(AVFoundation)
 import AVFoundation
 #endif
-@preconcurrency import AWSSDKIdentity
-@preconcurrency import AWSTranscribeStreaming
-@preconcurrency import AWSClientRuntime
-
-
 
 #if canImport(AVFoundation)
 @MainActor
@@ -21,40 +16,43 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var lastSessionDuration: TimeInterval = 0
     @Published var pastSessions: [PracticeSession] = []
     @Published var connectionError: String?
+    @Published var activeProviderName: String = ""
 
-    private let authManager: AuthManager = .shared
     private let sessionStore = PracticeSessionStore.shared
     private let recommendationLearningStore = RecommendationLearningStore.shared
 
-    private var audioEngine: AVAudioEngine?
-    private var transcribeClient: TranscribeStreamingClient?
-    private var streamConnection: StartStreamTranscriptionOutput?
-    private var requestStream: AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error>.Continuation?
+    // Provider abstraction — replaces direct AWS SDK usage
+    private var provider: any TranscriptionProvider
+    private var activeSession: (any TranscriptionSession)?
+    private var transcriptListenerTask: Task<Void, Never>?
 
+    private var audioEngine: AVAudioEngine?
     private var sessionStart: Date?
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
     private var hasPreparedInteractiveUse = false
 
+    // Quality tracking
+    private var sessionUpdateCount: Int = 0
+    private var totalLatencyMs: Int = 0
+    private var confidenceValues: [Double] = []
+    private var providerFillerCount: Int = 0
 
     init(preloadOnInit: Bool = true) {
+        self.provider = Self.resolveProvider()
+        self.activeProviderName = provider.name
         guard preloadOnInit else { return }
         loadSessions()
         prepareForInteractiveUse()
     }
 
-    private func preloadTranscribeClient() async {
-        guard transcribeClient == nil else { return }
-        do {
-            _ = try await authManager.currentCredentials()
-            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                awsCredentialIdentityResolver: authManager.credentialResolver(),
-                region: authManager.region
-            )
-            transcribeClient = TranscribeStreamingClient(config: config)
-        } catch {
-            print("Transcribe pre-load failed: \(error)")
+    private static func resolveProvider() -> any TranscriptionProvider {
+        let selected = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "aws"
+        switch selected {
+        case "deepgram": return DeepgramProvider()
+        case "google": return GoogleSpeechProvider()
+        default: return AWSTranscribeProvider()
         }
     }
 
@@ -67,7 +65,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         hasPreparedInteractiveUse = true
         loadSessions()
         requestRecordAuthorization()
-        Task(priority: .utility) { await preloadTranscribeClient() }
     }
 
     func annotateLatestSession(
@@ -103,24 +100,24 @@ class SpeechRecognizerViewModel: ObservableObject {
     func startRecording() {
         guard !isRecording else { return }
         prepareForInteractiveUse()
+
+        // Re-resolve provider in case user changed settings
+        provider = Self.resolveProvider()
+        activeProviderName = provider.name
+
         Task {
-            print("Starting transcription")
-            do {
-                _ = try await authManager.currentCredentials()
-                await self.startRecordingWith()
-            } catch {
-                print("Failed to fetch AWS credentials: \(error)")
-                await MainActor.run {
-                    self.connectionError = error.localizedDescription
-                    self.transcribedText = AuthManager.missingCredentialsMessage
-                }
-            }
+            print("Starting transcription with \(provider.name)")
+            await startRecordingWithProvider()
         }
     }
 
-    private func startRecordingWith() async {
+    private func startRecordingWithProvider() async {
         resetCurrentSession()
         sessionStart = Date()
+        sessionUpdateCount = 0
+        totalLatencyMs = 0
+        confidenceValues = []
+        providerFillerCount = 0
 
         do {
             try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
@@ -129,80 +126,51 @@ class SpeechRecognizerViewModel: ObservableObject {
             print("Audio session error: \(error)")
         }
 
-        let stream = AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error> { continuation in
-            self.requestStream = continuation
-        }
-
         let sampleRate = Int(AVAudioSession.sharedInstance().sampleRate)
-        let request = StartStreamTranscriptionInput(
-            audioStream: stream,
-            languageCode: .enUs,
-            mediaEncoding: .pcm,
-            mediaSampleRateHertz: sampleRate
+        let config = TranscriptionConfig(
+            languageCode: "en-US",
+            sampleRate: sampleRate,
+            encoding: .pcmSigned16Bit,
+            enableFillerWordDetection: true
         )
 
-        // Always create a fresh client to ensure credentials are current
-        // (temporary backend-vended credentials may have been refreshed)
         do {
-            _ = try await authManager.currentCredentials()
-            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                awsCredentialIdentityResolver: authManager.credentialResolver(),
-                region: authManager.region
-            )
-            transcribeClient = TranscribeStreamingClient(config: config)
-        } catch {
-            print("Failed to create AWS client: \(error)")
-            failStartRecording(with: error)
-            return
-        }
+            let session = try await provider.startSession(config: config)
+            self.activeSession = session
 
-        do {
-            try startAudioStream()
-        } catch {
-            failStartRecording(with: error)
-            return
-        }
-        isRecording = true
+            // Start audio capture and feed into the session
+            try startAudioStream(sendingTo: session)
+            isRecording = true
 
-        Task {
-            do {
-                if let client = transcribeClient {
-                    let output = try await client.startStreamTranscription(input: request)
-                    streamConnection = output
-                    Task.detached { [weak self] in
-                        if let events = output.transcriptResultStream {
-                            for try await event in events {
-                                await self?.handleTranscribeEvent(event)
-                            }
-                        }
-                    }
-                    print("Transcribe streaming started")
-                }
-            } catch {
-                print("Transcribe start failed: \(error)")
-                await MainActor.run {
-                    self.failStartRecording(with: error)
+            // Listen for transcript updates
+            transcriptListenerTask = Task { [weak self] in
+                for await update in session.transcriptUpdates {
+                    await self?.handleTranscriptUpdate(update)
                 }
             }
+        } catch {
+            print("Failed to start \(provider.name) session: \(error)")
+            failStartRecording(with: error)
         }
     }
-
-
 
     func stopRecording() {
         guard isRecording else { return }
         print("Stopping transcription")
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
-        requestStream?.finish()
-        requestStream = nil
-        streamConnection = nil
         isRecording = false
 
         Task {
+            try? await activeSession?.endAudio()
+            activeSession = nil
+            transcriptListenerTask?.cancel()
+            transcriptListenerTask = nil
+
             // Allow time for any final transcripts to arrive before finalizing
             try? await Task.sleep(for: .milliseconds(500))
             finalizeTranscript()
+            recordQualityMetrics()
         }
     }
 
@@ -217,6 +185,34 @@ class SpeechRecognizerViewModel: ObservableObject {
         saveCurrentSession()
     }
 
+    // MARK: - Transcript Update Handling (provider-agnostic)
+
+    private func handleTranscriptUpdate(_ update: TranscriptUpdate) {
+        sessionUpdateCount += 1
+        if let latency = update.latencyMs { totalLatencyMs += latency }
+        if let confidence = update.confidence { confidenceValues.append(confidence) }
+        if let providerFillers = update.providerFillerWords {
+            providerFillerCount += providerFillers.count
+        }
+
+        let snippet = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { return }
+
+        if update.isFinal {
+            if !finalTranscript.isEmpty { finalTranscript += " " }
+            finalTranscript += snippet
+            partialTranscript = ""
+        } else {
+            partialTranscript = snippet
+        }
+
+        let combined = [finalTranscript, partialTranscript].filter { !$0.isEmpty }.joined(separator: " ")
+        transcribedText = combined
+        highlightAndCountFillerWords(in: combined)
+    }
+
+    // MARK: - Audio Engine (provider-agnostic)
+
     private func requestRecordAuthorization() {
         AVAudioApplication.requestRecordPermission { granted in
             DispatchQueue.main.async {
@@ -226,18 +222,16 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func startAudioStream() throws {
+    private func startAudioStream(sendingTo session: any TranscriptionSession) throws {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
         let inputFormat = inputNode.inputFormat(forBus: 0)
         inputNode.removeTap(onBus: 0)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            guard let self = self else { return }
+            guard let self else { return }
             let data = self.convertBufferToPCMData(buffer: buffer)
-            self.requestStream?.yield(
-                .audioevent(TranscribeStreamingClientTypes.AudioEvent(audioChunk: data))
-            )
+            Task { try? await session.sendAudio(data) }
         }
 
         audioEngine!.prepare()
@@ -255,9 +249,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         connectionError = "\(error)"
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
-        requestStream?.finish()
-        requestStream = nil
-        streamConnection = nil
+        activeSession = nil
+        transcriptListenerTask?.cancel()
+        transcriptListenerTask = nil
         isRecording = false
         sessionStart = nil
     }
@@ -276,31 +270,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         return Data()
     }
 
-    private func handleTranscribeEvent(_ event: TranscribeStreamingClientTypes.TranscriptResultStream) async {
-        switch event {
-        case .transcriptevent(let transcriptEvent):
-            for result in transcriptEvent.transcript?.results ?? [] {
-                guard let alternative = result.alternatives?.first,
-                      let snippet = alternative.transcript?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !snippet.isEmpty else { continue }
-
-                DispatchQueue.main.async {
-                    if result.isPartial == false {
-                        if !self.finalTranscript.isEmpty { self.finalTranscript += " " }
-                        self.finalTranscript += snippet
-                        self.partialTranscript = ""
-                    } else {
-                        self.partialTranscript = snippet
-                    }
-
-                    let combined = [self.finalTranscript, self.partialTranscript].filter { !$0.isEmpty }.joined(separator: " ")
-                    self.transcribedText = combined
-                    self.highlightAndCountFillerWords(in: combined)
-                }
-            }
-        default: break
-        }
-    }
+    // MARK: - Filler Word Detection
 
     private func highlightAndCountFillerWords(in text: String) {
         let matches = FillerWordDetector.matches(in: text)
@@ -309,11 +279,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         for match in matches {
             attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
         }
-        DispatchQueue.main.async {
-            self.fillerWordCount = count
-            self.highlightedText = AttributedString(attributed)
-        }
+        fillerWordCount = count
+        highlightedText = AttributedString(attributed)
     }
+
+    // MARK: - Session Management
 
     func resetCurrentSession() {
         transcribedText = ""
@@ -355,6 +325,28 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionStore.reload()
         pastSessions = sessionStore.sessions
     }
+
+    // MARK: - Quality Metrics
+
+    private func recordQualityMetrics() {
+        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        let avgLatency = sessionUpdateCount > 0 ? totalLatencyMs / sessionUpdateCount : 0
+        let avgConfidence = confidenceValues.isEmpty ? nil : confidenceValues.reduce(0, +) / Double(confidenceValues.count)
+        let wordCount = transcribedText.split { !$0.isLetter && !$0.isNumber }.count
+
+        let metric = TranscriptionQualityMetrics(
+            provider: provider.identifier,
+            sessionId: UUID(),
+            date: Date(),
+            totalLatencyMs: avgLatency,
+            finalTranscriptLength: wordCount,
+            fillerWordsDetected: fillerWordCount,
+            providerFillersDetected: providerFillerCount,
+            averageConfidence: avgConfidence,
+            sessionDuration: duration
+        )
+        TranscriptionQualityStore.shared.record(metric)
+    }
 }
 #endif
 
@@ -374,6 +366,7 @@ struct PracticeSession: Identifiable, Codable {
     var aiCoachFeedback: AICoachFeedback? = nil
     var prompt: String? = nil
     var theme: PromptTheme? = nil
+    var drillResult: DrillResult? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -391,6 +384,7 @@ struct PracticeSession: Identifiable, Codable {
         case aiCoachFeedback
         case prompt
         case theme
+        case drillResult
     }
 
     init(
@@ -408,7 +402,8 @@ struct PracticeSession: Identifiable, Codable {
         coachSummary: String? = nil,
         aiCoachFeedback: AICoachFeedback? = nil,
         prompt: String? = nil,
-        theme: PromptTheme? = nil
+        theme: PromptTheme? = nil,
+        drillResult: DrillResult? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -425,6 +420,7 @@ struct PracticeSession: Identifiable, Codable {
         self.aiCoachFeedback = aiCoachFeedback
         self.prompt = prompt
         self.theme = theme
+        self.drillResult = drillResult
     }
 
     init(from decoder: Decoder) throws {
@@ -444,5 +440,6 @@ struct PracticeSession: Identifiable, Codable {
         aiCoachFeedback = try container.decodeIfPresent(AICoachFeedback.self, forKey: .aiCoachFeedback)
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
         theme = try container.decodeIfPresent(PromptTheme.self, forKey: .theme)
+        drillResult = try container.decodeIfPresent(DrillResult.self, forKey: .drillResult)
     }
 }

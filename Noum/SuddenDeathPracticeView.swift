@@ -7,15 +7,19 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathPracticeView: View {
     @Environment(\.dismiss) private var dismiss
-    var goHome: (() -> Void)?
+    @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var question: String = ""
     @State private var elapsed: Int = 0
-    @State private var showSummary = false
     @State private var timerTask: Task<Void, Never>? = nil
     @State private var pressureLevel: Int = 1
     @State private var evaluation: PracticeEvaluation?
+    // Mini-drill navigation
+    @State private var showMiniDrill = false
+    @State private var activeMiniDrill: DrillRecommendationV2?
+    @State private var miniDrillOutcome: MiniDrillOutcome?
+    @State private var showMiniDrillResult = false
     @State private var prepCountdown: Int? = nil
     @State private var launchCountdown: Int? = nil
     @State private var showGoCue = false
@@ -148,34 +152,58 @@ struct SuddenDeathPracticeView: View {
         .onChange(of: speechVM.fillerWordCount) { _, count in
             if count > 0 { stopSession(fillerTriggered: true) }
         }
-        .navigationDestination(isPresented: $showSummary) {
-            SummaryView(
-                transcript: speechVM.highlightedText,
-                fillerCount: speechVM.fillerWordCount,
-                duration: TimeInterval(elapsed),
-                score: evaluation?.score,
-                progressSegments: max(0, pressureLevel - 1),
-                xpEarned: evaluation?.xpEarned ?? 0,
-                showDuration: true,
-                feedbackOverride: evaluation?.feedback,
-                headlineOverride: evaluation?.headline,
-                scoreBreakdown: evaluation?.segments ?? [],
-                insights: evaluation?.insights ?? [],
-                onSelectPracticeMode: {
-                    showSummary = false
-                    if let goHome { goHome() } else { dismiss() }
-                },
-                onHome: {
-                    showSummary = false
-                    if let goHome {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { goHome() }
-                    } else { dismiss() }
-                },
-                onPracticeAgain: {
-                    showSummary = false
-                    reset()
-                }
-            )
+        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
+        .sheet(isPresented: $showMiniDrill) {
+            if let drill = activeMiniDrill {
+                MiniDrillView(
+                    drill: drill,
+                    prompt: question,
+                    onComplete: { outcome in
+                        miniDrillOutcome = outcome
+                        DrillHistoryStore.shared.record(
+                            .init(variationId: outcome.drill.variation.id,
+                                  skillArea: outcome.drill.skillArea,
+                                  succeeded: outcome.succeeded,
+                                  sessionId: UUID())
+                        )
+                        showMiniDrill = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            showMiniDrillResult = true
+                        }
+                    },
+                    onCancel: {
+                        showMiniDrill = false
+                        // Summary is still on the nav path; no action needed
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $showMiniDrillResult) {
+            if let outcome = miniDrillOutcome {
+                MiniDrillResultView(
+                    outcome: outcome,
+                    xpEarned: outcome.succeeded ? 50 : 20,
+                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                    onDone: {
+                        showMiniDrillResult = false
+                    },
+                    onTryAnother: {
+                        showMiniDrillResult = false
+                        if let nextDrill = activeMiniDrill,
+                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
+                            activeMiniDrill = DrillRecommendationV2(
+                                variation: freshVariation,
+                                reason: "Keep building on this skill",
+                                trendContext: nil,
+                                alternateFormat: nil
+                            )
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            showMiniDrill = true
+                        }
+                    }
+                )
+            }
         }
     }
 
@@ -427,6 +455,10 @@ struct SuddenDeathPracticeView: View {
                     } else {
                         silenceNudge = nil
                     }
+                    // Session cap — 5 minutes filler-free is exceptional
+                    if seconds >= 300 {
+                        stopSession(fillerTriggered: false)
+                    }
                 }
             }
         }
@@ -480,11 +512,10 @@ struct SuddenDeathPracticeView: View {
                     showGameOver = true
                     gameOverAppeared = false
                     withAnimation(.bouncySpring) { gameOverAppeared = true }
-#if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-#endif
+                    CoachHaptic.gameOver()
                 } else {
-                    showSummary = true
+                    CoachHaptic.sessionComplete()
+                    pushSummary()
                 }
             }
         }
@@ -978,7 +1009,7 @@ struct SuddenDeathPracticeView: View {
 
                     Button {
                         showGameOver = false
-                        showSummary = true
+                        pushSummary()
                     } label: {
                         Text("See Full Summary")
                             .font(.subheadline.weight(.semibold))
@@ -993,6 +1024,46 @@ struct SuddenDeathPracticeView: View {
         }
     }
 
+    // MARK: - Navigation
+
+    private func pushSummary() {
+        let payloadId = UUID()
+        let entry = SummaryDataStore.Entry(
+            transcript: speechVM.highlightedText,
+            fillerCount: speechVM.fillerWordCount,
+            duration: TimeInterval(elapsed),
+            score: evaluation?.score,
+            progressSegments: max(0, pressureLevel - 1),
+            xpEarned: evaluation?.xpEarned ?? 0,
+            showDuration: true,
+            practiceTitle: "Sudden Death",
+            feedbackOverride: evaluation?.feedback,
+            headlineOverride: evaluation?.headline,
+            scoreBreakdown: evaluation?.segments ?? [],
+            insights: evaluation?.insights ?? [],
+            recentSessions: [],
+            imConversationDetails: nil,
+            explicitMode: .suddenDeath,
+            recordingURL: nil,
+            sessionPrompt: nil,
+            sessionTheme: nil,
+            feedbackCategories: [],
+            strongMoments: [],
+            weakMoments: [],
+            durationAssessment: .onTarget,
+            targetRange: (30, 60, 120),
+            onStartDrill: nil,
+            onStartMiniDrill: { [self] drill in
+                activeMiniDrill = drill
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    showMiniDrill = true
+                }
+            }
+        )
+        SummaryDataStore.shared.store(entry, for: payloadId)
+        let payload = SummaryPayload(id: payloadId, mode: .suddenDeath)
+        navigationPath.append(AppDestination.summary(payload))
+    }
 }
 
 private struct PressureDirective {

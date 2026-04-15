@@ -7,11 +7,15 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct AhCounterView: View {
     @Environment(\.dismiss) private var dismiss
-    var goHome: (() -> Void)?
+    @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @State private var showSummary = false
     @State private var evaluation: PracticeEvaluation?
+    // Mini-drill navigation
+    @State private var showMiniDrill = false
+    @State private var activeMiniDrill: DrillRecommendationV2?
+    @State private var miniDrillOutcome: MiniDrillOutcome?
+    @State private var showMiniDrillResult = false
 
     // MARK: - Prompt Suggestions
 
@@ -49,6 +53,10 @@ struct AhCounterView: View {
     @State private var toastIsCoaching: Bool = false
     @State private var firedMilestones: Set<String> = []
     @State private var recentFillerTimestamps: [Int] = []
+
+    // MARK: - Launch Countdown
+    @State private var launchCountdown: Int? = nil
+    @State private var showGoCue = false
 
     // MARK: - Encouragement
 
@@ -268,8 +276,8 @@ struct AhCounterView: View {
                             .background(Color.red.gradient, in: Capsule(style: .continuous))
                             .foregroundStyle(.white)
                             .buttonStyle(.pressable)
-                    } else {
-                        Button("Start") { startRecording() }
+                    } else if launchCountdown == nil && !showGoCue {
+                        Button("Start") { beginLaunchCountdown() }
                             .font(.headline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, Spacing.md)
@@ -281,6 +289,15 @@ struct AhCounterView: View {
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.vertical, Spacing.sm)
                 .background(.regularMaterial)
+            }
+
+            // MARK: Countdown Overlay
+            if let launchCountdown {
+                countdownOverlay(value: "\(launchCountdown)", subtitle: "Get ready")
+                    .transition(.opacity.combined(with: .scale))
+            } else if showGoCue {
+                countdownOverlay(value: "GO", subtitle: "Start speaking")
+                    .transition(.opacity.combined(with: .scale))
             }
 
             // MARK: Milestone Toast Overlay
@@ -349,33 +366,64 @@ struct AhCounterView: View {
         .onChange(of: elapsedSeconds) { _, newElapsed in
             checkTimeMilestones(elapsed: newElapsed)
         }
-        .navigationDestination(isPresented: $showSummary) {
-            SummaryView(
-                transcript: speechVM.highlightedText,
-                fillerCount: speechVM.fillerWordCount,
-                duration: speechVM.lastSessionDuration,
-                score: evaluation?.score,
-                progressSegments: 0,
-                xpEarned: evaluation?.xpEarned ?? 0,
-                showDuration: true,
-                feedbackOverride: evaluation?.feedback,
-                headlineOverride: evaluation?.headline,
-                scoreBreakdown: evaluation?.segments ?? [],
-                insights: evaluation?.insights ?? [],
-                onSelectPracticeMode: {
-                    showSummary = false
-                    if let goHome { goHome() } else { dismiss() }
+        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
+        .sheet(isPresented: $showMiniDrill) { miniDrillSheet }
+        .sheet(isPresented: $showMiniDrillResult) { miniDrillResultSheet }
+    }
+
+    // MARK: - Mini Drill Sheets
+
+    @ViewBuilder
+    private var miniDrillSheet: some View {
+        if let drill = activeMiniDrill {
+            MiniDrillView(
+                drill: drill,
+                prompt: nil,
+                onComplete: { outcome in
+                    miniDrillOutcome = outcome
+                    DrillHistoryStore.shared.record(
+                        .init(variationId: outcome.drill.variation.id,
+                              skillArea: outcome.drill.skillArea,
+                              succeeded: outcome.succeeded,
+                              sessionId: UUID())
+                    )
+                    showMiniDrill = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        showMiniDrillResult = true
+                    }
                 },
-                onHome: {
-                    showSummary = false
-                    if let goHome {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { goHome() }
-                    } else { dismiss() }
+                onCancel: {
+                    showMiniDrill = false
+                    // Summary is still on the nav path; no action needed
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var miniDrillResultSheet: some View {
+        if let outcome = miniDrillOutcome {
+            MiniDrillResultView(
+                outcome: outcome,
+                xpEarned: outcome.succeeded ? 50 : 20,
+                streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                onDone: {
+                    showMiniDrillResult = false
                 },
-                onPracticeAgain: {
-                    showSummary = false
-                    speechVM.resetCurrentSession()
-                    resetStreakState()
+                onTryAnother: {
+                    showMiniDrillResult = false
+                    if let nextDrill = activeMiniDrill,
+                       let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
+                        activeMiniDrill = DrillRecommendationV2(
+                            variation: freshVariation,
+                            reason: "Keep building on this skill",
+                            trendContext: nil,
+                            alternateFormat: nil
+                        )
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        showMiniDrill = true
+                    }
                 }
             )
         }
@@ -399,6 +447,12 @@ struct AhCounterView: View {
                 currentStreakSeconds += 1
                 if currentStreakSeconds > bestStreakSeconds {
                     bestStreakSeconds = currentStreakSeconds
+                }
+                // Gentle session cap — nudge at 9 min, auto-stop at 10 min
+                if elapsedSeconds == 540 {
+                    toastMessage = "9 minutes — great session. Wrapping up soon."
+                } else if elapsedSeconds >= 600 {
+                    stopSession()
                 }
             }
         }
@@ -490,6 +544,51 @@ struct AhCounterView: View {
         }
     }
 
+    // MARK: - Launch Countdown
+
+    private func beginLaunchCountdown() {
+        launchCountdown = 3
+        Task {
+            for count in stride(from: 3, through: 1, by: -1) {
+                await MainActor.run {
+                    withAnimation(.snappy(duration: 0.25)) { launchCountdown = count }
+                    CoachHaptic.countdownBeat()
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            await MainActor.run {
+                withAnimation(.snappy(duration: 0.25)) { launchCountdown = nil }
+                showGoCue = true
+            }
+            try? await Task.sleep(for: .milliseconds(700))
+            await MainActor.run {
+                showGoCue = false
+                startRecording()
+            }
+        }
+    }
+
+    private func countdownOverlay(value: String, subtitle: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.10)
+                .ignoresSafeArea()
+
+            VStack(spacing: 10) {
+                Text(value)
+                    .font(.system(size: 76, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(AppColor.modeAhCounter.opacity(0.92))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .padding(36)
+            .shadow(color: .black.opacity(0.16), radius: 24, y: 18)
+        }
+    }
+
     // MARK: - Session Control
 
     private func startRecording() {
@@ -501,6 +600,7 @@ struct AhCounterView: View {
     private func stopSession() {
         speechVM.stopRecording()
         stopElapsedTimer()
+        CoachHaptic.sessionComplete()
         Task {
             try? await Task.sleep(for: .milliseconds(650))
             await MainActor.run {
@@ -519,10 +619,50 @@ struct AhCounterView: View {
                     insights: result.insights,
                     coachSummary: result.feedback
                 )
-                showSummary = true
+                pushSummary()
             }
         }
     }
 
+    // MARK: - Navigation
+
+    private func pushSummary() {
+        let payloadId = UUID()
+        let entry = SummaryDataStore.Entry(
+            transcript: speechVM.highlightedText,
+            fillerCount: speechVM.fillerWordCount,
+            duration: speechVM.lastSessionDuration,
+            score: evaluation?.score,
+            progressSegments: 0,
+            xpEarned: evaluation?.xpEarned ?? 0,
+            showDuration: true,
+            practiceTitle: "Ah-Counter Practice",
+            feedbackOverride: evaluation?.feedback,
+            headlineOverride: evaluation?.headline,
+            scoreBreakdown: evaluation?.segments ?? [],
+            insights: evaluation?.insights ?? [],
+            recentSessions: [],
+            imConversationDetails: nil,
+            explicitMode: .ahCounter,
+            recordingURL: nil,
+            sessionPrompt: nil,
+            sessionTheme: nil,
+            feedbackCategories: [],
+            strongMoments: [],
+            weakMoments: [],
+            durationAssessment: .onTarget,
+            targetRange: (30, 60, 120),
+            onStartDrill: nil,
+            onStartMiniDrill: { [self] drill in
+                activeMiniDrill = drill
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    showMiniDrill = true
+                }
+            }
+        )
+        SummaryDataStore.shared.store(entry, for: payloadId)
+        let payload = SummaryPayload(id: payloadId, mode: .ahCounter)
+        navigationPath.append(AppDestination.summary(payload))
+    }
 }
 #endif

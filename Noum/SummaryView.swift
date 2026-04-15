@@ -755,6 +755,8 @@ struct SummaryView: View {
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
+    var onStartDrill: ((DrillRecommendation) -> Void)?
+    var onStartMiniDrill: ((DrillRecommendationV2) -> Void)?
 
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
@@ -796,6 +798,7 @@ struct SummaryView: View {
     @State private var levelUpPreviousLevel: String = ""
     @State private var levelUpNewLevel: String = ""
     @State private var showSecondaryDetails = false
+    @State private var coachNoteRevealed = false
     @State private var showAIDisclosure = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -842,6 +845,54 @@ struct SummaryView: View {
     /// True when the user barely said anything — don't give credit for zero fillers etc.
     private var isMinimalEffort: Bool {
         transcriptWordCount < 5 || effectiveDuration < 5
+    }
+
+    /// The single "Next Rep" drill recommendation for this session (legacy v1).
+    private var drillRecommendation: DrillRecommendation {
+        DrillEngine.recommend(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            score: scoreValue,
+            feedbackCategories: feedbackCategories,
+            durationAssessment: durationAssessment
+        )
+    }
+
+    // MARK: - v2 Drill System
+
+    /// The v2 drill recommendation using trend intelligence and drill catalog.
+    private var drillRecommendationV2: DrillRecommendationV2 {
+        let categoryTuples = feedbackCategories.map { ($0.dimension, $0.rating.rawValue) }
+        return DrillEngineV2.recommend(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            score: scoreValue,
+            feedbackCategories: categoryTuples
+        )
+    }
+
+    /// Skill trends across recent sessions.
+    private var skillTrends: [SkillTrend] {
+        TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
+    }
+
+    /// Three-part coach note: momentum, leverage, next step.
+    private var coachNote: CoachNote {
+        let wpm = effectiveDuration > 0 ? Double(transcriptWordCount) / effectiveDuration * 60 : 0
+        let categoryRatings = Dictionary(uniqueKeysWithValues: feedbackCategories.map { ($0.dimension, $0.rating.rawValue) })
+        return VerdictEngine.generate(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            wpm: wpm,
+            score: scoreValue,
+            categoryRatings: categoryRatings,
+            trends: skillTrends,
+            primaryFocus: drillRecommendationV2.skillArea,
+            drillHistory: DrillHistoryStore.shared.entries
+        )
     }
 
     private var headline: String {
@@ -1046,29 +1097,31 @@ struct SummaryView: View {
                 )
                 .transition(.opacity)
             } else {
-                // Normal summary content — 4-tier hierarchy
+                // Normal summary content — redesigned hierarchy
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
 
                         // TIER 1: How did I do?
                         heroScoreCard
-                        verdictCard
 
-                        // TIER 2: What matters most?
-                        freeInsightCard
-                        aiMomentsCard
+                        // TIER 2: Coach Note (momentum / leverage)
+                        coachNoteCard
 
+                        // TIER 3: Your Next Move (primary CTA)
+                        yourNextMoveCard
+
+                        // IM Conversation overview (mode-specific)
                         if isIMSummary, let details = imConversationDetails {
                             imConversationOverview(details)
                         }
 
-                        // TIER 3: What should I do next?
-                        if premium.canViewCoachingInsights {
-                            coachReadCard
-                        }
+                        // TIER 4: Expandable details
+                        expandableDetailsSection
 
-                        // TIER 4: Secondary details (collapsed by default)
-                        secondaryDetailsSection
+                        // Pro Preview (free users only)
+                        if !premium.isPremium {
+                            proPreviewCard
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
@@ -1116,10 +1169,13 @@ struct SummaryView: View {
                 VideoPlaybackView(url: recordingURL)
             }
         }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
 #if canImport(UIKit)
         .onChange(of: celebrationVisible) { _, visible in
             if visible {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                CoachHaptic.personalBest()
             }
         }
 #endif
@@ -1274,7 +1330,446 @@ struct SummaryView: View {
         return abs(delta) >= 3 ? delta : nil // only show if meaningful (3+ seconds)
     }
 
-    // MARK: - Verdict Card
+    // MARK: - Coach Note Card (v2 — replaces verdict)
+
+    private var coachNoteCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Coach Note")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            // Momentum — what's getting stronger (stagger: line 0)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "arrow.up.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.positive)
+                    .frame(width: 18)
+                Text(coachNote.momentum)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .opacity(coachNoteRevealed ? 1 : 0)
+            .offset(y: coachNoteRevealed ? 0 : 8)
+
+            // Leverage — what's holding them back (stagger: line 1)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "scope")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.caution)
+                    .frame(width: 18)
+                Text(coachNote.leverage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .opacity(coachNoteRevealed ? 1 : 0)
+            .offset(y: coachNoteRevealed ? 0 : 8)
+
+            // Next step — one concrete action (stagger: line 2)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "arrow.right.circle")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 18)
+                Text(coachNote.nextStep)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .opacity(coachNoteRevealed ? 1 : 0)
+            .offset(y: coachNoteRevealed ? 0 : 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    // MARK: - Your Next Move Card (v2 — replaces nextRepCard)
+
+    private var yourNextMoveCard: some View {
+        let drill = drillRecommendationV2
+        return VStack(alignment: .leading, spacing: 14) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: drill.icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(drill.tint)
+                Text("Your Next Move")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                // Format badge
+                Text(drill.format == .miniDrill ? "Quick Drill" : "Full Retry")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(drill.tint)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(drill.tint.opacity(0.1), in: Capsule())
+            }
+
+            // Drill title
+            Text(drill.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            // Session-specific rationale
+            Text(drill.reason)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Trend context (if available)
+            if let context = drill.trendContext {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(drill.tint.opacity(0.7))
+                    Text(context)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(drill.tint.opacity(0.05), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            }
+
+            // Constraint rule
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your rule")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(drill.tint)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(drill.constraint)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(drill.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+            // Primary CTA — Mini Drill or Full Retry
+            if drill.format == .miniDrill {
+                Button {
+                    onStartMiniDrill?(drill)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Start Quick Drill (45s)")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .foregroundStyle(.white)
+                    .background(drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+
+                // Alternate: full retry
+                if let onStartDrill {
+                    Button {
+                        onStartDrill(drillRecommendation)
+                    } label: {
+                        Text("or Full Retry")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            } else {
+                // Full retry is the primary action
+                if let onStartDrill {
+                    Button {
+                        onStartDrill(drillRecommendation)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Start Full Retry")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .foregroundStyle(.white)
+                        .background(drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
+                }
+
+                // Alternate: mini drill
+                Button {
+                    onStartMiniDrill?(drill)
+                } label: {
+                    Text("or Quick Drill (45s)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            // AI Coach suggested drill (if available, shown subtly)
+            if let aiFeedback {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("AI Coach: \(aiFeedback.suggestedDrill)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    // MARK: - Expandable Details Section
+
+    private var expandableDetailsSection: some View {
+        VStack(spacing: 12) {
+            // Session Details (collapsed by default)
+            DisclosureGroup(isExpanded: $showSecondaryDetails) {
+                VStack(spacing: 14) {
+                    // Category grid
+                    if !feedbackCategories.isEmpty {
+                        categoryGrid
+                    }
+
+                    // AI Moments
+                    if !strongMoments.isEmpty || !weakMoments.isEmpty {
+                        aiMomentsContent
+                    }
+
+                    // Coach Read (premium)
+                    if premium.canViewCoachingInsights {
+                        coachReadCard
+                    }
+
+                    // Video playback
+                    if recordingURL != nil {
+                        videoPlaybackButton
+                    }
+
+                    // Session comparison
+                    sessionComparisonCard
+                }
+                .padding(.top, 8)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text("Session Details")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                }
+            }
+            .tint(.secondary)
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+
+            // Skill Progress (always visible if trend data exists)
+            if !skillTrends.isEmpty {
+                SkillProgressView(
+                    trends: skillTrends,
+                    drillHistory: DrillHistoryStore.shared.entries
+                )
+            }
+
+            // XP Progress
+            xpProgressCard
+        }
+    }
+
+    // MARK: - Pro Preview Card (Free Users)
+
+    private var proPreviewCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.orange)
+                Text("Unlock Deeper Insights")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+            }
+
+            Text("Pro members get personalized coach reads, video body language analysis, trend tracking, and detailed drills after every session.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Preview glimpse — show what a coach read looks like
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Coach Read Preview")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your opening was strong — direct and grounded...")
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.5))
+                    Text("Filler pattern suggests rehearsal on transitions...")
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.3))
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    LinearGradient(
+                        colors: [.clear, AppColor.cardBackground],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+
+            Button {
+                showPaywall = true
+            } label: {
+                HStack {
+                    Text("See What Pro Unlocks")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [Color.orange, Color.orange.opacity(0.85)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    /// AI Moments content (extracted from the old aiMomentsCard for reuse inside DisclosureGroup)
+    private var aiMomentsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !strongMoments.isEmpty {
+                Text("Strong Moments")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.positive)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                ForEach(strongMoments, id: \.self) { moment in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.positive)
+                        Text(moment)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+            if !weakMoments.isEmpty {
+                Text("Areas to Watch")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.caution)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .padding(.top, weakMoments.isEmpty ? 0 : 4)
+                ForEach(weakMoments, id: \.self) { moment in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.caution)
+                        Text(moment)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Video playback button for the expandable section
+    private var videoPlaybackButton: some View {
+        Button {
+            showVideoPlayback = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.caption.weight(.semibold))
+                Text("Watch Recording")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(AppColor.brandBlue)
+        }
+    }
+
+    /// Session comparison card
+    private var sessionComparisonCard: some View {
+        Group {
+            if recentSessions.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("vs. Recent Average")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    HStack(spacing: 16) {
+                        if let fd = fillerDelta {
+                            comparisonStat(label: "Fillers", delta: fd, inverted: true)
+                        }
+                        if let dd = durationDelta {
+                            comparisonStat(label: "Duration", delta: dd, inverted: false)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func comparisonStat(label: String, delta: Int, inverted: Bool) -> some View {
+        let improved = inverted ? delta < 0 : delta > 0
+        return HStack(spacing: 4) {
+            Image(systemName: improved ? "arrow.down" : "arrow.up")
+                .font(.caption2.weight(.bold))
+            Text("\(abs(delta))")
+                .font(.caption.weight(.bold))
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(improved ? AppColor.positive : AppColor.caution)
+    }
+
+    // MARK: - Legacy Verdict Card (kept for backward compatibility)
 
     private var verdictCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1295,34 +1790,82 @@ struct SummaryView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
     }
 
-    // MARK: - Free Insight Card
+    // MARK: - Next Rep Card
 
-    private var freeInsightCard: some View {
-        let insight = primaryFreeInsight
-        return VStack(alignment: .leading, spacing: 10) {
+    private var nextRepCard: some View {
+        let drill = drillRecommendation
+        return VStack(alignment: .leading, spacing: 12) {
+            // Header
             HStack(spacing: 8) {
-                Image(systemName: insight.icon)
+                Image(systemName: drill.icon)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(insight.tint)
-                Text("Focus Area")
+                    .foregroundStyle(drill.tint)
+                Text("Next Rep")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.8)
+                Spacer()
+                Image(systemName: "flame.fill")
+                    .font(.caption2)
+                    .foregroundStyle(drill.tint.opacity(0.5))
             }
 
-            Text(insight.message)
-                .font(.subheadline)
+            // Drill title
+            Text(drill.title)
+                .font(.headline)
                 .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
 
-            Text(insight.action)
-                .font(.caption)
+            // Why this drill
+            Text(drill.reason)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+            // The constraint / rule
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your rule")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(drill.tint)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(drill.constraint)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(drill.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+            // Success goal
+            HStack(spacing: 6) {
+                Image(systemName: "target")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(drill.successGoal)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // CTA Button
+            if onStartDrill != nil {
+                Button {
+                    onStartDrill?(drill)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Start Next Rep")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(.white)
+                    .background(drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
@@ -2476,8 +3019,16 @@ struct SummaryView: View {
         let levelAfter = ProfileManager.levelTitle(forXP: profile.xp)
         animateXP(to: profile.xp)
         animateSegments()
+        CoachHaptic.scoreReveal()
         withAnimation(.easeInOut(duration: 0.35)) {
             celebrationVisible = scoreValue >= 7 || xpEarned >= 100
+        }
+        // Stagger the coach note card lines in after the score settles
+        Task {
+            try? await Task.sleep(for: .seconds(0.8))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.4)) { coachNoteRevealed = true }
+            }
         }
         Task {
             try? await Task.sleep(for: .seconds(1.6))
@@ -2508,6 +3059,20 @@ struct SummaryView: View {
                 }
             }
         }
+        // Record skill snapshot for trend analysis
+        var categoryMap: [String: String] = [:]
+        for seg in lockedScoreBreakdown {
+            categoryMap[seg.title] = seg.value
+        }
+        SkillTrendStore.shared.recordFromSession(
+            sessionId: latestSessionID ?? UUID(),
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: (lockedTranscriptText ?? "").split(separator: " ").count,
+            score: scoreValue,
+            categoryRatings: categoryMap
+        )
+
         Task {
             await notificationManager.scheduleFollowUpReminder(
                 profile: coachingProfileStore.profile,
@@ -2609,7 +3174,7 @@ struct SummaryView: View {
     }
 
     private func detectMilestone(levelBefore: String, levelAfter: String) -> MilestoneEvent? {
-        // 1. Level-up
+        // 1. Level-up (highest priority — gets full-screen celebration)
         if levelBefore != levelAfter {
             return MilestoneEvent(
                 icon: "arrow.up.circle.fill",
@@ -2639,23 +3204,50 @@ struct SummaryView: View {
         // 3. Streak milestones (3, 7, 14, 30 days)
         let streak = sessionStreak
         if [3, 7, 14, 30].contains(streak) {
+            let copy = MilestoneCopy.streakMilestone(streak)
             return MilestoneEvent(
                 icon: "flame.fill",
                 tint: .orange,
-                title: "\(streak)-Day Streak!",
-                subtitle: "You've practiced \(streak) days in a row",
-                detail: streak < 30 ? "Next milestone: \(streak == 3 ? 7 : streak == 7 ? 14 : 30) days" : "Incredible consistency."
+                title: copy.title,
+                subtitle: copy.subtitle,
+                detail: copy.detail
             )
         }
 
-        // 4. First session ever
+        // 4. Session count milestones (10, 25, 50, 100)
+        let count = sessionStore.sessions.count
+        if [10, 25, 50, 100].contains(count) {
+            let copy = MilestoneCopy.sessionCount(count)
+            return MilestoneEvent(
+                icon: "number.circle.fill",
+                tint: .blue,
+                title: copy.title,
+                subtitle: copy.subtitle,
+                detail: copy.detail
+            )
+        }
+
+        // 5. Skill resolved (a previously problematic skill is now resolved)
+        let trends = skillTrends
+        if let resolved = trends.first(where: { $0.direction == .resolved }) {
+            let copy = MilestoneCopy.skillResolved(resolved.skillArea)
+            return MilestoneEvent(
+                icon: "checkmark.seal.fill",
+                tint: AppColor.positive,
+                title: copy.title,
+                subtitle: copy.subtitle,
+                detail: copy.detail
+            )
+        }
+
+        // 6. First session ever
         if sessionStore.sessions.count == 1 {
             return MilestoneEvent(
                 icon: "sparkles",
                 tint: .blue,
                 title: "First Rep Complete!",
                 subtitle: "Your speaking journey starts now",
-                detail: "Come back tomorrow to start building a streak."
+                detail: "The app learns your patterns over time — it gets smarter the more you use it."
             )
         }
 
@@ -2676,6 +3268,7 @@ struct SummaryView: View {
                 currentLevel = ProfileManager.levelTitle(forXP: endXP)
                 nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                 xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
+                CoachHaptic.xpEarned()
             }
         }
     }
@@ -2695,6 +3288,76 @@ struct SummaryView: View {
     }
 }
 
+#endif
+
+// MARK: - Path-based Navigation Init (in extension to preserve memberwise init)
+#if canImport(SwiftUI)
+extension SummaryView {
+    /// Path-based navigation initializer. Pulls all heavy data from SummaryDataStore.
+    init(payload: SummaryPayload, navigationPath: Binding<NavigationPath>) {
+        let store = SummaryDataStore.shared
+        let entry = store.retrieve(for: payload.id)
+
+        self.transcript = entry?.transcript ?? AttributedString("")
+        self.fillerCount = entry?.fillerCount ?? 0
+        self.duration = entry?.duration ?? 0
+        self.score = entry?.score
+        self.progressSegments = entry?.progressSegments ?? 0
+        self.xpEarned = entry?.xpEarned ?? 0
+        self.showDuration = entry?.showDuration ?? true
+        self.practiceTitle = entry?.practiceTitle ?? "Practice Summary"
+        self.feedbackOverride = entry?.feedbackOverride
+        self.headlineOverride = entry?.headlineOverride
+        self.scoreBreakdown = entry?.scoreBreakdown ?? []
+        self.insights = entry?.insights ?? []
+        self.recentSessions = entry?.recentSessions ?? []
+        self.imConversationDetails = entry?.imConversationDetails
+        self.explicitMode = entry?.explicitMode ?? payload.mode
+        self.recordingURL = entry?.recordingURL
+        self.sessionPrompt = entry?.sessionPrompt
+        self.sessionTheme = entry?.sessionTheme
+        self.feedbackCategories = entry?.feedbackCategories ?? []
+        self.strongMoments = entry?.strongMoments ?? []
+        self.weakMoments = entry?.weakMoments ?? []
+        self.durationAssessment = entry?.durationAssessment ?? .onTarget
+        self.targetRange = entry?.targetRange ?? (30, 60, 120)
+
+        // Path-based navigation callbacks
+        let pathBinding = navigationPath
+        let payloadId = payload.id
+        let payloadMode = payload.mode
+        self.onHome = {
+            SummaryDataStore.shared.remove(for: payloadId)
+            pathBinding.wrappedValue = NavigationPath()
+        }
+        self.onSelectPracticeMode = {
+            SummaryDataStore.shared.remove(for: payloadId)
+            pathBinding.wrappedValue = NavigationPath()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(AppDestination.practiceSelection)
+            }
+        }
+        self.onPracticeAgain = {
+            SummaryDataStore.shared.remove(for: payloadId)
+            var path = pathBinding.wrappedValue
+            if path.count > 0 { path.removeLast() }
+            if path.count > 0 { path.removeLast() }
+            pathBinding.wrappedValue = path
+            let destination: AppDestination
+            switch payloadMode {
+            case .timed: destination = .timedPractice
+            case .suddenDeath: destination = .suddenDeathPractice
+            case .ahCounter: destination = .ahCounterPractice
+            case .imConversation: destination = .imPractice(scenario: nil, tone: nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(destination)
+            }
+        }
+        self.onStartDrill = entry?.onStartDrill
+        self.onStartMiniDrill = entry?.onStartMiniDrill
+    }
+}
 #endif
 
 #if canImport(SwiftUI)

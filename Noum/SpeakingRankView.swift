@@ -5,6 +5,7 @@ import SwiftUI
 
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
+@available(*, deprecated, message: "Use ProfileView instead. Rank and achievements are now shown on the Profile tab.")
 struct SpeakingRankView: View {
     private let metricColumns = [
         GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)

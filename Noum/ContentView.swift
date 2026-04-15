@@ -97,6 +97,40 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 bottomNavigation
             }
+            .navigationDestination(for: AppDestination.self) { destination in
+                switch destination {
+                case .practiceSelection:
+                    PracticeModeSelectionView(selectedMode: $selectedPracticeMode, navigationPath: $navigationPath)
+                case .timedPractice:
+                    TimedPracticeView(navigationPath: $navigationPath)
+                case .suddenDeathPractice:
+                    SuddenDeathPracticeView(navigationPath: $navigationPath)
+                case .ahCounterPractice:
+                    AhCounterView(navigationPath: $navigationPath)
+                case .imPractice(let scenario, let tone):
+                    if IMModeAvailability.isAvailable {
+                        IMPracticeView(
+                            navigationPath: $navigationPath,
+                            preferredScenario: scenario,
+                            preferredTone: tone
+                        )
+                    } else {
+                        TimedPracticeView(navigationPath: $navigationPath)
+                    }
+                case .summary(let payload):
+                    SummaryView(payload: payload, navigationPath: $navigationPath)
+                case .sessionHistory:
+                    SessionHistoryView()
+                case .socialProfile:
+                    ProfileView()
+                case .settings:
+                    SettingsView()
+                case .speakingRank:
+                    SpeakingRankView()
+                case .pathJourney:
+                    PathJourneyView()
+                }
+            }
         }
         .accessibilityIdentifier("home.screen")
         .fullScreenCover(
@@ -233,7 +267,7 @@ struct ContentView: View {
     }
 
     private var firstSessionCard: some View {
-        NavigationLink(destination: TimedPracticeView(goHome: { navigationPath = NavigationPath() })) {
+        Button { navigationPath.append(AppDestination.timedPractice) } label: {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Let's find your starting point")
@@ -297,7 +331,7 @@ struct ContentView: View {
 
     private var quickStartCard: some View {
         let suggestion = effectiveSuggestion
-        return NavigationLink(destination: practiceDestination(for: suggestion)) {
+        return Button { navigationPath.append(practiceAppDestination(for: suggestion)) } label: {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
@@ -404,7 +438,7 @@ struct ContentView: View {
     }
 
     private var progressCard: some View {
-        NavigationLink(destination: SpeakingRankView()) {
+        Button { navigationPath.append(AppDestination.socialProfile) } label: {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: rankSymbol)
@@ -528,7 +562,7 @@ struct ContentView: View {
     }
 
     private var journeyPreviewCard: some View {
-        NavigationLink(destination: PathJourneyView()) {
+        Button { navigationPath.append(AppDestination.pathJourney) } label: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
@@ -578,22 +612,22 @@ struct ContentView: View {
     private var bottomNavigation: some View {
         HStack(spacing: 10) {
             Group {
-                NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode, goHome: { navigationPath = NavigationPath() })) {
+                Button { navigationPath.append(AppDestination.practiceSelection) } label: {
                     navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
                 }
                 .accessibilityIdentifier("nav.practice")
 
-                NavigationLink(destination: SessionHistoryView()) {
+                Button { navigationPath.append(AppDestination.sessionHistory) } label: {
                     navItem(title: "Review", systemImage: "book.fill", accent: .orange)
                 }
                 .accessibilityIdentifier("nav.history")
 
-                NavigationLink(destination: SocialProfileView()) {
-                    navItem(title: "Social", systemImage: "person.2.fill", accent: .purple)
+                Button { navigationPath.append(AppDestination.socialProfile) } label: {
+                    navItem(title: "Profile", systemImage: "person.fill", accent: .purple)
                 }
                 .accessibilityIdentifier("nav.social")
 
-                NavigationLink(destination: SettingsView()) {
+                Button { navigationPath.append(AppDestination.settings) } label: {
                     navItem(title: "Settings", systemImage: "slider.horizontal.3", accent: .green)
                 }
                 .accessibilityIdentifier("nav.settings")
@@ -615,7 +649,11 @@ struct ContentView: View {
         suggestion: PracticeSuggestion,
         systemImage: String
     ) -> some View {
-        NavigationLink(destination: practiceDestination(for: suggestion)) {
+        Button {
+            selectedPracticeMode = suggestion.mode
+            recommendationLearningStore.markTapped(mode: suggestion.mode)
+            navigationPath.append(practiceAppDestination(for: suggestion))
+        } label: {
             HStack(alignment: .center, spacing: 14) {
                 PulseBadge(systemImage: systemImage, tint: suggestion.tint)
 
@@ -662,10 +700,6 @@ struct ContentView: View {
                     .stroke(suggestion.tint.opacity(0.10), lineWidth: 1)
             )
         }
-        .simultaneousGesture(TapGesture().onEnded {
-            selectedPracticeMode = suggestion.mode
-            recommendationLearningStore.markTapped(mode: suggestion.mode)
-        })
     }
 
     private var coachingFocusCard: some View {
@@ -1129,25 +1163,19 @@ struct ContentView: View {
         )
     }
 
-    @ViewBuilder
-    private func practiceDestination(for suggestion: PracticeSuggestion) -> some View {
-        let home = { navigationPath = NavigationPath() }
+    private func practiceAppDestination(for suggestion: PracticeSuggestion) -> AppDestination {
         switch suggestion.mode {
         case .timed:
-            TimedPracticeView(goHome: home)
+            return .timedPractice
         case .suddenDeath:
-            SuddenDeathPracticeView(goHome: home)
+            return .suddenDeathPractice
         case .ahCounter:
-            AhCounterView(goHome: home)
+            return .ahCounterPractice
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                IMPracticeView(
-                    goHome: home,
-                    preferredScenario: suggestion.recommendedScenario,
-                    preferredTone: suggestion.recommendedTone
-                )
+                return .imPractice(scenario: suggestion.recommendedScenario, tone: suggestion.recommendedTone)
             } else {
-                TimedPracticeView(goHome: home)
+                return .timedPractice
             }
         }
     }
@@ -1179,44 +1207,13 @@ struct ContentView: View {
         return "Mode: \(suggestion.mode.displayLabel) • \(scenario.title) • \(tone.title)"
     }
 
-    private var levelProgressLabel: String {
-        "\(Int((profile.progressTowardsNextLevel * 100).rounded()))%"
-    }
-
-    private var rankSymbol: String {
-        let title = profile.levelTitle
-        if title.contains("Beginner") { return "sparkles" }
-        if title.contains("Novice") { return "figure.stand" }
-        if title.contains("Average") { return "waveform.path.ecg" }
-        if title.contains("Professional") { return "shield.lefthalf.filled" }
-        return "crown.fill"
-    }
-
-    private var rankTint: Color {
-        let title = profile.levelTitle
-        if title.contains("Beginner") { return .blue }
-        if title.contains("Novice") { return .teal }
-        if title.contains("Average") { return .indigo }
-        if title.contains("Professional") { return .orange }
-        return .yellow
-    }
-
-    private var rankDescriptor: String {
-        let title = profile.levelTitle
-        if title.contains("Beginner") { return "Foundational tier" }
-        if title.contains("Novice") { return "Developing tier" }
-        if title.contains("Average") { return "Steady tier" }
-        if title.contains("Professional") { return "Advanced tier" }
-        return "Elite tier"
-    }
-
-    private var rankTitle: String {
-        "Speaker \(max(1, (profile.xp / 1000) + 1))"
-    }
-
-    private var nextRankTitle: String {
-        "Next: Speaker \(max(2, (profile.xp / 1000) + 2))"
-    }
+    // Rank helpers forwarded from ProfileManager extension (PracticeSupport.swift)
+    private var levelProgressLabel: String { profile.levelProgressLabel }
+    private var rankSymbol: String { profile.rankSymbol }
+    private var rankTint: Color { profile.rankTint }
+    private var rankDescriptor: String { profile.rankDescriptor }
+    private var rankTitle: String { profile.rankTitle }
+    private var nextRankTitle: String { profile.nextRankTitle }
 
 }
 #endif

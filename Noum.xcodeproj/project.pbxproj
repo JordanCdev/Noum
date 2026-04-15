@@ -17,6 +17,15 @@
 		0B31DDB72E04EA9100DE8F71 /* AWSClientRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */; };
 		0D222222222222222222222223 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 0D222222222222222222222222 /* GoogleSignIn */; };
 		0D333333333333333333333334 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 0D333333333333333333333333 /* GoogleSignInSwift */; };
+		1707DBB82F8EF188001B0638 /* MOTIVATION_SYSTEM.md in Resources */ = {isa = PBXBuildFile; fileRef = 1707DBB72F8EF188001B0638 /* MOTIVATION_SYSTEM.md */; };
+		1707DBBA2F8EF1BC001B0638 /* RewardEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBB92F8EF1BC001B0638 /* RewardEngine.swift */; };
+		1707DBBC2F8EF208001B0638 /* ReinforcementCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBBB2F8EF208001B0638 /* ReinforcementCopy.swift */; };
+		1707DBBE2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md in Resources */ = {isa = PBXBuildFile; fileRef = 1707DBBD2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md */; };
+		1707DBC02F8F0350001B0638 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBBF2F8F0350001B0638 /* ProfileView.swift */; };
+		1707DBC22F8F0446001B0638 /* TranscriptionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC12F8F0446001B0638 /* TranscriptionProvider.swift */; };
+		1707DBC42F8F0456001B0638 /* AWSTranscribeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */; };
+		1707DBC62F8F046D001B0638 /* DeepgramProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */; };
+		1707DBC82F8F0488001B0638 /* GoogleSpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */; };
 		1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */; };
 		1774FCF02F849A3000A6D313 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCEF2F849A3000A6D313 /* DesignSystem.swift */; };
 /* End PBXBuildFile section */
@@ -42,6 +51,15 @@
 		0B981F6C2D44610E008F4158 /* Noum.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noum.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B981F7C2D446110008F4158 /* NoumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B981F862D446110008F4158 /* NoumUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1707DBB72F8EF188001B0638 /* MOTIVATION_SYSTEM.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = MOTIVATION_SYSTEM.md; sourceTree = "<group>"; };
+		1707DBB92F8EF1BC001B0638 /* RewardEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewardEngine.swift; sourceTree = "<group>"; };
+		1707DBBB2F8EF208001B0638 /* ReinforcementCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReinforcementCopy.swift; sourceTree = "<group>"; };
+		1707DBBD2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = EXPERIENCE_FRAMEWORK.md; sourceTree = "<group>"; };
+		1707DBBF2F8F0350001B0638 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		1707DBC12F8F0446001B0638 /* TranscriptionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionProvider.swift; sourceTree = "<group>"; };
+		1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWSTranscribeProvider.swift; sourceTree = "<group>"; };
+		1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepgramProvider.swift; sourceTree = "<group>"; };
+		1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSpeechProvider.swift; sourceTree = "<group>"; };
 		1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRecordingManager.swift; sourceTree = "<group>"; };
 		1774FCEF2F849A3000A6D313 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -129,6 +147,15 @@
 				0B981F6D2D44610E008F4158 /* Products */,
 				1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */,
 				1774FCEF2F849A3000A6D313 /* DesignSystem.swift */,
+				1707DBB72F8EF188001B0638 /* MOTIVATION_SYSTEM.md */,
+				1707DBB92F8EF1BC001B0638 /* RewardEngine.swift */,
+				1707DBBB2F8EF208001B0638 /* ReinforcementCopy.swift */,
+				1707DBBD2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md */,
+				1707DBBF2F8F0350001B0638 /* ProfileView.swift */,
+				1707DBC12F8F0446001B0638 /* TranscriptionProvider.swift */,
+				1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */,
+				1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */,
+				1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -277,6 +304,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1707DBB82F8EF188001B0638 /* MOTIVATION_SYSTEM.md in Resources */,
+				1707DBBE2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,6 +331,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */,
+				1707DBC42F8F0456001B0638 /* AWSTranscribeProvider.swift in Sources */,
+				1707DBC02F8F0350001B0638 /* ProfileView.swift in Sources */,
+				1707DBBC2F8EF208001B0638 /* ReinforcementCopy.swift in Sources */,
+				1707DBC62F8F046D001B0638 /* DeepgramProvider.swift in Sources */,
+				1707DBC22F8F0446001B0638 /* TranscriptionProvider.swift in Sources */,
+				1707DBC82F8F0488001B0638 /* GoogleSpeechProvider.swift in Sources */,
+				1707DBBA2F8EF1BC001B0638 /* RewardEngine.swift in Sources */,
 				1774FCF02F849A3000A6D313 /* DesignSystem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

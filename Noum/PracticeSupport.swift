@@ -6,6 +6,77 @@ import SwiftUI
 import AVFAudio
 #endif
 
+// MARK: - Navigation Destination Types
+
+enum AppDestination: Hashable {
+    case practiceSelection
+    case timedPractice
+    case suddenDeathPractice
+    case ahCounterPractice
+    case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
+    case summary(SummaryPayload)
+    case sessionHistory
+    case socialProfile
+    case settings
+    case speakingRank
+    case pathJourney
+}
+
+struct SummaryPayload: Identifiable, Hashable {
+    let id: UUID
+    let mode: PracticeMode
+}
+
+/// Holds the non-Hashable data that SummaryView needs, keyed by SummaryPayload.id.
+/// Practice views store their data here before pushing a `.summary(payload)` onto the navigation path.
+@MainActor
+final class SummaryDataStore {
+    static let shared = SummaryDataStore()
+    private init() {}
+
+    struct Entry {
+        let transcript: AttributedString
+        let fillerCount: Int
+        let duration: TimeInterval
+        let score: Int?
+        let progressSegments: Int
+        let xpEarned: Int
+        let showDuration: Bool
+        let practiceTitle: String
+        let feedbackOverride: String?
+        let headlineOverride: String?
+        let scoreBreakdown: [PracticeScoreSegment]
+        let insights: [String]
+        let recentSessions: [PracticeSession]
+        let imConversationDetails: IMConversationDetails?
+        let explicitMode: PracticeMode?
+        let recordingURL: URL?
+        let sessionPrompt: String?
+        let sessionTheme: PromptTheme?
+        let feedbackCategories: [FeedbackCategory]
+        let strongMoments: [String]
+        let weakMoments: [String]
+        let durationAssessment: DurationAssessment
+        let targetRange: (min: Double, target: Double, max: Double)
+        let onStartDrill: ((DrillRecommendation) -> Void)?
+        let onStartMiniDrill: ((DrillRecommendationV2) -> Void)?
+    }
+
+    private var entries: [UUID: Entry] = [:]
+
+    func store(_ entry: Entry, for id: UUID) {
+        entries[id] = entry
+    }
+
+    func retrieve(for id: UUID) -> Entry? {
+        entries[id]
+    }
+
+    func remove(for id: UUID) {
+        entries.removeValue(forKey: id)
+    }
+}
+
 enum LocalConfigLoader {
     static func value(forKey key: String, plistNamed plistName: String) -> String? {
         guard let url = Bundle.main.url(forResource: plistName, withExtension: "plist"),
@@ -3447,7 +3518,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
     case auto
     case backend
     case googleCloud
-    case elevenLabs
     case openAI
 
     static var allCases: [IMVoiceEngine] {
@@ -3464,8 +3534,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
             return "Backend"
         case .googleCloud:
             return "Google Cloud"
-        case .elevenLabs:
-            return "ElevenLabs"
         case .openAI:
             return "AI"
         }
@@ -3479,8 +3547,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
             return "Use Noum backend voice synthesis when cloud voice providers are unavailable."
         case .googleCloud:
             return "Use Google Cloud Text-to-Speech as the primary premium voice path."
-        case .elevenLabs:
-            return "Use ElevenLabs voice synthesis when API keys and voice IDs are configured."
         case .openAI:
             return "Use OpenAI TTS as the backup premium voice if Google Cloud is unavailable."
         }
@@ -3614,8 +3680,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return await playPromptWithOpenAI(text)
         case .googleCloud:
             return await playWithGoogleCloud(text, setup: setup)
-        case .elevenLabs:
-            return await playWithElevenLabs(text, setup: setup)
         case .backend:
             return await playWithBackend(text, setup: setup)
         case .auto:
@@ -3694,16 +3758,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             if backendTTSAvailable() {
                 appendUnique(.backend, to: &engines)
             }
-        case .elevenLabs:
-            if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
-                appendUnique(.elevenLabs, to: &engines)
-            }
-            if openAIAPIKey() != nil {
-                appendUnique(.openAI, to: &engines)
-            }
-            if backendTTSAvailable() {
-                appendUnique(.backend, to: &engines)
-            }
         case .openAI:
             appendUnique(.openAI, to: &engines)
             if backendTTSAvailable() {
@@ -3719,8 +3773,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return await playWithBackend(text, setup: setup)
         case .googleCloud:
             return await playWithGoogleCloud(text, setup: setup)
-        case .elevenLabs:
-            return await playWithElevenLabs(text, setup: setup)
         case .openAI:
             return await playWithOpenAI(text, setup: setup)
         case .auto:
@@ -3735,9 +3787,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return await executeWarmupRequest(request)
         case .openAI:
             guard let request = openAIRequest(for: ".", setup: setup) else { return false }
-            return await executeWarmupRequest(request)
-        case .elevenLabs:
-            guard let request = elevenLabsRequest(for: ".", setup: setup) else { return false }
             return await executeWarmupRequest(request)
         case .backend:
             guard let request = backendRequest(for: ".", setup: setup) else { return false }
@@ -4024,65 +4073,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func elevenLabsAPIKey() -> String? {
-        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: "ELEVENLABS_API_KEY", plistNamed: "AIConfig")
-    }
 
-    private func elevenLabsModelID() -> String {
-        ProcessInfo.processInfo.environment["ELEVENLABS_MODEL_ID"]
-            ?? LocalConfigLoader.value(forKey: "ELEVENLABS_MODEL_ID", plistNamed: "AIConfig")
-            ?? "eleven_flash_v2_5"
-    }
-
-    private func elevenLabsVoiceID(for scenario: IMConversationScenario) -> String? {
-        let scenarioKey: String
-        switch scenario {
-        case .socialCatchUp:
-            scenarioKey = "ELEVENLABS_VOICE_ID_MAYA"
-        case .workUpdate:
-            scenarioKey = "ELEVENLABS_VOICE_ID_JORDAN"
-        case .difficultConversation:
-            scenarioKey = "ELEVENLABS_VOICE_ID_SAM"
-        case .networking:
-            scenarioKey = "ELEVENLABS_VOICE_ID_ALEX"
-        }
-
-        if let value = ProcessInfo.processInfo.environment[scenarioKey], !value.isEmpty {
-            return value
-        }
-        if let value = LocalConfigLoader.value(forKey: scenarioKey, plistNamed: "AIConfig") {
-            return value
-        }
-        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_VOICE_ID_DEFAULT"], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: "ELEVENLABS_VOICE_ID_DEFAULT", plistNamed: "AIConfig")
-    }
-
-    private func playWithElevenLabs(_ text: String, setup: IMConversationSetup) async -> Bool {
-        guard let request = elevenLabsRequest(for: text, setup: setup) else {
-            lastFailureReason = "ElevenLabs credentials or voice ID are missing."
-            return false
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard !Task.isCancelled,
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                lastFailureReason = "ElevenLabs request failed."
-                return false
-            }
-
-            return playAudioData(data)
-        } catch {
-            lastFailureReason = "ElevenLabs error: \(error.localizedDescription)"
-            return false
-        }
-    }
 
     private func backendRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
         guard let baseURL = backendBaseURL() else { return nil }
@@ -4170,33 +4161,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         return request.httpBody == nil ? nil : request
     }
 
-    private func elevenLabsRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
-        guard let apiKey = elevenLabsAPIKey(),
-              let voiceID = elevenLabsVoiceID(for: setup.scenario),
-              let endpoint = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)") else {
-            return nil
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
-
-        let body = ElevenLabsSpeechRequest(
-            text: text,
-            modelID: elevenLabsModelID(),
-            voiceSettings: ElevenLabsVoiceSettings(
-                stability: 0.48,
-                similarityBoost: 0.78,
-                style: 0.22,
-                useSpeakerBoost: true,
-                speed: 0.96
-            )
-        )
-        request.httpBody = try? JSONEncoder().encode(body)
-        return request.httpBody == nil ? nil : request
-    }
 }
 
 private struct BackendIMTTSRequest: Codable {
@@ -4283,33 +4247,7 @@ private struct GoogleCloudTTSSpeechResponse: Codable {
     }
 }
 
-private struct ElevenLabsSpeechRequest: Codable {
-    let text: String
-    let modelID: String
-    let voiceSettings: ElevenLabsVoiceSettings
 
-    enum CodingKeys: String, CodingKey {
-        case text
-        case modelID = "model_id"
-        case voiceSettings = "voice_settings"
-    }
-}
-
-private struct ElevenLabsVoiceSettings: Codable {
-    let stability: Double
-    let similarityBoost: Double
-    let style: Double
-    let useSpeakerBoost: Bool
-    let speed: Double
-
-    enum CodingKeys: String, CodingKey {
-        case stability
-        case similarityBoost = "similarity_boost"
-        case style
-        case useSpeakerBoost = "use_speaker_boost"
-        case speed
-    }
-}
 #endif
 #endif
 
@@ -4332,6 +4270,214 @@ struct PracticeScoreSegment: Identifiable {
     let title: String
     let value: String
     let tintName: String
+}
+
+// MARK: - Next Rep Drill System
+
+/// A single, opinionated drill recommendation generated from session metrics.
+struct DrillRecommendation: Identifiable {
+    let id = UUID()
+    let type: DrillType
+    let title: String
+    let reason: String           // Why this drill, based on what happened
+    let constraint: String       // The one rule to follow
+    let successGoal: String      // How to know you nailed it
+    let icon: String             // SF Symbol
+    let tint: Color
+
+    /// The drill types available in the system, ordered by priority.
+    enum DrillType: String {
+        case pauseAndBreathe       // High fillers — replace fillers with silence
+        case slowOpen              // Rushed pace — deliberately slow first 2 sentences
+        case extendAndDevelop      // Too short — hit a minimum duration
+        case structuredResponse    // No structure — use intro/point/close
+        case cleanRun              // Moderate fillers — aim for zero
+        case powerOpen             // Weak opening — nail the first sentence
+        case paceSetter            // Too slow — hit a natural pace
+        case closingStatement      // Weak close — end with a deliberate sentence
+        case depthDive             // Shallow content — develop one idea fully
+        case confidenceHold        // Good session — maintain under harder conditions
+        case freeRepeat            // Clean session — just do it again
+    }
+}
+
+/// Generates a single drill recommendation from raw session metrics.
+/// Deterministic, template-driven — no AI call needed.
+enum DrillEngine {
+
+    static func recommend(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        score: Int,
+        feedbackCategories: [FeedbackCategory],
+        durationAssessment: DurationAssessment
+    ) -> DrillRecommendation {
+
+        let wpm = duration > 0 ? Double(wordCount) / duration * 60 : 0
+        let isMinimal = wordCount < 5 || duration < 5
+
+        // Helper to find worst category
+        func rating(for dimension: String) -> FeedbackRating? {
+            feedbackCategories.first(where: { $0.dimension == dimension })?.rating
+        }
+
+        // --- Priority cascade (most impactful issue first) ---
+
+        // 1. No speech / minimal effort → just get them talking
+        if wordCount == 0 || isMinimal {
+            return DrillRecommendation(
+                type: .extendAndDevelop,
+                title: "Commit to 30 Seconds",
+                reason: "Your last attempt was too short to practice anything meaningful.",
+                constraint: "Keep talking for at least 30 seconds — no stopping early.",
+                successGoal: "Reach 30 seconds with a clear point",
+                icon: "timer",
+                tint: .orange
+            )
+        }
+
+        // 2. High fillers (≥5) → pause & breathe drill
+        if fillerCount >= 5 {
+            return DrillRecommendation(
+                type: .pauseAndBreathe,
+                title: "Silent Transitions",
+                reason: "You used \(fillerCount) filler words — most appeared between ideas when your brain was searching for the next thought.",
+                constraint: "Pause silently for a full beat before every new point. No \"um\", \"uh\", or \"like\" allowed.",
+                successGoal: "Fewer than 2 filler words",
+                icon: "waveform.path",
+                tint: .red
+            )
+        }
+
+        // 3. Very short duration (<15s) → extend
+        if duration < 15 {
+            return DrillRecommendation(
+                type: .extendAndDevelop,
+                title: "Develop the Thought",
+                reason: "Your answer was only \(Int(duration)) seconds — too short to show structure or control.",
+                constraint: "After your opening, add one example and one closing sentence. Don't stop until you've made all three.",
+                successGoal: "Speak for at least 30 seconds with 3 distinct sections",
+                icon: "text.line.last.and.arrowtriangle.forward",
+                tint: .orange
+            )
+        }
+
+        // 4. Rushed pace (>160 WPM) → slow open
+        if wpm > 160 {
+            return DrillRecommendation(
+                type: .slowOpen,
+                title: "Slow Your Start",
+                reason: "Your pace hit \(Int(wpm)) WPM — noticeably fast. Speed undermines clarity even when the content is strong.",
+                constraint: "Deliberately slow your first two sentences. Count one beat between them.",
+                successGoal: "Pace below 150 WPM",
+                icon: "hare.fill",
+                tint: .orange
+            )
+        }
+
+        // 5. Moderate fillers (2-4) → clean run
+        if fillerCount >= 2 {
+            return DrillRecommendation(
+                type: .cleanRun,
+                title: "Zero Filler Run",
+                reason: "You had \(fillerCount) filler words — they cluster at transition points and make you sound less certain.",
+                constraint: "Deliver your answer with zero filler words. Replace every urge to say \"um\" with silence.",
+                successGoal: "Zero filler words",
+                icon: "sparkles",
+                tint: Color(.systemIndigo)
+            )
+        }
+
+        // 6. Weak opening
+        if rating(for: "Opening") == .couldImprove {
+            return DrillRecommendation(
+                type: .powerOpen,
+                title: "Nail the First Line",
+                reason: "Your opening didn't grab attention. A strong first sentence sets confidence for everything after.",
+                constraint: "Start with a clear, declarative statement — no hedge words, no throat-clearing.",
+                successGoal: "Opening rated OK or better",
+                icon: "bolt.fill",
+                tint: .blue
+            )
+        }
+
+        // 7. Weak structure
+        if rating(for: "Structure") == .couldImprove {
+            return DrillRecommendation(
+                type: .structuredResponse,
+                title: "Build a Framework",
+                reason: "Your answer lacked clear structure. Without a framework, ideas blur together.",
+                constraint: "Use a strict 3-part structure: opening statement, one supporting example, closing sentence.",
+                successGoal: "Structure rated OK or better",
+                icon: "list.number",
+                tint: .blue
+            )
+        }
+
+        // 8. Weak close
+        if rating(for: "Close") == .couldImprove {
+            return DrillRecommendation(
+                type: .closingStatement,
+                title: "Stick the Landing",
+                reason: "Your answer trailed off instead of ending with intention. A strong close leaves a lasting impression.",
+                constraint: "End with one deliberate closing sentence that summarizes your main point.",
+                successGoal: "Close rated OK or better",
+                icon: "flag.checkered",
+                tint: .purple
+            )
+        }
+
+        // 9. Too slow (<100 WPM, duration ≥15s)
+        if wpm > 0 && wpm < 100 && duration >= 15 {
+            return DrillRecommendation(
+                type: .paceSetter,
+                title: "Find Your Flow",
+                reason: "Your pace was \(Int(wpm)) WPM — quite slow. Hesitation can make you sound uncertain.",
+                constraint: "Commit to each sentence before starting it, then deliver at conversational speed — no long pauses mid-thought.",
+                successGoal: "Pace above 110 WPM",
+                icon: "metronome.fill",
+                tint: .blue
+            )
+        }
+
+        // 10. Shallow depth
+        if rating(for: "Depth") == .couldImprove {
+            return DrillRecommendation(
+                type: .depthDive,
+                title: "Go Deeper",
+                reason: "Your answer stayed surface-level. One well-developed idea beats three shallow ones.",
+                constraint: "Pick one point and give a specific, concrete example to support it.",
+                successGoal: "Depth rated OK or better",
+                icon: "arrow.down.to.line",
+                tint: .blue
+            )
+        }
+
+        // 11. Good session (score ≥7) → confidence hold / free repeat
+        if score >= 7 {
+            return DrillRecommendation(
+                type: .confidenceHold,
+                title: "Hold the Standard",
+                reason: "Strong session. Now prove it wasn't a one-off — repeat the same quality on the same prompt.",
+                constraint: "Match or beat your score. Stay clean, stay structured, stay in control.",
+                successGoal: "Score \(score) or higher",
+                icon: "flame.fill",
+                tint: .green
+            )
+        }
+
+        // 12. Default fallback — free repeat with structure focus
+        return DrillRecommendation(
+            type: .freeRepeat,
+            title: "One More Rep",
+            reason: "Your delivery had room to improve. The best way to get better is to try again with intention.",
+            constraint: "Focus on a strong open, one clear point, and a deliberate close.",
+            successGoal: "Improve your overall score",
+            icon: "arrow.clockwise",
+            tint: .blue
+        )
+    }
 }
 
 // MARK: - Feedback Categories (7 dimensions)
@@ -5384,6 +5530,52 @@ final class PracticeSessionStore: ObservableObject {
 }
 #endif
 
+// MARK: - Rank Helpers (shared across ContentView, ProfileView, SpeakingRankView)
+
+#if canImport(SwiftUI)
+import SwiftUI
+
+extension ProfileManager {
+    var rankSymbol: String {
+        let title = levelTitle
+        if title.contains("Beginner") { return "sparkles" }
+        if title.contains("Novice") { return "figure.stand" }
+        if title.contains("Average") { return "waveform.path.ecg" }
+        if title.contains("Professional") { return "shield.lefthalf.filled" }
+        return "crown.fill"
+    }
+
+    var rankTint: Color {
+        let title = levelTitle
+        if title.contains("Beginner") { return .blue }
+        if title.contains("Novice") { return .teal }
+        if title.contains("Average") { return .indigo }
+        if title.contains("Professional") { return .orange }
+        return .yellow
+    }
+
+    var rankDescriptor: String {
+        let title = levelTitle
+        if title.contains("Beginner") { return "Foundational tier" }
+        if title.contains("Novice") { return "Developing tier" }
+        if title.contains("Average") { return "Steady tier" }
+        if title.contains("Professional") { return "Advanced tier" }
+        return "Elite tier"
+    }
+
+    var rankTitle: String {
+        "Speaker \(max(1, (xp / 1000) + 1))"
+    }
+
+    var nextRankTitle: String {
+        "Next: Speaker \(max(2, (xp / 1000) + 2))"
+    }
+
+    var levelProgressLabel: String {
+        "\(Int((progressTowardsNextLevel * 100).rounded()))%"
+    }
+}
+#endif
 #if canImport(SwiftUI)
 struct RecommendationExposure: Codable, Equatable {
     let fingerprint: String

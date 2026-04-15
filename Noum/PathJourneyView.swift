@@ -11,9 +11,7 @@ import SwiftUI
 struct PathJourneyView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var sessionStore = PracticeSessionStore.shared
-    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
-    @State private var selectedAchievementID: String?
     @State private var debugDayOverride: Double = -1
 
     private var isDebugActive: Bool { debugDayOverride >= 0 }
@@ -24,13 +22,6 @@ struct PathJourneyView: View {
             return base.withSimulatedDays(Int(debugDayOverride))
         }
         return base
-    }
-
-    private var retentionSnapshot: RetentionLoopSnapshot {
-        RetentionLoopEngine.snapshot(
-            sessions: sessionStore.sessions,
-            profile: coachingProfileStore.profile
-        )
     }
 
     var body: some View {
@@ -83,8 +74,6 @@ struct PathJourneyView: View {
                                     .lineLimit(1)
                             }
 
-                            activeChallengeCard
-                            achievementsCard
                         }
                         .padding(16)
                         .background(
@@ -222,126 +211,6 @@ struct PathJourneyView: View {
         .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
-    private var activeChallengeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Active Challenge")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            HStack(alignment: .top, spacing: 10) {
-                PulseBadge(systemImage: "bolt.fill", tint: .orange, animated: false)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(retentionSnapshot.activeChallenge.title)
-                        .font(.headline)
-                    Text(retentionSnapshot.activeChallenge.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(retentionSnapshot.activeChallenge.rewardLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.orange.opacity(0.12), in: Capsule())
-                    SparkleRibbon(tint: .orange, animated: false)
-                }
-            }
-
-            ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue, animated: false)
-
-            HStack {
-                Text(retentionSnapshot.activeChallenge.progressLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
-                Spacer()
-                Text(retentionSnapshot.motivationLine)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
-        }
-        .padding(Spacing.cardGap)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-    }
-
-    private var achievementsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Milestones")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            ForEach(retentionSnapshot.achievements.prefix(3)) { achievement in
-                Button {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                        selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
-                    }
-                } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 10) {
-                            Group {
-                                if achievement.isUnlocked {
-                                    PulseBadge(systemImage: achievement.symbolName, tint: .green, animated: false)
-                                } else {
-                                    Image(systemName: achievement.symbolName)
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 24, height: 24)
-                                        .padding(12)
-                                        .background(Color.black.opacity(0.06), in: Circle())
-                                }
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(achievement.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text(achievement.summary)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            VStack(alignment: .trailing, spacing: 6) {
-                                Text(achievement.progressLabel)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
-                                Image(systemName: selectedAchievementID == achievement.id ? "chevron.up" : "chevron.down")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        if selectedAchievementID == achievement.id {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ShimmerProgressBar(
-                                    progress: achievement.progress,
-                                    tint: achievement.isUnlocked ? .green : .blue,
-                                    animated: false
-                                )
-                                Text(
-                                    achievement.isUnlocked
-                                        ? "Unlocked. This is now part of your communication identity."
-                                        : "Keep going. This one unlocks once the habit becomes repeatable."
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                    }
-                    .padding(12)
-                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
 }
 
 struct PracticeChallengeStatus {

@@ -98,6 +98,114 @@ struct PulseBadge: View {
     }
 }
 
+/// Animated success ring that fills and pulses when a drill is completed.
+struct DrillSuccessRing: View {
+    let tint: Color
+    let succeeded: Bool
+    @State private var fillAmount: Double = 0
+    @State private var pulseScale: Double = 1.0
+
+    var body: some View {
+        ZStack {
+            // Background ring
+            Circle()
+                .stroke(tint.opacity(0.15), lineWidth: 8)
+                .frame(width: 80, height: 80)
+
+            // Fill ring
+            Circle()
+                .trim(from: 0, to: fillAmount)
+                .stroke(tint, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .frame(width: 80, height: 80)
+                .rotationEffect(.degrees(-90))
+
+            // Center icon
+            Image(systemName: succeeded ? "checkmark" : "arrow.clockwise")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(tint)
+                .scaleEffect(pulseScale)
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.6)) { fillAmount = 1.0 }
+            if succeeded {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.5).delay(0.5)) {
+                    pulseScale = 1.2
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.7)) {
+                    pulseScale = 1.0
+                }
+            }
+        }
+    }
+}
+
+/// Skill level-up badge that scales in with a spring animation and briefly glows.
+struct SkillLevelUpBadge: View {
+    let skillArea: SkillArea
+    let newLevel: SkillLevel
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(skillArea.tint.opacity(0.15))
+                    .frame(width: 56, height: 56)
+                    .scaleEffect(appeared ? 1.15 : 0.3)
+
+                Image(systemName: skillArea.icon)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(skillArea.tint)
+                    .scaleEffect(appeared ? 1.0 : 0.3)
+            }
+
+            Text(skillArea.displayName)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+
+            Text(newLevel.rawValue.capitalized)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .opacity(appeared ? 1 : 0)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                appeared = true
+            }
+        }
+    }
+}
+
+/// Trend direction arrow that animates when direction changes.
+struct TrendArrow: View {
+    let direction: TrendDirection
+    let tint: Color
+
+    var body: some View {
+        Group {
+            switch direction {
+            case .improving:
+                Image(systemName: "arrow.up.right")
+                    .foregroundStyle(AppColor.positive)
+            case .declining:
+                Image(systemName: "arrow.down.right")
+                    .foregroundStyle(AppColor.caution)
+            case .newIssue:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(AppColor.warning)
+            case .resolved:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(AppColor.positive)
+            case .stable:
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption2.weight(.bold))
+        .transition(.scale.combined(with: .opacity))
+    }
+}
+
 struct SparkleRibbon: View {
     let tint: Color
     var animated: Bool = true
