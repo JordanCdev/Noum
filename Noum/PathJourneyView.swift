@@ -237,6 +237,7 @@ struct RetentionLoopSnapshot {
     let motivationLine: String
 }
 
+@MainActor
 enum RetentionLoopEngine {
     static func snapshot(sessions: [PracticeSession], profile: CoachingProfile?) -> RetentionLoopSnapshot {
         let sortedSessions = sessions.sorted { $0.date > $1.date }
@@ -250,10 +251,9 @@ enum RetentionLoopEngine {
             currentStreak: currentStreak
         )
 
-        let achievements = achievementStatuses(
-            sessions: sortedSessions,
-            currentStreak: currentStreak
-        )
+        // Evaluate achievements through the persistent store
+        AchievementStore.shared.evaluate(sessions: sortedSessions, streak: currentStreak)
+        let achievements = AchievementStore.shared.allStatuses(sessions: sortedSessions, streak: currentStreak)
 
         let motivationLine: String
         if activeChallenge.progress >= 1 {
@@ -343,68 +343,7 @@ enum RetentionLoopEngine {
         }
     }
 
-    private static func achievementStatuses(
-        sessions: [PracticeSession],
-        currentStreak: Int
-    ) -> [PracticeAchievementStatus] {
-        let imSessions = sessions.filter { $0.mode == .imConversation }.count
-        let highScoreCount = sessions.filter { ($0.score ?? 0) >= 8 }.count
-        let zeroFillerCount = sessions.filter { $0.fillerWordCount == 0 && $0.wordCount >= 12 }.count
-
-        return [
-            PracticeAchievementStatus(
-                id: "first_rep",
-                title: "First Rep",
-                summary: "You started the path.",
-                progress: min(Double(sessions.count), 1),
-                progressLabel: sessions.isEmpty ? "0/1" : "Unlocked",
-                isUnlocked: !sessions.isEmpty,
-                symbolName: "flag.fill"
-            ),
-            PracticeAchievementStatus(
-                id: "streak_three",
-                title: "Rhythm Builder",
-                summary: "Practice three days in a row.",
-                progress: min(Double(currentStreak), 3) / 3,
-                progressLabel: currentStreak >= 3 ? "Unlocked" : "\(currentStreak)/3 days",
-                isUnlocked: currentStreak >= 3,
-                symbolName: "flame.fill"
-            ),
-            PracticeAchievementStatus(
-                id: "sharp_score",
-                title: "Sharp Session",
-                summary: "Land a session scored 8 or higher.",
-                progress: min(Double(highScoreCount), 1),
-                progressLabel: highScoreCount >= 1 ? "Unlocked" : "0/1",
-                isUnlocked: highScoreCount >= 1,
-                symbolName: "sparkles"
-            ),
-            PracticeAchievementStatus(
-                id: "clean_run",
-                title: "Clean Run",
-                summary: "Finish a meaningful session without filler words.",
-                progress: min(Double(zeroFillerCount), 1),
-                progressLabel: zeroFillerCount >= 1 ? "Unlocked" : "0/1",
-                isUnlocked: zeroFillerCount >= 1,
-                symbolName: "checkmark.seal.fill"
-            ),
-            PracticeAchievementStatus(
-                id: "im_connector",
-                title: "Connection Builder",
-                summary: "Complete three IM sessions.",
-                progress: min(Double(imSessions), 3) / 3,
-                progressLabel: imSessions >= 3 ? "Unlocked" : "\(imSessions)/3 chats",
-                isUnlocked: imSessions >= 3,
-                symbolName: "bubble.left.and.bubble.right.fill"
-            )
-        ]
-        .sorted { lhs, rhs in
-            if lhs.isUnlocked == rhs.isUnlocked {
-                return lhs.progress > rhs.progress
-            }
-            return !lhs.isUnlocked && rhs.isUnlocked
-        }
-    }
+    // Achievement evaluation now handled by AchievementStore
 
     private static func currentStreak(from sessions: [PracticeSession]) -> Int {
         PracticeSession.calculateStreak(from: sessions)

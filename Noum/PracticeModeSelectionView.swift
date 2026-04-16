@@ -17,6 +17,7 @@ struct PracticeModeSelectionView: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
+    @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @State private var highlightedMode: PracticeMode?
     @State private var cachedRecommendedMode: PracticeMode?
     @State private var cachedRetentionSnapshot: RetentionLoopSnapshot?
@@ -159,6 +160,8 @@ struct PracticeModeSelectionView: View {
 
                     momentumContextCard
 
+                    pressureToggleCard
+
                     VStack(alignment: .leading, spacing: 12) {
                         Text("All Drills")
                             .font(.headline.weight(.semibold))
@@ -263,6 +266,53 @@ struct PracticeModeSelectionView: View {
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.blue.opacity(0.12), lineWidth: 1)
         )
+    }
+
+    private var pressureToggleCard: some View {
+        Button {
+            withAnimation(.snappySpring) {
+                practiceSettings.pressureModeEnabled.toggle()
+            }
+            if practiceSettings.pressureModeEnabled {
+                CoachHaptic.selectionTap()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: practiceSettings.pressureModeEnabled ? "bolt.fill" : "bolt")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(practiceSettings.pressureModeEnabled ? .white : .orange)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        practiceSettings.pressureModeEnabled ? Color.orange : Color.orange.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pressure Mode")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                    Text(practiceSettings.pressureModeEnabled ? "On — one-take, rated, shorter prep" : "Off — standard practice")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: practiceSettings.pressureModeEnabled ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(practiceSettings.pressureModeEnabled ? .orange : Color.secondary.opacity(0.3))
+            }
+            .padding(Spacing.md)
+            .background(
+                practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.06) : AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.3) : Color.black.opacity(0.05), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var bottomCTA: some View {

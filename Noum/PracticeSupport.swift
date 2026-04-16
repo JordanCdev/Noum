@@ -59,7 +59,6 @@ final class SummaryDataStore {
         let durationAssessment: DurationAssessment
         let targetRange: (min: Double, target: Double, max: Double)
         let onStartDrill: ((DrillRecommendation) -> Void)?
-        let onStartMiniDrill: ((DrillRecommendationV2) -> Void)?
     }
 
     private var entries: [UUID: Entry] = [:]
@@ -3062,11 +3061,17 @@ final class PracticeSettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(timedDifficulty.rawValue, forKey: timedDifficultyKey) }
     }
 
+    @Published var pressureModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(pressureModeEnabled, forKey: pressureModeKey) }
+    }
+
     private let timedDifficultyKey = "timedPracticeDifficulty"
+    private let pressureModeKey = "pressureModeEnabled"
 
     private init() {
         let rawValue = UserDefaults.standard.string(forKey: timedDifficultyKey)
         timedDifficulty = TimedPracticeDifficulty(rawValue: rawValue ?? "") ?? .easy
+        pressureModeEnabled = UserDefaults.standard.bool(forKey: pressureModeKey)
     }
 }
 
@@ -4564,7 +4569,8 @@ enum PracticeEvaluator {
         duration: TimeInterval,
         difficulty: TimedPracticeDifficulty,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4576,7 +4582,9 @@ enum PracticeEvaluator {
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 0.7, 3.0)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0  // Reduce 40% when audio quality is poor
+        let fillerPenalty = min(Double(fillerCount) * 0.7 * fillerPenaltyMultiplier, 3.0)
         let difficultyBonus: Double = {
             switch difficulty {
             case .free: return 0.0
@@ -4600,17 +4608,18 @@ enum PracticeEvaluator {
         let xpFromDuration = durationProgress * 18
         let xpEarned = max(5, Int(round((xpBase + xpFromDuration) * difficulty.xpMultiplier)))
 
-        let headline: String
+        let baseHeadline: String
         switch score {
         case 9...10:
-            headline = "Table-topics ready"
+            baseHeadline = "Table-topics ready"
         case 7...8:
-            headline = "Solid response"
+            baseHeadline = "Solid response"
         case 4...6:
-            headline = "Building momentum"
+            baseHeadline = "Building momentum"
         default:
-            headline = "Good warmup"
+            baseHeadline = "Good warmup"
         }
+        let headline = isLowConfidence ? "Based on what we could hear" : baseHeadline
 
         let durationAssessment = assessDuration(duration, difficulty: difficulty)
 
@@ -4655,6 +4664,9 @@ enum PracticeEvaluator {
             insights.append(styleTrendNote)
         }
         insights.append(styleSnapshot.coachingNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
 
         // Generate 7-dimension feedback categories
         let categories = buildFeedbackCategories(
@@ -4750,7 +4762,8 @@ enum PracticeEvaluator {
         duration: TimeInterval,
         pressureEventsHandled: Int,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4759,11 +4772,13 @@ enum PracticeEvaluator {
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let level = max(1, Int(duration / 30.0) + 1)
         let durationProgress = min(duration / Double(level * 30), 1.0)
         let contentProgress = min(Double(wordCount) / 24.0, 1.0)
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 2.0, 6.0)
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
+        let fillerPenalty = min(Double(fillerCount) * 2.0 * fillerPenaltyMultiplier, 6.0)
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
@@ -4829,6 +4844,9 @@ enum PracticeEvaluator {
             insights.append(styleTrendNote)
         }
         insights.append(paceSnapshot.coachNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
         insights.append(styleSnapshot.coachingNote)
 
         return PracticeEvaluation(
@@ -4846,7 +4864,8 @@ enum PracticeEvaluator {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4857,8 +4876,10 @@ enum PracticeEvaluator {
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 0.8, 5.0)
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
+        let fillerPenalty = min(Double(fillerCount) * 0.8 * fillerPenaltyMultiplier, 5.0)
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
@@ -4909,6 +4930,9 @@ enum PracticeEvaluator {
         }
         insights.append(paceSnapshot.coachNote)
         insights.append(styleSnapshot.coachingNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
 
         return PracticeEvaluation(
             score: score,
@@ -5366,6 +5390,10 @@ struct PracticeSessionDraft {
     let date: Date
     let mode: PracticeMode
     let imDetails: IMConversationDetails?
+    let transcriptConfidence: Double?
+    let transcriptionProvider: String?
+    let pressureLevel: PressureLevel
+    let isRated: Bool
 
     init(
         transcript: String,
@@ -5373,7 +5401,11 @@ struct PracticeSessionDraft {
         duration: TimeInterval,
         date: Date,
         mode: PracticeMode,
-        imDetails: IMConversationDetails? = nil
+        imDetails: IMConversationDetails? = nil,
+        transcriptConfidence: Double? = nil,
+        transcriptionProvider: String? = nil,
+        pressureLevel: PressureLevel = .standard,
+        isRated: Bool = false
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -5381,6 +5413,10 @@ struct PracticeSessionDraft {
         self.date = date
         self.mode = mode
         self.imDetails = imDetails
+        self.transcriptConfidence = transcriptConfidence
+        self.transcriptionProvider = transcriptionProvider
+        self.pressureLevel = pressureLevel
+        self.isRated = isRated
     }
 }
 
@@ -5442,7 +5478,11 @@ final class PracticeSessionStore: ObservableObject {
             duration: draft.duration,
             date: draft.date,
             mode: draft.mode,
-            imConversationDetails: draft.imDetails
+            imConversationDetails: draft.imDetails,
+            transcriptConfidence: draft.transcriptConfidence,
+            transcriptionProvider: draft.transcriptionProvider,
+            pressureLevel: draft.pressureLevel,
+            isRated: draft.isRated
         )
         sessions.insert(session, at: 0)
         persist()
@@ -5801,7 +5841,31 @@ enum PracticeSessionFinalizer {
         if annotation != .empty {
             store.annotate(sessionID: session.id, annotation: annotation)
         }
-        return store.sessions.first(where: { $0.id == session.id }) ?? session
+        let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
+
+        // Record baseline data
+        BaselineStore.shared.recordSession(finalized, pressure: draft.pressureLevel)
+
+        // Check personal bests (for all sessions)
+        let streak = PracticeSession.calculateStreak(from: store.sessions)
+        RatingStore.shared.checkPersonalBests(session: finalized, currentStreak: streak)
+
+        // Update speaking rating (only for rated/pressure sessions)
+        if draft.isRated, let score = finalized.score {
+            RatingStore.shared.recordRatedSession(
+                score: score,
+                sessionId: finalized.id,
+                pressureLevel: draft.pressureLevel
+            )
+        }
+
+        // Evaluate achievements
+        AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
+
+        // Analyze clutch words in transcript
+        ClutchWordStore.shared.analyzeSession(transcript: draft.transcript)
+
+        return finalized
     }
 }
 
@@ -6863,16 +6927,36 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
     private var systemPrompt: String {
         """
-        You are evaluating a short voice-driven instant message conversation for a speaking coach app.
+        You are a sharp, experienced communication coach evaluating an instant-message conversation.
+        You think in three layers:
+
+        LAYER 1 — FUNDAMENTALS (universal)
+        Clarity, composure, filler-word discipline, vocabulary range.
+        These are table stakes. Judge them honestly but don't belabor what's fine.
+
+        LAYER 2 — CONTEXT FIT (conversation-specific)
+        Did the user read the room? Did they move the conversation forward?
+        Did trust or engagement shift in the right direction?
+        Was the tone appropriate for this specific scenario and relationship?
+        A technically clear message that ignores the other person's state is still a miss.
+
+        LAYER 3 — IDENTITY LENS (personal style direction)
+        The user has a speaking-style goal. This is a direction, not a destination.
+        Map their goal to traits (e.g. "speak like a king" → authority, decisiveness, calm).
+        Judge whether they moved toward those traits in this conversation — even slightly.
+        Never evaluate whether they literally sounded like someone else.
+
+        WRITING RULES:
+        - Write like a coach who's watched the tape, not like an AI summarizing.
+        - Use plain, direct language. No corporate jargon. No "Great job!" unless they genuinely nailed it.
+        - headline: a short, honest read. "You held the room" or "You backed off too early" — not a compliment sandwich.
+        - feedback: 2-3 sentences max. One thing they did well, one thing to work on. Be specific — reference an actual moment or turn from the conversation.
+        - insights: exactly 3 concise strings. Each should be a concrete observation, not a vague principle.
+        - If the conversation was very short (under 3 turns), soften your confidence. Use language like "early read" or "hard to tell from this much" rather than definitive judgments.
+
         Return JSON only with keys:
         actualTone, toneMatch, clarityScore, composureScore, vocabularyScore, conversationScore, headline, feedback, insights, suggestedDrill.
-        Scoring rules:
-        - all numeric scores are integers from 1 to 10
-        - insights must contain exactly 3 concise strings
-        - headline must be short
-        - feedback should be 2-4 sentences, practical and coach-like
-        - actualTone should describe how the speaker actually came across
-        - judge target tone vs actual tone, conversational relevance, clarity, pacing signals, vocabulary, and composure
+        All numeric scores are integers from 1 to 10.
         """
     }
 
@@ -6897,51 +6981,52 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             return "\(speaker): \(turn.text)"
         }.joined(separator: "\n")
 
+        let turnCount = turns.filter { $0.speaker == .user }.count
+        let isShortSession = turnCount <= 2 || duration < 30
+
         return """
+        --- LAYER 1: FUNDAMENTALS ---
+        Filler words: \(fillerCount) (recent avg: \(String(format: "%.1f", recentAverageFillers)))
+        Duration: \(Int(duration))s (recent avg: \(Int(recentAverageDuration))s)
+        Words per minute: \(pace.wordsPerMinute) (\(pace.label))
+        User turns: \(turnCount)
+        \(isShortSession ? "⚠️ SHORT SESSION — soften confidence in all judgments." : "")
+
+        --- LAYER 2: CONTEXT FIT ---
         Scenario: \(setup.scenario.title)
-        Target tone: \(setup.targetTone.title)
-        Tone goal: \(setup.targetTone.coachingPrompt)
-        Scenario coaching focus: \(setup.scenario.coachingFocus)
-        Final trust: \(finalState?.normalizedTrust ?? 5)/10
-        Final engagement: \(finalState?.normalizedEngagement ?? 5)/10
-        Final tension: \(finalState?.normalizedTension ?? 4)/10
-        Final conversation beat: \(finalState?.beat ?? "Not captured")
-        Speaker context: \(profile?.speakingContext.title ?? "unknown")
-        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
-        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
-        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
-        Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
-        Personal goal reference: \(profile?.personalGoalReference ?? "none")
-        Communication north star: \(profile?.communicationNorthStar ?? "Help the user become a stronger communicator over time.")
-        In-conversation training focus: \(profile?.inConversationTrainingFocus ?? "Reward clear, human, well-calibrated communication that would strengthen a real relationship.")
-        Relationship baseline before this session: \(relationship?.promptSummary ?? "No stored relationship history.")
-        Filler words: \(fillerCount)
-        Duration seconds: \(Int(duration))
-        Words per minute: \(pace.wordsPerMinute)
-        Pace label: \(pace.label)
-        Speaking identity: \(identity.identity)
-        Identity evidence: \(identity.evidence)
-        Recent average fillers: \(String(format: "%.1f", recentAverageFillers))
-        Recent average duration: \(Int(recentAverageDuration))
+        Coaching focus: \(setup.scenario.coachingFocus)
+        Target tone: \(setup.targetTone.title) — \(setup.targetTone.coachingPrompt)
+        Trust: \(finalState?.normalizedTrust ?? 5)/10
+        Engagement: \(finalState?.normalizedEngagement ?? 5)/10
+        Tension: \(finalState?.normalizedTension ?? 4)/10
+        Beat reached: \(finalState?.beat ?? "Not captured")
+        Relationship history: \(relationship?.promptSummary ?? "First conversation.")
         Real-world context:
         \(context.summaryLines.joined(separator: "\n"))
 
-        Full conversation:
+        --- LAYER 3: IDENTITY LENS ---
+        Style direction: \(profile?.speakingStyleGoal.title ?? "not set")
+        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        North star: \(profile?.communicationNorthStar ?? "Become a stronger communicator over time.")
+        Training focus: \(profile?.inConversationTrainingFocus ?? "Clear, human, well-calibrated communication.")
+        Current speaking identity: \(identity.identity)
+        Identity evidence: \(identity.evidence)
+
+        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile))
+
+        --- FULL CONVERSATION ---
         \(transcriptLog)
 
-        Combined user transcript:
+        --- USER TRANSCRIPT ONLY ---
         \(transcript)
 
-        Evaluate not only speaking delivery but conversational quality:
-        - directness
-        - relevance to the other person
-        - tone consistency
-        - recovery after awkward or pressured moments
-        - whether the user actually moved the conversation forward
-        - whether trust/engagement improved or tension escalated appropriately
-        - whether any gain in trust feels earned through responsiveness, steadiness, and specificity rather than empty positivity
-        - whether the user got meaningfully closer to their communication north star
-        - whether the user handled their biggest challenge better than they usually do
+        EVALUATION FOCUS:
+        Layer 2 matters most here. This is a conversation, not a speech.
+        - Did the user read the other person and respond to what was actually happening?
+        - Did they move the conversation forward or just react?
+        - Was any trust gain earned through specificity and responsiveness, or just politeness?
+        - Did tension resolve productively or get avoided?
+        - For Layer 3: did the user move even slightly toward their style direction? Note it if so.
         """
     }
 

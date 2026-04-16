@@ -18,6 +18,11 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var connectionError: String?
     @Published var activeProviderName: String = ""
 
+    /// When set, filler detection uses context-aware logic that excludes prompt echoes
+    /// and ambiguous words in legitimate usage. Used by Pressure Drill mode.
+    var pressureDrillPrompt: String?
+    @Published var pressureDrillFillerCount: Int = 0
+
     private let sessionStore = PracticeSessionStore.shared
     private let recommendationLearningStore = RecommendationLearningStore.shared
 
@@ -48,7 +53,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private static func resolveProvider() -> any TranscriptionProvider {
-        let selected = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "aws"
+        let selected = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "deepgram"
         switch selected {
         case "deepgram": return DeepgramProvider()
         case "google": return GoogleSpeechProvider()
@@ -281,6 +286,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
         fillerWordCount = count
         highlightedText = AttributedString(attributed)
+
+        // If running in Pressure Drill mode, also compute context-aware count
+        if let prompt = pressureDrillPrompt {
+            pressureDrillFillerCount = FillerWordDetector.pressureDrillCount(in: text, prompt: prompt)
+        }
     }
 
     // MARK: - Session Management
@@ -289,6 +299,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         transcribedText = ""
         highlightedText = AttributedString("")
         fillerWordCount = 0
+        pressureDrillFillerCount = 0
         finalTranscript = ""
         partialTranscript = ""
         connectionError = nil
@@ -307,6 +318,13 @@ class SpeechRecognizerViewModel: ObservableObject {
             pastSessions = sessionStore.sessions
             return
         }
+        let avgConfidence = confidenceValues.isEmpty ? nil : confidenceValues.reduce(0, +) / Double(confidenceValues.count)
+        let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
+        let pressure = BaselineEngine.classifyPressure(
+            mode: currentSessionMode,
+            isPressureModeOn: pressureOn,
+            streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
+        )
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -314,7 +332,11 @@ class SpeechRecognizerViewModel: ObservableObject {
                 fillerWordCount: fillerWordCount,
                 duration: duration,
                 date: sessionStart ?? Date(),
-                mode: currentSessionMode
+                mode: currentSessionMode,
+                transcriptConfidence: avgConfidence,
+                transcriptionProvider: provider.identifier,
+                pressureLevel: pressure,
+                isRated: pressureOn
             )
         )
         pastSessions = sessionStore.sessions
@@ -367,6 +389,10 @@ struct PracticeSession: Identifiable, Codable {
     var prompt: String? = nil
     var theme: PromptTheme? = nil
     var drillResult: DrillResult? = nil
+    var transcriptConfidence: Double? = nil
+    var transcriptionProvider: String? = nil
+    var pressureLevel: PressureLevel = .standard
+    var isRated: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -385,6 +411,10 @@ struct PracticeSession: Identifiable, Codable {
         case prompt
         case theme
         case drillResult
+        case transcriptConfidence
+        case transcriptionProvider
+        case pressureLevel
+        case isRated
     }
 
     init(
@@ -403,7 +433,11 @@ struct PracticeSession: Identifiable, Codable {
         aiCoachFeedback: AICoachFeedback? = nil,
         prompt: String? = nil,
         theme: PromptTheme? = nil,
-        drillResult: DrillResult? = nil
+        drillResult: DrillResult? = nil,
+        transcriptConfidence: Double? = nil,
+        transcriptionProvider: String? = nil,
+        pressureLevel: PressureLevel = .standard,
+        isRated: Bool = false
     ) {
         self.id = id
         self.transcript = transcript
@@ -421,6 +455,10 @@ struct PracticeSession: Identifiable, Codable {
         self.prompt = prompt
         self.theme = theme
         self.drillResult = drillResult
+        self.transcriptConfidence = transcriptConfidence
+        self.transcriptionProvider = transcriptionProvider
+        self.pressureLevel = pressureLevel
+        self.isRated = isRated
     }
 
     init(from decoder: Decoder) throws {
@@ -441,5 +479,9 @@ struct PracticeSession: Identifiable, Codable {
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
         theme = try container.decodeIfPresent(PromptTheme.self, forKey: .theme)
         drillResult = try container.decodeIfPresent(DrillResult.self, forKey: .drillResult)
+        transcriptConfidence = try container.decodeIfPresent(Double.self, forKey: .transcriptConfidence)
+        transcriptionProvider = try container.decodeIfPresent(String.self, forKey: .transcriptionProvider)
+        pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
+        isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
     }
 }

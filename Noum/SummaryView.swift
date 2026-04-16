@@ -129,8 +129,8 @@ struct FeedbackRequestComposer: View {
                     // Personal note
                     noteSection
 
-                    // Share button
-                    shareButton
+                    // Send buttons
+                    sendSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
@@ -304,22 +304,140 @@ struct FeedbackRequestComposer: View {
         }
     }
 
-    // MARK: - Share Button
+    // MARK: - Send Buttons
 
-    private var shareButton: some View {
-        ShareLink(item: feedbackShareText) {
-            HStack(spacing: 8) {
-                Image(systemName: "paperplane.fill")
-                    .font(.headline.weight(.semibold))
-                Text("Send Feedback Request")
-                    .font(.headline.weight(.semibold))
+    @State private var showFriendPicker = false
+    @State private var selectedFriend: NoumFriend?
+    @State private var requestSent = false
+
+    private var sendSection: some View {
+        VStack(spacing: 12) {
+            // Primary: Send to a friend (in-app)
+            Button {
+                showFriendPicker = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.fill")
+                        .font(.headline.weight(.semibold))
+                    Text("Send to Friend")
+                        .font(.headline.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(AppColor.brandBlue.gradient, in: Capsule(style: .continuous))
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(AppColor.brandBlue.gradient, in: Capsule(style: .continuous))
+            .buttonStyle(.pressable)
+
+            // Secondary: External share
+            ShareLink(item: feedbackShareText) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Share Externally")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.black.opacity(0.04), in: Capsule())
+            }
         }
-        .buttonStyle(.pressable)
+        .sheet(isPresented: $showFriendPicker) {
+            friendPickerSheet
+        }
+        .overlay {
+            if requestSent {
+                requestSentConfirmation
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+    }
+
+    private var friendPickerSheet: some View {
+        NavigationStack {
+            List {
+                if FriendsManager.shared.friends.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.2.slash")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text("No friends added yet")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text("Add friends from your Profile to send them feedback requests.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    .listRowBackground(Color.clear)
+                } else {
+                    ForEach(FriendsManager.shared.friends) { friend in
+                        Button {
+                            sendToFriend(friend)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(AppColor.brandBlue.opacity(0.12))
+                                        .frame(width: 40, height: 40)
+                                    Text(friend.initials)
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(AppColor.brandBlue)
+                                }
+                                Text(friend.displayName)
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Image(systemName: "paperplane.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.brandBlue)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Choose Friend")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showFriendPicker = false }
+                }
+            }
+        }
+    }
+
+    private func sendToFriend(_ friend: NoumFriend) {
+        _ = FeedbackRequestManager.shared.createRequest(
+            recipientName: friend.displayName,
+            transcript: includeTranscript ? transcript : "",
+            score: score,
+            headline: headline,
+            prompt: prompt,
+            mode: mode,
+            requestNote: requestNote
+        )
+        showFriendPicker = false
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            requestSent = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation { requestSent = false }
+            dismiss()
+        }
+    }
+
+    private var requestSentConfirmation: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.green)
+            Text("Request Sent!")
+                .font(.headline.weight(.bold))
+        }
+        .padding(32)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var feedbackShareText: String {
@@ -671,7 +789,14 @@ struct FeedbackReviewScreen: View {
 
             // Submit
             Button {
-                // Build response and dismiss
+                // Save response via FeedbackRequestManager
+                let ratingStrings = dimensionRatings.mapValues { $0.rawValue }
+                FeedbackRequestManager.shared.addResponse(
+                    requestId: package.id,
+                    responderName: "You",
+                    textFeedback: responseText,
+                    dimensionRatings: ratingStrings
+                )
                 dismiss()
             } label: {
                 HStack(spacing: 8) {
@@ -682,9 +807,15 @@ struct FeedbackReviewScreen: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(AppColor.brandBlue.gradient, in: Capsule(style: .continuous))
+                .background(
+                    responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? Color.gray.gradient
+                        : AppColor.brandBlue.gradient,
+                    in: Capsule(style: .continuous)
+                )
             }
             .buttonStyle(.pressable)
+            .disabled(responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 
@@ -756,7 +887,6 @@ struct SummaryView: View {
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
     var onStartDrill: ((DrillRecommendation) -> Void)?
-    var onStartMiniDrill: ((DrillRecommendationV2) -> Void)?
 
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
@@ -764,6 +894,8 @@ struct SummaryView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var premium = PremiumManager.shared
+    @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -797,9 +929,17 @@ struct SummaryView: View {
     @State private var showLevelUpScreen = false
     @State private var levelUpPreviousLevel: String = ""
     @State private var levelUpNewLevel: String = ""
+    @State private var showMiniDrill = false
+    @State private var activeMiniDrill: DrillRecommendationV2?
+    @State private var showMiniDrillResult = false
+    @State private var miniDrillOutcome: MiniDrillOutcome?
     @State private var showSecondaryDetails = false
     @State private var coachNoteRevealed = false
     @State private var showAIDisclosure = false
+    @State private var showProgressionScreen = false
+    @State private var progressionDeltas: [AchievementProgressDelta] = []
+    @State private var progressionNewUnlocks: [AchievementTier] = []
+    @State private var progressionPreviousXP: Int = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let aiCoachService: AICoachServicing = AICoachService()
@@ -831,6 +971,10 @@ struct SummaryView: View {
     }
 
     private var isIMSummary: Bool { currentMode == .imConversation }
+
+    private var currentStreak: Int {
+        PracticeSession.calculateStreak(from: sessionStore.sessions)
+    }
 
     private var scoreValue: Int {
         if let lockedScore { return lockedScore }
@@ -1079,7 +1223,32 @@ struct SummaryView: View {
             AppColor.screenBackground
                 .ignoresSafeArea()
 
-            if showPersonalBestScreen, let milestone = personalBestMilestone {
+            if showProgressionScreen {
+                // Post-session progression: XP, achievement progress, unlock celebrations
+                PostSessionProgressionView(
+                    xpEarned: xpEarned,
+                    previousXP: progressionPreviousXP,
+                    newXP: profile.xp,
+                    previousLevel: currentLevel,
+                    newLevel: ProfileManager.levelTitle(forXP: profile.xp),
+                    achievementProgress: progressionDeltas,
+                    newUnlocks: progressionNewUnlocks,
+                    onContinue: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            showProgressionScreen = false
+                            // Chain to personal best screen if needed
+                            if personalBestMilestone != nil {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                        showPersonalBestScreen = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+                .transition(.opacity)
+            } else if showPersonalBestScreen, let milestone = personalBestMilestone {
                 // Full-screen personal best celebration (intermediary before summary)
                 personalBestCelebration(milestone: milestone)
                     .transition(.opacity)
@@ -1100,23 +1269,25 @@ struct SummaryView: View {
                 // Normal summary content — redesigned hierarchy
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
-
-                        // TIER 1: How did I do?
-                        heroScoreCard
-
-                        // TIER 2: Coach Note (momentum / leverage)
-                        coachNoteCard
-
-                        // TIER 3: Your Next Move (primary CTA)
-                        yourNextMoveCard
-
-                        // IM Conversation overview (mode-specific)
-                        if isIMSummary, let details = imConversationDetails {
-                            imConversationOverview(details)
+                        if isIMSummary {
+                            // IM MODE — conversation-first hierarchy
+                            imVerdictCard
+                            imReadCard
+                            imOneMove
+                            if let details = imConversationDetails {
+                                imSignalsCard(details)
+                            }
+                            baselineComparisonCard
+                            expandableDetailsSection
+                        } else {
+                            // TIMED / OTHER MODES — score-first hierarchy
+                            heroScoreCard
+                            coachNoteCard
+                            fillerBreakdownCard
+                            yourNextMoveCard
+                            baselineComparisonCard
+                            expandableDetailsSection
                         }
-
-                        // TIER 4: Expandable details
-                        expandableDetailsSection
 
                         // Pro Preview (free users only)
                         if !premium.isPremium {
@@ -1171,6 +1342,57 @@ struct SummaryView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
+        }
+        .fullScreenCover(isPresented: $showMiniDrill) {
+            if let drill = activeMiniDrill {
+                MiniDrillView(
+                    drill: drill,
+                    prompt: sessionPrompt,
+                    onComplete: { outcome in
+                        miniDrillOutcome = outcome
+                        DrillHistoryStore.shared.record(
+                            .init(variationId: outcome.drill.variation.id,
+                                  skillArea: outcome.drill.skillArea,
+                                  succeeded: outcome.succeeded,
+                                  sessionId: UUID())
+                        )
+                        showMiniDrill = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showMiniDrillResult = true
+                        }
+                    },
+                    onCancel: {
+                        showMiniDrill = false
+                    }
+                )
+            }
+        }
+        .fullScreenCover(isPresented: $showMiniDrillResult) {
+            if let outcome = miniDrillOutcome {
+                MiniDrillResultView(
+                    outcome: outcome,
+                    xpEarned: outcome.succeeded ? 50 : 20,
+                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                    onDone: {
+                        showMiniDrillResult = false
+                    },
+                    onTryAnother: {
+                        showMiniDrillResult = false
+                        if let nextDrill = activeMiniDrill,
+                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
+                            activeMiniDrill = DrillRecommendationV2(
+                                variation: freshVariation,
+                                reason: "Keep building on this skill",
+                                trendContext: nil,
+                                alternateFormat: nil
+                            )
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                showMiniDrill = true
+                            }
+                        }
+                    }
+                )
+            }
         }
 #if canImport(UIKit)
         .onChange(of: celebrationVisible) { _, visible in
@@ -1388,6 +1610,66 @@ struct SummaryView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
     }
 
+    // MARK: - Filler Word Breakdown Card
+
+    private var fillerBreakdownCard: some View {
+        let breakdown = FillerWordDetector.breakdown(
+            in: transcriptText,
+            customWords: ClutchWordStore.shared.customFillerWords
+        )
+        return Group {
+            if !breakdown.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Filler Breakdown")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+
+                    // Per-word breakdown chips
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(breakdown.topWords.prefix(6), id: \.word) { entry in
+                                HStack(spacing: 4) {
+                                    Text("\"\(entry.word)\"")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("\(entry.count)")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(fillerChipTint(count: entry.count), in: Capsule())
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.04), in: Capsule())
+                            }
+                        }
+                    }
+
+                    // Coaching note about fillers
+                    if breakdown.totalCount >= 3 {
+                        Text("Most fillers appear in transitions between ideas. Try pausing briefly instead.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if breakdown.totalCount > 0 {
+                        Text("Light filler usage. These tend to decrease as you build comfort with pausing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(Spacing.lg)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            }
+        }
+    }
+
+    private func fillerChipTint(count: Int) -> Color {
+        if count >= 4 { return AppColor.warning }
+        if count >= 2 { return AppColor.caution }
+        return .secondary
+    }
+
     // MARK: - Your Next Move Card (v2 — replaces nextRepCard)
 
     private var yourNextMoveCard: some View {
@@ -1459,7 +1741,8 @@ struct SummaryView: View {
             // Primary CTA — Mini Drill or Full Retry
             if drill.format == .miniDrill {
                 Button {
-                    onStartMiniDrill?(drill)
+                    activeMiniDrill = drill
+                    showMiniDrill = true
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "bolt.fill")
@@ -1507,7 +1790,8 @@ struct SummaryView: View {
 
                 // Alternate: mini drill
                 Button {
-                    onStartMiniDrill?(drill)
+                    activeMiniDrill = drill
+                    showMiniDrill = true
                 } label: {
                     Text("or Quick Drill (45s)")
                         .font(.caption.weight(.medium))
@@ -1532,6 +1816,105 @@ struct SummaryView: View {
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    // MARK: - Baseline Comparison Card
+
+    @ViewBuilder
+    private var baselineComparisonCard: some View {
+        let baseline = baselineStore.baseline
+        if baseline.overallConfidence >= .tentative {
+            let dummySession = PracticeSession(
+                transcript: transcriptText,
+                fillerWordCount: effectiveFillerCount,
+                duration: effectiveDuration,
+                date: Date(),
+                mode: explicitMode ?? .timed,
+                score: score ?? scoreValue
+            )
+            let comparisons = BaselineEngine.sessionComparison(session: dummySession, baseline: baseline)
+            let rating = ratingStore.rating
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.blue)
+                    Text("vs Your Baseline")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    Spacer()
+
+                    Text(baseline.overallConfidence.label)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.blue.opacity(0.08), in: Capsule())
+                }
+
+                if !comparisons.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(Array(comparisons.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(key)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 50, alignment: .leading)
+                                Text(value)
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.textPrimary)
+                            }
+                        }
+                    }
+                }
+
+                if rating.totalRatedSessions > 0 {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Rating")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Text("\(rating.overall)")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.blue)
+                        }
+                        if rating.weeklyDelta != 0 {
+                            Text(rating.weeklyDelta > 0 ? "+\(rating.weeklyDelta) this week" : "\(rating.weeklyDelta) this week")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(rating.weeklyDelta > 0 ? AppColor.positive : AppColor.caution)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Peak")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Text("\(rating.peakRating)")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                }
+
+                if !baseline.topStrengths.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                        Text("Strengths: \(baseline.topStrengths.joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.blue.opacity(0.08), lineWidth: 1)
+            )
+        }
     }
 
     // MARK: - Expandable Details Section
@@ -2930,6 +3313,297 @@ struct SummaryView: View {
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
     }
 
+    // MARK: - IM Mode Cards (Conversation-First Hierarchy)
+
+    /// The primary IM verdict — answers "how did that land?" without a score ring.
+    private var imVerdictCard: some View {
+        let details = imConversationDetails
+        let userTurns = details?.turns.filter { $0.speaker == .user }.count ?? 0
+        let isShortSession = userTurns <= 2 || effectiveDuration < 30
+        let confidenceLabel = isShortSession ? "Early read" : "Session read"
+
+        return VStack(spacing: 14) {
+            // Mode + confidence label
+            HStack(spacing: 8) {
+                Text("IM Mode".uppercased())
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .tracking(1.4)
+                Spacer()
+                Text(confidenceLabel.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(scoreAccent.opacity(0.7))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(scoreAccent.opacity(0.1), in: Capsule())
+            }
+
+            // Verdict line — the headline
+            HStack(spacing: 10) {
+                Image(systemName: scoreEmoji)
+                    .font(.title2)
+                    .foregroundStyle(scoreAccent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(headline)
+                        .font(.title3.weight(.bold))
+                    if let tone = details?.actualTone, !tone.isEmpty {
+                        Text("You came across as \(tone.lowercased())")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+
+            // Context chips + inline score
+            HStack(spacing: 8) {
+                if let details {
+                    chip(details.setup.scenario.title, tint: .purple)
+                    chip(details.setup.targetTone.title, tint: .blue)
+                }
+                Spacer()
+                // Score shown small, not as hero
+                Text("\(scoreValue)/10")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(scoreAccent)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(scoreAccent.opacity(0.1), in: Capsule())
+            }
+
+            // Compact stats
+            HStack(spacing: 16) {
+                Label("\(userTurns) turns", systemImage: "bubble.left.and.bubble.right")
+                Label("\(Int(effectiveDuration))s", systemImage: "clock")
+                Label("\(effectiveFillerCount) fillers", systemImage: "waveform.path")
+                Spacer()
+                Text("+\(xpEarned) XP")
+                    .foregroundStyle(.orange)
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(
+            LinearGradient(
+                colors: [AppColor.cardBackground, scoreAccent.opacity(0.04)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(scoreAccent.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+    }
+
+    /// The Read — one strength, one miss. Answers "what mattered?"
+    private var imReadCard: some View {
+        let note = coachNote
+        let userTurns = imConversationDetails?.turns.filter { $0.speaker == .user }.count ?? 0
+        let isShortSession = userTurns <= 2 || effectiveDuration < 30
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("The Read")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            // Strength
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(AppColor.positive)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(note.momentum)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider()
+
+            // Miss
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "scope")
+                    .font(.subheadline)
+                    .foregroundStyle(AppColor.caution)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(note.leverage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // Confidence disclaimer for short sessions
+            if isShortSession {
+                Text("Based on a short conversation — longer sessions give a clearer picture.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    /// One Move — condensed action + CTA. Answers "what should I do next?"
+    private var imOneMove: some View {
+        let note = coachNote
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("Next Move")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+            }
+
+            Text(note.nextStep)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // CTA buttons
+            HStack(spacing: 12) {
+                Button {
+                    onPracticeAgain()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption.weight(.bold))
+                        Text("Try Again")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .foregroundStyle(.white)
+                    .background(AppColor.brandBlue, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+
+                Button {
+                    onSelectPracticeMode()
+                } label: {
+                    Text("New Chat")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    /// Conversation signals with deltas from starting state.
+    private func imSignalsCard(_ details: IMConversationDetails) -> some View {
+        let startTrust = 5
+        let startTension = 4
+        let startEngagement = 5
+        let finalTrust = details.finalState?.normalizedTrust ?? startTrust
+        let finalTension = details.finalState?.normalizedTension ?? startTension
+        let finalEngagement = details.finalState?.normalizedEngagement ?? startEngagement
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Conversation Signals")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            HStack(spacing: 10) {
+                signalPill(label: "Trust", start: startTrust, end: finalTrust, goodDirection: .up, tint: .blue)
+                signalPill(label: "Tension", start: startTension, end: finalTension, goodDirection: .down, tint: .orange)
+                signalPill(label: "Engage", start: startEngagement, end: finalEngagement, goodDirection: .up, tint: .green)
+            }
+
+            // Outcome milestone (if present)
+            if let outcome = details.outcome {
+                HStack(spacing: 8) {
+                    Image(systemName: "star.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.yellow)
+                    Text(outcome.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.yellow.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            }
+
+            // Beat description
+            if let beat = details.finalState?.beat, !beat.isEmpty {
+                Text(beat)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    private enum SignalDirection { case up, down }
+
+    private func signalPill(label: String, start: Int, end: Int, goodDirection: SignalDirection, tint: Color) -> some View {
+        let delta = end - start
+        let isGood: Bool = {
+            switch goodDirection {
+            case .up: return delta >= 0
+            case .down: return delta <= 0
+            }
+        }()
+        let deltaColor: Color = delta == 0 ? .secondary : (isGood ? AppColor.positive : AppColor.caution)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text("\(start)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.tertiary)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+                Text("\(end)")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(tint)
+            }
+            if delta != 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("\(abs(delta))")
+                        .font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(deltaColor)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(tint.opacity(0.05), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+    }
+
     // MARK: - Personal Best Celebration (Full-Screen Intermediary)
 
     private func personalBestCelebration(milestone: MilestoneEvent) -> some View {
@@ -3008,57 +3682,107 @@ struct SummaryView: View {
         lockedScoreBreakdown = scoreBreakdown
         lockedInsights = insights
         aiFeedback = recentSessions.first?.aiCoachFeedback
+        progressionPreviousXP = profile.xp
         displayedXP = profile.xp
         currentLevel = ProfileManager.levelTitle(forXP: profile.xp)
         nextLevel = ProfileManager.levelTitle(forXP: ((profile.xp / 1000) + 1) * 1000)
         xpToNext = ProfileManager.xpNeededToNextLevel(forXP: profile.xp)
         progress = ProfileManager.progressTowardsNextLevel(forXP: profile.xp)
 
+        // Capture achievement state BEFORE applying session
+        let achievementsBefore: [String: (current: Int, target: Int)] = {
+            var map: [String: (Int, Int)] = [:]
+            for tier in AchievementStore.allTiers {
+                map[tier.id] = tier.evaluate(recentSessions, currentStreak)
+            }
+            return map
+        }()
         let levelBefore = ProfileManager.levelTitle(forXP: profile.xp)
         profile.addXP(xpEarned)
         let levelAfter = ProfileManager.levelTitle(forXP: profile.xp)
+
+        // Re-evaluate achievements after XP (session already recorded by PracticeSessionFinalizer)
+        let newlyUnlockedIDs = AchievementStore.shared.evaluate(
+            sessions: sessionStore.sessions,
+            streak: currentStreak
+        )
+
+        // Compute achievement progress deltas
+        var deltas: [AchievementProgressDelta] = []
+        for tier in AchievementStore.allTiers {
+            let before = achievementsBefore[tier.id] ?? (0, 1)
+            let (current, target) = tier.evaluate(sessionStore.sessions, currentStreak)
+            let prevProgress = target > 0 ? min(1.0, Double(before.0) / Double(target)) : 0
+            let newProgress = target > 0 ? min(1.0, Double(current) / Double(target)) : 0
+            // Show only meaningful progress: newly unlocked or at least 5% movement
+            let delta = newProgress - prevProgress
+            if newlyUnlockedIDs.contains(tier.id) || delta >= 0.05 {
+                deltas.append(AchievementProgressDelta(
+                    id: tier.id,
+                    title: tier.title,
+                    previousProgress: prevProgress,
+                    newProgress: newProgress,
+                    progressLabel: "\(current)/\(target)"
+                ))
+            }
+        }
+        progressionDeltas = deltas.sorted { ($0.newProgress >= 1.0 ? 1 : 0) > ($1.newProgress >= 1.0 ? 1 : 0) }
+        progressionNewUnlocks = newlyUnlockedIDs.compactMap { AchievementStore.tier(for: $0) }
+
+        // Show progression screen if there's XP or achievement progress
+        if xpEarned > 0 || !progressionDeltas.isEmpty {
+            showProgressionScreen = true
+        }
+
         animateXP(to: profile.xp)
         animateSegments()
         CoachHaptic.scoreReveal()
-        withAnimation(.easeInOut(duration: 0.35)) {
-            celebrationVisible = scoreValue >= 7 || xpEarned >= 100
-        }
-        // Stagger the coach note card lines in after the score settles
-        Task {
-            try? await Task.sleep(for: .seconds(0.8))
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.4)) { coachNoteRevealed = true }
-            }
-        }
-        Task {
-            try? await Task.sleep(for: .seconds(1.6))
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.35)) {
-                    celebrationVisible = false
-                }
-            }
-        }
 
         // Milestone detection — personal bests and level-ups get full intermediary screens,
         // other milestones (streak, first session) use the compact overlay.
+        // These trigger AFTER the progression screen dismisses.
         let milestone = detectMilestone(levelBefore: levelBefore, levelAfter: levelAfter)
         if let milestone {
             if milestone.title == "New Personal Best!" {
                 personalBestMilestone = milestone
-                showPersonalBestScreen = true
+                // Will show after progression screen
+                if !showProgressionScreen {
+                    showPersonalBestScreen = true
+                }
             } else if milestone.title == "Level Up!" {
                 levelUpPreviousLevel = levelBefore
                 levelUpNewLevel = levelAfter
-                showLevelUpScreen = true
+                // Level up is now shown in progression screen
             } else {
                 Task {
-                    try? await Task.sleep(for: .seconds(2.2))
+                    try? await Task.sleep(for: .seconds(showProgressionScreen ? 0.5 : 2.2))
                     await MainActor.run {
                         withAnimation(.standardSpring) { activeMilestone = milestone }
                     }
                 }
             }
         }
+        // Score celebration + coach note reveal (delayed if progression screen is showing)
+        let celebrationDelay: Double = showProgressionScreen ? 0.5 : 0
+        Task {
+            if celebrationDelay > 0 {
+                try? await Task.sleep(for: .seconds(celebrationDelay))
+            }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    celebrationVisible = scoreValue >= 7 || xpEarned >= 100
+                }
+            }
+            try? await Task.sleep(for: .seconds(0.8))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.4)) { coachNoteRevealed = true }
+            }
+            try? await Task.sleep(for: .seconds(0.8))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35)) { celebrationVisible = false }
+            }
+        }
+
         // Record skill snapshot for trend analysis
         var categoryMap: [String: String] = [:]
         for seg in lockedScoreBreakdown {
@@ -3355,7 +4079,6 @@ extension SummaryView {
             }
         }
         self.onStartDrill = entry?.onStartDrill
-        self.onStartMiniDrill = entry?.onStartMiniDrill
     }
 }
 #endif

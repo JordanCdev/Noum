@@ -572,12 +572,6 @@ struct TimedPracticeView: View {
     @State private var showExitConfirmation = false
     @State private var activeDrill: DrillRecommendation?
 
-    // Mini-drill navigation
-    @State private var showMiniDrill = false
-    @State private var activeMiniDrill: DrillRecommendationV2?
-    @State private var miniDrillOutcome: MiniDrillOutcome?
-    @State private var showMiniDrillResult = false
-
     // Tasks
     @State private var thinkingTask: Task<Void, Never>?
     @State private var speakingTask: Task<Void, Never>?
@@ -735,60 +729,6 @@ struct TimedPracticeView: View {
             PaywallView()
         }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
-        .sheet(isPresented: $showMiniDrill) {
-            if let drill = activeMiniDrill {
-                MiniDrillView(
-                    drill: drill,
-                    prompt: question,
-                    onComplete: { outcome in
-                        miniDrillOutcome = outcome
-                        // Record drill history
-                        DrillHistoryStore.shared.record(
-                            .init(variationId: outcome.drill.variation.id,
-                                  skillArea: outcome.drill.skillArea,
-                                  succeeded: outcome.succeeded,
-                                  sessionId: UUID())
-                        )
-                        showMiniDrill = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showMiniDrillResult = true
-                        }
-                    },
-                    onCancel: {
-                        showMiniDrill = false
-                        // Summary is still on the nav path; no action needed
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $showMiniDrillResult) {
-            if let outcome = miniDrillOutcome {
-                MiniDrillResultView(
-                    outcome: outcome,
-                    xpEarned: outcome.succeeded ? 50 : 20,
-                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
-                    onDone: {
-                        showMiniDrillResult = false
-                    },
-                    onTryAnother: {
-                        showMiniDrillResult = false
-                        // Select a fresh drill for the same skill area
-                        if let nextDrill = activeMiniDrill,
-                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
-                            activeMiniDrill = DrillRecommendationV2(
-                                variation: freshVariation,
-                                reason: "Keep building on this skill",
-                                trendContext: nil,
-                                alternateFormat: nil
-                            )
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showMiniDrill = true
-                        }
-                    }
-                )
-            }
-        }
     }
 
     // MARK: - Background
@@ -2251,12 +2191,6 @@ struct TimedPracticeView: View {
             onStartDrill: { [self] drill in
                 activeDrill = drill
                 restartSession()
-            },
-            onStartMiniDrill: { [self] drill in
-                activeMiniDrill = drill
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    showMiniDrill = true
-                }
             }
         )
         SummaryDataStore.shared.store(entry, for: payloadId)

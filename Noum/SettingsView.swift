@@ -506,7 +506,7 @@ struct SettingsView: View {
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    @AppStorage("transcriptionProvider") private var selectedProvider: String = "aws"
+    @AppStorage("transcriptionProvider") private var selectedProvider: String = "deepgram"
 
     private var transcriptionProviderCard: some View {
         VStack(alignment: .leading, spacing: 14) {

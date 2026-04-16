@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Local development credentials for non-AWS transcription providers.
+        Copy this file to TranscriptionProviders.plist (gitignored) and fill in your keys.
+
+        Deepgram (dev only — production uses backend-vended scoped keys):
+        1. Create account at https://deepgram.com
+        2. Dashboard → API Keys → Create a New API Key
+    -->
+    <key>DEEPGRAM_API_KEY</key>
+    <string>YOUR_DEEPGRAM_KEY</string>
+
+    <!--
+        Google Cloud Speech (used directly with bundle-ID restriction):
+        1. Enable "Cloud Speech-to-Text API" in Google Cloud Console
+        2. APIs & Services → Credentials → Create API Key
+        3. Restrict the key to your iOS bundle ID and Speech-to-Text API only
+    -->
+    <key>GOOGLE_SPEECH_API_KEY</key>
+    <string>YOUR_GOOGLE_KEY</string>
+    <key>GOOGLE_SPEECH_PROJECT_ID</key>
+    <string>YOUR_PROJECT_ID</string>
+
+    <!--
+        AWS credentials remain in Transcribe.plist (existing pattern).
+        Production: backend-vended via /v1/transcribe/credentials
+    -->
+</dict>
+</plist>

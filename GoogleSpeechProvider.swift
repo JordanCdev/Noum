@@ -5,6 +5,17 @@ import Foundation
 /// Uses Google Cloud Speech-to-Text V2 REST API with chunked recognition.
 /// For real-time streaming, audio is accumulated in short chunks and sent as
 /// sequential recognize requests. This avoids gRPC dependencies.
+///
+/// **Security model:** Google API keys are restricted in Google Cloud Console
+/// by iOS bundle ID (com.yourapp.noum). This means:
+/// - The key only works from your app's bundle — extracting it from the .ipa
+///   won't help unless the attacker also spoofs the bundle ID.
+/// - Additionally, restrict the key to the Speech-to-Text API only in the Console.
+/// - No backend proxy needed (unlike Deepgram which has no bundle-ID restriction).
+///
+/// To restrict: Google Cloud Console → APIs & Services → Credentials →
+/// Edit your key → Application restrictions → iOS apps → Add bundle ID.
+/// Also set API restrictions → Restrict key → Cloud Speech-to-Text API only.
 final class GoogleSpeechProvider: TranscriptionProvider, @unchecked Sendable {
     let name = "Google Cloud Speech"
     let identifier = "google"

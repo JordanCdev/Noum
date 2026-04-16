@@ -12,10 +12,7 @@ struct AhCounterView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @State private var evaluation: PracticeEvaluation?
     // Mini-drill navigation
-    @State private var showMiniDrill = false
-    @State private var activeMiniDrill: DrillRecommendationV2?
-    @State private var miniDrillOutcome: MiniDrillOutcome?
-    @State private var showMiniDrillResult = false
+
 
     // MARK: - Prompt Suggestions
 
@@ -367,66 +364,6 @@ struct AhCounterView: View {
             checkTimeMilestones(elapsed: newElapsed)
         }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
-        .sheet(isPresented: $showMiniDrill) { miniDrillSheet }
-        .sheet(isPresented: $showMiniDrillResult) { miniDrillResultSheet }
-    }
-
-    // MARK: - Mini Drill Sheets
-
-    @ViewBuilder
-    private var miniDrillSheet: some View {
-        if let drill = activeMiniDrill {
-            MiniDrillView(
-                drill: drill,
-                prompt: nil,
-                onComplete: { outcome in
-                    miniDrillOutcome = outcome
-                    DrillHistoryStore.shared.record(
-                        .init(variationId: outcome.drill.variation.id,
-                              skillArea: outcome.drill.skillArea,
-                              succeeded: outcome.succeeded,
-                              sessionId: UUID())
-                    )
-                    showMiniDrill = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        showMiniDrillResult = true
-                    }
-                },
-                onCancel: {
-                    showMiniDrill = false
-                    // Summary is still on the nav path; no action needed
-                }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var miniDrillResultSheet: some View {
-        if let outcome = miniDrillOutcome {
-            MiniDrillResultView(
-                outcome: outcome,
-                xpEarned: outcome.succeeded ? 50 : 20,
-                streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
-                onDone: {
-                    showMiniDrillResult = false
-                },
-                onTryAnother: {
-                    showMiniDrillResult = false
-                    if let nextDrill = activeMiniDrill,
-                       let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
-                        activeMiniDrill = DrillRecommendationV2(
-                            variation: freshVariation,
-                            reason: "Keep building on this skill",
-                            trendContext: nil,
-                            alternateFormat: nil
-                        )
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        showMiniDrill = true
-                    }
-                }
-            )
-        }
     }
 
     // MARK: - Timer Management
@@ -652,13 +589,7 @@ struct AhCounterView: View {
             weakMoments: [],
             durationAssessment: .onTarget,
             targetRange: (30, 60, 120),
-            onStartDrill: nil,
-            onStartMiniDrill: { [self] drill in
-                activeMiniDrill = drill
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    showMiniDrill = true
-                }
-            }
+            onStartDrill: nil
         )
         SummaryDataStore.shared.store(entry, for: payloadId)
         let payload = SummaryPayload(id: payloadId, mode: .ahCounter)

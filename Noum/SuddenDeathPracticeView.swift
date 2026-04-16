@@ -4,127 +4,82 @@ import SwiftUI
 #endif
 
 #if canImport(SwiftUI)
+
+// MARK: - Phase State Machine
+
+private enum PressureDrillPhase: Equatable {
+    case setup
+    case countdown(Int)       // 3, 2, 1
+    case go                   // brief flash
+    case active
+    case gameOver(fillerTriggered: Bool)
+}
+
+// MARK: - View
+
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathPracticeView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+
+    // Prompt is set once and locked
     @State private var question: String = ""
+
+    // State machine
+    @State private var phase: PressureDrillPhase = .setup
+
+    // Run state
     @State private var elapsed: Int = 0
-    @State private var timerTask: Task<Void, Never>? = nil
     @State private var pressureLevel: Int = 1
+    @State private var pressureEventsHandled: Int = 0
+    @State private var timerTask: Task<Void, Never>?
     @State private var evaluation: PracticeEvaluation?
-    // Mini-drill navigation
-    @State private var showMiniDrill = false
-    @State private var activeMiniDrill: DrillRecommendationV2?
-    @State private var miniDrillOutcome: MiniDrillOutcome?
-    @State private var showMiniDrillResult = false
-    @State private var prepCountdown: Int? = nil
-    @State private var launchCountdown: Int? = nil
-    @State private var showGoCue = false
-    @State private var transitionCue: LevelTransitionCue?
-    @State private var pressurePulse = false
-    @State private var silenceNudge: String? = nil
-    @State private var stopReason: String? = nil
-    @State private var isEndingSession = false
-    @State private var activePressureEvent: PressureEvent?
-    @State private var pressureEventsHandled = 0
-    @State private var showGameOver = false
-    @State private var gameOverAppeared = false
     @State private var showExitConfirmation = false
 
     var body: some View {
         ZStack {
+            // Background
             LinearGradient(
-                colors: [
-                    pressureBackground.leading,
-                    Color.white,
-                    pressureBackground.trailing
-                ],
+                colors: [pressureBackground.leading, Color.white, pressureBackground.trailing],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
+            .animation(.easeInOut(duration: 0.8), value: pressureLevel)
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 20) {
-                    headerCard
-
-                    if let error = speechVM.connectionError {
-                        ErrorCard(message: error)
-                    }
-
-                    if speechVM.isRecording {
-                        progressCard
-                        transcriptCard
-                        pressureDirectiveCard
-                        if let activePressureEvent {
-                            pressureEventCard(activePressureEvent)
-                        }
-                        if let silenceNudge {
-                            silenceNudgeCard(silenceNudge)
-                        }
-                        timerCard
-                            .accessibilityIdentifier("suddenDeathTimer")
-                    } else if let prepCountdown {
-                        prepStage(countdown: prepCountdown)
-                    } else {
-                        progressCard
-                        promptCard
-                    }
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.top, Spacing.md)
-                .padding(.bottom, 90)
-            }
-            .safeAreaInset(edge: .bottom) {
-                Group {
-                    if speechVM.isRecording {
-                        Button("Stop") { stopSession() }
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.md)
-                            .background(Color.red, in: Capsule())
-                            .foregroundStyle(.white)
-                            .buttonStyle(.pressable)
-                    } else if prepCountdown == nil {
-                        Button("Begin Run") { startSequence() }
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.md)
-                            .background(Color.orange, in: Capsule())
-                            .foregroundStyle(.white)
-                            .buttonStyle(.pressable)
-                    }
-                }
-                .padding(.horizontal, Spacing.screenH)
-                .padding(.vertical, 12)
-                .background(.regularMaterial)
-            }
-
-            if let launchCountdown {
-                countdownOverlay(value: "\(launchCountdown)", subtitle: "Get ready")
-                    .transition(.opacity.combined(with: .scale))
-            } else if showGoCue {
-                countdownOverlay(value: "GO", subtitle: levelTitle)
-                    .transition(.opacity.combined(with: .scale))
-            } else if let transitionCue {
-                countdownOverlay(value: transitionCue.title, subtitle: transitionCue.subtitle)
-                    .transition(.opacity.combined(with: .scale))
-            }
-
-            if showGameOver {
-                gameOverOverlay
+            // Content
+            switch phase {
+            case .setup:
+                setupScreen
                     .transition(.opacity)
-                    .zIndex(20)
+
+            case .active:
+                activeScreen
+                    .transition(.opacity)
+
+            case .gameOver:
+                gameOverScreen
+                    .transition(.opacity)
+
+            case .countdown, .go:
+                // Show the prompt faded behind the countdown
+                activeScreenPreview
+            }
+
+            // Countdown overlay
+            if case .countdown(let value) = phase {
+                countdownOverlay(text: "\(value)", color: .orange)
+            } else if case .go = phase {
+                countdownOverlay(text: "GO", color: .green)
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(speechVM.isRecording)
+        .navigationBarBackButtonHidden(phase != .setup)
         .toolbar {
-            if speechVM.isRecording {
+            if case .active = phase {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         showExitConfirmation = true
@@ -144,291 +99,368 @@ struct SuddenDeathPracticeView: View {
         } message: {
             Text("Your current session will be lost.")
         }
-        .accessibilityIdentifier("suddenDeath.screen")
         .task {
             if question.isEmpty { question = PracticeTopics.random() }
+            speechVM.pressureDrillPrompt = question
             speechVM.prepareForInteractiveUse()
         }
-        .onChange(of: speechVM.fillerWordCount) { _, count in
-            if count > 0 { stopSession(fillerTriggered: true) }
-        }
-        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
-        .sheet(isPresented: $showMiniDrill) {
-            if let drill = activeMiniDrill {
-                MiniDrillView(
-                    drill: drill,
-                    prompt: question,
-                    onComplete: { outcome in
-                        miniDrillOutcome = outcome
-                        DrillHistoryStore.shared.record(
-                            .init(variationId: outcome.drill.variation.id,
-                                  skillArea: outcome.drill.skillArea,
-                                  succeeded: outcome.succeeded,
-                                  sessionId: UUID())
-                        )
-                        showMiniDrill = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showMiniDrillResult = true
-                        }
-                    },
-                    onCancel: {
-                        showMiniDrill = false
-                        // Summary is still on the nav path; no action needed
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $showMiniDrillResult) {
-            if let outcome = miniDrillOutcome {
-                MiniDrillResultView(
-                    outcome: outcome,
-                    xpEarned: outcome.succeeded ? 50 : 20,
-                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
-                    onDone: {
-                        showMiniDrillResult = false
-                    },
-                    onTryAnother: {
-                        showMiniDrillResult = false
-                        if let nextDrill = activeMiniDrill,
-                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
-                            activeMiniDrill = DrillRecommendationV2(
-                                variation: freshVariation,
-                                reason: "Keep building on this skill",
-                                trendContext: nil,
-                                alternateFormat: nil
-                            )
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showMiniDrill = true
-                        }
-                    }
-                )
+        .onChange(of: speechVM.pressureDrillFillerCount) { _, count in
+            if count > 0, case .active = phase {
+                endRun(fillerTriggered: true)
             }
         }
     }
 
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Pressure Drill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            Text("Survive until a filler word ends the run")
-                .font(.largeTitle.weight(.bold))
-            Text("Every 30 seconds the pressure level climbs. Stay clean, stay composed, and see how long you can hold the room.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            if speechVM.isRecording {
-                Text(pressureCue)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(levelTint)
-                    .padding(.top, 4)
-            } else if let profile = coachingProfileStore.profile {
-                Text(entryBrief(for: profile))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(levelTint.opacity(pressurePulse ? 0.85 : 0.25), lineWidth: pressurePulse ? 2.5 : 1)
-                .animation(.easeInOut(duration: 0.35), value: pressurePulse)
-        )
-    }
+    // MARK: - Setup Screen
 
-    private var progressCard: some View {
-        HStack(spacing: 12) {
-            StatCard(title: "Elapsed", value: "\(elapsed)s", tint: .orange)
-            StatCard(title: "Level", value: "\(pressureLevel)", tint: levelTint)
-            StatCard(title: "Fillers", value: "\(speechVM.fillerWordCount)", tint: .red)
-        }
-    }
+    private var setupScreen: some View {
+        VStack(spacing: 0) {
+            Spacer()
 
-    private var promptCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Prompt")
-                .font(.headline)
-            Text(question)
-                .font(.title3.weight(.semibold))
-            Text("Take a breath, understand the setup, then start the run when you are ready.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private func prepStage(countdown: Int) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Prepare")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            Text(question)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("You have a short setup window. Read the prompt, find your opening line, then the pressure run begins.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("\(countdown)")
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
+            VStack(spacing: 24) {
+                // Title
+                VStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(.orange)
-                    Text("seconds to prepare")
+
+                    Text("Pressure Drill")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                    Text("Survive without fillers")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Prompt card
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Your prompt")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    Text(question)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Spacing.lg)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                        .stroke(Color.orange.opacity(0.15), lineWidth: 1)
+                )
+
+                // New prompt button
+                Button {
+                    withAnimation(.snappySpring) {
+                        question = PracticeTopics.random()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                        Text("New Prompt")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+
+                if let error = speechVM.connectionError {
+                    ErrorCard(message: error)
+                }
+            }
+            .padding(.horizontal, Spacing.screenH)
+
+            Spacer()
+
+            // Begin button
+            Button {
+                beginCountdown()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                        .font(.headline)
+                    Text("Begin Run")
+                        .font(.headline.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.md)
+                .background(Color.orange.gradient, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 24)
+        }
+    }
+
+    // MARK: - Active Screen
+
+    private var activeScreen: some View {
+        VStack(spacing: 0) {
+            // Top bar: level + timer
+            HStack {
+                Text(levelTitle)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(levelTint)
+
+                Spacer()
+
+                Text(formatTime(elapsed))
+                    .font(.system(.title3, design: .rounded).weight(.bold).monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.vertical, 12)
+
+            // Level progress bar
+            GeometryReader { geo in
+                let progress = min(1.0, Double(elapsed % 30) / 30.0)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(levelTint.opacity(0.2))
+                    .frame(height: 3)
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(levelTint)
+                            .frame(width: geo.size.width * progress, height: 3)
+                            .animation(.linear(duration: 1), value: elapsed)
+                    }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, Spacing.screenH)
+
+            // Transcript area
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(speechVM.highlightedText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Spacing.md)
+
+                    // Prompt reminder (faded)
+                    Text(question)
+                        .font(.caption)
+                        .foregroundStyle(.secondary.opacity(0.5))
+                        .padding(.horizontal, Spacing.md)
+                }
+                .padding(.top, Spacing.md)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, Spacing.screenH)
+
+            // End run button
+            Button {
+                endRun(fillerTriggered: false)
+            } label: {
+                Text("End Run")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .background(Color.red.opacity(0.85), in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 24)
+        }
+    }
+
+    // Preview version shown behind countdown
+    private var activeScreenPreview: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Level 1 • Settle in")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                Text("0:00")
+                    .font(.system(.title3, design: .rounded).weight(.bold).monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.vertical, 12)
+
+            Spacer()
+
+            Text(question)
+                .font(.caption)
+                .foregroundStyle(.secondary.opacity(0.3))
+                .padding(.horizontal, Spacing.screenH)
+
+            Spacer()
+        }
+        .opacity(0.3)
+    }
+
+    // MARK: - Game Over Screen
+
+    private var gameOverScreen: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(spacing: 20) {
+                // Icon
+                Image(systemName: fillerTriggeredGameOver ? "waveform.badge.exclamationmark" : "checkmark.circle.fill")
+                    .font(.system(size: 48, weight: .bold))
+                    .foregroundStyle(fillerTriggeredGameOver ? .orange : .green)
+
+                // Title
+                Text(fillerTriggeredGameOver ? "Filler Detected" : "Run Complete")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+
+                // Time
+                VStack(spacing: 4) {
+                    Text("\(elapsed)")
+                        .font(.system(size: 64, weight: .black, design: .rounded))
+                    Text("seconds survived")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Score
+                if let score = evaluation?.score {
+                    Text("Score: \(score)/10")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.blue)
+                }
+
+                // Level badge
+                Text("Reached Level \(pressureLevel)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(levelTint)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(levelTint.opacity(0.12), in: Capsule())
+
+                // Personal best
+                if isNewPersonalBest {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                        Text("New Personal Best!")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.yellow)
+                    }
+                } else if suddenDeathPersonalBest > 0 {
+                    Text("Personal best: \(suddenDeathPersonalBest)s")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
             }
 
-            Button("Start Now") {
-                prepCountdown = nil
-                beginLaunchCountdown()
-            }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.md)
-            .background(Color.orange, in: Capsule())
-            .foregroundStyle(.white)
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
+            Spacer()
 
-    private var transcriptCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Live Transcript")
-                .font(.headline)
-            ScrollView {
-                Text(speechVM.highlightedText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Spacing.md)
-                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-            }
-            .frame(minHeight: 220)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private var pressureDirectiveCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(currentDirective.eyebrow)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(levelTint)
-                    .textCase(.uppercase)
-                Spacer()
-                Text("Level \(pressureLevel)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(currentDirective.title)
-                .font(.headline)
-
-            Text(currentDirective.body)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if let constraint = currentDirective.constraint {
-                Text(constraint)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(levelTint)
-                    .padding(.top, 2)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(levelTint.opacity(pressurePulse ? 0.85 : 0.18), lineWidth: pressurePulse ? 2 : 1)
-                .animation(.easeInOut(duration: 0.35), value: pressurePulse)
-        )
-    }
-
-    private var timerCard: some View {
-        VStack(spacing: 8) {
-            Text("\(elapsed)")
-                .font(.system(size: 54, weight: .bold, design: .rounded))
-                .foregroundStyle(levelTint)
-            Text("Seconds survived")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text(levelTitle)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(levelTint)
-            Text(nextMilestoneText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .scaleEffect(pressurePulse ? 1.02 : 1.0)
-        .animation(.easeInOut(duration: 0.35), value: pressurePulse)
-    }
-
-    private func startSequence() {
-        if prepCountdown == nil {
-            reset()
-            prepCountdown = 15
-            Task {
-                for count in stride(from: 15, through: 1, by: -1) {
-                    await MainActor.run { prepCountdown = count }
-                    try? await Task.sleep(for: .seconds(1))
-                    if Task.isCancelled { return }
-                    let stillPreparing = await MainActor.run { prepCountdown != nil }
-                    if !stillPreparing { return }
+            // Actions
+            VStack(spacing: 12) {
+                // Try Again — same prompt, straight to countdown
+                Button {
+                    retryRun()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.headline.weight(.bold))
+                        Text("Try Again")
+                            .font(.headline.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .background(Color.orange.gradient, in: Capsule())
                 }
-                await MainActor.run {
-                    prepCountdown = nil
-                    beginLaunchCountdown()
-                }
-            }
-            return
-        }
+                .buttonStyle(.pressable)
 
-        prepCountdown = nil
-        beginLaunchCountdown()
+                // New Prompt
+                Button {
+                    question = PracticeTopics.random()
+                    resetRunState()
+                    withAnimation(.snappySpring) { phase = .setup }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.subheadline)
+                        Text("New Prompt")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(AppColor.cardBackground, in: Capsule())
+                    .overlay(Capsule().stroke(Color.black.opacity(0.08), lineWidth: 1))
+                }
+
+                // See Summary
+                Button {
+                    pushSummary()
+                } label: {
+                    Text("See Full Summary")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.bottom, 24)
+        }
     }
 
-    private func beginLaunchCountdown() {
-        launchCountdown = 3
+    private var fillerTriggeredGameOver: Bool {
+        if case .gameOver(let filler) = phase { return filler }
+        return false
+    }
+
+    // MARK: - Countdown Overlay
+
+    private func countdownOverlay(text: String, color: Color) -> some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+
+            Text(text)
+                .font(.system(size: 120, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+                .shadow(color: color.opacity(0.5), radius: 30, y: 8)
+                .transition(.scale.combined(with: .opacity))
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: - Run Control
+
+    private func beginCountdown() {
+        speechVM.prepareSession(mode: .suddenDeath)
         Task {
-            for count in stride(from: 3, through: 1, by: -1) {
-                await MainActor.run { launchCountdown = count }
+            for count in [3, 2, 1] {
+                await MainActor.run {
+                    withAnimation(.snappySpring) { phase = .countdown(count) }
+                }
+                CoachHaptic.countdownBeat()
                 try? await Task.sleep(for: .seconds(1))
             }
             await MainActor.run {
-                launchCountdown = nil
-                showGoCue = true
+                withAnimation(.snappySpring) { phase = .go }
             }
-            try? await Task.sleep(for: .milliseconds(700))
+            CoachHaptic.drillSuccess()
+            try? await Task.sleep(for: .milliseconds(600))
             await MainActor.run {
-                showGoCue = false
+                withAnimation(.snappySpring) { phase = .active }
                 startRecording()
             }
         }
     }
 
+    private func retryRun() {
+        // Same prompt, reset state, go straight to countdown
+        resetRunState()
+        beginCountdown()
+    }
+
     private func startRecording() {
-        reset()
+        speechVM.resetCurrentSession()
         speechVM.prepareSession(mode: .suddenDeath)
         speechVM.startRecording()
+        elapsed = 0
+        pressureLevel = 1
+        pressureEventsHandled = 0
         timerTask = Task {
             var seconds = 0
             while !Task.isCancelled {
@@ -439,38 +471,29 @@ struct SuddenDeathPracticeView: View {
                     elapsed = seconds
                     let newLevel = max(1, (seconds / 30) + 1)
                     if newLevel != pressureLevel {
-                        pressureLevel = newLevel
-                        triggerPressurePulse()
-                        showTransitionCue(for: newLevel)
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            pressureLevel = newLevel
+                        }
+                        CoachHaptic.levelUp()
                     }
                     if seconds >= 15 && seconds % 15 == 0 {
-                        triggerPressureEvent(at: seconds)
+                        pressureEventsHandled += 1
                     }
-                    if transcriptWordCount == 0 {
-                        if seconds == 5 {
-                            silenceNudge = "The room is waiting. Start with one clean sentence now."
-                        } else if seconds == 10 {
-                            silenceNudge = "Still no answer. Commit to the first simple thought and build from there."
-                        }
-                    } else {
-                        silenceNudge = nil
-                    }
-                    // Session cap — 5 minutes filler-free is exceptional
+                    // 5-minute cap
                     if seconds >= 300 {
-                        stopSession(fillerTriggered: false)
+                        endRun(fillerTriggered: false)
                     }
                 }
             }
         }
     }
 
-    private func stopSession(fillerTriggered: Bool = false) {
-        guard !isEndingSession else { return }
-        isEndingSession = true
+    private func endRun(fillerTriggered: Bool) {
+        guard case .active = phase else { return }
         timerTask?.cancel()
         speechVM.stopRecording()
         Task {
-            try? await Task.sleep(for: .milliseconds(650))
+            try? await Task.sleep(for: .milliseconds(500))
             await MainActor.run {
                 let result = PracticeEvaluator.evaluateSuddenDeathPractice(
                     transcript: speechVM.transcribedText,
@@ -480,548 +503,108 @@ struct SuddenDeathPracticeView: View {
                     recentSessions: speechVM.pastSessions,
                     profile: coachingProfileStore.profile
                 )
-                if let stopReason {
-                    let overridden = PracticeEvaluation(
-                        score: result.score,
-                        xpEarned: result.xpEarned,
-                        headline: "Round stopped",
-                        feedback: stopReason,
-                        segments: result.segments,
-                        insights: result.insights
-                    )
-                    evaluation = overridden
-                    speechVM.annotateLatestSession(
-                        score: overridden.score,
-                        xpEarned: overridden.xpEarned,
-                        headline: overridden.headline,
-                        insights: overridden.insights,
-                        coachSummary: overridden.feedback
-                    )
-                } else {
-                    evaluation = result
-                    speechVM.annotateLatestSession(
+                evaluation = result
+                speechVM.annotateLatestSession(
+                    score: result.score,
+                    xpEarned: result.xpEarned,
+                    headline: result.headline,
+                    insights: result.insights,
+                    coachSummary: result.feedback
+                )
+
+                let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
+                let pressure = BaselineEngine.classifyPressure(
+                    mode: .suddenDeath,
+                    isPressureModeOn: pressureOn,
+                    streakDays: PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
+                )
+                _ = PracticeSessionFinalizer.finalize(
+                    store: PracticeSessionStore.shared,
+                    draft: PracticeSessionDraft(
+                        transcript: speechVM.transcribedText,
+                        fillerWordCount: speechVM.fillerWordCount,
+                        duration: TimeInterval(elapsed),
+                        date: Date(),
+                        mode: .suddenDeath,
+                        pressureLevel: pressure,
+                        isRated: pressureOn
+                    ),
+                    annotation: PracticeSessionAnnotation(
                         score: result.score,
                         xpEarned: result.xpEarned,
                         headline: result.headline,
                         insights: result.insights,
                         coachSummary: result.feedback
                     )
-                }
+                )
 
                 if fillerTriggered {
-                    showGameOver = true
-                    gameOverAppeared = false
-                    withAnimation(.bouncySpring) { gameOverAppeared = true }
                     CoachHaptic.gameOver()
                 } else {
                     CoachHaptic.sessionComplete()
-                    pushSummary()
+                }
+                withAnimation(.snappySpring) {
+                    phase = .gameOver(fillerTriggered: fillerTriggered)
                 }
             }
         }
     }
 
-    private func reset() {
+    private func resetRunState() {
         timerTask?.cancel()
         speechVM.resetCurrentSession()
-        question = PracticeTopics.random()
+        speechVM.pressureDrillPrompt = question
         elapsed = 0
         pressureLevel = 1
-        evaluation = nil
-        prepCountdown = nil
-        launchCountdown = nil
-        showGoCue = false
-        transitionCue = nil
-        pressurePulse = false
-        silenceNudge = nil
-        stopReason = nil
-        isEndingSession = false
-        activePressureEvent = nil
         pressureEventsHandled = 0
-        showGameOver = false
-        gameOverAppeared = false
+        evaluation = nil
     }
+
+    // MARK: - Helpers
 
     private var levelTint: Color {
         switch pressureLevel {
-        case 1:
-            return .orange
-        case 2:
-            return .pink
-        case 3:
-            return .red
-        default:
-            return .purple
+        case 1: return .orange
+        case 2: return .pink
+        case 3: return .red
+        default: return .purple
         }
     }
 
     private var levelTitle: String {
         switch pressureLevel {
-        case 1:
-            return "Level 1 • Settle in"
-        case 2:
-            return "Level 2 • Pressure rising"
-        case 3:
-            return "Level 3 • High pressure"
-        default:
-            return "Level \(pressureLevel) • Hold your nerve"
+        case 1: return "Level 1 • Settle in"
+        case 2: return "Level 2 • Pressure rising"
+        case 3: return "Level 3 • High pressure"
+        default: return "Level \(pressureLevel) • Hold your nerve"
         }
-    }
-
-    private var nextMilestoneText: String {
-        let nextLevelAt = pressureLevel * 30
-        let remaining = max(0, nextLevelAt - elapsed)
-        return remaining == 0
-            ? "Pressure level just increased"
-            : "\(remaining)s until level \(pressureLevel + 1)"
-    }
-
-    private var pressureCue: String {
-        switch pressureLevel {
-        case 1:
-            return "Land the first sentence cleanly."
-        case 2:
-            return "Pressure is rising. Keep your pauses deliberate."
-        case 3:
-            return "The room feels tighter now. Hold your nerve."
-        default:
-            return "Stay composed. One filler ends the run."
-        }
-    }
-
-    private var currentDirective: PressureDirective {
-        pressureDirective(level: pressureLevel, profile: coachingProfileStore.profile)
     }
 
     private var pressureBackground: (leading: Color, trailing: Color) {
         switch pressureLevel {
-        case 1:
-            return (
-                Color(red: 0.98, green: 0.93, blue: 0.88),
-                Color(red: 0.99, green: 0.95, blue: 0.88)
-            )
-        case 2:
-            return (
-                Color(red: 0.99, green: 0.91, blue: 0.90),
-                Color(red: 0.99, green: 0.90, blue: 0.94)
-            )
-        case 3:
-            return (
-                Color(red: 1.0, green: 0.90, blue: 0.90),
-                Color(red: 0.98, green: 0.87, blue: 0.87)
-            )
-        default:
-            return (
-                Color(red: 0.95, green: 0.88, blue: 0.96),
-                Color(red: 0.92, green: 0.87, blue: 0.98)
-            )
+        case 1: return (Color(red: 0.98, green: 0.93, blue: 0.88), Color(red: 0.99, green: 0.95, blue: 0.88))
+        case 2: return (Color(red: 0.99, green: 0.91, blue: 0.90), Color(red: 0.99, green: 0.90, blue: 0.94))
+        case 3: return (Color(red: 1.0, green: 0.90, blue: 0.90), Color(red: 0.98, green: 0.87, blue: 0.87))
+        default: return (Color(red: 0.95, green: 0.88, blue: 0.96), Color(red: 0.92, green: 0.87, blue: 0.98))
         }
     }
-
-    private var transcriptWordCount: Int {
-        speechVM.transcribedText.split { !$0.isLetter && !$0.isNumber }.count
-    }
-
-    private func triggerPressurePulse() {
-        pressurePulse = true
-        Task {
-            try? await Task.sleep(for: .milliseconds(450))
-            await MainActor.run { pressurePulse = false }
-        }
-    }
-
-    private func triggerPressureEvent(at seconds: Int) {
-        let event = pressureEvent(at: seconds, profile: coachingProfileStore.profile)
-        activePressureEvent = event
-        pressureEventsHandled += 1
-        triggerPressurePulse()
-        Task {
-            try? await Task.sleep(for: .seconds(6))
-            await MainActor.run {
-                if activePressureEvent?.id == event.id {
-                    activePressureEvent = nil
-                }
-            }
-        }
-    }
-
-    private func showTransitionCue(for level: Int) {
-        let cue = LevelTransitionCue(
-            title: "Level \(level)",
-            subtitle: transitionSubtitle(for: level)
-        )
-        transitionCue = cue
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            await MainActor.run {
-                if transitionCue?.id == cue.id {
-                    transitionCue = nil
-                }
-            }
-        }
-    }
-
-    private func entryBrief(for profile: CoachingProfile) -> String {
-        switch profile.confidenceLevel {
-        case .beginner:
-            return "This mode will push you, but the goal is still one clean thought at a time."
-        case .rebuilding:
-            return "Treat this as composure training: steady opening, steady breath, steady finish."
-        case .inconsistent:
-            return "You already have the ability. This drill tests whether you can hold it under pressure."
-        case .confident:
-            return "Use this to prove your delivery stays sharp when the pressure keeps climbing."
-        }
-    }
-
-    private func pressureDirective(level: Int, profile: CoachingProfile?) -> PressureDirective {
-        let challenge = profile?.biggestChallenge
-        let confidence = profile?.confidenceLevel
-
-        let body: String
-        let constraint: String?
-
-        switch level {
-        case 1:
-            body = baselineDirective(for: challenge, confidence: confidence)
-            constraint = "Deliver one clear opening thought before you expand."
-        case 2:
-            body = secondLevelDirective(for: challenge)
-            constraint = "Add one concrete example without rushing."
-        case 3:
-            body = thirdLevelDirective(for: challenge)
-            constraint = "No filler. No restart. Clean transitions only."
-        case 4:
-            body = "Now make it sound room-ready. Keep your pace calm and your language deliberate, as if people are judging every sentence."
-            constraint = "Turn the answer into a concise, persuasive mini-talk."
-        default:
-            body = "This is keynote territory now. Stay composed, hold your structure, and keep sounding intentional even as the pressure stacks up."
-            constraint = "Keep authority in your tone while protecting clean pauses."
-        }
-
-        return PressureDirective(
-            eyebrow: level >= 4 ? "High Pressure" : "Pressure Cue",
-            title: pressureTitle(for: level),
-            body: body,
-            constraint: constraint
-        )
-    }
-
-    private func pressureTitle(for level: Int) -> String {
-        switch level {
-        case 1: return "Establish control"
-        case 2: return "Expand under pressure"
-        case 3: return "Stay clean while the room tightens"
-        case 4: return "Sound decisive"
-        default: return "Hold the room"
-        }
-    }
-
-    private func transitionSubtitle(for level: Int) -> String {
-        switch level {
-        case 2:
-            return "Pressure rising. Keep the next idea clean."
-        case 3:
-            return "No loose transitions now. Stay composed."
-        case 4:
-            return "Sound decisive. The room is judging every line."
-        default:
-            return "Hold your nerve and keep control."
-        }
-    }
-
-    private func baselineDirective(for challenge: SpeakingChallenge?, confidence: ConfidenceLevel?) -> String {
-        switch challenge {
-        case .fillerWords:
-            return "Start with one calm sentence and let silence buy you time before the next point."
-        case .rambling:
-            return "Answer directly first, then add one supporting idea so the structure stays tight."
-        case .freezing:
-            return "Say the first simple sentence quickly, then build from it instead of waiting for a perfect answer."
-        case .rushing:
-            return "Slow the first sentence down on purpose so the rest of the answer follows your pace."
-        case .none:
-            switch confidence {
-            case .beginner:
-                return "Keep it simple. One clear point is enough to win the opening phase."
-            case .rebuilding:
-                return "Find your rhythm early and let the opening settle you."
-            case .inconsistent:
-                return "Show that your good reps are repeatable even when the pressure starts rising."
-            case .confident:
-                return "Set the tone quickly and make the room believe you’re in control."
-            case .none:
-                return "Open cleanly and establish control before you try to do more."
-            }
-        }
-    }
-
-    private func secondLevelDirective(for challenge: SpeakingChallenge?) -> String {
-        switch challenge {
-        case .fillerWords:
-            return "The next risk is thinking out loud. Keep each pause quiet and intentional before you move to the example."
-        case .rambling:
-            return "Pressure rises here because answers start to wander. Keep everything tied back to your main point."
-        case .freezing:
-            return "Don’t overthink the next section. Add one example and keep momentum."
-        case .rushing:
-            return "Pressure can speed you up here. Keep the pace measured while you expand."
-        case .none:
-            return "Now show range: keep the answer alive without sounding scattered."
-        }
-    }
-
-    private func thirdLevelDirective(for challenge: SpeakingChallenge?) -> String {
-        switch challenge {
-        case .fillerWords:
-            return "This is where filler habits usually show. Protect every transition with a clean pause."
-        case .rambling:
-            return "The middle of the answer must stay disciplined now. If the structure drifts, the pressure wins."
-        case .freezing:
-            return "The pressure is high enough now that hesitation will feel obvious. Commit to the next sentence."
-        case .rushing:
-            return "Keep sounding composed while the internal tempo rises. Calm beats fast here."
-        case .none:
-            return "This is where solid speakers separate from shaky ones. Keep the answer structured and intentional."
-        }
-    }
-
-    private func pressureEvent(at seconds: Int, profile: CoachingProfile?) -> PressureEvent {
-        let level = max(1, (seconds / 30) + 1)
-        let challenge = profile?.biggestChallenge
-        let context = profile?.speakingContext
-
-        switch (level, challenge, context) {
-        case (1, .some(.freezing), _):
-            return PressureEvent(
-                title: "No overthinking",
-                body: "Answer directly now. Do not wait for a perfect line.",
-                constraint: "Give the next sentence immediately."
-            )
-        case (1, .some(.rambling), _):
-            return PressureEvent(
-                title: "Tighten it",
-                body: "Restate your point in one clean sentence before you expand again.",
-                constraint: "One sentence. No wandering."
-            )
-        case (2, _, .some(.work)):
-            return PressureEvent(
-                title: "Boardroom pressure",
-                body: "Imagine someone senior just asked for a concrete example.",
-                constraint: "Give one example right now."
-            )
-        case (2, _, .some(.interviews)):
-            return PressureEvent(
-                title: "Interview follow-up",
-                body: "A recruiter interrupts and asks what the result was.",
-                constraint: "Add a result or outcome in the next sentence."
-            )
-        case (2, _, .some(.presentations)):
-            return PressureEvent(
-                title: "Audience test",
-                body: "The room needs a clearer takeaway.",
-                constraint: "State your key message cleanly now."
-            )
-        case (3, .some(.rushing), _):
-            return PressureEvent(
-                title: "Slow without losing control",
-                body: "The pressure is trying to speed you up. Stay deliberate.",
-                constraint: "Make the next sentence your calmest one."
-            )
-        case (3, .some(.fillerWords), _):
-            return PressureEvent(
-                title: "Protect the transition",
-                body: "This is where filler words usually break the run.",
-                constraint: "Use one clean pause before the next idea."
-            )
-        case (4..., _, .some(.presentations)):
-            return PressureEvent(
-                title: "Keynote mode",
-                body: "The answer now has to sound room-ready and authoritative.",
-                constraint: "Deliver the next line like a closing statement."
-            )
-        case (4..., _, _):
-            return PressureEvent(
-                title: "High-stakes follow-up",
-                body: "You are being judged on clarity and composure now.",
-                constraint: "Sharpen the next sentence and land it confidently."
-            )
-        default:
-            return PressureEvent(
-                title: "Pressure shift",
-                body: "The room just got harder. Keep control and adapt without filler.",
-                constraint: "Answer the next moment more cleanly than the last."
-            )
-        }
-    }
-
-    private func countdownOverlay(value: String, subtitle: String) -> some View {
-        ZStack {
-            Color.black.opacity(0.10)
-                .ignoresSafeArea()
-
-            VStack(spacing: 10) {
-                Text(value)
-                    .font(.system(size: 76, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                Text(subtitle)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.92))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(levelTint.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .padding(36)
-            .shadow(color: .black.opacity(0.16), radius: 24, y: 18)
-        }
-    }
-
-    private func silenceNudgeCard(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(.orange)
-            Text(message)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.md)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-    }
-
-    private func pressureEventCard(_ event: PressureEvent) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Live Pressure Event")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .textCase(.uppercase)
-                Spacer()
-                Text("Respond now")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-
-            Text(event.title)
-                .font(.headline.weight(.bold))
-                .foregroundStyle(.white)
-
-            Text(event.body)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.92))
-
-            Text(event.constraint)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.top, 2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(levelTint.gradient, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .shadow(color: levelTint.opacity(0.20), radius: 18, y: 12)
-        .transition(.opacity.combined(with: .move(edge: .top)))
-    }
-
-    // MARK: - Game Over
 
     private var suddenDeathPersonalBest: Int {
-        let pastSD = PracticeSessionStore.shared.sessions
+        PracticeSessionStore.shared.sessions
             .filter { $0.mode == .suddenDeath }
-            .dropFirst() // exclude current
-        return pastSD.map { Int($0.duration) }.max() ?? 0
+            .dropFirst()
+            .map { Int($0.duration) }
+            .max() ?? 0
     }
 
     private var isNewPersonalBest: Bool {
         elapsed > suddenDeathPersonalBest && suddenDeathPersonalBest > 0
     }
 
-    private var gameOverOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.65)
-                .ignoresSafeArea()
-
-            VStack(spacing: 20) {
-                // Icon
-                Image(systemName: "stopwatch.fill")
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(.orange)
-                    .scaleEffect(gameOverAppeared ? 1.0 : 0.3)
-
-                // Title
-                Text("Run Complete")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-
-                // Survival time — big and prominent
-                VStack(spacing: 4) {
-                    Text("\(elapsed)")
-                        .font(.system(size: 72, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("seconds survived")
-                        .font(.headline)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-
-                // Personal best comparison
-                if isNewPersonalBest {
-                    HStack(spacing: 8) {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
-                        Text("New Personal Best!")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.yellow)
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
-                    }
-                    .padding(.vertical, 6)
-                } else if suddenDeathPersonalBest > 0 {
-                    Text("Personal best: \(suddenDeathPersonalBest)s")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-
-                // Level reached
-                Text("Reached Level \(pressureLevel)")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(levelTint)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(levelTint.opacity(0.2), in: Capsule())
-
-                // Actions
-                VStack(spacing: 12) {
-                    Button {
-                        showGameOver = false
-                        reset()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.headline.weight(.bold))
-                            Text("Try Again")
-                                .font(.headline.weight(.bold))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md)
-                        .background(Color.orange.gradient, in: Capsule())
-                    }
-                    .buttonStyle(.pressable)
-
-                    Button {
-                        showGameOver = false
-                        pushSummary()
-                    } label: {
-                        Text("See Full Summary")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
-            }
-            .scaleEffect(gameOverAppeared ? 1.0 : 0.8)
-            .opacity(gameOverAppeared ? 1.0 : 0)
-        }
+    private func formatTime(_ seconds: Int) -> String {
+        let m = seconds / 60
+        let s = seconds % 60
+        return String(format: "%d:%02d", m, s)
     }
 
     // MARK: - Navigation
@@ -1036,7 +619,7 @@ struct SuddenDeathPracticeView: View {
             progressSegments: max(0, pressureLevel - 1),
             xpEarned: evaluation?.xpEarned ?? 0,
             showDuration: true,
-            practiceTitle: "Sudden Death",
+            practiceTitle: "Pressure Drill",
             feedbackOverride: evaluation?.feedback,
             headlineOverride: evaluation?.headline,
             scoreBreakdown: evaluation?.segments ?? [],
@@ -1045,44 +628,18 @@ struct SuddenDeathPracticeView: View {
             imConversationDetails: nil,
             explicitMode: .suddenDeath,
             recordingURL: nil,
-            sessionPrompt: nil,
+            sessionPrompt: question,
             sessionTheme: nil,
             feedbackCategories: [],
             strongMoments: [],
             weakMoments: [],
             durationAssessment: .onTarget,
             targetRange: (30, 60, 120),
-            onStartDrill: nil,
-            onStartMiniDrill: { [self] drill in
-                activeMiniDrill = drill
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    showMiniDrill = true
-                }
-            }
+            onStartDrill: nil
         )
         SummaryDataStore.shared.store(entry, for: payloadId)
         let payload = SummaryPayload(id: payloadId, mode: .suddenDeath)
         navigationPath.append(AppDestination.summary(payload))
     }
-}
-
-private struct PressureDirective {
-    let eyebrow: String
-    let title: String
-    let body: String
-    let constraint: String?
-}
-
-private struct PressureEvent: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let body: String
-    let constraint: String
-}
-
-private struct LevelTransitionCue: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let subtitle: String
 }
 #endif

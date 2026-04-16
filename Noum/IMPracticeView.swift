@@ -27,14 +27,12 @@ struct IMPracticeView: View {
     @State private var totalDuration: TimeInterval = 0
     @State private var totalFillers = 0
     // Mini-drill navigation
-    @State private var showMiniDrill = false
-    @State private var activeMiniDrill: DrillRecommendationV2?
-    @State private var miniDrillOutcome: MiniDrillOutcome?
-    @State private var showMiniDrillResult = false
+
     @State private var summaryTranscript = AttributedString("")
     @State private var summaryEvaluation: IMConversationEvaluation?
     @State private var serviceErrorMessage: String?
     @State private var isEndingConversation = false
+    @State private var evaluationFailed = false
     @State private var setupStep: SetupStep = .scenario
     @State private var typingPhase = 0
     @State private var processingStripeOffset: CGFloat = -140
@@ -225,58 +223,6 @@ struct IMPracticeView: View {
             }
         }
         // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
-        .sheet(isPresented: $showMiniDrill) {
-            if let drill = activeMiniDrill {
-                MiniDrillView(
-                    drill: drill,
-                    prompt: nil,
-                    onComplete: { outcome in
-                        miniDrillOutcome = outcome
-                        DrillHistoryStore.shared.record(
-                            .init(variationId: outcome.drill.variation.id,
-                                  skillArea: outcome.drill.skillArea,
-                                  succeeded: outcome.succeeded,
-                                  sessionId: UUID())
-                        )
-                        showMiniDrill = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showMiniDrillResult = true
-                        }
-                    },
-                    onCancel: {
-                        showMiniDrill = false
-                        // Summary is still on the nav path; no action needed
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $showMiniDrillResult) {
-            if let outcome = miniDrillOutcome {
-                MiniDrillResultView(
-                    outcome: outcome,
-                    xpEarned: outcome.succeeded ? 50 : 20,
-                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
-                    onDone: {
-                        showMiniDrillResult = false
-                    },
-                    onTryAnother: {
-                        showMiniDrillResult = false
-                        if let nextDrill = activeMiniDrill,
-                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
-                            activeMiniDrill = DrillRecommendationV2(
-                                variation: freshVariation,
-                                reason: "Keep building on this skill",
-                                trendContext: nil,
-                                alternateFormat: nil
-                            )
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showMiniDrill = true
-                        }
-                    }
-                )
-            }
-        }
         .onAppear {
             if let preferredScenario {
                 scenario = preferredScenario
@@ -616,45 +562,65 @@ struct IMPracticeView: View {
     }
 
     private var endingConversationScreen: some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 24)
+        VStack(spacing: 24) {
+            Spacer(minLength: 40)
 
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.10))
-                    .frame(width: 82, height: 82)
+            if evaluationFailed {
+                VStack(spacing: 12) {
+                    Text("Couldn't finish")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
 
-                HStack(spacing: 7) {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .fill(Color.blue.opacity(0.80))
-                            .frame(width: 9, height: 9)
-                            .scaleEffect(typingPhase == index ? 1.12 : 0.72)
-                            .opacity(typingPhase == index ? 1 : 0.4)
-                            .animation(.easeInOut(duration: 0.18), value: typingPhase)
+                    Text("Something went wrong building your feedback. You can try again or skip to the home screen.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                VStack(spacing: 12) {
+                    Button {
+                        retryEvaluation()
+                    } label: {
+                        Text("Try Again")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.blue, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                            .foregroundStyle(.white)
+                    }
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Skip & Go Home")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .padding(.horizontal, 24)
+            } else {
+                VStack(spacing: 12) {
+                    Text("Wrapping up")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+
+                    Text(endingStageMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                processingIndicator
+                    .padding(.horizontal, 36)
+
+                sessionWrapUpCard
             }
 
-            VStack(spacing: 8) {
-                Text("Ending the chat")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text(endingStageMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-            }
-
-            processingIndicator
-                .padding(.horizontal, 28)
-
-            sessionWrapUpCard
-
+            Spacer()
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.top, 18)
         .padding(.bottom, 24)
     }
@@ -1171,6 +1137,12 @@ struct IMPracticeView: View {
                     summaryEvaluation = finalEvaluation
                     summaryTranscript = AttributedString(transcript)
 
+                    let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
+                    let pressure = BaselineEngine.classifyPressure(
+                        mode: .imConversation,
+                        isPressureModeOn: pressureOn,
+                        streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
+                    )
                     _ = PracticeSessionFinalizer.finalize(
                         store: sessionStore,
                         draft: PracticeSessionDraft(
@@ -1187,7 +1159,9 @@ struct IMPracticeView: View {
                                 outcome: finalEvaluation.outcome,
                                 relationshipSnapshot: updatedRelationship,
                                 contextSnapshot: sessionContext
-                            )
+                            ),
+                            pressureLevel: pressure,
+                            isRated: pressureOn
                         ),
                         annotation: PracticeSessionAnnotation(
                             score: finalEvaluation.overallScore,
@@ -1202,11 +1176,16 @@ struct IMPracticeView: View {
                 }
             } catch {
                 await MainActor.run {
-                    isEndingConversation = false
-                    serviceErrorMessage = error.localizedDescription
+                    evaluationFailed = true
                 }
             }
         }
+    }
+
+    private func retryEvaluation() {
+        evaluationFailed = false
+        isEndingConversation = false
+        endConversation()
     }
 
     // MARK: - Session Timer (wall-clock cap)
@@ -1343,13 +1322,7 @@ struct IMPracticeView: View {
             weakMoments: [],
             durationAssessment: .onTarget,
             targetRange: (30, 60, 120),
-            onStartDrill: nil,
-            onStartMiniDrill: { [self] drill in
-                activeMiniDrill = drill
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    showMiniDrill = true
-                }
-            }
+            onStartDrill: nil
         )
         SummaryDataStore.shared.store(entry, for: payloadId)
         let payload = SummaryPayload(id: payloadId, mode: .imConversation)

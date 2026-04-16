@@ -2,16 +2,82 @@ import Foundation
 
 // MARK: - Deepgram Nova-2 Provider
 
+/// Production: fetches a short-lived scoped key from your backend (Option A).
+/// Dev: falls back to environment variable or local TranscriptionProviders.plist.
+///
+/// Backend endpoint: GET /v1/transcribe/deepgram-key
+/// Expected response: { "apiKey": "dg_...", "expiresAt": "ISO8601" }
+/// The backend creates a scoped key via Deepgram's API: POST https://api.deepgram.com/v1/keys/{projectId}
+/// with `time_to_live_in_seconds` and limited scopes (e.g. ["usage:write"]).
 final class DeepgramProvider: TranscriptionProvider, @unchecked Sendable {
     let name = "Deepgram Nova-2"
     let identifier = "deepgram"
 
+    private var cachedKey: (key: String, expiresAt: Date)?
+
     func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {
-        let apiKey = try loadAPIKey()
+        let apiKey = try await resolveAPIKey()
         return DeepgramSession(apiKey: apiKey, config: config)
     }
 
-    private func loadAPIKey() throws -> String {
+    private func resolveAPIKey() async throws -> String {
+        // 1. Use cached backend key if still valid (refresh 30s before expiry)
+        if let cached = cachedKey,
+           Date().addingTimeInterval(30) < cached.expiresAt {
+            return cached.key
+        }
+
+        // 2. Try backend-vended scoped key (production path)
+        if let backendKey = try? await fetchBackendScopedKey() {
+            cachedKey = backendKey
+            return backendKey.key
+        }
+
+        // 3. Fall back to local dev credentials
+        return try loadLocalAPIKey()
+    }
+
+    /// Fetches a short-lived Deepgram scoped key from your backend.
+    /// Backend should call Deepgram's key management API to create a temporary key
+    /// with limited scopes and TTL (e.g. 30 minutes).
+    private func fetchBackendScopedKey() async throws -> (key: String, expiresAt: Date)? {
+        let authManager = await AuthManager.shared
+        guard let accountID = await authManager.currentAccountID,
+              let providerRaw = await authManager.currentAuthProviderRawValue else {
+            return nil
+        }
+
+        let baseURLString = ProcessInfo.processInfo.environment["BACKEND_BASE_URL"]
+            ?? LocalConfigLoader.value(forKey: "BACKEND_BASE_URL", plistNamed: "BackendConfig")
+
+        guard let baseURLString, !baseURLString.isEmpty,
+              let baseURL = URL(string: baseURLString) else {
+            return nil
+        }
+
+        let endpoint = baseURL.appending(path: "/v1/transcribe/deepgram-key")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.setValue(accountID, forHTTPHeaderField: "X-Noum-Account-ID")
+        request.setValue(providerRaw, forHTTPHeaderField: "X-Noum-Auth-Provider")
+
+        let backendAPIKey = ProcessInfo.processInfo.environment["BACKEND_API_KEY"]
+            ?? LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
+        if let backendAPIKey, !backendAPIKey.isEmpty {
+            request.setValue(backendAPIKey, forHTTPHeaderField: "X-Noum-API-Key")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        let decoded = try JSONDecoder().decode(DeepgramKeyResponse.self, from: data)
+        return (key: decoded.apiKey, expiresAt: decoded.expiresAt)
+    }
+
+    private func loadLocalAPIKey() throws -> String {
         // Priority: 1) Environment variable, 2) TranscriptionProviders.plist
         if let envKey = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"], !envKey.isEmpty {
             return envKey
@@ -24,6 +90,32 @@ final class DeepgramProvider: TranscriptionProvider, @unchecked Sendable {
         }
 
         throw DeepgramError.missingAPIKey
+    }
+}
+
+private struct DeepgramKeyResponse: Decodable {
+    let apiKey: String
+    let expiresAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case apiKey
+        case expiresAt, expiration
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiKey = try container.decode(String.self, forKey: .apiKey)
+        let dateString = try (container.decodeIfPresent(String.self, forKey: .expiresAt)
+            ?? container.decode(String.self, forKey: .expiration))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: dateString)
+                ?? ISO8601DateFormatter().date(from: dateString) else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: [CodingKeys.expiresAt], debugDescription: "Invalid ISO8601 date")
+            )
+        }
+        expiresAt = date
     }
 }
 

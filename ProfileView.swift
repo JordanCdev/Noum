@@ -25,8 +25,13 @@ struct ProfileView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var friends = FriendsManager.shared
     @StateObject private var challenges = ChallengesManager.shared
+    @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var clutchWordStore = ClutchWordStore.shared
+    @StateObject private var feedbackManager = FeedbackRequestManager.shared
 
     @State private var selectedAchievementID: String?
+    @State private var focusedAchievementTier: AchievementTier?
     @State private var showPaywall = false
     @State private var showAddFriendManual = false
     @State private var showScanner = false
@@ -79,9 +84,12 @@ struct ProfileView: View {
             VStack(spacing: 18) {
                 identityHeader
                 rankPanel
+                speakingRatingCard
                 coachingDirectionCard
                 activeChallengePanel
                 achievementsPanel
+                speechPatternsCard
+                feedbackInboxCard
                 statsRow
                 socialSection
             }
@@ -108,6 +116,20 @@ struct ProfileView: View {
         }
         .sheet(item: $selectedAsyncChallenge) { challenge in
             AsyncChallengeDetailSheet(challenge: challenge, challenges: challenges)
+        }
+        .overlay {
+            if let tier = focusedAchievementTier {
+                let status = retentionSnapshot.achievements.first { $0.id == tier.id }
+                AchievementDetailModal(
+                    tier: tier,
+                    isUnlocked: status?.isUnlocked ?? true,
+                    progress: status?.progress ?? 0,
+                    progressLabel: status?.progressLabel ?? "",
+                    unlockDate: AchievementStore.shared.unlocks[tier.id],
+                    onDismiss: { focusedAchievementTier = nil }
+                )
+                .transition(.opacity)
+            }
         }
     }
 
@@ -230,6 +252,162 @@ struct ProfileView: View {
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
+    // MARK: - Speaking Rating
+
+    @ViewBuilder
+    private var speakingRatingCard: some View {
+        let rating = ratingStore.rating
+        let baseline = baselineStore.baseline
+
+        if rating.totalRatedSessions > 0 || baseline.overallConfidence >= .tentative {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.blue)
+                    Text("Speaking Rating")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Spacer()
+                }
+
+                if rating.totalRatedSessions > 0 {
+                    // Rating display
+                    HStack(alignment: .bottom, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(rating.overall)")
+                                .font(.system(size: 44, weight: .bold, design: .rounded))
+                                .foregroundStyle(.blue)
+                            if rating.weeklyDelta != 0 {
+                                Text(rating.weeklyDelta > 0 ? "+\(rating.weeklyDelta) this week" : "\(rating.weeklyDelta) this week")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(rating.weeklyDelta > 0 ? AppColor.positive : AppColor.caution)
+                            }
+                        }
+
+                        Spacer()
+
+                        VStack(alignment: .trailing, spacing: 6) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text("Peak: \(rating.peakRating)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(rating.totalRatedSessions) rated sessions")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // Trend indicator
+                    HStack(spacing: 6) {
+                        Image(systemName: trendIcon(rating.currentTrend))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(trendColor(rating.currentTrend))
+                        Text(trendLabel(rating.currentTrend))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Personal Bests
+                let pbs = rating.personalBests.filter { $0.value > 0 }
+                if !pbs.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Personal Bests")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+                            ForEach(pbs, id: \.category) { pb in
+                                HStack(spacing: 8) {
+                                    Image(systemName: RatingEngine.pbIcon(pb.category))
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.orange)
+                                        .frame(width: 28, height: 28)
+                                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(RatingEngine.pbTitle(pb.category))
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                        Text(RatingEngine.formatPB(pb))
+                                            .font(.caption.weight(.bold))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+
+                // Baseline strengths
+                if !baseline.topStrengths.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                        Text("Strengths: \(baseline.topStrengths.joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Persistent blockers
+                if !baseline.persistentBlockers.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        Text("Working on: \(baseline.persistentBlockers.joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(20)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(Color.blue.opacity(0.08), lineWidth: 1)
+            )
+        }
+    }
+
+    private func trendIcon(_ trend: TrendDirection) -> String {
+        switch trend {
+        case .improving: return "arrow.up.right"
+        case .stable: return "arrow.right"
+        case .declining: return "arrow.down.right"
+        case .newIssue: return "exclamationmark.circle"
+        case .resolved: return "checkmark.circle"
+        }
+    }
+
+    private func trendColor(_ trend: TrendDirection) -> Color {
+        switch trend {
+        case .improving, .resolved: return AppColor.positive
+        case .stable: return .secondary
+        case .declining, .newIssue: return AppColor.caution
+        }
+    }
+
+    private func trendLabel(_ trend: TrendDirection) -> String {
+        switch trend {
+        case .improving: return "Trending up"
+        case .stable: return "Holding steady"
+        case .declining: return "Dipping — more reps will help"
+        case .newIssue: return "New pattern detected"
+        case .resolved: return "Recent issue resolved"
+        }
+    }
+
     // MARK: - Coaching Direction
 
     private var coachingDirectionCard: some View {
@@ -296,102 +474,320 @@ struct ProfileView: View {
     // MARK: - Achievements
 
     private var achievementsPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Achievements")
-                .font(.title3.weight(.bold))
+        let allStatuses = retentionSnapshot.achievements
+        let overallProgress = allStatuses.isEmpty
+            ? 0.0
+            : Double(unlockedAchievements.count) / Double(allStatuses.count)
 
-            if unlockedAchievements.isEmpty {
-                Text("Your first achievement will appear here once a habit becomes repeatable.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Attained achievements")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-
-                ForEach(unlockedAchievements) { achievement in
-                    achievementRow(achievement, expanded: selectedAchievementID == achievement.id)
+        return VStack(alignment: .leading, spacing: 18) {
+            // Header
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Achievements")
+                        .font(.title3.weight(.bold))
+                    Text("\(unlockedAchievements.count)/\(allStatuses.count) unlocked")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                // Progress ring
+                ZStack {
+                    Circle()
+                        .stroke(Color.blue.opacity(0.10), lineWidth: 3.5)
+                        .frame(width: 38, height: 38)
+                    Circle()
+                        .trim(from: 0, to: overallProgress)
+                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 38, height: 38)
+                    Text("\(Int(overallProgress * 100))%")
+                        .font(.system(size: 9, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.blue)
                 }
             }
 
-            if let nextAchievement = lockedAchievements.first {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Next Up")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    achievementRow(nextAchievement, expanded: selectedAchievementID == nextAchievement.id)
+            if allStatuses.isEmpty {
+                Text("Complete your first session to start earning achievements.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                // Track sections
+                ForEach(AchievementStore.tiersByTrack, id: \.track) { track, tiers in
+                    achievementTrackSection(track: track, tiers: tiers, allStatuses: allStatuses)
                 }
             }
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(Color.blue.opacity(0.05), lineWidth: 1)
+        )
     }
 
-    private func achievementRow(_ achievement: PracticeAchievementStatus, expanded: Bool) -> some View {
-        Button {
-            withAnimation(.standardSpring) {
-                selectedAchievementID = expanded ? nil : achievement.id
+    private func achievementTrackSection(track: AchievementTrack, tiers: [AchievementTier], allStatuses: [PracticeAchievementStatus]) -> some View {
+        let statuses = tiers.compactMap { tier in allStatuses.first { $0.id == tier.id } }
+        let unlocked = statuses.filter(\.isUnlocked).count
+
+        return VStack(alignment: .leading, spacing: 10) {
+            // Track header
+            HStack(spacing: 7) {
+                Image(systemName: track.symbol)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(track.tint)
+                    .frame(width: 22, height: 22)
+                    .background(track.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                Text(track.label.uppercased())
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .tracking(0.8)
+                    .foregroundStyle(.primary.opacity(0.7))
+
+                Spacer()
+
+                Text("\(unlocked)/\(tiers.count)")
+                    .font(.caption2.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Image(systemName: achievement.symbolName)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
-                        .frame(width: 24, height: 24)
-                        .padding(12)
-                        .background(
-                            achievement.isUnlocked ? Color.green.opacity(0.12) : Color.black.opacity(0.06),
-                            in: Circle()
-                        )
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(achievement.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text(achievement.summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Tier grid — 4 per row
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 4)
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(tiers, id: \.id) { tier in
+                    let status = statuses.first { $0.id == tier.id }
+                    let isUnlocked = status?.isUnlocked ?? false
+                    achievementGridItem(tier: tier, status: status, isUnlocked: isUnlocked)
                 }
+            }
+        }
+    }
 
-                HStack {
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Text(achievement.progressLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
+    private func achievementGridItem(tier: AchievementTier, status: PracticeAchievementStatus?, isUnlocked: Bool) -> some View {
+        VStack(spacing: 4) {
+            AchievementIconView(
+                tier: tier,
+                isUnlocked: isUnlocked,
+                progress: status?.progress ?? 0,
+                size: .grid
+            )
+            .frame(width: 52, height: 52)
+
+            Text(isUnlocked ? tier.title : "???")
+                .font(.system(size: 8.5, weight: .medium))
+                .foregroundStyle(isUnlocked ? Color.primary : Color.secondary.opacity(0.4))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard isUnlocked else { return }
+            withAnimation(.standardSpring) {
+                focusedAchievementTier = tier
+            }
+        }
+    }
+
+    // MARK: - Speech Patterns Card
+
+    private var speechPatternsCard: some View {
+        let topClutch = clutchWordStore.topClutchWords.prefix(5)
+        let topFillers = fillerProfile.prefix(5)
+        let hasData = !topFillers.isEmpty || !topClutch.isEmpty
+
+        return Group {
+            if hasData {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Speech Patterns")
+                        .font(.title3.weight(.bold))
+
+                    // Filler word profile
+                    if !topFillers.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Top Filler Words")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            ForEach(topFillers, id: \.word) { entry in
+                                HStack(spacing: 10) {
+                                    Text("\"\(entry.word)\"")
+                                        .font(.subheadline.weight(.semibold))
+                                        .frame(width: 80, alignment: .leading)
+
+                                    GeometryReader { geo in
+                                        let maxCount = topFillers.first?.count ?? 1
+                                        let fraction = maxCount > 0 ? min(1.0, Double(entry.count) / Double(maxCount)) : 0
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(Color.orange.opacity(0.2))
+                                            .frame(height: 6)
+                                            .overlay(alignment: .leading) {
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(Color.orange)
+                                                    .frame(width: geo.size.width * fraction, height: 6)
+                                            }
+                                    }
+                                    .frame(height: 6)
+
+                                    Text("\(entry.count)")
+                                        .font(.caption.weight(.bold).monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 30, alignment: .trailing)
+                                }
+                            }
+                        }
+                    }
+
+                    // Clutch word profile
+                    if !topClutch.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Verbal Habits")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                Spacer()
+                                Text("across sessions")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            ForEach(Array(topClutch), id: \.id) { entry in
+                                HStack(spacing: 10) {
+                                    Text("\"\(entry.word)\"")
+                                        .font(.subheadline.weight(.semibold))
+                                        .frame(width: 80, alignment: .leading)
+
+                                    Text("\(entry.totalOccurrences)x")
+                                        .font(.caption.weight(.bold).monospacedDigit())
+                                        .foregroundStyle(.purple)
+
+                                    Spacer()
+
+                                    Text("\(entry.sessionCount) sessions")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if clutchWordStore.establishedPatterns.count >= 2 {
+                                Text("These words appear frequently across your sessions. They may be unconscious habits.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
+                .padding(Spacing.lg)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            }
+        }
+    }
 
-                if expanded {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ShimmerProgressBar(
-                            progress: achievement.progress,
-                            tint: achievement.isUnlocked ? .green : .blue
-                        )
-                        Text(
-                            achievement.isUnlocked
-                                ? "Unlocked and retained. This is now part of the way you tend to show up."
-                                : "Still in progress. Keep stacking reps until this becomes stable."
-                        )
+    /// Aggregate filler word profile across all sessions.
+    private var fillerProfile: [(word: String, count: Int)] {
+        var aggregate: [String: Int] = [:]
+        for session in sessions {
+            let bd = FillerWordDetector.breakdown(
+                in: session.transcript,
+                customWords: clutchWordStore.customFillerWords
+            )
+            for (word, count) in bd.wordCounts {
+                aggregate[word, default: 0] += count
+            }
+        }
+        return aggregate.sorted { $0.value > $1.value }.map { (word: $0.key, count: $0.value) }
+    }
+
+    // MARK: - Feedback Inbox
+
+    @State private var selectedFeedbackRequest: StoredFeedbackRequest?
+
+    private var feedbackInboxCard: some View {
+        Group {
+            if !feedbackManager.requests.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Feedback Requests")
+                            .font(.title3.weight(.bold))
+                        Spacer()
+                        if feedbackManager.unreadCount > 0 {
+                            Text("\(feedbackManager.unreadCount) new")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(AppColor.brandBlue, in: Capsule())
+                        }
+                    }
+
+                    ForEach(feedbackManager.requests.prefix(5)) { request in
+                        feedbackRequestRow(request)
+                    }
+                }
+                .padding(Spacing.lg)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            }
+        }
+    }
+
+    private func feedbackRequestRow(_ request: StoredFeedbackRequest) -> some View {
+        HStack(spacing: 12) {
+            // Status icon
+            ZStack {
+                Circle()
+                    .fill(feedbackStatusColor(request.status).opacity(0.12))
+                    .frame(width: 36, height: 36)
+                Image(systemName: feedbackStatusIcon(request.status))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(feedbackStatusColor(request.status))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("To \(request.recipientName)")
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 4) {
+                    Text(request.mode.displayLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text("·")
+                        .foregroundStyle(.secondary)
+                    Text("Score: \(request.score)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !request.responses.isEmpty {
+                        Text("·")
+                            .foregroundStyle(.secondary)
+                        Text("\(request.responses.count) response\(request.responses.count == 1 ? "" : "s")")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.brandBlue)
                     }
-                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .padding(12)
-            .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+
+            Spacer()
+
+            Text(request.createdAt.formatted(.dateTime.month(.abbreviated).day()))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
+        .padding(10)
+        .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private func feedbackStatusColor(_ status: FeedbackRequestStatus) -> Color {
+        switch status {
+        case .pending: return .orange
+        case .responded: return AppColor.brandBlue
+        case .archived: return .secondary
+        }
+    }
+
+    private func feedbackStatusIcon(_ status: FeedbackRequestStatus) -> String {
+        switch status {
+        case .pending: return "clock.fill"
+        case .responded: return "text.bubble.fill"
+        case .archived: return "archivebox.fill"
+        }
     }
 
     // MARK: - Stats Row
