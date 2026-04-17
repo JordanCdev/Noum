@@ -26,6 +26,9 @@ struct SettingsView: View {
     @State private var debugMessage: String?
     @State private var showDeleteConfirmation = false
     @State private var showYourData = false
+    #if DEBUG
+    @State private var seedProfileStatus: String?
+    #endif
 
     var body: some View {
         ZStack {
@@ -582,6 +585,36 @@ struct SettingsView: View {
             .background(Color.orange, in: Capsule())
             .foregroundStyle(.white)
             .buttonStyle(.pressable)
+
+            #if DEBUG
+            Divider().padding(.vertical, 4)
+
+            Text("Seed Profiles")
+                .font(.subheadline.weight(.semibold))
+            Text("Inject realistic session history + baseline for inspecting the intelligence layer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(SeedProfile.allCases, id: \.rawValue) { profile in
+                Button(profile.displayName) {
+                    Task { @MainActor in
+                        DevSeedData.injectProfile(profile)
+                        seedProfileStatus = "Injected: \(profile.displayName)"
+                    }
+                }
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.purple.opacity(0.15), in: Capsule())
+                .foregroundStyle(.purple)
+            }
+
+            if let status = seedProfileStatus {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+            #endif
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)

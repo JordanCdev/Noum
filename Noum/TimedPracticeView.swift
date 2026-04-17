@@ -642,6 +642,13 @@ struct TimedPracticeView: View {
 
     private let totalDuration = ImpromptuTimingState.hardStopSeconds
 
+    private var thinkingSubtitle: String {
+        if practiceSettings.pressureModeEnabled {
+            return thinkingCountdown > 5 ? "Pressure mode — think fast" : thinkingCountdown > 2 ? "Commit to your opening" : "Go."
+        }
+        return thinkingCountdown > 10 ? "Breathe and think" : thinkingCountdown > 5 ? "Plan your opening" : "Almost ready..."
+    }
+
     var body: some View {
         ZStack {
             backgroundLayer
@@ -1041,20 +1048,20 @@ struct TimedPracticeView: View {
 
             // Countdown with breathing indicator
             ZStack {
-                // Breathing circle — calming visual anchor
+                // Breathing circle — calming in normal mode, tighter pulse in pressure mode
                 Circle()
-                    .fill(Color.white.opacity(0.04))
+                    .fill(practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.06) : Color.white.opacity(0.04))
                     .frame(width: breathePhase ? 180 : 140, height: breathePhase ? 180 : 140)
                     .blur(radius: 30)
-                    .animation(.easeInOut(duration: 3.5).repeatForever(autoreverses: true), value: breathePhase)
+                    .animation(.easeInOut(duration: practiceSettings.pressureModeEnabled ? 2.0 : 3.5).repeatForever(autoreverses: true), value: breathePhase)
 
                 VStack(spacing: 10) {
                     Text("\(thinkingCountdown)")
                         .font(.system(size: 80, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(practiceSettings.pressureModeEnabled ? .orange : .white)
                         .contentTransition(.numericText())
 
-                    Text(thinkingCountdown > 10 ? "Breathe and think" : thinkingCountdown > 5 ? "Plan your opening" : "Almost ready...")
+                    Text(thinkingSubtitle)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.4))
                         .contentTransition(.interpolate)
@@ -1123,6 +1130,11 @@ struct TimedPracticeView: View {
             }
 
             VStack(spacing: 0) {
+                // Pressure mode indicator (shown when pressure toggle is on)
+                if practiceSettings.pressureModeEnabled && activeDrill == nil {
+                    pressureBanner
+                }
+
                 // Drill constraint banner (shown during Next Rep sessions)
                 if let drill = activeDrill {
                     drillBanner(drill)
@@ -1159,6 +1171,34 @@ struct TimedPracticeView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
+
+    /// Compact banner indicating pressure mode is active during speaking.
+    private var pressureBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bolt.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.orange)
+            Text("Pressure Mode")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("·")
+                .foregroundStyle(.secondary)
+            Text("One take — stay committed")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.orange.opacity(0.15), lineWidth: 1)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 4)
     }
@@ -1945,12 +1985,14 @@ struct TimedPracticeView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         // Classic always gets 15-second thinking time; Coach respects the toggle
+        // Pressure mode halves thinking time for increased challenge
         let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+        let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
 
         if useThinkingTime {
-            thinkingCountdown = 15
+            thinkingCountdown = thinkingDuration
             withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
-            startThinkingCountdown()
+            startThinkingCountdown(thinkingDuration: thinkingDuration)
         } else if !keepPromptVisible {
             withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
             Task {
@@ -1964,10 +2006,10 @@ struct TimedPracticeView: View {
         }
     }
 
-    private func startThinkingCountdown() {
+    private func startThinkingCountdown(thinkingDuration: Int = 15) {
         thinkingTask?.cancel()
         thinkingTask = Task {
-            for i in stride(from: 15, through: 1, by: -1) {
+            for i in stride(from: thinkingDuration, through: 1, by: -1) {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     withAnimation(.snappy(duration: 0.25)) { thinkingCountdown = i }
@@ -2111,7 +2153,7 @@ struct TimedPracticeView: View {
         speakingTask?.cancel()
         thinkingTask?.cancel()
         speechVM.resetCurrentSession()
-        thinkingCountdown = 15
+        thinkingCountdown = practiceSettings.pressureModeEnabled ? 8 : 15
         elapsedSeconds = 0
         currentTimingState = .neutral
         evaluation = nil
@@ -2134,10 +2176,11 @@ struct TimedPracticeView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+        let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
         if useThinkingTime {
-            thinkingCountdown = 15
+            thinkingCountdown = thinkingDuration
             withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
-            startThinkingCountdown()
+            startThinkingCountdown(thinkingDuration: thinkingDuration)
         } else if !keepPromptVisible {
             withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
             Task {

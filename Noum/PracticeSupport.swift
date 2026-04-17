@@ -6946,12 +6946,23 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         Judge whether they moved toward those traits in this conversation — even slightly.
         Never evaluate whether they literally sounded like someone else.
 
+        BASELINE CONTEXT:
+        If a speaker baseline is provided, use it to calibrate your evaluation:
+        - Compare this session's metrics against their established baseline, not abstract ideals.
+        - If they improved relative to their baseline, acknowledge the progress specifically.
+        - If they regressed, name the regression honestly but without alarm — one session doesn't define a trend.
+        - Reference persistent blockers if provided — these are the patterns they've been stuck on.
+        - Reference strengths if provided — these are what they can rely on.
+        - If baseline confidence is low ("tentative" or "early"), frame comparisons softly: "early signal" or "initial read."
+        - If the session was under elevated or high pressure, weight composure-under-pressure more heavily.
+        - If a style goal is provided, note whether this session moved toward it.
+
         WRITING RULES:
         - Write like a coach who's watched the tape, not like an AI summarizing.
         - Use plain, direct language. No corporate jargon. No "Great job!" unless they genuinely nailed it.
         - headline: a short, honest read. "You held the room" or "You backed off too early" — not a compliment sandwich.
-        - feedback: 2-3 sentences max. One thing they did well, one thing to work on. Be specific — reference an actual moment or turn from the conversation.
-        - insights: exactly 3 concise strings. Each should be a concrete observation, not a vague principle.
+        - feedback: 2-3 sentences max. One thing they did well, one thing to work on. Be specific — reference an actual moment or turn from the conversation. When baseline data is available, ground your feedback in it (e.g. "filler rate dropped below your usual" rather than "good job on fillers").
+        - insights: exactly 3 concise strings. Each should be a concrete observation, not a vague principle. At least one insight should reference the baseline or a trend when available.
         - If the conversation was very short (under 3 turns), soften your confidence. Use language like "early read" or "hard to tell from this much" rather than definitive judgments.
 
         Return JSON only with keys:
@@ -7012,7 +7023,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         Current speaking identity: \(identity.identity)
         Identity evidence: \(identity.evidence)
 
-        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile))
+        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile, currentPressureLevel: BaselineEngine.classifyPressure(mode: .imConversation, isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled, streakDays: PracticeSession.calculateStreak(from: recentSessions)), styleGoal: profile?.speakingStyleGoal.title))
 
         --- FULL CONVERSATION ---
         \(transcriptLog)
@@ -7240,7 +7251,20 @@ struct AICoachService: AICoachServicing {
         profile: CoachingProfile?,
         plan: CoachingPlan?
     ) -> String {
-        """
+        let baselineStore = BaselineStore.shared
+        let pressureLevel = BaselineEngine.classifyPressure(
+            mode: input.mode,
+            isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled,
+            streakDays: PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
+        )
+        let baselineContext = BaselineEngine.promptContext(
+            baseline: baselineStore.baseline,
+            pressure: baselineStore.pressureProfile,
+            currentPressureLevel: pressureLevel,
+            styleGoal: profile?.speakingStyleGoal.title
+        )
+
+        return """
         Session mode: \(input.mode.rawValue)
         Score: \(input.score.map(String.init) ?? "n/a") / 10
         Filler words: \(input.fillerCount)
@@ -7256,6 +7280,8 @@ struct AICoachService: AICoachServicing {
         Coaching brief: \(profile?.coachingBrief ?? "none")
         Current focus suggestion: \(plan?.currentFocus ?? "none")
         Suggested drill: \(plan?.suggestedDrill ?? "none")
+
+        \(baselineContext)
 
         Transcript:
         \(input.transcript)

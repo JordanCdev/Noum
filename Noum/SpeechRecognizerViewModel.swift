@@ -22,6 +22,9 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// and ambiguous words in legitimate usage. Used by Pressure Drill mode.
     var pressureDrillPrompt: String?
     @Published var pressureDrillFillerCount: Int = 0
+    /// Count of uncertain filler detections (below sudden death threshold but above noise).
+    /// UI can show a "?" indicator for these.
+    @Published var uncertainFillerCount: Int = 0
 
     private let sessionStore = PracticeSessionStore.shared
     private let recommendationLearningStore = RecommendationLearningStore.shared
@@ -287,9 +290,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = count
         highlightedText = AttributedString(attributed)
 
-        // If running in Pressure Drill mode, also compute context-aware count
+        // If running in Pressure Drill mode, use confidence-scored detections
         if let prompt = pressureDrillPrompt {
-            pressureDrillFillerCount = FillerWordDetector.pressureDrillCount(in: text, prompt: prompt)
+            let allDetections = FillerWordDetector.detections(in: text, prompt: prompt)
+            pressureDrillFillerCount = allDetections.filter { $0.confidence >= FillerDetection.suddenDeathThreshold }.count
+            uncertainFillerCount = allDetections.filter { $0.confidence >= 0.4 && $0.confidence < FillerDetection.suddenDeathThreshold }.count
         }
     }
 
@@ -300,6 +305,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         highlightedText = AttributedString("")
         fillerWordCount = 0
         pressureDrillFillerCount = 0
+        uncertainFillerCount = 0
         finalTranscript = ""
         partialTranscript = ""
         connectionError = nil

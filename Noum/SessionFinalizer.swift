@@ -1,0 +1,327 @@
+import Foundation
+#if canImport(SwiftUI)
+import SwiftUI
+
+// MARK: - Session Finalization Result
+
+/// All computed state from finalizing a post-session view.
+/// Produced once by `SessionFinalizer.finalize()`, consumed by SummaryView to drive display.
+struct SessionFinalizationResult {
+    let previousXP: Int
+    let newXP: Int
+    let previousLevel: String
+    let newLevel: String
+    let isLevelUp: Bool
+    let achievementDeltas: [AchievementProgressDelta]
+    let newUnlocks: [AchievementTier]
+    let milestone: MilestoneEvent?
+    let isPersonalBest: Bool
+    let showProgressionScreen: Bool
+
+    // New systems
+    let nextAction: NextAction?
+    let baselineComparisons: [String: String]
+    let pressureLevel: PressureLevel
+    let coachNote: CoachNote?
+}
+
+// MARK: - Session Finalizer
+
+/// Extracts the lifecycle logic from SummaryView's `setup()` into a testable service.
+/// Handles XP application, achievement evaluation, milestone detection, and trend recording.
+@MainActor
+enum SessionFinalizer {
+
+    /// Finalize a session: apply XP, evaluate achievements, detect milestones, record trends,
+    /// and compute next-action recommendation with baseline-aware coaching.
+    /// Call once from SummaryView's `onAppear`.
+    static func finalize(
+        xpEarned: Int,
+        scoreValue: Int,
+        effectiveFillerCount: Int,
+        effectiveDuration: TimeInterval,
+        transcriptWordCount: Int,
+        scoreBreakdown: [PracticeScoreSegment],
+        currentMode: PracticeMode,
+        sessionPrompt: String?,
+        latestSessionID: UUID?,
+        recentSessions: [PracticeSession],
+        imConversationDetails: IMConversationDetails?,
+        practiceTitle: String,
+        derivedInsightsFirst: String?,
+        pressureLevel: PressureLevel = .standard,
+        transcript: String = ""
+    ) -> SessionFinalizationResult {
+        let profile = ProfileManager.shared
+        let sessionStore = PracticeSessionStore.shared
+        let coachingProfileStore = CoachingProfileStore.shared
+        let notificationManager = NotificationManager.shared
+
+        let previousXP = profile.xp
+        let currentStreak = PracticeSession.calculateStreak(from: sessionStore.sessions)
+
+        // Capture achievement state BEFORE applying session
+        let achievementsBefore: [String: (current: Int, target: Int)] = {
+            var map: [String: (Int, Int)] = [:]
+            for tier in AchievementStore.allTiers {
+                map[tier.id] = tier.evaluate(recentSessions, currentStreak)
+            }
+            return map
+        }()
+
+        let levelBefore = ProfileManager.levelTitle(forXP: profile.xp)
+        profile.addXP(xpEarned)
+        let levelAfter = ProfileManager.levelTitle(forXP: profile.xp)
+        let newXP = profile.xp
+
+        // Re-evaluate achievements after XP (session already recorded by PracticeSessionFinalizer)
+        let newlyUnlockedIDs = AchievementStore.shared.evaluate(
+            sessions: sessionStore.sessions,
+            streak: currentStreak
+        )
+
+        // Compute achievement progress deltas
+        var deltas: [AchievementProgressDelta] = []
+        for tier in AchievementStore.allTiers {
+            let before = achievementsBefore[tier.id] ?? (0, 1)
+            let (current, target) = tier.evaluate(sessionStore.sessions, currentStreak)
+            let prevProgress = target > 0 ? min(1.0, Double(before.0) / Double(target)) : 0
+            let newProgress = target > 0 ? min(1.0, Double(current) / Double(target)) : 0
+            let delta = newProgress - prevProgress
+            if newlyUnlockedIDs.contains(tier.id) || delta >= 0.05 {
+                deltas.append(AchievementProgressDelta(
+                    id: tier.id,
+                    title: tier.title,
+                    previousProgress: prevProgress,
+                    newProgress: newProgress,
+                    progressLabel: "\(current)/\(target)"
+                ))
+            }
+        }
+        let sortedDeltas = deltas.sorted { ($0.newProgress >= 1.0 ? 1 : 0) > ($1.newProgress >= 1.0 ? 1 : 0) }
+        let newUnlocks = newlyUnlockedIDs.compactMap { AchievementStore.tier(for: $0) }
+
+        let showProgression = xpEarned > 0 || !sortedDeltas.isEmpty
+
+        // Record skill snapshot for trend analysis
+        var categoryMap: [String: String] = [:]
+        for seg in scoreBreakdown {
+            categoryMap[seg.title] = seg.value
+        }
+        SkillTrendStore.shared.recordFromSession(
+            sessionId: latestSessionID ?? UUID(),
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            score: scoreValue,
+            categoryRatings: categoryMap
+        )
+
+        // Schedule follow-up reminder
+        Task {
+            await notificationManager.scheduleFollowUpReminder(
+                profile: coachingProfileStore.profile,
+                relationship: imConversationDetails?.relationshipSnapshot,
+                sessions: sessionStore.sessions,
+                practiceTitle: practiceTitle,
+                nextMove: derivedInsightsFirst
+            )
+        }
+
+        // Milestone detection
+        let skillTrends = TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
+        let milestone = detectMilestone(
+            levelBefore: levelBefore,
+            levelAfter: levelAfter,
+            scoreValue: scoreValue,
+            currentMode: currentMode,
+            currentStreak: currentStreak,
+            sessions: sessionStore.sessions,
+            skillTrends: skillTrends
+        )
+
+        let isPersonalBest = milestone?.title == "New Personal Best!"
+        let isLevelUp = levelBefore != levelAfter
+
+        // --- New systems: baseline, next action, enhanced coach note ---
+
+        // Baseline is already updated by PracticeSessionFinalizer.finalize() before we get here.
+        // Read the current state — don't double-update.
+        let baselineStore = BaselineStore.shared
+        let baseline = baselineStore.baseline
+        let wpm = effectiveDuration > 0 ? Double(transcriptWordCount) / effectiveDuration * 60 : 0
+
+        // Baseline comparisons
+        let comparisons: [String: String]
+        if let latestSession = sessionStore.sessions.first {
+            comparisons = BaselineEngine.sessionComparison(session: latestSession, baseline: baseline)
+        } else {
+            comparisons = [:]
+        }
+
+        // NextAction recommendation
+        let nextAction: NextAction? = {
+            guard baseline.qualifyingSessionCount >= 2 else { return nil }
+            let input = NextActionInput(
+                fillerCount: effectiveFillerCount,
+                duration: effectiveDuration,
+                wordCount: transcriptWordCount,
+                wpm: wpm,
+                score: scoreValue,
+                categoryRatings: categoryMap,
+                mode: currentMode,
+                pressureLevel: pressureLevel,
+                baseline: baselineStore.baseline,
+                pressureProfile: baselineStore.pressureProfile,
+                trends: skillTrends,
+                drillHistory: DrillHistoryStore.shared.entries,
+                sessionCount: sessionStore.sessions.count,
+                streakDays: currentStreak,
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+            )
+            let action = NextActionEngine.recommend(input: input)
+            LastNextActionSnapshot.save(action)
+            return action
+        }()
+
+        // Enhanced coach note with baseline + style
+        let coachNote: CoachNote? = {
+            let primaryFocus = TrendAnalyzer.primaryFocus(
+                trends: skillTrends,
+                currentSessionSnapshot: SkillSnapshot(
+                    sessionId: latestSessionID ?? UUID(),
+                    fillerCount: effectiveFillerCount,
+                    duration: effectiveDuration,
+                    wordCount: transcriptWordCount,
+                    wpm: wpm,
+                    score: scoreValue,
+                    categoryRatings: categoryMap
+                ),
+                recentDrills: DrillHistoryStore.shared.entries
+            )
+            return VerdictEngine.generate(
+                fillerCount: effectiveFillerCount,
+                duration: effectiveDuration,
+                wordCount: transcriptWordCount,
+                wpm: wpm,
+                score: scoreValue,
+                categoryRatings: categoryMap,
+                trends: skillTrends,
+                primaryFocus: primaryFocus,
+                drillHistory: DrillHistoryStore.shared.entries,
+                baseline: baselineStore.baseline,
+                pressureProfile: baselineStore.pressureProfile,
+                pressureLevel: pressureLevel,
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+            )
+        }()
+
+        return SessionFinalizationResult(
+            previousXP: previousXP,
+            newXP: newXP,
+            previousLevel: levelBefore,
+            newLevel: levelAfter,
+            isLevelUp: isLevelUp,
+            achievementDeltas: sortedDeltas,
+            newUnlocks: newUnlocks,
+            milestone: milestone,
+            isPersonalBest: isPersonalBest,
+            showProgressionScreen: showProgression,
+            nextAction: nextAction,
+            baselineComparisons: comparisons,
+            pressureLevel: pressureLevel,
+            coachNote: coachNote
+        )
+    }
+
+    // MARK: - Milestone Detection
+
+    private static func detectMilestone(
+        levelBefore: String,
+        levelAfter: String,
+        scoreValue: Int,
+        currentMode: PracticeMode,
+        currentStreak: Int,
+        sessions: [PracticeSession],
+        skillTrends: [SkillTrend]
+    ) -> MilestoneEvent? {
+        // 1. Level-up (highest priority — gets full-screen celebration)
+        if levelBefore != levelAfter {
+            return MilestoneEvent(
+                icon: "arrow.up.circle.fill",
+                tint: .blue,
+                title: "Level Up!",
+                subtitle: levelAfter,
+                detail: "Keep practicing to reach the next rank."
+            )
+        }
+
+        // 2. Personal best score (across all sessions in the same mode)
+        let pastScores = sessions
+            .filter { $0.mode == currentMode }
+            .dropFirst() // exclude the session we just saved
+            .compactMap(\.score)
+        let previousBest = pastScores.max() ?? 0
+        if scoreValue > previousBest && scoreValue >= 6 && !pastScores.isEmpty {
+            return MilestoneEvent(
+                icon: "star.fill",
+                tint: .orange,
+                title: "New Personal Best!",
+                subtitle: "\(scoreValue)/10 in \(currentMode.displayLabel)",
+                detail: previousBest > 0 ? "Previous best: \(previousBest)/10" : nil
+            )
+        }
+
+        // 3. Streak milestones (3, 7, 14, 30 days)
+        if [3, 7, 14, 30].contains(currentStreak) {
+            let copy = MilestoneCopy.streakMilestone(currentStreak)
+            return MilestoneEvent(
+                icon: "flame.fill",
+                tint: .orange,
+                title: copy.title,
+                subtitle: copy.subtitle,
+                detail: copy.detail
+            )
+        }
+
+        // 4. Session count milestones (10, 25, 50, 100)
+        let count = sessions.count
+        if [10, 25, 50, 100].contains(count) {
+            let copy = MilestoneCopy.sessionCount(count)
+            return MilestoneEvent(
+                icon: "number.circle.fill",
+                tint: .blue,
+                title: copy.title,
+                subtitle: copy.subtitle,
+                detail: copy.detail
+            )
+        }
+
+        // 5. Skill resolved (a previously problematic skill is now resolved)
+        if let resolved = skillTrends.first(where: { $0.direction == .resolved }) {
+            let copy = MilestoneCopy.skillResolved(resolved.skillArea)
+            return MilestoneEvent(
+                icon: "checkmark.seal.fill",
+                tint: AppColor.positive,
+                title: copy.title,
+                subtitle: copy.subtitle,
+                detail: copy.detail
+            )
+        }
+
+        // 6. First session ever
+        if sessions.count == 1 {
+            return MilestoneEvent(
+                icon: "sparkles",
+                tint: .blue,
+                title: "First Rep Complete!",
+                subtitle: "Your speaking journey starts now",
+                detail: "The app learns your patterns over time — it gets smarter the more you use it."
+            )
+        }
+
+        return nil
+    }
+}
+
+#endif

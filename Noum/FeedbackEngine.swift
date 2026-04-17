@@ -9,12 +9,128 @@ struct CoachNote {
     let nextStep: String      // What to do about it
 }
 
+// MARK: - IM Context Fit
+
+/// Context-fit data for IM (interview/meeting) sessions.
+/// Captures how well the user's response fit the conversational scenario.
+struct IMContextFit {
+    let scenarioName: String      // e.g. "Executive briefing", "Team standup"
+    let targetTone: String        // e.g. "Concise and direct", "Warm and collaborative"
+    let relevanceScore: Double    // 0–1, how on-topic the response was
+    let naturalness: Double       // 0–1, how natural/conversational it sounded
+    let trustBuilding: Double     // 0–1, how well it built rapport/credibility
+}
+
+// MARK: - Style Trait Mapping
+
+/// Maps a user's stated style goal to measurable communication traits.
+enum StyleTraitMapping {
+    struct StyleTrait {
+        let name: String                 // e.g. "decisiveness"
+        let evaluationHint: String       // What to look for in the session
+    }
+
+    /// Returns the traits associated with a style goal.
+    static func traits(for goal: String) -> [StyleTrait] {
+        let lowered = goal.lowercased()
+
+        if lowered.contains("authoritative") || lowered.contains("authority") || lowered.contains("commanding") {
+            return [
+                StyleTrait(name: "Decisiveness", evaluationHint: "Low hedging, strong declarative statements, no trailing-off"),
+                StyleTrait(name: "Strong openings", evaluationHint: "Confident first sentence, no preamble or apology"),
+                StyleTrait(name: "Deliberate pacing", evaluationHint: "Controlled pace, strategic pauses before key points"),
+                StyleTrait(name: "Clear phrasing", evaluationHint: "Direct language, minimal qualifiers"),
+            ]
+        }
+
+        if lowered.contains("warm") || lowered.contains("approachable") || lowered.contains("friendly") {
+            return [
+                StyleTrait(name: "Conversational rhythm", evaluationHint: "Natural pace variation, occasional rhetorical questions"),
+                StyleTrait(name: "Inclusive language", evaluationHint: "Uses 'we', acknowledges others' perspectives"),
+                StyleTrait(name: "Story elements", evaluationHint: "Personal anecdotes or relatable examples"),
+                StyleTrait(name: "Positive framing", evaluationHint: "Focuses on solutions and opportunities"),
+            ]
+        }
+
+        if lowered.contains("concise") || lowered.contains("crisp") || lowered.contains("efficient") {
+            return [
+                StyleTrait(name: "Brevity", evaluationHint: "Short duration relative to content, no redundancy"),
+                StyleTrait(name: "Lead with conclusion", evaluationHint: "Main point stated first, then supporting detail"),
+                StyleTrait(name: "Minimal filler", evaluationHint: "Very low filler rate, no hedge phrases"),
+                StyleTrait(name: "Clean transitions", evaluationHint: "No verbal clutter between ideas"),
+            ]
+        }
+
+        if lowered.contains("persuasive") || lowered.contains("compelling") || lowered.contains("influential") {
+            return [
+                StyleTrait(name: "Structured argument", evaluationHint: "Clear claim → evidence → implication flow"),
+                StyleTrait(name: "Vocal emphasis", evaluationHint: "Key words emphasized, variation in energy"),
+                StyleTrait(name: "Confident delivery", evaluationHint: "No hedging, deliberate pacing on key claims"),
+                StyleTrait(name: "Strong close", evaluationHint: "Call to action or memorable final statement"),
+            ]
+        }
+
+        if lowered.contains("thoughtful") || lowered.contains("measured") || lowered.contains("analytical") {
+            return [
+                StyleTrait(name: "Considered pacing", evaluationHint: "Deliberate speed, pauses after complex points"),
+                StyleTrait(name: "Depth over breadth", evaluationHint: "Fewer points developed thoroughly rather than many points skimmed"),
+                StyleTrait(name: "Nuance", evaluationHint: "Acknowledges complexity, avoids oversimplification"),
+                StyleTrait(name: "Evidence-based", evaluationHint: "References data, examples, or reasoning"),
+            ]
+        }
+
+        // Default: general improvement traits
+        return [
+            StyleTrait(name: "Clarity", evaluationHint: "Clear, understandable delivery"),
+            StyleTrait(name: "Confidence", evaluationHint: "Committed delivery without excessive hedging"),
+        ]
+    }
+}
+
+// MARK: - Confidence Phrasing
+
+/// Wraps feedback text with appropriate certainty framing based on baseline confidence.
+enum ConfidencePhrasing {
+
+    /// Frame a statement based on how much data backs it up.
+    static func frame(_ statement: String, confidence: BaselineConfidence) -> String {
+        switch confidence {
+        case .insufficient:
+            return "Early signal: \(statement)"
+        case .tentative:
+            return "Initial read: \(statement)"
+        case .moderate:
+            return statement  // No framing needed — moderate confidence is the default
+        case .established:
+            return "Consistent pattern: \(statement)"
+        case .stable:
+            return "Well-established: \(statement)"
+        }
+    }
+
+    /// Frame a comparison against baseline.
+    static func comparison(_ dimension: String, sessionValue: String, baselineValue: String, direction: String, confidence: BaselineConfidence) -> String {
+        switch confidence {
+        case .insufficient, .tentative:
+            return "\(dimension): \(sessionValue) (still building your baseline)"
+        case .moderate:
+            return "\(dimension): \(sessionValue) (\(direction) your emerging baseline of \(baselineValue))"
+        case .established, .stable:
+            return "\(dimension): \(sessionValue) (\(direction) your baseline of \(baselineValue))"
+        }
+    }
+}
+
 // MARK: - Verdict Engine
 
 /// Generates tone-aware, trend-informed feedback following the momentum/leverage/next-step pattern.
 enum VerdictEngine {
 
     /// Generate a coach note from the current session and trend data.
+    ///
+    /// The baseline/pressure/style parameters are optional — when provided, feedback
+    /// references the user's historical patterns (Layer 1), IM context-fit (Layer 2),
+    /// and style goal alignment (Layer 3).
     static func generate(
         fillerCount: Int,
         duration: TimeInterval,
@@ -24,9 +140,16 @@ enum VerdictEngine {
         categoryRatings: [String: String],
         trends: [SkillTrend],
         primaryFocus: SkillArea,
-        drillHistory: [DrillHistoryStore.Entry]
+        drillHistory: [DrillHistoryStore.Entry],
+        baseline: CommunicationBaseline? = nil,
+        pressureProfile: PressureProfile? = nil,
+        pressureLevel: PressureLevel = .standard,
+        styleGoal: String? = nil,
+        imContext: IMContextFit? = nil
     ) -> CoachNote {
-        let momentum = buildMomentum(
+        let confidence = baseline?.overallConfidence ?? .insufficient
+
+        var momentum = buildMomentum(
             fillerCount: fillerCount,
             wpm: wpm,
             score: score,
@@ -35,7 +158,7 @@ enum VerdictEngine {
             drillHistory: drillHistory
         )
 
-        let leverage = buildLeverage(
+        var leverage = buildLeverage(
             primaryFocus: primaryFocus,
             fillerCount: fillerCount,
             wpm: wpm,
@@ -45,7 +168,35 @@ enum VerdictEngine {
             trends: trends
         )
 
-        let nextStep = buildNextStep(primaryFocus: primaryFocus, trends: trends)
+        var nextStep = buildNextStep(primaryFocus: primaryFocus, trends: trends)
+
+        // --- Layer 1 Enhancement: Baseline-referenced feedback ---
+        if let baseline, baseline.overallConfidence >= .moderate {
+            momentum = enrichWithBaseline(momentum, fillerCount: fillerCount, wpm: wpm, duration: duration, baseline: baseline, confidence: confidence)
+            leverage = enrichLeverageWithBaseline(leverage, fillerCount: fillerCount, wpm: wpm, duration: duration, baseline: baseline, confidence: confidence)
+        }
+
+        // --- Layer 2: IM context-fit ---
+        if let imContext {
+            let contextNote = buildIMContextNote(imContext: imContext)
+            if !contextNote.isEmpty {
+                leverage = leverage + " " + contextNote
+            }
+        }
+
+        // --- Layer 3: Style lens ---
+        if let goal = styleGoal, !goal.isEmpty {
+            let styleNote = buildStyleNote(goal: goal, fillerCount: fillerCount, wpm: wpm, duration: duration, categoryRatings: categoryRatings)
+            if !styleNote.isEmpty {
+                nextStep = nextStep + " " + styleNote
+            }
+        }
+
+        // --- Pressure context ---
+        if pressureLevel >= .elevated, let pressure = pressureProfile,
+           let resilience = pressure.pressureResilience, resilience < 0.7 {
+            momentum = momentum + " (This was a high-pressure session — any gains here carry extra weight.)"
+        }
 
         return CoachNote(momentum: momentum, leverage: leverage, nextStep: nextStep)
     }
@@ -199,18 +350,207 @@ enum VerdictEngine {
     private static func buildNextStep(primaryFocus: SkillArea, trends: [SkillTrend]) -> String {
         let trend = trends.first(where: { $0.skillArea == primaryFocus })
 
-        // If improving, acknowledge and push forward
+        // If improving, acknowledge and push forward with skill-specific guidance
         if trend?.direction == .improving {
-            return "You're making progress here. One focused drill can solidify the gains."
+            switch primaryFocus {
+            case .fillerReduction:
+                return "Your filler count is dropping. A pause-replacement drill will lock in the new habit."
+            case .paceControl:
+                return "Your pace is evening out. Try a timed response drill to anchor this rhythm."
+            case .openingStrength:
+                return "Your openings are getting sharper. Practice leading with a bold first sentence."
+            case .closingStrength:
+                return "Your closings are getting more deliberate. Drill the callback close to take it further."
+            case .structure:
+                return "Your structure is tightening. Try a two-point framework drill to push for even cleaner organization."
+            case .answerDevelopment:
+                return "You're developing ideas more fully. Practice the one-example depth drill to make your points land harder."
+            case .conciseSpeaking:
+                return "You're getting more concise. Try the 30-second constraint drill to sharpen further."
+            case .pauseUsage:
+                return "Your pauses are becoming more intentional. Practice placing one emphatic pause per answer."
+            case .vocalEmphasis:
+                return "Your emphasis is improving. Try varying tone on your opening and closing lines."
+            case .confidence:
+                return "Your delivery confidence is growing. Practice committing to declarative statements without softeners."
+            }
         }
 
-        // If new issue, be reassuring
+        // If new issue, be reassuring with skill-specific context
         if trend?.direction == .newIssue {
-            return "This just popped up — a quick drill can reset it before it becomes a pattern."
+            switch primaryFocus {
+            case .fillerReduction:
+                return "Fillers just spiked — likely a one-off. A quick pause drill can reset the pattern."
+            case .paceControl:
+                return "Pace was off this session. A short pacing drill can bring it back to your range."
+            case .openingStrength:
+                return "Your opening was weaker than usual. Lead with your strongest point next time."
+            case .structure:
+                return "Structure slipped — try a framework drill to reset your defaults."
+            case .answerDevelopment:
+                return "Your depth dropped this session. One detailed-example drill can get it back on track."
+            default:
+                return "Your \(primaryFocus.displayName.lowercased()) dipped — a quick drill can reset it before it becomes a pattern."
+            }
         }
 
-        // Default: point to the drill
-        return "A focused drill on \(primaryFocus.displayName.lowercased()) is the best next step."
+        // Default: skill-specific call to action
+        switch primaryFocus {
+        case .fillerReduction:
+            return "A filler-replacement drill is the best next move — swap each filler moment for a pause."
+        case .paceControl:
+            return "A pacing drill will help — practice finding your natural conversational speed."
+        case .openingStrength:
+            return "Practice your opening line before you start — a strong first sentence changes everything."
+        case .closingStrength:
+            return "Try ending your next answer with a single clear takeaway statement."
+        case .structure:
+            return "Try a framework drill — even a simple 'point, example, takeaway' structure makes a difference."
+        case .answerDevelopment:
+            return "Practice developing one idea fully before moving to the next."
+        case .conciseSpeaking:
+            return "Try the constraint drill — deliver your message in half the words you normally would."
+        case .pauseUsage:
+            return "In your next session, place one deliberate pause after your opening sentence."
+        case .vocalEmphasis:
+            return "Try emphasizing just two or three key words in your next answer."
+        case .confidence:
+            return "Replace one hedge phrase with a direct statement in your next session."
+        }
+    }
+
+    // MARK: - Baseline-Enhanced Feedback (Layer 1)
+
+    /// Enriches momentum text with baseline comparisons where available.
+    private static func enrichWithBaseline(
+        _ momentum: String,
+        fillerCount: Int,
+        wpm: Double,
+        duration: TimeInterval,
+        baseline: CommunicationBaseline,
+        confidence: BaselineConfidence
+    ) -> String {
+        var additions: [String] = []
+
+        // Filler rate vs baseline
+        if baseline.fillerRate.isReliable && duration > 0 {
+            let sessionRate = Double(fillerCount) / (duration / 60.0)
+            let delta = sessionRate - baseline.fillerRate.value
+            if delta < -0.5 {
+                additions.append(ConfidencePhrasing.frame(
+                    "filler rate dropped to \(String(format: "%.1f", sessionRate))/min — below your baseline of \(String(format: "%.1f", baseline.fillerRate.value))/min",
+                    confidence: confidence
+                ))
+            }
+        }
+
+        // Pace vs baseline
+        if baseline.pace.isReliable {
+            if wpm >= baseline.pace.percentile25 && wpm <= baseline.pace.percentile75 {
+                additions.append("Pace held steady at \(Int(wpm)) WPM — right in your zone.")
+            }
+        }
+
+        if additions.isEmpty {
+            return momentum
+        }
+        return momentum + " " + additions.joined(separator: " ")
+    }
+
+    /// Enriches leverage text with baseline comparisons.
+    private static func enrichLeverageWithBaseline(
+        _ leverage: String,
+        fillerCount: Int,
+        wpm: Double,
+        duration: TimeInterval,
+        baseline: CommunicationBaseline,
+        confidence: BaselineConfidence
+    ) -> String {
+        // Compare session filler *rate* against baseline filler *rate* (both per minute)
+        if baseline.fillerRate.isReliable, fillerCount > 0, duration > 0 {
+            let sessionRate = Double(fillerCount) / (duration / 60.0)
+            if sessionRate > baseline.fillerRate.value + 0.5 {
+                return leverage + " " + ConfidencePhrasing.frame(
+                    "Your filler rate this session was \(String(format: "%.1f", sessionRate))/min — above your usual \(String(format: "%.1f", baseline.fillerRate.value))/min.",
+                    confidence: confidence
+                )
+            }
+        }
+
+        // If hedging is a known issue
+        if baseline.hedgingRate.isReliable && baseline.hedgingRate.value > 3.0 {
+            return leverage + " Watch for hedge phrases too — they've been a recurring pattern."
+        }
+
+        return leverage
+    }
+
+    // MARK: - IM Context-Fit (Layer 2)
+
+    /// Generates context-fit feedback for IM sessions.
+    private static func buildIMContextNote(imContext: IMContextFit) -> String {
+        var notes: [String] = []
+
+        if imContext.relevanceScore < 0.5 {
+            notes.append("Your response drifted from the \(imContext.scenarioName.lowercased()) context — staying on-topic builds credibility.")
+        }
+
+        if imContext.naturalness < 0.5 {
+            notes.append("The delivery felt rehearsed — aim for a more conversational tone, especially in a \(imContext.scenarioName.lowercased()) setting.")
+        }
+
+        if imContext.trustBuilding < 0.5 && imContext.targetTone.lowercased().contains("collaborative") {
+            notes.append("The tone didn't build rapport — try acknowledging the other perspective before stating your position.")
+        }
+
+        return notes.prefix(1).joined()
+    }
+
+    // MARK: - Style Lens (Layer 3)
+
+    /// Generates style-aligned next step guidance.
+    private static func buildStyleNote(
+        goal: String,
+        fillerCount: Int,
+        wpm: Double,
+        duration: TimeInterval,
+        categoryRatings: [String: String]
+    ) -> String {
+        let traits = StyleTraitMapping.traits(for: goal)
+        guard !traits.isEmpty else { return "" }
+
+        // Check if the session aligns or misaligns with the style goal
+        var mismatches: [String] = []
+
+        for trait in traits {
+            let hint = trait.evaluationHint.lowercased()
+            if hint.contains("low hedging") || hint.contains("minimal filler") {
+                if fillerCount >= 5 {
+                    mismatches.append("Your \(goal.lowercased()) goal needs fewer fillers — they undercut \(trait.name.lowercased()).")
+                    break
+                }
+            }
+            if hint.contains("brevity") || hint.contains("short duration") {
+                if duration > 120 {
+                    mismatches.append("For a \(goal.lowercased()) style, aim for shorter, tighter responses.")
+                    break
+                }
+            }
+            if hint.contains("strong opening") || hint.contains("confident first") {
+                if categoryRatings["Opening"] == "Could improve" {
+                    mismatches.append("Your \(goal.lowercased()) goal starts with a stronger opening — lead with conviction.")
+                    break
+                }
+            }
+            if hint.contains("strong close") || hint.contains("call to action") {
+                if categoryRatings["Close"] == "Could improve" {
+                    mismatches.append("End with impact — a \(goal.lowercased()) communicator closes deliberately.")
+                    break
+                }
+            }
+        }
+
+        return mismatches.first ?? ""
     }
 
     // MARK: - Dynamic Drill Rationale
@@ -282,12 +622,15 @@ enum VerdictEngine {
 enum DrillEngineV2 {
 
     /// Generate a drill recommendation using session data + cross-session trends.
+    /// When `targetArea` is provided, the engine skips its own focus determination
+    /// and drills into the requested skill area directly.
     static func recommend(
         fillerCount: Int,
         duration: TimeInterval,
         wordCount: Int,
         score: Int,
         feedbackCategories: [(dimension: String, rating: String)],
+        targetArea: SkillArea? = nil,
         trendStore: SkillTrendStore = .shared,
         drillHistory: DrillHistoryStore = .shared
     ) -> DrillRecommendationV2 {
@@ -311,10 +654,12 @@ enum DrillEngineV2 {
             categoryRatings: categoryRatings
         )
 
-        // Determine primary focus area using trend intelligence
+        // Use the caller's target area when provided; otherwise derive from session data
         let focusArea: SkillArea
 
-        if isMinimal {
+        if let targetArea {
+            focusArea = targetArea
+        } else if isMinimal {
             focusArea = .answerDevelopment
         } else {
             focusArea = determineFocus(

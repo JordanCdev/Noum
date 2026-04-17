@@ -37,6 +37,7 @@ struct SuddenDeathPracticeView: View {
     @State private var timerTask: Task<Void, Never>?
     @State private var evaluation: PracticeEvaluation?
     @State private var showExitConfirmation = false
+    @State private var showUncertainIndicator = false
 
     var body: some View {
         ZStack {
@@ -107,6 +108,18 @@ struct SuddenDeathPracticeView: View {
         .onChange(of: speechVM.pressureDrillFillerCount) { _, count in
             if count > 0, case .active = phase {
                 endRun(fillerTriggered: true)
+            }
+        }
+        .onChange(of: speechVM.uncertainFillerCount) { oldVal, newVal in
+            if newVal > oldVal, case .active = phase {
+                // Flash the uncertain indicator briefly
+                withAnimation(.easeIn(duration: 0.15)) { showUncertainIndicator = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.2))
+                    await MainActor.run {
+                        withAnimation(.easeOut(duration: 0.3)) { showUncertainIndicator = false }
+                    }
+                }
             }
         }
     }
@@ -206,6 +219,17 @@ struct SuddenDeathPracticeView: View {
                     .foregroundStyle(levelTint)
 
                 Spacer()
+
+                // Uncertain filler indicator — flashes briefly when a borderline detection is noticed
+                if showUncertainIndicator {
+                    Text("?")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.orange.opacity(0.8))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.orange.opacity(0.12), in: Capsule())
+                        .transition(.scale.combined(with: .opacity))
+                }
 
                 Text(formatTime(elapsed))
                     .font(.system(.title3, design: .rounded).weight(.bold).monospacedDigit())

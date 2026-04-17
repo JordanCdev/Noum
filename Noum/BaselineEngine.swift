@@ -12,6 +12,59 @@ import Foundation
 import SwiftUI
 #endif
 
+// MARK: - Hedge Detector
+
+/// Detects hedge/softening phrases that dilute assertiveness.
+enum HedgeDetector {
+    /// Hedge phrases ranked by dilution impact.
+    static let hedgePhrases: [String] = [
+        "i think",
+        "i guess",
+        "i suppose",
+        "i feel like",
+        "kind of",
+        "sort of",
+        "maybe",
+        "probably",
+        "might be",
+        "could be",
+        "possibly",
+        "i'm not sure but",
+        "not entirely sure",
+        "it seems like",
+        "more or less",
+        "to be honest",
+        "in my opinion",
+    ]
+
+    /// Count total hedge phrase occurrences in a transcript.
+    static func count(in transcript: String) -> Int {
+        let lower = transcript.lowercased()
+        return hedgePhrases.reduce(0) { total, phrase in
+            total + occurrences(of: phrase, in: lower)
+        }
+    }
+
+    /// Returns all detected hedge phrases with their counts.
+    static func breakdown(in transcript: String) -> [(phrase: String, count: Int)] {
+        let lower = transcript.lowercased()
+        return hedgePhrases.compactMap { phrase in
+            let count = occurrences(of: phrase, in: lower)
+            return count > 0 ? (phrase, count) : nil
+        }
+    }
+
+    private static func occurrences(of target: String, in text: String) -> Int {
+        var count = 0
+        var searchRange = text.startIndex..<text.endIndex
+        while let range = text.range(of: target, range: searchRange) {
+            count += 1
+            searchRange = range.upperBound..<text.endIndex
+        }
+        return count
+    }
+}
+
 // MARK: - Pressure Level
 
 enum PressureLevel: Int, Codable, Comparable, CaseIterable {
@@ -131,9 +184,16 @@ struct CommunicationBaseline: Codable, Equatable {
 
     // Layer 3: Style Signals
     var vocabularyRange: BaselineStat    // Unique word ratio
+    var hedgingRate: BaselineStat        // Hedge phrases per minute (e.g., "I think", "maybe", "sort of")
 
     // Layer 4: Overall
     var averageScore: BaselineStat
+
+    // Layer 5: Verbal Habits
+    /// Top clutch words with per-session occurrence frequency.
+    /// Populated from ClutchWordStore — tracks the user's most persistent verbal habits.
+    /// Keys are lowercased words; values track occurrences-per-session as a BaselineStat.
+    var clutchWordFrequencies: [String: BaselineStat]
 
     // Computed summaries
     var topStrengths: [String]           // Skill area names consistently strong
@@ -157,7 +217,9 @@ struct CommunicationBaseline: Codable, Equatable {
         answerDepth: .empty,
         clarity: .empty,
         vocabularyRange: .empty,
+        hedgingRate: .empty,
         averageScore: .empty,
+        clutchWordFrequencies: [:],
         topStrengths: [],
         persistentBlockers: []
     )
@@ -176,6 +238,12 @@ struct PressureProfile: Codable, Equatable {
 
     var casualScore: BaselineStat?
     var highScore: BaselineStat?
+
+    var casualDuration: BaselineStat?
+    var highDuration: BaselineStat?
+
+    var casualStructure: BaselineStat?
+    var highStructure: BaselineStat?
 
     /// 0.0 = completely falls apart under pressure; 1.0 = identical performance
     var pressureResilience: Double? {
@@ -198,21 +266,116 @@ struct PressureProfile: Codable, Equatable {
         return max(0, min(1.0, 1.0 - avgDelta))
     }
 
-    /// Human-readable pressure insight, or nil if not enough data
-    var pressureInsight: String? {
-        guard let casual = casualFillerRate, casual.isReliable,
-              let high = highFillerRate, high.isReliable else { return nil }
-        let diff = high.value - casual.value
-        if diff > 1.5 {
-            return "Your filler rate jumps from \(String(format: "%.1f", casual.value))/min to \(String(format: "%.1f", high.value))/min under pressure."
-        } else if diff < -0.5 {
-            return "You actually use fewer fillers under pressure — you focus up."
-        } else {
-            return "Your filler control holds steady regardless of pressure."
+    /// Delta for a specific dimension under pressure vs casual. Positive = worse under pressure.
+    func pressureDelta(for dimension: PressureDimension) -> Double? {
+        switch dimension {
+        case .fillers:
+            guard let c = casualFillerRate, c.isReliable, let h = highFillerRate, h.isReliable else { return nil }
+            return h.value - c.value
+        case .pace:
+            guard let c = casualPace, c.isReliable, let h = highPace, h.isReliable else { return nil }
+            return h.value - c.value
+        case .score:
+            guard let c = casualScore, c.isReliable, let h = highScore, h.isReliable else { return nil }
+            return c.value - h.value  // Score delta inverted: lower score = worse
+        case .duration:
+            guard let c = casualDuration, c.isReliable, let h = highDuration, h.isReliable else { return nil }
+            return c.value - h.value  // Shorter under pressure = worse
+        case .structure:
+            guard let c = casualStructure, c.isReliable, let h = highStructure, h.isReliable else { return nil }
+            return c.value - h.value  // Lower structure quality = worse
         }
     }
 
+    /// Which dimension degrades most under pressure
+    var mostAffectedDimension: PressureDimension? {
+        let dimensions: [PressureDimension] = [.fillers, .pace, .score, .duration, .structure]
+        let withDeltas = dimensions.compactMap { dim -> (PressureDimension, Double)? in
+            guard let delta = pressureDelta(for: dim) else { return nil }
+            return (dim, delta)
+        }
+        return withDeltas.max(by: { $0.1 < $1.1 })?.0
+    }
+
+    /// Multiple human-readable pressure insights
+    var pressureInsights: [String] {
+        var insights: [String] = []
+
+        // Filler insight
+        if let casual = casualFillerRate, casual.isReliable,
+           let high = highFillerRate, high.isReliable {
+            let diff = high.value - casual.value
+            if diff > 1.5 {
+                insights.append("Your filler rate jumps from \(String(format: "%.1f", casual.value))/min to \(String(format: "%.1f", high.value))/min under pressure.")
+            } else if diff < -0.5 {
+                insights.append("You actually use fewer fillers under pressure — you focus up.")
+            } else {
+                insights.append("Your filler control holds steady regardless of pressure.")
+            }
+        }
+
+        // Pace insight
+        if let cp = casualPace, cp.isReliable, let hp = highPace, hp.isReliable {
+            let diff = hp.value - cp.value
+            if diff > 15 {
+                insights.append("Your pace accelerates by \(Int(diff)) WPM under pressure (\(Int(cp.value)) → \(Int(hp.value))).")
+            } else if diff < -15 {
+                insights.append("You slow down by \(Int(abs(diff))) WPM under pressure — possibly over-deliberating.")
+            }
+        }
+
+        // Duration insight
+        if let cd = casualDuration, cd.isReliable, let hd = highDuration, hd.isReliable {
+            let diff = cd.value - hd.value
+            if diff > 10 {
+                insights.append("Under pressure, your answers are \(Int(diff))s shorter on average.")
+            }
+        }
+
+        // Score insight
+        if let cs = casualScore, cs.isReliable, let hs = highScore, hs.isReliable {
+            let diff = cs.value - hs.value
+            if diff > 1.0 {
+                insights.append("Your score drops by \(String(format: "%.1f", diff)) points under pressure.")
+            }
+        }
+
+        // Resilience summary
+        if let resilience = pressureResilience {
+            if resilience >= 0.85 {
+                insights.append("Pressure resilience: strong — your performance barely changes under stress.")
+            } else if resilience >= 0.6 {
+                insights.append("Pressure resilience: moderate — some degradation under stress, room to build.")
+            } else {
+                insights.append("Pressure resilience: developing — significant performance gap under stress.")
+            }
+        }
+
+        return insights
+    }
+
+    /// Backward-compatible single insight (returns first insight or nil)
+    var pressureInsight: String? { pressureInsights.first }
+
     static let empty = PressureProfile()
+}
+
+enum PressureDimension: String, CaseIterable {
+    case fillers
+    case pace
+    case score
+    case duration
+    case structure
+
+    var label: String {
+        switch self {
+        case .fillers: return "Filler words"
+        case .pace: return "Speaking pace"
+        case .score: return "Overall score"
+        case .duration: return "Answer length"
+        case .structure: return "Structure quality"
+        }
+    }
 }
 
 // MARK: - Session Qualifier
@@ -303,6 +466,16 @@ enum BaselineEngine {
             baseline.vocabularyRange = buildStat(from: vocabRatios, allSamples: qualifying.count)
         }
 
+        // Hedging rate (hedge phrases per minute)
+        let hedgingRates = recent.compactMap { s -> Double? in
+            guard s.duration > 0 else { return nil }
+            let count = HedgeDetector.count(in: s.transcript)
+            return Double(count) / (s.duration / 60.0)
+        }
+        if !hedgingRates.isEmpty {
+            baseline.hedgingRate = buildStat(from: hedgingRates, allSamples: qualifying.count)
+        }
+
         // Average score
         let scores = recent.compactMap { $0.score }.map { Double($0) }
         if !scores.isEmpty {
@@ -313,6 +486,15 @@ enum BaselineEngine {
         baseline.topStrengths = identifyStrengths(baseline)
         baseline.persistentBlockers = identifyBlockers(baseline)
 
+        return baseline
+    }
+
+    /// Recomputes the entire baseline, including clutch word data from the store.
+    /// Call from a @MainActor context to safely access ClutchWordStore.
+    @MainActor
+    static func computeWithClutchWords(from sessions: [PracticeSession]) -> CommunicationBaseline {
+        var baseline = compute(from: sessions)
+        baseline.clutchWordFrequencies = buildClutchWordStats(from: ClutchWordStore.shared.topClutchWords)
         return baseline
     }
 
@@ -359,10 +541,26 @@ enum BaselineEngine {
             updated.vocabularyRange = updateStat(updated.vocabularyRange, newValue: ratio, alpha: alpha, totalSamples: totalQualifying)
         }
 
+        // Hedging rate
+        if session.duration > 0 {
+            let hedgeCount = HedgeDetector.count(in: session.transcript)
+            let hedgeRate = Double(hedgeCount) / (session.duration / 60.0)
+            updated.hedgingRate = updateStat(updated.hedgingRate, newValue: hedgeRate, alpha: alpha, totalSamples: totalQualifying)
+        }
+
         // Update strengths and blockers
         updated.topStrengths = identifyStrengths(updated)
         updated.persistentBlockers = identifyBlockers(updated)
 
+        return updated
+    }
+
+    /// Updates an existing baseline with a new session, including clutch word refresh.
+    /// Call from a @MainActor context to safely access ClutchWordStore.
+    @MainActor
+    static func updateWithClutchWords(_ baseline: CommunicationBaseline, with session: PracticeSession) -> CommunicationBaseline {
+        var updated = update(baseline, with: session)
+        updated.clutchWordFrequencies = buildClutchWordStats(from: ClutchWordStore.shared.topClutchWords)
         return updated
     }
 
@@ -415,7 +613,22 @@ enum BaselineEngine {
 
         var updated = profile
 
-        // We only track casual and high in detail for the MVP pressure gap analysis
+        // Track all levels for filler rate; track full profile for casual and high
+        let dur = session.duration
+
+        // Structure quality from category ratings (snapshot lookup)
+        let structureValue: Double? = {
+            let snapshots = SkillTrendStore.shared.snapshots
+            guard let match = snapshots.first(where: { $0.sessionId == session.id }) else { return nil }
+            guard let ratingStr = match.categoryRatings["Structure"] else { return nil }
+            switch ratingStr {
+            case "Good": return 3.0
+            case "OK": return 2.0
+            case "Could improve": return 1.0
+            default: return nil
+            }
+        }()
+
         switch pressure {
         case .casual:
             let existing = updated.casualFillerRate ?? .empty
@@ -424,6 +637,12 @@ enum BaselineEngine {
             updated.casualPace = updateStat(existingPace, newValue: wpm, alpha: 0.2, totalSamples: existingPace.sampleCount + 1)
             let existingScore = updated.casualScore ?? .empty
             updated.casualScore = updateStat(existingScore, newValue: score, alpha: 0.2, totalSamples: existingScore.sampleCount + 1)
+            let existingDur = updated.casualDuration ?? .empty
+            updated.casualDuration = updateStat(existingDur, newValue: dur, alpha: 0.2, totalSamples: existingDur.sampleCount + 1)
+            if let sv = structureValue {
+                let existingStruct = updated.casualStructure ?? .empty
+                updated.casualStructure = updateStat(existingStruct, newValue: sv, alpha: 0.2, totalSamples: existingStruct.sampleCount + 1)
+            }
         case .standard:
             let existing = updated.standardFillerRate ?? .empty
             updated.standardFillerRate = updateStat(existing, newValue: fillerRate, alpha: 0.2, totalSamples: existing.sampleCount + 1)
@@ -437,6 +656,12 @@ enum BaselineEngine {
             updated.highPace = updateStat(existingPace, newValue: wpm, alpha: 0.2, totalSamples: existingPace.sampleCount + 1)
             let existingScore = updated.highScore ?? .empty
             updated.highScore = updateStat(existingScore, newValue: score, alpha: 0.2, totalSamples: existingScore.sampleCount + 1)
+            let existingDur = updated.highDuration ?? .empty
+            updated.highDuration = updateStat(existingDur, newValue: dur, alpha: 0.2, totalSamples: existingDur.sampleCount + 1)
+            if let sv = structureValue {
+                let existingStruct = updated.highStructure ?? .empty
+                updated.highStructure = updateStat(existingStruct, newValue: sv, alpha: 0.2, totalSamples: existingStruct.sampleCount + 1)
+            }
         }
 
         return updated
@@ -445,7 +670,12 @@ enum BaselineEngine {
     // MARK: - Prompt Context
 
     /// Generates a baseline summary string for inclusion in AI evaluation prompts.
-    static func promptContext(baseline: CommunicationBaseline, pressure: PressureProfile) -> String {
+    static func promptContext(
+        baseline: CommunicationBaseline,
+        pressure: PressureProfile,
+        currentPressureLevel: PressureLevel = .standard,
+        styleGoal: String? = nil
+    ) -> String {
         guard baseline.overallConfidence >= .tentative else {
             return "Baseline: Not yet established (fewer than 3 qualifying sessions)."
         }
@@ -465,6 +695,27 @@ enum BaselineEngine {
         if baseline.averageScore.isReliable {
             lines.append("Average score: \(String(format: "%.1f", baseline.averageScore.value))/10")
         }
+        if baseline.hedgingRate.isReliable {
+            lines.append("Hedging rate: \(String(format: "%.1f", baseline.hedgingRate.value)) hedge phrases/min")
+        }
+
+        // Category quality signals
+        let categorySignals: [(String, BaselineStat)] = [
+            ("Opening", baseline.openingStrength),
+            ("Closing", baseline.closingStrength),
+            ("Structure", baseline.structureQuality),
+            ("Depth", baseline.answerDepth),
+            ("Clarity", baseline.clarity),
+        ]
+        let reliableCategories = categorySignals.filter { $0.1.isReliable }
+        if !reliableCategories.isEmpty {
+            let descriptions = reliableCategories.map { name, stat -> String in
+                let level = stat.value >= 2.5 ? "strong" : stat.value >= 1.8 ? "moderate" : "developing"
+                return "\(name): \(level) (\(String(format: "%.1f", stat.value))/3)"
+            }
+            lines.append("Category averages: \(descriptions.joined(separator: ", "))")
+        }
+
         if !baseline.topStrengths.isEmpty {
             lines.append("Consistent strengths: \(baseline.topStrengths.joined(separator: ", "))")
         }
@@ -472,10 +723,41 @@ enum BaselineEngine {
             lines.append("Persistent blockers: \(baseline.persistentBlockers.joined(separator: ", "))")
         }
 
-        if let insight = pressure.pressureInsight {
+        // Verbal habits (clutch words)
+        let significantClutch = baseline.clutchWordFrequencies.filter { $0.value.isReliable && $0.value.value >= 1.5 }
+        if !significantClutch.isEmpty {
+            let descriptions = significantClutch
+                .sorted { $0.value.value > $1.value.value }
+                .prefix(3)
+                .map { "\"\($0.key)\" (~\(String(format: "%.1f", $0.value.value))x/session)" }
+            lines.append("Verbal habits (clutch words): \(descriptions.joined(separator: ", "))")
+        }
+
+        // Pressure context
+        lines.append("")
+        lines.append("Current session pressure: \(currentPressureLevel.label)")
+
+        if let resilience = pressure.pressureResilience {
+            lines.append("Pressure resilience: \(String(format: "%.0f", resilience * 100))%")
+        }
+
+        if let worstDim = pressure.mostAffectedDimension,
+           let delta = pressure.pressureDelta(for: worstDim), delta > 0 {
+            lines.append("Most affected under pressure: \(worstDim.label)")
+        }
+
+        for insight in pressure.pressureInsights.prefix(2) {
             lines.append("Pressure pattern: \(insight)")
         }
 
+        // Style goal
+        if let goal = styleGoal, !goal.isEmpty {
+            lines.append("")
+            lines.append("Speaker's style goal: \(goal)")
+            lines.append("Evaluate whether this session moves toward that style goal.")
+        }
+
+        lines.append("")
         lines.append("Compare this session against the baseline. Note deviations — positive or negative.")
         return lines.joined(separator: "\n")
     }
@@ -541,10 +823,44 @@ enum BaselineEngine {
     }
 
     private static func buildCategoryStat(from sessions: [PracticeSession], dimension: String, allSamples: Int) -> BaselineStat {
-        // Category ratings live in SkillTrendStore snapshots, not directly on PracticeSession.
-        // For baseline, we'll use the SkillTrendStore data when available.
-        // For now, return empty — this gets populated via the trend store integration.
-        return .empty
+        // Pull category ratings from SkillTrendStore snapshots.
+        // Map: "Good" = 3, "OK" = 2, "Could improve" = 1
+        let snapshots = SkillTrendStore.shared.snapshots
+        let ratingValues: [Double] = snapshots.compactMap { snapshot -> Double? in
+            guard let ratingStr = snapshot.categoryRatings[dimension] else { return nil }
+            switch ratingStr {
+            case "Good": return 3.0
+            case "OK": return 2.0
+            case "Could improve": return 1.0
+            default: return nil
+            }
+        }
+        guard !ratingValues.isEmpty else { return .empty }
+        let recent = Array(ratingValues.prefix(20))
+        return buildStat(from: recent, allSamples: allSamples)
+    }
+
+    /// Builds BaselineStat entries for the top 5 clutch words.
+    /// Uses total occurrences / session count to get a per-session frequency stat.
+    /// Pass `ClutchWordStore.shared.topClutchWords` from a @MainActor context.
+    static func buildClutchWordStats(from entries: [ClutchWordEntry]) -> [String: BaselineStat] {
+        let top5 = Array(entries.prefix(5))
+        guard !top5.isEmpty else { return [:] }
+
+        var result: [String: BaselineStat] = [:]
+        for entry in top5 {
+            guard entry.sessionCount >= 2 else { continue } // Need at least 2 sessions to be meaningful
+            let avgPerSession = Double(entry.totalOccurrences) / Double(entry.sessionCount)
+            result[entry.word] = BaselineStat(
+                value: avgPerSession,
+                sampleCount: entry.sessionCount,
+                confidence: BaselineConfidence.from(sessionCount: entry.sessionCount),
+                trend: .stable,
+                percentile25: avgPerSession * 0.7,
+                percentile75: avgPerSession * 1.3
+            )
+        }
+        return result
     }
 
     private static func updateStat(_ stat: BaselineStat, newValue: Double, alpha: Double, totalSamples: Int) -> BaselineStat {
@@ -592,6 +908,9 @@ enum BaselineEngine {
         if baseline.pace.isReliable && baseline.pace.value >= 110 && baseline.pace.value <= 150 {
             strengths.append("Pace control")
         }
+        if baseline.hedgingRate.isReliable && baseline.hedgingRate.value < 1.0 {
+            strengths.append("Directness")
+        }
         if baseline.openingStrength.isReliable && baseline.openingStrength.value >= 2.5 {
             strengths.append("Opening strength")
         }
@@ -612,6 +931,9 @@ enum BaselineEngine {
         }
         if baseline.pace.isReliable && (baseline.pace.value > 170 || baseline.pace.value < 90) {
             blockers.append("Pace control")
+        }
+        if baseline.hedgingRate.isReliable && baseline.hedgingRate.value > 4.0 {
+            blockers.append("Hedging language")
         }
         if baseline.openingStrength.isReliable && baseline.openingStrength.value < 1.5 {
             blockers.append("Opening strength")

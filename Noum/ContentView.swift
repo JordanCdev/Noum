@@ -703,11 +703,26 @@ struct ContentView: View {
     }
 
     private var coachingFocusCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(recommendedPracticeSummary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            if let lastAction = LastNextActionSnapshot.load() {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.blue)
+                    Text("Your next move")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.blue)
+                }
+                Text(lastAction.reasoning)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(recommendedPracticeSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
