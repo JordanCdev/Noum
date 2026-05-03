@@ -488,6 +488,19 @@ class AuthManager: ObservableObject {
             "recommendation.pending.\(accountID)",
             "recommendation.outcomes.\(accountID)",
             "profileXP.\(accountID)",
+            // Daily Goal
+            "noum.dailyGoal.reps.\(accountID)",
+            "noum.dailyGoal.drillCompletions.\(accountID)",
+            "noum.dailyGoal.lastCelebrationDay.\(accountID)",
+            // Streak Freeze
+            "noum.streakFreeze.available.\(accountID)",
+            "noum.streakFreeze.lastEarnedWeek.\(accountID)",
+            "noum.streakFreeze.consumedDates.\(accountID)",
+            // Notification preferences
+            "noum.notifications.dailyReminderEnabled.\(accountID)",
+            "noum.notifications.dailyReminderTime.\(accountID)",
+            "noum.notifications.streakWarningEnabled.\(accountID)",
+            "noum.notifications.weeklyDigestEnabled.\(accountID)",
         ]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)

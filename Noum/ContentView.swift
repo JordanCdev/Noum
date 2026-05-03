@@ -28,7 +28,11 @@ struct ContentView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var dailyGoal = DailyGoalManager.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
+    @State private var showDailyGoalCelebration = false
+    @State private var showFreezeNudge = false
     @State private var aiRecommendation: AIHomeRecommendation?
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
@@ -74,11 +78,19 @@ struct ContentView: View {
                     VStack(spacing: Spacing.cardGap) {
                         if sessionStore.sessions.isEmpty {
                             heroCard
+                            DailyGoalCard(manager: dailyGoal)
                             firstSessionCard
                         } else {
                             heroCard
+                            DailyGoalCard(manager: dailyGoal)
+                            streakCard
+                            WeeklyDigestCard(
+                                sessionStore: sessionStore,
+                                ratingStore: RatingStore.shared,
+                                clutchWordStore: ClutchWordStore.shared,
+                                coachingProfileStore: coachingProfileStore
+                            )
                             quickStartCard
-                            streakChallengeCard
                             progressCard
                             journeyPreviewCard
                             suggestedPracticeCard
@@ -117,6 +129,10 @@ struct ContentView: View {
                     } else {
                         TimedPracticeView(navigationPath: $navigationPath)
                     }
+                case .cutTheCrutchPractice:
+                    CutTheCrutchView(navigationPath: $navigationPath)
+                case .friendLeaderboard:
+                    FriendLeaderboardView()
                 case .summary(let payload):
                     SummaryView(payload: payload, navigationPath: $navigationPath)
                 case .sessionHistory:
@@ -140,6 +156,24 @@ struct ContentView: View {
             )
         ) {
             CoachingOnboardingView()
+        }
+        .overlay {
+            if showDailyGoalCelebration {
+                DailyGoalCelebration {
+                    showDailyGoalCelebration = false
+                    dailyGoal.consumeGoalCelebration()
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
+        }
+        .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
+            if isPending {
+                showDailyGoalCelebration = true
+            }
+        }
+        .onAppear {
+            dailyGoal.recompute()
         }
         .task {
             guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
@@ -379,62 +413,68 @@ struct ContentView: View {
         .accessibilityIdentifier("home.quickStart")
     }
 
-    // MARK: - Streak & Challenge Card
+    // MARK: - Streak Card
 
-    private var streakChallengeCard: some View {
-        let streak = sessionStreak
-        let challenge = retentionSnapshot.activeChallenge
+    /// Compact streak pill with optional freeze badge. Replaces the legacy
+    /// `streakChallengeCard` — the "today's challenge" half is now covered by
+    /// `DailyGoalCard`, which makes the source of truth singular.
+    private var streakCard: some View {
+        let streak = streakFreeze.currentStreak
+        let isAlive = streak > 0
+        let savedByFreeze = streakFreeze.freezeJustConsumedToday
 
-        return HStack(spacing: 12) {
-            // Streak pill
-            HStack(spacing: 8) {
+        return Button {
+            if savedByFreeze { streakFreeze.consumeFreezeNudge() }
+            navigationPath.append(AppDestination.friendLeaderboard)
+        } label: {
+            HStack(spacing: Spacing.sm) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(streak > 0 ? .orange : .gray)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(isAlive ? .orange : Color.secondary.opacity(0.4))
+                    .accessibilityHidden(true)
+
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(streak)")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(streak > 0 ? .orange : .secondary)
-                    Text("day streak")
+                        .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(isAlive ? .orange : .secondary)
+                    Text(savedByFreeze ? "Saved by a freeze" : "day streak")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(savedByFreeze ? AppColor.brandBlue : .secondary)
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.sm)
-            .background(
-                (streak > 0 ? Color.orange : Color.gray).opacity(0.08),
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-            )
 
-            // Today's challenge pill
-            VStack(alignment: .leading, spacing: 4) {
-                Text(challenge.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                ShimmerProgressBar(
-                    progress: challenge.progress,
-                    tint: .blue,
-                    animated: challenge.progress > 0 && challenge.progress < 1
-                )
-                HStack {
-                    Text(challenge.progressLabel)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.blue)
-                    Spacer()
-                    Text(challenge.rewardLabel)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                Spacer()
+
+                if streakFreeze.freezesAvailable > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "snowflake")
+                            .font(.caption.weight(.bold))
+                        Text("Freeze")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+                    .accessibilityLabel("Streak freeze available")
+                    .accessibilityHint("One free miss this week is automatically protected.")
                 }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
             }
-            .frame(maxWidth: .infinity)
-            .padding(Spacing.sm)
-            .background(
-                Color.blue.opacity(0.06),
-                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            .frame(minHeight: 44)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
             )
         }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("\(streak) day streak")
+        .accessibilityHint("Open the weekly leaderboard.")
     }
 
     private var progressCard: some View {

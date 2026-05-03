@@ -288,15 +288,13 @@ struct ProfileView: View {
                         }
                     }
 
-                    // Trend indicator
-                    HStack(spacing: 6) {
-                        Image(systemName: trendIcon(rating.currentTrend))
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(trendColor(rating.currentTrend))
-                        Text(trendLabel(rating.currentTrend))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
+                    // Rating history chart — replaces the previous trend pill.
+                    // Renders the last 30 days as a smoothed line with peak marker.
+                    RatingHistoryChart(
+                        history: rating.ratingHistory,
+                        peakRating: rating.peakRating,
+                        trend: rating.currentTrend
+                    )
                 }
 
                 // Personal Bests

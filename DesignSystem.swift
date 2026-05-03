@@ -82,6 +82,8 @@ enum AppColor {
     static let modeAhCounter = Color(red: 0.14, green: 0.60, blue: 0.44)
     /// IM Conversation mode
     static let modeIM = Color(red: 0.32, green: 0.43, blue: 0.94)
+    /// Cut the Crutch — control / restraint drill (warm rose, distinct from pressure tints)
+    static let modeCrutch = Color(red: 0.78, green: 0.32, blue: 0.50)
 
     // MARK: Semantic Feedback
 

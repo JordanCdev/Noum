@@ -14,6 +14,8 @@ enum AppDestination: Hashable {
     case suddenDeathPractice
     case ahCounterPractice
     case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
+    case cutTheCrutchPractice
+    case friendLeaderboard
     case summary(SummaryPayload)
     case sessionHistory
     case socialProfile
@@ -433,6 +435,21 @@ struct CoachingProfile: Codable, Equatable {
 }
 
 extension CoachingProfile {
+    /// Templated, on-voice rendering of the user's goal — uses ONLY the
+    /// structured enum values the user picked during onboarding. Never embeds
+    /// free-text fields, so it's safe for any user-facing surface including
+    /// lock-screen notifications, weekly digests, and result cards.
+    ///
+    /// VISION milestone 1 originally specified an AI paraphrase of the raw
+    /// goal text. That's deferred until `AINPCChatService` is wired to a real
+    /// model — the templated version below produces cleaner, faster, free copy
+    /// and is the right v1.
+    var displayableGoal: String {
+        let action = primaryGoal.title.lowercased()
+        let style = speakingStyleGoal.coachingDescription
+        return "You want to \(action) and \(style)."
+    }
+
     var communicationNorthStar: String {
         let goalReference = personalGoalReference.isEmpty
             ? desiredOutcome.title.lowercased()

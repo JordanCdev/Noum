@@ -6,13 +6,25 @@ import UIKit
 #if canImport(AppKit)
 import AppKit
 #endif
+#if canImport(StoreKit)
+import StoreKit
+#endif
+#if canImport(AVFAudio)
+import AVFAudio
+#endif
+
+// MARK: - Settings Screen
 
 @available(iOS 17.0, macOS 12.0, *)
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var profileManager = ProfileManager.shared
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
+    @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
@@ -20,12 +32,17 @@ struct SettingsView: View {
     @StateObject private var imVoicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var premium = PremiumManager.shared
+    @StateObject private var dailyGoal = DailyGoalManager.shared
+
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
     @State private var showPaywall = false
-    @State private var debugMessage: String?
-    @State private var showDeleteConfirmation = false
     @State private var showYourData = false
+    @State private var showSignOutAlert = false
+    @State private var showDeleteSheet = false
+    @State private var debugMessage: String?
+    @State private var supportToast: String?
+    @State private var microphonePermission: MicrophonePermissionState = .unknown
     #if DEBUG
     @State private var seedProfileStatus: String?
     #endif
@@ -33,24 +50,31 @@ struct SettingsView: View {
     var body: some View {
         ZStack {
             AppColor.screenBackground
-            .ignoresSafeArea()
+                .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    overviewCard
-                    subscriptionCard
-                    practiceCard
-                    coachingCard
-                    remindersCard
-                    accountPrivacyCard
+                VStack(spacing: Spacing.lg) {
+                    profileHero
+
+                    section(label: "Practice") { practiceCard }
+                    section(label: "Coaching") { coachingProfileCard }
+                    section(label: "Feedback") { feedbackCard }
+                    section(label: "Subscription") { subscriptionCard }
+                    section(label: "Privacy & Data") { privacyCard }
+                    section(label: "Account") { accountCard }
+                    section(label: "About") { aboutCard }
+
                     if authManager.isDeveloper {
-                        transcriptionProviderCard
-                        debugCard
-                        recommendationDiagnosticsCard
+                        section(label: "Developer Tools") { transcriptionProviderCard }
+                        section(label: "Diagnostics") { recommendationDiagnosticsCard }
+                        section(label: "Seed Data") { developerSeedCard }
                     }
-                    Spacer(minLength: 0)
+
+                    Spacer(minLength: 8)
                 }
-                .padding(Spacing.lg)
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.lg)
             }
         }
         .navigationTitle("")
@@ -59,13 +83,21 @@ struct SettingsView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") { dismiss() }
+                    .accessibilityHint("Close settings")
             }
         }
         .onChange(of: authManager.isSignedIn) { _, signedIn in
             if !signedIn { dismiss() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                refreshMicrophonePermission()
+                Task { await notificationManager.refreshAuthorizationStatus() }
+            }
+        }
         .task {
             isBackendConfigured = await BackendSyncManager.shared.isConfigured
+            refreshMicrophonePermission()
         }
         .sheet(isPresented: $showCoachingProfile) {
             CoachingOnboardingView()
@@ -83,456 +115,831 @@ struct SettingsView: View {
                     }
             }
         }
-        .alert("Debug Tools", isPresented: .constant(debugMessage != nil), actions: {
+        .sheet(isPresented: $showDeleteSheet) {
+            DeleteAccountConfirmationSheet(
+                onConfirm: {
+                    authManager.deleteCurrentAccount()
+                },
+                onClose: {
+                    showDeleteSheet = false
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .alert("Sign out of Noum?", isPresented: $showSignOutAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Sign out", role: .destructive) {
+                authManager.signOut()
+            }
+        } message: {
+            Text("Your local drafts will be cleared. Your reps stay safe on your account.")
+        }
+        .alert("Heads up", isPresented: .constant(debugMessage != nil), actions: {
             Button("OK", role: .cancel) { debugMessage = nil }
         }, message: {
             Text(debugMessage ?? "")
         })
-        .alert("Delete Account?", isPresented: $showDeleteConfirmation) {
-            Button("Delete Everything", role: .destructive) {
-                authManager.deleteCurrentAccount()
+        .overlay(alignment: .bottom) {
+            if let supportToast {
+                Text(supportToast)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.black.opacity(0.85), in: Capsule())
+                    .padding(.bottom, Spacing.lg)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityLabel(supportToast)
+                    .onAppear {
+                        Task {
+                            try? await Task.sleep(for: .seconds(2.0))
+                            await MainActor.run {
+                                withAnimation(reduceMotion ? nil : .standardSpring) {
+                                    self.supportToast = nil
+                                }
+                            }
+                        }
+                    }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently deletes your account and all associated data, including practice sessions, coaching profile, AI analysis history, and any synced data on our servers. This cannot be undone.")
         }
     }
 
-    private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Settings")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-            Text("Manage practice defaults, coaching preferences, and your account in one place.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    // MARK: - Section Wrapper
+
+    @ViewBuilder
+    private func section<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            SettingsSectionLabel(title: label)
+            content()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    private let proColor = AppColor.pro
+    // MARK: - Profile Hero
 
-    private var subscriptionCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if premium.isPremium {
-                // Active subscriber card
-                HStack(spacing: 14) {
-                    Image(systemName: "crown.fill")
-                        .font(.title2)
-                        .foregroundStyle(
+    private var displayName: String {
+        let name = authManager.currentAccountName?.trimmingCharacters(in: .whitespaces) ?? ""
+        return name.isEmpty ? "Speaker" : name
+    }
+
+    private var profileHero: some View {
+        Button {
+            showCoachingProfile = true
+        } label: {
+            HStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(
                             LinearGradient(
-                                colors: [proColor, AppColor.proLight],
+                                colors: [AppColor.brandBlue, AppColor.brandBlueLight],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                        .frame(width: 64, height: 64)
+
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [AppColor.brandBlue.opacity(0.18), AppColor.brandBlueLight.opacity(0.10)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
+                        .frame(width: 56, height: 56)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Text("Noum Pro")
-                                .font(.headline.weight(.bold))
-                            Text("ACTIVE")
+                    Text(String(displayName.prefix(1)).uppercased())
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(displayName)
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+
+                        if premium.isPremium {
+                            Text("PRO")
                                 .font(.caption2.weight(.heavy))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(proColor, in: Capsule())
+                                .padding(.vertical, 3)
+                                .background(AppColor.pro, in: Capsule())
+                                .accessibilityLabel("Pro subscriber")
                         }
-                        Text("All premium features are unlocked.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
 
-                    Spacer()
-                }
-
-                Divider()
-                    .padding(.vertical, 2)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    subscriptionFeatureRow(icon: "text.magnifyingglass", title: "Coach Mode")
-                    subscriptionFeatureRow(icon: "text.quote", title: "Live Transcript")
-                    subscriptionFeatureRow(icon: "video.fill", title: "Video Recording")
-                    subscriptionFeatureRow(icon: "waveform.badge.magnifyingglass", title: "Filler Tracking")
-                    subscriptionFeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Trends & Analytics")
-                    subscriptionFeatureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges")
-                    subscriptionFeatureRow(icon: "tray.full.fill", title: "Saved Transcripts")
-                }
-
-                if authManager.isDeveloper {
-                    Divider()
-                        .padding(.vertical, 2)
-
-                    Button("Revoke Premium (Debug)") {
-                        premium.revokePremium()
+                    HStack(spacing: 6) {
+                        Image(systemName: profileManager.rankSymbol)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(profileManager.rankTint)
+                        Text(profileManager.rankTitle)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(profileManager.rankTint)
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.red)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 5)
+                    .background(profileManager.rankTint.opacity(0.12), in: Capsule())
                 }
-            } else {
-                // Free user — upgrade CTA
-                HStack(spacing: 14) {
-                    Image(systemName: "crown.fill")
-                        .font(.title2)
-                        .foregroundStyle(proColor.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Upgrade to Pro")
-                            .font(.headline.weight(.bold))
-                        Text("Unlock Coach Mode, transcripts, analytics, and more.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-
-                Button {
-                    showPaywall = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "crown.fill")
-                            .font(.subheadline)
-                        Text("See Plans")
-                            .font(.headline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
-                    .background(
-                        LinearGradient(
-                            colors: [proColor, proColor.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule()
-                    )
-                    .foregroundStyle(.white)
-                    .shadow(color: proColor.opacity(0.3), radius: 12, y: 4)
-                }
-                .buttonStyle(.pressable)
-
-                Button("Restore Purchase") {
-                    Task { await premium.restorePurchases() }
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.tertiary)
             }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .overlay(
-            premium.isPremium
-                ? RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(proColor.opacity(0.15), lineWidth: 1)
-                : nil
-        )
+        .buttonStyle(.pressable)
+        .accessibilityLabel("\(displayName), \(profileManager.rankTitle)")
+        .accessibilityHint("Open coaching profile to edit")
+        .accessibilityIdentifier("settings.profileHero")
     }
 
-    private func subscriptionFeatureRow(icon: String, title: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(proColor)
-                .frame(width: 24, height: 24)
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(.green)
-        }
-    }
+    // MARK: - Practice Card
 
     private var practiceCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Practice")
-                .font(.headline)
-
-            Text("Choose the default timed drill difficulty.")
-                .font(.subheadline)
+        cardContainer(spacing: Spacing.md) {
+            Text("Choose the default difficulty for Timed practice. Voice cues and live filler highlighting follow what you set here.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            ForEach(TimedPracticeDifficulty.allCases) { difficulty in
-                Button {
-                    practiceSettings.timedDifficulty = difficulty
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(difficulty.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(difficulty.subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: practiceSettings.timedDifficulty == difficulty ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(practiceSettings.timedDifficulty == difficulty ? .blue : .secondary)
-                    }
-                    .padding(14)
-                    .background(Color.blue.opacity(practiceSettings.timedDifficulty == difficulty ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            VStack(spacing: Spacing.xs) {
+                ForEach(TimedPracticeDifficulty.allCases) { difficulty in
+                    difficultyOption(difficulty)
                 }
-                .buttonStyle(.plain)
             }
 
             Divider()
-                .padding(.vertical, 2)
 
-            Toggle(isOn: $imVoicePlaybackSettings.isEnabled) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Read IM messages aloud")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Noum reads NPC replies out loud during IM Mode. Enabled by default.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
+            SettingsToggleRow(
+                title: "Voice cues",
+                subtitle: "Read replies aloud during IM practice.",
+                isOn: $imVoicePlaybackSettings.isEnabled,
+                accessibilityHint: "Enables spoken responses in IM mode."
+            )
 
             Divider()
-                .padding(.vertical, 2)
 
-            Toggle(isOn: $practiceSettings.fillerAlertSoundEnabled) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Filler alert sound")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Play a short click when a filler word is detected.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            SettingsToggleRow(
+                title: "Real-time filler highlight",
+                subtitle: micDisabledForFillerHighlight
+                    ? "Microphone access is required for live filler detection."
+                    : "Plays a soft cue and pulse when a filler word is detected.",
+                isOn: $practiceSettings.fillerAlertSoundEnabled,
+                isDisabled: micDisabledForFillerHighlight,
+                disabledReason: micDisabledForFillerHighlight ? "Mic access blocked" : nil,
+                accessibilityHint: "Plays a soft cue when a filler word is detected during a session."
+            )
+
+            Divider()
+
+            SettingsToggleRow(
+                title: "Pressure mode",
+                subtitle: "One-take reps, shorter prep, and a rated finish across modes.",
+                isOn: $practiceSettings.pressureModeEnabled,
+                accessibilityHint: "Adds time pressure and rating to every drill."
+            )
+
+            Divider()
+
+            dailyGoalRow
+        }
+    }
+
+    private var dailyGoalRow: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Daily goal")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text("How many reps count as today's done. One is enough — picking more is a stretch goal.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .toggleStyle(.switch)
 
-            if imVoicePlaybackSettings.isEnabled && authManager.isDeveloper {
-                Divider()
-                    .padding(.vertical, 2)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("IM voice quality")
-                        .font(.subheadline.weight(.semibold))
-
-                    Text("Keep voice dependable. Noum now prioritizes Google Cloud first and quietly falls back to OpenAI if needed.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(IMVoiceEngine.allCases) { engine in
-                        Button {
-                            imVoicePlaybackSettings.engine = engine
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(engine.title)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                    Text(engine.subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: imVoicePlaybackSettings.engine == engine ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(imVoicePlaybackSettings.engine == engine ? .blue : .secondary)
-                            }
-                            .padding(14)
-                            .background(Color.blue.opacity(imVoicePlaybackSettings.engine == engine ? 0.10 : 0.04), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Voice Debug")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text("Selected: \(imVoicePlaybackSettings.engine.title)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("Resolved: \(imVoicePlaybackSettings.lastResolvedEngineTitle)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("Status: \(imVoicePlaybackSettings.lastPlaybackStatus)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let lastPlaybackError = imVoicePlaybackSettings.lastPlaybackError {
-                            Text("Last error: \(lastPlaybackError)")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            HStack(spacing: Spacing.xs) {
+                ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
+                    goalChip(value)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .contain)
     }
 
-    private var coachingCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Coaching Profile")
-                .font(.headline)
+    private func goalChip(_ value: Int) -> some View {
+        let isSelected = dailyGoal.goalReps == value
+        return Button {
+            dailyGoal.goalReps = value
+            CoachHaptic.selectionTap()
+        } label: {
+            Text("\(value) rep\(value == 1 ? "" : "s")")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? .white : AppColor.brandBlue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    isSelected ? AppColor.brandBlue : AppColor.brandBlue.opacity(0.10),
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.pressable)
+        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
+        .accessibilityLabel("Daily goal \(value) rep\(value == 1 ? "" : "s")")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
 
+    private var micDisabledForFillerHighlight: Bool {
+        microphonePermission == .denied
+    }
+
+    private func difficultyOption(_ difficulty: TimedPracticeDifficulty) -> some View {
+        let isSelected = practiceSettings.timedDifficulty == difficulty
+        return Button {
+            practiceSettings.timedDifficulty = difficulty
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(difficulty.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(difficulty.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Spacing.xs)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? AppColor.brandBlue : .secondary)
+            }
+            .frame(minHeight: 44)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.sm)
+            .background(
+                AppColor.brandBlue.opacity(isSelected ? 0.10 : 0.04),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+        }
+        .buttonStyle(.pressable)
+        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
+        .accessibilityLabel("\(difficulty.title) difficulty")
+        .accessibilityHint(difficulty.subtitle)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - Coaching Profile Card
+
+    private var coachingProfileCard: some View {
+        cardContainer(spacing: Spacing.md) {
             if let profile = coachingProfileStore.profile {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    compactTag(title: "Context", value: profile.speakingContext.title)
-                    compactTag(title: "Priority", value: profile.primaryGoal.title)
-                    compactTag(title: "Challenge", value: profile.biggestChallenge.title)
-                    compactTag(title: "Voice", value: profile.speakingStyleGoal.title)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
+                    coachingTag(label: "Context", value: profile.speakingContext.title)
+                    coachingTag(label: "Priority", value: profile.primaryGoal.title)
+                    coachingTag(label: "Challenge", value: profile.biggestChallenge.title)
+                    coachingTag(label: "Voice", value: profile.speakingStyleGoal.title)
                 }
                 if !profile.personalGoalReference.isEmpty {
                     Text(profile.personalGoalReference)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .padding(14)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(Spacing.sm)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
-                if !profile.whyNowReference.isEmpty || !profile.successVisionReference.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if !profile.whyNowReference.isEmpty {
-                            compactTag(title: "Why now", value: profile.whyNowReference)
-                        }
-                        if !profile.successVisionReference.isEmpty {
-                            compactTag(title: "What success changes", value: profile.successVisionReference)
-                        }
-                    }
-                }
             } else {
-                Text("Complete your coaching profile so Noum can tailor drills and guidance to your goals.")
+                Text("Set a coaching profile so Noum can tailor drills to your goals.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            compactTag(title: "AI coach", value: aiSettings.activeProvider == nil ? "Not configured" : "Ready")
-
-            Button(coachingProfileStore.profile == nil ? "Set Coaching Profile" : "Update Coaching Profile") {
+            SettingsNavRow(
+                title: coachingProfileStore.profile == nil ? "Set coaching profile" : "Update coaching profile",
+                icon: "person.crop.circle.badge.checkmark",
+                accessibilityHint: "Open the coaching profile flow."
+            ) {
                 showCoachingProfile = true
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.md)
-            .background(Color.blue, in: Capsule())
-            .foregroundStyle(.white)
-            .buttonStyle(.pressable)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    private var remindersCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Practice Reminders")
-                .font(.headline)
-
-            Text("Set reminders that keep your practice habit consistent and goal-aligned.")
-                .font(.subheadline)
+    private func coachingTag(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.sm)
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
 
-            Toggle(
+    // MARK: - Feedback Card (Reminders + Haptics)
+
+    private var feedbackCard: some View {
+        cardContainer(spacing: Spacing.md) {
+            // Daily reminder
+            SettingsToggleRow(
+                title: "Daily reminder",
+                subtitle: dailyReminderSubtitle,
+                isOn: Binding(
+                    get: { notificationManager.dailyReminderEnabled },
+                    set: { newValue in
+                        Task { await notificationManager.setDailyReminderEnabled(newValue) }
+                    }
+                ),
+                accessibilityHint: "A single reminder at your chosen time of day."
+            )
+
+            if notificationManager.dailyReminderEnabled {
+                dailyReminderTimePicker
+            }
+
+            Divider()
+
+            // Streak warning
+            SettingsToggleRow(
+                title: "Streak warning",
+                subtitle: "An evening nudge when your streak is at risk. Quiet on days you've already practiced.",
+                isOn: Binding(
+                    get: { notificationManager.streakWarningEnabled },
+                    set: { newValue in
+                        Task { await notificationManager.setStreakWarningEnabled(newValue) }
+                    }
+                ),
+                accessibilityHint: "Reminds you when your streak might break."
+            )
+
+            Divider()
+
+            // Weekly digest
+            SettingsToggleRow(
+                title: "Weekly digest",
+                subtitle: "Sunday evening: how the week landed and what's trending.",
+                isOn: Binding(
+                    get: { notificationManager.weeklyDigestEnabled },
+                    set: { newValue in
+                        Task { await notificationManager.setWeeklyDigestEnabled(newValue) }
+                    }
+                ),
+                accessibilityHint: "A short weekly summary every Sunday."
+            )
+
+            Divider()
+
+            // Legacy follow-up (kept for backward compatibility)
+            SettingsToggleRow(
+                title: "Post-session follow-up",
+                subtitle: "A short reminder tied to your last rep, 18 hours after a session.",
                 isOn: Binding(
                     get: { notificationManager.isEnabled },
                     set: { newValue in
                         Task { await notificationManager.updateEnabled(newValue) }
                     }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Goal-based follow-ups")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Send a single follow-up based on the north star, why now, and the next best move.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
+                ),
+                accessibilityHint: "Sends a follow-up reminder eighteen hours after each session."
+            )
 
-            compactTag(title: "Notification access", value: notificationManager.authorizationLabel)
+            SettingsStatusRow(
+                title: "Notification access",
+                value: notificationManager.authorizationLabel,
+                valueTint: authorizationTint(notificationManager.authorizationLabel),
+                icon: "bell.fill"
+            )
+
+            Divider()
+
+            // Haptics
+            SettingsToggleRow(
+                title: "Haptics",
+                subtitle: "Subtle taps for streaks, level-ups, and rep transitions.",
+                isOn: $hapticsSettings.isEnabled,
+                accessibilityHint: "Master haptic feedback switch."
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    private var accountPrivacyCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Account & Privacy")
-                .font(.headline)
+    private var dailyReminderSubtitle: String {
+        if notificationManager.dailyReminderEnabled {
+            return "Fires daily at \(formattedReminderTime). Tap to change."
+        }
+        return "One short reminder at a time you choose."
+    }
 
-            if authManager.isSignedIn {
-                compactTag(title: "Signed in as", value: authManager.currentAccountName ?? "Guest Speaker")
-                if let provider = authManager.currentAuthProviderTitle {
-                    compactTag(title: "Provider", value: provider)
+    private var formattedReminderTime: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        var components = DateComponents()
+        components.hour = notificationManager.dailyReminderHour
+        components.minute = notificationManager.dailyReminderMinute
+        let date = Calendar.current.date(from: components) ?? Date()
+        return formatter.string(from: date)
+    }
+
+    private var dailyReminderTimePicker: some View {
+        let binding = Binding<Date>(
+            get: {
+                var c = DateComponents()
+                c.hour = notificationManager.dailyReminderHour
+                c.minute = notificationManager.dailyReminderMinute
+                return Calendar.current.date(from: c) ?? Date()
+            },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                notificationManager.dailyReminderHour = c.hour ?? 9
+                notificationManager.dailyReminderMinute = c.minute ?? 0
+            }
+        )
+
+        return DatePicker(
+            "Reminder time",
+            selection: binding,
+            displayedComponents: .hourAndMinute
+        )
+        .labelsHidden()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, Spacing.xs)
+        .accessibilityLabel("Daily reminder time")
+    }
+
+    private func authorizationTint(_ label: String) -> Color {
+        switch label {
+        case "Allowed", "Quietly allowed", "Temporarily allowed": return AppColor.positive
+        case "Blocked": return AppColor.warning
+        default: return .secondary
+        }
+    }
+
+    // MARK: - Subscription Card
+
+    private var subscriptionCard: some View {
+        cardContainer(spacing: Spacing.md) {
+            if premium.isPremium {
+                proHeader
+                Divider()
+                SettingsNavRow(
+                    title: "Manage subscription",
+                    icon: "creditcard.fill",
+                    accessibilityHint: "Opens the App Store subscription manager."
+                ) {
+                    openManageSubscriptions()
                 }
-                if let accountID = authManager.currentAccountID {
-                    Button {
-                        #if canImport(UIKit)
-                        UIPasteboard.general.string = accountID
-                        #elseif canImport(AppKit)
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(accountID, forType: .string)
-                        #endif
-                        debugMessage = "Account ID copied to clipboard."
-                    } label: {
-                        compactTag(title: "Account ID (tap to copy)", value: accountID)
+                SettingsNavRow(
+                    title: "Restore purchase",
+                    icon: "arrow.clockwise",
+                    accessibilityHint: "Re-checks your App Store entitlements."
+                ) {
+                    Task { await premium.restorePurchases() }
+                }
+                if authManager.isDeveloper {
+                    Button("Revoke Pro (debug)") {
+                        premium.revokePremium()
                     }
-                    .buttonStyle(.plain)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.warning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                compactTag(title: "Status", value: "Signed out")
-            }
-
-            Text("Use log out to disconnect this device, or delete the current account if you want to remove it.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if authManager.isSignedIn {
+                freeHeader
                 Button {
-                    authManager.signOut()
+                    showPaywall = true
                 } label: {
-                    actionRow(title: "Log Out", tint: .red)
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "crown.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Text("See plans")
+                            .font(.headline.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.md)
+                    .background(
+                        LinearGradient(
+                            colors: [AppColor.pro, AppColor.proLight],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule()
+                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .accessibilityHint("Opens the paywall to view subscription plans.")
 
-                Button {
-                    showDeleteConfirmation = true
-                } label: {
-                    actionRow(title: "Delete Account", tint: .black)
+                Button("Restore purchase") {
+                    Task { await premium.restorePurchases() }
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    showYourData = true
-                } label: {
-                    actionRow(title: "Your Data", tint: .blue)
-                }
-                .buttonStyle(.plain)
-            } else {
-                Text("No active session")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 44)
+                .accessibilityHint("Re-checks your App Store entitlements.")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
+
+    private var proHeader: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "crown.fill")
+                .font(.title3)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [AppColor.pro, AppColor.proLight],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Noum Pro")
+                    .font(.headline.weight(.bold))
+                Text("All premium features unlocked.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var freeHeader: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "crown.fill")
+                .font(.title3)
+                .foregroundStyle(AppColor.pro.opacity(0.6))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Noum is free to try")
+                    .font(.headline.weight(.bold))
+                Text("Pro unlocks Coach Mode, transcripts, analytics, and more.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func openManageSubscriptions() {
+        #if canImport(UIKit) && canImport(StoreKit)
+        Task { @MainActor in
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first
+            else {
+                debugMessage = "Subscription management is unavailable right now."
+                return
+            }
+            do {
+                try await AppStore.showManageSubscriptions(in: scene)
+            } catch {
+                debugMessage = "Couldn't open the subscription manager. Try again from the App Store."
+            }
+        }
+        #else
+        debugMessage = "Subscription management is unavailable on this device."
+        #endif
+    }
+
+    // MARK: - Privacy Card
+
+    private var privacyCard: some View {
+        cardContainer(spacing: Spacing.sm) {
+            SettingsStatusRow(
+                title: "Microphone access",
+                value: microphonePermission.label,
+                valueTint: microphonePermission.tint,
+                icon: "mic.fill"
+            )
+
+            if microphonePermission == .denied {
+                Button {
+                    openSystemSettings()
+                } label: {
+                    Text("Open system settings")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+                .buttonStyle(.pressable)
+                .accessibilityHint("Opens iOS Settings to grant microphone access.")
+            }
+
+            Divider()
+
+            SettingsNavRow(
+                title: "Your data",
+                icon: "tray.full.fill",
+                accessibilityHint: "Review what Noum stores on this device and where it processes data."
+            ) {
+                showYourData = true
+            }
+        }
+    }
+
+    private func openSystemSettings() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+        #endif
+    }
+
+    // MARK: - Account Card
+
+    private var accountCard: some View {
+        cardContainer(spacing: Spacing.sm) {
+            if authManager.isSignedIn {
+                SettingsStatusRow(
+                    title: "Signed in as",
+                    value: displayName,
+                    valueTint: .primary
+                )
+                if let provider = authManager.currentAuthProviderTitle {
+                    SettingsStatusRow(
+                        title: "Provider",
+                        value: provider,
+                        valueTint: .secondary
+                    )
+                }
+
+                Divider()
+
+                Button {
+                    showSignOutAlert = true
+                } label: {
+                    accountActionLabel(title: "Sign out", tint: AppColor.warning, icon: "arrow.right.square")
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Sign out")
+                .accessibilityHint("Signs you out on this device. Your data stays on your account.")
+
+                Button {
+                    showDeleteSheet = true
+                } label: {
+                    accountActionLabel(title: "Delete account", tint: AppColor.warning, icon: "trash.fill")
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Delete account")
+                .accessibilityHint("Permanently deletes your account and all data after a typed confirmation.")
+            } else {
+                SettingsStatusRow(
+                    title: "Status",
+                    value: "Signed out",
+                    valueTint: .secondary
+                )
+            }
+        }
+    }
+
+    private func accountActionLabel(title: String, tint: Color, icon: String) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 22)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint.opacity(0.6))
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - About Card
+
+    private var aboutCard: some View {
+        cardContainer(spacing: Spacing.sm) {
+            SettingsStatusRow(
+                title: "Version",
+                value: appVersionString,
+                valueTint: .secondary
+            )
+
+            Divider()
+
+            SettingsNavRow(
+                title: "Copy diagnostic report",
+                icon: "doc.on.doc.fill",
+                accessibilityHint: "Copies a short sign-in diagnostic to your clipboard for support."
+            ) {
+                copyDiagnosticReport()
+            }
+        }
+    }
+
+    private var appVersionString: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }
+
+    private func copyDiagnosticReport() {
+        let payload = authManager.supportReportPayload()
+        #if canImport(UIKit)
+        UIPasteboard.general.string = payload
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        #endif
+        withAnimation(reduceMotion ? nil : .standardSpring) {
+            supportToast = "Diagnostic copied to clipboard"
+        }
+    }
+
+    // MARK: - Microphone Permission
+
+    private enum MicrophonePermissionState {
+        case unknown, undetermined, denied, granted
+
+        var label: String {
+            switch self {
+            case .granted: return "Allowed"
+            case .denied: return "Blocked"
+            case .undetermined: return "Not requested"
+            case .unknown: return "Unavailable"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .granted: return AppColor.positive
+            case .denied: return AppColor.warning
+            default: return .secondary
+            }
+        }
+    }
+
+    private func refreshMicrophonePermission() {
+        #if canImport(AVFAudio)
+        let status: MicrophonePermissionState
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: status = .granted
+        case .denied: status = .denied
+        case .undetermined: status = .undetermined
+        @unknown default: status = .unknown
+        }
+        microphonePermission = status
+        #else
+        microphonePermission = .unknown
+        #endif
+    }
+
+    // MARK: - Card Container
+
+    @ViewBuilder
+    private func cardContainer<Content: View>(
+        spacing: CGFloat = Spacing.md,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: spacing, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
+    }
+
+    // MARK: - Developer Cards (preserved from prior implementation)
 
     @AppStorage("transcriptionProvider") private var selectedProvider: String = "deepgram"
 
     private var transcriptionProviderCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Transcription Provider")
-                .font(.headline)
-
+        cardContainer(spacing: Spacing.md) {
             Text("Switch between speech-to-text backends for testing and comparison.")
-                .font(.subheadline)
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             Picker("Provider", selection: $selectedProvider) {
                 ForEach(TranscriptionProviderID.allCases) { provider in
@@ -543,9 +950,9 @@ struct SettingsView: View {
 
             let qualityStore = TranscriptionQualityStore.shared
             if let avgLatency = qualityStore.averageLatency(for: selectedProvider) {
-                HStack(spacing: 12) {
+                HStack(spacing: Spacing.sm) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Avg Latency")
+                        Text("Avg latency")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Text("\(avgLatency)ms")
@@ -554,7 +961,7 @@ struct SettingsView: View {
                     Spacer()
                     if let avgConf = qualityStore.averageConfidence(for: selectedProvider) {
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text("Avg Confidence")
+                            Text("Avg confidence")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             Text(String(format: "%.0f%%", avgConf * 100))
@@ -562,48 +969,111 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .padding(12)
-                .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .padding(Spacing.sm)
+                .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+            }
+
+            if imVoicePlaybackSettings.isEnabled {
+                Divider()
+                Text("IM voice quality")
+                    .font(.subheadline.weight(.semibold))
+                Text("Noum prioritizes Google Cloud first and quietly falls back to OpenAI if needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(IMVoiceEngine.allCases) { engine in
+                    Button {
+                        imVoicePlaybackSettings.engine = engine
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(engine.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(engine.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: imVoicePlaybackSettings.engine == engine ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(imVoicePlaybackSettings.engine == engine ? AppColor.brandBlue : .secondary)
+                        }
+                        .padding(Spacing.sm)
+                        .background(
+                            AppColor.brandBlue.opacity(imVoicePlaybackSettings.engine == engine ? 0.10 : 0.04),
+                            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        )
+                    }
+                    .buttonStyle(.pressable)
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    private var debugCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Developer Tools")
-                .font(.headline)
-
-            Text("Seed local and Firebase-backed data without recording a live session.")
-                .font(.subheadline)
+    private var recommendationDiagnosticsCard: some View {
+        cardContainer(spacing: Spacing.md) {
+            Text("Inspect whether Noum's recommended mode is actually improving outcomes.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Button("Create Test Session") {
+            HStack(spacing: Spacing.xs) {
+                compactStat(title: "Shown", value: "\(recommendationLearningStore.outcomes.count)")
+                compactStat(title: "Followed", value: "\(followedRecommendationCount)")
+                compactStat(title: "Hit rate", value: followedRecommendationCount == 0 ? "—" : "\(Int(followRate * 100))%")
+            }
+
+            HStack(spacing: Spacing.xs) {
+                compactStat(title: "Score Δ", value: signedValue(averageScoreDelta))
+                compactStat(title: "Filler Δ", value: signedValue(averageFillerDelta))
+                compactStat(title: "Duration Δ", value: signedSeconds(averageDurationDelta))
+            }
+
+            HStack(spacing: Spacing.xs) {
+                compactStat(
+                    title: "Storage",
+                    value: isBackendConfigured ? "Backend synced" : "Local only"
+                )
+                Button("Reset") {
+                    recommendationLearningStore.resetDiagnostics()
+                    debugMessage = "Recommendation diagnostics reset."
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(AppColor.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .foregroundStyle(AppColor.warning)
+            }
+        }
+    }
+
+    private var developerSeedCard: some View {
+        cardContainer(spacing: Spacing.md) {
+            Text("Seed sessions and profiles without recording a live rep.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Create test session") {
                 seedTestSession()
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.md)
-            .background(Color.blue, in: Capsule())
+            .font(.headline.weight(.semibold))
             .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.sm)
+            .background(AppColor.brandBlue, in: Capsule())
             .buttonStyle(.pressable)
 
-            Button("Create 3 Session Run") {
+            Button("Create 3-session run") {
                 seedSessionRun()
             }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.md)
-            .background(Color.orange, in: Capsule())
+            .font(.headline.weight(.semibold))
             .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.sm)
+            .background(AppColor.modeSuddenDeath, in: Capsule())
             .buttonStyle(.pressable)
 
             #if DEBUG
-            Divider().padding(.vertical, 4)
-
-            Text("Seed Profiles")
+            Divider()
+            Text("Seed profiles")
                 .font(.subheadline.weight(.semibold))
             Text("Inject realistic session history + baseline for inspecting the intelligence layer.")
                 .font(.caption)
@@ -617,153 +1087,40 @@ struct SettingsView: View {
                     }
                 }
                 .font(.subheadline.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.purple.opacity(0.15), in: Capsule())
-                .foregroundStyle(.purple)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(AppColor.pro.opacity(0.15), in: Capsule())
+                .foregroundStyle(AppColor.pro)
             }
 
             if let status = seedProfileStatus {
                 Text(status)
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AppColor.positive)
             }
             #endif
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    private var recommendationDiagnosticsCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Recommendation Diagnostics")
-                .font(.headline)
-
-            Text("Inspect whether Noum's recommended mode is actually improving outcomes.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if let pending = recommendationLearningStore.pendingExposure {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Pending Recommendation")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(pending.title)
-                        .font(.subheadline.weight(.semibold))
-                    Text("Mode: \(label(for: pending.mode)) • \(pending.isAIBacked ? "AI-backed" : "Rules-backed")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-            }
-
-            HStack(spacing: 10) {
-                compactTag(title: "Shown", value: "\(recommendationLearningStore.outcomes.count)")
-                compactTag(title: "Followed", value: "\(followedRecommendationCount)")
-                compactTag(title: "Hit rate", value: followedRecommendationCount == 0 ? "--" : "\(Int(followRate * 100))%")
-            }
-
-            HStack(spacing: 10) {
-                compactTag(title: "Score delta", value: signedValue(averageScoreDelta))
-                compactTag(title: "Filler delta", value: signedValue(averageFillerDelta))
-                compactTag(title: "Duration delta", value: signedSeconds(averageDurationDelta))
-            }
-
-            HStack(spacing: 10) {
-                compactTag(
-                    title: "Storage",
-                    value: isBackendConfigured ? "Firebase / backend synced" : "Local only"
-                )
-
-                Button("Reset") {
-                    recommendationLearningStore.resetDiagnostics()
-                    debugMessage = "Recommendation diagnostics reset."
-                }
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                .foregroundStyle(.red)
-            }
-
-            if recommendationLearningStore.outcomes.isEmpty {
-                Text("No completed recommendation outcomes yet.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Recent Outcomes")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    ForEach(recommendationLearningStore.outcomes.prefix(4)) { outcome in
-                        recommendationOutcomeRow(outcome)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-    }
-
-    private func compactTag(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func compactStat(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.6)
             Text(value)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-                .minimumScaleFactor(0.9)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(Spacing.sm)
         .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
-    private func actionRow(title: String, tint: Color) -> some View {
-        HStack {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(tint)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(tint.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                .stroke(tint.opacity(0.14), lineWidth: 1)
-        )
-    }
-
-    private func recommendationOutcomeRow(_ outcome: RecommendationOutcome) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(outcome.title)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(outcome.followed ? "Followed" : "Skipped")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(outcome.followed ? .green : .secondary)
-            }
-            Text("Mode: \(label(for: outcome.mode)) • Score \(signedValue(outcome.scoreDelta)) • Fillers \(signedValue(outcome.fillerDelta)) • Duration \(signedSeconds(outcome.durationDelta))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-    }
+    // MARK: - Recommendation Diagnostic Helpers
 
     private var followedRecommendationCount: Int {
         recommendationLearningStore.outcomes.filter(\.followed).count
@@ -802,18 +1159,7 @@ struct SettingsView: View {
         return rounded > 0 ? "+\(rounded)s" : "\(rounded)s"
     }
 
-    private func label(for mode: PracticeMode) -> String {
-        switch mode {
-        case .timed:
-            return "Timed"
-        case .suddenDeath:
-            return "Sudden Death"
-        case .ahCounter:
-            return "Ah-Counter"
-        case .imConversation:
-            return "IM Mode"
-        }
-    }
+    // MARK: - Dev Seeding
 
     private func seedTestSession() {
         let transcript = "I want to explain ideas with more structure and a calmer, more authoritative delivery when I feel pressure."
@@ -922,7 +1268,145 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Your Data View
+// MARK: - Delete Account Confirmation Sheet
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct DeleteAccountConfirmationSheet: View {
+    let onConfirm: () -> Void
+    let onClose: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var typedConfirmation: String = ""
+    @State private var isDeleting = false
+    @FocusState private var fieldFocused: Bool
+
+    private let requiredPhrase = "delete"
+
+    private var matchesPhrase: Bool {
+        typedConfirmation == requiredPhrase
+    }
+
+    var body: some View {
+        ZStack {
+            AppColor.screenBackground.ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(AppColor.warning)
+                    Text("Delete account")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                    Text("This permanently removes your account and every session, coaching detail, and AI history tied to it. You can't undo this.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Type delete to confirm")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+
+                    TextField("delete", text: $typedConfirmation)
+                        .font(.title3.weight(.semibold))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .focused($fieldFocused)
+                        .padding(Spacing.md)
+                        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                                .stroke(matchesPhrase ? AppColor.warning : Color.black.opacity(0.05), lineWidth: 1)
+                        )
+                        .accessibilityLabel("Confirmation text")
+                        .accessibilityHint("Type the lowercase word delete to enable deletion.")
+
+                    Text("This step exists so a single tap can't end your account.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(spacing: Spacing.sm) {
+                    Button {
+                        guard matchesPhrase else { return }
+                        isDeleting = true
+                        // Hold the deletion overlay for 1.5s after firing so the
+                        // user can't dismiss before the auth state flips.
+                        Task {
+                            onConfirm()
+                            try? await Task.sleep(for: .seconds(1.5))
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            if isDeleting {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "trash.fill")
+                            }
+                            Text(isDeleting ? "Deleting…" : "Delete account")
+                                .font(.headline.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md)
+                        .background(
+                            (matchesPhrase ? AppColor.warning : AppColor.warning.opacity(0.4)),
+                            in: Capsule()
+                        )
+                    }
+                    .buttonStyle(.pressable)
+                    .disabled(!matchesPhrase || isDeleting)
+                    .accessibilityLabel("Confirm delete account")
+                    .accessibilityHint(matchesPhrase ? "Permanently deletes your account." : "Type delete first to enable.")
+
+                    Button("Cancel") {
+                        onClose()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+                    .disabled(isDeleting)
+                }
+            }
+            .padding(Spacing.lg)
+
+            if isDeleting {
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(true)
+
+                VStack(spacing: Spacing.md) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
+                    Text("Removing your account…")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+                .padding(Spacing.lg)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Removing your account")
+            }
+        }
+        .interactiveDismissDisabled(isDeleting)
+        .onAppear {
+            if !reduceMotion {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { fieldFocused = true }
+            } else {
+                fieldFocused = true
+            }
+        }
+    }
+}
+
+// MARK: - Your Data View (preserved)
 
 @available(iOS 17.0, macOS 12.0, *)
 struct YourDataView: View {
@@ -937,13 +1421,14 @@ struct YourDataView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Your Data")
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                Text("Your data")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
 
                 Text("Here's what Noum stores and where. Your data is yours — you can export or delete it at any time.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 onDeviceSection
                 cloudProcessingSection
@@ -962,20 +1447,20 @@ struct YourDataView: View {
     }
 
     private var onDeviceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("On This Device")
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("On this device")
                 .font(.headline)
 
             dataRow(
-                label: "Practice Sessions",
+                label: "Practice sessions",
                 detail: "\(sessionStore.sessions.count) sessions stored locally"
             )
             dataRow(
-                label: "Coaching Profile",
+                label: "Coaching profile",
                 detail: coachingProfileStore.profile != nil ? "Active — includes your goals, preferences, and speaking context" : "Not set up"
             )
             dataRow(
-                label: "XP & Progress",
+                label: "XP & progress",
                 detail: "\(profileManager.xp) XP earned"
             )
             dataRow(
@@ -993,8 +1478,8 @@ struct YourDataView: View {
     }
 
     private var cloudProcessingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Cloud Processing")
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Cloud processing")
                 .font(.headline)
 
             Text("When you use certain features, data is sent to these services:")
@@ -1030,8 +1515,8 @@ struct YourDataView: View {
     }
 
     private var actionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Data Actions")
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Data actions")
                 .font(.headline)
 
             Button {
@@ -1039,19 +1524,20 @@ struct YourDataView: View {
             } label: {
                 HStack {
                     Image(systemName: "square.and.arrow.up")
-                    Text("Export All My Data")
+                    Text("Export all my data")
                 }
                 .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.blue, in: Capsule())
                 .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(AppColor.brandBlue, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
 
             Text("Exports a JSON file containing all your locally stored data — sessions, coaching profile, preferences, and progress.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
@@ -1091,25 +1577,18 @@ struct YourDataView: View {
             "accountID": accountID,
         ]
 
-        // Coaching profile
         if let data = defaults.data(forKey: "coachingProfile.\(accountID)"),
            let json = try? JSONSerialization.jsonObject(with: data) {
             export["coachingProfile"] = json
         }
-
-        // Practice sessions
         if let data = defaults.data(forKey: "practiceSessions.\(accountID)"),
            let json = try? JSONSerialization.jsonObject(with: data) {
             export["practiceSessions"] = json
         }
-
-        // IM relationship profiles
         if let data = defaults.data(forKey: "imRelationshipProfiles.\(accountID)"),
            let json = try? JSONSerialization.jsonObject(with: data) {
             export["relationshipProfiles"] = json
         }
-
-        // Recommendations
         if let data = defaults.data(forKey: "recommendation.pending.\(accountID)"),
            let json = try? JSONSerialization.jsonObject(with: data) {
             export["recommendationPending"] = json
@@ -1118,17 +1597,12 @@ struct YourDataView: View {
            let json = try? JSONSerialization.jsonObject(with: data) {
             export["recommendationOutcomes"] = json
         }
-
-        // XP
         export["xp"] = defaults.integer(forKey: "profileXP.\(accountID)")
-
-        // Friends
         if let data = defaults.data(forKey: "NoumFriendsList"),
            let json = try? JSONSerialization.jsonObject(with: data) {
             export["friends"] = json
         }
 
-        // Write to temp file
         guard let jsonData = try? JSONSerialization.data(
             withJSONObject: export,
             options: [.prettyPrinted, .sortedKeys]
@@ -1142,7 +1616,6 @@ struct YourDataView: View {
     }
 }
 
-/// Minimal UIActivityViewController wrapper for sharing the export file.
 @available(iOS 17.0, *)
 private struct ShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
@@ -1153,5 +1626,40 @@ private struct ShareSheet: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+
+// MARK: - Previews
+
+#if DEBUG
+@available(iOS 17.0, *)
+#Preview("Settings — default") {
+    NavigationStack {
+        SettingsView()
+    }
+}
+
+@available(iOS 17.0, *)
+#Preview("Settings — Free tier") {
+    NavigationStack {
+        SettingsView()
+    }
+    .onAppear { PremiumManager.shared.revokePremium() }
+}
+
+@available(iOS 17.0, *)
+#Preview("Settings — Pro tier") {
+    NavigationStack {
+        SettingsView()
+    }
+    .onAppear { PremiumManager.shared.upgradeToPremium() }
+}
+
+@available(iOS 17.0, *)
+#Preview("Delete confirmation") {
+    Color.clear.sheet(isPresented: .constant(true)) {
+        DeleteAccountConfirmationSheet(onConfirm: {}, onClose: {})
+            .presentationDetents([.medium, .large])
+    }
+}
+#endif
 
 #endif

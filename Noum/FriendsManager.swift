@@ -11,11 +11,57 @@ struct NoumFriend: Codable, Identifiable, Equatable {
     var addedAt: Date
     var addedVia: AddMethod
 
+    /// Cached peer stats — populated by backend sync when available.
+    /// All optional so existing friends decode cleanly when the fields are absent.
+    /// `nil` is the honest "we don't know yet" signal — leaderboard treats it
+    /// as "Awaiting sync", not as zero.
+    var lastKnownRating: Int?
+    var lastKnownStreak: Int?
+    var lastKnownRepsThisWeek: Int?
+    var lastSyncedAt: Date?
+
     enum AddMethod: String, Codable {
         case invite
         case qrCode
         case contacts
         case manual
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, displayName, addedAt, addedVia
+        case lastKnownRating, lastKnownStreak, lastKnownRepsThisWeek, lastSyncedAt
+    }
+
+    init(
+        id: UUID,
+        displayName: String,
+        addedAt: Date,
+        addedVia: AddMethod,
+        lastKnownRating: Int? = nil,
+        lastKnownStreak: Int? = nil,
+        lastKnownRepsThisWeek: Int? = nil,
+        lastSyncedAt: Date? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.addedAt = addedAt
+        self.addedVia = addedVia
+        self.lastKnownRating = lastKnownRating
+        self.lastKnownStreak = lastKnownStreak
+        self.lastKnownRepsThisWeek = lastKnownRepsThisWeek
+        self.lastSyncedAt = lastSyncedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.displayName = try c.decode(String.self, forKey: .displayName)
+        self.addedAt = try c.decode(Date.self, forKey: .addedAt)
+        self.addedVia = try c.decode(AddMethod.self, forKey: .addedVia)
+        self.lastKnownRating = try c.decodeIfPresent(Int.self, forKey: .lastKnownRating)
+        self.lastKnownStreak = try c.decodeIfPresent(Int.self, forKey: .lastKnownStreak)
+        self.lastKnownRepsThisWeek = try c.decodeIfPresent(Int.self, forKey: .lastKnownRepsThisWeek)
+        self.lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
     }
 
     /// Short initials for avatar

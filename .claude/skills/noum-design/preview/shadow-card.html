@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Shadow & Card</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>body{margin:0;padding:30px;background:var(--bg-screen);color:var(--fg-primary)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.c{padding:var(--space-lg);border-radius:var(--radius-lg);background:#fff;border:1px solid var(--card-border)}.c .t{font:var(--type-caption);color:var(--fg-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.4px;font-weight:700}.c .d{font:var(--type-caption);font-family:var(--font-text);color:var(--fg-primary)}</style>
+</head><body>
+<div class="grid">
+  <div class="c" style="box-shadow:var(--shadow-card)"><div class="t">Card · default</div><div class="d">0 8px 24px<br>rgba(33,38,51,.06)</div></div>
+  <div class="c" style="box-shadow:var(--shadow-selected);border-color:rgba(51,120,245,.26)"><div class="t">Selected · tinted</div><div class="d">0 8px 16px<br>modeTint @ 10%</div></div>
+  <div class="c" style="box-shadow:var(--shadow-recommendation);background:linear-gradient(135deg,rgba(51,120,245,.10),rgba(51,120,245,.05));border-color:rgba(51,120,245,.12)"><div class="t">Mode wash</div><div class="d">tint @10→5% gradient<br>+ tinted shadow</div></div>
+</div>
+</body></html>
