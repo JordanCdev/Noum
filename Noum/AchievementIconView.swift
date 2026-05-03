@@ -107,13 +107,14 @@ struct AchievementIconView: View {
                 .clipShape(Circle())
 
             if !isUnlocked {
+                // Desaturated overlay — light wash instead of dark blackout
                 Circle()
-                    .fill(.black.opacity(0.55))
+                    .fill(.white.opacity(0.70))
                     .frame(width: size.diameter, height: size.diameter)
 
-                Image(systemName: "lock.fill")
-                    .font(.system(size: size.symbolSize * 0.6, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                Image(systemName: tier.symbolName)
+                    .font(.system(size: size.symbolSize * 0.65, weight: .semibold))
+                    .foregroundStyle(track.tint.opacity(0.30))
             }
         }
     }
@@ -124,8 +125,8 @@ struct AchievementIconView: View {
         let shape = AchievementContainerShape.shape(for: track)
 
         return ZStack {
-            // Outer glow for higher tiers
-            if tier.tierIndex >= 1 {
+            // Outer glow — only at detail/celebrate sizes and for higher tiers
+            if tier.tierIndex >= 1 && size != .grid {
                 containerPath(shape)
                     .fill(
                         RadialGradient(
@@ -149,12 +150,12 @@ struct AchievementIconView: View {
                 )
                 .frame(width: size.diameter, height: size.diameter)
                 .shadow(
-                    color: track.gradient[0].opacity(0.30),
-                    radius: size == .celebrate ? 16 : 6,
+                    color: track.gradient[0].opacity(size == .grid ? 0.20 : 0.30),
+                    radius: size == .celebrate ? 16 : (size == .grid ? 3 : 6),
                     y: size == .celebrate ? 5 : 2
                 )
 
-            // Inner border ring
+            // Inner border — subtle accent edge
             containerPath(shape)
                 .stroke(
                     LinearGradient(
@@ -162,29 +163,30 @@ struct AchievementIconView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: size.ringWidth
+                    lineWidth: size == .grid ? 1.5 : size.ringWidth
                 )
                 .frame(width: size.diameter - size.ringWidth, height: size.diameter - size.ringWidth)
 
-            // Specular highlight (top-left)
-            containerPath(shape)
-                .fill(
-                    LinearGradient(
-                        colors: [.white.opacity(0.22), .clear, .clear],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            // Specular highlight — only at detail/celebrate for cleaner grid icons
+            if size != .grid {
+                containerPath(shape)
+                    .fill(
+                        LinearGradient(
+                            colors: [.white.opacity(0.18), .clear, .clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-                .frame(width: size.diameter - size.ringWidth * 2, height: size.diameter - size.ringWidth * 2)
+                    .frame(width: size.diameter - size.ringWidth * 2, height: size.diameter - size.ringWidth * 2)
+            }
 
-            // Center symbol
+            // Center symbol — white for all tracks
             Image(systemName: tier.symbolName)
                 .font(.system(size: size.symbolSize, weight: .bold))
                 .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.20), radius: 1.5, y: 1)
+                .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
 
-            // Tier pips at bottom
-            tierPips
+            // Tier position now shown as text in the detail sheet — no pips on icon
         }
         .frame(width: size.diameter * 1.3, height: size.diameter * 1.3)
     }
@@ -195,71 +197,42 @@ struct AchievementIconView: View {
         let shape = AchievementContainerShape.shape(for: track)
 
         return ZStack {
-            // Dark muted container
+            // Light muted fill — sits naturally on the light page background
             containerPath(shape)
                 .fill(
                     LinearGradient(
-                        colors: [Color(white: 0.15), Color(white: 0.10)],
+                        colors: [Color(white: 0.92), Color(white: 0.88)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .frame(width: size.diameter, height: size.diameter)
 
-            // Faint border
+            // Soft track-color tint overlay
             containerPath(shape)
-                .stroke(Color.white.opacity(0.06), lineWidth: size.ringWidth * 0.5)
+                .fill(
+                    LinearGradient(
+                        colors: track.gradient.map { $0.opacity(0.08) },
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: size.diameter, height: size.diameter)
+
+            // Visible border in track color
+            containerPath(shape)
+                .stroke(
+                    track.tint.opacity(0.20),
+                    lineWidth: size == .grid ? 1.5 : 2
+                )
                 .frame(width: size.diameter - size.ringWidth, height: size.diameter - size.ringWidth)
 
-            // Lock icon
-            Image(systemName: "lock.fill")
-                .font(.system(size: size.symbolSize * 0.55, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.18))
-
-            // Progress ring
-            if progress > 0 {
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        LinearGradient(
-                            colors: track.accentGradient.map { $0.opacity(0.5) },
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        style: StrokeStyle(lineWidth: size.ringWidth, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: size.diameter + size.ringWidth * 2, height: size.diameter + size.ringWidth * 2)
-            }
+            // Symbol silhouette — clearly visible, muted but not invisible
+            Image(systemName: tier.symbolName)
+                .font(.system(size: size.symbolSize * 0.80, weight: .semibold))
+                .foregroundStyle(track.tint.opacity(0.30))
         }
         .frame(width: size.diameter * 1.3, height: size.diameter * 1.3)
-    }
-
-    // MARK: - Tier Pips
-
-    @ViewBuilder
-    private var tierPips: some View {
-        if tier.totalTiersInTrack > 1 {
-            let pipDiameter: CGFloat = size == .grid ? 4 : (size == .detail ? 5.5 : 7)
-            let spacing: CGFloat = size == .grid ? 2.5 : 3.5
-
-            VStack(spacing: 0) {
-                Spacer()
-                HStack(spacing: spacing) {
-                    ForEach(0..<tier.totalTiersInTrack, id: \.self) { i in
-                        Circle()
-                            .fill(
-                                i <= tier.tierIndex
-                                    ? AnyShapeStyle(LinearGradient(colors: track.accentGradient, startPoint: .top, endPoint: .bottom))
-                                    : AnyShapeStyle(Color.white.opacity(0.15))
-                            )
-                            .frame(width: pipDiameter, height: pipDiameter)
-                    }
-                }
-                .offset(y: -size.diameter * 0.04)
-            }
-            .frame(width: size.diameter * 1.3, height: size.diameter * 1.3)
-        }
     }
 
     // MARK: - Shape Path Helper
@@ -349,138 +322,20 @@ struct RoundedSquareShape: Shape {
 
 struct MedalShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let w = rect.width, h = rect.height
-        let cx = w / 2, cy = h * 0.44
-        let r = min(w, h) * 0.40
+        // 8-point starburst badge — clean, reads at any size, feels premium
+        let cx = rect.width / 2, cy = rect.height / 2
+        let outerR = min(rect.width, rect.height) / 2 * 0.92
+        let innerR = outerR * 0.82
+        let points = 8
         var p = Path()
-        p.addArc(center: CGPoint(x: cx, y: cy), radius: r,
-                 startAngle: .degrees(140), endAngle: .degrees(40), clockwise: true)
-        p.addLine(to: CGPoint(x: cx + r * 0.55, y: h * 0.92))
-        p.addLine(to: CGPoint(x: cx + r * 0.15, y: h * 0.78))
-        p.addLine(to: CGPoint(x: cx, y: h * 0.95))
-        p.addLine(to: CGPoint(x: cx - r * 0.15, y: h * 0.78))
-        p.addLine(to: CGPoint(x: cx - r * 0.55, y: h * 0.92))
+        for i in 0..<(points * 2) {
+            let angle = Angle(degrees: Double(i) * (360.0 / Double(points * 2)) - 90).radians
+            let r = i.isMultiple(of: 2) ? outerR : innerR
+            let pt = CGPoint(x: cx + r * Foundation.cos(angle), y: cy + r * Foundation.sin(angle))
+            i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+        }
         p.closeSubpath()
         return p
-    }
-}
-
-// MARK: - Achievement Detail Modal
-
-@available(iOS 17.0, *)
-struct AchievementDetailModal: View {
-    let tier: AchievementTier
-    let isUnlocked: Bool
-    let progress: Double
-    let progressLabel: String
-    let unlockDate: Date?
-    let onDismiss: () -> Void
-
-    @State private var appeared = false
-
-    var body: some View {
-        ZStack {
-            // Radial vignette: darker at edges, lighter at center to preserve context
-            RadialGradient(
-                colors: [
-                    Color.black.opacity(appeared ? 0.40 : 0),
-                    Color.black.opacity(appeared ? 0.65 : 0),
-                    Color.black.opacity(appeared ? 0.80 : 0)
-                ],
-                center: .center,
-                startRadius: 80,
-                endRadius: UIScreen.main.bounds.height * 0.55
-            )
-            .ignoresSafeArea()
-            .onTapGesture { dismissModal() }
-
-            // Content card — solid dark card, not frosted glass
-            VStack(spacing: 22) {
-                // Icon
-                AchievementIconView(
-                    tier: tier,
-                    isUnlocked: isUnlocked,
-                    progress: progress,
-                    size: .detail
-                )
-                .padding(.top, 8)
-
-                // Title
-                Text(tier.title)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-
-                // Description
-                Text(tier.description)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-
-                // Track badge
-                HStack(spacing: 6) {
-                    Image(systemName: tier.track.symbol)
-                        .font(.system(size: 10, weight: .bold))
-                    Text(tier.track.label.uppercased())
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.5)
-                }
-                .foregroundStyle(tier.track.tint)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(tier.track.tint.opacity(0.15), in: Capsule())
-
-                // Tier indicator
-                if tier.totalTiersInTrack > 1 {
-                    HStack(spacing: 4) {
-                        ForEach(0..<tier.totalTiersInTrack, id: \.self) { i in
-                            Circle()
-                                .fill(i <= tier.tierIndex ? tier.track.tint : Color.white.opacity(0.15))
-                                .frame(width: 7, height: 7)
-                        }
-                    }
-                    Text("Tier \(tier.tierIndex + 1) of \(tier.totalTiersInTrack)")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.35))
-                }
-
-                // Unlock date
-                if isUnlocked, let unlockDate {
-                    Text("Unlocked \(unlockDate.formatted(.dateTime.month(.abbreviated).day().year()))")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.45))
-                }
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 28)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color(red: 0.10, green: 0.10, blue: 0.14))
-                    .shadow(color: .black.opacity(0.6), radius: 30, y: 8)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.06), lineWidth: 1)
-            )
-            .padding(.horizontal, 36)
-            .scaleEffect(appeared ? 1 : 0.92)
-            .opacity(appeared ? 1 : 0)
-        }
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.80)) {
-                appeared = true
-            }
-        }
-    }
-
-    private func dismissModal() {
-        withAnimation(.easeOut(duration: 0.22)) {
-            appeared = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            onDismiss()
-        }
     }
 }
 
@@ -859,7 +714,9 @@ struct PostSessionProgressionView: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(.white.opacity(0.06))
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(delta.newProgress >= 1.0 ? Color.green : Color.blue.opacity(0.6))
+                            .fill(delta.newProgress >= 1.0
+                                ? AnyShapeStyle(Color.green)
+                                : AnyShapeStyle(Color.blue.opacity(0.6)))
                             .frame(width: max(geo.size.width * delta.newProgress, 4))
                     }
                 }

@@ -17,6 +17,67 @@ import Photos
 
 #if canImport(AVFoundation) && canImport(UIKit)
 
+enum VideoRecordingState: Equatable {
+    case idle
+    case preparing
+    case ready
+    case recording
+    case finalizing
+    case available(URL)
+    case failed(String)
+}
+
+struct VideoRecordingLifecycle: Equatable {
+    private(set) var state: VideoRecordingState = .idle
+    private(set) var recordingURL: URL?
+    private(set) var errorMessage: String?
+    private(set) var savedRecordingURL: URL?
+
+    mutating func beginPreparing() {
+        state = .preparing
+        errorMessage = nil
+    }
+
+    mutating func markReady() {
+        state = .ready
+        errorMessage = nil
+    }
+
+    mutating func startRecording() {
+        state = .recording
+        recordingURL = nil
+        savedRecordingURL = nil
+        errorMessage = nil
+    }
+
+    mutating func beginFinalizing() {
+        state = .finalizing
+    }
+
+    mutating func complete(url: URL) {
+        state = .available(url)
+        recordingURL = url
+        errorMessage = nil
+    }
+
+    mutating func fail(_ message: String) {
+        state = .failed(message)
+        recordingURL = nil
+        errorMessage = message
+    }
+
+    mutating func markSaved(url: URL) {
+        savedRecordingURL = url
+    }
+
+    mutating func cleanup() {
+        state = .idle
+        recordingURL = nil
+        errorMessage = nil
+        savedRecordingURL = nil
+    }
+}
+
 // MARK: - Video Recording Manager
 
 @MainActor
@@ -27,10 +88,14 @@ final class VideoRecordingManager: NSObject, ObservableObject {
     @Published private(set) var recordingURL: URL?
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published var recordingError: String?
+    @Published private(set) var recordingState: VideoRecordingState = .idle
 
     @Published private(set) var captureSession: AVCaptureSession?
     private var movieOutput: AVCaptureMovieFileOutput?
     private var durationTimer: Task<Void, Never>?
+    private var recordingStartTask: Task<Void, Never>?
+    private var lifecycle = VideoRecordingLifecycle()
+    private var expectedRecordingURL: URL?
 
     private override init() {
         super.init()
@@ -40,6 +105,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
 
     func prepareSession() async -> Bool {
         guard captureSession == nil else { return true }
+        applyLifecycleUpdate { $0.beginPreparing() }
 
         let session = AVCaptureSession()
         session.sessionPreset = .medium
@@ -48,7 +114,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
               let videoInput = try? AVCaptureDeviceInput(device: camera),
               session.canAddInput(videoInput) else {
-            recordingError = "Camera unavailable"
+            applyLifecycleUpdate { $0.fail("Camera unavailable") }
             return false
         }
         session.addInput(videoInput)
@@ -64,7 +130,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         let output = AVCaptureMovieFileOutput()
         output.maxRecordedDuration = CMTime(seconds: 180, preferredTimescale: 600) // 3 min max
         guard session.canAddOutput(output) else {
-            recordingError = "Could not configure recording"
+            applyLifecycleUpdate { $0.fail("Could not configure recording") }
             return false
         }
         session.addOutput(output)
@@ -82,6 +148,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         }
 
         captureSession = session
+        applyLifecycleUpdate { $0.markReady() }
 
         return true
     }
@@ -117,38 +184,56 @@ final class VideoRecordingManager: NSObject, ObservableObject {
     // MARK: - Start / Stop
 
     func startRecording() {
+        guard !isRecording, recordingState != .finalizing else { return }
         guard let session = captureSession, let output = movieOutput else {
-            recordingError = "Recording not prepared"
+            applyLifecycleUpdate { $0.fail("Recording not prepared") }
             return
         }
 
-        let filename = "noum_session_\(Int(Date().timeIntervalSince1970)).mov"
+        let filename = "noum_session_\(UUID().uuidString).mov"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        expectedRecordingURL = url
+        applyLifecycleUpdate { $0.startRecording() }
+        recordingDuration = 0
+        isRecording = true
 
         // Ensure session is running, then begin recording on a background thread.
         // AVCaptureMovieFileOutput.startRecording must be called after the session
         // is actually running — we use a background dispatch to avoid blocking main.
-        Task.detached(priority: .userInitiated) {
+        recordingStartTask?.cancel()
+        recordingStartTask = Task.detached(priority: .userInitiated) {
             if !session.isRunning {
                 session.startRunning()
             }
             // Brief yield to let the session stabilize
             try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            let shouldStart = await MainActor.run {
+                self.expectedRecordingURL == url && self.isRecording
+            }
+            guard shouldStart else { return }
             output.startRecording(to: url, recordingDelegate: self)
             await MainActor.run { [weak self] in
-                self?.isRecording = true
-                self?.recordingDuration = 0
-                self?.recordingURL = nil
+                guard self?.expectedRecordingURL == url else { return }
                 self?.startDurationTimer()
             }
         }
     }
 
     func stopRecording() {
-        movieOutput?.stopRecording()
+        guard isRecording || movieOutput?.isRecording == true else { return }
+        recordingStartTask?.cancel()
+        recordingStartTask = nil
         durationTimer?.cancel()
         durationTimer = nil
         isRecording = false
+        if movieOutput?.isRecording == true {
+            movieOutput?.stopRecording()
+            applyLifecycleUpdate { $0.beginFinalizing() }
+        } else {
+            expectedRecordingURL = nil
+            applyLifecycleUpdate { $0.fail("Recording stopped before video capture started.") }
+        }
     }
 
     @Published private(set) var isSaving = false
@@ -157,7 +242,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
     /// Save the current recording to the Photos library for permanent storage.
     func saveRecording() {
         guard let sourceURL = recordingURL else {
-            recordingError = "No recording to save."
+            applyLifecycleUpdate { $0.fail("No recording to save.") }
             return
         }
         guard !isSaving else { return }
@@ -175,7 +260,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
                             guard let self else { return }
                             self.isSaving = false
                             if success {
-                                self.savedRecordingURL = sourceURL
+                                self.markRecordingSaved(at: sourceURL)
                             } else {
                                 self.recordingError = "Could not save to Photos: \(error?.localizedDescription ?? "Unknown error")"
                             }
@@ -198,7 +283,7 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         let destURL = savedDir.appendingPathComponent(filename)
         do {
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
-            savedRecordingURL = destURL
+            markRecordingSaved(at: destURL)
         } catch {
             recordingError = "Could not save recording: \(error.localizedDescription)"
         }
@@ -209,6 +294,8 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         captureSession?.stopRunning()
         captureSession = nil
         movieOutput = nil
+        recordingStartTask?.cancel()
+        recordingStartTask = nil
         // Clean up temp recording if not saved
         if let url = recordingURL, savedRecordingURL == nil {
             try? FileManager.default.removeItem(at: url)
@@ -216,6 +303,8 @@ final class VideoRecordingManager: NSObject, ObservableObject {
         recordingURL = nil
         savedRecordingURL = nil
         recordingDuration = 0
+        expectedRecordingURL = nil
+        applyLifecycleUpdate { $0.cleanup() }
     }
 
     // MARK: - Camera Preview Layer
@@ -251,6 +340,39 @@ final class VideoRecordingManager: NSObject, ObservableObject {
             }
         }
     }
+
+    func waitForRecordingFinalization(timeout: TimeInterval = 2.0, pollInterval: TimeInterval = 0.1) async -> URL? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            switch recordingState {
+            case .available(let url):
+                return url
+            case .failed:
+                return nil
+            case .idle, .preparing, .ready:
+                if !isRecording { return recordingURL }
+            case .recording, .finalizing:
+                break
+            }
+
+            let nanoseconds = UInt64(max(0.01, pollInterval) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+        }
+
+        return recordingURL
+    }
+
+    private func applyLifecycleUpdate(_ update: (inout VideoRecordingLifecycle) -> Void) {
+        update(&lifecycle)
+        recordingState = lifecycle.state
+        recordingURL = lifecycle.recordingURL
+        recordingError = lifecycle.errorMessage
+        savedRecordingURL = lifecycle.savedRecordingURL
+    }
+
+    private func markRecordingSaved(at url: URL) {
+        applyLifecycleUpdate { $0.markSaved(url: url) }
+    }
 }
 
 // MARK: - AVCaptureFileOutputRecordingDelegate
@@ -258,18 +380,22 @@ final class VideoRecordingManager: NSObject, ObservableObject {
 extension VideoRecordingManager: AVCaptureFileOutputRecordingDelegate {
     nonisolated func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
         Task { @MainActor in
+            guard expectedRecordingURL == outputFileURL else { return }
+            expectedRecordingURL = nil
+            recordingStartTask = nil
+
             if let error {
                 // AVFoundation often reports a "stopped" error even when the file was written successfully.
                 // Check if the file exists and has content before treating it as a real failure.
                 let fileExists = FileManager.default.fileExists(atPath: outputFileURL.path)
                 let fileSize = (try? FileManager.default.attributesOfItem(atPath: outputFileURL.path)[.size] as? UInt64) ?? 0
                 if fileExists && fileSize > 0 {
-                    recordingURL = outputFileURL
+                    applyLifecycleUpdate { $0.complete(url: outputFileURL) }
                 } else {
-                    recordingError = "Recording failed: \(error.localizedDescription)"
+                    applyLifecycleUpdate { $0.fail("Recording failed: \(error.localizedDescription)") }
                 }
             } else {
-                recordingURL = outputFileURL
+                applyLifecycleUpdate { $0.complete(url: outputFileURL) }
             }
             isRecording = false
         }

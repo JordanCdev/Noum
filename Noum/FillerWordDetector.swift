@@ -40,6 +40,15 @@ struct FillerWordBreakdown {
     }
 }
 
+struct FillerAnalysis {
+    let rawCount: Int
+    let adjustedCount: Int
+    let detections: [FillerDetection]
+    let adjustedDetections: [FillerDetection]
+    let promptExcludedCount: Int
+    let semanticExcludedCount: Int
+}
+
 // MARK: - Filler Word Detector
 
 struct FillerWordDetector {
@@ -391,6 +400,22 @@ struct FillerWordDetector {
         detections(in: text, prompt: prompt)
             .filter { $0.confidence >= FillerDetection.suddenDeathThreshold }
             .count
+    }
+
+    static func analysis(in text: String, prompt: String = "", threshold: Double = 0.65) -> FillerAnalysis {
+        let raw = breakdown(in: text).totalCount
+        let allDetections = detections(in: text, prompt: prompt)
+        let adjusted = allDetections.filter { $0.confidence >= threshold }
+        let promptExcluded = allDetections.filter { $0.context == .promptEcho && $0.confidence < threshold }.count
+        let semanticExcluded = max(0, raw - adjusted.count - promptExcluded)
+        return FillerAnalysis(
+            rawCount: raw,
+            adjustedCount: adjusted.count,
+            detections: allDetections,
+            adjustedDetections: adjusted,
+            promptExcludedCount: promptExcluded,
+            semanticExcludedCount: semanticExcluded
+        )
     }
 
     // MARK: - Context Classification Helpers

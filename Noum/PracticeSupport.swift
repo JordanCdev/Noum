@@ -3065,13 +3065,19 @@ final class PracticeSettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(pressureModeEnabled, forKey: pressureModeKey) }
     }
 
+    @Published var fillerAlertSoundEnabled: Bool {
+        didSet { UserDefaults.standard.set(fillerAlertSoundEnabled, forKey: fillerAlertSoundKey) }
+    }
+
     private let timedDifficultyKey = "timedPracticeDifficulty"
     private let pressureModeKey = "pressureModeEnabled"
+    private let fillerAlertSoundKey = "fillerAlertSoundEnabled"
 
     private init() {
         let rawValue = UserDefaults.standard.string(forKey: timedDifficultyKey)
         timedDifficulty = TimedPracticeDifficulty(rawValue: rawValue ?? "") ?? .easy
         pressureModeEnabled = UserDefaults.standard.bool(forKey: pressureModeKey)
+        fillerAlertSoundEnabled = UserDefaults.standard.bool(forKey: fillerAlertSoundKey)
     }
 }
 
@@ -5843,6 +5849,9 @@ enum PracticeSessionFinalizer {
         }
         let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
 
+        // Analyze verbal habits before refreshing the baseline so clutch words are included immediately.
+        ClutchWordStore.shared.analyzeSession(transcript: draft.transcript)
+
         // Record baseline data
         BaselineStore.shared.recordSession(finalized, pressure: draft.pressureLevel)
 
@@ -5861,9 +5870,6 @@ enum PracticeSessionFinalizer {
 
         // Evaluate achievements
         AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
-
-        // Analyze clutch words in transcript
-        ClutchWordStore.shared.analyzeSession(transcript: draft.transcript)
 
         return finalized
     }
@@ -7876,4 +7882,3 @@ final class VideoAnalysisService {
     }
 }
 #endif
-

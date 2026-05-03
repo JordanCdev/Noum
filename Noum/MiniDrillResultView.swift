@@ -11,6 +11,7 @@ import SwiftUI
 struct MiniDrillResultView: View {
     let outcome: MiniDrillOutcome
     let xpEarned: Int
+    let xpBreakdown: DrillXPEngine.Breakdown?
     let streak: Int                         // Current streak for this skill area
     let onDone: () -> Void
     let onTryAnother: (() -> Void)?
@@ -35,18 +36,11 @@ struct MiniDrillResultView: View {
 
                 // Title + feedback — phase 2
                 VStack(spacing: 12) {
-                    Text(DrillCompletionCopy.title(succeeded: outcome.succeeded))
+                    Text(DrillCompletionCopy.title(for: outcome))
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text(DrillCompletionCopy.feedbackLine(
-                        skillArea: outcome.drill.skillArea,
-                        succeeded: outcome.succeeded,
-                        fillerCount: outcome.fillerCount,
-                        wordCount: outcome.wordCount,
-                        duration: outcome.duration,
-                        wpm: wpm
-                    ))
+                    Text(feedbackText)
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.75))
                     .multilineTextAlignment(.center)
@@ -74,20 +68,23 @@ struct MiniDrillResultView: View {
                     }
 
                     if xpEarned > 0 {
-                        Text("+\(xpEarned) XP")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(outcome.drill.tint)
+                        VStack(spacing: 4) {
+                            Text("+\(xpEarned) XP")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(outcome.drill.tint)
+                            if let xpBreakdown {
+                                Text(xpBreakdown.label)
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.white.opacity(0.42))
+                            }
+                        }
                     }
                 }
                 .scaleEffect(phase >= 3 ? 1.0 : 0.8)
                 .opacity(phase >= 3 ? 1 : 0)
 
                 // Quick stats — phase 4
-                HStack(spacing: 24) {
-                    miniStat(label: "Duration", value: "\(Int(outcome.duration))s")
-                    miniStat(label: "Words", value: "\(outcome.wordCount)")
-                    miniStat(label: "Fillers", value: "\(outcome.fillerCount)")
-                }
+                statsRow
                 .padding(.top, 4)
                 .opacity(phase >= 4 ? 1 : 0)
 
@@ -179,6 +176,71 @@ struct MiniDrillResultView: View {
 
     private var resultTint: Color {
         outcome.succeeded ? AppColor.positive : outcome.drill.tint
+    }
+
+    private var feedbackText: String {
+        switch outcome.drillType {
+        case .beatTheBrake:
+            if let metrics = outcome.beatTheBrakeMetrics {
+                return DrillCompletionCopy.beatTheBrakeFeedback(metrics: metrics, succeeded: outcome.succeeded)
+            }
+        case .landThePause:
+            if let metrics = outcome.landThePauseMetrics {
+                return DrillCompletionCopy.landThePauseFeedback(metrics: metrics, succeeded: outcome.succeeded)
+            }
+        case .prepStack:
+            if let metrics = outcome.prepStackMetrics {
+                return DrillCompletionCopy.prepStackFeedback(metrics: metrics, succeeded: outcome.succeeded)
+            }
+        case .standard:
+            break
+        }
+        return DrillCompletionCopy.feedbackLine(
+            skillArea: outcome.drill.skillArea,
+            succeeded: outcome.succeeded,
+            fillerCount: outcome.fillerCount,
+            wordCount: outcome.wordCount,
+            duration: outcome.duration,
+            wpm: wpm
+        )
+    }
+
+    // MARK: - Stats Row
+
+    @ViewBuilder
+    private var statsRow: some View {
+        switch outcome.drillType {
+        case .beatTheBrake:
+            if let m = outcome.beatTheBrakeMetrics {
+                HStack(spacing: 24) {
+                    miniStat(label: "Pace Control", value: "\(Int(m.zonePercentage * 100))%")
+                    miniStat(label: "Fillers", value: "\(m.adjustedFillers)")
+                    miniStat(label: "Rushed", value: "\(m.rushedBursts)")
+                }
+            }
+        case .landThePause:
+            if let m = outcome.landThePauseMetrics {
+                HStack(spacing: 24) {
+                    miniStat(label: "Locked", value: "\(m.checkpointsLocked)/3")
+                    miniStat(label: "Transition Fillers", value: "\(m.transitionFillers)")
+                    miniStat(label: "Best Combo", value: "\(m.bestCombo)")
+                }
+            }
+        case .prepStack:
+            if let m = outcome.prepStackMetrics {
+                HStack(spacing: 24) {
+                    miniStat(label: "PREP", value: "\(m.stepsCompleted)/4")
+                    miniStat(label: "Fillers", value: "\(m.fillerCount)")
+                    miniStat(label: "Close", value: "\(Int(m.closeStrength * 100))%")
+                }
+            }
+        case .standard:
+            HStack(spacing: 24) {
+                miniStat(label: "Duration", value: "\(Int(outcome.duration))s")
+                miniStat(label: "Words", value: "\(outcome.wordCount)")
+                miniStat(label: "Fillers", value: "\(outcome.fillerCount)")
+            }
+        }
     }
 
     // MARK: - Components

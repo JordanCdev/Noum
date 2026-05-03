@@ -133,4 +133,61 @@ enum CoachHaptic {
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         #endif
     }
+
+    /// Filler detected alert — light rigid tap paired with audio cue.
+    static func fillerAlert() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.5)
+        #endif
+    }
+
+    /// Pace warning — double soft tap when leaving WPM zone (Beat the Brake).
+    static func paceWarning() {
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.impactOccurred(intensity: 0.6)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            generator.impactOccurred(intensity: 0.6)
+        }
+        #endif
+    }
+
+    /// Checkpoint locked — medium impact (Land the Pause lock-in).
+    static func checkpointLock() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.8)
+        #endif
+    }
+
+    /// Timer urgency — rapid double-tap when time is running critically low.
+    static func timerUrgency() {
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
+        generator.impactOccurred(intensity: 0.8)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+            generator.impactOccurred(intensity: 0.9)
+        }
+        #endif
+    }
+
+    /// Round survived — quick success pulse between rounds.
+    static func roundSurvived() {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+    }
+
+    /// Pressure session complete — definitive ending with ascending taps.
+    static func pressureSessionComplete() {
+        #if canImport(UIKit)
+        let heavy = UIImpactFeedbackGenerator(style: .heavy)
+        heavy.impactOccurred(intensity: 0.7)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            heavy.impactOccurred(intensity: 0.9)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        #endif
+    }
 }

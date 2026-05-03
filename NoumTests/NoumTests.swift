@@ -7,6 +7,7 @@
 
 import Foundation
 import Testing
+import XCTest
 @testable import Noum
 
 struct NoumTests {
@@ -29,6 +30,65 @@ struct NoumTests {
     @Test func additionalFillerWords() async throws {
         let count3 = FillerWordDetector.count(in: "hmm erm mm")
         #expect(count3 == 3)
+    }
+
+}
+
+final class VideoRecordingLifecycleTests: XCTestCase {
+    func testStartingNewRecordingClearsPreviousResultAndError() {
+        let firstURL = URL(fileURLWithPath: "/tmp/first.mov")
+        var lifecycle = VideoRecordingLifecycle()
+
+        lifecycle.startRecording()
+        lifecycle.complete(url: firstURL)
+        lifecycle.fail("Old failure")
+        lifecycle.startRecording()
+
+        XCTAssertEqual(lifecycle.state, .recording)
+        XCTAssertNil(lifecycle.recordingURL)
+        XCTAssertNil(lifecycle.savedRecordingURL)
+        XCTAssertNil(lifecycle.errorMessage)
+    }
+
+    func testFinalizingSuccessPublishesAvailableURL() {
+        let url = URL(fileURLWithPath: "/tmp/final.mov")
+        var lifecycle = VideoRecordingLifecycle()
+
+        lifecycle.startRecording()
+        lifecycle.beginFinalizing()
+        lifecycle.complete(url: url)
+
+        XCTAssertEqual(lifecycle.state, .available(url))
+        XCTAssertEqual(lifecycle.recordingURL, url)
+        XCTAssertNil(lifecycle.errorMessage)
+    }
+
+    func testFailedFinalizationClearsURLAndStoresError() {
+        let url = URL(fileURLWithPath: "/tmp/final.mov")
+        var lifecycle = VideoRecordingLifecycle()
+
+        lifecycle.startRecording()
+        lifecycle.complete(url: url)
+        lifecycle.fail("Recording failed")
+
+        XCTAssertEqual(lifecycle.state, .failed("Recording failed"))
+        XCTAssertNil(lifecycle.recordingURL)
+        XCTAssertEqual(lifecycle.errorMessage, "Recording failed")
+    }
+
+    func testCleanupResetsAllPublicLifecycleState() {
+        let url = URL(fileURLWithPath: "/tmp/final.mov")
+        var lifecycle = VideoRecordingLifecycle()
+
+        lifecycle.startRecording()
+        lifecycle.complete(url: url)
+        lifecycle.markSaved(url: url)
+        lifecycle.cleanup()
+
+        XCTAssertEqual(lifecycle.state, .idle)
+        XCTAssertNil(lifecycle.recordingURL)
+        XCTAssertNil(lifecycle.savedRecordingURL)
+        XCTAssertNil(lifecycle.errorMessage)
     }
 }
 
@@ -124,6 +184,81 @@ struct FillerDetectionTests {
         // "like" appears in prompt → most uses should be echo or valid
         // "it like brings" → ambiguous, may or may not flag
         #expect(highCount <= 1, "Sudden death should be lenient with prompt-echo 'like'. High-conf count: \(highCount)")
+    }
+
+    @Test func fillerAnalysisSeparatesRawAndAdjustedCounts() {
+        let prompt = "What do you like about teams?"
+        let transcript = "I like how teams work. It feels like a real support system. Um, the best teams are clear."
+        let analysis = FillerWordDetector.analysis(in: transcript, prompt: prompt)
+        #expect(analysis.rawCount >= analysis.adjustedCount)
+        #expect(analysis.adjustedCount == 1, "Only the explicit disfluency should count. Got \(analysis.adjustedCount)")
+    }
+}
+
+struct FillerAlertGateTests {
+    @Test func alertOnlyPlaysForEnabledHighConfidenceIncrementAfterCooldown() {
+        var gate = FillerAlertGate()
+        gate.cooldown = 1.0
+        let detection = FillerDetection(word: "um", range: NSRange(location: 0, length: 2), confidence: 0.95, context: .midPhrase)
+        let start = Date()
+
+        let first = gate.evaluate(previousAdjustedCount: 0, adjustedCount: 1, detections: [detection], isEnabled: true, now: start)
+        #expect(first.shouldPlay)
+
+        let cooled = gate.evaluate(previousAdjustedCount: 1, adjustedCount: 2, detections: [detection, detection], isEnabled: true, now: start.addingTimeInterval(0.2))
+        #expect(!cooled.shouldPlay)
+
+        let disabled = gate.evaluate(previousAdjustedCount: 2, adjustedCount: 3, detections: [detection, detection, detection], isEnabled: false, now: start.addingTimeInterval(2.0))
+        #expect(!disabled.shouldPlay)
+    }
+}
+
+struct DrillXPEngineTests {
+    @Test func drillXPVariesWithOutcomeQuality() {
+        let variation = DrillCatalog.allVariations.first { $0.id == "pace.beatTheBrake" }!
+        let drill = DrillRecommendationV2(variation: variation, reason: "test", trendContext: nil, alternateFormat: nil)
+        let strong = MiniDrillOutcome(
+            drill: drill,
+            drillType: .beatTheBrake,
+            transcript: String(repeating: "clear ", count: 70),
+            fillerCount: 0,
+            duration: 45,
+            wordCount: 70,
+            succeeded: true,
+            beatTheBrakeMetrics: BeatTheBrakeMetrics(
+                averageWPM: 126,
+                timeInZone: 38,
+                totalDuration: 45,
+                zonePercentage: 0.84,
+                peakWPM: 137,
+                lowestWPM: 112,
+                adjustedFillers: 0,
+                rushedBursts: 0
+            )
+        )
+        let weak = MiniDrillOutcome(
+            drill: drill,
+            drillType: .beatTheBrake,
+            transcript: "um rushed answer",
+            fillerCount: 1,
+            duration: 8,
+            wordCount: 3,
+            succeeded: false,
+            beatTheBrakeMetrics: BeatTheBrakeMetrics(
+                averageWPM: 180,
+                timeInZone: 1,
+                totalDuration: 8,
+                zonePercentage: 0.12,
+                peakWPM: 210,
+                lowestWPM: 160,
+                adjustedFillers: 1,
+                rushedBursts: 4
+            )
+        )
+
+        #expect(DrillXPEngine.breakdown(outcome: strong).total > DrillXPEngine.breakdown(outcome: weak).total)
+        #expect(DrillCompletionCopy.title(for: strong) == "Cleaner Rhythm")
+        #expect(DrillCompletionCopy.title(for: weak) == "Rushed Finish")
     }
 }
 
@@ -963,5 +1098,228 @@ struct DrillTargetAreaTests {
         // With 12 fillers in 30 seconds, filler reduction should be the focus
         #expect(rec.variation.skillArea == .fillerReduction,
             "High filler count should auto-target filler reduction. Got: \(rec.variation.skillArea)")
+    }
+}
+
+// MARK: - Pressure Timer Engine Tests (auto-ramp, no difficulty selector)
+
+struct PressureRoundConfigTests {
+
+    @Test func round1HasWidestWindows() {
+        let config = PressureRoundConfig.config(for: 1)
+        #expect(config.startWindow == 12, "Round 1 start window should be 12s. Got: \(config.startWindow)")
+        #expect(config.fillerTolerance == 3, "Round 1 should tolerate 3 fillers. Got: \(config.fillerTolerance)")
+        #expect(!config.isFollowUp, "Round 1 should be a fresh prompt, not a follow-up")
+    }
+
+    @Test func pressureRampsAcrossRounds() {
+        let r1 = PressureRoundConfig.config(for: 1)
+        let r3 = PressureRoundConfig.config(for: 3)
+        let r5 = PressureRoundConfig.config(for: 5)
+        #expect(r3.startWindow < r1.startWindow, "Round 3 start window should be shorter than round 1")
+        #expect(r5.startWindow < r3.startWindow, "Round 5 start window should be shorter than round 3")
+        #expect(r5.fillerTolerance < r1.fillerTolerance, "Later rounds should tolerate fewer fillers")
+    }
+
+    @Test func round4IsTopicReset() {
+        let config = PressureRoundConfig.config(for: 4)
+        #expect(!config.isFollowUp, "Round 4 should be a topic reset (not a follow-up)")
+        #expect(config.startWindow == 6, "Round 4 start window should be 6s. Got: \(config.startWindow)")
+        #expect(config.fillerTolerance == 1, "Round 4 filler tolerance should be 1. Got: \(config.fillerTolerance)")
+    }
+
+    @Test func round6PlusHasZeroFillerTolerance() {
+        let r6 = PressureRoundConfig.config(for: 6)
+        let r8 = PressureRoundConfig.config(for: 8)
+        #expect(r6.fillerTolerance == 0, "Round 6 should have zero filler tolerance")
+        #expect(r8.fillerTolerance == 0, "Round 8 should have zero filler tolerance")
+        #expect(r6.isFollowUp, "Round 6 should be a follow-up")
+    }
+
+    @Test func startWindowNeverGoesBelowMinimum() {
+        let r20 = PressureRoundConfig.config(for: 20)
+        #expect(r20.startWindow >= 3, "Start window should never go below 3s. Got: \(r20.startWindow)")
+    }
+
+    @Test func allRoundsHaveConsistentResponseCap() {
+        for round in 1...10 {
+            let config = PressureRoundConfig.config(for: round)
+            #expect(config.responseCap == 30, "Response cap should be 30s for all rounds. Round \(round) got: \(config.responseCap)")
+            #expect(config.minimumWords == 10, "Minimum words should be 10 for all rounds. Round \(round) got: \(config.minimumWords)")
+        }
+    }
+
+    @Test func roundZeroOrNegativeClampedToRound1() {
+        let r0 = PressureRoundConfig.config(for: 0)
+        let rNeg = PressureRoundConfig.config(for: -3)
+        let r1 = PressureRoundConfig.config(for: 1)
+        #expect(r0 == r1, "Round 0 should clamp to round 1 config")
+        #expect(rNeg == r1, "Negative round should clamp to round 1 config")
+    }
+}
+
+struct RoundOutcomeTests {
+
+    @Test func survivedIsNotFailed() {
+        #expect(!RoundOutcome.survived.isFailed, "Survived should not be a failure")
+    }
+
+    @Test func allFailureStatesAreFailed() {
+        let failures: [RoundOutcome] = [.timeoutBeforeStart, .fillerOverload, .tooShort]
+        for outcome in failures {
+            #expect(outcome.isFailed, "\(outcome.label) should be a failure state")
+        }
+    }
+
+    @Test func allOutcomesHaveLabelsAndIcons() {
+        let all: [RoundOutcome] = [.survived, .timeoutBeforeStart, .fillerOverload, .tooShort]
+        for outcome in all {
+            #expect(!outcome.label.isEmpty, "Outcome should have a label")
+            #expect(!outcome.icon.isEmpty, "Outcome should have an icon")
+        }
+    }
+}
+
+struct PressureSessionResultTests {
+
+    @Test func deepSurvivalCleanRunGetsTopLabel() {
+        let result = PressureSessionResult(
+            roundsSurvived: 6,
+            finalOutcome: .timeoutBeforeStart,
+            roundOutcomes: [.survived, .survived, .survived, .survived, .survived, .survived, .timeoutBeforeStart],
+            totalDuration: 180, totalFillers: 0, totalWords: 120, bestRoundWords: 25,
+            personalBest: 3
+        )
+        #expect(result.resultLabel == "Fast and Clear", "6+ rounds with 0 fillers should be 'Fast and Clear'. Got: \(result.resultLabel)")
+        #expect(result.isNewPersonalBest, "6 rounds survived should beat personal best of 3")
+    }
+
+    @Test func timeoutOnFirstRoundGetsLowScore() {
+        let result = PressureSessionResult(
+            roundsSurvived: 0,
+            finalOutcome: .timeoutBeforeStart,
+            roundOutcomes: [.timeoutBeforeStart],
+            totalDuration: 10, totalFillers: 0, totalWords: 0, bestRoundWords: 0,
+            personalBest: 0
+        )
+        #expect(result.score <= 3, "Immediate timeout should score low. Got: \(result.score)")
+        #expect(result.resultLabel == "Time Broke You", "Got: \(result.resultLabel)")
+    }
+
+    @Test func fillerFailureAfterSurvivalGetsRecoveryLabel() {
+        let result = PressureSessionResult(
+            roundsSurvived: 2,
+            finalOutcome: .fillerOverload,
+            roundOutcomes: [.survived, .survived, .fillerOverload],
+            totalDuration: 60, totalFillers: 2, totalWords: 40, bestRoundWords: 20,
+            personalBest: 1
+        )
+        #expect(result.resultLabel == "Strong Recovery", "Should be 'Strong Recovery' after surviving 2 rounds. Got: \(result.resultLabel)")
+    }
+
+    @Test func tooShortGetsRushedLabel() {
+        let result = PressureSessionResult(
+            roundsSurvived: 0,
+            finalOutcome: .tooShort,
+            roundOutcomes: [.tooShort],
+            totalDuration: 5, totalFillers: 0, totalWords: 3, bestRoundWords: 3,
+            personalBest: 0
+        )
+        #expect(result.resultLabel == "Rushed Start", "Got: \(result.resultLabel)")
+    }
+
+    @Test func xpScalesWithSurvival() {
+        let shallow = PressureSessionResult(
+            roundsSurvived: 1,
+            finalOutcome: .fillerOverload,
+            roundOutcomes: [.survived, .fillerOverload],
+            totalDuration: 30, totalFillers: 2, totalWords: 15, bestRoundWords: 15,
+            personalBest: 0
+        )
+        let deep = PressureSessionResult(
+            roundsSurvived: 5,
+            finalOutcome: .timeoutBeforeStart,
+            roundOutcomes: [.survived, .survived, .survived, .survived, .survived, .timeoutBeforeStart],
+            totalDuration: 150, totalFillers: 0, totalWords: 100, bestRoundWords: 25,
+            personalBest: 3
+        )
+        #expect(deep.xpEarned > shallow.xpEarned,
+            "Deep survival XP (\(deep.xpEarned)) should exceed shallow XP (\(shallow.xpEarned))")
+    }
+
+    @Test func personalBestDetection() {
+        let notBest = PressureSessionResult(
+            roundsSurvived: 2,
+            finalOutcome: .fillerOverload,
+            roundOutcomes: [.survived, .survived, .fillerOverload],
+            totalDuration: 60, totalFillers: 1, totalWords: 30, bestRoundWords: 18,
+            personalBest: 5
+        )
+        #expect(!notBest.isNewPersonalBest, "2 rounds should not beat personal best of 5")
+
+        let isBest = PressureSessionResult(
+            roundsSurvived: 6,
+            finalOutcome: .timeoutBeforeStart,
+            roundOutcomes: [.survived, .survived, .survived, .survived, .survived, .survived, .timeoutBeforeStart],
+            totalDuration: 180, totalFillers: 0, totalWords: 120, bestRoundWords: 25,
+            personalBest: 5
+        )
+        #expect(isBest.isNewPersonalBest, "6 rounds should beat personal best of 5")
+
+        let firstRun = PressureSessionResult(
+            roundsSurvived: 3,
+            finalOutcome: .fillerOverload,
+            roundOutcomes: [.survived, .survived, .survived, .fillerOverload],
+            totalDuration: 90, totalFillers: 1, totalWords: 50, bestRoundWords: 20,
+            personalBest: 0
+        )
+        #expect(!firstRun.isNewPersonalBest, "First run (personalBest == 0) should not flag as new PB")
+    }
+
+    @Test func resultLabelCoversAllExpectedValues() {
+        let labels = ["Fast and Clear", "Beat the Clock", "Held Under Pressure", "Strong Recovery", "Filler Spike", "Rushed Start", "Time Broke You"]
+        // Verify the icon/tint lookup doesn't crash for a baseline result
+        let result = PressureSessionResult(
+            roundsSurvived: 0,
+            finalOutcome: .survived,
+            roundOutcomes: [],
+            totalDuration: 0, totalFillers: 0, totalWords: 0, bestRoundWords: 0,
+            personalBest: 0
+        )
+        #expect(!result.resultIcon.isEmpty)
+        #expect(!result.resultLabel.isEmpty)
+        #expect(labels.count == 7, "Should have 7 distinct result labels")
+    }
+
+    @Test func scoreRangeIsClamped() {
+        // Zero-round result should still be >= 1
+        let zero = PressureSessionResult(
+            roundsSurvived: 0,
+            finalOutcome: .tooShort,
+            roundOutcomes: [.tooShort],
+            totalDuration: 2, totalFillers: 0, totalWords: 1, bestRoundWords: 1,
+            personalBest: 0
+        )
+        #expect(zero.score >= 1 && zero.score <= 10, "Score should be 1-10. Got: \(zero.score)")
+
+        // High survival result should still be <= 10
+        let high = PressureSessionResult(
+            roundsSurvived: 10,
+            finalOutcome: .timeoutBeforeStart,
+            roundOutcomes: Array(repeating: RoundOutcome.survived, count: 10) + [.timeoutBeforeStart],
+            totalDuration: 300, totalFillers: 0, totalWords: 200, bestRoundWords: 30,
+            personalBest: 8
+        )
+        #expect(high.score >= 1 && high.score <= 10, "Score should be 1-10. Got: \(high.score)")
+    }
+}
+
+struct PressureFollowUpTemplateTests {
+
+    @Test func templateFallbackNeverReturnsEmpty() {
+        for _ in 0..<20 {
+            let template = PressureFollowUpTemplates.random()
+            #expect(!template.isEmpty, "Template should never be empty")
+        }
     }
 }

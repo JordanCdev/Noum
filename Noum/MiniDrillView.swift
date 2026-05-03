@@ -22,6 +22,7 @@ struct MiniDrillView: View {
     @State private var progressRingFill: Double = 0
     @State private var showPulse = false
     @State private var timerTask: Task<Void, Never>?
+    @State private var recordingStartDate: Date?
 
     private let drillDuration: Int = 45
 
@@ -121,14 +122,23 @@ struct MiniDrillView: View {
                         .transition(.opacity)
                     }
 
-                    // Prompt hint (if available)
+                    // Prompt (if available) — prominent enough to actually read
                     if let prompt, phase == .speaking || phase == .ready {
-                        Text(prompt)
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.35))
-                            .lineLimit(2)
+                        Text("\"\(prompt)\"")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(3)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
+                            .padding(.horizontal, 24)
+                    }
+
+                    // Goal line — what success looks like
+                    if phase == .ready {
+                        Text("Goal: \(drill.variation.successDescription)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(drill.tint.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
                     }
 
                     // Action button
@@ -249,7 +259,10 @@ struct MiniDrillView: View {
             showPulse = true
         }
 
+        speechVM.sessionPrompt = prompt
+        speechVM.shouldRecordPracticeSession = false
         speechVM.prepareSession(mode: .timed)
+        recordingStartDate = Date()
         speechVM.startRecording()
 
         // Timer task
@@ -289,7 +302,8 @@ struct MiniDrillView: View {
 
         // Evaluate success
         let fillerCount = speechVM.fillerWordCount
-        let duration = speechVM.lastSessionDuration
+        let measuredDuration = recordingStartDate.map { Date().timeIntervalSince($0) } ?? TimeInterval(elapsedSeconds)
+        let duration = max(speechVM.lastSessionDuration, measuredDuration, TimeInterval(elapsedSeconds))
         let transcript = speechVM.transcribedText
         let wordCount = transcript.split(separator: " ").count
 
@@ -308,6 +322,7 @@ struct MiniDrillView: View {
 
         let outcome = MiniDrillOutcome(
             drill: drill,
+            drillType: .standard,
             transcript: transcript,
             fillerCount: fillerCount,
             duration: duration,
@@ -364,13 +379,19 @@ struct MiniDrillView: View {
 // MARK: - Mini Drill Outcome
 
 /// The result of a completed mini-drill, passed to the result view.
-struct MiniDrillOutcome {
+struct MiniDrillOutcome: Identifiable {
+    let id = UUID()
     let drill: DrillRecommendationV2
+    let drillType: MiniDrillType
     let transcript: String
     let fillerCount: Int
     let duration: TimeInterval
     let wordCount: Int
     let succeeded: Bool
+    // Drill-specific metrics (only one populated per drill type)
+    var beatTheBrakeMetrics: BeatTheBrakeMetrics?
+    var landThePauseMetrics: LandThePauseMetrics?
+    var prepStackMetrics: PREPStackMetrics?
 }
 
 #endif

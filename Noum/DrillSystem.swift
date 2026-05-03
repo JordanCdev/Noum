@@ -96,6 +96,57 @@ enum DrillFormat: String, Codable {
     case fullRetry    // Full re-practice with constraint overlay
 }
 
+// MARK: - Mini Drill Type
+
+/// Distinguishes specialized mini-drill experiences from the standard constraint drill.
+enum MiniDrillType: String, Codable {
+    case standard       // Existing 45s constraint drill
+    case beatTheBrake   // Live WPM gauge, stay in zone
+    case landThePause   // 3 checkpoint pauses
+    case prepStack      // Guided 4-step PREP structure
+
+    /// Map a variation ID to its drill type.
+    static func from(variationId: String) -> MiniDrillType {
+        switch variationId {
+        case "pace.beatTheBrake": return .beatTheBrake
+        case "pause.landThePause": return .landThePause
+        case "structure.prepStack": return .prepStack
+        default: return .standard
+        }
+    }
+}
+
+// MARK: - Drill-Specific Metrics
+
+struct BeatTheBrakeMetrics {
+    let averageWPM: Double
+    let timeInZone: TimeInterval      // Seconds within 110-140 WPM
+    let totalDuration: TimeInterval
+    let zonePercentage: Double        // timeInZone / totalDuration
+    let peakWPM: Double
+    let lowestWPM: Double
+    let adjustedFillers: Int
+    let rushedBursts: Int
+}
+
+struct LandThePauseMetrics {
+    let checkpointsLocked: Int        // Out of 3
+    let pauseDurations: [TimeInterval] // Duration of each pause
+    let totalDuration: TimeInterval
+    let fillerCount: Int
+    let transitionFillers: Int
+    let bestCombo: Int
+}
+
+struct PREPStackMetrics {
+    let stepsCompleted: Int           // Out of 4 (P-R-E-P)
+    let totalDuration: TimeInterval
+    let wordCount: Int
+    let fillerCount: Int
+    let transitionFillers: Int
+    let closeStrength: Double
+}
+
 // MARK: - Drill Variation
 
 /// A single drill exercise within a skill family.
@@ -439,6 +490,15 @@ enum DrillCatalog {
             format: .miniDrill,
             successDescription: "WPM within 110–150 range"
         ),
+        DrillVariation(
+            id: "pace.beatTheBrake",
+            skillArea: .paceControl,
+            title: "Beat the Brake",
+            constraint: "Keep your pace between 110–140 WPM. The gauge turns red if you drift.",
+            coachingPrinciple: "Controlled pace is the foundation of clear communication.",
+            format: .miniDrill,
+            successDescription: "60%+ time in the zone"
+        ),
     ]
 
     // MARK: Structure
@@ -479,6 +539,15 @@ enum DrillCatalog {
             coachingPrinciple: "Contrast frames show balanced thinking and intellectual range.",
             format: .fullRetry,
             successDescription: "Structure rated OK or better"
+        ),
+        DrillVariation(
+            id: "structure.prepStack",
+            skillArea: .structure,
+            title: "PREP Stack",
+            constraint: "Follow the guided structure: Point → Reason → Example → Point. Advance each step.",
+            coachingPrinciple: "PREP is the gold standard for structured impromptu responses.",
+            format: .miniDrill,
+            successDescription: "All 4 PREP steps completed"
         ),
     ]
 
@@ -603,6 +672,15 @@ enum DrillCatalog {
             format: .miniDrill,
             successDescription: "Zero filler words with at least one thinking pause"
         ),
+        DrillVariation(
+            id: "pause.landThePause",
+            skillArea: .pauseUsage,
+            title: "Land the Pause",
+            constraint: "Lock in 3 deliberate pauses during your answer. Tap to lock each one.",
+            coachingPrinciple: "Intentional pauses separate good speakers from great ones.",
+            format: .miniDrill,
+            successDescription: "All 3 checkpoints locked"
+        ),
     ]
 
     // MARK: Vocal Emphasis
@@ -716,5 +794,112 @@ enum DrillSelector {
         // All exhausted — pick any that isn't the very last one done
         let fallback = variations.filter { $0.id != lastDrillId }
         return fallback.randomElement() ?? variations.first
+    }
+}
+
+// MARK: - Drill XP Engine
+
+/// Performance-based XP calculation for mini-drills.
+/// Replaces hardcoded 50/20 values with a formula based on actual drill metrics.
+///
+/// Formula:
+///   baseXP (success/fail) + qualityBonus + cleanBonus + streakModifier
+///
+/// Range: 10–80 XP per drill (roughly).
+enum DrillXPEngine {
+    struct Breakdown: Equatable {
+        let base: Int
+        let quality: Int
+        let clean: Int
+        let streak: Int
+
+        var total: Int { max(10, base + quality + clean + streak) }
+        var label: String {
+            var parts = ["\(base) base"]
+            if quality > 0 { parts.append("+\(quality) quality") }
+            if clean > 0 { parts.append("+\(clean) clean") }
+            if streak > 0 { parts.append("+\(streak) streak") }
+            return parts.joined(separator: " / ")
+        }
+    }
+
+    /// Calculate XP earned for a drill outcome.
+    static func calculate(outcome: MiniDrillOutcome) -> Int {
+        breakdown(outcome: outcome).total
+    }
+
+    static func breakdown(outcome: MiniDrillOutcome) -> Breakdown {
+        let base = outcome.succeeded ? 30 : 10
+
+        var qualityBonus = 0
+        var cleanBonus = 0
+
+        switch outcome.drillType {
+        case .standard:
+            qualityBonus = standardQualityBonus(outcome: outcome)
+        case .beatTheBrake:
+            qualityBonus = beatTheBrakeQualityBonus(outcome: outcome)
+        case .landThePause:
+            qualityBonus = landThePauseQualityBonus(outcome: outcome)
+        case .prepStack:
+            qualityBonus = prepStackQualityBonus(outcome: outcome)
+        }
+
+        // Clean execution bonus: zero fillers in any drill
+        if outcome.fillerCount == 0 && outcome.wordCount >= 10 {
+            cleanBonus = 10
+        }
+
+        // Streak modifier: consecutive successes in this skill area give a small bump
+        let streak = DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea)
+        let streakBonus = min(streak * 3, 15) // Cap at +15 for 5+ streak
+
+        return Breakdown(base: base, quality: qualityBonus, clean: cleanBonus, streak: streakBonus)
+    }
+
+    // MARK: - Drill-Specific Quality Bonuses
+
+    private static func standardQualityBonus(outcome: MiniDrillOutcome) -> Int {
+        guard outcome.succeeded else { return 0 }
+        var bonus = 0
+        // Word density bonus: more meaningful content
+        if outcome.wordCount >= 50 { bonus += 5 }
+        if outcome.wordCount >= 80 { bonus += 5 }
+        // Duration engagement: used most of the drill time
+        if outcome.duration >= 35 { bonus += 5 }
+        return bonus
+    }
+
+    private static func beatTheBrakeQualityBonus(outcome: MiniDrillOutcome) -> Int {
+        guard let m = outcome.beatTheBrakeMetrics else { return 0 }
+        var bonus = 0
+        // Zone percentage tiers
+        if m.zonePercentage >= 0.80 { bonus += 15 }
+        else if m.zonePercentage >= 0.70 { bonus += 10 }
+        else if m.zonePercentage >= 0.60 { bonus += 5 }
+        // Tight range bonus: peak and lowest both within zone
+        if m.peakWPM <= 145 && m.lowestWPM >= 105 { bonus += 5 }
+        return bonus
+    }
+
+    private static func landThePauseQualityBonus(outcome: MiniDrillOutcome) -> Int {
+        guard let m = outcome.landThePauseMetrics else { return 0 }
+        var bonus = 0
+        // Per-checkpoint bonus
+        bonus += m.checkpointsLocked * 5
+        // Pause quality: average pause duration in sweet spot (0.8–2.0s)
+        let avgPause = m.pauseDurations.isEmpty ? 0 : m.pauseDurations.reduce(0, +) / Double(m.pauseDurations.count)
+        if avgPause >= 0.8 && avgPause <= 2.0 { bonus += 5 }
+        return bonus
+    }
+
+    private static func prepStackQualityBonus(outcome: MiniDrillOutcome) -> Int {
+        guard let m = outcome.prepStackMetrics else { return 0 }
+        var bonus = 0
+        // Per-step bonus
+        bonus += m.stepsCompleted * 4
+        // Content depth bonus
+        if m.wordCount >= 60 { bonus += 5 }
+        return bonus
     }
 }

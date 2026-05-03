@@ -82,13 +82,14 @@ final class ClutchWordStore: ObservableObject {
 
     /// Scan a transcript for clutch words and update the profile.
     /// Call this after each session.
-    func analyzeSession(transcript: String) {
+    func analyzeSession(transcript: String, prompt: String? = nil) {
         let lowered = transcript.lowercased()
+        let promptLowered = prompt?.lowercased() ?? ""
         let candidates = Self.defaultClutchWords.subtracting(dismissedWords)
         var foundWords: [String: Int] = [:]
 
         for candidate in candidates {
-            let count = countOccurrences(of: candidate, in: lowered)
+            let count = adjustedOccurrences(of: candidate, in: lowered, prompt: promptLowered)
             if count > 0 {
                 foundWords[candidate] = count
             }
@@ -96,7 +97,7 @@ final class ClutchWordStore: ObservableObject {
 
         // Also check custom filler words as clutch words
         for word in customFillerWords {
-            let count = countOccurrences(of: word, in: lowered)
+            let count = adjustedOccurrences(of: word, in: lowered, prompt: promptLowered)
             if count > 0 {
                 foundWords[word] = (foundWords[word] ?? 0) + count
             }
@@ -153,6 +154,13 @@ final class ClutchWordStore: ObservableObject {
         let pattern = #"(?i)(?<!\w)\#(escaped)(?=\b|[^\w]|$)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return 0 }
         return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+    }
+
+    private func adjustedOccurrences(of word: String, in text: String, prompt: String) -> Int {
+        let transcriptCount = countOccurrences(of: word, in: text)
+        guard transcriptCount > 0, !prompt.isEmpty else { return transcriptCount }
+        let promptCount = countOccurrences(of: word, in: prompt)
+        return max(0, transcriptCount - promptCount)
     }
 
     // MARK: - Persistence

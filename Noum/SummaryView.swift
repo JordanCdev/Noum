@@ -78,10 +78,10 @@ struct SummaryView: View {
     @State private var showLevelUpScreen = false
     @State private var levelUpPreviousLevel: String = ""
     @State private var levelUpNewLevel: String = ""
-    @State private var showMiniDrill = false
     @State private var activeMiniDrill: DrillRecommendationV2?
-    @State private var showMiniDrillResult = false
     @State private var miniDrillOutcome: MiniDrillOutcome?
+    @State private var miniDrillAwardedXP: Int = 0
+    @State private var miniDrillXPBreakdown: DrillXPEngine.Breakdown?
     @State private var showSecondaryDetails = false
     @State private var nextAction: NextAction?
     @State private var coachNoteRevealed = false
@@ -502,8 +502,8 @@ struct SummaryView: View {
                                 aiFeedback: aiFeedback,
                                 nextAction: nextAction,
                                 onStartMiniDrill: { drill in
+                                    print("[QuickDrill] Trigger: \(drill.title) | skill=\(drill.skillArea) | format=\(drill.format)")
                                     activeMiniDrill = drill
-                                    showMiniDrill = true
                                 },
                                 onStartDrill: onStartDrill
                             )
@@ -575,56 +575,39 @@ struct SummaryView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
-        .fullScreenCover(isPresented: $showMiniDrill) {
-            if let drill = activeMiniDrill {
-                MiniDrillView(
-                    drill: drill,
-                    prompt: sessionPrompt,
-                    onComplete: { outcome in
-                        miniDrillOutcome = outcome
-                        DrillHistoryStore.shared.record(
-                            .init(variationId: outcome.drill.variation.id,
-                                  skillArea: outcome.drill.skillArea,
-                                  succeeded: outcome.succeeded,
-                                  sessionId: UUID())
-                        )
-                        showMiniDrill = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showMiniDrillResult = true
-                        }
-                    },
-                    onCancel: {
-                        showMiniDrill = false
-                    }
-                )
-            }
+        .fullScreenCover(item: $activeMiniDrill) { drill in
+            let _ = print("[QuickDrill] Present: \(drill.title) | id=\(drill.id) | type=\(MiniDrillType.from(variationId: drill.variation.id))")
+            drillView(for: drill)
         }
-        .fullScreenCover(isPresented: $showMiniDrillResult) {
-            if let outcome = miniDrillOutcome {
-                MiniDrillResultView(
-                    outcome: outcome,
-                    xpEarned: outcome.succeeded ? 50 : 20,
-                    streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
-                    onDone: {
-                        showMiniDrillResult = false
-                    },
-                    onTryAnother: {
-                        showMiniDrillResult = false
-                        if let nextDrill = activeMiniDrill,
-                           let freshVariation = DrillSelector.select(for: nextDrill.skillArea) {
-                            activeMiniDrill = DrillRecommendationV2(
-                                variation: freshVariation,
-                                reason: "Keep building on this skill",
-                                trendContext: nil,
-                                alternateFormat: nil
-                            )
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                showMiniDrill = true
-                            }
+        .fullScreenCover(item: $miniDrillOutcome) { outcome in
+            let _ = print("[QuickDrill] Result: succeeded=\(outcome.succeeded) type=\(outcome.drillType)")
+            MiniDrillResultView(
+                outcome: outcome,
+                xpEarned: miniDrillAwardedXP,
+                xpBreakdown: miniDrillXPBreakdown,
+                streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                onDone: {
+                    print("[QuickDrill] Done — dismissing result")
+                    miniDrillOutcome = nil
+                },
+                onTryAnother: {
+                    print("[QuickDrill] Try another — loading next variation")
+                    miniDrillOutcome = nil
+                    if let freshVariation = DrillSelector.select(for: outcome.drill.skillArea) {
+                        let nextDrill = DrillRecommendationV2(
+                            variation: freshVariation,
+                            reason: "Keep building on this skill",
+                            trendContext: nil,
+                            alternateFormat: nil
+                        )
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            activeMiniDrill = nextDrill
                         }
+                    } else {
+                        print("[QuickDrill] ERROR: No fresh variation found for \(outcome.drill.skillArea)")
                     }
-                )
-            }
+                }
+            )
         }
 #if canImport(UIKit)
         .onChange(of: celebrationVisible) { _, visible in
@@ -2067,6 +2050,57 @@ struct SummaryView: View {
         case "indigo": return .indigo
         default: return .primary
         }
+    }
+
+    // MARK: - Drill Routing
+
+    @ViewBuilder
+    private func drillView(for drill: DrillRecommendationV2) -> some View {
+        let drillType = MiniDrillType.from(variationId: drill.variation.id)
+        switch drillType {
+        case .beatTheBrake:
+            BeatTheBrakeView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        case .landThePause:
+            LandThePauseView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        case .prepStack:
+            PREPStackView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        case .standard:
+            MiniDrillView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        }
+    }
+
+    private func handleDrillComplete(_ outcome: MiniDrillOutcome) {
+        print("[QuickDrill] Complete: succeeded=\(outcome.succeeded) fillers=\(outcome.fillerCount) words=\(outcome.wordCount) type=\(outcome.drillType)")
+        DrillHistoryStore.shared.record(
+            .init(variationId: outcome.drill.variation.id,
+                  skillArea: outcome.drill.skillArea,
+                  succeeded: outcome.succeeded,
+                  sessionId: UUID())
+        )
+
+        let xpBreakdown = DrillXPEngine.breakdown(outcome: outcome)
+        miniDrillAwardedXP = xpBreakdown.total
+        miniDrillXPBreakdown = xpBreakdown
+        ProfileManager.shared.addXP(xpBreakdown.total)
+        RewardEngine.shared.evaluateDrill(
+            skillArea: outcome.drill.skillArea,
+            succeeded: outcome.succeeded,
+            streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea)
+        )
+
+        if !outcome.transcript.isEmpty {
+            BaselineStore.shared.recordMiniDrillOutcome(outcome, prompt: sessionPrompt)
+        }
+
+        activeMiniDrill = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            miniDrillOutcome = outcome
+        }
+    }
+
+    private func handleDrillCancel() {
+        print("[QuickDrill] Cancelled")
+        activeMiniDrill = nil
     }
 
     // MARK: - Setup & Logic

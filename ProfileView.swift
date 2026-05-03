@@ -30,8 +30,7 @@ struct ProfileView: View {
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
 
-    @State private var selectedAchievementID: String?
-    @State private var focusedAchievementTier: AchievementTier?
+    @State private var showAchievementsPage = false
     @State private var showPaywall = false
     @State private var showAddFriendManual = false
     @State private var showScanner = false
@@ -60,10 +59,6 @@ struct ProfileView: View {
 
     private var unlockedAchievements: [PracticeAchievementStatus] {
         retentionSnapshot.achievements.filter(\.isUnlocked)
-    }
-
-    private var lockedAchievements: [PracticeAchievementStatus] {
-        retentionSnapshot.achievements.filter { !$0.isUnlocked }
     }
 
     private var totalSessions: Int { sessions.count }
@@ -117,19 +112,8 @@ struct ProfileView: View {
         .sheet(item: $selectedAsyncChallenge) { challenge in
             AsyncChallengeDetailSheet(challenge: challenge, challenges: challenges)
         }
-        .overlay {
-            if let tier = focusedAchievementTier {
-                let status = retentionSnapshot.achievements.first { $0.id == tier.id }
-                AchievementDetailModal(
-                    tier: tier,
-                    isUnlocked: status?.isUnlocked ?? true,
-                    progress: status?.progress ?? 0,
-                    progressLabel: status?.progressLabel ?? "",
-                    unlockDate: AchievementStore.shared.unlocks[tier.id],
-                    onDismiss: { focusedAchievementTier = nil }
-                )
-                .transition(.opacity)
-            }
+        .navigationDestination(isPresented: $showAchievementsPage) {
+            AchievementsPage()
         }
     }
 
@@ -471,38 +455,28 @@ struct ProfileView: View {
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
     }
 
-    // MARK: - Achievements
+    // MARK: - Achievements (Compact Preview)
 
     private var achievementsPanel: some View {
         let allStatuses = retentionSnapshot.achievements
-        let overallProgress = allStatuses.isEmpty
-            ? 0.0
-            : Double(unlockedAchievements.count) / Double(allStatuses.count)
+        let previewTiers = achievementPreviewTiers(from: allStatuses)
+        // NEW = from the last session's unlocks AND within 24h
+        let newlyUnlockedIDs = Set(AchievementStore.shared.newlyUnlocked)
+        let newCutoff = Calendar.current.date(byAdding: .hour, value: -24, to: Date()) ?? Date()
 
-        return VStack(alignment: .leading, spacing: 18) {
-            // Header
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Achievements")
-                        .font(.title3.weight(.bold))
-                    Text("\(unlockedAchievements.count)/\(allStatuses.count) unlocked")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
+        return VStack(alignment: .leading, spacing: 14) {
+            // Header row — entire card taps to open achievements
+            HStack(alignment: .firstTextBaseline) {
+                Text("Achievements")
+                    .font(.title3.weight(.bold))
                 Spacer()
-                // Progress ring
-                ZStack {
-                    Circle()
-                        .stroke(Color.blue.opacity(0.10), lineWidth: 3.5)
-                        .frame(width: 38, height: 38)
-                    Circle()
-                        .trim(from: 0, to: overallProgress)
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 38, height: 38)
-                    Text("\(Int(overallProgress * 100))%")
-                        .font(.system(size: 9, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.blue)
+                HStack(spacing: 4) {
+                    Text("\(unlockedAchievements.count)/\(allStatuses.count)")
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -511,80 +485,73 @@ struct ProfileView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                // Track sections
-                ForEach(AchievementStore.tiersByTrack, id: \.track) { track, tiers in
-                    achievementTrackSection(track: track, tiers: tiers, allStatuses: allStatuses)
+                // 4-badge preview row
+                HStack(spacing: 0) {
+                    ForEach(Array(previewTiers.enumerated()), id: \.element.id) { index, tier in
+                        let status = allStatuses.first { $0.id == tier.id }
+                        let isUnlocked = status?.isUnlocked ?? false
+                        // Only the single most recent NEW badge gets the chip
+                        let isNew = index == 0
+                            && newlyUnlockedIDs.contains(tier.id)
+                            && (AchievementStore.shared.unlocks[tier.id] ?? .distantPast) > newCutoff
+
+                        VStack(spacing: 5) {
+                            ZStack(alignment: .topTrailing) {
+                                AchievementIconView(
+                                    tier: tier,
+                                    isUnlocked: isUnlocked,
+                                    progress: status?.progress ?? 0,
+                                    size: .grid
+                                )
+                                .frame(width: 48, height: 48)
+
+                                if isNew {
+                                    Text("NEW")
+                                        .font(.system(size: 7, weight: .heavy, design: .rounded))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 2)
+                                        .background(tier.track.tint, in: Capsule())
+                                        .offset(x: 4, y: -2)
+                                }
+                            }
+
+                            Text(tier.title)
+                                .font(.system(size: 8.5, weight: isUnlocked ? .semibold : .medium))
+                                .foregroundStyle(isUnlocked ? Color.primary : Color.secondary.opacity(0.5))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
                 }
             }
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(Color.blue.opacity(0.05), lineWidth: 1)
-        )
-    }
-
-    private func achievementTrackSection(track: AchievementTrack, tiers: [AchievementTier], allStatuses: [PracticeAchievementStatus]) -> some View {
-        let statuses = tiers.compactMap { tier in allStatuses.first { $0.id == tier.id } }
-        let unlocked = statuses.filter(\.isUnlocked).count
-
-        return VStack(alignment: .leading, spacing: 10) {
-            // Track header
-            HStack(spacing: 7) {
-                Image(systemName: track.symbol)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(track.tint)
-                    .frame(width: 22, height: 22)
-                    .background(track.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                Text(track.label.uppercased())
-                    .font(.system(size: 11, weight: .heavy, design: .rounded))
-                    .tracking(0.8)
-                    .foregroundStyle(.primary.opacity(0.7))
-
-                Spacer()
-
-                Text("\(unlocked)/\(tiers.count)")
-                    .font(.caption2.weight(.bold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            // Tier grid — 4 per row
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 4)
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(tiers, id: \.id) { tier in
-                    let status = statuses.first { $0.id == tier.id }
-                    let isUnlocked = status?.isUnlocked ?? false
-                    achievementGridItem(tier: tier, status: status, isUnlocked: isUnlocked)
-                }
-            }
-        }
-    }
-
-    private func achievementGridItem(tier: AchievementTier, status: PracticeAchievementStatus?, isUnlocked: Bool) -> some View {
-        VStack(spacing: 4) {
-            AchievementIconView(
-                tier: tier,
-                isUnlocked: isUnlocked,
-                progress: status?.progress ?? 0,
-                size: .grid
-            )
-            .frame(width: 52, height: 52)
-
-            Text(isUnlocked ? tier.title : "???")
-                .font(.system(size: 8.5, weight: .medium))
-                .foregroundStyle(isUnlocked ? Color.primary : Color.secondary.opacity(0.4))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-        }
         .contentShape(Rectangle())
-        .onTapGesture {
-            guard isUnlocked else { return }
-            withAnimation(.standardSpring) {
-                focusedAchievementTier = tier
-            }
+        .onTapGesture { showAchievementsPage = true }
+    }
+
+    /// Up to 4 preview tiers: most recent unlocks first, then easiest locked ones to fill to 4.
+    private func achievementPreviewTiers(from allStatuses: [PracticeAchievementStatus]) -> [AchievementTier] {
+        let unlockDates = AchievementStore.shared.unlocks
+        // Recent unlocks sorted by date descending
+        let recentUnlocked = AchievementStore.allTiers
+            .filter { unlockDates[$0.id] != nil }
+            .sorted { (unlockDates[$0.id] ?? .distantPast) > (unlockDates[$1.id] ?? .distantPast) }
+
+        if recentUnlocked.count >= 4 {
+            return Array(recentUnlocked.prefix(4))
         }
+
+        // Fill remaining slots with easiest locked badges (lowest tierIndex)
+        let unlockedIDs = Set(unlockDates.keys)
+        let easiestLocked = AchievementStore.allTiers
+            .filter { !unlockedIDs.contains($0.id) }
+            .sorted { $0.tierIndex < $1.tierIndex }
+
+        let combined = recentUnlocked + easiestLocked
+        return Array(combined.prefix(4))
     }
 
     // MARK: - Speech Patterns Card

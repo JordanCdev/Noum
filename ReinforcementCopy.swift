@@ -52,9 +52,76 @@ enum SessionCompletionCopy {
 
 enum DrillCompletionCopy {
 
-    /// Result title — never says "failed."
+    /// Result title — never says "failed." Drill-specific when possible.
     static func title(succeeded: Bool) -> String {
         succeeded ? "Drill Complete" : "Keep Going"
+    }
+
+    /// Drill-type-aware result title with specific, outcome-mapped language.
+    static func title(for outcome: MiniDrillOutcome) -> String {
+        switch outcome.drillType {
+        case .beatTheBrake:
+            if outcome.succeeded {
+                if let m = outcome.beatTheBrakeMetrics, m.zonePercentage >= 0.80 {
+                    return "Cleaner Rhythm"
+                }
+                return "Controlled Pace"
+            }
+            if let m = outcome.beatTheBrakeMetrics, m.averageWPM > 140 {
+                return "Rushed Finish"
+            }
+            return "Pace Slipped"
+
+        case .landThePause:
+            if outcome.succeeded {
+                if let m = outcome.landThePauseMetrics, m.transitionFillers == 0 {
+                    return "Clean Pauses"
+                }
+                return "Strong Transitions"
+            }
+            if let m = outcome.landThePauseMetrics, m.transitionFillers > 0 {
+                return "Rushed Between Points"
+            }
+            return "Combo Broken"
+
+        case .prepStack:
+            if outcome.succeeded {
+                return "Strong Stack"
+            }
+            if let m = outcome.prepStackMetrics, m.stepsCompleted <= 2 {
+                return "Missing Support"
+            }
+            return "Weak Close"
+
+        case .standard:
+            return title(for: outcome.drill.skillArea, succeeded: outcome.succeeded)
+        }
+    }
+
+    /// Skill-area-aware titles for standard drills.
+    private static func title(for skillArea: SkillArea, succeeded: Bool) -> String {
+        switch skillArea {
+        case .fillerReduction:
+            return succeeded ? "Clean Run" : "Keep Cleaning"
+        case .paceControl:
+            return succeeded ? "Steady Pace" : "Pace Check"
+        case .openingStrength:
+            return succeeded ? "Strong Open" : "Sharpen the Hook"
+        case .closingStrength:
+            return succeeded ? "Clean Close" : "Stick the Landing"
+        case .structure:
+            return succeeded ? "Clear Framework" : "Build the Frame"
+        case .answerDevelopment:
+            return succeeded ? "Fully Developed" : "Go Deeper"
+        case .conciseSpeaking:
+            return succeeded ? "Tight and Focused" : "Trim the Fat"
+        case .pauseUsage:
+            return succeeded ? "Deliberate Pauses" : "Let It Breathe"
+        case .vocalEmphasis:
+            return succeeded ? "Strong Delivery" : "More Color"
+        case .confidence:
+            return succeeded ? "Steady and Sure" : "Commit to It"
+        }
     }
 
     /// Skill-specific one-liner based on actual metrics.
@@ -69,7 +136,10 @@ enum DrillCompletionCopy {
         switch skillArea {
         case .fillerReduction:
             if succeeded {
-                return "Zero filler words — clean run."
+                if fillerCount == 0 {
+                    return "Zero filler words — clean run."
+                }
+                return "Just \(fillerCount) filler — nearly clean."
             }
             return "\(fillerCount) filler\(fillerCount == 1 ? "" : "s") — getting closer to clean."
 
@@ -147,6 +217,52 @@ enum DrillCompletionCopy {
     /// "Try another" button framing.
     static func tryAnotherLabel(succeeded: Bool) -> String {
         succeeded ? "Try Another Variation" : "Try Another Drill"
+    }
+
+    // MARK: - Specialized Drill Feedback
+
+    /// Beat the Brake — pace zone drill feedback.
+    static func beatTheBrakeFeedback(metrics: BeatTheBrakeMetrics, succeeded: Bool) -> String {
+        let pct = Int(metrics.zonePercentage * 100)
+        let avg = Int(metrics.averageWPM)
+        if succeeded {
+            return "\(pct)% pace control at \(avg) WPM avg; this trained slowing down before filler pressure builds."
+        }
+        if metrics.averageWPM > 140 {
+            return "\(pct)% pace control; \(metrics.rushedBursts) rushed burst\(metrics.rushedBursts == 1 ? "" : "s") pushed you past the target band."
+        }
+        if metrics.averageWPM < 110 {
+            return "\(pct)% pace control; \(avg) WPM was below the challenge band."
+        }
+        return "\(pct)% pace control at \(avg) WPM; the goal is steadier rhythm, not zero fillers."
+    }
+
+    /// Land the Pause — checkpoint pause drill feedback.
+    static func landThePauseFeedback(metrics: LandThePauseMetrics, succeeded: Bool) -> String {
+        let locked = metrics.checkpointsLocked
+        if succeeded {
+            if metrics.transitionFillers == 0 {
+                return "\(locked)/3 pauses banked; your transitions stayed clean."
+            }
+            return "\(locked)/3 pauses banked with \(metrics.transitionFillers) transition filler\(metrics.transitionFillers == 1 ? "" : "s")."
+        }
+        if locked == 0 {
+            return "No pauses banked yet. Deliver one point, stop, then let the silence register."
+        }
+        return "\(locked)/3 pauses banked; the combo broke before all three points landed."
+    }
+
+    /// PREP Stack — guided structure drill feedback.
+    static func prepStackFeedback(metrics: PREPStackMetrics, succeeded: Bool) -> String {
+        let steps = metrics.stepsCompleted
+        let dur = Int(metrics.totalDuration)
+        if succeeded {
+            return "Full PREP in \(dur)s with a clear final point."
+        }
+        if steps <= 2 {
+            return "\(steps)/4 steps — push through all four. Point → Reason → Example → Point."
+        }
+        return "\(steps)/4 steps — strengthen the close so the stack lands."
     }
 }
 

@@ -2042,6 +2042,7 @@ struct TimedPracticeView: View {
         isStopping = false
         lastMilestoneState = .neutral
         milestoneScale = 1.0
+        speechVM.sessionPrompt = question
         speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
 
@@ -2086,12 +2087,9 @@ struct TimedPracticeView: View {
 
         Task {
             // Wait for video recording delegate to finish writing the file
-            // The delegate sets recordingURL when the file is ready
+            // The delegate publishes an explicit terminal state when the file is ready or failed.
             if enableVideoRecording {
-                for _ in 0..<20 {
-                    if videoManager.recordingURL != nil { break }
-                    try? await Task.sleep(for: .milliseconds(100))
-                }
+                _ = await videoManager.waitForRecordingFinalization()
             }
             try? await Task.sleep(for: .milliseconds(650))
             await MainActor.run {

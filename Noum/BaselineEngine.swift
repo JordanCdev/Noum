@@ -564,6 +564,37 @@ enum BaselineEngine {
         return updated
     }
 
+    @MainActor
+    static func updateWithMiniDrill(_ baseline: CommunicationBaseline, outcome: MiniDrillOutcome) -> CommunicationBaseline {
+        var updated = baseline
+        updated.sessionCount += 1
+        updated.lastUpdated = Date()
+
+        guard outcome.duration >= 5, outcome.wordCount >= 5 else {
+            updated.clutchWordFrequencies = buildClutchWordStats(from: ClutchWordStore.shared.topClutchWords)
+            return updated
+        }
+
+        let alpha = 0.08
+        let samples = max(1, updated.qualifyingSessionCount)
+        let fillerRate = Double(outcome.fillerCount) / max(outcome.duration / 60.0, 0.1)
+        let wpm = Double(outcome.wordCount) / max(outcome.duration, 1) * 60
+
+        updated.fillerRate = updateStat(updated.fillerRate, newValue: fillerRate, alpha: alpha, totalSamples: max(updated.fillerRate.sampleCount, samples))
+        updated.pace = updateStat(updated.pace, newValue: wpm, alpha: alpha, totalSamples: max(updated.pace.sampleCount, samples))
+        updated.durationTendency = updateStat(updated.durationTendency, newValue: outcome.duration, alpha: alpha, totalSamples: max(updated.durationTendency.sampleCount, samples))
+        updated.hedgingRate = updateStat(
+            updated.hedgingRate,
+            newValue: Double(HedgeDetector.count(in: outcome.transcript)) / max(outcome.duration / 60.0, 0.1),
+            alpha: alpha,
+            totalSamples: max(updated.hedgingRate.sampleCount, samples)
+        )
+        updated.clutchWordFrequencies = buildClutchWordStats(from: ClutchWordStore.shared.topClutchWords)
+        updated.topStrengths = identifyStrengths(updated)
+        updated.persistentBlockers = identifyBlockers(updated)
+        return updated
+    }
+
     // MARK: - Pressure Classification
 
     /// Classifies the pressure level of a session based on mode, difficulty, and context.
@@ -978,8 +1009,14 @@ final class BaselineStore: ObservableObject {
 
     /// Incrementally update with a new session.
     func recordSession(_ session: PracticeSession, pressure: PressureLevel) {
-        baseline = BaselineEngine.update(baseline, with: session)
+        baseline = BaselineEngine.updateWithClutchWords(baseline, with: session)
         pressureProfile = BaselineEngine.updatePressureProfile(pressureProfile, session: session, pressure: pressure)
+        save()
+    }
+
+    func recordMiniDrillOutcome(_ outcome: MiniDrillOutcome, prompt: String?) {
+        ClutchWordStore.shared.analyzeSession(transcript: outcome.transcript, prompt: prompt)
+        baseline = BaselineEngine.updateWithMiniDrill(baseline, outcome: outcome)
         save()
     }
 

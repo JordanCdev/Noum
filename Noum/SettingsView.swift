@@ -293,6 +293,20 @@ struct SettingsView: View {
             }
             .toggleStyle(.switch)
 
+            Divider()
+                .padding(.vertical, 2)
+
+            Toggle(isOn: $practiceSettings.fillerAlertSoundEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Filler alert sound")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Play a short click when a filler word is detected.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+
             if imVoicePlaybackSettings.isEnabled && authManager.isDeveloper {
                 Divider()
                     .padding(.vertical, 2)

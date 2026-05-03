@@ -5,6 +5,9 @@ import SwiftUI
 #if canImport(AVFoundation)
 import AVFoundation
 #endif
+#if canImport(AudioToolbox)
+import AudioToolbox
+#endif
 
 #if canImport(AVFoundation)
 @MainActor
@@ -18,13 +21,30 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var connectionError: String?
     @Published var activeProviderName: String = ""
 
-    /// When set, filler detection uses context-aware logic that excludes prompt echoes
-    /// and ambiguous words in legitimate usage. Used by Pressure Drill mode.
-    var pressureDrillPrompt: String?
+    /// The session prompt (topic). Used by ALL modes for prompt-echo exclusion
+    /// in semantic filler detection. Set this before recording starts.
+    var sessionPrompt: String?
+
+    /// When set, enables the stricter Pressure Drill filler path.
+    /// Uses `sessionPrompt` for echo exclusion with the sudden death threshold.
+    var pressureDrillPrompt: String? {
+        get { _pressureDrillMode ? sessionPrompt : nil }
+        set { _pressureDrillMode = newValue != nil; if let v = newValue { sessionPrompt = v } }
+    }
+    private var _pressureDrillMode = false
+
     @Published var pressureDrillFillerCount: Int = 0
-    /// Count of uncertain filler detections (below sudden death threshold but above noise).
+    @Published var fillerAlertDebugLine: String?
+    /// Count of uncertain filler detections (below general threshold but above noise).
     /// UI can show a "?" indicator for these.
     @Published var uncertainFillerCount: Int = 0
+
+    /// Confidence threshold for the general filler count (non-pressure modes).
+    /// Detections at or above this level are counted. Default: 0.65 (catches clear
+    /// fillers like "um", "uh", "you know" and high-confidence "like"/"so" but
+    /// excludes ambiguous low-confidence matches).
+    private let generalFillerThreshold: Double = 0.65
+    private var fillerAlertGate = FillerAlertGate()
 
     private let sessionStore = PracticeSessionStore.shared
     private let recommendationLearningStore = RecommendationLearningStore.shared
@@ -40,6 +60,7 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
     private var hasPreparedInteractiveUse = false
+    var shouldRecordPracticeSession = true
 
     // Quality tracking
     private var sessionUpdateCount: Int = 0
@@ -120,7 +141,13 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     private func startRecordingWithProvider() async {
+        let shouldRestorePressureMode = _pressureDrillMode
+        let promptBeforeReset = sessionPrompt
         resetCurrentSession()
+        if shouldRestorePressureMode {
+            _pressureDrillMode = true
+            sessionPrompt = promptBeforeReset
+        }
         sessionStart = Date()
         sessionUpdateCount = 0
         totalLatencyMs = 0
@@ -281,18 +308,45 @@ class SpeechRecognizerViewModel: ObservableObject {
     // MARK: - Filler Word Detection
 
     private func highlightAndCountFillerWords(in text: String) {
-        let matches = FillerWordDetector.matches(in: text)
-        let count = matches.count
+        // Always use semantic detection — prompt-aware, confidence-scored.
+        let prompt = sessionPrompt ?? ""
+        let allDetections = FillerWordDetector.detections(in: text, prompt: prompt)
+
+        // General filler count: detections at or above the general threshold.
+        // This catches clear fillers but excludes ambiguous "like a", "so that", prompt echoes.
+        let generalDetections = allDetections.filter { $0.confidence >= generalFillerThreshold }
+        let count = generalDetections.count
+
+        // Highlight confirmed fillers in the transcript
         let attributed = NSMutableAttributedString(string: text)
-        for match in matches {
-            attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+        for detection in generalDetections {
+            attributed.addAttribute(.foregroundColor, value: UIColor.red, range: detection.range)
         }
+
+        let previousCount = fillerWordCount
         fillerWordCount = count
         highlightedText = AttributedString(attributed)
 
-        // If running in Pressure Drill mode, use confidence-scored detections
-        if let prompt = pressureDrillPrompt {
-            let allDetections = FillerWordDetector.detections(in: text, prompt: prompt)
+        let alertDecision = fillerAlertGate.evaluate(
+            previousAdjustedCount: previousCount,
+            adjustedCount: count,
+            detections: allDetections,
+            isEnabled: PracticeSettingsManager.shared.fillerAlertSoundEnabled
+        )
+        fillerAlertDebugLine = alertDecision.debugLine
+
+        if alertDecision.shouldPlay {
+            CoachHaptic.fillerAlert()
+            #if canImport(AudioToolbox)
+            AudioServicesPlaySystemSound(1104)
+            #endif
+            print("[FillerAlert] \(alertDecision.debugLine)")
+        } else if alertDecision.detectionFired {
+            print("[FillerAlert] \(alertDecision.debugLine)")
+        }
+
+        // Pressure Drill mode: stricter sudden death threshold
+        if _pressureDrillMode {
             pressureDrillFillerCount = allDetections.filter { $0.confidence >= FillerDetection.suddenDeathThreshold }.count
             uncertainFillerCount = allDetections.filter { $0.confidence >= 0.4 && $0.confidence < FillerDetection.suddenDeathThreshold }.count
         }
@@ -306,6 +360,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         fillerWordCount = 0
         pressureDrillFillerCount = 0
         uncertainFillerCount = 0
+        fillerAlertDebugLine = nil
+        fillerAlertGate.reset()
+        _pressureDrillMode = false
         finalTranscript = ""
         partialTranscript = ""
         connectionError = nil
@@ -319,7 +376,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             sessionStart = nil
             return
         }
-        guard currentSessionMode != .imConversation else {
+        guard shouldRecordPracticeSession, currentSessionMode != .imConversation else {
             sessionStart = nil
             pastSessions = sessionStore.sessions
             return
