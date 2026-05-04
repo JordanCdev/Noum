@@ -20,6 +20,7 @@ struct NoumApp: App {
 
     init() {
         FirebaseBootstrap.configure()
+        TypographyDebug.logRegisteredFamiliesOnce()
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("UI_TESTING_SEED") {
             // Inject the "improving intermediate" dev profile before any view
@@ -53,6 +54,10 @@ struct NoumApp: App {
             }
         }
         .preferredColorScheme(.light)
+        // M3 typography redesign: default body text uses Manrope. Views can
+        // override with the Figtree-backed `Typography.headline` /
+        // `Typography.cardTitle` etc. for headlines.
+        .environment(\.font, Typography.body)
 #if canImport(GoogleSignIn)
         .onOpenURL { url in
             GIDSignIn.sharedInstance.handle(url)

@@ -204,7 +204,7 @@ struct SuddenDeathPracticeView: View {
                         .foregroundStyle(accentColor)
 
                     Text("Pressure Drill")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(Typography.bigStat)
 
                     Text("Respond fast. Stay clean. Survive.")
                         .font(.subheadline)
@@ -283,7 +283,7 @@ struct SuddenDeathPracticeView: View {
     private var difficultyPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("DIFFICULTY")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(Typography.micro)
                 .tracking(0.8)
                 .foregroundStyle(.secondary)
 
@@ -700,7 +700,7 @@ struct SuddenDeathPracticeView: View {
 
                 // Result label
                 Text(result.resultLabel)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
 
                 // Key stat: rounds survived
                 Text("Survived \(result.roundsSurvived) round\(result.roundsSurvived == 1 ? "" : "s")")

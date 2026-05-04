@@ -496,6 +496,11 @@ class AuthManager: ObservableObject {
             "noum.streakFreeze.available.\(accountID)",
             "noum.streakFreeze.lastEarnedWeek.\(accountID)",
             "noum.streakFreeze.consumedDates.\(accountID)",
+            // Path progression (M3)
+            "noum.pathProgress.unlocked.\(accountID)",
+            "noum.pathProgress.initialized.\(accountID)",
+            // Lessons (M3+: teaching layer)
+            "noum.lessons.progress.\(accountID)",
             // Notification preferences
             "noum.notifications.dailyReminderEnabled.\(accountID)",
             "noum.notifications.dailyReminderTime.\(accountID)",
@@ -507,6 +512,9 @@ class AuthManager: ObservableObject {
         }
         // Global keys that are not per-account but should be cleared on deletion
         defaults.removeObject(forKey: "NoumFriendsList")
+        defaults.removeObject(forKey: "NoumChallenges")
+        defaults.removeObject(forKey: "NoumCompletedChallenges")
+        defaults.removeObject(forKey: "NoumAsyncChallenges")
         defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
         defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
         defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")

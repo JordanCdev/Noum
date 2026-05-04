@@ -127,7 +127,7 @@ struct AhCounterView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
                         Text("Track filler words as you speak")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                         Text("Use this mode for open-ended reps without a fixed countdown.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)

@@ -86,6 +86,7 @@ struct SummaryView: View {
     @State private var nextAction: NextAction?
     @State private var coachNoteRevealed = false
     @State private var enhancedCoachNote: CoachNote?
+    @State private var eloquenceFindings: [EloquenceFinding] = []
     @State private var showAIDisclosure = false
     @State private var showProgressionScreen = false
     @State private var progressionDeltas: [AchievementProgressDelta] = []
@@ -495,6 +496,7 @@ struct SummaryView: View {
                                 coachNote: coachNote,
                                 coachNoteRevealed: coachNoteRevealed
                             )
+                            EloquenceFindingsCard(findings: eloquenceFindings)
                             FillerBreakdownCard(transcriptText: transcriptText)
                             YourNextMoveCard(
                                 drill: drillRecommendationV2,
@@ -1762,7 +1764,7 @@ struct SummaryView: View {
 
             // Headline
             Text(headline)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(Typography.cardTitle)
                 .foregroundStyle(.white.opacity(0.9))
                 .padding(.bottom, 6)
 
@@ -1845,7 +1847,7 @@ struct SummaryView: View {
     private func shareStatCell(value: String, label: String, tint: Color) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(Typography.headline)
                 .foregroundStyle(.white)
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
@@ -2146,6 +2148,7 @@ struct SummaryView: View {
         progressionNewUnlocks = result.newUnlocks
         nextAction = result.nextAction
         enhancedCoachNote = result.coachNote
+        eloquenceFindings = result.eloquenceFindings
 
         if result.showProgressionScreen {
             showProgressionScreen = true

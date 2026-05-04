@@ -135,7 +135,7 @@ struct DailyGoalCelebration: View {
                 }
 
                 Text("Today's done")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
                     .foregroundStyle(.white)
 
                 Text("That's the rep. Streak intact, no break needed.")

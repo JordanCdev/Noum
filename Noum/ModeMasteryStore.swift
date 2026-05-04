@@ -96,7 +96,7 @@ enum ModeMasteryRank {
                     "Clean", "Refined", "Refined", "Crystal", "Master"][l - 1]
         case .imConversation:
             return ["Acquaintance", "Acquaintance", "Conversant", "Conversant", "Attuned",
-                    "Attuned", "Trusted", "Trusted", "Composed Voice", "Master"][l - 1]
+                    "Attuned", "Trusted", "Trusted", "Anchored", "Master"][l - 1]
         }
     }
 

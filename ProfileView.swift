@@ -29,6 +29,7 @@ struct ProfileView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
+    @StateObject private var league = LeagueManager.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -67,6 +68,15 @@ struct ProfileView: View {
         PracticeSession.calculateStreak(from: sessions)
     }
 
+    /// True when there's at least one friend and none of them carry an
+    /// `accountID` — i.e. every challenge with this user's friends is
+    /// going to use the local simulator.
+    private var hasOnlyLegacyFriends: Bool {
+        let list = friends.friends
+        guard !list.isEmpty else { return false }
+        return list.allSatisfy { $0.accountID == nil }
+    }
+
     private var coachingInsight: String {
         if let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile) {
             return plan.encouragement
@@ -80,6 +90,7 @@ struct ProfileView: View {
                 identityHeader
                 rankPanel
                 speakingRatingCard
+                leaguePanel
                 ModeMasteryCard()
                 coachingDirectionCard
                 activeChallengePanel
@@ -92,6 +103,10 @@ struct ProfileView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 40)
+        }
+        .task {
+            await challenges.refreshFromBackend()
+            await friends.refreshPeerStats()
         }
         .background(
             LinearGradient(
@@ -202,7 +217,7 @@ struct ProfileView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.rankTitle)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(Typography.bigStat)
                     Text(profile.rankDescriptor)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(profile.rankTint)
@@ -388,6 +403,75 @@ struct ProfileView: View {
         case .declining: return "Dipping — more reps will help"
         case .newIssue: return "New pattern detected"
         case .resolved: return "Recent issue resolved"
+        }
+    }
+
+    // MARK: - League
+
+    /// Tappable summary of the user's current league tier. Real peer ranking
+    /// lives in `LeagueView` — this card is a low-noise entry point that
+    /// surfaces tier + rating headroom + reset countdown without filling
+    /// the profile with a full leaderboard.
+    private var leaguePanel: some View {
+        NavigationLink(value: AppDestination.league) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(leagueTierTint.opacity(0.16))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "rosette")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(leagueTierTint)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(league.tier.title) league")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(leagueSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(league.resetCopy)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("profile.league")
+    }
+
+    private var leagueSubtitle: String {
+        if let toNext = league.ratingToNextTier, let next = league.tier.nextTier {
+            return "+\(toNext) rating to \(next.title)"
+        }
+        return "Top tier — defend your rating to stay."
+    }
+
+    private var leagueTierTint: Color {
+        switch league.tier {
+        case .bronze:   return Color(red: 0.65, green: 0.42, blue: 0.20)
+        case .silver:   return Color(red: 0.60, green: 0.62, blue: 0.66)
+        case .gold:     return Color(red: 0.85, green: 0.65, blue: 0.13)
+        case .platinum: return Color(red: 0.39, green: 0.55, blue: 0.78)
+        case .diamond:  return Color(red: 0.36, green: 0.78, blue: 0.78)
         }
     }
 
@@ -827,6 +911,11 @@ struct ProfileView: View {
             Text("Challenge a friend to the same prompt. Both speak, then compare scores.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if hasOnlyLegacyFriends {
+                Text("Practice mode — opponent scores are simulated for friends without a linked account.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             let active = challenges.activeAsyncChallenges
             if active.isEmpty {
@@ -940,6 +1029,28 @@ struct ProfileView: View {
                     }
                     .foregroundStyle(.blue)
                 }
+            }
+
+            if !friends.friends.isEmpty {
+                NavigationLink(value: AppDestination.friendLeaderboard) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.number")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.blue)
+                        Text("View leaderboard")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.blue)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile.friendLeaderboard")
             }
 
             if friends.friends.isEmpty {

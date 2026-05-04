@@ -1478,7 +1478,7 @@ struct TimedPracticeView: View {
                     }
                     Spacer()
                     Text("\(speechVM.fillerWordCount)")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(Typography.cardTitle)
                         .foregroundStyle(speechVM.fillerWordCount > 5 ? .red : speechVM.fillerWordCount > 2 ? .orange : .green)
                 }
                 .padding(.horizontal, 20)

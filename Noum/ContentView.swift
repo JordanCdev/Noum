@@ -30,6 +30,7 @@ struct ContentView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
+    @StateObject private var pathProgress = PathProgressManager.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
@@ -79,11 +80,13 @@ struct ContentView: View {
                         if sessionStore.sessions.isEmpty {
                             heroCard
                             DailyGoalCard(manager: dailyGoal)
+                            nextLessonCard
                             firstSessionCard
                         } else {
                             heroCard
                             DailyGoalCard(manager: dailyGoal)
                             streakCard
+                            nextLessonCard
                             WeeklyDigestCard(
                                 sessionStore: sessionStore,
                                 ratingStore: RatingStore.shared,
@@ -133,6 +136,18 @@ struct ContentView: View {
                     CutTheCrutchView(navigationPath: $navigationPath)
                 case .friendLeaderboard:
                     FriendLeaderboardView()
+                case .league:
+                    LeagueView()
+                case .speechProjects:
+                    SpeechProjectsView(navigationPath: $navigationPath)
+                case .lessons:
+                    LessonsHomeView(navigationPath: $navigationPath)
+                case .lesson(let id):
+                    if let lesson = LessonsCatalog.lesson(id: id) {
+                        LessonView(lesson: lesson, navigationPath: $navigationPath)
+                    } else {
+                        LessonsHomeView(navigationPath: $navigationPath)
+                    }
                 case .summary(let payload):
                     SummaryView(payload: payload, navigationPath: $navigationPath)
                 case .sessionHistory:
@@ -144,7 +159,7 @@ struct ContentView: View {
                 case .speakingRank:
                     SpeakingRankView()
                 case .pathJourney:
-                    PathJourneyView()
+                    PathJourneyView(navigationPath: $navigationPath)
                 }
             }
         }
@@ -165,6 +180,18 @@ struct ContentView: View {
                 }
                 .transition(.opacity)
                 .zIndex(100)
+            }
+        }
+        .overlay {
+            if let unlockedNode = pendingPathCelebration {
+                PathNodeCelebration(
+                    node: unlockedNode,
+                    onDismiss: {
+                        pathProgress.consumeCelebration()
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(99)
             }
         }
         .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
@@ -267,11 +294,11 @@ struct ContentView: View {
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Hello, \(heroTitle)")
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
+                .font(Typography.sectionHero)
                 .foregroundStyle(.primary)
-            
+
             Text(heroSubtitle)
-                .font(.callout)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -305,7 +332,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Let's find your starting point")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
 
                     Text(firstSessionWelcomeMessage)
@@ -361,6 +388,76 @@ struct ContentView: View {
         .accessibilityIdentifier("home.firstSession")
     }
 
+    // MARK: - Next Lesson
+
+    /// "Your next lesson" home card. Picks the lesson the user should
+    /// work on next from `LessonStore.nextRecommendedLesson`. Shows the
+    /// crown progress on the picked lesson + a one-tap CTA that opens
+    /// the lesson directly. Hides itself when every lesson is mastered.
+    @ViewBuilder
+    private var nextLessonCard: some View {
+        if let lesson = LessonStore.shared.nextRecommendedLesson {
+            let crowns = LessonStore.shared.crownLevel(for: lesson.id)
+            Button {
+                navigationPath.append(AppDestination.lesson(id: lesson.id))
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .fill(AppColor.brandBlue.opacity(0.14))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: lesson.symbolName)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(AppColor.brandBlue)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(crowns == 0 ? "Next lesson" : "Earn another crown")
+                            .font(Typography.micro)
+                            .foregroundStyle(AppColor.brandBlue)
+                            .textCase(.uppercase)
+                            .tracking(0.8)
+                        Text(lesson.title)
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(lesson.tagline)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        crownPips(crowns: crowns)
+                            .padding(.top, 2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 14)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        .stroke(Color.white.opacity(0.75), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.nextLesson")
+        }
+    }
+
+    private func crownPips(crowns: Int) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<LessonStore.crownCap, id: \.self) { i in
+                Image(systemName: i < crowns ? "crown.fill" : "crown")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(i < crowns ? AppColor.brandBlue : Color.secondary.opacity(0.30))
+            }
+        }
+    }
+
     // MARK: - Quick Start
 
     private var quickStartCard: some View {
@@ -378,7 +475,7 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Quick Start")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(Typography.headline)
                         .foregroundStyle(.primary)
                     Text(suggestion.title)
                         .font(.caption)
@@ -492,7 +589,7 @@ struct ContentView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Text(rankTitle)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Open progress, unlocked achievements, and recent coaching insights")
@@ -564,7 +661,7 @@ struct ContentView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             Text("Recommended Practice")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
@@ -601,11 +698,16 @@ struct ContentView: View {
         )
     }
 
+    /// "Your next node" home surface. Shows the first incomplete node from
+    /// the path, with live progress + a one-tap CTA. The whole card pushes
+    /// the full path on tap; the inline CTA jumps straight to the action that
+    /// progresses *this* node, so the user never has to stop at the path map.
     private var journeyPreviewCard: some View {
-        Button { navigationPath.append(AppDestination.pathJourney) } label: {
+        let status = pathProgress.currentNode
+        return Button { navigationPath.append(AppDestination.pathJourney) } label: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
+                    Image(systemName: status?.node.symbolName ?? "checkmark.seal.fill")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(AppColor.positive)
                         .frame(width: 46, height: 46)
@@ -615,13 +717,15 @@ struct ContentView: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Your Path")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-                        Text(journeySnapshot.progressLabel)
-                            .font(.subheadline.weight(.semibold))
+                        Text(status == nil ? "Path cleared" : "Your next node")
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(AppColor.positive)
-                        Text(journeySnapshot.nextMilestoneLabel)
+                            .textCase(.uppercase)
+                            .tracking(0.6)
+                        Text(status?.node.title ?? "Defend your gains")
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.primary)
+                        Text(status?.node.coachLine ?? "You've cleared every node. Hold the path with one rep a day.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -631,14 +735,39 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack(spacing: 6) {
+                if let status, status.progress > 0 && !status.isComplete {
+                    ProgressView(value: status.progress)
+                        .progressViewStyle(.linear)
+                        .tint(AppColor.positive)
+                }
+
+                HStack(spacing: 8) {
                     Spacer()
-                    Text("Open")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.positive)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(AppColor.positive)
+                    if let status {
+                        Button {
+                            navigationPath.append(status.node.actionDestination)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(status.node.actionLabel)
+                                    .font(.caption.weight(.bold))
+                                Image(systemName: "arrow.right")
+                                    .font(.caption2.weight(.bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(AppColor.positive, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("home.path.action")
+                    } else {
+                        Text("Open path")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(AppColor.positive)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(AppColor.positive)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -707,7 +836,7 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(suggestion.title)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(Typography.headline)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -790,7 +919,7 @@ struct ContentView: View {
                     .symbolEffect(.pulse, options: .repeating.speed(0.6))
             }
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(Typography.nav)
                 .textCase(.uppercase)
                 .tracking(0.4)
                 .foregroundStyle(accent.opacity(0.85))
@@ -1026,8 +1155,11 @@ struct ContentView: View {
         }
     }
 
-    private var journeySnapshot: PracticeJourneySnapshot {
-        PracticeJourneySnapshot.make(from: sessionStore.sessions)
+    /// The node that was just newly-unlocked, if any. Drives the path
+    /// celebration overlay. Cleared by `pathProgress.consumeCelebration()`.
+    private var pendingPathCelebration: PathNode? {
+        guard let id = pathProgress.pendingCelebrationNodeID else { return nil }
+        return PathNodeRegistry.all.first(where: { $0.0.id == id })?.0
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {

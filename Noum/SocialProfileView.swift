@@ -113,6 +113,10 @@ struct SocialProfileView: View {
         .sheet(isPresented: $showAddFriendManual) {
             AddFriendSheet(friends: friends, challenges: challenges)
         }
+        .task {
+            await challenges.refreshFromBackend()
+            await friends.refreshPeerStats()
+        }
     }
 
     // MARK: - Profile Header
@@ -249,9 +253,11 @@ struct SocialProfileView: View {
             Text("Challenge a friend to the same prompt. Both speak, then compare scores.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Practice mode — opponent scores are simulated")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            if hasOnlyLegacyFriends {
+                Text("Practice mode — opponent scores are simulated for friends without a linked account.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             let active = challenges.activeAsyncChallenges
             if active.isEmpty {
@@ -862,8 +868,13 @@ struct SocialProfileView: View {
     private func handleScannedQR(_ code: String) {
         if code.hasPrefix("noum://friend/") {
             let friendID = String(code.dropFirst("noum://friend/".count))
-            friends.addFriend(name: "Speaker \(friendID.prefix(4))", method: .qrCode)
+            friends.addFriend(
+                name: "Speaker \(friendID.prefix(4))",
+                method: .qrCode,
+                accountID: friendID.isEmpty ? nil : friendID
+            )
             challenges.recordSocialAction()
+            Task { await friends.refreshPeerStats(force: true) }
         }
     }
 
@@ -882,6 +893,16 @@ struct SocialProfileView: View {
 
     private var currentStreak: Int {
         PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
+    }
+
+    /// True when there's at least one friend and none of them carry an
+    /// `accountID` — i.e. every challenge with this user's friends is
+    /// going to use the local simulator. Used to surface honest copy
+    /// instead of pretending the network is live.
+    private var hasOnlyLegacyFriends: Bool {
+        let list = friends.friends
+        guard !list.isEmpty else { return false }
+        return list.allSatisfy { $0.accountID == nil }
     }
 
     private func shareInviteLink() {
@@ -1225,7 +1246,7 @@ struct AddFriendSheet: View {
                             .foregroundStyle(.white.opacity(0.6))
                     } else {
                         Text(String(friendName.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                             .foregroundStyle(.white)
                     }
                 }

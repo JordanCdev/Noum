@@ -210,7 +210,7 @@ struct SettingsView: View {
                         .frame(width: 56, height: 56)
 
                     Text(String(displayName.prefix(1)).uppercased())
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(Typography.cardTitle)
                         .foregroundStyle(AppColor.brandBlue)
                 }
                 .accessibilityHidden(true)
@@ -218,7 +218,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Text(displayName)
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(Typography.cardTitle)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
@@ -1296,7 +1296,7 @@ private struct DeleteAccountConfirmationSheet: View {
                         .font(.title2)
                         .foregroundStyle(AppColor.warning)
                     Text("Delete account")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(Typography.bigStat)
                     Text("This permanently removes your account and every session, coaching detail, and AI history tied to it. You can't undo this.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -1423,7 +1423,7 @@ struct YourDataView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 Text("Your data")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
 
                 Text("Here's what Noum stores and where. Your data is yours — you can export or delete it at any time.")
                     .font(.subheadline)

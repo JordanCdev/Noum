@@ -23,6 +23,16 @@ struct SessionFinalizationResult {
     let baselineComparisons: [String: String]
     let pressureLevel: PressureLevel
     let coachNote: CoachNote?
+
+    /// M3+: rhetorical devices detected on the transcript. Surfaced as a
+    /// positive coaching card in the summary. Empty array when nothing
+    /// noteworthy was detected.
+    let eloquenceFindings: [EloquenceFinding]
+
+    /// Bonus XP awarded for the eloquence findings. Already added to
+    /// `newXP`; surfaced separately so the summary can label it
+    /// ("+12 XP for shape").
+    let eloquenceBonusXP: Int
 }
 
 // MARK: - Session Finalizer
@@ -69,8 +79,15 @@ enum SessionFinalizer {
             return map
         }()
 
+        // Compute eloquence findings + XP bonus first so we can roll the
+        // bonus into the session XP that goes through the rank ladder. The
+        // base xpEarned still drives the headline number; the bonus is
+        // labelled separately on the summary.
+        let preliminaryEloquenceFindings = EloquenceEngine.analyse(transcript: transcript)
+        let eloquenceBonus = EloquenceXP.totalXP(for: preliminaryEloquenceFindings)
+
         let levelBefore = ProfileManager.levelTitle(forXP: profile.xp)
-        profile.addXP(xpEarned)
+        profile.addXP(xpEarned + eloquenceBonus)
         let levelAfter = ProfileManager.levelTitle(forXP: profile.xp)
         let newXP = profile.xp
 
@@ -127,6 +144,14 @@ enum SessionFinalizer {
                 nextMove: derivedInsightsFirst
             )
         }
+
+        // Sync the public-readable subset of the user's stats so peers
+        // (friends + league) can see updated rating, streak, and weekly reps.
+        // Best-effort: any failure is silent. The local UI is unaffected.
+        syncPeerSurfaces()
+
+        // M3: surface the path node celebration if this session unlocked one.
+        PathProgressManager.shared.evaluateAfterSession()
 
         // Milestone detection
         let skillTrends = TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
@@ -216,6 +241,13 @@ enum SessionFinalizer {
             )
         }()
 
+        // Rhetorical devices on the transcript — positive coaching surface.
+        // Conservative thresholds inside the engine keep false positives down.
+        // Reuse the findings already computed earlier for the XP bonus —
+        // running the analyser twice would be wasteful and could (in
+        // theory) drift if the engine grew side effects.
+        let eloquenceFindings = preliminaryEloquenceFindings
+
         return SessionFinalizationResult(
             previousXP: previousXP,
             newXP: newXP,
@@ -230,8 +262,26 @@ enum SessionFinalizer {
             nextAction: nextAction,
             baselineComparisons: comparisons,
             pressureLevel: pressureLevel,
-            coachNote: coachNote
+            coachNote: coachNote,
+            eloquenceFindings: eloquenceFindings,
+            eloquenceBonusXP: eloquenceBonus
         )
+    }
+
+    // MARK: - Peer surface sync
+
+    /// Push the user's public-readable snapshot to `profiles_public/{id}`
+    /// and to the current league bucket. Called once after a session is
+    /// fully recorded so rating, streak, and weekly reps reflect the new
+    /// state. Fire-and-forget on a detached task.
+    private static func syncPeerSurfaces() {
+        guard let accountID = AuthManager.shared.currentAccountID else { return }
+        let displayName = AuthManager.shared.currentAccountName ?? "Speaker"
+        let snapshot = PublicProfileBuilder.build(accountID: accountID, displayName: displayName)
+        Task {
+            await BackendSyncManager.shared.syncPublicProfile(snapshot)
+            await LeagueManager.shared.syncSelf(snapshot: snapshot)
+        }
     }
 
     // MARK: - Milestone Detection

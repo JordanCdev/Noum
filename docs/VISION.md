@@ -59,100 +59,92 @@ The next two milestones are explicitly about closing it.
 
 **Build phase: closing the retention loop.** Core session loop, multi-mode
 practice, scoring, rating, achievements, premium gating, settings, and
-account lifecycle all ship. Trend data is computed but not rendered.
-Daily/weekly cadence and peer competition surfaces are absent. The next
-work is wiring the pull mechanics, not adding new modes.
+account lifecycle all ship. Daily-rhythm v1 (M1) is shipped end-to-end:
+daily goal ring, streak freeze, three notification surfaces, 30-day rating
+chart, weekly digest, AI-paraphrased goal text. Peer Pull v1 (M2) is
+landed in app code: friend leaderboard with real backend stats, async
+challenge round-trip via shared Firestore docs, weekly league bucketed by
+tier+ISO-week. The Firestore security rules (`FIRESTORE_RULES.md` at the
+project root) need to deploy before launch — the iOS code is the minimum
+contract; the rules are what enforce write isolation.
 
 ## Next milestone
 
-**Name:** _Daily-rhythm v1 — the "come back tomorrow" loop._
+**Name:** _Path-Journey gameplay v1 — node-by-node unlock._
+
+(M1 _Daily-rhythm_ and M2 _Peer Pull_ have shipped in app code; M2 is
+gated on Firestore rules deployment.)
 
 **Definition of done:**
-- A real daily target (e.g. 1 rep, configurable 1–3) with a visible
-  ring on home that fills as the day progresses, and a celebration
-  moment on completion. This replaces the current rolling-tile
-  "active challenge".
-- Streak protection: one **streak freeze per week** auto-earned, plus
-  a "you're about to lose your streak" reminder fired at a user-chosen
-  time within 4 hours of midnight local.
-- Three notification surfaces beyond the current single follow-up:
-  daily reminder at user-chosen time, streak-warning, weekly digest.
-  All copy stays lock-screen-safe (no goal-text quotes).
-- A first **`SwiftUI Chart`** rendering — the rating's last 30 days as
-  a smoothed line, with a peak marker. Replaces the existing pill on
-  the profile rating card.
-- A **"this week"** card on home that shows: reps, average score
-  delta vs. last week, top filler word, and the active goal in one
-  short paraphrased sentence.
-- Goal text is **paraphrased once** at capture time (single AI pass)
-  and stored as `paraphrasedGoal` alongside the raw input. UI only
-  ever reads the paraphrase. Raw stays for export only.
+- The Path is no longer decorative. Each node has a concrete entry
+  condition (e.g. "3 clean reps", "peak rating ≥ X", "zero fillers in
+  a Sudden Death round") read off the existing baseline / rating /
+  session systems — no parallel tracking.
+- Home always shows "Your next node" with a one-tap CTA that opens
+  the rep that progresses it.
+- Completing a node fires a single celebration overlay
+  (`MilestoneCelebrationOverlay`) and unlocks the visual reveal of the
+  next node — consolidated with the existing milestone copy so we
+  don't double-celebrate.
+- Path map shows past, current, and next-3 nodes with state
+  indicators. Beyond the next 3 stays masked so the path doesn't read
+  as a finite track.
+- Re-uses `RetentionLoopEngine` and `BaselineEngine` data; no new
+  state owners.
+- The decorative `practicedDays`-based reveal in `PathJourneyView` is
+  retired or repurposed (it implied progress without driving it).
 
 **Out of scope for this milestone:**
-- Leaderboards / leagues
 - Pitch / grammar / pause analytics
 - Word of the day
-- Path-Journey gameplay logic
 - AI-generated topic prompts
 - Multilingual support
+- Server-side league matching algorithms beyond the
+  client-deterministic `{tier}_{ISO-week}` bucketing already in M2.
 
 ## Future milestones (rough order)
 
-1. **Peer pull v1 — leagues and async challenges that survive a
-   reinstall.** A weekly league of 10–20 strangers within rating
-   range, climbing/dropping a rung at the end of each week.
-   `ChallengesManager.AsyncChallenge` syncs through `BackendSyncManager`
-   so two-participant challenges actually round-trip. Friend leaderboard
-   on profile. — _Why: peer accountability is the single biggest pull
-   mechanic Duolingo uses, and Noum already has the friend graph._
-2. **Path-Journey gameplay v1 — node-by-node unlock.** Each node has
-   a concrete entry condition (3 clean reps, peak rating ≥ X, zero
-   fillers in a Sudden Death round). The home screen always shows
-   "Your next node" with one tap to start the rep that progresses it.
-   Replaces the decorative scenes. — _Why: the Path is the most
-   under-leveraged surface in the app; right now it implies progress
-   without driving it._
-3. **Speech-quality v2 — pauses + word-choice variety.** Pauses become
+1. **Speech-quality v2 — pauses + word-choice variety.** Pauses become
    a session metric (count, mean length, longest, "filled vs unfilled").
    Word-choice gets a "variety score" from a Zipf-style repetition
    metric. Both feed `BaselineEngine` and `TrendAnalyzer`, both render
    in the new chart card. — _Why: filler control is solved enough that
    the ceiling on improvement now lives in pacing and word choice._
-4. **Coach memory v1 — goal-aware drill selection.** Goal capture
+2. **Coach memory v1 — goal-aware drill selection.** Goal capture
    becomes recurring (re-asked every 2 weeks). Drill prompts are
    filtered by goal tags. Session debrief framing leads with the goal
    ("you said you wanted to be more concise — your last 5 reps averaged
    23s, target was 30s"). — _Why: the coaching profile is captured
    once and ignored after; making it living turns the app from a tool
    into a coach._
-5. **High-score & rivalry surface — peak-rating wall.** A "Best in
+3. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the
    loss-aversion / chase loop without faking ranks. Tied to the league
-   from milestone 1. — _Why: completes the pull loop with public proof
+   from M2. — _Why: completes the pull loop with public proof
    of progress._
-6. **AI-driven topic prompts — recurrence-aware.** Pull from the
+4. **AI-driven topic prompts — recurrence-aware.** Pull from the
    200-prompt pool 70% of the time, generate fresh ones via
    `AINPCChatService` 30% of the time, biased by the user's goal,
    weakest pattern, and recent prompt history (no repeats inside 14
    days). — _Why: prompt staleness is a quiet retention killer once
    users have seen the pool 2–3 times._
-7. **Word of the day — vocabulary stretch.** One curated word per day
+5. **Word of the day — vocabulary stretch.** One curated word per day
    tied to a 30s prompt that asks the user to use it naturally. Track
    "used / not used" automatically. — _Why: small daily commitment
    point that's distinct from "do a rep", giving lapsed users a tiny
    reason to open the app even when they don't have time for a full
    session._
-8. **Pitch / intonation v1.** Add a pitch track to the audio pipeline
+6. **Pitch / intonation v1.** Add a pitch track to the audio pipeline
    (likely on-device DSP, `Accelerate` framework). Score monotone vs
    varied delivery. Render alongside pace. — _Why: the missing third
    leg of "how it sounds when you speak", and the most differentiating
    metric vs. competitors who only count fillers._
-9. **Grammar / English-usage v1.** Light grammar feedback (subject-verb
+7. **Grammar / English-usage v1.** Light grammar feedback (subject-verb
    agreement, run-on sentences, redundant phrasing) on the post-session
    transcript. Probably an LLM pass with caching. — _Why: requested
    feature; lower priority because it touches polish rather than core
    skill, and risks feeling pedantic._
-10. **Multilingual v1 — start with Spanish, French, German.** Provider
+8. **Multilingual v1 — start with Spanish, French, German.** Provider
     locale becomes user-selectable; filler-word lexicon and prompt
     pool ship per locale. — _Why: market expansion; not core to the
     product story but a reasonable late-roadmap move._

@@ -118,6 +118,8 @@ struct PracticeModeSelectionView: View {
                             modeCard(option)
                         }
                         crutchCard
+                        lessonsCard
+                        speechProjectsCard
                     }
                 }
                 .padding(.horizontal, Spacing.screenH)
@@ -144,7 +146,7 @@ struct PracticeModeSelectionView: View {
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Pick your next rep")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(Typography.screenTitle)
                 .foregroundStyle(.primary)
 
             Text("Each mode trains a different kind of pressure.")
@@ -327,6 +329,137 @@ struct PracticeModeSelectionView: View {
         .accessibilityLabel(crutchOption.title)
         .accessibilityHint(crutchOption.subtitle)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - Lessons Card
+
+    /// Tappable entry point to the lessons catalog. Lessons teach a
+    /// single technique (rule of three, anaphora, pause-instead-of-filler)
+    /// in three short steps with engine-validated practice.
+    private var lessonsCard: some View {
+        Button {
+            CoachHaptic.selectionTap()
+            navigationPath.append(AppDestination.lessons)
+        } label: {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .fill(AppColor.brandBlue.opacity(0.14))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "books.vertical.fill")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("Lessons")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.primary)
+                        crownChip
+                        Spacer(minLength: 0)
+                    }
+                    Text("Learn one technique at a time. Concept, then spot it, then say it. Earn crowns by repeat practice.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("practiceMode.lessons")
+        .accessibilityLabel("Lessons")
+        .accessibilityHint("Open the lessons catalog.")
+    }
+
+    /// Small crown count chip — shows the user's running total of crowns
+    /// when they have any. Hides at zero to keep the card uncluttered for
+    /// first-time users.
+    @ViewBuilder
+    private var crownChip: some View {
+        let total = LessonStore.shared.totalCrowns
+        if total > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "crown.fill")
+                    .font(.caption2.weight(.bold))
+                Text("\(total)")
+                    .font(.caption2.weight(.bold).monospacedDigit())
+            }
+            .foregroundStyle(AppColor.brandBlue)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+        }
+    }
+
+    // MARK: - Speech Projects Card
+
+    /// Tappable entry point to the structured speech-project catalog.
+    /// Visually distinct from the four mode cards — projects are
+    /// curated and prepared, not impromptu reps.
+    private var speechProjectsCard: some View {
+        Button {
+            CoachHaptic.selectionTap()
+            navigationPath.append(AppDestination.speechProjects)
+        } label: {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .fill(AppColor.pro.opacity(0.14))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "graduationcap.fill")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("Speech projects")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 0)
+                    }
+                    Text("Toastmasters-inspired prepared speeches with concrete objectives — Ice Breaker, Vocal Variety, Persuasive, Storytelling.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("practiceMode.speechProjects")
+        .accessibilityLabel("Speech projects")
+        .accessibilityHint("Browse structured prepared speeches with objectives.")
     }
 
     // MARK: - Bottom CTA

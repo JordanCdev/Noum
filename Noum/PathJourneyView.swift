@@ -7,12 +7,36 @@ import SwiftUI
 #endif
 
 #if canImport(SwiftUI)
+
+// MARK: - Path Journey View
+
+/// The user's speaking-skill path.
+///
+/// Two layers in one screen:
+/// 1. **The journey artwork** (original) — daylight scenery that reveals as
+///    the user practices. Emotional anchor.
+/// 2. **Skill milestones** (M3, new) — concrete nodes with real entry
+///    conditions read off existing engines (sessions, baseline, rating,
+///    mastery, streak). Past nodes are checked off, the current node shows
+///    live progress + a one-tap CTA, the next 3 are visible-but-locked, and
+///    anything beyond is masked so the path doesn't read as a finite track.
 @available(iOS 17.0, macOS 12.0, *)
 struct PathJourneyView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var daylightModel = PathDaylightModel()
+    @StateObject private var pathProgress = PathProgressManager.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
     @State private var debugDayOverride: Double = -1
+    @Binding var navigationPath: NavigationPath
+
+    init(navigationPath: Binding<NavigationPath>) {
+        self._navigationPath = navigationPath
+    }
+
+    init() {
+        self._navigationPath = .constant(NavigationPath())
+    }
 
     private var isDebugActive: Bool { debugDayOverride >= 0 }
 
@@ -27,72 +51,24 @@ struct PathJourneyView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                AppColor.screenBackground
-                .ignoresSafeArea()
+                AppColor.screenBackground.ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Your journey")
-                                .font(.system(size: 30, weight: .bold, design: .rounded))
-                            Text(snapshot.summaryLine)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        headerCopy
+                        artworkCard(geometry: geometry)
+                        nodeListSection
+                        if pathProgress.hasMaskedNodes {
+                            maskedHint
                         }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            PathJourneyArtwork(
-                                snapshot: snapshot,
-                                compact: false,
-                                sceneResolver: { date in
-                                    daylightModel.sceneState(for: date)
-                                }
-                            )
-                            .frame(height: min(270, geometry.size.height * 0.37))
-
-                            HStack(spacing: 10) {
-                                journeyPill(title: "Revealed", value: snapshot.progressLabel, icon: "map.fill", accent: .green)
-                                journeyPill(title: "Streak", value: snapshot.streakLabel, icon: "flame.fill", accent: .orange)
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("What this means")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-                                Text(snapshot.explanationLine)
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(2)
-                                Text(snapshot.consequenceLine)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                Text(snapshot.nextMilestoneLabel)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                        }
-                        .padding(16)
-                        .background(
-                            Color.white,
-                            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-                        )
-
-                        // MARK: - Debug day slider (developer only)
                         if AuthManager.shared.isDeveloper {
                             debugSliderCard
                         }
+                        Spacer(minLength: Spacing.lg)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, Spacing.screenH)
+                    .padding(.top, Spacing.sm)
+                    .padding(.bottom, Spacing.lg)
                 }
             }
         }
@@ -105,7 +81,7 @@ struct PathJourneyView: View {
                             .font(.system(size: 16, weight: .semibold))
                         Text("Back")
                     }
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppColor.brandBlue)
                 }
             }
         }
@@ -114,6 +90,294 @@ struct PathJourneyView: View {
             daylightModel.activate()
         }
     }
+
+    // MARK: - Header
+
+    private var headerCopy: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Your journey")
+                .font(Typography.screenTitle)
+                .foregroundStyle(.primary)
+            Text(snapshot.summaryLine)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Artwork card (original visual)
+
+    /// Reproduces the original journey card — daylight artwork + revealed/streak
+    /// pills + the "what this means" copy. Keeps the emotional anchor of the
+    /// path screen intact while the milestones section adds the gameplay layer.
+    private func artworkCard(geometry: GeometryProxy) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PathJourneyArtwork(
+                snapshot: snapshot,
+                compact: false,
+                sceneResolver: { date in daylightModel.sceneState(for: date) }
+            )
+            .frame(height: min(270, geometry.size.height * 0.37))
+
+            HStack(spacing: 10) {
+                journeyPill(title: "Revealed", value: snapshot.progressLabel, icon: "map.fill", accent: AppColor.positive)
+                journeyPill(title: "Streak", value: snapshot.streakLabel, icon: "flame.fill", accent: .orange)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("What this means")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(snapshot.explanationLine)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                Text(snapshot.consequenceLine)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+    }
+
+    private func journeyPill(title: String, value: String, icon: String, accent: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(accent.opacity(0.82))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(value)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(accent.opacity(0.92))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    // MARK: - Node list section (M3 gameplay)
+
+    private var nodeListSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Skill milestones")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Spacer()
+                Text("\(pathProgress.completedNodes.count)/\(PathNodeRegistry.all.count) cleared")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+
+            nodeList
+        }
+    }
+
+    // MARK: - Node list
+
+    private var nodeList: some View {
+        let visible = visibleStatuses
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, status in
+                nodeRow(status: status)
+                if index < visible.count - 1 {
+                    connector(isCompletedAbove: status.isComplete)
+                }
+            }
+        }
+        .padding(.vertical, Spacing.md)
+        .frame(maxWidth: .infinity)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+    }
+
+    /// Past nodes (all completed) + current + next 3. Anything beyond is masked.
+    private var visibleStatuses: [PathNodeStatus] {
+        let completed = pathProgress.completedNodes
+        let upcoming: [PathNodeStatus]
+        if let current = pathProgress.currentNode {
+            upcoming = [current] + pathProgress.upcomingNodes
+        } else {
+            upcoming = []
+        }
+        return completed + upcoming
+    }
+
+    @ViewBuilder
+    private func nodeRow(status: PathNodeStatus) -> some View {
+        if status.isCurrent {
+            currentNodeRow(status: status)
+        } else {
+            staticNodeRow(status: status)
+        }
+    }
+
+    private func staticNodeRow(status: PathNodeStatus) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            nodeBadge(status: status)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.node.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(status.isComplete ? .primary : .secondary)
+                Text(status.node.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: Spacing.xs)
+            if status.isComplete {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(AppColor.positive)
+            } else {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(staticAccessibility(status: status))
+    }
+
+    private func currentNodeRow(status: PathNodeStatus) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                nodeBadge(status: status)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Now")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    Text(status.node.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(status.node.coachLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Spacing.xs)
+            }
+
+            ProgressView(value: status.progress)
+                .progressViewStyle(.linear)
+                .tint(AppColor.brandBlue)
+
+            HStack {
+                Text(status.node.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    navigationPath.append(status.node.actionDestination)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(status.node.actionLabel)
+                            .font(.caption.weight(.bold))
+                        Image(systemName: "arrow.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(AppColor.brandBlue, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("journey.currentNode.action")
+            }
+        }
+        .padding(Spacing.md)
+        .background(
+            AppColor.brandBlue.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+        )
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 6)
+    }
+
+    private func nodeBadge(status: PathNodeStatus) -> some View {
+        ZStack {
+            Circle()
+                .fill(badgeFill(status: status))
+                .frame(width: 36, height: 36)
+            Image(systemName: status.node.symbolName)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(badgeIconTint(status: status))
+        }
+    }
+
+    private func badgeFill(status: PathNodeStatus) -> Color {
+        if status.isComplete { return AppColor.positive.opacity(0.18) }
+        if status.isCurrent { return AppColor.brandBlue.opacity(0.18) }
+        return Color.secondary.opacity(0.10)
+    }
+
+    private func badgeIconTint(status: PathNodeStatus) -> Color {
+        if status.isComplete { return AppColor.positive }
+        if status.isCurrent { return AppColor.brandBlue }
+        return .secondary
+    }
+
+    private func connector(isCompletedAbove: Bool) -> some View {
+        Rectangle()
+            .fill(isCompletedAbove ? AppColor.positive.opacity(0.35) : Color.secondary.opacity(0.18))
+            .frame(width: 2, height: 16)
+            .padding(.leading, Spacing.md + 18)
+            .accessibilityHidden(true)
+    }
+
+    private var maskedHint: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "ellipsis.circle")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text("More after these")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
+            Text("Clear the visible nodes to reveal the next stretch of the path.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.md)
+        .background(AppColor.tagBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private func staticAccessibility(status: PathNodeStatus) -> String {
+        let state = status.isComplete ? "Complete" : "Locked"
+        return "\(status.node.title). \(state). \(status.node.detail)"
+    }
+
+    // MARK: - Debug slider (developer only)
 
     private var debugSliderCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -135,7 +399,7 @@ struct PathJourneyView: View {
 
             HStack(spacing: 12) {
                 Text("Day \(isDebugActive ? Int(debugDayOverride) : snapshot.practicedDays)")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
                     .foregroundStyle(.primary)
                     .frame(width: 80, alignment: .leading)
 
@@ -190,27 +454,6 @@ struct PathJourneyView: View {
                 .stroke(Color.orange.opacity(0.2), lineWidth: 1)
         )
     }
-
-    private func journeyPill(title: String, value: String, icon: String, accent: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(accent.opacity(0.82))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(accent.opacity(0.92))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-    }
-
 }
 
 struct PracticeChallengeStatus {

@@ -1323,3 +1323,142 @@ struct PressureFollowUpTemplateTests {
         }
     }
 }
+
+// MARK: - Eloquence Engine
+
+struct EloquenceEngineTests {
+
+    @Test func tricolonInPreparedSentenceIsDetected() {
+        let transcript = "We need clarity, courage, and conviction in everything we do."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.contains(where: { $0.device == .tricolon || $0.device == .ruleOfThree }),
+                "Expected tricolon/ruleOfThree finding. Got: \(findings.map(\.device))")
+    }
+
+    @Test func anaphoraAcrossSentencesIsDetected() {
+        let transcript = """
+        Again, we'll get the briefing right. Again, we'll arrive ready. Practice makes the difference.
+        """
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.contains(where: { $0.device == .anaphora }),
+                "Expected anaphora finding. Got: \(findings.map(\.device))")
+    }
+
+    @Test func alliterationRunIsDetected() {
+        let transcript = "Pride, prejudice, and proper preparation prevent panic."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.contains(where: { $0.device == .alliteration }),
+                "Expected alliteration finding. Got: \(findings.map(\.device))")
+    }
+
+    @Test func epizeuxisIsDetected() {
+        let transcript = "Never, never give in. The work is hard, but worth it."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.contains(where: { $0.device == .epizeuxis }),
+                "Expected epizeuxis finding. Got: \(findings.map(\.device))")
+    }
+
+    @Test func diacopeIsDetected() {
+        let transcript = "Bond, James Bond. The brand sells itself."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.contains(where: { $0.device == .diacope || $0.device == .epizeuxis }),
+                "Expected diacope or epizeuxis. Got: \(findings.map(\.device))")
+    }
+
+    @Test func rhetoricalQuestionIsDetected() {
+        let transcript = "What does that look like in practice? Three crisp answers, on the clock, no fillers."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.contains(where: { $0.device == .rhetoricalQuestion }),
+                "Expected rhetorical question finding. Got: \(findings.map(\.device))")
+    }
+
+    @Test func plainTranscriptHasNoFindings() {
+        let transcript = "Yeah I think that's basically how I'd handle it. We could probably move forward."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        // No tricolon / parallel / anaphora etc. expected here.
+        #expect(findings.count <= 1, "Plain transcript should produce at most 1 weak finding. Got: \(findings.map(\.device))")
+    }
+
+    @Test func veryShortTranscriptReturnsEmpty() {
+        let transcript = "Hello there."
+        let findings = EloquenceEngine.analyse(transcript: transcript)
+        #expect(findings.isEmpty, "Very short transcripts should not produce findings")
+    }
+
+    @Test func cappedAtMaxFindings() {
+        let transcript = """
+        We will speak. We will lead. We will deliver. \
+        Friends, families, futures all rise together. \
+        Pride, prejudice, perfect preparation push performance. \
+        Never, never give in.
+        """
+        let findings = EloquenceEngine.analyse(transcript: transcript, maxFindings: 3)
+        #expect(findings.count <= 3, "Should cap at maxFindings")
+    }
+}
+
+// MARK: - Eloquence XP
+
+struct EloquenceXPTests {
+
+    @Test func emptyFindingsAwardZero() {
+        #expect(EloquenceXP.totalXP(for: []) == 0)
+    }
+
+    @Test func singleFindingPaysFullBaseXP() {
+        let finding = EloquenceFinding(
+            device: .tricolon,
+            snippet: "clarity, courage, conviction",
+            coachLine: "_"
+        )
+        let xp = EloquenceXP.totalXP(for: [finding])
+        #expect(xp == EloquenceXP.baseXP(for: .tricolon))
+    }
+
+    @Test func diminishingReturnsAcrossFindings() {
+        let three: [EloquenceFinding] = [
+            .init(device: .antithesis, snippet: "_", coachLine: "_"),
+            .init(device: .tricolon, snippet: "_", coachLine: "_"),
+            .init(device: .anaphora, snippet: "_", coachLine: "_")
+        ]
+        let xp = EloquenceXP.totalXP(for: three)
+        let naive = three.map { EloquenceXP.baseXP(for: $0.device) }.reduce(0, +)
+        #expect(xp < naive, "Diminishing returns must reduce the third finding")
+    }
+
+    @Test func cannotExceedPerSessionCap() {
+        // Five high-value devices in one session — total should still be ≤ cap.
+        let many: [EloquenceFinding] = [
+            .init(device: .antithesis, snippet: "_", coachLine: "_"),
+            .init(device: .tricolon, snippet: "_", coachLine: "_"),
+            .init(device: .anaphora, snippet: "_", coachLine: "_"),
+            .init(device: .epistrophe, snippet: "_", coachLine: "_"),
+            .init(device: .isocolon, snippet: "_", coachLine: "_")
+        ]
+        let xp = EloquenceXP.totalXP(for: many)
+        #expect(xp <= EloquenceXP.perSessionCap, "Must respect per-session cap")
+    }
+
+    @Test func bonusCopyMatchesContent() {
+        #expect(EloquenceXP.bonusCopy(for: []) == nil)
+        let solo = EloquenceXP.bonusCopy(for: [
+            .init(device: .tricolon, snippet: "_", coachLine: "_")
+        ])
+        #expect(solo?.contains("rule of three") == true)
+        let multi = EloquenceXP.bonusCopy(for: [
+            .init(device: .tricolon, snippet: "_", coachLine: "_"),
+            .init(device: .anaphora, snippet: "_", coachLine: "_")
+        ])
+        #expect(multi?.contains("shape") == true)
+    }
+
+    @Test func antithesisIsHighestPaying() {
+        // Per-product spec: antithesis is the rarest detector (most
+        // conservative) and should pay the most per finding.
+        let antithesisXP = EloquenceXP.baseXP(for: .antithesis)
+        for device in EloquenceDevice.allCases where device != .antithesis {
+            #expect(antithesisXP >= EloquenceXP.baseXP(for: device),
+                    "antithesis should be ≥ \(device): got \(antithesisXP) vs \(EloquenceXP.baseXP(for: device))")
+        }
+    }
+}

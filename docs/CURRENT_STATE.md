@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-03_
+_Last updated: 2026-05-04_
 
 ## Architecture overview
 
@@ -32,10 +32,14 @@ _Last updated: 2026-05-03_
   of truth for `Spacing`, `CornerRadius`, `AppColor`, springs, shared
   components (`CardView`, `StatCard`, `PrimaryCTA`, `PressableButtonStyle`,
   `LightGradientBackground`, `SectionHeader`, `ErrorCard`,
-  `MilestoneCelebrationOverlay`).
+  `MilestoneCelebrationOverlay`). **Typography lives in
+  `Noum/Typography.swift`** — Figtree (display/rounded) + Manrope
+  (text/UI), bundled as variable TTF in `Noum/Resources/Fonts/`,
+  registered via `Info.plist` `UIAppFonts`. The default body font is
+  set globally on the app root with `.environment(\.font, Typography.body)`.
 - **Design spec:** `.claude/skills/noum-design/` — voice rules, color
-  palette, type scale, motion, iconography. `DesignSystem.swift` wins
-  on conflict.
+  palette, type scale, motion, iconography. `DesignSystem.swift` +
+  `Typography.swift` win on conflict.
 
 ## Key files / modules
 
@@ -87,11 +91,23 @@ _Last updated: 2026-05-03_
 
 ### Social
 - `Noum/Noum/FriendsManager.swift` — local friends list, names only,
-  no phone numbers.
+  no phone numbers. Optional `accountID` per friend so peer stats can
+  be fetched from `profiles_public/{accountID}` (M2).
 - `Noum/Noum/ChallengesManager.swift` — async challenge model
-  (two participants, prompt, results).
+  (two participants, prompt, results). Backend round-trip via
+  `BackendSyncManager.syncAsyncChallenge` / `fetchAsyncChallenges`.
 - `Noum/Noum/ClubsManager.swift` — clubs scaffolding.
-- `Noum/Noum/SocialProfileView.swift` — public-facing profile view.
+- `Noum/Noum/SocialProfileView.swift` — older public-facing profile
+  view (not the active surface; `ProfileView.swift` at the project root
+  is what the home nav routes to).
+- `Noum/Noum/LeagueManager.swift` + `Noum/Noum/LeagueView.swift` —
+  weekly league with tier-from-rating bucketing
+  (`{tier}_{ISO-year}-W{week}`), reads top 20 members per bucket.
+- `Noum/Noum/PublicProfileSnapshot.swift` — Codable subset written to
+  `profiles_public/{accountID}` and to `leagues/{bucket}/members/{id}`.
+  Read by friends + league.
+- `FIRESTORE_RULES.md` (project root) — rules required to deploy the M2
+  collections safely (peer-readable but owner-write only).
 
 ### Premium & infra
 - `Noum/Noum/PremiumManager.swift` — StoreKit 2 (Monthly/Annual),
@@ -115,6 +131,21 @@ _Last updated: 2026-05-03_
 
 ### Implemented (shipping end-to-end)
 
+- **Eloquence detection** — `EloquenceEngine` runs on every session
+  transcript and surfaces rhetorical devices (tricolon, anaphora,
+  epistrophe, alliteration, isocolon, antithesis, polysyndeton,
+  asyndeton, diacope, epizeuxis, rhetorical question) as positive
+  coaching in the summary's `EloquenceFindingsCard`. Conservative
+  thresholds; the card hides when there's nothing notable. Inspired
+  by Forsyth's *Elements of Eloquence*. Unit-tested (9 tests in
+  `EloquenceEngineTests`).
+- **Speech projects** — Toastmasters-inspired structured prepared
+  speeches in `Noum/SpeechProject.swift` + `SpeechProjectsView`. Eight
+  projects (Ice Breaker, Table Topic, Vocal Variety, Body of Evidence,
+  Storytelling Arc, Persuade with Structure, Teach It in 90,
+  Inspire Your Audience) with concrete objectives and curated prompts.
+  Reachable from the practice picker; project context is handed off
+  to `TimedPracticeView` via `SpeechProjectContext.current`.
 - **Speech-to-text** — three providers (AWS Transcribe streaming,
   Deepgram WS, Google Speech V2) with quality metrics tracked per
   provider.
@@ -150,7 +181,12 @@ _Last updated: 2026-05-03_
 - **Define goal & why** — captured during `CoachingOnboardingView`,
   surfaced in reminder bodies and recommendation context. UI to
   display goal at the top of practice picker was just removed because
-  it leaked raw user input; the data is still captured.
+  it leaked raw user input; the data is still captured. After capture,
+  `GoalParaphraseService` runs a single best-effort AI pass and stores
+  the result as `CoachingProfile.paraphrasedGoal`. UI surfaces use the
+  paraphrase via `displayableGoal` and fall back to the deterministic
+  template when no paraphrase is present (no AI key, network failure,
+  legacy profile).
 - **Trend direction** — `TrendAnalyzer` produces improving / stable /
   declining / newIssue / resolved classifications. Surfaced as a
   pill on the profile, **not as a chart**.
@@ -179,10 +215,19 @@ _Last updated: 2026-05-03_
   `RetentionLoopEngine` to produce one "active challenge" tile.
   **Auto-rotation / weekly reset / leaderboard not wired.** It's a
   single rolling status, not a true daily challenge surface.
-- **Friends / async challenges** — data models and add/remove flow
-  exist; **no remote sync of challenge state**, so async challenges
-  don't survive a device reinstall and can't be acted on by both
-  participants.
+- **Friends / async challenges (M2 v1)** — round-trip via Firestore
+  shared docs at `challenges/{id}` is shipped. Each participant writes
+  their own slice and reads the doc. Local persistence is a cache;
+  `ChallengesManager.refreshFromBackend()` merges. The simulated
+  opponent is removed. Friend invitation by QR code carries the
+  inviter's `accountID` so peer stats can be fetched. Friends added
+  before M2 (no `accountID`) keep showing "Awaiting sync".
+- **Weekly league (M2 v1)** — `LeagueManager` writes the user's snapshot
+  to `leagues/{tier}_{ISO-year}-W{week}/members/{accountID}` after every
+  session. `LeagueView` reads top 20 of the current bucket. Tier is
+  derived from rating (Bronze < 300, Silver < 500, Gold < 700, Platinum
+  < 850, Diamond ≥ 850). Pre-launch the league is sparse — the empty
+  state explicitly says "your league forms over the week".
 - **Clubs** — `ClubsManager.swift` is scaffolding only; no real club
   membership / club challenges / club leaderboard ship.
 - **Path Journey** — visual progression (scenes reveal as session
@@ -218,9 +263,6 @@ _Last updated: 2026-05-03_
 
 ### Not started
 
-- **High-score / leaderboard view** — `RatingStore.peakRating` exists
-  per-user, but no "your peak vs everyone else" view, no friend-scoped
-  rank, no weekly league.
 - **Pitch / intonation analysis** — zero pitch tracking. The audio
   pipeline drops the signal at transcription time.
 - **Grammar / English-usage evaluation** — no parser, no AST, no
@@ -233,10 +275,6 @@ _Last updated: 2026-05-03_
 - **Sponsor / advertisement surfaces** — none, and they conflict with
   the paid model. Mentioned on the original Trello but flagged here
   as "do not build".
-- **Streak freeze / streak insurance** — streaks break on miss; no
-  recovery mechanic.
-- **Weekly leaderboards / leagues** — no league concept, no weekly
-  reset, no peer ranking surface.
 - **Lives / hearts gating** — not present (and probably not the right
   loss-aversion mechanic for a speaking app — flagged for VISION).
 

@@ -85,7 +85,7 @@ struct WeeklyDigestCard: View {
                 .textCase(.uppercase)
                 .tracking(0.6)
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(Typography.headline)
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

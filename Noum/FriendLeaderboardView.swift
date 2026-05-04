@@ -6,12 +6,13 @@ import SwiftUI
 /// Weekly peer leaderboard — sorts the current user against their friends by
 /// speaking rating, streak, and reps this week.
 ///
-/// **Backend gap (flagged):** peer stats (`lastKnownRating`, `lastKnownStreak`,
-/// `lastKnownRepsThisWeek`) live on `NoumFriend` but are populated by a backend
-/// endpoint that doesn't exist yet. Until the backend ships an endpoint at
-/// `/v1/friends/stats` (or a Firestore equivalent), friends render with an
-/// "Awaiting sync" empty state next to their name. The current user's row is
-/// always populated from local stores so the screen is useful even pre-backend.
+/// Data flow:
+/// - The current user's row is always built from local stores
+///   (`RatingStore`, `StreakFreezeManager`, `PracticeSessionStore`).
+/// - Friends with a known `accountID` are populated via
+///   `FriendsManager.refreshPeerStats()` which reads `profiles_public/{id}`.
+///   Friends added before M2 (no `accountID`) render with an "Awaiting sync"
+///   tag and a one-line explainer card so the empty state is honest.
 @available(iOS 17.0, macOS 12.0, *)
 struct FriendLeaderboardView: View {
     @Environment(\.dismiss) private var dismiss
@@ -31,17 +32,25 @@ struct FriendLeaderboardView: View {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
                     leaderboardCard
-                    backendNoteCard
+                    if showsLegacyFriendNote {
+                        legacyFriendNoteCard
+                    }
                     Spacer(minLength: Spacing.lg)
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.sm)
                 .padding(.bottom, Spacing.lg)
             }
+            .refreshable {
+                await friendsManager.refreshPeerStats(force: true)
+            }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("leaderboard.screen")
+        .task {
+            await friendsManager.refreshPeerStats()
+        }
     }
 
     // MARK: - Header
@@ -49,7 +58,7 @@ struct FriendLeaderboardView: View {
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("This week's leaderboard")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .font(Typography.bigStat)
                 .foregroundStyle(.primary)
 
             Text("Sorted by speaking rating. Streaks and reps shown alongside.")
@@ -177,21 +186,29 @@ struct FriendLeaderboardView: View {
         }
     }
 
-    // MARK: - Backend note
+    // MARK: - Legacy-friend explainer (only shown when relevant)
 
-    private var backendNoteCard: some View {
+    /// True when at least one friend has no `accountID` and so can't be looked
+    /// up server-side — typically a friend added before M2 shipped or via a
+    /// manual name entry. The explainer tells the user how to get them synced
+    /// rather than hiding the gap.
+    private var showsLegacyFriendNote: Bool {
+        friendsManager.friends.contains { $0.accountID == nil }
+    }
+
+    private var legacyFriendNoteCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "icloud.slash")
+                Image(systemName: "person.crop.circle.badge.questionmark")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                Text("Peer sync isn't live yet")
+                Text("Some friends are awaiting sync")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
             }
-            Text("Your friends' stats will populate here once the peer sync endpoint ships. For now you'll see your own row only.")
+            Text("Friends added before peer sync shipped don't have an account link. Re-add them via QR code so their stats can show up here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

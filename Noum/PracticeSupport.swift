@@ -16,6 +16,10 @@ enum AppDestination: Hashable {
     case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
     case cutTheCrutchPractice
     case friendLeaderboard
+    case league
+    case speechProjects
+    case lessons
+    case lesson(id: String)
     case summary(SummaryPayload)
     case sessionHistory
     case socialProfile
@@ -363,6 +367,11 @@ struct CoachingProfile: Codable, Equatable {
     var coachingBrief: String
     var motivationWhyNow: String
     var successVision: String
+    /// AI-paraphrased, single-sentence rendering of the user's goal. Set once
+    /// at onboarding by `GoalParaphraseService` (best-effort, never blocks).
+    /// Read-only post-capture: raw inputs stay for export, the paraphrase is
+    /// the sanitised version safe to surface in UI and notifications.
+    var paraphrasedGoal: String?
 
     var isComplete: Bool { true }
     var personalGoalReference: String {
@@ -393,6 +402,7 @@ struct CoachingProfile: Codable, Equatable {
         case coachingBrief
         case motivationWhyNow
         case successVision
+        case paraphrasedGoal
     }
 
     init(
@@ -405,7 +415,8 @@ struct CoachingProfile: Codable, Equatable {
         styleReference: String,
         coachingBrief: String,
         motivationWhyNow: String,
-        successVision: String
+        successVision: String,
+        paraphrasedGoal: String? = nil
     ) {
         self.speakingContext = speakingContext
         self.primaryGoal = primaryGoal
@@ -417,6 +428,7 @@ struct CoachingProfile: Codable, Equatable {
         self.coachingBrief = coachingBrief
         self.motivationWhyNow = motivationWhyNow
         self.successVision = successVision
+        self.paraphrasedGoal = paraphrasedGoal
     }
 
     init(from decoder: Decoder) throws {
@@ -431,20 +443,22 @@ struct CoachingProfile: Codable, Equatable {
         coachingBrief = try container.decodeIfPresent(String.self, forKey: .coachingBrief) ?? ""
         motivationWhyNow = try container.decodeIfPresent(String.self, forKey: .motivationWhyNow) ?? ""
         successVision = try container.decodeIfPresent(String.self, forKey: .successVision) ?? ""
+        paraphrasedGoal = try container.decodeIfPresent(String.self, forKey: .paraphrasedGoal)
     }
 }
 
 extension CoachingProfile {
-    /// Templated, on-voice rendering of the user's goal — uses ONLY the
-    /// structured enum values the user picked during onboarding. Never embeds
-    /// free-text fields, so it's safe for any user-facing surface including
-    /// lock-screen notifications, weekly digests, and result cards.
-    ///
-    /// VISION milestone 1 originally specified an AI paraphrase of the raw
-    /// goal text. That's deferred until `AINPCChatService` is wired to a real
-    /// model — the templated version below produces cleaner, faster, free copy
-    /// and is the right v1.
+    /// On-voice, single-sentence rendering of the user's goal — safe for any
+    /// user-facing surface including lock-screen notifications, weekly digests,
+    /// and result cards. Prefers the AI paraphrase set at onboarding by
+    /// `GoalParaphraseService`; falls back to a deterministic template when
+    /// no paraphrase has been written yet (no provider, network failure, or
+    /// legacy profile).
     var displayableGoal: String {
+        if let trimmed = paraphrasedGoal?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            return trimmed
+        }
         let action = primaryGoal.title.lowercased()
         let style = speakingStyleGoal.coachingDescription
         return "You want to \(action) and \(style)."
@@ -3130,6 +3144,31 @@ final class CoachingProfileStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         shouldPresentInitialOnboarding = false
         syncProfileIfPossible(profile, accountID: accountID)
+        paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
+    }
+
+    /// Single-shot AI paraphrase of the user's goal at capture time. Best-effort:
+    /// silent on failure (no provider, no network, model error) — `displayableGoal`
+    /// falls back to the deterministic template. Guarded so we never repeat the
+    /// pass for the same profile, even across launches.
+    private func paraphraseGoalIfNeeded(profile: CoachingProfile, accountID: String) {
+        guard profile.paraphrasedGoal == nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let paraphrase = await GoalParaphraseService.shared.paraphrase(profile: profile),
+                  !paraphrase.isEmpty
+            else { return }
+            await MainActor.run {
+                guard self.currentAccountID == accountID else { return }
+                guard var current = self.profile, current.paraphrasedGoal == nil else { return }
+                current.paraphrasedGoal = paraphrase
+                self.profile = current
+                if let data = try? JSONEncoder().encode(current) {
+                    UserDefaults.standard.set(data, forKey: self.profileKey(for: accountID))
+                }
+                self.syncProfileIfPossible(current, accountID: accountID)
+            }
+        }
     }
 
     func reloadForCurrentAccount() {

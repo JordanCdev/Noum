@@ -313,7 +313,7 @@ struct CoachingOnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(stage.title)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
                     .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -468,7 +468,7 @@ struct CoachingOnboardingView: View {
 
                         VStack(spacing: 8) {
                             Text(isEditingExistingProfile ? "Profile updated!" : "Welcome to Noum!")
-                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .font(Typography.screenTitle)
                                 .foregroundStyle(AppColor.textPrimary)
 
                             Text(isEditingExistingProfile
@@ -561,7 +561,7 @@ struct CoachingOnboardingView: View {
                         .padding(.bottom, Spacing.xxs)
 
                         Text("Your Coaching Profile")
-                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                             .foregroundStyle(AppColor.textPrimary)
 
                         Text("Here's how Noum will coach you.")
