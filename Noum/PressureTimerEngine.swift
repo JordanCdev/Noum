@@ -3,7 +3,65 @@ import Foundation
 import SwiftUI
 #endif
 
-// MARK: - Round Config (auto-ramp by round, no difficulty selector)
+// MARK: - Difficulty
+
+/// Optional difficulty modifier for pressure-based modes (Sudden Death today).
+/// `medium` is the canonical baseline — tuned curve shipped before this enum
+/// existed. Easy and Hard are multiplicative tweaks on top, not separate
+/// curves, so the engine state machine stays unchanged.
+enum SuddenDeathDifficulty: String, Codable, CaseIterable, Identifiable {
+    case easy
+    case medium
+    case hard
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .easy: return "Easy"
+        case .medium: return "Medium"
+        case .hard: return "Hard"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .easy:   return "Wider start window. Two fillers free per round."
+        case .medium: return "Standard pressure. The default ramp."
+        case .hard:   return "Tight start window. Almost no filler tolerance."
+        }
+    }
+
+    /// Multiplier on `startWindow`. Wider = more time before timeout.
+    var startWindowFactor: Double {
+        switch self {
+        case .easy: return 1.4
+        case .medium: return 1.0
+        case .hard: return 0.7
+        }
+    }
+
+    /// Additive shift on `fillerTolerance` (clamped to ≥ 0).
+    var fillerToleranceShift: Int {
+        switch self {
+        case .easy: return 1
+        case .medium: return 0
+        case .hard: return -1
+        }
+    }
+
+    /// Multiplier on session XP. Survives a personal best on Hard pays more
+    /// than survival on Easy.
+    var xpMultiplier: Double {
+        switch self {
+        case .easy: return 0.85
+        case .medium: return 1.0
+        case .hard: return 1.3
+        }
+    }
+}
+
+// MARK: - Round Config (auto-ramp by round, scaled by difficulty)
 
 /// Timing and tolerance values for a single round. Pressure ramps automatically.
 struct PressureRoundConfig: Equatable {
@@ -18,8 +76,21 @@ struct PressureRoundConfig: Equatable {
     /// Whether this round uses a follow-up (vs. a fresh prompt).
     let isFollowUp: Bool
 
-    /// Builds config for a given round (1-indexed). Pressure ramps automatically.
-    static func config(for round: Int) -> PressureRoundConfig {
+    /// Builds config for a given round (1-indexed) at a given difficulty.
+    static func config(for round: Int, difficulty: SuddenDeathDifficulty = .medium) -> PressureRoundConfig {
+        let base = baseConfig(for: round)
+        let scaledWindow = max(2, base.startWindow * difficulty.startWindowFactor)
+        let scaledFillerTolerance = max(0, base.fillerTolerance + difficulty.fillerToleranceShift)
+        return PressureRoundConfig(
+            startWindow: scaledWindow,
+            responseCap: base.responseCap,
+            fillerTolerance: scaledFillerTolerance,
+            minimumWords: base.minimumWords,
+            isFollowUp: base.isFollowUp
+        )
+    }
+
+    private static func baseConfig(for round: Int) -> PressureRoundConfig {
         let r = max(1, round)
         let startWindow: TimeInterval
         let fillerTolerance: Int
@@ -139,6 +210,7 @@ struct PressureSessionResult: Equatable {
     let totalWords: Int
     let bestRoundWords: Int
     let personalBest: Int  // previous best rounds survived
+    var difficulty: SuddenDeathDifficulty = .medium
 
     /// Behavior-mapped result label.
     var resultLabel: String {
@@ -202,12 +274,12 @@ struct PressureSessionResult: Equatable {
         return max(1, min(10, Int(round(raw))))
     }
 
-    /// XP earned from the session.
+    /// XP earned from the session, scaled by difficulty.
     var xpEarned: Int {
         let base = Double(score) * 10.0
         let survivalBonus = Double(roundsSurvived) * 18.0
         let depthMultiplier = roundsSurvived >= 4 ? 1.3 : 1.0
-        let adjusted = (base + survivalBonus) * depthMultiplier
+        let adjusted = (base + survivalBonus) * depthMultiplier * difficulty.xpMultiplier
         return max(10, Int(round(adjusted)))
     }
 
@@ -280,6 +352,8 @@ final class PressureTimerEngine: ObservableObject {
     private var responseLimitTask: Task<Void, Never>?
     private(set) var roundConfig: PressureRoundConfig = .config(for: 1)
     private(set) var previousBestRounds: Int = 0
+    /// Difficulty for the current session. Set in `configure()`.
+    private(set) var difficulty: SuddenDeathDifficulty = .medium
 
     // Accumulated stats
     private var totalFillers: Int = 0
@@ -293,10 +367,16 @@ final class PressureTimerEngine: ObservableObject {
     // MARK: - Session Control
 
     /// Configure with an opening prompt and optional follow-up provider.
-    func configure(openingPrompt: String, followUpProvider: PressureFollowUpProviding?, previousBest: Int = 0) {
+    func configure(
+        openingPrompt: String,
+        followUpProvider: PressureFollowUpProviding?,
+        previousBest: Int = 0,
+        difficulty: SuddenDeathDifficulty = .medium
+    ) {
         self.openingPrompt = openingPrompt
         self.followUpProvider = followUpProvider
         self.previousBestRounds = previousBest
+        self.difficulty = difficulty
         reset()
     }
 
@@ -374,7 +454,7 @@ final class PressureTimerEngine: ObservableObject {
         currentFillerCount = 0
         currentWordCount = 0
         userHasStartedSpeaking = false
-        roundConfig = PressureRoundConfig.config(for: nextRound)
+        roundConfig = PressureRoundConfig.config(for: nextRound, difficulty: difficulty)
 
         print("[PressureEngine] Entering NPC turn for round \(nextRound), isFollowUp: \(roundConfig.isFollowUp)")
         phase = .npcTurn(round: nextRound)
@@ -584,7 +664,8 @@ final class PressureTimerEngine: ObservableObject {
             totalFillers: totalFillers,
             totalWords: totalWords,
             bestRoundWords: bestRoundWords,
-            personalBest: previousBestRounds
+            personalBest: previousBestRounds,
+            difficulty: difficulty
         )
     }
 

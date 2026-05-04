@@ -28,6 +28,13 @@ struct SuddenDeathPracticeView: View {
         UserDefaults.standard.integer(forKey: Self.personalBestKey)
     }
 
+    // Difficulty selector — persisted across launches.
+    private static let difficultyKey = "suddenDeath.difficulty"
+    @State private var difficulty: SuddenDeathDifficulty = {
+        let raw = UserDefaults.standard.string(forKey: Self.difficultyKey) ?? ""
+        return SuddenDeathDifficulty(rawValue: raw) ?? .medium
+    }()
+
     private let accentColor = AppColor.modeSuddenDeath
 
     var body: some View {
@@ -214,6 +221,8 @@ struct SuddenDeathPracticeView: View {
                 .padding(Spacing.lg)
                 .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
 
+                difficultyPicker
+
                 // Personal best
                 if previousBestRounds > 0 {
                     HStack(spacing: 6) {
@@ -267,6 +276,62 @@ struct SuddenDeathPracticeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - Difficulty Picker (Easy / Medium / Hard)
+
+    private var difficultyPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DIFFICULTY")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.8)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                ForEach(SuddenDeathDifficulty.allCases) { option in
+                    difficultyChip(option)
+                }
+            }
+
+            Text(difficulty.subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Difficulty: \(difficulty.title). \(difficulty.subtitle)")
+    }
+
+    private func difficultyChip(_ option: SuddenDeathDifficulty) -> some View {
+        let isSelected = difficulty == option
+        return Button {
+            withAnimation(.snappySpring) {
+                difficulty = option
+                UserDefaults.standard.set(option.rawValue, forKey: Self.difficultyKey)
+            }
+            CoachHaptic.selectionTap()
+        } label: {
+            Text(option.title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(isSelected ? .white : accentColor)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    isSelected ? accentColor : accentColor.opacity(0.10),
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(option.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Countdown Screen
@@ -748,7 +813,8 @@ struct SuddenDeathPracticeView: View {
         engine.configure(
             openingPrompt: openingPrompt,
             followUpProvider: PressureFollowUpService.shared,
-            previousBest: previousBestRounds
+            previousBest: previousBestRounds,
+            difficulty: difficulty
         )
         engine.beginCountdown()
     }
@@ -759,7 +825,8 @@ struct SuddenDeathPracticeView: View {
         engine.configure(
             openingPrompt: openingPrompt,
             followUpProvider: PressureFollowUpService.shared,
-            previousBest: previousBestRounds
+            previousBest: previousBestRounds,
+            difficulty: difficulty
         )
         engine.beginCountdown()
     }

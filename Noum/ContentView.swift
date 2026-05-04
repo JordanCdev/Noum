@@ -614,28 +614,36 @@ struct ContentView: View {
                             in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                         )
 
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("Your Path")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .foregroundStyle(.primary)
                         Text(journeySnapshot.progressLabel)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(AppColor.positive)
+                        Text(journeySnapshot.nextMilestoneLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("home.path.nextMilestone")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack {
+                HStack(spacing: 6) {
                     Spacer()
+                    Text("Open")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.positive)
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.positive)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 78)
             .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
             .background(
                 AppColor.cardBackground,
                 in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)

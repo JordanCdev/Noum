@@ -80,6 +80,7 @@ struct ProfileView: View {
                 identityHeader
                 rankPanel
                 speakingRatingCard
+                ModeMasteryCard()
                 coachingDirectionCard
                 activeChallengePanel
                 achievementsPanel

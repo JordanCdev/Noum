@@ -20,6 +20,16 @@ struct NoumApp: App {
 
     init() {
         FirebaseBootstrap.configure()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_SEED") {
+            // Inject the "improving intermediate" dev profile before any view
+            // binds to PracticeSessionStore so screenshot-tour UI tests open on
+            // a populated state instead of the first-run empty card.
+            if PracticeSessionStore.shared.sessions.isEmpty {
+                DevSeedData.injectProfile(.improvingIntermediate)
+            }
+        }
+        #endif
     }
 
     var body: some Scene {

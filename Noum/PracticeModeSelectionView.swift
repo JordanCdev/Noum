@@ -18,6 +18,7 @@ struct PracticeModeSelectionView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
+    @StateObject private var masteryStore = ModeMasteryStore.shared
     @State private var cachedRecommendedMode: PracticeMode?
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
@@ -182,6 +183,11 @@ struct PracticeModeSelectionView: View {
                         }
 
                         Spacer(minLength: 0)
+
+                        let snapshot = masteryStore.snapshot(for: option.mode)
+                        if snapshot.sessionsLogged > 0 {
+                            ModeMasteryBadge(snapshot: snapshot)
+                        }
                     }
 
                     Text(option.subtitle)
