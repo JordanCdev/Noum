@@ -90,6 +90,7 @@ struct ProfileView: View {
                 identityHeader
                 rankPanel
                 speakingRatingCard
+                ProgressionChartsCard(sessionStore: sessionStore)
                 leaguePanel
                 ModeMasteryCard()
                 coachingDirectionCard
@@ -129,7 +130,7 @@ struct ProfileView: View {
             AsyncChallengeDetailSheet(challenge: challenge, challenges: challenges)
         }
         .navigationDestination(isPresented: $showAchievementsPage) {
-            AchievementsPage()
+            AchievementsTreeView()
         }
     }
 

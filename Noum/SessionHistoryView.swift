@@ -14,7 +14,16 @@ struct SessionHistoryView: View {
     @State private var selectedModeFilter: PracticeMode? = nil
     @State private var sessionToDelete: PracticeSession?
     @State private var showTrends = false
+    @Binding var navigationPath: NavigationPath
     @Environment(\.dismiss) private var dismiss
+
+    init(navigationPath: Binding<NavigationPath>) {
+        self._navigationPath = navigationPath
+    }
+
+    init() {
+        self._navigationPath = .constant(NavigationPath())
+    }
 
     // MARK: - Derived Data
 
@@ -85,6 +94,20 @@ struct SessionHistoryView: View {
                         trendsSection
                             .padding(.horizontal, Spacing.screenH)
                             .padding(.bottom, 20)
+
+                        // --- Replay misses (specific past sessions) ---
+                        MistakeReplayCard(sessionStore: sessionStore) { destination in
+                            navigationPath.append(destination)
+                        }
+                        .padding(.horizontal, Spacing.screenH)
+                        .padding(.bottom, 20)
+
+                        // --- Mistakes to fix (Duolingo-style review surface) ---
+                        WeakAreasCard(sessionStore: sessionStore) { target in
+                            navigationPath.append(target.destination)
+                        }
+                        .padding(.horizontal, Spacing.screenH)
+                        .padding(.bottom, 20)
 
                         // --- Mode Filter ---
                         modeFilterChips

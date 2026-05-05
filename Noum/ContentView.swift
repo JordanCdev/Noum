@@ -31,6 +31,9 @@ struct ContentView: View {
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
+    @StateObject private var deferredCapture = DeferredProfileCaptureManager.shared
+    @StateObject private var notificationPrePrompt = NotificationPrePromptManager.shared
+    @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
@@ -78,25 +81,34 @@ struct ContentView: View {
 
                     VStack(spacing: Spacing.cardGap) {
                         if sessionStore.sessions.isEmpty {
-                            heroCard
-                            DailyGoalCard(manager: dailyGoal)
-                            nextLessonCard
-                            firstSessionCard
+                            // Empty-state: a single, clear primary action.
+                            // Lessons + Path are surfaced below the fold so
+                            // the user sees the curriculum exists, but
+                            // they're never asked to choose between four
+                            // CTAs before they've done anything.
+                            heroCard.cardEntrance(0)
+                            firstSessionCard.cardEntrance(1)
+                            DailyGoalCard(manager: dailyGoal).cardEntrance(2)
+                            secondaryDiscoveryCard.cardEntrance(3)
                         } else {
-                            heroCard
-                            DailyGoalCard(manager: dailyGoal)
-                            streakCard
-                            nextLessonCard
-                            WeeklyDigestCard(
+                            // Populated: the AI weekly narrative is the #2
+                            // surface — it's the strongest differentiator
+                            // and deserves visibility.
+                            heroCard.cardEntrance(0)
+                            AIWeeklyInsightCard(
                                 sessionStore: sessionStore,
                                 ratingStore: RatingStore.shared,
                                 clutchWordStore: ClutchWordStore.shared,
                                 coachingProfileStore: coachingProfileStore
                             )
-                            quickStartCard
-                            progressCard
-                            journeyPreviewCard
-                            suggestedPracticeCard
+                            .cardEntrance(1)
+                            DailyGoalCard(manager: dailyGoal).cardEntrance(2)
+                            streakCard.cardEntrance(3)
+                            nextLessonCard.cardEntrance(4)
+                            quickStartCard.cardEntrance(5)
+                            journeyPreviewCard.cardEntrance(6)
+                            progressCard.cardEntrance(7)
+                            suggestedPracticeCard.cardEntrance(8)
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -151,7 +163,7 @@ struct ContentView: View {
                 case .summary(let payload):
                     SummaryView(payload: payload, navigationPath: $navigationPath)
                 case .sessionHistory:
-                    SessionHistoryView()
+                    SessionHistoryView(navigationPath: $navigationPath)
                 case .socialProfile:
                     ProfileView()
                 case .settings:
@@ -194,6 +206,20 @@ struct ContentView: View {
                 .zIndex(99)
             }
         }
+        // Deferred profile capture — fired by SessionFinalizer when the
+        // user hits a session-count milestone with an unanswered prompt.
+        .sheet(item: $deferredCapture.pendingPrompt) { prompt in
+            DeferredProfileCaptureSheet(prompt: prompt)
+        }
+        // Notification pre-prompt — soft sell before iOS's hard prompt.
+        // Fires once on session 1 with a 30-day cool-down on decline.
+        .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
+            NotificationPrePromptSheet()
+        }
+        .onChange(of: deepLinkRouter.pending) { _, url in
+            guard let url else { return }
+            consumeDeepLink(url)
+        }
         .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
             if isPending {
                 showDailyGoalCelebration = true
@@ -234,12 +260,12 @@ struct ContentView: View {
 
         // 1. No sessions at all
         if sessions.isEmpty {
-            return "Let's find your baseline"
+            return "One rep sets your baseline"
         }
 
         // 2. Seven-day streak or higher
         if sessionStreak >= 7 {
-            return "\u{1F525} \(sessionStreak)-day streak — unstoppable"
+            return "\(sessionStreak)-day streak — that's a habit"
         }
 
         // 3. Three-day streak or higher
@@ -279,7 +305,7 @@ struct ContentView: View {
 
         // 7. Last session was yesterday
         if daysSinceLastSession == 1 {
-            return "Welcome back — let's keep the momentum"
+            return "Welcome back — keep the momentum"
         }
 
         // 8. Been a few days
@@ -322,7 +348,7 @@ struct ContentView: View {
             case .rushing:
                 challenge = "slowing down under pressure"
             }
-            return "You said you want to work on \(challenge). Let's see where you stand."
+            return "You want to work on \(challenge). One short rep sets your starting line."
         }
         return "One short rep is all it takes to set your starting line."
     }
@@ -331,7 +357,7 @@ struct ContentView: View {
         Button { navigationPath.append(AppDestination.timedPractice) } label: {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Let's find your starting point")
+                    Text("Find your starting point")
                         .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
 
@@ -386,6 +412,80 @@ struct ContentView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityIdentifier("home.firstSession")
+    }
+
+    // MARK: - Secondary discovery (empty state)
+
+    /// Compact two-row card used only in the empty state. Surfaces lessons
+    /// + path as a *discovery* surface so the new user sees the curriculum
+    /// exists, but neither row competes with the primary "Start your first
+    /// rep" CTA. Intentionally lower visual weight than the firstSessionCard.
+    private var secondaryDiscoveryCard: some View {
+        VStack(spacing: 0) {
+            discoveryRow(
+                icon: "books.vertical.fill",
+                title: "Bite-sized lessons",
+                subtitle: "Three steps. Two minutes. Earn a crown.",
+                tint: AppColor.brandBlue,
+                destination: .lessons,
+                accessibilityID: "home.discovery.lessons"
+            )
+            Divider().padding(.leading, 60)
+            discoveryRow(
+                icon: "point.topleft.down.curvedto.point.bottomright.up.fill",
+                title: "Your path",
+                subtitle: "Clear nodes by hitting concrete goals.",
+                tint: AppColor.positive,
+                destination: .pathJourney,
+                accessibilityID: "home.discovery.path"
+            )
+        }
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+    }
+
+    private func discoveryRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        tint: Color,
+        destination: AppDestination,
+        accessibilityID: String
+    ) -> some View {
+        Button {
+            navigationPath.append(destination)
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .fill(tint.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(tint)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.headline)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityID)
     }
 
     // MARK: - Next Lesson
@@ -1155,6 +1255,42 @@ struct ContentView: View {
         }
     }
 
+    /// Routes a `noum://` URL to the right destination on the navigation
+    /// path. Called when `DeepLinkRouter.pending` changes (set by
+    /// `NoumApp.onOpenURL`). Clears the pending URL after consumption so
+    /// it doesn't fire twice.
+    private func consumeDeepLink(_ url: URL) {
+        defer { deepLinkRouter.pending = nil }
+        guard url.scheme == "noum" else { return }
+        let host = url.host ?? ""
+        let path = url.path
+        switch host {
+        case "lesson":
+            // noum://lesson/<id>
+            let lessonID = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            guard !lessonID.isEmpty,
+                  LessonsCatalog.lesson(id: lessonID) != nil else { return }
+            navigationPath.append(AppDestination.lesson(id: lessonID))
+        case "practice":
+            navigationPath.append(AppDestination.practiceSelection)
+        case "league":
+            navigationPath.append(AppDestination.league)
+        case "path":
+            navigationPath.append(AppDestination.pathJourney)
+        case "lessons":
+            navigationPath.append(AppDestination.lessons)
+        case "friend":
+            // Friend-invite URLs are consumed by SocialProfileView's QR
+            // handler when the user is already on that surface. From a
+            // cold launch, we surface the social tab so the manual add
+            // flow is visible.
+            navigationPath.append(AppDestination.socialProfile)
+        default:
+            // Unrecognised — no-op rather than crash.
+            break
+        }
+    }
+
     /// The node that was just newly-unlocked, if any. Drives the path
     /// celebration overlay. Cleared by `pathProgress.consumeCelebration()`.
     private var pendingPathCelebration: PathNode? {
@@ -1320,8 +1456,12 @@ struct ContentView: View {
         return currentAverage - previousAverage
     }
 
+    /// Single source of truth for the user-visible streak count: the
+    /// `StreakFreezeManager`, which applies freezes. This used to be
+    /// computed twice (raw calculation + freeze-applied) and the home
+    /// could show two different numbers. Now both reads pull from here.
     private var sessionStreak: Int {
-        PracticeSession.calculateStreak(from: sessionStore.sessions)
+        streakFreeze.currentStreak
     }
 
     private var daysSinceLastSession: Int {

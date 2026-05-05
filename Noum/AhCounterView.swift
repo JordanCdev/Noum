@@ -66,18 +66,18 @@ struct AhCounterView: View {
             return "Shake it off, keep going"
         }
         if currentStreakSeconds >= 60 {
-            return "Outstanding control!"
+            return "Outstanding control"
         }
         if currentStreakSeconds >= 30 {
-            return "Impressive focus!"
+            return "Impressive focus"
         }
         if currentStreakSeconds >= 15 {
-            return "Clean streak going!"
+            return "Clean streak going"
         }
         if elapsedSeconds <= 10 {
-            return "You're rolling!"
+            return "You're rolling"
         }
-        return "Keep it up!"
+        return "Keep going"
     }
 
     private var encouragementIcon: String {
@@ -455,7 +455,7 @@ struct AhCounterView: View {
         guard speechVM.isRecording else { return }
         if streak == 30, !firedMilestones.contains("streak30") {
             firedMilestones.insert("streak30")
-            showToast("30s clean — nice rhythm!")
+            showToast("30s clean — nice rhythm")
         } else if streak == 60, !firedMilestones.contains("streak60") {
             firedMilestones.insert("streak60")
             showToast("1 minute clean — you're locked in")

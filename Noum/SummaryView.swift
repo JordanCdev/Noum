@@ -496,6 +496,10 @@ struct SummaryView: View {
                                 coachNote: coachNote,
                                 coachNoteRevealed: coachNoteRevealed
                             )
+                            AISessionDebriefCard(
+                                session: sessionStore.sessions.first,
+                                recentSessions: Array(sessionStore.sessions.prefix(5))
+                            )
                             EloquenceFindingsCard(findings: eloquenceFindings)
                             FillerBreakdownCard(transcriptText: transcriptText)
                             YourNextMoveCard(
@@ -576,6 +580,21 @@ struct SummaryView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
+        }
+        // First-rep celebration — fires *once* on the user's very first
+        // session. The manager handles the once-only logic; we just
+        // present whatever it yields.
+        .fullScreenCover(
+            item: Binding(
+                get: { FirstRepCelebrationManager.shared.pendingSession },
+                set: { newValue in
+                    if newValue == nil { FirstRepCelebrationManager.shared.dismiss() }
+                }
+            )
+        ) { session in
+            FirstRepCelebration(session: session) {
+                FirstRepCelebrationManager.shared.dismiss()
+            }
         }
         .fullScreenCover(item: $activeMiniDrill) { drill in
             let _ = print("[QuickDrill] Present: \(drill.title) | id=\(drill.id) | type=\(MiniDrillType.from(variationId: drill.variation.id))")

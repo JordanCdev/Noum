@@ -1149,6 +1149,13 @@ struct TimedPracticeView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            // Real-time positive feedback — pulses when the engine catches
+            // a rhetorical move. Self-contained: lifecycle is bound to the
+            // speech VM's recording flag, so it resets between sessions.
+            LiveEloquenceHUD(speechVM: speechVM)
+                .padding(.top, 4)
+        }
     }
 
     /// Compact banner shown at top during a drill session, reminding the user of their constraint.

@@ -15,6 +15,12 @@ struct SuddenDeathPracticeView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var engine = PressureTimerEngine()
 
+    /// Live Activity coordinator. Lazily initialised on first use because
+    /// we need access to `engine` and `speechVM` which are
+    /// `@StateObject`-resolved by SwiftUI on first body access. Built
+    /// inside `start()` below.
+    @State private var liveActivityCoordinator: PressureLiveActivityCoordinator?
+
     // UI state
     @State private var showExitConfirmation = false
     @State private var showUncertainIndicator = false
@@ -109,6 +115,14 @@ struct SuddenDeathPracticeView: View {
         }
         .onChange(of: engine.phase) { _, newPhase in
             handlePhaseChange(newPhase)
+        }
+        .onDisappear {
+            // Belt-and-braces: if the user taps back during a live
+            // session, kill the activity instead of leaving it dangling
+            // in the Dynamic Island. The coordinator's `end()` is
+            // idempotent.
+            liveActivityCoordinator?.end()
+            liveActivityCoordinator = nil
         }
     }
 
@@ -841,7 +855,31 @@ struct SuddenDeathPracticeView: View {
 
     // MARK: - Phase Change Handler
 
+    /// Start (lazily) the Pressure Live Activity coordinator at the
+    /// transition from `.setup` to anything live. Subsequent phase
+    /// changes are observed by the coordinator's own subscription.
+    private func startLiveActivityIfNeeded() {
+        guard liveActivityCoordinator == nil else { return }
+        if #available(iOS 16.1, *) {
+            let coordinator = PressureLiveActivityCoordinator(
+                engine: engine,
+                modeLabel: "Pressure Drill",
+                fillerCountProvider: { [weak speechVM = self.speechVM] in
+                    speechVM?.pressureDrillFillerCount ?? 0
+                }
+            )
+            coordinator.start()
+            liveActivityCoordinator = coordinator
+        }
+    }
+
     private func handlePhaseChange(_ newPhase: PressureTurnPhase) {
+        // Kick off the Live Activity the first time the engine moves
+        // away from setup. Ending the activity is handled inside the
+        // coordinator on `.sessionComplete`.
+        if newPhase != .setup {
+            startLiveActivityIfNeeded()
+        }
         switch newPhase {
         case .npcTurn:
             // Reset transcript for new round

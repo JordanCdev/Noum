@@ -131,6 +131,11 @@ final class DailyGoalManager: ObservableObject {
         if previous < goalReps && total >= goalReps {
             triggerGoalCelebrationIfNeeded()
         }
+
+        // Mirror to App Group so the widget + notifications can read it.
+        if #available(iOS 17.0, *) {
+            SharedNoumStateMirror.refresh()
+        }
     }
 
     /// View calls this once after rendering the celebration so it doesn't fire again.

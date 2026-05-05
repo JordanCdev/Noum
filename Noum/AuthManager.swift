@@ -501,6 +501,12 @@ class AuthManager: ObservableObject {
             "noum.pathProgress.initialized.\(accountID)",
             // Lessons (M3+: teaching layer)
             "noum.lessons.progress.\(accountID)",
+            // First-rep celebration (one-shot per account)
+            "noum.firstRep.seen.\(accountID)",
+            // Deferred profile capture (one-shot per prompt per account)
+            "noum.deferredCapture.seen.goal.\(accountID)",
+            "noum.deferredCapture.seen.whyNow.\(accountID)",
+            "noum.deferredCapture.seen.successVision.\(accountID)",
             // Notification preferences
             "noum.notifications.dailyReminderEnabled.\(accountID)",
             "noum.notifications.dailyReminderTime.\(accountID)",

@@ -153,6 +153,30 @@ enum SessionFinalizer {
         // M3: surface the path node celebration if this session unlocked one.
         PathProgressManager.shared.evaluateAfterSession()
 
+        // First-rep magic — a once-only celebration when the user finishes
+        // their very first session. Driven by `FirstRepCelebrationManager`
+        // so duplicate triggers across reload/relaunch can't fire twice.
+        if let latestSession = sessionStore.sessions.first {
+            FirstRepCelebrationManager.shared.consider(
+                session: latestSession,
+                totalSessionCount: sessionStore.sessions.count
+            )
+        }
+
+        // Deferred profile capture — fire the goal / why-now / success
+        // prompts after the user has done a rep, not during onboarding.
+        DeferredProfileCaptureManager.shared.consider(
+            sessionCount: sessionStore.sessions.count,
+            profile: coachingProfileStore.profile
+        )
+
+        // Notification pre-prompt — soft sell before iOS's hard system
+        // dialog. Fires once on session 1, then respects 30-day cooldown
+        // on decline.
+        NotificationPrePromptManager.shared.consider(
+            sessionCount: sessionStore.sessions.count
+        )
+
         // Milestone detection
         let skillTrends = TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
         let milestone = detectMilestone(

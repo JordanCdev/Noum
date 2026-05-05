@@ -5,6 +5,9 @@ import SwiftUI
 #if canImport(Combine)
 import Combine
 #endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 // MARK: - Streak Freeze Manager
 
@@ -145,6 +148,31 @@ final class StreakFreezeManager: ObservableObject {
         }
 
         currentStreak = count
+        SharedNoumStateMirror.refresh()
+        // Lock-screen / home-screen app-icon badge mirrors the streak so
+        // the user sees their own number without opening the app. Set to
+        // 0 (clears the badge) when streak is 0 so we never advertise a
+        // streak that doesn't exist.
+        applyAppIconBadge(streak: count)
+    }
+
+    /// Best-effort: the modern API requires notification authorization,
+    /// so we route through `UNUserNotificationCenter.setBadgeCount` and
+    /// silently skip when the user hasn't granted permission. Falls back
+    /// to the deprecated `UIApplication` setter on builds that need it.
+    private func applyAppIconBadge(streak: Int) {
+        #if canImport(UserNotifications)
+        Task { @MainActor in
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                _ = try? await center.setBadgeCount(streak)
+            default:
+                break
+            }
+        }
+        #endif
     }
 
     // MARK: - Internals

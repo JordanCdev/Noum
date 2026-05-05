@@ -160,8 +160,12 @@ final class NotificationManager: ObservableObject {
     private func scheduleDailyReminder() async {
 #if canImport(UserNotifications)
         let content = UNMutableNotificationContent()
-        content.title = "Today's rep is waiting"
-        content.body = "A short drill keeps the rhythm. One rep is enough to count today."
+        let copy = NotificationCopy.dailyReminder(
+            streakDays: SharedNoumState.read().currentStreak,
+            todayDone: SharedNoumState.read().repsToday > 0
+        )
+        content.title = copy.title
+        content.body = copy.body
         content.sound = .default
 
         var components = DateComponents()
@@ -176,13 +180,33 @@ final class NotificationManager: ObservableObject {
 
     private func scheduleStreakWarning() async {
 #if canImport(UserNotifications)
-        let content = UNMutableNotificationContent()
-        content.title = "Don't break the streak"
-        content.body = "Your streak depends on a rep today. One short drill keeps it alive — or your weekly freeze covers a single miss."
-        content.sound = .default
+        // Streak warning is loss-aversion *only* when the user actually has
+        // a streak to lose. New users at streak 0 should not see "your
+        // streak ends in 3 hours" — the warning's whole power comes from
+        // the fact that you have something to defend.
+        let snapshot = SharedNoumState.read()
+        guard snapshot.currentStreak > 0 else {
+            // Quietly skip — when the user builds a streak, the next
+            // refresh re-arms this with real numbers.
+            return
+        }
+        // Skip if they've already practiced today (no streak to lose).
+        guard snapshot.repsToday == 0 else { return }
 
-        // 8 PM local — close enough to midnight to be a meaningful nudge,
-        // far enough to actually let the user act on it.
+        let content = UNMutableNotificationContent()
+        let copy = NotificationCopy.streakWarning(
+            streakDays: snapshot.currentStreak,
+            freezesAvailable: snapshot.freezesAvailable
+        )
+        content.title = copy.title
+        content.body = copy.body
+        content.sound = .default
+        // Badge with streak count so the lock-screen icon carries the
+        // weight even before the user reads the notification.
+        content.badge = NSNumber(value: snapshot.currentStreak)
+
+        // 8 PM local — late enough to feel "you're running out of time",
+        // early enough to actually do something about it.
         var components = DateComponents()
         components.hour = 20
         components.minute = 0
@@ -196,8 +220,9 @@ final class NotificationManager: ObservableObject {
     private func scheduleWeeklyDigest() async {
 #if canImport(UserNotifications)
         let content = UNMutableNotificationContent()
-        content.title = "Your week, summed up"
-        content.body = "Open Noum to see how this week shaped up — reps, score, and what's trending."
+        let copy = NotificationCopy.weeklyDigest(weeklyReps: SharedNoumState.read().weeklyReps)
+        content.title = copy.title
+        content.body = copy.body
         content.sound = .default
 
         // Sunday 7 PM local. ISO weekday 1 = Sunday.

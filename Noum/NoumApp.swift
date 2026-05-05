@@ -16,6 +16,7 @@ import GoogleSignIn
 
 struct NoumApp: App {
     @State private var showSplash = true
+    @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
 
     init() {
@@ -58,11 +59,51 @@ struct NoumApp: App {
         // override with the Figtree-backed `Typography.headline` /
         // `Typography.cardTitle` etc. for headlines.
         .environment(\.font, Typography.body)
-#if canImport(GoogleSignIn)
-        .onOpenURL { url in
-            GIDSignIn.sharedInstance.handle(url)
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            // Re-arm scheduled notifications with the latest streak +
+            // freezes + reps-today snapshot. Notification copy is
+            // streak-aware via NotificationCopy, so the body that fires
+            // tonight reflects what the user actually has on the line.
+            NotificationManager.shared.refreshScheduledNotifications()
+            // Push the freshest state to the App Group so the widget
+            // doesn't render stale data after a backgrounded session.
+            if #available(iOS 17.0, *) {
+                SharedNoumStateMirror.refresh()
+            }
         }
-#endif
+        .onOpenURL { url in
+            handleIncomingURL(url)
+        }
     }
+
+    /// Routes an incoming `noum://` URL to the right surface.
+    /// - `noum://friend/<accountID>` — friend invite (handled inside
+    ///   SocialProfileView's QR scanner; we surface the app to that tab).
+    /// - `noum://lesson/<id>` — open a specific lesson.
+    /// - `noum://practice` — open the practice picker.
+    /// Falls through to the default screen if the URL is unrecognised.
+    private func handleIncomingURL(_ url: URL) {
+#if canImport(GoogleSignIn)
+        // GoogleSignIn handles its own URL scheme — let it consume first.
+        if GIDSignIn.sharedInstance.handle(url) { return }
+#endif
+        guard url.scheme == "noum" else { return }
+        // The full deep-link router lives on the home screen, which holds
+        // the navigationPath. Surface the URL via a global so ContentView
+        // can pick it up on next refresh.
+        DeepLinkRouter.shared.pending = url
+    }
+}
+
+// MARK: - Deep link router
+
+/// Buffer the latest pending URL so `ContentView` can route once it owns
+/// the `NavigationPath`. Cleared on consumption.
+@MainActor
+final class DeepLinkRouter: ObservableObject {
+    static let shared = DeepLinkRouter()
+    @Published var pending: URL?
+    private init() {}
 }
 #endif

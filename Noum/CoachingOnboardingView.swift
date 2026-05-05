@@ -2,21 +2,19 @@
 import SwiftUI
 
 private enum OnboardingStage: Int, CaseIterable {
+    // Three load-bearing questions only. Free-text fields (goal text,
+    // why-now, success vision) are captured *after* the first rep via
+    // contextual prompts — Duolingo doesn't ask for an essay before
+    // letting you start, neither do we.
     case context
     case challenge
     case style
-    case goal
-    case whyNow
-    case successVision
 
     var title: String {
         switch self {
         case .context: return "Where do you want the most help?"
         case .challenge: return "Where do you want the most growth?"
         case .style: return "How should you come across?"
-        case .goal: return "What do you want to get better at?"
-        case .whyNow: return "Why does this matter right now?"
-        case .successVision: return "If this improves, what changes?"
         }
     }
 
@@ -25,9 +23,6 @@ private enum OnboardingStage: Int, CaseIterable {
         case .context: return "Pick the situation Noum should coach first."
         case .challenge: return "Pick the area you'd most like to strengthen."
         case .style: return "Pick the voice you want to reinforce."
-        case .goal: return "One clear answer is enough."
-        case .whyNow: return "Give Noum the current stakes."
-        case .successVision: return "Describe the payoff in real life."
         }
     }
 }
@@ -331,27 +326,6 @@ struct CoachingOnboardingView: View {
                         optionList(options: SpeakingChallenge.allCases, selectedID: biggestChallenge.id) { biggestChallenge = $0 }
                     case .style:
                         optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal.id) { speakingStyleGoal = $0 }
-                    case .goal:
-                        editorCard(
-                            prompt: "Example: lead updates in meetings without second-guessing every sentence.",
-                            text: $coachingGoal,
-                            field: .goal,
-                            identifier: "coaching.goal"
-                        )
-                    case .whyNow:
-                        editorCard(
-                            prompt: "Example: I need to sound sharper in high-visibility conversations.",
-                            text: $whyNow,
-                            field: .whyNow,
-                            identifier: "coaching.whyNow"
-                        )
-                    case .successVision:
-                        editorCard(
-                            prompt: "Example: I will feel calmer, clearer, and more credible at work.",
-                            text: $successVision,
-                            field: .successVision,
-                            identifier: "coaching.successVision"
-                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -372,7 +346,7 @@ struct CoachingOnboardingView: View {
                     advance(from: stage)
                 } label: {
                     HStack(spacing: 8) {
-                        Text(stage == .successVision ? "Finish" : "Next")
+                        Text(stage == .style ? "Finish" : "Next")
                             .font(.subheadline.weight(.semibold))
 
                         ZStack {
@@ -878,17 +852,19 @@ struct CoachingOnboardingView: View {
         let prompt: String
         let binding: Binding<String>
 
+        // Editor overlay is reused by `DeferredProfileCapture` (post-first-rep
+        // prompts). The titles match the questions the deferred prompts ask.
         switch field {
         case .goal:
-            title = OnboardingStage.goal.title
+            title = "What do you want to get better at?"
             prompt = "Example: lead updates in meetings without second-guessing every sentence."
             binding = $coachingGoal
         case .whyNow:
-            title = OnboardingStage.whyNow.title
+            title = "Why does this matter right now?"
             prompt = "Example: I need to sound sharper in high-visibility conversations."
             binding = $whyNow
         case .successVision:
-            title = OnboardingStage.successVision.title
+            title = "If this improves, what changes?"
             prompt = "Example: I will feel calmer, clearer, and more credible at work."
             binding = $successVision
         }
@@ -1044,29 +1020,14 @@ struct CoachingOnboardingView: View {
     }
 
     private func helperText(for stage: OnboardingStage) -> String? {
-        switch stage {
-        case .goal:
-            return "Specific beats impressive."
-        case .whyNow:
-            return "Tell Noum what makes this urgent."
-        case .successVision:
-            return "Keep it concrete and personal."
-        default:
-            return nil
-        }
+        // Multi-choice stages don't need helper text.
+        nil
     }
 
     private func canAdvance(from stage: OnboardingStage) -> Bool {
-        switch stage {
-        case .goal:
-            return coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
-        case .whyNow:
-            return whyNow.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
-        case .successVision:
-            return successVision.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
-        default:
-            return true
-        }
+        // After the onboarding-cut to 3 multi-choice screens, every stage
+        // has a default selection, so the user can always advance.
+        return true
     }
 
     private func advance(from stage: OnboardingStage) {
