@@ -2221,3 +2221,86 @@ struct DailyChallengeSetTests {
         #expect(set.allClaimed == false)
     }
 }
+
+// MARK: - Word of the Day (M9)
+
+struct WordOfTheDayCatalogTests {
+
+    @Test func deterministicForSameDayKey() {
+        let key = "2026-05-06"
+        let a = WordOfTheDayCatalog.entry(for: key)
+        let b = WordOfTheDayCatalog.entry(for: key)
+        #expect(a == b)
+    }
+
+    @Test func entriesHaveAcceptedHeadwordForm() {
+        for entry in WordOfTheDayCatalog.entries {
+            // Headword (lowercased) must always be in acceptedForms — that's
+            // the primary detection target.
+            #expect(entry.acceptedForms.contains(entry.word.lowercased()))
+        }
+    }
+
+    @Test func entriesHaveDisplayCopy() {
+        for entry in WordOfTheDayCatalog.entries {
+            #expect(!entry.word.isEmpty)
+            #expect(!entry.partOfSpeech.isEmpty)
+            #expect(!entry.definition.isEmpty)
+            #expect(!entry.promptSuggestion.isEmpty)
+        }
+    }
+
+    @Test func definitionsStayUnderNinetyChars() {
+        // Style guide: definitions should fit in a single line on the home
+        // tile. Hard-cap at 90 to surface anything that drifts over.
+        for entry in WordOfTheDayCatalog.entries {
+            #expect(entry.definition.count <= 90,
+                    "definition too long for \(entry.word): \(entry.definition.count) chars")
+        }
+    }
+
+    @Test func promptsAreQuestions() {
+        for entry in WordOfTheDayCatalog.entries {
+            #expect(entry.promptSuggestion.hasSuffix("?"),
+                    "prompt for \(entry.word) doesn't end with '?'")
+        }
+    }
+}
+
+@MainActor
+struct WordOfTheDayDetectionTests {
+
+    @Test func detectsHeadwordInTranscript() {
+        let forms = ["pivot", "pivots", "pivoted", "pivoting"]
+        let transcript = "I had to pivot mid-conversation when the room shifted."
+        #expect(WordOfTheDayManager.transcriptContains(any: forms, in: transcript) == true)
+    }
+
+    @Test func detectsInflectedForm() {
+        let forms = ["resonate", "resonates", "resonated", "resonant", "resonance"]
+        let transcript = "That advice still resonates with me three years later."
+        #expect(WordOfTheDayManager.transcriptContains(any: forms, in: transcript) == true)
+    }
+
+    @Test func ignoresSubstringWithinUnrelatedWord() {
+        // "art" should NOT match inside "smart" — word-boundary safe.
+        let forms = ["art"]
+        let transcript = "She made a smart call under pressure."
+        #expect(WordOfTheDayManager.transcriptContains(any: forms, in: transcript) == false)
+    }
+
+    @Test func caseInsensitive() {
+        let forms = ["candour"]
+        let transcript = "Candour is harder than honesty in practice."
+        #expect(WordOfTheDayManager.transcriptContains(any: forms, in: transcript) == true)
+    }
+
+    @Test func emptyTranscriptReturnsFalse() {
+        #expect(WordOfTheDayManager.transcriptContains(any: ["hello"], in: "") == false)
+    }
+
+    @Test func noMatchReturnsFalse() {
+        let transcript = "Today was a normal day with no surprises."
+        #expect(WordOfTheDayManager.transcriptContains(any: ["catalyst", "galvanise"], in: transcript) == false)
+    }
+}

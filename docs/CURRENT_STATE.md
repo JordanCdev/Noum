@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5–M8 shipped: coach memory, peak ratings, AI prompts, daily challenges)_
+_Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day)_
 
 ## Architecture overview
 
@@ -328,6 +328,20 @@ _Last updated: 2026-05-06 (M5–M8 shipped: coach memory, peak ratings, AI promp
   Surfaced in home, profile, reminder copy, widget, and the soft-sell
   pre-prompt's value-prop bullets. App icon badge mirrors the current
   streak via `setBadgeCount`.
+- **Word of the day (M9)** — `WordOfTheDayCatalog` ships 30 curated
+  entries (word, part-of-speech, definition, 30s prompt suggestion, and
+  inflected acceptedForms list). `entry(for:)` hashes the ISO day key
+  to pick deterministically — same day, same word, no backend.
+  `WordOfTheDayManager` (per-account) scans today's session transcripts
+  for any acceptedForm using a word-boundary safe tokenizer (matches
+  app-wide `wordCount` semantics) so substrings of unrelated words don't
+  trigger. "Used" stamps a per-day set in UserDefaults so a future
+  vocabulary-streak surface can read from it. `WordOfTheDayTile` on
+  populated home shows the word + definition + suggested prompt;
+  "Try it" seeds `timedPractice.suggestedPrompt` and pushes
+  `AppDestination.timedPractice`. `SessionFinalizer` triggers
+  evaluation after each session. Catalog covers ~30 days; needs growth
+  to ~365 to satisfy the "no repeats inside a year" target.
 - **Daily challenges (M8)** — `DailyChallenge.swift` defines 8 strict
   challenge kinds keyed to real `PracticeSession` fields (held pause
   ≥ 3s unfilled, zero-filler rep ≥ 14 words, score ≥ 8/10, etc.).

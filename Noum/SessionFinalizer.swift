@@ -193,6 +193,12 @@ enum SessionFinalizer {
         DailyChallengesManager.shared.ensureForToday()
         DailyChallengesManager.shared.recomputeReady()
 
+        // Word of the day (M9) — scan the latest transcript for today's
+        // word and flip the home tile to "Used" if the user worked it
+        // into their rep naturally.
+        WordOfTheDayManager.shared.ensureForToday()
+        WordOfTheDayManager.shared.evaluateAgainstTodaysSessions()
+
         // Notification pre-prompt — soft sell before iOS's hard system
         // dialog. Fires once on session 1, then respects 30-day cooldown
         // on decline.

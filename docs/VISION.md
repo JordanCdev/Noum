@@ -82,53 +82,52 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M9 — Word of the day._
+**Name:** _M10 — Pitch / intonation v1._
 
-(M8 _Daily-challenge rhythm v1_ shipped: `DailyChallenge` model with 8
-challenge kinds (heldPause, shortAnswer, zeroFillers, sustainedAnswer,
-cleanSuddenDeath, crispDelivery, highScoreSession, multiplePauses), each
-keyed to strict pass criteria over real `PracticeSession` fields.
-`DailyChallengeGenerator` produces a deterministic 3-of-8 trio per ISO
-date via a Splitmix64 seeded RNG — same day, same trio, no jitter on
-relaunch. `DailyChallengesManager` (per-account) auto-rolls at midnight,
-re-evaluates against the latest session via the SessionStore subscription,
-and surfaces a "ready to claim" state when criteria are satisfied. Claim
-explicitly user-triggered — XP grants through `ProfileManager.shared.addXP`,
-celebration via `pendingClaim` + brief tile-overhead toast. 9pm soft
-expiry switches the tile to a faded treatment with softer copy (no shame),
-still claimable until midnight. `DailyChallengeTile` lives on populated
-home as a third card alongside DailyGoalCard. `SessionFinalizer` calls
-`ensureForToday()` + `recomputeReady()` after each finalize.)
+(M9 _Word of the day_ shipped: `WordOfTheDayCatalog` with 30 curated
+words (each: word, partOfSpeech, definition, 30s prompt, accepted
+inflected forms). `WordOfTheDayCatalog.entry(for: dayKey)` selects
+deterministically via Hasher → same day → same word, no backend
+needed. `WordOfTheDayManager` (per-account) tracks "used today" via
+word-boundary safe transcript scanning across all of today's
+sessions. Detection forgives plurals/past-tense via the explicit
+`acceptedForms` list and ignores substrings inside unrelated words
+(e.g., "art" doesn't match in "smart"). `WordOfTheDayTile` on home
+shows the word, definition, and 30s prompt; tapping "Try it"
+seeds `timedPractice.suggestedPrompt` so the next Timed session
+opens with that exact prompt. `SessionFinalizer` triggers
+re-evaluation after each finalize so the tile flips to "Used"
+immediately. Per-account "used days" set persisted so a future
+"vocabulary streak" surface can read from it.)
 
-**Honest gaps remaining for M8:**
-- No backend / cross-device sync for claim state — challenges are
-  per-device. If the user practices on another device, the trio is
-  the same (deterministic) but claim state isn't shared.
-- No notification fired at 9pm soft expiry; the existing daily-rhythm
-  notifications already cover that surface.
+**Honest gaps remaining for M9:**
+- 30 curated words covers a month — needs to grow to ~365 to hit
+  "no repeats inside a year". Same shape, just more entries.
+- No notification surfaces today's word yet — the daily-rhythm
+  notification copy could include it, deferred to a follow-up so
+  this commit stays focused.
 
-**Why this next:** small daily commitment point distinct from "do a
-rep". Lapsed users get a tiny reason to open the app even when they
-don't have time for a full session. Builds vocabulary stretch into the
-practice loop without being pedantic.
+**Why this next:** the missing third leg of "how it sounds when
+you speak". Filler count and pace are solved; pitch / intonation
+is the differentiating metric vs. competitors and the most
+emotionally important to the listener. On-device DSP via
+`Accelerate` keeps it private and instant.
 
 **Definition of done:**
-- One curated word per day surfaced on home and in the daily-rhythm
-  notification.
-- Tied to a 30s prompt that asks the user to use it naturally.
-- Track "used / not used" automatically by checking the session
-  transcript for the day's word.
-- Reset at local midnight; deterministic so the same day shows the
-  same word across devices.
+- Pitch track extracted on-device during recording (autocorrelation
+  via vDSP, ~50ms windows).
+- Score for "monotone vs varied delivery" surfaced in the summary
+  card alongside pace.
+- Trend pill on the profile.
+- No new privacy implications — all DSP runs in-process.
 
 **Out of scope for this milestone:**
-- Pitch / intonation
 - Grammar / English-usage feedback
 - Multilingual support
 
 ## Future milestones (rough order)
 
-(M9 — Word of the day — is the active "Next milestone" above.)
+(M10 — Pitch / intonation v1 — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

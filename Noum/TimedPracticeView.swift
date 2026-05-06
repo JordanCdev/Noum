@@ -716,11 +716,20 @@ struct TimedPracticeView: View {
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
             if question.isEmpty {
-                question = await PracticeTopics.next(
-                    profile: coachingProfileStore.profile,
-                    baseline: baselineStore.baseline,
-                    theme: selectedTheme
-                )
+                // Word-of-the-day path — if home tile seeded a one-shot
+                // prompt, use it directly and clear the seed so subsequent
+                // sessions don't reuse the same word.
+                if let seeded = UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt"),
+                   !seeded.isEmpty {
+                    question = seeded
+                    UserDefaults.standard.removeObject(forKey: "timedPractice.suggestedPrompt")
+                } else {
+                    question = await PracticeTopics.next(
+                        profile: coachingProfileStore.profile,
+                        baseline: baselineStore.baseline,
+                        theme: selectedTheme
+                    )
+                }
             }
             speechVM.prepareForInteractiveUse()
             prewarmTTS()
