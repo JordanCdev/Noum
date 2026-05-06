@@ -69,6 +69,16 @@ struct SpeakingRating: Codable, Equatable {
     var ratingHistory: [RatingSnapshot]     // Last 50 changes
     var personalBests: [PersonalBestRecord]
     var totalRatedSessions: Int
+    /// Peak rating within the current ISO week. Resets to `overall` whenever
+    /// `weekPeakISOWeek` differs from the current week — prevents stale
+    /// "best of week" claims from carrying over into the next week.
+    /// Optional for backwards-compat: legacy data without this field decodes cleanly.
+    var weekPeakRating: Int
+    /// ISO week (1-53) the `weekPeakRating` was set in. Combined with
+    /// `weekPeakISOYear` to detect a week boundary.
+    var weekPeakISOWeek: Int
+    /// Year the `weekPeakRating` was set in. Needed because ISO weeks wrap.
+    var weekPeakISOYear: Int
 
     var currentTrend: TrendDirection {
         guard ratingHistory.count >= 3 else { return .stable }
@@ -86,12 +96,60 @@ struct SpeakingRating: Codable, Equatable {
             .reduce(0) { $0 + $1.delta }
     }
 
+    /// True when `weekPeakRating` was set in the current ISO week.
+    /// Caller can use this to decide whether to surface the value as a
+    /// "this week" stat or to treat it as stale.
+    var isWeekPeakCurrent: Bool {
+        let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
+        return comps.weekOfYear == weekPeakISOWeek && comps.yearForWeekOfYear == weekPeakISOYear
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case overall, peakRating, ratingHistory, personalBests, totalRatedSessions
+        case weekPeakRating, weekPeakISOWeek, weekPeakISOYear
+    }
+
+    init(
+        overall: Int,
+        peakRating: Int,
+        ratingHistory: [RatingSnapshot],
+        personalBests: [PersonalBestRecord],
+        totalRatedSessions: Int,
+        weekPeakRating: Int? = nil,
+        weekPeakISOWeek: Int? = nil,
+        weekPeakISOYear: Int? = nil
+    ) {
+        self.overall = overall
+        self.peakRating = peakRating
+        self.ratingHistory = ratingHistory
+        self.personalBests = personalBests
+        self.totalRatedSessions = totalRatedSessions
+        self.weekPeakRating = weekPeakRating ?? overall
+        let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
+        self.weekPeakISOWeek = weekPeakISOWeek ?? (comps.weekOfYear ?? 1)
+        self.weekPeakISOYear = weekPeakISOYear ?? (comps.yearForWeekOfYear ?? 2026)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.overall = try c.decode(Int.self, forKey: .overall)
+        self.peakRating = try c.decode(Int.self, forKey: .peakRating)
+        self.ratingHistory = try c.decode([RatingSnapshot].self, forKey: .ratingHistory)
+        self.personalBests = try c.decode([PersonalBestRecord].self, forKey: .personalBests)
+        self.totalRatedSessions = try c.decode(Int.self, forKey: .totalRatedSessions)
+        let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
+        self.weekPeakRating = try c.decodeIfPresent(Int.self, forKey: .weekPeakRating) ?? overall
+        self.weekPeakISOWeek = try c.decodeIfPresent(Int.self, forKey: .weekPeakISOWeek) ?? (comps.weekOfYear ?? 1)
+        self.weekPeakISOYear = try c.decodeIfPresent(Int.self, forKey: .weekPeakISOYear) ?? (comps.yearForWeekOfYear ?? 2026)
+    }
+
     static let initial = SpeakingRating(
         overall: 400,
         peakRating: 400,
         ratingHistory: [],
         personalBests: [],
-        totalRatedSessions: 0
+        totalRatedSessions: 0,
+        weekPeakRating: 400
     )
 }
 
@@ -144,6 +202,20 @@ enum RatingEngine {
         }
         if newRating > updated.peakRating {
             updated.peakRating = newRating
+        }
+
+        // Maintain week peak. If the current ISO week differs from the stored
+        // one, this is a brand-new week — reset peak to the new rating instead
+        // of carrying the old number forward (which would be a lie).
+        let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
+        let currentWeek = comps.weekOfYear ?? updated.weekPeakISOWeek
+        let currentYear = comps.yearForWeekOfYear ?? updated.weekPeakISOYear
+        if currentWeek != updated.weekPeakISOWeek || currentYear != updated.weekPeakISOYear {
+            updated.weekPeakRating = newRating
+            updated.weekPeakISOWeek = currentWeek
+            updated.weekPeakISOYear = currentYear
+        } else if newRating > updated.weekPeakRating {
+            updated.weekPeakRating = newRating
         }
 
         return updated

@@ -21,6 +21,7 @@ struct NoumFriend: Codable, Identifiable, Equatable {
     /// `nil` is the honest "we don't know yet" signal — leaderboard treats it
     /// as "Awaiting sync", not as zero.
     var lastKnownRating: Int?
+    var lastKnownPeakRating: Int?
     var lastKnownStreak: Int?
     var lastKnownRepsThisWeek: Int?
     var lastSyncedAt: Date?
@@ -34,7 +35,7 @@ struct NoumFriend: Codable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, displayName, addedAt, addedVia, accountID
-        case lastKnownRating, lastKnownStreak, lastKnownRepsThisWeek, lastSyncedAt
+        case lastKnownRating, lastKnownPeakRating, lastKnownStreak, lastKnownRepsThisWeek, lastSyncedAt
     }
 
     init(
@@ -44,6 +45,7 @@ struct NoumFriend: Codable, Identifiable, Equatable {
         addedVia: AddMethod,
         accountID: String? = nil,
         lastKnownRating: Int? = nil,
+        lastKnownPeakRating: Int? = nil,
         lastKnownStreak: Int? = nil,
         lastKnownRepsThisWeek: Int? = nil,
         lastSyncedAt: Date? = nil
@@ -54,6 +56,7 @@ struct NoumFriend: Codable, Identifiable, Equatable {
         self.addedVia = addedVia
         self.accountID = accountID
         self.lastKnownRating = lastKnownRating
+        self.lastKnownPeakRating = lastKnownPeakRating
         self.lastKnownStreak = lastKnownStreak
         self.lastKnownRepsThisWeek = lastKnownRepsThisWeek
         self.lastSyncedAt = lastSyncedAt
@@ -67,6 +70,7 @@ struct NoumFriend: Codable, Identifiable, Equatable {
         self.addedVia = try c.decode(AddMethod.self, forKey: .addedVia)
         self.accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
         self.lastKnownRating = try c.decodeIfPresent(Int.self, forKey: .lastKnownRating)
+        self.lastKnownPeakRating = try c.decodeIfPresent(Int.self, forKey: .lastKnownPeakRating)
         self.lastKnownStreak = try c.decodeIfPresent(Int.self, forKey: .lastKnownStreak)
         self.lastKnownRepsThisWeek = try c.decodeIfPresent(Int.self, forKey: .lastKnownRepsThisWeek)
         self.lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
@@ -199,6 +203,7 @@ final class FriendsManager: ObservableObject {
             guard let accountID = friends[index].accountID,
                   let snapshot = fetched[accountID] else { continue }
             friends[index].lastKnownRating = snapshot.rating
+            friends[index].lastKnownPeakRating = snapshot.peakRating
             friends[index].lastKnownStreak = snapshot.currentStreak
             friends[index].lastKnownRepsThisWeek = snapshot.weeklyReps
             friends[index].lastSyncedAt = snapshot.updatedAt

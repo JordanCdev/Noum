@@ -1822,3 +1822,91 @@ struct DistanceFromGoalTests {
         #expect(far.goalDistanceLabel(.reduceFillers) == "Early days")
     }
 }
+
+// MARK: - Weekly peak rating (M6)
+
+struct WeekPeakRatingTests {
+
+    @Test func freshRatingHasCurrentWeekStamped() {
+        let r = SpeakingRating.initial
+        #expect(r.isWeekPeakCurrent == true)
+        #expect(r.weekPeakRating == 400)
+    }
+
+    @Test func processedSessionUpdatesWeekPeakWhenHigher() {
+        let initial = SpeakingRating.initial
+        // High enough score to bump rating upward
+        let updated = RatingEngine.processRatedSession(
+            rating: initial,
+            sessionScore: 9,
+            sessionId: UUID(),
+            pressureLevel: .standard
+        )
+        #expect(updated.weekPeakRating >= initial.weekPeakRating)
+        #expect(updated.weekPeakRating == updated.overall)
+    }
+
+    @Test func processedSessionDoesNotLowerWeekPeak() {
+        // Start at a high peak, then take a hit
+        var r = SpeakingRating.initial
+        r.overall = 700
+        r.weekPeakRating = 750
+        let lower = RatingEngine.processRatedSession(
+            rating: r,
+            sessionScore: 1,  // forces negative delta
+            sessionId: UUID(),
+            pressureLevel: .standard
+        )
+        #expect(lower.weekPeakRating == 750, "week peak shouldn't drop on a bad session")
+        #expect(lower.overall < r.overall, "rating itself should drop")
+    }
+
+    @Test func staleWeekResetsToCurrentRating() {
+        // Simulate a rating saved last week — week stamp doesn't match today.
+        var r = SpeakingRating.initial
+        r.overall = 500
+        r.weekPeakRating = 800       // stale value from last week
+        r.weekPeakISOWeek = 1        // forced mismatch
+        r.weekPeakISOYear = 2000
+
+        let updated = RatingEngine.processRatedSession(
+            rating: r,
+            sessionScore: 7,
+            sessionId: UUID(),
+            pressureLevel: .standard
+        )
+
+        // After reset, the week peak should be the new rating (not the
+        // carried-over 800), because we're in a new week.
+        #expect(updated.weekPeakRating == updated.overall)
+        let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
+        #expect(updated.weekPeakISOWeek == comps.weekOfYear)
+        #expect(updated.weekPeakISOYear == comps.yearForWeekOfYear)
+    }
+
+    @Test func isWeekPeakCurrentDetectsStaleWeek() {
+        var r = SpeakingRating.initial
+        r.weekPeakISOWeek = 1
+        r.weekPeakISOYear = 2000
+        #expect(r.isWeekPeakCurrent == false)
+    }
+
+    @Test func decodeLegacyRatingDataAddsCurrentWeekStamp() throws {
+        // Legacy JSON missing the week-peak fields should decode cleanly with
+        // weekPeakRating defaulting to overall and the current week stamped.
+        let legacy = """
+        {
+          "overall": 525,
+          "peakRating": 600,
+          "ratingHistory": [],
+          "personalBests": [],
+          "totalRatedSessions": 4
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(SpeakingRating.self, from: legacy)
+        #expect(decoded.overall == 525)
+        #expect(decoded.peakRating == 600)
+        #expect(decoded.weekPeakRating == 525)  // defaulted to current overall
+        #expect(decoded.isWeekPeakCurrent == true)
+    }
+}

@@ -89,6 +89,7 @@ struct ProfileView: View {
                 identityHeader
                 rankPanel
                 speakingRatingCard
+                PeakRatingWallCard()
                 ProgressionChartsCard(sessionStore: sessionStore)
                 leaguePanel
                 ModeMasteryCard()

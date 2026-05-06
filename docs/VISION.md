@@ -82,40 +82,48 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M6 — High-score & rivalry surface — peak-rating wall._
+**Name:** _M7 — AI-driven topic prompts (recurrence-aware)._
 
-(M5 _Coach memory v1_ shipped: `GoalRefreshManager` 2-week recurring
-"still your goal?" sheet; `CommunicationBaseline.distanceFromGoal(_:)`
-+ `goalDistanceLabel`; `AIInsightInput.goalDistance` piped into debrief
-and weekly prompts; `AIInsightsService` session-debrief system prompt
-now mandates opening with a goal-grounding sentence; `suggestedTimedDifficulty`
-+ `suggestedTheme` added to `RecommendationBiasBlueprint` and surfaced
-in the home CTA — moreConcise → Hard (15s), calmerDelivery → Easy (60s),
-with matching theme pre-seeded in `timedPractice.selectedTheme` on
-quick-start tap.)
+(M6 _High-score & rivalry surface — peak-rating wall_ shipped client-side:
+`SpeakingRating.weekPeakRating` + `weekPeakISOWeek/Year` with automatic
+ISO-week boundary reset (no carry-over of last-week's peak); legacy
+JSON decodes cleanly. `PeakRatingWallCard` on `ProfileView` shows
+**Best ever** / **Best this week** / **Best in friends** — never fakes
+data: friends without linked accounts say "Awaiting sync"; user's own
+"now" badge only appears if currently at peak. `NoumFriend.lastKnownPeakRating`
+synced from `PublicProfileSnapshot.peakRating`.
 
-**Why this next:** the retention loop needs a loss-aversion / chase
-surface tied to real performance. The league from M2 gives the data;
-surfacing peak-week rating, all-time best, and friend comparisons
-completes the "public proof of progress" pull mechanic.
+**Honest gaps remaining for full M6:**
+- "Best in current league bucket" (peer max within `LeagueManager.members`)
+  needs `FIRESTORE_RULES.md` deployed before peer reads return real data.
+  Card already handles empty `members` correctly today.
+- No share-out from peak card yet — adding share sheet would let users
+  post their PB. Out of scope for this pass.)
+
+**Why this next:** prompt staleness is a quiet retention killer once
+users have seen the curated 200-prompt pool 2-3 times. AI-generated
+prompts biased by user's goal + weakest pattern + recent prompt
+history create infinite freshness without diluting the curated pool's
+quality.
 
 **Definition of done:**
-- "Best in week" surface showing the user's highest rating within the
-  current league bucket (no fake ranks — real M2 data).
-- "Best ever" personal record watermark displayed on profile + summary.
-- "Best in friends" comparison fetched from `profiles_public/{id}` for
-  friends who have linked accounts.
+- Pull from the 200-prompt pool 70% of the time, generate fresh ones
+  via `AINPCChatService` 30% of the time.
+- Generated prompts biased by `CoachingProfile.primaryGoal` and the
+  baseline's weakest dimension.
+- Prompt-history dedup: no repeats inside a 14-day window (per-account).
+- Generated prompts pass a content filter (length, no PII, no off-topic
+  drift) before reaching the user.
 
 **Out of scope for this milestone:**
 - Pitch / intonation
 - Grammar / English-usage feedback
 - Word of the day
-- AI-generated topic prompts beyond the existing curated pool
 - Multilingual support
 
 ## Future milestones (rough order)
 
-(M6 — High-score & rivalry surface — is the active "Next milestone" above.)
+(M7 — AI-driven topic prompts — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

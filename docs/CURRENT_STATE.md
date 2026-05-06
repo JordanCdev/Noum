@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5 Coach memory v1 shipped)_
+_Last updated: 2026-05-06 (M5 Coach memory v1 + M6 Peak rating wall shipped)_
 
 ## Architecture overview
 
@@ -371,6 +371,18 @@ _Last updated: 2026-05-06 (M5 Coach memory v1 shipped)_
 - **Trend charts** — `ProgressionCharts` renders animated SwiftUI
   `Chart` line + area marks for filler / score / pace on the profile.
   `TrendAnalyzer` data also surfaces as the existing trend pill.
+- **Peak rating wall (M6)** — `SpeakingRating.weekPeakRating` tracks
+  the highest rating reached within the current ISO week. Resets at
+  every week boundary (legacy data decodes cleanly with current overall
+  as the default week peak). `PeakRatingWallCard` on `ProfileView`
+  shows three rows — Best ever (`peakRating`), Best this week
+  (`weekPeakRating` if `isWeekPeakCurrent`, else "—"), Best in friends
+  (max `lastKnownPeakRating` across linked-account friends). Honest
+  empty states: "Awaiting sync" when no friend has been backend-synced;
+  "No linked friends" when all friends are local-only; "You lead" when
+  the user's peak exceeds every friend's; "Tied with [name]" when
+  matched. Friend peer reads need `FIRESTORE_RULES.md` deployed for
+  real data — card handles empty `members` arrays correctly today.
 - **Recommendation engine** — `RecommendationBiasEngine` +
   `CoachingPlanner` produce next-best-mode + reason, with
   `RecommendationLearningStore` tracking whether following the
