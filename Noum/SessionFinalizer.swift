@@ -179,6 +179,13 @@ enum SessionFinalizer {
             profile: coachingProfileStore.profile
         )
 
+        // Goal refresh — every 14 days, surface a lightweight "still your
+        // goal?" confirmation so coach memory stays current.
+        GoalRefreshManager.shared.consider(
+            sessionCount: sessionStore.sessions.count,
+            profile: coachingProfileStore.profile
+        )
+
         // Notification pre-prompt — soft sell before iOS's hard system
         // dialog. Fires once on session 1, then respects 30-day cooldown
         // on decline.

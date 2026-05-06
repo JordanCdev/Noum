@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-04_
+_Last updated: 2026-05-06_
 
 ## Architecture overview
 
@@ -156,8 +156,25 @@ _Last updated: 2026-05-04_
   from SF Symbols (waveform variants + halos + glow), four moods (calm /
   listening / excited / coaching), state-specific accents (sparkle ribbon
   on excited, symmetric arc-pulses on listening, slight tilt on coaching).
-  Used on the home hero, FirstRepCelebration, and ProfileView header.
-  Brand-rule compliant: motion + color + shape, no illustration.
+  Used on the home hero, FirstRepCelebration, ProfileView header, and
+  AchievementsTreeView hero strip. Brand-rule compliant: motion + color
+  + shape, no illustration.
+- `Noum/Noum/PauseMetrics.swift` + `Noum/Noum/PauseSummaryCard.swift` —
+  M4 v1: pause statistics (count, mean, longest, filled-vs-unfilled
+  ratio) computed from word timings during finalize. Card hides when
+  no metrics; integrates into BaselineEngine + ProgressionCharts +
+  TrendAnalyzer + path-node criteria (`heldSilentPause`,
+  `cleanPauseSession`).
+- `Noum/Noum/WordChoiceMetrics.swift` + `Noum/Noum/WordChoiceCard.swift`
+  — M4 v1: unique-content-word ratio + top 3 repeated content words
+  after stop-word + filler filtering. Card hides for sessions under
+  20 content words.
+- `Noum/Noum/PrivacyInfo.xcprivacy` — App Store privacy manifest
+  declaring data collection categories (audio, name, user ID,
+  product interaction, crash + performance), API usage reasons
+  (UserDefaults `CA92.1`, system boot time `35F9.1`, file timestamp
+  `C617.1`), and `NSPrivacyTracking=false`. Required for App Store
+  submission since May 2024.
 - `Noum/Noum/SoundscapeEngine.swift` + `Noum/Noum/SoundscapePickerView.swift`
   — pre-rep ambience generator (`AVAudioSourceNode`-based pink/brown
   noise + sine drones), 4 modes (Off/Focus/Calm/Steady), Pro-gated for
@@ -390,13 +407,25 @@ _Last updated: 2026-05-04_
 
 ### Partially implemented
 
-- **Pause analysis** — first-class in **Land the Pause** mini-drill
-  (lock-in mechanic), but **not measured as a session metric** in
-  Timed / Sudden Death / Ah-Counter / IM. Surfaces nowhere in summary
-  cards or trends.
-- **Word choice** — `ClutchWordStore` tracks user-defined "clutch
-  words" (words to avoid) and surfaces a top-5 list. **No vocabulary
-  variety, sophistication, or repetition analysis.**
+- **Pause analysis** — **M4 v1 shipped**. `PauseMetrics` (count, mean,
+  longest, filledRatio) computed at finalize for every Timed / Sudden
+  Death / Ah-Counter / IM session. Renders in the summary's
+  `PauseSummaryCard`, integrated into `BaselineEngine` (`pauseRate` +
+  `pauseFilledRatio` dimensions), surfaces as a 4th series in
+  `ProgressionCharts`, drives 2 path-node criteria (`heldSilentPause`,
+  `cleanPauseSession`) + 2 path nodes ("Hold a silent beat",
+  "Composed pauses"), and drives `TrendAnalyzer.analyzePause` so the
+  pause direction (improving/stable/declining) folds into the existing
+  primary-focus pick. Land the Pause mini-drill remains as a focused
+  in-session lock-in mechanic.
+- **Word choice** — **M4 v1 shipped**. `WordChoiceMetrics` (unique
+  ratio + top 3 repeated content words after stop-word + filler
+  filtering, 20-content-word minimum) renders in the summary's
+  `WordChoiceCard`. `ClutchWordStore` continues to track user-defined
+  "clutch words" alongside. Vocabulary range was already in
+  `BaselineEngine` via unique-ratio; no new dimension added (the
+  existing vocab signal covers the baseline; the card surfaces the
+  detail per-rep).
 - **Daily / weekly challenges** — model + UI scaffold real, used by
   `RetentionLoopEngine` to produce one "active challenge" tile.
   **Auto-rotation / weekly reset / leaderboard not wired.** It's a
@@ -463,14 +492,22 @@ _Last updated: 2026-05-04_
 - **UI tests are flaky** — four UI tests
   (`testHomeScreenAndPrimaryNavigation`,
   `testPracticeModesOpenAvailableScreens`, `testOnboardingFlowSmoke`,
-  `ScreenshotTour.testCaptureAdvancementSurfaces`) fail. Unit tests
-  are stable (95/95). Root cause partially identified: the home tests
-  query elements as `app.otherElements[...]` but recent UX work
-  promoted those tiles to buttons (and added a populated-state seed
-  requirement). The journey card was refactored to use sibling
-  buttons instead of nested ones (cleaner hit-testing) but UI tests
-  still need a dedicated pass — likely needs both `app.buttons[...]`
-  query updates AND `UI_TESTING_SEED` added to `launchApp()`.
+  `ScreenshotTour.testCaptureAdvancementSurfaces`) fail intermittently.
+  Unit tests are stable (111+ tests passing including all M4 work).
+  Root cause partially identified: the home tests query elements as
+  `app.otherElements[...]` but recent UX work promoted those tiles to
+  buttons. The journey card was refactored to use sibling buttons
+  instead of nested ones (cleaner hit-testing) and the launch args
+  needs `UI_TESTING_SEED` for populated state — but the seed isn't
+  reliably injecting in the test environment. Needs a dedicated pass.
+- **Dynamic Type partial coverage** — ~90 `.system(size:)` call sites
+  don't use `.relativeTo` text styles, so they don't scale with the
+  user's preferred text size. Low-impact for most users (the system
+  text styles still render fine), but a thoroughness gap. Migrate at
+  some point.
+- **Hosted privacy policy URL** — bundled `PrivacyPolicy.md` renders
+  in-app via `PrivacyPolicyView`. App Store submission also requires
+  a hosted public URL (Firebase Hosting or similar). Open.
 
 ## Conventions to preserve
 

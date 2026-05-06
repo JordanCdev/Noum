@@ -127,10 +127,21 @@ final class ModeMasteryStore: ObservableObject {
     private let sessionStore: PracticeSessionStore
     private var cancellables: Set<AnyCancellable> = []
 
-    private init(sessionStore: PracticeSessionStore = .shared) {
-        self.sessionStore = sessionStore
-        rebuild(from: sessionStore.sessions)
-        sessionStore.$sessions
+    private init(sessionStore: PracticeSessionStore? = nil) {
+        // Resolved in the init body rather than via default parameter so
+        // accessing `PracticeSessionStore.shared` (main-actor-isolated)
+        // happens inside the init's @MainActor context, not at the
+        // default-parameter evaluation site. Explicit branch instead of
+        // `??` because `??`'s RHS is a nonisolated autoclosure.
+        let resolvedStore: PracticeSessionStore
+        if let provided = sessionStore {
+            resolvedStore = provided
+        } else {
+            resolvedStore = PracticeSessionStore.shared
+        }
+        self.sessionStore = resolvedStore
+        rebuild(from: resolvedStore.sessions)
+        resolvedStore.$sessions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sessions in
                 self?.rebuild(from: sessions)

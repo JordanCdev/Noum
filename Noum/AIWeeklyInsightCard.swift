@@ -164,7 +164,9 @@ struct AIWeeklyInsightCard: View {
         let cutoff = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let weekly = sessionStore.sessions.filter { $0.date >= cutoff }
         let topFiller = clutchWordStore.topClutchWords.first?.word
-        let goalParaphrase = coachingProfileStore.profile?.displayableGoal
+        let profile = coachingProfileStore.profile
+        let goalParaphrase = profile?.displayableGoal
+        let goalDistance = profile.map { baselineStore.baseline.distanceFromGoal($0.primaryGoal) }
 
         let input = AIInsightInput(
             kind: .weeklyNarrative,
@@ -175,7 +177,8 @@ struct AIWeeklyInsightCard: View {
             weeklyReps: weekly.count,
             topFillerWord: topFiller,
             goalParaphrase: goalParaphrase,
-            currentStreak: streakFreezeManager.currentStreak
+            currentStreak: streakFreezeManager.currentStreak,
+            goalDistance: goalDistance
         )
 
         isRefreshing = true

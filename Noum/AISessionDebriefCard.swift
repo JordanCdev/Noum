@@ -154,7 +154,9 @@ struct AISessionDebriefCard: View {
             sessions.insert(session, at: 0)
         }
         let topFiller = clutchWordStore.topClutchWords.first?.word
-        let goalParaphrase = coachingProfileStore.profile?.displayableGoal
+        let profile = coachingProfileStore.profile
+        let goalParaphrase = profile?.displayableGoal
+        let goalDistance = profile.map { baselineStore.baseline.distanceFromGoal($0.primaryGoal) }
         let input = AIInsightInput(
             kind: .sessionDebrief,
             sessions: sessions,
@@ -166,7 +168,8 @@ struct AISessionDebriefCard: View {
             }.count,
             topFillerWord: topFiller,
             goalParaphrase: goalParaphrase,
-            currentStreak: streakFreezeManager.currentStreak
+            currentStreak: streakFreezeManager.currentStreak,
+            goalDistance: goalDistance
         )
         let next = await AIInsightsService.shared.insight(for: input)
         await MainActor.run {

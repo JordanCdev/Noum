@@ -6,7 +6,6 @@ import SwiftUI
 import UIKit
 #endif
 #if canImport(Contacts)
-import Contacts
 #endif
 #if canImport(CoreImage)
 import CoreImage.CIFilterBuiltins

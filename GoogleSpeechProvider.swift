@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Google Cloud Speech V2 Provider
 
@@ -76,8 +77,12 @@ final class GoogleSpeechSession: TranscriptionSession, @unchecked Sendable {
     private let updateContinuation: AsyncStream<TranscriptUpdate>.Continuation
     let transcriptUpdates: AsyncStream<TranscriptUpdate>
 
-    private var audioBuffer = Data()
-    private let bufferLock = NSLock()
+    // `audioBuffer` is owned by `bufferLock`. Switching from `NSLock`
+    // to `OSAllocatedUnfairLock` because `NSLock.lock`/`unlock` are
+    // unsafe to call from async functions under Swift 6 — the unfair
+    // lock variant is async-context-safe and never holds across
+    // suspension points (the closure body has no awaits).
+    private let bufferLock = OSAllocatedUnfairLock<Data>(initialState: Data())
     private var isRunning = true
     private var chunkTask: Task<Void, Never>?
 
@@ -103,9 +108,9 @@ final class GoogleSpeechSession: TranscriptionSession, @unchecked Sendable {
     }
 
     func sendAudio(_ data: Data) async throws {
-        bufferLock.lock()
-        audioBuffer.append(data)
-        bufferLock.unlock()
+        bufferLock.withLock { buffer in
+            buffer.append(data)
+        }
     }
 
     func endAudio() async throws {
@@ -117,14 +122,15 @@ final class GoogleSpeechSession: TranscriptionSession, @unchecked Sendable {
     }
 
     private func sendChunk() async {
-        bufferLock.lock()
-        guard !audioBuffer.isEmpty else {
-            bufferLock.unlock()
-            return
+        // Drain the buffer atomically — copy the bytes out under the
+        // lock and reset, then do the network work without holding the
+        // lock (no suspension points inside `withLock`).
+        let chunk: Data = bufferLock.withLock { buffer in
+            let snapshot = buffer
+            buffer = Data()
+            return snapshot
         }
-        let chunk = audioBuffer
-        audioBuffer = Data()
-        bufferLock.unlock()
+        guard !chunk.isEmpty else { return }
 
         // Build the request
         let base64Audio = chunk.base64EncodedString()

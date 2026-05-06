@@ -314,6 +314,7 @@ struct PaywallView: View {
                                 .frame(width: 36, height: 36)
                                 .background(Color.white.opacity(0.1), in: Circle())
                         }
+                        .accessibilityLabel("Close")
                     }
                     .padding(.top, 8)
 
@@ -363,15 +364,15 @@ struct PaywallView: View {
 
                     // Features
                     VStack(spacing: 0) {
-                        featureRow(icon: "text.magnifyingglass", title: "Coach Mode", description: "Full transcript-led practice with deeper feedback")
-                        featureRow(icon: "text.quote", title: "Live Transcript", description: "See your words in real time as you speak")
-                        featureRow(icon: "video.fill", title: "Video Recording", description: "Record yourself and review your delivery")
-                        featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler Tracking", description: "Detect and reduce verbal crutches")
-                        featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend Analytics", description: "Track improvement across sessions")
-                        featureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges", description: "Challenge friends to the same prompt")
-                        featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI Video Analysis", description: "Nonverbal coaching — 5 analyses/month")
-                        featureRow(icon: "brain.fill", title: "100 AI Coaching Reads", description: "5× more monthly AI analyses than free tier")
-                        featureRow(icon: "tray.full.fill", title: "Saved Transcripts", description: "Review and compare past sessions")
+                        featureRow(icon: "text.magnifyingglass", title: "Coach mode", description: "Full transcript-led practice with deeper feedback")
+                        featureRow(icon: "text.quote", title: "Live transcript", description: "See your words in real time as you speak")
+                        featureRow(icon: "video.fill", title: "Video recording", description: "Record yourself and review your delivery")
+                        featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler tracking", description: "Detect and reduce verbal crutches")
+                        featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend analytics", description: "Track improvement across sessions")
+                        featureRow(icon: "person.2.wave.2.fill", title: "Unlimited async challenges", description: "Challenge friends to the same prompt")
+                        featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI video analysis", description: "Nonverbal coaching — 5 analyses/month")
+                        featureRow(icon: "brain.fill", title: "100 AI coaching reads", description: "5× more monthly AI analyses than free tier")
+                        featureRow(icon: "tray.full.fill", title: "Saved transcripts", description: "Review and compare past sessions")
                     }
                     .padding(4)
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
@@ -400,7 +401,7 @@ struct PaywallView: View {
                                     Image(systemName: "crown.fill")
                                         .font(.headline)
                                 }
-                                Text(isPurchasing ? "Processing..." : "Subscribe Now")
+                                Text(isPurchasing ? "Processing\u{2026}" : "Subscribe")
                                     .font(.headline.weight(.bold))
                             }
                             .frame(maxWidth: .infinity)
@@ -425,7 +426,7 @@ struct PaywallView: View {
                                 .foregroundStyle(.red.opacity(0.8))
                         }
 
-                        Button("Restore Purchase") {
+                        Button("Restore") {
                             Task {
                                 await premium.restorePurchases()
                                 if premium.isPremium {

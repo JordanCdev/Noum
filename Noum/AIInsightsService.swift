@@ -71,6 +71,9 @@ struct AIInsightInput {
     let topFillerWord: String?
     let goalParaphrase: String?
     let currentStreak: Int
+    /// Normalized 0–1 distance from the user's coaching goal (from
+    /// CommunicationBaseline.distanceFromGoal). nil if no goal is set.
+    let goalDistance: Double?
     /// Sessions to focus on inside the prompt — usually the last 3–5.
     /// Trimmed by the caller so the prompt stays small.
     var focusSessions: [PracticeSession] {
@@ -188,18 +191,23 @@ actor AIInsightsService {
         """
         switch kind {
         case .weeklyNarrative:
-            return common + "\nThe goal is a one-paragraph narrative summary of the user's last 7 days of speaking practice."
+            return common + "\nThe goal is a one-paragraph narrative summary of the user's last 7 days of speaking practice. If a user goal is provided, open with one sentence connecting the week's trend to that goal."
         case .sessionDebrief:
-            return common + "\nThe goal is a coaching read of one specific session, naming what just changed."
+            return common + "\nThe goal is a coaching read of one specific session. If a user goal is provided, your first sentence MUST connect this session to that goal — e.g. 'You said you wanted to X — this session moved toward/away from that because…'. Then name what concretely changed."
         case .patternBreak:
-            return common + "\nA pattern just shifted. Surface what changed and whether it was good or bad."
+            return common + "\nA pattern just shifted. Surface what changed and whether it was good or bad. If a user goal is provided, frame the shift in terms of that goal."
         }
     }
 
     private func userPrompt(from input: AIInsightInput) -> String {
         var lines: [String] = []
+        // Goal goes first — for sessionDebrief the system prompt requires leading with it.
         if let goal = input.goalParaphrase, !goal.isEmpty {
-            lines.append("User's goal: \(goal)")
+            lines.append("User's stated goal: \(goal)")
+            if let d = input.goalDistance {
+                let pct = Int((1.0 - d) * 100)
+                lines.append("Goal progress (higher = closer to goal): \(pct)%")
+            }
         }
         lines.append("Sessions logged this week: \(input.weeklyReps)")
         lines.append("Rating delta this week: \(input.weeklyDelta >= 0 ? "+" : "")\(input.weeklyDelta)")

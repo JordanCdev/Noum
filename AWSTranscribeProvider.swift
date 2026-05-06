@@ -10,8 +10,16 @@ final class AWSTranscribeProvider: TranscriptionProvider, @unchecked Sendable {
     let identifier = "aws"
     private let authManager: AuthManager
 
-    init(authManager: AuthManager = .shared) {
-        self.authManager = authManager
+    @MainActor
+    init(authManager: AuthManager? = nil) {
+        // `AuthManager.shared` is main-actor-isolated, so this init
+        // must be too. Callers (SpeechRecognizerViewModel etc.) are
+        // already on @MainActor when constructing the provider.
+        if let provided = authManager {
+            self.authManager = provided
+        } else {
+            self.authManager = AuthManager.shared
+        }
     }
 
     func startSession(config: TranscriptionConfig) async throws -> any TranscriptionSession {

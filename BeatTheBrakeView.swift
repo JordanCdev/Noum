@@ -180,6 +180,7 @@ struct BeatTheBrakeView: View {
                             .background(.white.opacity(0.1), in: Circle())
                     }
                     .buttonStyle(.pressable)
+                    .accessibilityLabel("Close drill")
                     Spacer()
                 }
                 .padding(.horizontal, 16)

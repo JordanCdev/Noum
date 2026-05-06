@@ -22,8 +22,19 @@ struct ConfettiLayer: View {
     var duration: Double = 1.6
 
     @State private var pieces: [ConfettiPiece] = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // Skip the entire particle system when Reduce Motion is on —
+        // falling pieces are vestibular triggers and the celebration
+        // overlays already convey the moment via copy + scale springs.
+        if reduceMotion { EmptyView() }
+        else {
+            confettiContent
+        }
+    }
+
+    private var confettiContent: some View {
         GeometryReader { geo in
             ZStack {
                 ForEach(pieces) { piece in

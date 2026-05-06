@@ -6241,6 +6241,11 @@ struct RecommendationBiasBlueprint {
     let modeBenefit: String
     let whyMode: String
     let whyNow: String
+    /// Suggested Timed difficulty based on the user's coaching goal.
+    /// `nil` if the recommended mode is not Timed or no profile is set.
+    let suggestedTimedDifficulty: TimedPracticeDifficulty?
+    /// Prompt theme that best matches this user's coaching goal.
+    let suggestedTheme: PromptTheme
 }
 
 enum RecommendationBiasEngine {
@@ -6282,7 +6287,9 @@ enum RecommendationBiasEngine {
                 target: mode == .ahCounter ? "Cut fillers by 1" : "One complete rep",
                 modeBenefit: playbookEntry(for: mode).benefit,
                 whyMode: playbookEntry(for: mode).bestFor,
-                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline."
+                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline.",
+                suggestedTimedDifficulty: nil,
+                suggestedTheme: .all
             )
         }
 
@@ -6294,6 +6301,8 @@ enum RecommendationBiasEngine {
         let target = target(for: mode, profile: profile, input: input)
         let focus = focus(for: mode, profile: profile)
         let whyNow = whyNow(for: mode, profile: profile, input: input)
+        let difficulty = mode == .timed ? suggestedTimedDifficulty(for: profile) : nil
+        let theme = suggestedTheme(for: profile)
 
         return RecommendationBiasBlueprint(
             recommendedMode: mode,
@@ -6303,8 +6312,34 @@ enum RecommendationBiasEngine {
             target: target,
             modeBenefit: benefit.benefit,
             whyMode: benefit.bestFor + " This lines up with the user's north star.",
-            whyNow: whyNow
+            whyNow: whyNow,
+            suggestedTimedDifficulty: difficulty,
+            suggestedTheme: theme
         )
+    }
+
+    /// Maps a coaching goal to a suggested Timed difficulty.
+    private static func suggestedTimedDifficulty(for profile: CoachingProfile) -> TimedPracticeDifficulty {
+        switch profile.primaryGoal {
+        case .moreConcise:  return .hard    // 15s forces conciseness
+        case .thinkFaster:  return .medium  // 30s balanced speed + structure
+        case .reduceFillers: return .medium // 30s — enough time to self-monitor
+        case .calmerDelivery: return .easy  // 60s — room to compose and pace
+        }
+    }
+
+    /// Maps a coaching goal to the prompt theme most likely to surface useful practice.
+    private static func suggestedTheme(for profile: CoachingProfile) -> PromptTheme {
+        switch profile.primaryGoal {
+        case .moreConcise:
+            return profile.speakingContext == .interviews ? .interviewPrep : .workCareer
+        case .thinkFaster:
+            return profile.biggestChallenge == .freezing ? .general : .funRandom
+        case .reduceFillers:
+            return .all
+        case .calmerDelivery:
+            return profile.speakingContext == .social ? .socialConfidence : .ethicsOpinions
+        }
     }
 
     private static func prioritizedModes(for profile: CoachingProfile) -> [PracticeMode] {

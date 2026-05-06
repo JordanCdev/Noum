@@ -279,4 +279,214 @@ struct DeferredProfileCaptureSheet: View {
     }
 }
 
+// MARK: - Goal Refresh (recurring 2-week cadence)
+
+/// Fires a lightweight "still your goal?" sheet every 14+ days.
+/// The user confirms in one tap or updates their goal text.
+/// Never blocks — a skip stamps the date and stays quiet for another 14 days.
+@MainActor
+@available(iOS 17.0, macOS 12.0, *)
+final class GoalRefreshManager: ObservableObject {
+    static let shared = GoalRefreshManager()
+
+    @Published var shouldPresent = false
+
+    private let lastRefreshKeyPrefix = "noum.goalRefresh.lastDate."
+    private let minimumSessionsBeforeRefresh = 10
+    private let refreshIntervalDays = 14
+
+    private init() {}
+
+    /// Called from SessionFinalizer after each finished rep.
+    func consider(sessionCount: Int, profile: CoachingProfile?) {
+        guard !shouldPresent else { return }
+        guard let profile, !profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard sessionCount >= minimumSessionsBeforeRefresh else { return }
+
+        let key = lastRefreshKey()
+        if let lastDate = UserDefaults.standard.object(forKey: key) as? Date {
+            let days = Calendar.current.dateComponents([.day], from: lastDate, to: Date()).day ?? 0
+            guard days >= refreshIntervalDays else { return }
+        } else {
+            // First refresh — trigger if they have enough sessions but never refreshed.
+            guard sessionCount >= 20 else { return }
+        }
+
+        shouldPresent = true
+    }
+
+    /// User confirmed their goal is still correct — stamp date, no edit.
+    func confirm() {
+        stamp()
+        shouldPresent = false
+    }
+
+    /// User submitted an updated goal text.
+    func update(_ newGoal: String) {
+        stamp()
+        let trimmed = newGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 10 else { shouldPresent = false; return }
+        let store = CoachingProfileStore.shared
+        guard var profile = store.profile else { shouldPresent = false; return }
+        profile.coachingBrief = trimmed
+        profile.paraphrasedGoal = nil  // re-trigger paraphrase pass with new text
+        store.save(profile)
+        shouldPresent = false
+    }
+
+    func skip() {
+        stamp()
+        shouldPresent = false
+    }
+
+    private func stamp() {
+        UserDefaults.standard.set(Date(), forKey: lastRefreshKey())
+    }
+
+    private func lastRefreshKey() -> String {
+        lastRefreshKeyPrefix + (AuthManager.shared.currentAccountID ?? "guest")
+    }
+}
+
+// MARK: - Goal Refresh Sheet
+
+@available(iOS 17.0, macOS 12.0, *)
+struct GoalRefreshSheet: View {
+    @StateObject private var manager = GoalRefreshManager.shared
+    @StateObject private var profileStore = CoachingProfileStore.shared
+    @State private var isEditing = false
+    @State private var editText: String = ""
+    @FocusState private var focused: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(width: 36, height: 4)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Still your goal?")
+                    .font(Typography.cardTitle)
+                    .foregroundStyle(.primary)
+                Text("Noum stays useful when your goal is current. Confirm or update in 30 seconds.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Current goal display / edit toggle
+            VStack(alignment: .leading, spacing: 8) {
+                if isEditing {
+                    ZStack(alignment: .topLeading) {
+                        if editText.isEmpty {
+                            Text("What are you working on right now?")
+                                .font(Typography.body)
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                        }
+                        TextEditor(text: $editText)
+                            .font(Typography.body)
+                            .focused($focused)
+                            .scrollContentBackground(.hidden)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(minHeight: 100)
+                    }
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .stroke(focused ? AppColor.brandBlue.opacity(0.4) : Color.white.opacity(0.6), lineWidth: 1)
+                    )
+                } else {
+                    Text(profileStore.profile?.displayableGoal ?? "")
+                        .font(Typography.body)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+            }
+
+            Spacer()
+
+            if isEditing {
+                HStack {
+                    Button("Cancel") {
+                        isEditing = false
+                        focused = false
+                    }
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        manager.update(editText)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Save goal")
+                                .font(Typography.headline)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 11)
+                        .background(
+                            editText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+                                ? AppColor.brandBlue : Color.secondary.opacity(0.5),
+                            in: Capsule()
+                        )
+                    }
+                    .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).count < 10)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Button {
+                        if let current = profileStore.profile?.coachingBrief, !current.isEmpty {
+                            editText = current
+                        }
+                        isEditing = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focused = true }
+                    } label: {
+                        Text("Update it")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                    }
+
+                    Spacer()
+
+                    Button {
+                        manager.confirm()
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Still right")
+                                .font(Typography.headline)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 11)
+                        .background(AppColor.brandBlue, in: Capsule())
+                    }
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.hidden)
+    }
+}
+
 #endif

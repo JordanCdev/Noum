@@ -880,7 +880,7 @@ struct SummaryView: View {
             HStack(spacing: 8) {
                 Image(systemName: "play.rectangle.fill")
                     .font(.caption.weight(.semibold))
-                Text("Watch Recording")
+                Text("Watch recording")
                     .font(.caption.weight(.semibold))
             }
             .foregroundStyle(AppColor.brandBlue)
@@ -1011,7 +1011,7 @@ struct SummaryView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.clockwise")
                             .font(.subheadline.weight(.semibold))
-                        Text("Start Next Rep")
+                        Text("Start rep")
                             .font(.subheadline.weight(.semibold))
                     }
                     .frame(maxWidth: .infinity)
@@ -1277,7 +1277,7 @@ struct SummaryView: View {
                     Image(systemName: "play.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.primary)
-                    Text("Watch Recording")
+                    Text("Watch recording")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     Spacer()

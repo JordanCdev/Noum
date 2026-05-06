@@ -205,6 +205,42 @@ struct CommunicationBaseline: Codable, Equatable {
         BaselineConfidence.from(sessionCount: qualifyingSessionCount)
     }
 
+    /// Normalized 0.0–1.0 distance from the user's stated coaching goal.
+    /// 0.0 means the user is at (or beyond) the goal target; 1.0 means far from it.
+    /// Returns 0.5 when there is insufficient data to measure.
+    func distanceFromGoal(_ goal: CoachingPriority) -> Double {
+        switch goal {
+        case .reduceFillers:
+            guard fillerRate.confidence != .insufficient else { return 0.5 }
+            // Target: ≤ 1 filler/min. 8+ fillers/min = distance 1.0.
+            return min(fillerRate.value / 8.0, 1.0)
+
+        case .moreConcise:
+            guard durationTendency.confidence != .insufficient else { return 0.5 }
+            // Target: ≤ 45s typical duration. 120s+ = distance 1.0.
+            return max(0, min((durationTendency.value - 20) / 100.0, 1.0))
+
+        case .thinkFaster:
+            guard averageScore.confidence != .insufficient else { return 0.5 }
+            // Target: ≥ 7.5/10 score. 0/10 = distance 1.0.
+            return max(0, 1.0 - averageScore.value / 7.5)
+
+        case .calmerDelivery:
+            guard pauseFilledRatio.confidence != .insufficient else { return 0.5 }
+            // Target: ≤ 0.2 filled-pause ratio. 1.0 ratio = distance 1.0.
+            return min(pauseFilledRatio.value / 0.8, 1.0)
+        }
+    }
+
+    /// Short coaching phrase describing current goal distance (1–4 words). Safe for UI.
+    func goalDistanceLabel(_ goal: CoachingPriority) -> String {
+        let d = distanceFromGoal(goal)
+        if d < 0.25 { return "On track" }
+        if d < 0.50 { return "Getting closer" }
+        if d < 0.75 { return "Work to do" }
+        return "Early days"
+    }
+
     static let empty = CommunicationBaseline(
         lastUpdated: Date(),
         sessionCount: 0,

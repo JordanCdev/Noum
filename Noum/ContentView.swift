@@ -32,6 +32,7 @@ struct ContentView: View {
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
     @StateObject private var deferredCapture = DeferredProfileCaptureManager.shared
+    @StateObject private var goalRefresh = GoalRefreshManager.shared
     @StateObject private var notificationPrePrompt = NotificationPrePromptManager.shared
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
@@ -56,6 +57,8 @@ struct ContentView: View {
         let recommendedScenario: IMConversationScenario?
         let benefit: String
         let tint: Color
+        var suggestedTimedDifficulty: TimedPracticeDifficulty? = nil
+        var suggestedTheme: PromptTheme = .all
     }
 
     private struct ModeSnapshot {
@@ -114,7 +117,12 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, Spacing.screenH)
                     .padding(.top, 12)
-                    .padding(.bottom, 24)
+                    // Generous bottom inset so the last card never sits
+                    // under the floating bottom-nav pill. The pill lives
+                    // in `safeAreaInset(edge: .bottom)` further below; if
+                    // we trim this any tighter the populated home's
+                    // bottom card gets clipped on first paint.
+                    .padding(.bottom, 96)
                 }
             }
             .coordinateSpace(name: "homeScroll")
@@ -221,6 +229,10 @@ struct ContentView: View {
         .sheet(item: $deferredCapture.pendingPrompt) { prompt in
             DeferredProfileCaptureSheet(prompt: prompt)
         }
+        // Goal refresh — 2-week cadence "still your goal?" lightweight sheet.
+        .sheet(isPresented: $goalRefresh.shouldPresent) {
+            GoalRefreshSheet()
+        }
         // Notification pre-prompt — soft sell before iOS's hard prompt.
         // Fires once on session 1 with a 30-day cool-down on decline.
         .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
@@ -310,7 +322,7 @@ struct ContentView: View {
 
         // 6. Practiced today
         if sessionStreak == 1 {
-            return "Already practiced today — nice"
+            return "Already practiced today — stack a second rep"
         }
 
         // 7. Last session was yesterday
@@ -676,7 +688,7 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Quick Start")
+                    Text("Quick start")
                         .font(Typography.headline)
                         .foregroundStyle(.primary)
                     Text(suggestion.title)
@@ -1269,7 +1281,9 @@ struct ContentView: View {
             recommendedTone: bias.recommendedTone,
             recommendedScenario: bias.recommendedScenario,
             benefit: bias.modeBenefit,
-            tint: AppColor.tint(for: bias.recommendedMode)
+            tint: AppColor.tint(for: bias.recommendedMode),
+            suggestedTimedDifficulty: bias.suggestedTimedDifficulty,
+            suggestedTheme: bias.suggestedTheme
         )
     }
 
@@ -1613,6 +1627,17 @@ struct ContentView: View {
     }
 
     private func practiceAppDestination(for suggestion: PracticeSuggestion) -> AppDestination {
+        if suggestion.mode == .timed {
+            // Seed the theme picker with the goal-biased suggestion so the first
+            // topic the user sees is matched to their coaching goal. User can still
+            // change it inside the practice view.
+            if suggestion.suggestedTheme != .all {
+                UserDefaults.standard.set(
+                    suggestion.suggestedTheme.rawValue,
+                    forKey: "timedPractice.selectedTheme"
+                )
+            }
+        }
         switch suggestion.mode {
         case .timed:
             return .timedPractice
