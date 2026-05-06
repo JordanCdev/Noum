@@ -1739,3 +1739,86 @@ struct PathNodePauseCriteriaTests {
         #expect(progress == 0.0)
     }
 }
+
+// MARK: - distanceFromGoal (M5)
+
+struct DistanceFromGoalTests {
+
+    private static func stat(_ value: Double) -> BaselineStat {
+        BaselineStat(value: value, sampleCount: 10, confidence: .moderate, trend: .stable, percentile25: 0, percentile75: 0)
+    }
+
+    private static func baseline(
+        fillerRate: Double = 0,
+        pace: Double = 130,
+        duration: Double = 30,
+        score: Double = 7,
+        pauseFilledRatio: Double = 0.1
+    ) -> CommunicationBaseline {
+        var b = CommunicationBaseline.empty
+        b.fillerRate = stat(fillerRate)
+        b.pace = stat(pace)
+        b.durationTendency = stat(duration)
+        b.averageScore = stat(score)
+        b.pauseFilledRatio = stat(pauseFilledRatio)
+        return b
+    }
+
+    @Test func atGoalFillerRateReturnsZeroDistance() {
+        let b = Self.baseline(fillerRate: 0)
+        #expect(b.distanceFromGoal(.reduceFillers) == 0.0)
+    }
+
+    @Test func highFillerRateReturnsMaxDistance() {
+        let b = Self.baseline(fillerRate: 8)
+        #expect(b.distanceFromGoal(.reduceFillers) == 1.0)
+    }
+
+    @Test func midFillerRateIsMidDistance() {
+        let b = Self.baseline(fillerRate: 4)
+        let d = b.distanceFromGoal(.reduceFillers)
+        #expect(d > 0.4 && d < 0.6)
+    }
+
+    @Test func shortDurationIsCloserToGoalForConcise() {
+        let near = Self.baseline(duration: 20)
+        let far = Self.baseline(duration: 90)
+        #expect(near.distanceFromGoal(.moreConcise) < far.distanceFromGoal(.moreConcise))
+    }
+
+    @Test func highScoreIsCloseToThinkFasterGoal() {
+        let near = Self.baseline(score: 7.5)
+        let far = Self.baseline(score: 3.0)
+        #expect(near.distanceFromGoal(.thinkFaster) < far.distanceFromGoal(.thinkFaster))
+    }
+
+    @Test func lowPauseFilledRatioIsCloseToCalmerDeliveryGoal() {
+        let near = Self.baseline(pauseFilledRatio: 0.05)
+        let far = Self.baseline(pauseFilledRatio: 0.7)
+        #expect(near.distanceFromGoal(.calmerDelivery) < far.distanceFromGoal(.calmerDelivery))
+    }
+
+    @Test func distanceIsAlwaysInUnitRange() {
+        let b = Self.baseline(fillerRate: 100, pace: 300, duration: 300, score: 0, pauseFilledRatio: 2.0)
+        for goal in CoachingPriority.allCases {
+            let d = b.distanceFromGoal(goal)
+            #expect(d >= 0.0 && d <= 1.0, "goal \(goal.rawValue) distance \(d) out of range")
+        }
+    }
+
+    @Test func insufficientDataReturnsHalf() {
+        var b = CommunicationBaseline.empty
+        // .empty has .insufficient confidence on all stats
+        for goal in CoachingPriority.allCases {
+            let d = b.distanceFromGoal(goal)
+            #expect(d == 0.5, "expected 0.5 for insufficient data, got \(d) for \(goal.rawValue)")
+        }
+    }
+
+    @Test func goalDistanceLabelStrings() {
+        let near = Self.baseline(fillerRate: 0)
+        let far = Self.baseline(fillerRate: 8)
+        #expect(near.goalDistanceLabel(.reduceFillers) == "On track")
+        #expect(far.goalDistanceLabel(.reduceFillers) == "Early days")
+    }
+}

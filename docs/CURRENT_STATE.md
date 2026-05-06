@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06_
+_Last updated: 2026-05-06 (M5 Coach memory v1 shipped)_
 
 ## Architecture overview
 
@@ -356,12 +356,18 @@ _Last updated: 2026-05-06_
 - **Pressure Live Activity** — Sudden Death rounds mirror to the
   Dynamic Island + lock screen via `PressureLiveActivityCoordinator`.
   Shipped end-to-end; needs real-device QA.
-- **Define goal & why** — captured during `CoachingOnboardingView`,
-  surfaced in reminder bodies and recommendation context. After
-  capture, `GoalParaphraseService` runs a single best-effort AI pass
-  and stores the result as `CoachingProfile.paraphrasedGoal`. UI surfaces
-  use the paraphrase via `displayableGoal` and fall back to the
-  deterministic template when no paraphrase is present.
+- **Define goal & why (M5 Coach memory v1)** — captured during
+  `CoachingOnboardingView`, surfaced in reminder bodies and recommendation
+  context. After capture, `GoalParaphraseService` runs a single best-effort
+  AI pass and stores the result as `CoachingProfile.paraphrasedGoal`. UI
+  surfaces use the paraphrase via `displayableGoal`. **M5 additions:**
+  `GoalRefreshManager` fires a lightweight "still your goal?" sheet every
+  14 days (after session 20+); `CommunicationBaseline.distanceFromGoal(_:)`
+  returns a normalized 0–1 proximity metric per `CoachingPriority`;
+  `AIInsightInput.goalDistance` is passed to AI prompts so the session
+  debrief opens with a goal-grounding sentence; `RecommendationBiasBlueprint`
+  gains `suggestedTimedDifficulty` and `suggestedTheme` (goal-mapped),
+  seeded into the practice session on quick-start tap.
 - **Trend charts** — `ProgressionCharts` renders animated SwiftUI
   `Chart` line + area marks for filler / score / pace on the profile.
   `TrendAnalyzer` data also surfaces as the existing trend pill.

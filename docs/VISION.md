@@ -82,37 +82,29 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _Coach memory v1 — goal-aware drill selection + AI-debrief
-goal-grounding._
+**Name:** _M6 — High-score & rivalry surface — peak-rating wall._
 
-(M4 _Speech-quality v2_ shipped: `PauseMetrics` + `WordChoiceMetrics`
-ship end-to-end through baseline, charts, trend analyzer, summary
-cards, and 2 new path nodes. The dream agenda — daily hero,
-NoumCharacter on home/profile/first-rep/achievements, tier promotion
-celebration overlay, Pro purple shimmer, and synthesised
-SoundscapeEngine + picker wired into Timed/SuddenDeath/AhCounter
-pre-rep windows — also shipped this milestone cycle.)
+(M5 _Coach memory v1_ shipped: `GoalRefreshManager` 2-week recurring
+"still your goal?" sheet; `CommunicationBaseline.distanceFromGoal(_:)`
++ `goalDistanceLabel`; `AIInsightInput.goalDistance` piped into debrief
+and weekly prompts; `AIInsightsService` session-debrief system prompt
+now mandates opening with a goal-grounding sentence; `suggestedTimedDifficulty`
++ `suggestedTheme` added to `RecommendationBiasBlueprint` and surfaced
+in the home CTA — moreConcise → Hard (15s), calmerDelivery → Easy (60s),
+with matching theme pre-seeded in `timedPractice.selectedTheme` on
+quick-start tap.)
 
-**Why this next:** the captured `CoachingProfile` is set once during
-onboarding and ignored after. Making the profile *living* turns the
-app from a tool into a coach. The AI insights service is already
-running per-session and per-week; piping the goal into its inputs is
-a small change with a large emotional return.
+**Why this next:** the retention loop needs a loss-aversion / chase
+surface tied to real performance. The league from M2 gives the data;
+surfacing peak-week rating, all-time best, and friend comparisons
+completes the "public proof of progress" pull mechanic.
 
 **Definition of done:**
-- Goal capture becomes recurring — re-asked every 2 weeks via a
-  lightweight prompt sheet (not a full re-onboarding). User can edit
-  or confirm in 30 seconds.
-- Drill prompts and IM scenarios filter by goal tags. The user with
-  goal "more concise" sees more 30-second prompts; the user with
-  "calmer delivery" sees harder pressure scenarios.
-- `AIInsightsService` debrief output leads with the user's goal:
-  *"You said you wanted to be more concise — your last 5 reps
-  averaged 23s, target was 30s."*
-- New `BaselineEngine.distanceFromGoal` dimension captures how close
-  the current baseline is to the goal target.
-- Goal text never leaks raw user input directly into UI (paraphrase
-  through `GoalParaphraseService`, fall back to template).
+- "Best in week" surface showing the user's highest rating within the
+  current league bucket (no fake ranks — real M2 data).
+- "Best ever" personal record watermark displayed on profile + summary.
+- "Best in friends" comparison fetched from `profiles_public/{id}` for
+  friends who have linked accounts.
 
 **Out of scope for this milestone:**
 - Pitch / intonation
@@ -120,12 +112,10 @@ a small change with a large emotional return.
 - Word of the day
 - AI-generated topic prompts beyond the existing curated pool
 - Multilingual support
-- Server-side league matching algorithms beyond the
-  client-deterministic `{tier}_{ISO-week}` bucketing already in M2.
 
 ## Future milestones (rough order)
 
-(M5 — Coach memory v1 — is the active "Next milestone" above.)
+(M6 — High-score & rivalry surface — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

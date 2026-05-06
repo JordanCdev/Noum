@@ -469,14 +469,39 @@ struct ProfileView: View {
     // MARK: - Coaching Direction
 
     private var coachingDirectionCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Coaching Direction")
-                .font(.caption.weight(.semibold))
+                .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
+                .tracking(0.8)
+
+            if let profile = coachingProfileStore.profile {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "target")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 32, height: 32)
+                        .background(AppColor.brandBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(profile.displayableGoal)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        let label = baselineStore.baseline.goalDistanceLabel(profile.primaryGoal)
+                        Text(label)
+                            .font(Typography.micro)
+                            .foregroundStyle(label == "On track" ? AppColor.brandBlue : .secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
 
             Text(coachingInsight)
-                .font(.subheadline.weight(.semibold))
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
