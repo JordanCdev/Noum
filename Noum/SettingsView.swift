@@ -38,6 +38,7 @@ struct SettingsView: View {
     @State private var showCoachingProfile = false
     @State private var showPaywall = false
     @State private var showYourData = false
+    @State private var showPrivacyPolicy = false
     @State private var showSignOutAlert = false
     @State private var showDeleteSheet = false
     @State private var debugMessage: String?
@@ -114,6 +115,9 @@ struct SettingsView: View {
                         }
                     }
             }
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            PrivacyPolicyView()
         }
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
@@ -757,6 +761,16 @@ struct SettingsView: View {
                 accessibilityHint: "Review what Noum stores on this device and where it processes data."
             ) {
                 showYourData = true
+            }
+
+            Divider()
+
+            SettingsNavRow(
+                title: "Privacy policy",
+                icon: "doc.text.fill",
+                accessibilityHint: "Read the full privacy policy."
+            ) {
+                showPrivacyPolicy = true
             }
         }
     }

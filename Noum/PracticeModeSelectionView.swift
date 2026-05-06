@@ -20,6 +20,11 @@ struct PracticeModeSelectionView: View {
     @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @State private var cachedRecommendedMode: PracticeMode?
+    /// Dynamic per-user "why this mode" line produced by the
+    /// `RecommendationBiasEngine`. Falls back to the static
+    /// `ModeOption.recommendedReason` when nil (cold start, no
+    /// session history).
+    @State private var cachedRecommendedReason: String?
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
@@ -199,7 +204,7 @@ struct PracticeModeSelectionView: View {
                         .multilineTextAlignment(.leading)
 
                     if isRecommended {
-                        Text(option.recommendedReason)
+                        Text(cachedRecommendedReason ?? option.recommendedReason)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(option.tint)
                             .padding(.top, 2)
@@ -530,6 +535,12 @@ struct PracticeModeSelectionView: View {
             plan: plan
         )
         cachedRecommendedMode = blueprint.recommendedMode
+        // Prefer `whyNow` (the situational hook) over `whyMode` (the
+        // mode-benefit), but fall back gracefully and ignore empty
+        // strings so we never render a blank line.
+        let dynamic = [blueprint.whyNow, blueprint.whyMode]
+            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        cachedRecommendedReason = dynamic
     }
 
     private func appDestination(for mode: PracticeMode) -> AppDestination {

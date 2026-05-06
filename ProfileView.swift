@@ -176,7 +176,9 @@ struct ProfileView: View {
 
                 Text("\(profile.xp) XP")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppColor.brandBlue)
+                    .contentTransition(.numericText())
+                    .animation(.standardSpring, value: profile.xp)
             }
 
             if !premium.isPremium {
@@ -237,12 +239,14 @@ struct ProfileView: View {
                         .foregroundStyle(.blue)
                 }
 
-                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: .blue)
+                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(profile.xp) XP total")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
+                        .contentTransition(.numericText())
+                        .animation(.standardSpring, value: profile.xp)
                     Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -280,7 +284,9 @@ struct ProfileView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(rating.overall)")
                                 .font(.system(size: 44, weight: .bold, design: .rounded))
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(AppColor.brandBlue)
+                                .contentTransition(.numericText())
+                                .animation(.standardSpring, value: rating.overall)
                             if rating.weeklyDelta != 0 {
                                 Text(rating.weeklyDelta > 0 ? "+\(rating.weeklyDelta) this week" : "\(rating.weeklyDelta) this week")
                                     .font(.caption.weight(.semibold))
@@ -466,15 +472,7 @@ struct ProfileView: View {
         return "Top tier — defend your rating to stay."
     }
 
-    private var leagueTierTint: Color {
-        switch league.tier {
-        case .bronze:   return Color(red: 0.65, green: 0.42, blue: 0.20)
-        case .silver:   return Color(red: 0.60, green: 0.62, blue: 0.66)
-        case .gold:     return Color(red: 0.85, green: 0.65, blue: 0.13)
-        case .platinum: return Color(red: 0.39, green: 0.55, blue: 0.78)
-        case .diamond:  return Color(red: 0.36, green: 0.78, blue: 0.78)
-        }
-    }
+    private var leagueTierTint: Color { league.tier.tint }
 
     // MARK: - Coaching Direction
 

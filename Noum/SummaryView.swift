@@ -1575,7 +1575,7 @@ struct SummaryView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            ShimmerProgressBar(progress: progress, tint: .blue)
+            ShimmerProgressBar(progress: progress, tint: AppColor.brandBlue)
 
             HStack {
                 Text("\(displayedXP) XP")

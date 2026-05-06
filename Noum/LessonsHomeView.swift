@@ -28,6 +28,9 @@ struct LessonsHomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
+                    if showsFirstTimeEmptyState {
+                        firstTimeEmptyState
+                    }
                     summaryStrip
                     lessonsByCategory
                     Spacer(minLength: Spacing.lg)
@@ -67,6 +70,37 @@ struct LessonsHomeView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - First-time empty state
+
+    /// Renders only on the very first visit — when no crowns have been earned
+    /// and no lesson has ever been opened. Once a single attempt has happened
+    /// (pass or fail), the catalog stands on its own.
+    private var showsFirstTimeEmptyState: Bool {
+        let everAttempted = lessonStore.progress.values.contains { $0.totalAttempts > 0 || $0.lastCompletedAt != nil }
+        return lessonStore.totalCrowns == 0 && !everAttempted
+    }
+
+    private var firstTimeEmptyState: some View {
+        let recommended = lessonStore.nextRecommendedLesson ?? LessonsCatalog.all.first
+        return EmptyStateView(
+            symbol: "books.vertical.fill",
+            title: "Earn your first crown",
+            body: "Each lesson teaches one move. Concept, then spot it, then say it.",
+            tint: AppColor.brandBlue,
+            cta: recommended.map { lesson in
+                EmptyStateView.CTA(label: "Start \(lesson.title)", icon: "play.fill") {
+                    navigationPath.append(AppDestination.lesson(id: lesson.id))
+                }
+            }
+        )
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+        .accessibilityIdentifier("emptyState.lessons")
     }
 
     // MARK: - Summary strip
@@ -222,6 +256,9 @@ struct LessonCelebrationOverlay: View {
                         .foregroundStyle(AppColor.brandBlue)
                         .scaleEffect(hasAppeared ? 1 : 0.7)
                 }
+
+                SparkleRibbon(tint: AppColor.brandBlue)
+                    .opacity(hasAppeared ? 1 : 0)
 
                 VStack(spacing: 10) {
                     Text(celebration.kind.headline)

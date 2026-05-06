@@ -754,22 +754,25 @@ struct SuddenDeathPracticeView: View {
 
                 // Personal best
                 if result.isNewPersonalBest {
-                    HStack(spacing: 6) {
-                        Image(systemName: "trophy.fill")
-                            .foregroundStyle(.yellow)
-                        Text("New Personal Best!")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.primary)
+                    VStack(spacing: 6) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trophy.fill")
+                                .foregroundStyle(.yellow)
+                            Text("New personal best")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+                        }
+                        SparkleRibbon(tint: .yellow)
                     }
                 }
 
                 // XP earned
                 Text("+\(result.xpEarned) XP")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppColor.brandBlue)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
-                    .background(Color.blue.opacity(0.1), in: Capsule())
+                    .background(AppColor.brandBlue.opacity(0.1), in: Capsule())
             }
             .padding(.horizontal, Spacing.screenH)
 
@@ -860,17 +863,15 @@ struct SuddenDeathPracticeView: View {
     /// changes are observed by the coordinator's own subscription.
     private func startLiveActivityIfNeeded() {
         guard liveActivityCoordinator == nil else { return }
-        if #available(iOS 16.1, *) {
-            let coordinator = PressureLiveActivityCoordinator(
-                engine: engine,
-                modeLabel: "Pressure Drill",
-                fillerCountProvider: { [weak speechVM = self.speechVM] in
-                    speechVM?.pressureDrillFillerCount ?? 0
-                }
-            )
-            coordinator.start()
-            liveActivityCoordinator = coordinator
-        }
+        let coordinator = PressureLiveActivityCoordinator(
+            engine: engine,
+            modeLabel: "Pressure Drill",
+            fillerCountProvider: { [weak speechVM = self.speechVM] in
+                speechVM?.pressureDrillFillerCount ?? 0
+            }
+        )
+        coordinator.start()
+        liveActivityCoordinator = coordinator
     }
 
     private func handlePhaseChange(_ newPhase: PressureTurnPhase) {

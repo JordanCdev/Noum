@@ -60,6 +60,20 @@ enum LeagueTier: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// Brand-significant tier tint. Used on profile, league, and any rank
+    /// surface where the tier needs to read at a glance.
+    #if canImport(SwiftUI)
+    var tint: Color {
+        switch self {
+        case .bronze:   return Color(red: 0.65, green: 0.42, blue: 0.20)
+        case .silver:   return Color(red: 0.60, green: 0.62, blue: 0.66)
+        case .gold:     return Color(red: 0.85, green: 0.65, blue: 0.13)
+        case .platinum: return Color(red: 0.39, green: 0.55, blue: 0.78)
+        case .diamond:  return Color(red: 0.36, green: 0.78, blue: 0.78)
+        }
+    }
+    #endif
+
     static func tier(for rating: Int) -> LeagueTier {
         switch rating {
         case ..<300:    return .bronze

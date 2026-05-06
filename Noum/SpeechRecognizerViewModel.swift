@@ -180,7 +180,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             // Listen for transcript updates
             transcriptListenerTask = Task { [weak self] in
                 for await update in session.transcriptUpdates {
-                    await self?.handleTranscriptUpdate(update)
+                    self?.handleTranscriptUpdate(update)
                 }
             }
         } catch {

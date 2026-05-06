@@ -296,7 +296,9 @@ class AuthManager: ObservableObject {
             return
         }
 
+        #if DEBUG
         print("Restored signed in account: \(accountID)")
+        #endif
         isSignedIn = true
         authProvider = provider
         deferStoreReloadForCurrentAccount()
@@ -555,7 +557,9 @@ class AuthManager: ObservableObject {
 
         UserDefaults.standard.set(true, forKey: hasSeenAccountKey)
 
+        #if DEBUG
         print("Saved \(provider.title) user ID: \(accountID)")
+        #endif
         signIn()
         authProvider = provider
         isSignedIn = true

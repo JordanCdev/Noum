@@ -128,15 +128,15 @@ struct SpeakingRankView: View {
                     Spacer()
                     Text(levelProgressLabel)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
                 }
 
-                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: .blue)
+                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(profile.xp) XP total")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
                     Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
                         .font(.caption)
                         .foregroundStyle(.secondary)

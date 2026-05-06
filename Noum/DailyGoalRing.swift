@@ -71,6 +71,8 @@ struct DailyGoalCard: View {
                     Text("\(manager.repsToday)")
                         .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(AppColor.brandBlue)
+                        .contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .standardSpring, value: manager.repsToday)
                 }
             }
         }

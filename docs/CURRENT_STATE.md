@@ -5,18 +5,32 @@ _Last updated: 2026-05-04_
 ## Architecture overview
 
 - **Framework:** SwiftUI, iOS 17 minimum.
+- **App targets:** Main iOS app (`Noum`), home-screen + lock-screen widgets
+  (`NoumWidget`, also hosts the Live Activity), iMessage extension
+  (`NoumMessages`), and a watchOS glance (`NoumWatch`, currently detached
+  from the iOS scheme until the watchOS 26.2 simulator runtime is installed
+  locally).
 - **State management:** `ObservableObject` singletons (`*.shared`) injected into
   views via `@StateObject` — `AuthManager`, `ProfileManager`,
   `PracticeSettingsManager`, `HapticsSettings`, `NotificationManager`,
-  `PremiumManager`, `CoachingProfileStore`, `PracticeSessionStore`,
-  `IMVoicePlaybackSettingsManager`, `RecommendationLearningStore`,
-  `RatingStore`, `BaselineStore`, `ChallengesManager`, `FriendsManager`,
-  `ClubsManager`, `AchievementStore`, `ClutchWordStore`. No
-  Observation-framework migration yet.
+  `NotificationPrePromptManager`, `PremiumManager`, `CoachingProfileStore`,
+  `PracticeSessionStore`, `IMVoicePlaybackSettingsManager`,
+  `RecommendationLearningStore`, `RatingStore`, `BaselineStore`,
+  `ChallengesManager`, `FriendsManager`, `ClubsManager`, `AchievementStore`,
+  `ClutchWordStore`, `LessonStore`, `PathProgressManager`,
+  `OnboardingHeroManager`, `StreakFreezeManager`,
+  `FirstRepCelebrationManager`, `DeepLinkRouter`. No Observation-framework
+  migration yet.
 - **Persistence:** `UserDefaults` keyed per-account
   (`<key>.<accountID>`), Keychain for the account ID + provider, and
   `BackendSyncManager` for optional Firebase sync of XP, sessions,
   coaching profile, and recommendation outcomes.
+- **Cross-process state:** `SharedNoumState` writes a JSON snapshot
+  (streak, freezes, reps-today, next-node) into the
+  `group.com.jordancoaten.noum` App Group. `SharedNoumStateMirror` keeps
+  it fresh after every session finalize and on every scenePhase active.
+  Widget extension + Live Activity read this snapshot — never the main
+  app's UserDefaults.
 - **Audio / speech:** `AVAudioEngine` capture →
   pluggable `TranscriptionProvider` (AWS Transcribe streaming, Deepgram
   WebSocket, Google Speech-to-Text V2). Provider chosen via the
@@ -25,14 +39,18 @@ _Last updated: 2026-05-04_
 - **Backend:** Firebase Auth (Apple, Google, anonymous), Firestore
   via `BackendSyncManager`, optional REST backend for vended AWS
   credentials. Privacy posture documented in `Noum/Noum/PRIVACY_*.md`.
-- **AI providers:** Google Gemini and OpenAI for coaching analysis
-  (`AINPCChatService`, configured in `AIConfig.plist`). Google Cloud
-  TTS for IM voice playback with OpenAI fallback.
+- **AI providers:** Google Gemini, OpenAI, and DeepSeek for coaching
+  analysis (`AINPCChatService`, `AIInsightsService`, `GoalParaphraseService`),
+  configured in `AIConfig.plist`. Google Cloud TTS for IM voice playback
+  with OpenAI fallback.
+- **URL scheme:** `noum://` registered in `Info.plist`. `DeepLinkRouter`
+  buffers incoming URLs until `ContentView` owns the navigation stack.
+  Routes: `noum://lesson/<id>`, `noum://practice`, `noum://friend/<id>`.
 - **Design tokens location:** `Noum/DesignSystem.swift` — single source
   of truth for `Spacing`, `CornerRadius`, `AppColor`, springs, shared
   components (`CardView`, `StatCard`, `PrimaryCTA`, `PressableButtonStyle`,
   `LightGradientBackground`, `SectionHeader`, `ErrorCard`,
-  `MilestoneCelebrationOverlay`). **Typography lives in
+  `MilestoneCelebrationOverlay`, `EmptyStateView`). **Typography lives in
   `Noum/Typography.swift`** — Figtree (display/rounded) + Manrope
   (text/UI), bundled as variable TTF in `Noum/Resources/Fonts/`,
   registered via `Info.plist` `UIAppFonts`. The default body font is
@@ -49,7 +67,8 @@ _Last updated: 2026-05-04_
 - `Noum/Noum/TimedPracticeView.swift` — Timed mode (3 difficulties,
   optional Pressure Mode, optional thinking time).
 - `Noum/Noum/SuddenDeathPracticeView.swift` — pressure mode where one
-  filler ends the round.
+  filler ends the round. Now exposes a per-mode difficulty
+  (Easy/Medium/Hard) that scales filler tolerance and start-window.
 - `Noum/Noum/AhCounterView.swift` — free-form speak with live filler
   and pacing tracking.
 - `Noum/Noum/IMPracticeView.swift` — live AI conversation reps with
@@ -60,6 +79,26 @@ _Last updated: 2026-05-04_
 - `Noum/Noum/PressureTimerEngine.swift` — auto-ramping round configs:
   start window 12s→3s, filler tolerance 3→0, follow-ups in R2/3/5,
   fresh prompt in R4.
+- `Noum/Noum/LiveEloquenceHUD.swift` — in-session detection chip; pops
+  briefly when `EloquenceEngine` recognises a rhetorical device mid-rep.
+- `Noum/Noum/PressureLiveActivityCoordinator.swift` — Live Activity
+  that mirrors a Sudden Death session to the Dynamic Island + lock
+  screen. Shipped end-to-end; needs real-device QA (Live Activity is
+  not testable on simulator).
+
+### Lessons (Duolingo-style teaching layer)
+- `Noum/Noum/Lesson.swift` + `LessonsCatalog.swift` — five lessons
+  across rhetoric, structure, presence, and recovery, each with three
+  steps (concept → spot it → say it).
+- `Noum/Noum/LessonStore.swift` — 0–5 crown progression per lesson,
+  per-account; emits a `LessonCelebration` (unlocked / levelUp /
+  mastered) on each pass that the home screen consumes.
+- `Noum/Noum/LessonView.swift` + `LessonsHomeView.swift` — catalog
+  browser with crown rows, summary strip, first-time empty state, and
+  the `LessonCelebrationOverlay` that fires on every crown gain.
+- Lessons feed back into the path: `PathProgressInput.totalLessonCrowns`
+  and `maxLessonCrown` are read by criteria like
+  `totalLessonCrowns(N)` / `lessonMastered`.
 
 ### Speech & feedback
 - `Noum/Noum/SpeechRecognizerViewModel.swift` — provider-agnostic
@@ -74,20 +113,77 @@ _Last updated: 2026-05-04_
   session score, strengths, persistent blockers, pressure profile.
 - `Noum/Noum/TrendAnalyzer.swift` — improvement/stable/declining/
   newIssue/resolved classification per skill snapshot.
+- `Noum/Noum/EloquenceEngine.swift` — eleven rhetorical-device
+  detectors (tricolon, anaphora, epistrophe, alliteration, isocolon,
+  antithesis, polysyndeton, asyndeton, diacope, epizeuxis, rhetorical
+  question). Conservative thresholds; covered by 9 unit tests.
+- `Noum/Noum/EloquenceXP.swift` — 5–25 XP per detected device,
+  60-cap per session, diminishing returns inside a single rep.
+- `Noum/Noum/AIInsightsService.swift` — narrative insight generator
+  (weeklyNarrative / sessionDebrief / patternBreak). Reuses the
+  Gemini/OpenAI/DeepSeek provider plumbing; falls back to a template
+  when no AI provider is configured. Cached per week-bucket so quota
+  isn't re-spent on the same input.
 
 ### Progression & retention
 - `Noum/Noum/ProfileManager.swift` — XP store (per-account), level
   ladder (`Beginner/Novice/Average/Professional/World Class` × I/II/III),
   rank symbol/tint/title.
-- `Noum/Noum/AchievementStore.swift` — 7 tracks (Volume, Consistency,
-  Clarity, Scores, Endurance, Modes, Mastery), real unlock conditions.
+- `Noum/Noum/ModeMastery.swift` (in `PracticeSupport.swift`) — per-mode
+  mastery (Bronze/Silver/Gold/Platinum) computed from session count +
+  baseline score within that mode. Surfaced on the profile and read by
+  path criteria (`modeMasteryLevel`, `modeMasteryAnyLevel`).
+- `Noum/Noum/AchievementStore.swift` + `Noum/Noum/AchievementsTreeView.swift`
+  — 7 tracks (Volume, Consistency, Clarity, Scores, Endurance, Modes,
+  Mastery) plus a hierarchical tree view that visualises locked /
+  unlocked branches.
 - `Noum/Noum/ChallengesManager.swift` — daily/weekly/streak/social
   challenge models; `RetentionLoopEngine` produces an "active challenge"
   snapshot for the home screen.
-- `Noum/Noum/PathJourneyView.swift` — visual journey (scenes that
-  reveal as session count grows).
-- `Noum/Noum/RewardEngine.swift` (`Noum/`) — emits XP, streak, and
+- `Noum/Noum/PathNode.swift` + `PathNodeCelebration.swift` +
+  `PathProgressManager.swift` — node-by-node path with concrete entry
+  conditions evaluated against `PathProgressInput` (sessions, baseline,
+  rating, streak, mode-mastery, lesson crowns). The home screen surfaces
+  the next node with a one-tap CTA. Past + current + next-3 visible on
+  the path map; further-out nodes stay masked. **M3 milestone shipped.**
+- `Noum/Noum/PathJourneyView.swift` — map surface that combines the new
+  node grid with retained decorative artwork.
+- `Noum/Noum/StreakFreezeManager.swift` — weekly-replenishing streak
+  freeze; protects the streak across one missed day per ISO week.
+  Wires the app icon badge through `UNUserNotificationCenter.setBadgeCount`
+  (passively gated on authorization, never triggers a prompt).
+- `Noum/Noum/FirstRepCelebration.swift` + `Noum/Noum/ConfettiLayer.swift`
+  — first-rep moment: full-screen overlay + share sheet rendered via
+  `ImageRenderer`. Fires once, persists per-account.
+- `Noum/Noum/OnboardingHeroView.swift` + `OnboardingHeroManager.swift`
+  — three-screen value-prop intro presented on first launch via
+  `fullScreenCover`. Skipped under `UI_TESTING` and
+  `UI_TESTING_SEED` arguments.
+- `Noum/Noum/ProgressionCharts.swift` — animated `SwiftUI Chart` views
+  (LineMark + AreaMark) for filler trend, score trend, and pace
+  trend on the profile. Replaces the older "trend pill only" surface.
+- `Noum/Noum/WeakAreasCard.swift` + `Noum/Noum/MistakeReplayCard.swift`
+  — Review-tab surfaces that summarise the patterns the user is
+  repeating and let them tap into a re-prompted rep.
+- `Noum/RewardEngine.swift` (`Noum/`) — emits XP, streak, and
   milestone events.
+
+### Notifications (4 surfaces, soft-sell pre-prompt)
+- `Noum/Noum/NotificationManager.swift` — three daily-rhythm surfaces
+  (`scheduleDailyReminder`, `scheduleStreakWarning`, `scheduleWeeklyDigest`)
+  plus the legacy 18h follow-up. `refreshScheduledNotifications` is
+  called on every scenePhase active, but is **passive** — it reads
+  `UNUserNotificationCenter.notificationSettings()` and only re-arms
+  when status is authorized/provisional/ephemeral. The hard system
+  prompt is reserved for the explicit `set*Enabled(true)` toggles
+  fired from the pre-prompt sheet.
+- `Noum/Noum/NotificationCopy.swift` — lock-screen-safe streak-aware
+  copy. Title/body adapts to streak length, freezes available, and
+  reps today.
+- `Noum/Noum/NotificationPrePrompt.swift` — soft-sell sheet shown
+  exactly once after the first finished rep (`sessionCount == 1`).
+  "Maybe later" honours a 30-day cool-down. The accept path enables
+  all three daily-rhythm surfaces in sequence so iOS only prompts once.
 
 ### Social
 - `Noum/Noum/FriendsManager.swift` — local friends list, names only,
@@ -115,13 +211,29 @@ _Last updated: 2026-05-04_
 - `Noum/Noum/AuthManager.swift` — Apple, Google, anonymous, account
   delete with full per-account UserDefaults wipe.
 - `Noum/Noum/BackendSyncManager.swift` — Firebase + REST sync.
-- `Noum/Noum/NotificationManager.swift` — single follow-up reminder
-  per session.
+
+### Widgets, Live Activity, iMessage, watchOS
+- `NoumWidget/` — five widget sizes (small/medium/large for streak +
+  lock-screen rectangular/circular). Reads `SharedNoumState` from the
+  App Group. Hosts the Live Activity bundle.
+- `NoumWidget/PracticeLiveActivity.swift` — Live Activity layout for
+  Sudden Death rounds (Dynamic Island compact / expanded / minimal).
+- `Noum/PracticeLiveActivityAttributes.swift` (also copied into the
+  widget target) — shared `ActivityAttributes` definition; both targets
+  must compile against the exact same struct.
+- `NoumMessages/` — iMessage extension scaffolding for sharing rep
+  results / async-challenge invites inline.
+- `NoumWatch/` — watchOS 10+ glance. Detached from the iOS scheme
+  pending local install of the watchOS 26.2 simulator runtime.
 
 ### Settings & UX primitives
 - `Noum/Noum/SettingsView.swift` — production settings (refactored).
 - `Noum/Noum/SettingsRow.swift` — `SettingsToggleRow`, `SettingsNavRow`,
   `SettingsStatusRow`, `SettingsSectionLabel`.
+- `Noum/Noum/EmptyStateView.swift` — reusable empty-state component
+  (large tinted SF Symbol → headline → body → optional capsule CTA).
+  Used on Lessons, Session History, Friends, Friend Leaderboard, and
+  Async Speak-offs surfaces.
 - `Noum/Noum/HapticsSettings.swift` — global haptics gate, honored
   by `CoachHaptic` and every `.sensoryFeedback`.
 - `Noum/Noum/CoachHaptic.swift` — every haptic pattern routes through
@@ -131,14 +243,27 @@ _Last updated: 2026-05-04_
 
 ### Implemented (shipping end-to-end)
 
-- **Eloquence detection** — `EloquenceEngine` runs on every session
-  transcript and surfaces rhetorical devices (tricolon, anaphora,
-  epistrophe, alliteration, isocolon, antithesis, polysyndeton,
-  asyndeton, diacope, epizeuxis, rhetorical question) as positive
-  coaching in the summary's `EloquenceFindingsCard`. Conservative
-  thresholds; the card hides when there's nothing notable. Inspired
-  by Forsyth's *Elements of Eloquence*. Unit-tested (9 tests in
-  `EloquenceEngineTests`).
+- **Onboarding hero** — `OnboardingHeroView` shows on every brand-new
+  account install. Three-screen value prop ("speak with more clarity"
+  → "real-time coaching" → "believable progress"). Skip + Begin both
+  persist `hasSeen`. Bypassed under `UI_TESTING` so the screenshot
+  tour isn't gated by it.
+- **Lessons system (Duolingo-style)** — five lessons × three steps ×
+  0–5 crowns, with celebration overlay on every crown gain. Surface
+  reachable from the home tab; lesson progress feeds the path via
+  `totalLessonCrowns` / `maxLessonCrown` so the curriculum and the
+  path are one progression, not two.
+- **Path nodes (M3 v1)** — node-by-node gameplay with concrete entry
+  conditions (`scoreAtLeast`, `streakAtLeast`, `modeMasteryLevel`,
+  `cleanRunsInWindow`, `totalLessonCrowns`, etc.). Home shows the next
+  node with one-tap CTA. Path map renders past + current + next-3 with
+  state indicators; further-out nodes stay masked.
+- **Eloquence detection + XP** — `EloquenceEngine` runs on every
+  session transcript and surfaces eleven rhetorical devices in the
+  summary's `EloquenceFindingsCard` plus a brief in-session HUD.
+  Detections award 5–25 XP each, capped at 60/session with diminishing
+  returns. Conservative thresholds; the card hides when there's nothing
+  notable. Inspired by Forsyth's *Elements of Eloquence*. Unit-tested.
 - **Speech projects** — Toastmasters-inspired structured prepared
   speeches in `Noum/SpeechProject.swift` + `SpeechProjectsView`. Eight
   projects (Ice Breaker, Table Topic, Vocal Variety, Body of Evidence,
@@ -164,43 +289,87 @@ _Last updated: 2026-05-04_
   feature gates for Coach Mode, Live Transcript, Filler Tracking,
   Trends, Video, Saved Transcripts, Unlimited Async Challenges, AI
   Video Analysis (5/mo), 100 AI coaching reads.
-- **Streaks** — calculated from session dates, surfaced in home,
-  profile, and reminder copy.
+- **Streaks + freeze** — calculated from session dates; one weekly-
+  replenishing freeze auto-protects the streak across a missed day.
+  Surfaced in home, profile, reminder copy, widget, and the soft-sell
+  pre-prompt's value-prop bullets. App icon badge mirrors the current
+  streak via `setBadgeCount`.
+- **First-rep celebration** — full-screen overlay + share sheet on
+  the user's first finished rep. Persists per-account.
 - **XP / levels / ranks** — XP persistent per-account, levels derived
   (`xp / 1000` with sub-level Roman numerals), rank surface on home,
   profile, and Settings hero.
-- **Achievements** — 7 tracks, real unlock paths, unlock dates stored,
-  badge animations on the achievements page.
+- **Per-mode mastery** — Bronze/Silver/Gold/Platinum per
+  PracticeMode, derived from session count + baseline score within
+  the mode. Surfaced on the profile and read by path criteria.
+- **Achievements + tree view** — 7 tracks, real unlock paths, unlock
+  dates stored, badge animations, plus a hierarchical
+  `AchievementsTreeView` that visualises locked/unlocked branches.
+- **Difficulty levels — Timed and Sudden Death** — Easy / Medium /
+  Hard for both. Sudden Death difficulty scales filler tolerance and
+  start-window.
 - **Topic / prompt generation** — 200+ curated prompts in
   `PracticeTopics.swift` across 8 themes. **No AI generation.**
 - **AI coaching reads** — Coach Mode + Coach Read via
-  `AINPCChatService` (Gemini / OpenAI), gated to Pro, 100/mo limit.
+  `AINPCChatService` (Gemini / OpenAI / DeepSeek), gated to Pro,
+  100/mo limit.
+- **AI narrative insights** — `AIInsightsService` produces weekly
+  narrative + post-session debrief + pattern-break insights. Cached
+  per week-bucket. Falls back to a rich template insight when no
+  provider is configured so the card stays useful offline.
 - **Pressure Mode** — auto-ramping round configs across Timed and
   Sudden Death; baseline-aware pressure classification.
-- **Difficulty levels — Timed only** — Easy / Medium / Hard.
+- **Pressure Live Activity** — Sudden Death rounds mirror to the
+  Dynamic Island + lock screen via `PressureLiveActivityCoordinator`.
+  Shipped end-to-end; needs real-device QA.
 - **Define goal & why** — captured during `CoachingOnboardingView`,
-  surfaced in reminder bodies and recommendation context. UI to
-  display goal at the top of practice picker was just removed because
-  it leaked raw user input; the data is still captured. After capture,
-  `GoalParaphraseService` runs a single best-effort AI pass and stores
-  the result as `CoachingProfile.paraphrasedGoal`. UI surfaces use the
-  paraphrase via `displayableGoal` and fall back to the deterministic
-  template when no paraphrase is present (no AI key, network failure,
-  legacy profile).
-- **Trend direction** — `TrendAnalyzer` produces improving / stable /
-  declining / newIssue / resolved classifications. Surfaced as a
-  pill on the profile, **not as a chart**.
+  surfaced in reminder bodies and recommendation context. After
+  capture, `GoalParaphraseService` runs a single best-effort AI pass
+  and stores the result as `CoachingProfile.paraphrasedGoal`. UI surfaces
+  use the paraphrase via `displayableGoal` and fall back to the
+  deterministic template when no paraphrase is present.
+- **Trend charts** — `ProgressionCharts` renders animated SwiftUI
+  `Chart` line + area marks for filler / score / pace on the profile.
+  `TrendAnalyzer` data also surfaces as the existing trend pill.
 - **Recommendation engine** — `RecommendationBiasEngine` +
   `CoachingPlanner` produce next-best-mode + reason, with
   `RecommendationLearningStore` tracking whether following the
   recommendation actually moved score/filler/duration deltas.
-- **Notifications — single follow-up** — opt-in, fires 18h after a
-  session, lock-screen-safe copy that never quotes the user's typed
-  goal.
+- **Notifications — four surfaces, soft-sell pre-prompt** — opt-in
+  via `NotificationPrePromptSheet` after the first finished rep, then
+  three daily-rhythm surfaces (daily reminder, streak warning, weekly
+  digest) plus the legacy 18h follow-up. Lock-screen-safe copy that
+  never quotes the user's typed goal. Passive scenePhase refresh —
+  no surprise prompts.
+- **Widget extension** — five sizes (small/medium/large + lock-screen
+  rectangular/circular) reading the App Group `SharedNoumState`
+  snapshot. Updates after every session finalize and on scenePhase
+  active.
+- **Deep linking** — `noum://` URL scheme registered. `DeepLinkRouter`
+  buffers the URL; `ContentView` consumes it once it owns the nav
+  stack. Routes: `/lesson/<id>`, `/practice`, `/friend/<id>`.
+- **Friends / async challenges (M2 v1)** — round-trip via Firestore
+  shared docs at `challenges/{id}` is shipped. Each participant writes
+  their own slice and reads the doc. Friend invitation by QR code
+  carries the inviter's `accountID` so peer stats can be fetched.
+- **Weekly league (M2 v1)** — `LeagueManager` writes the user's
+  snapshot to `leagues/{tier}_{ISO-year}-W{week}/members/{accountID}`
+  after every session. `LeagueView` reads top 20 of the current bucket.
+  Tier is derived from rating (Bronze < 300, Silver < 500, Gold < 700,
+  Platinum < 850, Diamond ≥ 850).
 - **Settings** — production-quality refactor with hero profile, Pro/
   Free state, manage-subscription deep link, typed deletion confirm,
   haptics master gate, mic permission status, "Your data" sheet,
   diagnostic copy.
+- **Empty-state primitive** — `EmptyStateView` shipped across Lessons,
+  Session History, Friends, Friend Leaderboard, and Async Speak-offs.
+  Voice-controlled (no "Let's", no exclamations, no emoji).
+- **iMessage extension target (`NoumMessages`)** — scaffolded; share
+  rep results / async-challenge invites inline. Not yet promoted to
+  prime tab nav.
+- **watchOS glance target (`NoumWatch`)** — built; detached from iOS
+  scheme until local watchOS 26.2 simulator runtime install. Surfaces
+  streak + reps-today + a one-tap "start a quick rep" CTA.
 
 ### Partially implemented
 
@@ -215,37 +384,13 @@ _Last updated: 2026-05-04_
   `RetentionLoopEngine` to produce one "active challenge" tile.
   **Auto-rotation / weekly reset / leaderboard not wired.** It's a
   single rolling status, not a true daily challenge surface.
-- **Friends / async challenges (M2 v1)** — round-trip via Firestore
-  shared docs at `challenges/{id}` is shipped. Each participant writes
-  their own slice and reads the doc. Local persistence is a cache;
-  `ChallengesManager.refreshFromBackend()` merges. The simulated
-  opponent is removed. Friend invitation by QR code carries the
-  inviter's `accountID` so peer stats can be fetched. Friends added
-  before M2 (no `accountID`) keep showing "Awaiting sync".
-- **Weekly league (M2 v1)** — `LeagueManager` writes the user's snapshot
-  to `leagues/{tier}_{ISO-year}-W{week}/members/{accountID}` after every
-  session. `LeagueView` reads top 20 of the current bucket. Tier is
-  derived from rating (Bronze < 300, Silver < 500, Gold < 700, Platinum
-  < 850, Diamond ≥ 850). Pre-launch the league is sparse — the empty
-  state explicitly says "your league forms over the week".
 - **Clubs** — `ClubsManager.swift` is scaffolding only; no real club
   membership / club challenges / club leaderboard ship.
-- **Path Journey** — visual progression (scenes reveal as session
-  count grows). **No branching paths, no node-by-node skill
-  unlocking, no "next required step" guidance.**
-- **Difficulty levels — non-Timed modes** — Sudden Death, Ah-Counter,
-  IM Mode have no user-visible difficulty selector. (Pressure Mode
-  rounds escalate automatically, but a per-mode skill level isn't
-  exposed.)
 - **Topic generation — AI** — pool is static. The AI infrastructure
   exists (`AINPCChatService`) but isn't wired to generate fresh
   prompts.
-- **Behaviour analytics** — trend direction is computed but not
-  charted; clutch-word and filler-pattern counters exist but aren't
-  rolled into a single "what's changed for you this week" digest.
-- **Custom notifications** — only one follow-up per session, no daily
-  reminder at a chosen time, no streak-protection nudge, no challenge
-  expiry warning, no goal anniversary, no escalation.
+- **iMessage / watchOS surfaces** — both targets compile and ship;
+  neither has had a real-device QA pass yet.
 
 ### Stubbed / placeholder
 
@@ -254,11 +399,16 @@ _Last updated: 2026-05-04_
   It does not influence drill prompt selection, evaluation weighting,
   or session debrief framing.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
-  produces a structured `reason` per blueprint that is currently
-  ignored by the picker (the picker uses pre-baked per-mode lines
-  instead).
-- **In-app privacy policy** — `Noum/Noum/PrivacyPolicy.md` exists in
-  the bundle but is not rendered anywhere; no hosted public URL yet
+  now feeds dynamic per-user `whyNow` / `whyMode` text into the
+  practice mode picker's recommended row. Falls back to the pre-baked
+  per-mode line when no profile / no session history exists. The
+  blueprint's `focus`, `target`, and `modeBenefit` fields are still
+  unused at the call site — those could feed a richer "Recommended
+  for you" expanded card if we want to surface more.
+- **Hosted privacy policy URL** — the bundled `PrivacyPolicy.md` is
+  now rendered in-app via `PrivacyPolicyView`, reachable from
+  Settings → Privacy & Data → Privacy policy. App Store submission
+  also requires a hosted public URL — that side is still open
   (see `PRIVACY_REMEDIATION.md` §1.2).
 
 ### Not started
@@ -270,8 +420,6 @@ _Last updated: 2026-05-04_
 - **Word of the day** — not present.
 - **Multilingual support** — every transcription provider is hardcoded
   to `en-US`; all copy and prompts are English.
-- **Line / bar charts for progression** — `TrendAnalyzer` data is
-  rendered as labels and pills only. No `SwiftUI Chart` usage anywhere.
 - **Sponsor / advertisement surfaces** — none, and they conflict with
   the paid model. Mentioned on the original Trello but flagged here
   as "do not build".
@@ -280,27 +428,32 @@ _Last updated: 2026-05-04_
 
 ## Known issues / debt
 
-- **`PremiumManager.restorePurchase()` (no `s`)** at
-  `PremiumManager.swift:161` — sets `isPremium = true` without going
-  through StoreKit. Looks like a leftover next to `restorePurchases()`
-  and `upgradeToPremium()`. Footgun if anything still calls it.
-- **Trend graphs not yet rendered** — the data exists end-to-end;
-  shipping the first `Chart` view is a high-leverage UX win.
-- **Path Journey is decorative** — it implies progression but doesn't
-  drive next-best-action. Either tie it to gameplay or demote it.
+- **Pressure Live Activity needs real-device QA** — Live Activity is
+  not testable on simulator; lock-screen rendering and Dynamic Island
+  presentation must be verified on hardware before launch.
+- **NoumWatch detached from iOS scheme** — watchOS 26.2 simulator
+  runtime not installed locally. Either install the runtime and
+  re-attach, or keep detached until watch stack is ready for QA.
 - **Onboarding goal text quality is variable** — users type free-form
-  prose ("the user signed up to be more concise so they can to speak
-  like a king…"). The picker used to render this verbatim; that's
-  fixed, but the underlying input quality means goal text shouldn't
-  be embedded into UI without a sanity check or paraphrase pass.
+  prose. The picker no longer renders this verbatim, but the underlying
+  input quality means goal text shouldn't be embedded into UI without
+  a paraphrase pass.
 - **Daily challenge surface is a single tile** — no proper daily reset
   rhythm, no expiry warning before a streak breaks.
-- **No "next step here" affordance on the home screen** — the
-  recommendation card answers "what mode" but not "what specific
-  thing am I working on this week and where am I in it".
 - **`AISettingsManager` is referenced but lives inside
   `PracticeSupport.swift`** — that file is 7,800+ lines and a
   long-term refactor target.
+- **UI tests are flaky** — four UI tests
+  (`testHomeScreenAndPrimaryNavigation`,
+  `testPracticeModesOpenAvailableScreens`, `testOnboardingFlowSmoke`,
+  `ScreenshotTour.testCaptureAdvancementSurfaces`) fail. Unit tests
+  are stable (95/95). Root cause partially identified: the home tests
+  query elements as `app.otherElements[...]` but recent UX work
+  promoted those tiles to buttons (and added a populated-state seed
+  requirement). The journey card was refactored to use sibling
+  buttons instead of nested ones (cleaner hit-testing) but UI tests
+  still need a dedicated pass — likely needs both `app.buttons[...]`
+  query updates AND `UI_TESTING_SEED` added to `launchApp()`.
 
 ## Conventions to preserve
 
@@ -312,6 +465,14 @@ _Last updated: 2026-05-04_
 - **Per-account scoping:** every persisted user value is keyed
   `<feature>.<accountID>`. Account deletion must clear every key —
   see `AuthManager.clearAllUserData(for:)` for the canonical list.
+- **Cross-process state:** widgets, Live Activity, and watch glances
+  read `SharedNoumState` from the App Group. Never read main-app
+  UserDefaults from an extension.
+- **Notification authorization:** never trigger the iOS hard prompt
+  except from an explicit user action (the `set*Enabled(true)`
+  toggles wired off the pre-prompt sheet). Passive surfaces
+  (`refreshScheduledNotifications`, `applyAppIconBadge`) read
+  `notificationSettings()` and silently no-op when not authorized.
 - **Design tokens:** all spacing, radii, and color come from
   `DesignSystem.swift` (`Spacing.*`, `CornerRadius.*`, `AppColor.*`).
   No literal hex, no magic spacing numbers.
@@ -328,7 +489,7 @@ _Last updated: 2026-05-04_
   `.buttonStyle(.pressable)`. No bespoke press animations.
 - **Lock-screen safety:** notification copy never quotes user-authored
   goal text directly — see `NotificationManager.reminderTitle` /
-  `reminderBody`.
+  `reminderBody`, and `NotificationCopy.swift` for daily-rhythm copy.
 - **AVAudioApplication.recordPermission** is the iOS 17 API. Don't
   reach for the deprecated `AVAudioSession.requestRecordPermission`.
 - **Preview safety:** preview blocks must not mutate real `.shared`
@@ -336,3 +497,7 @@ _Last updated: 2026-05-04_
   `revokePremium()` / `upgradeToPremium()` are tolerated because they
   reset on relaunch, but new previews should prefer constructor
   injection where the manager surface allows it.
+- **Singleton init reentry:** when a singleton's `init` calls
+  `recompute()` or any mirror-write, defer the cross-singleton write
+  with `DispatchQueue.main.async`. Direct calls during init can
+  re-enter `.shared` and deadlock the dispatch_once.

@@ -129,6 +129,11 @@ final class NotificationManager: ObservableObject {
 
     /// Re-arms all enabled daily-rhythm surfaces. Idempotent and safe to call
     /// from `.task` on app launch or after any of the toggles flips.
+    /// **Never** triggers iOS's hard system permission prompt — that's
+    /// reserved for the explicit `set*Enabled(true)` toggles after the
+    /// user has read the soft-sell `NotificationPrePromptSheet`. Passive
+    /// foreground refreshes simply re-arm whatever is already granted +
+    /// enabled, and silently no-op otherwise.
     func refreshScheduledNotifications() {
 #if canImport(UserNotifications)
         Task {
@@ -140,7 +145,15 @@ final class NotificationManager: ObservableObject {
                 weeklyDigestIdentifier
             ])
 
-            guard await requestAuthorizationIfNeeded() else { return }
+            // Read authorization state passively — do NOT request, do NOT
+            // surface the system prompt. The pre-prompt sheet handles asks.
+            let settings = await center.notificationSettings()
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                break
+            default:
+                return
+            }
 
             if dailyReminderEnabled {
                 await scheduleDailyReminder()

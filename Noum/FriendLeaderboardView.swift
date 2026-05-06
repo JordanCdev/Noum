@@ -24,6 +24,8 @@ struct FriendLeaderboardView: View {
     @StateObject private var profileManager = ProfileManager.shared
     @StateObject private var authManager = AuthManager.shared
 
+    @State private var showAddFriendSheet = false
+
     var body: some View {
         ZStack {
             AppColor.screenBackground.ignoresSafeArea()
@@ -50,6 +52,12 @@ struct FriendLeaderboardView: View {
         .accessibilityIdentifier("leaderboard.screen")
         .task {
             await friendsManager.refreshPeerStats()
+        }
+        .sheet(isPresented: $showAddFriendSheet) {
+            AddFriendSheet(
+                friends: friendsManager,
+                challenges: ChallengesManager.shared
+            )
         }
     }
 
@@ -86,6 +94,8 @@ struct FriendLeaderboardView: View {
                 }
 
                 if friendsManager.friends.isEmpty {
+                    Divider()
+                        .padding(.leading, 56)
                     emptyFriendsHint
                 }
             }
@@ -100,15 +110,16 @@ struct FriendLeaderboardView: View {
     }
 
     private var emptyFriendsHint: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Add a friend to see how your week stacks up.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
+        EmptyStateView(
+            symbol: "person.2.wave.2",
+            title: "Find your first speaking partner",
+            body: "Add a friend to see how your week stacks up against theirs.",
+            tint: AppColor.brandBlue,
+            cta: EmptyStateView.CTA(label: "Add a friend", icon: "plus") {
+                showAddFriendSheet = true
+            }
+        )
+        .accessibilityIdentifier("emptyState.peers")
     }
 
     private func rankRow(rank: Int, row: LeaderboardRow) -> some View {

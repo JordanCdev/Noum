@@ -11,7 +11,7 @@ struct SplashScreenView: View {
             .ignoresSafeArea()
 
             Circle()
-                .fill(Color.blue.opacity(0.16))
+                .fill(AppColor.brandBlue.opacity(0.16))
                 .frame(width: 220, height: 220)
                 .blur(radius: 18)
                 .offset(x: animateOrb ? 26 : -18, y: animateOrb ? -44 : -12)
@@ -34,7 +34,7 @@ struct SplashScreenView: View {
 
                 ProgressView()
                     .progressViewStyle(.circular)
-                    .tint(.blue)
+                    .tint(AppColor.brandBlue)
                     .scaleEffect(1.1)
             }
             .padding(34)

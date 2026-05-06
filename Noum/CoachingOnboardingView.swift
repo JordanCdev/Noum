@@ -225,7 +225,7 @@ struct CoachingOnboardingView: View {
                     }
                 } label: {
                     HStack(spacing: 12) {
-                        Text("Let's get started")
+                        Text("Begin")
                             .font(.headline.weight(.semibold))
 
                         Spacer()
@@ -336,7 +336,7 @@ struct CoachingOnboardingView: View {
                 if let helper = helperText(for: stage) {
                     Text(helper)
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.48, green: 0.51, blue: 0.57))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -449,7 +449,7 @@ struct CoachingOnboardingView: View {
                                 ? "Your coaching is now recalibrated."
                                 : "Your coaching journey starts now.")
                                 .font(.headline.weight(.medium))
-                                .foregroundStyle(Color(red: 0.48, green: 0.51, blue: 0.57))
+                                .foregroundStyle(AppColor.textSecondary)
                         }
                         .transition(.opacity.combined(with: .offset(y: 16)))
                     }

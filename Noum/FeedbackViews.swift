@@ -433,7 +433,7 @@ struct FeedbackRequestComposer: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.green)
-            Text("Request Sent!")
+            Text("Request sent")
                 .font(.headline.weight(.bold))
         }
         .padding(32)

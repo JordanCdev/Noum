@@ -16,6 +16,7 @@ import GoogleSignIn
 
 struct NoumApp: App {
     @State private var showSplash = true
+    @StateObject private var onboardingHero = OnboardingHeroManager.shared
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
 
@@ -52,6 +53,13 @@ struct NoumApp: App {
                     }
             } else {
                 ContentView()
+                    .fullScreenCover(isPresented: heroPresented) {
+                        // Manager persists the seen flag inside the view
+                        // when "Begin" or "Skip" is tapped; the published
+                        // change propagates back to `heroPresented` and
+                        // the cover dismisses automatically.
+                        OnboardingHeroView(onFinish: {})
+                    }
             }
         }
         .preferredColorScheme(.light)
@@ -75,6 +83,21 @@ struct NoumApp: App {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
+    }
+
+    /// Drives the onboarding hero `fullScreenCover`. Presents only for
+    /// brand-new users who have never seen the hero on the current
+    /// account. UI testing bypasses the hero so the screenshot-tour
+    /// suite isn't blocked by it.
+    private var heroPresented: Binding<Bool> {
+        Binding(
+            get: { !isUITesting && !onboardingHero.hasSeen },
+            set: { newValue in
+                if newValue == false {
+                    onboardingHero.markSeen()
+                }
+            }
+        )
     }
 
     /// Routes an incoming `noum://` URL to the right surface.

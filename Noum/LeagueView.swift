@@ -394,21 +394,13 @@ struct LeagueView: View {
 
     // MARK: - Helpers
 
-    private var tierTint: Color {
-        switch league.tier {
-        case .bronze:   return Color(red: 0.65, green: 0.42, blue: 0.20)
-        case .silver:   return Color(red: 0.60, green: 0.62, blue: 0.66)
-        case .gold:     return Color(red: 0.85, green: 0.65, blue: 0.13)
-        case .platinum: return Color(red: 0.39, green: 0.55, blue: 0.78)
-        case .diamond:  return Color(red: 0.36, green: 0.78, blue: 0.78)
-        }
-    }
+    private var tierTint: Color { league.tier.tint }
 
     private func rankTint(_ rank: Int) -> Color {
         switch rank {
-        case 1: return Color(red: 0.85, green: 0.65, blue: 0.13)
-        case 2: return Color(red: 0.60, green: 0.62, blue: 0.66)
-        case 3: return Color(red: 0.65, green: 0.42, blue: 0.20)
+        case 1: return LeagueTier.gold.tint
+        case 2: return LeagueTier.silver.tint
+        case 3: return LeagueTier.bronze.tint
         default: return .secondary
         }
     }

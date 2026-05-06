@@ -457,38 +457,16 @@ struct SocialProfileView: View {
             }
 
             if friends.friends.isEmpty {
-                VStack(spacing: 14) {
-                    Image(systemName: "person.2.slash")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.secondary.opacity(0.5))
-
-                    Text("No friends yet")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text("Invite fellow speakers to practice together and challenge each other.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-
-                    Button {
+                EmptyStateView(
+                    symbol: "person.2.wave.2",
+                    title: "Find your first speaking partner",
+                    body: "Invite a friend to share prompts and trade speak-offs side by side.",
+                    tint: AppColor.brandBlue,
+                    cta: EmptyStateView.CTA(label: "Invite a friend", icon: "paperplane.fill") {
                         showInviteSheet = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "paperplane.fill")
-                                .font(.caption)
-                            Text("Invite Friends")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.blue, in: Capsule())
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                )
+                .accessibilityIdentifier("emptyState.friends")
             } else {
                 ForEach(friends.friends.prefix(8)) { friend in
                     friendRow(friend)

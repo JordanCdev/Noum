@@ -110,7 +110,7 @@ struct LandThePauseView: View {
                             .buttonStyle(.pressable)
                             .disabled(!isSilent)
                         } else {
-                            Text("All checkpoints locked!")
+                            Text("All checkpoints locked in")
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(AppColor.positive)
                         }

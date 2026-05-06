@@ -388,7 +388,7 @@ struct ContentView: View {
                 .padding(.vertical, Spacing.md)
                 .background(
                     LinearGradient(
-                        colors: [.blue, Color.blue.opacity(0.8)],
+                        colors: [AppColor.brandBlue, AppColor.brandBlue.opacity(0.8)],
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
@@ -407,7 +407,7 @@ struct ContentView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                    .stroke(AppColor.brandBlue.opacity(0.15), lineWidth: 1)
             )
         }
         .buttonStyle(.pressable)
@@ -432,7 +432,7 @@ struct ContentView: View {
             )
             Divider().padding(.leading, 60)
             discoveryRow(
-                icon: "point.topleft.down.curvedto.point.bottomright.up.fill",
+                icon: "signpost.right.fill",
                 title: "Your path",
                 subtitle: "Clear nodes by hitting concrete goals.",
                 tint: AppColor.positive,
@@ -474,7 +474,8 @@ struct ContentView: View {
                     Text(subtitle)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
@@ -634,6 +635,8 @@ struct ContentView: View {
                     Text("\(streak)")
                         .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(isAlive ? .orange : .secondary)
+                        .contentTransition(.numericText())
+                        .animation(.standardSpring, value: streak)
                     Text(savedByFreeze ? "Saved by a freeze" : "day streak")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(savedByFreeze ? AppColor.brandBlue : .secondary)
@@ -716,7 +719,7 @@ struct ContentView: View {
                             .foregroundStyle(.blue)
                     }
 
-                    ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: .blue)
+                    ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -798,14 +801,17 @@ struct ContentView: View {
         )
     }
 
-    /// "Your next node" home surface. Shows the first incomplete node from
-    /// the path, with live progress + a one-tap CTA. The whole card pushes
-    /// the full path on tap; the inline CTA jumps straight to the action that
-    /// progresses *this* node, so the user never has to stop at the path map.
+    /// "Your next node" home surface. The header area pushes the full path
+    /// on tap; the inline CTA capsule jumps straight to the action that
+    /// progresses *this* node, so the user never has to stop at the path
+    /// map. The two affordances live as sibling buttons (no nesting) so
+    /// hit-testing is unambiguous.
     private var journeyPreviewCard: some View {
         let status = pathProgress.currentNode
-        return Button { navigationPath.append(AppDestination.pathJourney) } label: {
-            VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 12) {
+            Button {
+                navigationPath.append(AppDestination.pathJourney)
+            } label: {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: status?.node.symbolName ?? "checkmark.seal.fill")
                         .font(.system(size: 18, weight: .bold))
@@ -834,56 +840,63 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.path")
 
-                if let status, status.progress > 0 && !status.isComplete {
-                    ProgressView(value: status.progress)
-                        .progressViewStyle(.linear)
-                        .tint(AppColor.positive)
-                }
+            if let status, status.progress > 0 && !status.isComplete {
+                ProgressView(value: status.progress)
+                    .progressViewStyle(.linear)
+                    .tint(AppColor.positive)
+            }
 
-                HStack(spacing: 8) {
-                    Spacer()
-                    if let status {
-                        Button {
-                            navigationPath.append(status.node.actionDestination)
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(status.node.actionLabel)
-                                    .font(.caption.weight(.bold))
-                                Image(systemName: "arrow.right")
-                                    .font(.caption2.weight(.bold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AppColor.positive, in: Capsule())
+            HStack(spacing: 8) {
+                Spacer()
+                if let status {
+                    Button {
+                        navigationPath.append(status.node.actionDestination)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(status.node.actionLabel)
+                                .font(.caption.weight(.bold))
+                            Image(systemName: "arrow.right")
+                                .font(.caption2.weight(.bold))
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("home.path.action")
-                    } else {
-                        Text("Open path")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.positive)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.positive)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(AppColor.positive, in: Capsule())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("home.path.action")
+                } else {
+                    Button {
+                        navigationPath.append(AppDestination.pathJourney)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Open path")
+                                .font(.caption.weight(.bold))
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                        }
+                        .foregroundStyle(AppColor.positive)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 14)
-            .background(
-                AppColor.cardBackground,
-                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.white.opacity(0.75), lineWidth: 1)
-            )
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("home.path")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 14)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.75), lineWidth: 1)
+        )
     }
 
     private var bottomNavigation: some View {
@@ -1280,10 +1293,10 @@ struct ContentView: View {
         case "lessons":
             navigationPath.append(AppDestination.lessons)
         case "friend":
-            // Friend-invite URLs are consumed by SocialProfileView's QR
-            // handler when the user is already on that surface. From a
-            // cold launch, we surface the social tab so the manual add
-            // flow is visible.
+            // Add the inviter as a friend immediately, then surface the
+            // profile so the user sees the new entry. `acceptInvite`
+            // is idempotent — re-scanning the same URL is a no-op.
+            FriendsManager.shared.acceptInvite(from: url)
             navigationPath.append(AppDestination.socialProfile)
         default:
             // Unrecognised — no-op rather than crash.

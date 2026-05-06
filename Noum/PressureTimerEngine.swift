@@ -483,7 +483,6 @@ final class PressureTimerEngine: ObservableObject {
         isGeneratingFollowUp = true
         let transcript = lastUserTranscript
         let previousPrompt = currentPromptText
-        let profile: CoachingProfile? = nil // View will set this if available
 
         Task {
             let followUp: String

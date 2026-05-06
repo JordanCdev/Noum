@@ -158,11 +158,6 @@ final class PremiumManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: storageKey)
     }
 
-    func restorePurchase() {
-        isPremium = true
-        UserDefaults.standard.set(true, forKey: storageKey)
-    }
-
     func revokePremium() {
         isPremium = false
         UserDefaults.standard.set(false, forKey: storageKey)

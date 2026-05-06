@@ -118,10 +118,12 @@ struct AIWeeklyInsightCard: View {
         Button {
             Task { await refresh(force: true) }
         } label: {
-            Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-                .symbolEffect(.rotate, options: .repeating, isActive: isRefreshing)
+            ZStack {
+                Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.clockwise")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .modifier(RefreshSpinModifier(isActive: isRefreshing))
+            }
         }
         .accessibilityLabel("Refresh weekly insight")
         .disabled(isRefreshing)
@@ -186,6 +188,35 @@ struct AIWeeklyInsightCard: View {
                 self.insight = next
             }
             self.isRefreshing = false
+        }
+    }
+}
+
+// MARK: - Refresh spin
+
+/// iOS 17-compatible rotating spinner for the refresh chip. Uses a
+/// continuous rotation animation under iOS 17 and the native
+/// `.symbolEffect(.rotate)` on iOS 18+ where it's available.
+@available(iOS 17.0, *)
+private struct RefreshSpinModifier: ViewModifier {
+    let isActive: Bool
+    @State private var angle: Double = 0
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.symbolEffect(.rotate, options: .repeating, isActive: isActive)
+        } else {
+            content
+                .rotationEffect(.degrees(angle))
+                .onChange(of: isActive) { _, newValue in
+                    if newValue {
+                        withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                            angle = 360
+                        }
+                    } else {
+                        angle = 0
+                    }
+                }
         }
     }
 }

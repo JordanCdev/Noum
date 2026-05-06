@@ -354,20 +354,19 @@ struct SessionHistoryView: View {
     // MARK: - Empty States
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 42))
-                .foregroundStyle(.secondary)
-            Text("No sessions yet")
-                .font(.title3.weight(.bold))
-            Text("Your practice sessions will appear here with key takeaways and trends.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(28)
+        EmptyStateView(
+            symbol: "clock.arrow.circlepath",
+            title: "Your first session is the hardest",
+            body: "One short rep populates this view with score, pacing, and filler trends.",
+            tint: AppColor.brandBlue,
+            cta: EmptyStateView.CTA(label: "Start a rep", icon: "mic.fill") {
+                navigationPath.append(AppDestination.practiceSelection)
+            }
+        )
+        .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .padding(24)
+        .padding(Spacing.lg)
+        .accessibilityIdentifier("emptyState.history")
     }
 
     private var emptyFilterState: some View {

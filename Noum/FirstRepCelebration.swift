@@ -54,6 +54,8 @@ struct FirstRepCelebration: View {
             VStack(spacing: 32) {
                 Spacer(minLength: 60)
                 pulseBadge
+                SparkleRibbon(tint: .white)
+                    .opacity(phase >= .reveal ? 1 : 0)
                 headerCopy
                 statsGrid
                 Spacer(minLength: 0)

@@ -9,6 +9,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct SpeechProjectsView: View {
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var sessionStore = PracticeSessionStore.shared
     @Binding var navigationPath: NavigationPath
     @State private var selectedProject: SpeechProject?
 
@@ -27,6 +28,9 @@ struct SpeechProjectsView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     headerCopy
+                    if showsFirstTimeEmptyState {
+                        firstTimeEmptyState
+                    }
                     projectGrid
                     Spacer(minLength: Spacing.lg)
                 }
@@ -59,6 +63,33 @@ struct SpeechProjectsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - First-time empty state
+
+    /// Shown only when the user has never completed a practice session at all.
+    /// Once a single rep exists, the catalog stands on its own — projects are
+    /// extra credit, not the only entry point.
+    private var showsFirstTimeEmptyState: Bool {
+        sessionStore.sessions.isEmpty
+    }
+
+    private var firstTimeEmptyState: some View {
+        EmptyStateView(
+            symbol: "rectangle.stack.fill",
+            title: "Pick a project to anchor your week",
+            body: "Each project gives you objectives, a target length, and a coach line to aim at.",
+            tint: AppColor.brandBlue,
+            cta: EmptyStateView.CTA(label: "Start with Ice Breaker", icon: "play.fill") {
+                selectedProject = SpeechProjects.iceBreaker
+            }
+        )
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+        .accessibilityIdentifier("emptyState.projects")
     }
 
     private var projectGrid: some View {
