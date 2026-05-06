@@ -115,7 +115,9 @@ struct ProgressionChartsCard: View {
 
     private var chart: some View {
         let series = selectedSeries
-        let points = dataPoints
+        // Pause series may omit sessions that lacked word timings —
+        // filter so we never draw a fake-zero point.
+        let points = dataPoints.filter { series.hasValue(in: $0) }
         let values = points.map { series.value(from: $0) }
         let yMin = (values.min() ?? 0) * 0.85
         let yMax = (values.max() ?? 1) * 1.15
@@ -180,7 +182,9 @@ struct ProgressionChartsCard: View {
 
     private var statsRow: some View {
         let series = selectedSeries
-        let values = dataPoints.map { series.value(from: $0) }
+        let values = dataPoints
+            .filter { series.hasValue(in: $0) }
+            .map { series.value(from: $0) }
         let avg = values.reduce(0, +) / Double(max(1, values.count))
         let last7 = Array(values.suffix(7))
         let prev7 = Array(values.prefix(max(0, values.count - 7)).suffix(7))
@@ -225,13 +229,14 @@ struct ProgressionChartsCard: View {
 @available(iOS 17.0, macOS 12.0, *)
 extension ProgressionChartsCard {
     enum ChartSeries: CaseIterable {
-        case score, fillerRate, pace
+        case score, fillerRate, pace, pauseRate
 
         var shortLabel: String {
             switch self {
             case .score:      return "Score"
             case .fillerRate: return "Fillers"
             case .pace:       return "Pace"
+            case .pauseRate:  return "Pauses"
             }
         }
 
@@ -240,6 +245,7 @@ extension ProgressionChartsCard {
             case .score:      return "star.fill"
             case .fillerRate: return "speaker.slash.fill"
             case .pace:       return "speedometer"
+            case .pauseRate:  return "pause.circle.fill"
             }
         }
 
@@ -248,6 +254,7 @@ extension ProgressionChartsCard {
             case .score:      return AppColor.brandBlue
             case .fillerRate: return AppColor.caution
             case .pace:       return AppColor.modeAhCounter
+            case .pauseRate:  return AppColor.modeIM
             }
         }
 
@@ -256,6 +263,17 @@ extension ProgressionChartsCard {
             case .score:      return point.score
             case .fillerRate: return point.fillerRate
             case .pace:       return point.pace
+            case .pauseRate:  return point.pauseRate ?? 0
+            }
+        }
+
+        /// Returns true only when the underlying point has real data for
+        /// this series. Used to filter out sessions whose transcription
+        /// provider didn't capture word timings (pause series only).
+        func hasValue(in point: ChartPoint) -> Bool {
+            switch self {
+            case .pauseRate: return point.pauseRate != nil
+            default:         return true
             }
         }
 
@@ -264,6 +282,7 @@ extension ProgressionChartsCard {
             case .score:      return String(format: "%.1f", value)
             case .fillerRate: return String(format: "%.1f/min", value)
             case .pace:       return String(format: "%.0f WPM", value)
+            case .pauseRate:  return String(format: "%.1f/min", value)
             }
         }
 
@@ -278,6 +297,9 @@ extension ProgressionChartsCard {
             case .pace:
                 if abs(delta) < 1 { return "Even" }
                 return String(format: "%+.0f WPM", delta)
+            case .pauseRate:
+                if abs(delta) < 0.05 { return "Even" }
+                return String(format: "%+.1f/min", delta)
             }
         }
 
@@ -291,6 +313,11 @@ extension ProgressionChartsCard {
                 // Pace is more nuanced — extreme up or down is bad. For
                 // this card's scope, treat closer-to-baseline as good.
                 return abs(delta) < 5
+            case .pauseRate:
+                // More pauses = more deliberate delivery, generally good
+                // up to a ceiling (~6/min). Treat upward movement as
+                // improvement until we have enough data to model the curve.
+                return delta >= 0.1
             }
         }
     }
@@ -301,6 +328,10 @@ extension ProgressionChartsCard {
         let score: Double
         let fillerRate: Double
         let pace: Double
+        /// Pauses per minute — nil when the session didn't capture word
+        /// timings. Filtered out at the chart-render layer for the
+        /// `.pauseRate` series so we don't draw fake zeros.
+        let pauseRate: Double?
 
         init?(session: PracticeSession) {
             guard let score = session.score else { return nil }
@@ -311,6 +342,11 @@ extension ProgressionChartsCard {
             self.fillerRate = Double(session.fillerWordCount) / minutes
             let words = session.wordCount
             self.pace = session.duration > 0 ? Double(words) / minutes : 0
+            if let metrics = session.pauseMetrics, session.duration > 0 {
+                self.pauseRate = Double(metrics.count) / minutes
+            } else {
+                self.pauseRate = nil
+            }
         }
     }
 }

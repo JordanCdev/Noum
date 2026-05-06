@@ -1161,7 +1161,8 @@ struct IMPracticeView: View {
                                 contextSnapshot: sessionContext
                             ),
                             pressureLevel: pressure,
-                            isRated: pressureOn
+                            isRated: pressureOn,
+                            pauseMetrics: speechVM.currentSessionPauseMetrics()
                         ),
                         annotation: PracticeSessionAnnotation(
                             score: finalEvaluation.overallScore,

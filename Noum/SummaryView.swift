@@ -501,6 +501,10 @@ struct SummaryView: View {
                                 recentSessions: Array(sessionStore.sessions.prefix(5))
                             )
                             EloquenceFindingsCard(findings: eloquenceFindings)
+                            if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
+                                PauseSummaryCard(metrics: pauseMetrics)
+                            }
+                            WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
                             FillerBreakdownCard(transcriptText: transcriptText)
                             YourNextMoveCard(
                                 drill: drillRecommendationV2,
@@ -737,10 +741,12 @@ struct SummaryView: View {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.orange)
-                Text("Unlock Deeper Insights")
+                    .foregroundStyle(AppColor.pro)
+                Text("Unlock deeper insights")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                SparkleRibbon(tint: AppColor.pro)
             }
 
             Text("Pro members get personalized coach reads, video body language analysis, trend tracking, and detailed drills after every session.")
@@ -754,7 +760,7 @@ struct SummaryView: View {
                     Image(systemName: "text.magnifyingglass")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text("Coach Read Preview")
+                    Text("Coach read preview")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -784,7 +790,7 @@ struct SummaryView: View {
                 showPaywall = true
             } label: {
                 HStack {
-                    Text("See What Pro Unlocks")
+                    Text("See what Pro unlocks")
                         .font(.subheadline.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.caption.weight(.bold))
@@ -794,7 +800,7 @@ struct SummaryView: View {
                 .padding(.vertical, 12)
                 .background(
                     LinearGradient(
-                        colors: [Color.orange, Color.orange.opacity(0.85)],
+                        colors: [AppColor.pro, AppColor.proLight],
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
@@ -804,10 +810,24 @@ struct SummaryView: View {
             .buttonStyle(.plain)
         }
         .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .background(
+            // Subtle purple wash so the Pro card reads as visually
+            // distinct from the default white cards. Stays inside the
+            // motion+color rule (no illustration), and uses the brand's
+            // existing purple tokens.
+            LinearGradient(
+                colors: [
+                    AppColor.pro.opacity(0.06),
+                    AppColor.cardBackground
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .strokeBorder(Color.orange.opacity(0.15), lineWidth: 1)
+                .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
         )
     }
 
@@ -1618,7 +1638,7 @@ struct SummaryView: View {
                     SparkleRibbon(tint: .orange)
                     Text(retentionSnapshot.activeChallenge.rewardLabel)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
                 }
             }
         }
@@ -1802,9 +1822,9 @@ struct SummaryView: View {
             HStack(spacing: 0) {
                 shareStatCell(value: "\(effectiveFillerCount)", label: "Fillers", tint: fillerTint)
                 shareDivider
-                shareStatCell(value: "\(Int(effectiveDuration))s", label: "Duration", tint: .blue)
+                shareStatCell(value: "\(Int(effectiveDuration))s", label: "Duration", tint: AppColor.brandBlue)
                 shareDivider
-                shareStatCell(value: "\(shareWPM)", label: "WPM", tint: .orange)
+                shareStatCell(value: "\(shareWPM)", label: "WPM", tint: AppColor.modeSuddenDeath)
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
@@ -1984,7 +2004,7 @@ struct SummaryView: View {
             } else if scoreDelta == 0 {
                 Text("Consistency is progress. Same score, building the habit.")
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppColor.brandBlue)
             }
         }
         .padding(Spacing.cardGap)

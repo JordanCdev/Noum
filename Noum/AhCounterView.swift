@@ -485,6 +485,10 @@ struct AhCounterView: View {
 
     private func beginLaunchCountdown() {
         launchCountdown = 3
+        // Start the user's preferred pre-rep ambience (no-op if Off).
+        // It runs through the 3-2-1 + GO cue, then stops the moment
+        // recording starts so it doesn't bleed into the rep itself.
+        SoundscapeEngine.shared.startPreferredMode()
         Task {
             for count in stride(from: 3, through: 1, by: -1) {
                 await MainActor.run {
@@ -500,6 +504,7 @@ struct AhCounterView: View {
             try? await Task.sleep(for: .milliseconds(700))
             await MainActor.run {
                 showGoCue = false
+                SoundscapeEngine.shared.stop()
                 startRecording()
             }
         }

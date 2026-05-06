@@ -15,6 +15,10 @@ struct SkillSnapshot: Identifiable, Codable {
     let score: Int
     let categoryRatings: [String: String]   // dimension name → FeedbackRating.rawValue
     let drillCompleted: CompletedDrillRef?
+    /// Pauses per minute for this session, or nil if word timings weren't
+    /// captured. Lets the trend analyzer pick up pause progress without
+    /// re-reading the transcript.
+    let pauseRate: Double?
 
     struct CompletedDrillRef: Codable {
         let variationId: String
@@ -31,7 +35,8 @@ struct SkillSnapshot: Identifiable, Codable {
         wpm: Double,
         score: Int,
         categoryRatings: [String: String] = [:],
-        drillCompleted: CompletedDrillRef? = nil
+        drillCompleted: CompletedDrillRef? = nil,
+        pauseRate: Double? = nil
     ) {
         self.id = UUID()
         self.sessionId = sessionId
@@ -43,6 +48,27 @@ struct SkillSnapshot: Identifiable, Codable {
         self.score = score
         self.categoryRatings = categoryRatings
         self.drillCompleted = drillCompleted
+        self.pauseRate = pauseRate
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, sessionId, date, fillerCount, duration, wordCount, wpm
+        case score, categoryRatings, drillCompleted, pauseRate
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        sessionId = try c.decode(UUID.self, forKey: .sessionId)
+        date = try c.decode(Date.self, forKey: .date)
+        fillerCount = try c.decode(Int.self, forKey: .fillerCount)
+        duration = try c.decode(TimeInterval.self, forKey: .duration)
+        wordCount = try c.decode(Int.self, forKey: .wordCount)
+        wpm = try c.decode(Double.self, forKey: .wpm)
+        score = try c.decode(Int.self, forKey: .score)
+        categoryRatings = try c.decodeIfPresent([String: String].self, forKey: .categoryRatings) ?? [:]
+        drillCompleted = try c.decodeIfPresent(CompletedDrillRef.self, forKey: .drillCompleted)
+        pauseRate = try c.decodeIfPresent(Double.self, forKey: .pauseRate)
     }
 }
 
@@ -74,7 +100,8 @@ class SkillTrendStore: ObservableObject {
         wordCount: Int,
         score: Int,
         categoryRatings: [String: String] = [:],
-        drillCompleted: SkillSnapshot.CompletedDrillRef? = nil
+        drillCompleted: SkillSnapshot.CompletedDrillRef? = nil,
+        pauseRate: Double? = nil
     ) {
         let wpm = duration > 0 ? Double(wordCount) / duration * 60.0 : 0
         let snapshot = SkillSnapshot(
@@ -85,7 +112,8 @@ class SkillTrendStore: ObservableObject {
             wpm: wpm,
             score: score,
             categoryRatings: categoryRatings,
-            drillCompleted: drillCompleted
+            drillCompleted: drillCompleted,
+            pauseRate: pauseRate
         )
         record(snapshot)
     }
@@ -180,8 +208,65 @@ enum TrendAnalyzer {
         trends.append(analyzeCategory("Depth", skillArea: .answerDevelopment, snapshots: snapshots))
         trends.append(analyzeCategory("Clarity", skillArea: .conciseSpeaking, snapshots: snapshots))
         trends.append(analyzeDuration(snapshots))
+        if let pauseTrend = analyzePause(snapshots) {
+            trends.append(pauseTrend)
+        }
 
         return trends
+    }
+
+    /// Pause-rate trend across the snapshots that captured pause data.
+    /// Returns nil when too few snapshots have pauseRate to read a trend
+    /// (avoids noisy "improving from nothing" signals on day-1 reps).
+    static func analyzePause(_ snapshots: [SkillSnapshot]) -> SkillTrend? {
+        let withPauses = snapshots.filter { $0.pauseRate != nil }
+        guard withPauses.count >= 3 else { return nil }
+
+        // Compare the latest 3 reps with the next-3-back to detect direction.
+        let recent = Array(withPauses.prefix(3))
+        let previous = Array(withPauses.dropFirst(3).prefix(3))
+
+        let recentAvg = recent.compactMap(\.pauseRate).reduce(0, +) / Double(max(1, recent.count))
+        let prevAvg = previous.isEmpty
+            ? recentAvg
+            : previous.compactMap(\.pauseRate).reduce(0, +) / Double(previous.count)
+        let delta = recentAvg - prevAvg
+
+        let direction: TrendDirection
+        if previous.isEmpty {
+            direction = .stable
+        } else if delta >= 0.4 {
+            // More pauses per minute = more deliberate delivery.
+            direction = .improving
+        } else if delta <= -0.4 {
+            direction = .declining
+        } else {
+            direction = .stable
+        }
+
+        let level: SkillLevel
+        if recentAvg >= 4.0 { level = .strong }
+        else if recentAvg >= 2.5 { level = .solid }
+        else if recentAvg >= 1.0 { level = .developing }
+        else { level = .weak }
+
+        let confidence: TrendConfidence = withPauses.count >= 8 ? .high
+            : (withPauses.count >= 4 ? .medium : .low)
+
+        let deltaText: String? = {
+            guard !previous.isEmpty, abs(delta) >= 0.2 else { return nil }
+            let sign = delta > 0 ? "+" : ""
+            return "\(sign)\(String(format: "%.1f", delta))/min vs prior"
+        }()
+
+        return SkillTrend(
+            skillArea: .pauseUsage,
+            direction: direction,
+            confidence: confidence,
+            windowSize: withPauses.count,
+            currentLevel: level,
+            recentDelta: deltaText
+        )
     }
 
     /// Find the single highest-leverage focus area for the next drill.

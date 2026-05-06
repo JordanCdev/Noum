@@ -68,6 +68,46 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var confidenceValues: [Double] = []
     private var providerFillerCount: Int = 0
 
+    // Pause-metric raw inputs. Word timings stay transient (we don't
+    // persist them — only the computed `PauseMetrics` lands on the
+    // session) but we accumulate across the whole rep so finalization
+    // can compute pause stats from the full word stream.
+    private var sessionWordTimings: [TranscriptUpdate.WordTiming] = []
+    /// `startTime` of every word the filler detector has flagged. Read
+    /// at finalize to classify pauses as filled vs unfilled.
+    private var fillerStartTimes: [TimeInterval] = []
+
+    /// Snapshot of accumulated word timings, intended for SessionFinalizer
+    /// to compute pause metrics. Returns an empty array if the active
+    /// transcription provider didn't emit word-level data.
+    var capturedWordTimings: [TranscriptUpdate.WordTiming] {
+        sessionWordTimings
+    }
+
+    /// Compute pause metrics from the session's captured word timings.
+    /// Returns nil when the provider didn't emit word data (so we don't
+    /// store a misleading "0 pauses" reading on a session we couldn't
+    /// actually measure). Public so per-mode views (Sudden Death, IM)
+    /// can attach metrics to their own session drafts.
+    func currentSessionPauseMetrics() -> PauseMetrics? {
+        guard !sessionWordTimings.isEmpty else { return nil }
+        // Cross-reference filler detector findings against the word stream
+        // by lowercased text. Each filler-classified word's `startTime`
+        // becomes a timestamp the pause computer uses to mark "filled" gaps.
+        let fillers = FillerWordDetector.detections(
+            in: finalTranscript,
+            prompt: sessionPrompt ?? ""
+        )
+        let fillerTexts = Set(fillers.map { $0.word.lowercased() })
+        let filledStarts = sessionWordTimings
+            .filter { fillerTexts.contains($0.word.lowercased()) }
+            .map { $0.startTime }
+        return PauseMetrics.compute(
+            words: sessionWordTimings,
+            fillerStartTimes: filledStarts
+        )
+    }
+
     init(preloadOnInit: Bool = true) {
         self.provider = Self.resolveProvider()
         self.activeProviderName = provider.name
@@ -153,6 +193,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         totalLatencyMs = 0
         confidenceValues = []
         providerFillerCount = 0
+        sessionWordTimings = []
+        fillerStartTimes = []
 
         do {
             try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
@@ -237,6 +279,13 @@ class SpeechRecognizerViewModel: ObservableObject {
             if !finalTranscript.isEmpty { finalTranscript += " " }
             finalTranscript += snippet
             partialTranscript = ""
+
+            // Accumulate word timings only on `isFinal` updates so we
+            // don't double-count partials. Provider word arrays are the
+            // authoritative source for pause computation.
+            if let words = update.words, !words.isEmpty {
+                sessionWordTimings.append(contentsOf: words)
+            }
         } else {
             partialTranscript = snippet
         }
@@ -388,6 +437,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             isPressureModeOn: pressureOn,
             streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
         )
+        let pauseMetrics = currentSessionPauseMetrics()
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -399,7 +449,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 transcriptConfidence: avgConfidence,
                 transcriptionProvider: provider.identifier,
                 pressureLevel: pressure,
-                isRated: pressureOn
+                isRated: pressureOn,
+                pauseMetrics: pauseMetrics
             )
         )
         pastSessions = sessionStore.sessions
@@ -456,6 +507,10 @@ struct PracticeSession: Identifiable, Codable {
     var transcriptionProvider: String? = nil
     var pressureLevel: PressureLevel = .standard
     var isRated: Bool = false
+    /// Pause statistics for this session. Optional because (a) older
+    /// persisted sessions decode without it, and (b) some transcription
+    /// providers may not emit word-level timings on certain reps.
+    var pauseMetrics: PauseMetrics? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -478,6 +533,7 @@ struct PracticeSession: Identifiable, Codable {
         case transcriptionProvider
         case pressureLevel
         case isRated
+        case pauseMetrics
     }
 
     init(
@@ -500,7 +556,8 @@ struct PracticeSession: Identifiable, Codable {
         transcriptConfidence: Double? = nil,
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
-        isRated: Bool = false
+        isRated: Bool = false,
+        pauseMetrics: PauseMetrics? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -522,6 +579,7 @@ struct PracticeSession: Identifiable, Codable {
         self.transcriptionProvider = transcriptionProvider
         self.pressureLevel = pressureLevel
         self.isRated = isRated
+        self.pauseMetrics = pauseMetrics
     }
 
     init(from decoder: Decoder) throws {
@@ -546,5 +604,6 @@ struct PracticeSession: Identifiable, Codable {
         transcriptionProvider = try container.decodeIfPresent(String.self, forKey: .transcriptionProvider)
         pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
+        pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
     }
 }

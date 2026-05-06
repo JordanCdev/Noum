@@ -138,22 +138,15 @@ struct ProfileView: View {
 
     private var identityHeader: some View {
         VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.blue.opacity(0.4), Color.purple.opacity(0.5)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 80, height: 80)
-                    .shadow(color: Color.purple.opacity(0.2), radius: 16, y: 6)
-
-                Text(String(displayName.prefix(1)).uppercased())
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
+            // Speaker character — abstract, breathing, brand-tinted.
+            // Replaces the letter avatar so the profile reads as
+            // "speaker presence" rather than account placeholder.
+            NoumCharacter(
+                mood: .calm,
+                tint: premium.isPremium ? AppColor.pro : AppColor.brandBlue,
+                size: 90
+            )
+            .padding(.bottom, -8)
 
             VStack(spacing: 6) {
                 HStack(spacing: 8) {

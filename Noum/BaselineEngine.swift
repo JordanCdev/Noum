@@ -174,6 +174,8 @@ struct CommunicationBaseline: Codable, Equatable {
     var pace: BaselineStat               // Average WPM
     var paceVariance: BaselineStat       // Std dev of WPM across sessions
     var durationTendency: BaselineStat   // Typical speaking length (seconds)
+    var pauseRate: BaselineStat          // Pauses (≥0.5s) per minute
+    var pauseFilledRatio: BaselineStat   // Fraction of pauses filled with disfluency, 0–1
 
     // Layer 2: Structure & Content
     var openingStrength: BaselineStat    // From category ratings (1-3 scale)
@@ -211,6 +213,8 @@ struct CommunicationBaseline: Codable, Equatable {
         pace: .empty,
         paceVariance: .empty,
         durationTendency: .empty,
+        pauseRate: .empty,
+        pauseFilledRatio: .empty,
         openingStrength: .empty,
         closingStrength: .empty,
         structureQuality: .empty,
@@ -223,6 +227,89 @@ struct CommunicationBaseline: Codable, Equatable {
         topStrengths: [],
         persistentBlockers: []
     )
+
+    // MARK: - Codable (backwards-compatible)
+    //
+    // Custom decoder so persisted baselines from earlier app versions
+    // (which lack `pauseRate` / `pauseFilledRatio`) decode cleanly into
+    // `.empty` for those fields rather than failing the whole decode.
+
+    enum CodingKeys: String, CodingKey {
+        case lastUpdated, sessionCount, qualifyingSessionCount
+        case fillerRate, pace, paceVariance, durationTendency
+        case pauseRate, pauseFilledRatio
+        case openingStrength, closingStrength, structureQuality, answerDepth, clarity
+        case vocabularyRange, hedgingRate, averageScore
+        case clutchWordFrequencies, topStrengths, persistentBlockers
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lastUpdated = try c.decode(Date.self, forKey: .lastUpdated)
+        sessionCount = try c.decode(Int.self, forKey: .sessionCount)
+        qualifyingSessionCount = try c.decode(Int.self, forKey: .qualifyingSessionCount)
+        fillerRate = try c.decode(BaselineStat.self, forKey: .fillerRate)
+        pace = try c.decode(BaselineStat.self, forKey: .pace)
+        paceVariance = try c.decode(BaselineStat.self, forKey: .paceVariance)
+        durationTendency = try c.decode(BaselineStat.self, forKey: .durationTendency)
+        pauseRate = try c.decodeIfPresent(BaselineStat.self, forKey: .pauseRate) ?? .empty
+        pauseFilledRatio = try c.decodeIfPresent(BaselineStat.self, forKey: .pauseFilledRatio) ?? .empty
+        openingStrength = try c.decode(BaselineStat.self, forKey: .openingStrength)
+        closingStrength = try c.decode(BaselineStat.self, forKey: .closingStrength)
+        structureQuality = try c.decode(BaselineStat.self, forKey: .structureQuality)
+        answerDepth = try c.decode(BaselineStat.self, forKey: .answerDepth)
+        clarity = try c.decode(BaselineStat.self, forKey: .clarity)
+        vocabularyRange = try c.decode(BaselineStat.self, forKey: .vocabularyRange)
+        hedgingRate = try c.decode(BaselineStat.self, forKey: .hedgingRate)
+        averageScore = try c.decode(BaselineStat.self, forKey: .averageScore)
+        clutchWordFrequencies = try c.decodeIfPresent([String: BaselineStat].self, forKey: .clutchWordFrequencies) ?? [:]
+        topStrengths = try c.decode([String].self, forKey: .topStrengths)
+        persistentBlockers = try c.decode([String].self, forKey: .persistentBlockers)
+    }
+
+    init(
+        lastUpdated: Date,
+        sessionCount: Int,
+        qualifyingSessionCount: Int,
+        fillerRate: BaselineStat,
+        pace: BaselineStat,
+        paceVariance: BaselineStat,
+        durationTendency: BaselineStat,
+        pauseRate: BaselineStat,
+        pauseFilledRatio: BaselineStat,
+        openingStrength: BaselineStat,
+        closingStrength: BaselineStat,
+        structureQuality: BaselineStat,
+        answerDepth: BaselineStat,
+        clarity: BaselineStat,
+        vocabularyRange: BaselineStat,
+        hedgingRate: BaselineStat,
+        averageScore: BaselineStat,
+        clutchWordFrequencies: [String: BaselineStat],
+        topStrengths: [String],
+        persistentBlockers: [String]
+    ) {
+        self.lastUpdated = lastUpdated
+        self.sessionCount = sessionCount
+        self.qualifyingSessionCount = qualifyingSessionCount
+        self.fillerRate = fillerRate
+        self.pace = pace
+        self.paceVariance = paceVariance
+        self.durationTendency = durationTendency
+        self.pauseRate = pauseRate
+        self.pauseFilledRatio = pauseFilledRatio
+        self.openingStrength = openingStrength
+        self.closingStrength = closingStrength
+        self.structureQuality = structureQuality
+        self.answerDepth = answerDepth
+        self.clarity = clarity
+        self.vocabularyRange = vocabularyRange
+        self.hedgingRate = hedgingRate
+        self.averageScore = averageScore
+        self.clutchWordFrequencies = clutchWordFrequencies
+        self.topStrengths = topStrengths
+        self.persistentBlockers = persistentBlockers
+    }
 }
 
 // MARK: - Pressure Profile
@@ -448,6 +535,28 @@ enum BaselineEngine {
         let durations = recent.map { $0.duration }
         baseline.durationTendency = buildStat(from: durations, allSamples: qualifying.count)
 
+        // Pause rate (pauses ≥ 0.5s per minute) — only counts sessions where
+        // the transcription provider actually emitted word timings, so older
+        // sessions and provider-degraded reps don't drag the average toward 0.
+        let pauseRates = recent.compactMap { s -> Double? in
+            guard let metrics = s.pauseMetrics, s.duration > 0 else { return nil }
+            return Double(metrics.count) / (s.duration / 60.0)
+        }
+        if !pauseRates.isEmpty {
+            baseline.pauseRate = buildStat(from: pauseRates, allSamples: pauseRates.count)
+        }
+
+        // Filled-pause ratio — fraction of pauses filled with disfluency.
+        // Only counts sessions where at least one pause occurred (otherwise
+        // the ratio is undefined / 0 by convention but adds no signal).
+        let filledRatios = recent.compactMap { s -> Double? in
+            guard let metrics = s.pauseMetrics, metrics.count > 0 else { return nil }
+            return metrics.filledRatio
+        }
+        if !filledRatios.isEmpty {
+            baseline.pauseFilledRatio = buildStat(from: filledRatios, allSamples: filledRatios.count)
+        }
+
         // Category ratings (Opening, Closing, Structure, Depth, Clarity)
         // Map "Good" = 3, "OK" = 2, "Could improve" = 1
         baseline.openingStrength = buildCategoryStat(from: recent, dimension: "Opening", allSamples: qualifying.count)
@@ -528,6 +637,27 @@ enum BaselineEngine {
 
         // Duration
         updated.durationTendency = updateStat(updated.durationTendency, newValue: session.duration, alpha: alpha, totalSamples: totalQualifying)
+
+        // Pause metrics — only contribute when the session captured them.
+        // Sessions from older builds (or providers that don't emit timings)
+        // leave the existing baseline pause stats untouched.
+        if let metrics = session.pauseMetrics, session.duration > 0 {
+            let pauseRate = Double(metrics.count) / (session.duration / 60.0)
+            updated.pauseRate = updateStat(
+                updated.pauseRate,
+                newValue: pauseRate,
+                alpha: alpha,
+                totalSamples: max(updated.pauseRate.sampleCount + 1, totalQualifying)
+            )
+            if metrics.count > 0 {
+                updated.pauseFilledRatio = updateStat(
+                    updated.pauseFilledRatio,
+                    newValue: metrics.filledRatio,
+                    alpha: alpha,
+                    totalSamples: max(updated.pauseFilledRatio.sampleCount + 1, totalQualifying)
+                )
+            }
+        }
 
         // Score
         if let score = session.score {

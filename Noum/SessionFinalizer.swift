@@ -125,13 +125,22 @@ enum SessionFinalizer {
         for seg in scoreBreakdown {
             categoryMap[seg.title] = seg.value
         }
+        // Pull pause-rate from the freshly-finalized session so the trend
+        // analyzer can pick up pause progress without re-tokenising the
+        // transcript. nil for sessions whose provider didn't emit timings.
+        let pauseRate: Double? = {
+            guard let metrics = sessionStore.sessions.first?.pauseMetrics,
+                  effectiveDuration > 0 else { return nil }
+            return Double(metrics.count) / (effectiveDuration / 60.0)
+        }()
         SkillTrendStore.shared.recordFromSession(
             sessionId: latestSessionID ?? UUID(),
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
             score: scoreValue,
-            categoryRatings: categoryMap
+            categoryRatings: categoryMap,
+            pauseRate: pauseRate
         )
 
         // Schedule follow-up reminder

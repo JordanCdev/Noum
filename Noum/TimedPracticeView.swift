@@ -1999,9 +1999,15 @@ struct TimedPracticeView: View {
         if useThinkingTime {
             thinkingCountdown = thinkingDuration
             withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+            // Pre-rep ambience runs through the thinking window — long
+            // enough for the user to feel it, cuts the moment recording
+            // starts inside `startSpeaking()` so it never bleeds onto the
+            // rep itself.
+            SoundscapeEngine.shared.startPreferredMode()
             startThinkingCountdown(thinkingDuration: thinkingDuration)
         } else if !keepPromptVisible {
             withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+            SoundscapeEngine.shared.startPreferredMode()
             Task {
                 try? await Task.sleep(for: .seconds(3))
                 if phase == .briefReveal {
@@ -2042,6 +2048,10 @@ struct TimedPracticeView: View {
 
     private func startSpeaking() {
         guard !speechVM.isRecording else { return }
+
+        // Cut pre-rep ambience the moment the rep starts — soundscape
+        // is for prep only, never for the rep itself.
+        SoundscapeEngine.shared.stop()
 
         withAnimation(.easeInOut(duration: 0.3)) { phase = .speaking }
 
@@ -2185,9 +2195,15 @@ struct TimedPracticeView: View {
         if useThinkingTime {
             thinkingCountdown = thinkingDuration
             withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+            // Pre-rep ambience runs through the thinking window — long
+            // enough for the user to feel it, cuts the moment recording
+            // starts inside `startSpeaking()` so it never bleeds onto the
+            // rep itself.
+            SoundscapeEngine.shared.startPreferredMode()
             startThinkingCountdown(thinkingDuration: thinkingDuration)
         } else if !keepPromptVisible {
             withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+            SoundscapeEngine.shared.startPreferredMode()
             Task {
                 try? await Task.sleep(for: .seconds(3))
                 if phase == .briefReveal {
@@ -2206,6 +2222,9 @@ struct TimedPracticeView: View {
         thinkingTask = nil
         ttsEngine.stopSpeaking(at: .immediate)
         if videoManager.isRecording { videoManager.stopRecording() }
+        // If the user backs out mid-thinking-window, stop ambience so
+        // it doesn't leak into the next surface.
+        SoundscapeEngine.shared.stop()
     }
 
     // MARK: - Navigation

@@ -491,7 +491,7 @@ struct BaselineComparisonCard: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.blue.opacity(0.08), in: Capsule())
+                        .background(AppColor.brandBlue.opacity(0.08), in: Capsule())
                 }
 
                 // Pressure context indicator with resilience data
@@ -584,7 +584,7 @@ struct BaselineComparisonCard: View {
             .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.blue.opacity(0.08), lineWidth: 1)
+                    .stroke(AppColor.brandBlue.opacity(0.08), lineWidth: 1)
             )
         }
     }

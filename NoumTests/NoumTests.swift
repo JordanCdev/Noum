@@ -283,6 +283,8 @@ struct NextActionEngineTests {
             pace: BaselineStat(value: pace, sampleCount: sessionCount, confidence: confidence, trend: .stable, percentile25: pace - 10, percentile75: pace + 10),
             paceVariance: .empty,
             durationTendency: BaselineStat(value: 45, sampleCount: sessionCount, confidence: confidence, trend: .stable, percentile25: 35, percentile75: 55),
+            pauseRate: .empty,
+            pauseFilledRatio: .empty,
             openingStrength: .empty,
             closingStrength: .empty,
             structureQuality: .empty,
@@ -439,6 +441,7 @@ struct VerdictEngineTests {
             fillerRate: BaselineStat(value: 3.0, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 2.0, percentile75: 4.0),
             pace: BaselineStat(value: 130, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 120, percentile75: 140),
             paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -516,6 +519,7 @@ struct BaselinePromptContextTests {
             pace: BaselineStat(value: 135, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 125, percentile75: 145),
             paceVariance: .empty,
             durationTendency: BaselineStat(value: 45, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 35, percentile75: 55),
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -549,6 +553,7 @@ struct BaselinePromptContextTests {
             lastUpdated: Date(), sessionCount: 15, qualifyingSessionCount: 15,
             fillerRate: BaselineStat(value: 2.5, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 1.8, percentile75: 3.2),
             pace: .empty, paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -623,6 +628,7 @@ struct TrendResponseTests {
             fillerRate: BaselineStat(value: 2.0, sampleCount: 12, confidence: .established, trend: .declining, percentile25: 1.5, percentile75: 2.5),
             pace: BaselineStat(value: 140, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 130, percentile75: 150),
             paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -655,6 +661,7 @@ struct TrendResponseTests {
             fillerRate: BaselineStat(value: 1.5, sampleCount: 10, confidence: .established, trend: .stable, percentile25: 1.0, percentile75: 2.0),
             pace: BaselineStat(value: 130, sampleCount: 10, confidence: .established, trend: .stable, percentile25: 120, percentile75: 140),
             paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -720,6 +727,7 @@ struct StyleCoachingTests {
             fillerRate: BaselineStat(value: 1.5, sampleCount: 20, confidence: .stable, trend: .stable, percentile25: 1.0, percentile75: 2.0),
             pace: BaselineStat(value: 130, sampleCount: 20, confidence: .stable, trend: .stable, percentile25: 120, percentile75: 140),
             paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -795,6 +803,7 @@ struct SessionEdgeCaseTests {
                 fillerRate: BaselineStat(value: 0.8, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 0.3, percentile75: 1.3),
                 pace: BaselineStat(value: 133, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 125, percentile75: 141),
                 paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
                 openingStrength: .empty, closingStrength: .empty,
                 structureQuality: .empty, answerDepth: .empty, clarity: .empty,
                 vocabularyRange: .empty, hedgingRate: .empty,
@@ -897,6 +906,7 @@ struct BlockerMatchTests {
             fillerRate: BaselineStat(value: 5.0, sampleCount: 20, confidence: .stable, trend: .stable, percentile25: 4.0, percentile75: 6.0),
             pace: BaselineStat(value: 130, sampleCount: 20, confidence: .stable, trend: .stable, percentile25: 120, percentile75: 140),
             paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: BaselineStat(value: 1.0, sampleCount: 20, confidence: .stable, trend: .declining, percentile25: 0.8, percentile75: 1.2),
             closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
@@ -927,6 +937,7 @@ struct BlockerMatchTests {
             fillerRate: BaselineStat(value: 5.0, sampleCount: 20, confidence: .stable, trend: .stable, percentile25: 4.0, percentile75: 6.0),
             pace: BaselineStat(value: 130, sampleCount: 20, confidence: .stable, trend: .stable, percentile25: 120, percentile75: 140),
             paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -1035,6 +1046,7 @@ struct FillerRateComparisonTests {
             lastUpdated: Date(), sessionCount: 15, qualifyingSessionCount: 15,
             fillerRate: BaselineStat(value: 2.0, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 1.5, percentile75: 2.5),
             pace: .empty, paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -1058,6 +1070,7 @@ struct FillerRateComparisonTests {
             lastUpdated: Date(), sessionCount: 15, qualifyingSessionCount: 15,
             fillerRate: BaselineStat(value: 2.0, sampleCount: 15, confidence: .established, trend: .stable, percentile25: 1.5, percentile75: 2.5),
             pace: .empty, paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
             openingStrength: .empty, closingStrength: .empty,
             structureQuality: .empty, answerDepth: .empty, clarity: .empty,
             vocabularyRange: .empty, hedgingRate: .empty,
@@ -1460,5 +1473,269 @@ struct EloquenceXPTests {
             #expect(antithesisXP >= EloquenceXP.baseXP(for: device),
                     "antithesis should be ≥ \(device): got \(antithesisXP) vs \(EloquenceXP.baseXP(for: device))")
         }
+    }
+}
+
+// MARK: - Pause Metrics
+
+private func word(_ text: String, start: TimeInterval, end: TimeInterval) -> TranscriptUpdate.WordTiming {
+    TranscriptUpdate.WordTiming(word: text, startTime: start, endTime: end, confidence: 1.0)
+}
+
+struct PauseMetricsTests {
+    @Test func emptyInputProducesEmptyMetrics() {
+        let metrics = PauseMetrics.compute(words: [], fillerStartTimes: [])
+        #expect(metrics == .empty)
+    }
+
+    @Test func singleWordProducesEmptyMetrics() {
+        // Need at least 2 words to measure a gap.
+        let metrics = PauseMetrics.compute(words: [word("hi", start: 0, end: 0.4)], fillerStartTimes: [])
+        #expect(metrics == .empty)
+    }
+
+    @Test func gapsBelowThresholdAreNotPauses() {
+        // Two words separated by 0.3s — below the 0.5s threshold, so no pause counted.
+        let words = [
+            word("the", start: 0.0, end: 0.4),
+            word("answer", start: 0.7, end: 1.2)
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [])
+        #expect(metrics.count == 0)
+    }
+
+    @Test func longGapCountsAsOnePause() {
+        let words = [
+            word("the", start: 0.0, end: 0.4),
+            word("answer", start: 1.5, end: 2.0)
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [])
+        #expect(metrics.count == 1)
+        // Gap is 1.1s (1.5 - 0.4)
+        #expect(abs(metrics.meanSeconds - 1.1) < 0.01)
+        #expect(abs(metrics.longestSeconds - 1.1) < 0.01)
+        #expect(metrics.filledRatio == 0)
+    }
+
+    @Test func multiplePausesCountedSeparately() {
+        let words = [
+            word("first", start: 0.0, end: 0.5),
+            word("second", start: 1.5, end: 2.0),     // 1.0s gap
+            word("third", start: 2.3, end: 2.8),       // 0.3s gap (sub-threshold)
+            word("fourth", start: 4.0, end: 4.5)        // 1.2s gap
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [])
+        #expect(metrics.count == 2)
+        // Mean of (1.0, 1.2) = 1.1s
+        #expect(abs(metrics.meanSeconds - 1.1) < 0.01)
+        #expect(abs(metrics.longestSeconds - 1.2) < 0.01)
+    }
+
+    @Test func filledPauseDetected() {
+        // Pause from 0.5 to 1.5 (1.0s gap). Filler at 0.8 falls inside it.
+        let words = [
+            word("ok", start: 0.0, end: 0.5),
+            word("so", start: 1.5, end: 1.7)
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [0.8])
+        #expect(metrics.count == 1)
+        #expect(metrics.filledRatio == 1.0)
+    }
+
+    @Test func unfilledPauseDetected() {
+        // Same gap, but the filler is well outside the gap (at 5.0).
+        let words = [
+            word("ok", start: 0.0, end: 0.5),
+            word("so", start: 1.5, end: 1.7)
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [5.0])
+        #expect(metrics.count == 1)
+        #expect(metrics.filledRatio == 0)
+    }
+
+    @Test func mixedFilledAndUnfilledPauses() {
+        let words = [
+            word("a", start: 0.0, end: 0.3),
+            word("b", start: 1.3, end: 1.5),     // pause 1: filler at 0.8 inside (filled)
+            word("c", start: 3.0, end: 3.3),     // pause 2: no filler (unfilled)
+            word("d", start: 5.0, end: 5.3)      // pause 3: filler at 4.5 inside (filled)
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [0.8, 4.5])
+        #expect(metrics.count == 3)
+        // 2 of 3 pauses are filled
+        #expect(abs(metrics.filledRatio - (2.0 / 3.0)) < 0.01)
+    }
+
+    @Test func unsortedWordsAreSortedBeforeComputation() {
+        // Provider may emit words slightly out of order on partial results.
+        let words = [
+            word("second", start: 1.5, end: 2.0),
+            word("first", start: 0.0, end: 0.5)
+        ]
+        let metrics = PauseMetrics.compute(words: words, fillerStartTimes: [])
+        #expect(metrics.count == 1)
+        #expect(abs(metrics.longestSeconds - 1.0) < 0.01)
+    }
+
+    @Test func headlineCopyIsOnVoice() {
+        // Voice rules: no "Let's", no exclamations, sentence case, concrete.
+        let zero = PauseMetrics.empty.headline
+        #expect(!zero.contains("!"))
+        #expect(!zero.lowercased().contains("let's"))
+
+        let clean = PauseMetrics(count: 4, meanSeconds: 0.8, longestSeconds: 1.2, filledRatio: 0).headline
+        #expect(!clean.contains("!"))
+    }
+}
+
+// MARK: - Path Node pause criteria
+
+private func sessionWithPauseMetrics(_ metrics: PauseMetrics, duration: TimeInterval = 60) -> PracticeSession {
+    PracticeSession(
+        transcript: "test",
+        fillerWordCount: 0,
+        duration: duration,
+        date: Date(),
+        mode: .timed,
+        pauseMetrics: metrics
+    )
+}
+
+private func emptyProgressInput(sessions: [PracticeSession] = []) -> PathProgressInput {
+    PathProgressInput(
+        sessions: sessions,
+        currentStreak: 0,
+        baseline: .empty,
+        rating: .initial,
+        modeMastery: [:],
+        totalLessonCrowns: 0,
+        maxLessonCrown: 0,
+        now: Date()
+    )
+}
+
+struct WordChoiceMetricsTests {
+    @Test func tooShortInputReturnsEmpty() {
+        // Below 20 content-word minimum.
+        let metrics = WordChoiceMetrics.compute(transcript: "I think the answer is yes.")
+        #expect(metrics.contentWordCount == 0)
+        #expect(metrics.uniqueRatio == 0)
+        #expect(metrics.repeatedContentWords.isEmpty)
+    }
+
+    @Test func stopWordsAreFiltered() {
+        // Lots of stop words shouldn't surface as repeated content.
+        let transcript = """
+        the team needs better systems and more clear ownership across deliverables
+        because consistent delivery becomes operational discipline once standards
+        align with execution timelines and stakeholder feedback loops
+        """
+        let metrics = WordChoiceMetrics.compute(transcript: transcript)
+        #expect(metrics.contentWordCount > 0)
+        let words = metrics.repeatedContentWords.map { $0.word }
+        #expect(!words.contains("the"))
+        #expect(!words.contains("and"))
+    }
+
+    @Test func fillerTokensAreFiltered() {
+        let transcript = String(repeating: "um like basically actually ", count: 10)
+            + "structure delivery composure clarity range projection authority "
+            + "team direction outcome growth"
+        let metrics = WordChoiceMetrics.compute(transcript: transcript)
+        let words = metrics.repeatedContentWords.map { $0.word }
+        #expect(!words.contains("um"))
+        #expect(!words.contains("like"))
+        #expect(!words.contains("basically"))
+        #expect(!words.contains("actually"))
+    }
+
+    @Test func repeatedContentWordSurfaces() {
+        // "leadership" repeats 5 times; should surface as #1 in repeats.
+        let transcript = """
+        leadership requires honest leadership about decisions and leadership
+        starts with leadership presence in tough rooms also leadership
+        means saying the harder thing when other things stay quiet
+        meanwhile direction structure clarity outcome delivery growth team
+        """
+        let metrics = WordChoiceMetrics.compute(transcript: transcript)
+        #expect(metrics.repeatedContentWords.first?.word == "leadership")
+        #expect((metrics.repeatedContentWords.first?.count ?? 0) >= 3)
+    }
+
+    @Test func varietyHighInVariedTranscript() {
+        // 40 distinct content words.
+        let transcript = """
+        structure clarity delivery composure outcome direction depth range
+        cadence pacing phrasing emphasis economy substance candor presence
+        focus restraint nuance precision authority warmth signal momentum
+        rhythm balance honesty insight resolve method tone mastery
+        timing instinct action context judgement framing distance
+        """
+        let metrics = WordChoiceMetrics.compute(transcript: transcript)
+        #expect(metrics.uniqueRatio >= 0.9, "Expected high unique ratio for varied transcript, got \(metrics.uniqueRatio)")
+    }
+
+    @Test func minThreeRepeatsRequiredForRepeatList() {
+        // Each content word appears exactly twice — below the 3-rep cutoff.
+        let transcript = """
+        structure structure clarity clarity delivery delivery composure composure
+        outcome outcome direction direction range range cadence cadence
+        phrasing phrasing emphasis emphasis economy economy substance substance
+        """
+        let metrics = WordChoiceMetrics.compute(transcript: transcript)
+        // Even though some words appear twice, none reach the 3-rep bar
+        // so the surfaced list is empty (avoids noisy false-positives).
+        #expect(metrics.repeatedContentWords.isEmpty)
+    }
+}
+
+struct PathNodePauseCriteriaTests {
+    @Test func heldSilentPauseRequiresUnfilledPause() {
+        // A long pause that was filled doesn't count.
+        let filled = sessionWithPauseMetrics(PauseMetrics(count: 1, meanSeconds: 2.0, longestSeconds: 2.0, filledRatio: 1.0))
+        let input = emptyProgressInput(sessions: [filled])
+        let progress = PathNodeCriterion.heldSilentPause(seconds: 1.5).progress(for: input)
+        #expect(progress == 0.0)
+    }
+
+    @Test func heldSilentPauseProgressesWithUnfilledLong() {
+        // Unfilled pause exactly at the bar.
+        let silent = sessionWithPauseMetrics(PauseMetrics(count: 1, meanSeconds: 1.5, longestSeconds: 1.5, filledRatio: 0))
+        let input = emptyProgressInput(sessions: [silent])
+        let progress = PathNodeCriterion.heldSilentPause(seconds: 1.5).progress(for: input)
+        #expect(progress == 1.0)
+    }
+
+    @Test func heldSilentPausePartialProgress() {
+        // Unfilled pause halfway to the bar.
+        let half = sessionWithPauseMetrics(PauseMetrics(count: 1, meanSeconds: 0.75, longestSeconds: 0.75, filledRatio: 0))
+        let input = emptyProgressInput(sessions: [half])
+        let progress = PathNodeCriterion.heldSilentPause(seconds: 1.5).progress(for: input)
+        #expect(abs(progress - 0.5) < 0.01)
+    }
+
+    @Test func cleanPauseSessionRequiresMinPauseCount() {
+        // Session with 0% filled ratio but only 1 pause — below the
+        // minPauses bar so doesn't trivially complete the node.
+        let single = sessionWithPauseMetrics(PauseMetrics(count: 1, meanSeconds: 1.0, longestSeconds: 1.0, filledRatio: 0))
+        let input = emptyProgressInput(sessions: [single])
+        let progress = PathNodeCriterion.cleanPauseSession(maxRatio: 0.25, minPauses: 3).progress(for: input)
+        #expect(progress == 0.0)
+    }
+
+    @Test func cleanPauseSessionPassesWithEnoughPauses() {
+        // 3 pauses, none filled — clears the bar.
+        let composed = sessionWithPauseMetrics(PauseMetrics(count: 3, meanSeconds: 0.8, longestSeconds: 1.2, filledRatio: 0))
+        let input = emptyProgressInput(sessions: [composed])
+        let progress = PathNodeCriterion.cleanPauseSession(maxRatio: 0.25, minPauses: 3).progress(for: input)
+        #expect(progress == 1.0)
+    }
+
+    @Test func cleanPauseSessionFailsAboveMaxRatio() {
+        // 4 pauses, half filled — above the 0.25 max.
+        let cluttered = sessionWithPauseMetrics(PauseMetrics(count: 4, meanSeconds: 0.8, longestSeconds: 1.2, filledRatio: 0.5))
+        let input = emptyProgressInput(sessions: [cluttered])
+        let progress = PathNodeCriterion.cleanPauseSession(maxRatio: 0.25, minPauses: 3).progress(for: input)
+        #expect(progress == 0.0)
     }
 }

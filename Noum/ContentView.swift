@@ -34,6 +34,7 @@ struct ContentView: View {
     @StateObject private var deferredCapture = DeferredProfileCaptureManager.shared
     @StateObject private var notificationPrePrompt = NotificationPrePromptManager.shared
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
+    @StateObject private var league = LeagueManager.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
@@ -184,6 +185,15 @@ struct ContentView: View {
         ) {
             CoachingOnboardingView()
         }
+        // Tier promotion celebration. Surfaces over the home with a
+        // tinted radial gradient + sparkle ribbon. Cleared when the
+        // user taps Continue or the backdrop.
+        .fullScreenCover(item: $league.pendingPromotion) { promotion in
+            TierPromotionOverlay(promotion: promotion) {
+                league.consumePendingPromotion()
+            }
+            .presentationBackground(.clear)
+        }
         .overlay {
             if showDailyGoalCelebration {
                 DailyGoalCelebration {
@@ -317,20 +327,111 @@ struct ContentView: View {
         return "Every rep makes you sharper"
     }
 
-    private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Hello, \(heroTitle)")
-                .font(Typography.sectionHero)
-                .foregroundStyle(.primary)
+    /// Time-of-day-aware greeting that feels like the coach is reading
+    /// the user's day, not just dropping a generic "Hello". Streak +
+    /// recency shape the variant chosen.
+    private var heroGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let streak = sessionStreak
+        // Lapsed user: name the absence first, before the time of day.
+        if daysSinceLastSession >= 3, !sessionStore.sessions.isEmpty {
+            return "Welcome back"
+        }
+        // Late-night reps: read the discipline.
+        if hour >= 22 || hour < 5 { return "Late rep" }
+        // Streak-aware morning frame.
+        if hour < 12 {
+            return streak >= 3 ? "Morning, day \(streak)" : "Good morning"
+        }
+        if hour < 17 { return "Good afternoon" }
+        return streak >= 3 ? "Evening, day \(streak)" : "Good evening"
+    }
 
-            Text(heroSubtitle)
-                .font(Typography.subheadline)
-                .foregroundStyle(.secondary)
+    /// Mood for the hero's coach character. Excited only on long
+    /// streaks (≥7 days) so the moment lands; everything else stays
+    /// calm to keep the home grounded.
+    private var heroCharacterMood: NoumCharacter.Mood {
+        sessionStreak >= 7 ? .excited : .calm
+    }
+
+    /// Tint for the hero's gradient. Alive streak pulls toward brand
+    /// blue; lapsed users get a softer tint so the surface doesn't
+    /// shame them on a return rep.
+    private var heroGradientTint: Color {
+        let streak = sessionStreak
+        if daysSinceLastSession >= 3 { return AppColor.brandBlue.opacity(0.6) }
+        if streak >= 7 { return AppColor.brandBlue }
+        if streak >= 3 { return AppColor.brandBlue.opacity(0.85) }
+        return AppColor.brandBlue.opacity(0.7)
+    }
+
+    private var heroCard: some View {
+        let collapseFactor = max(0, 1 + (homeScrollOffset / 42))
+        return ZStack(alignment: .topLeading) {
+            // Soft tinted gradient. Subtler than a full card so the
+            // hero feels like a header, not a banner ad.
+            LinearGradient(
+                colors: [
+                    heroGradientTint.opacity(0.10),
+                    heroGradientTint.opacity(0.02)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+
+            // Coach character. Composes SF Symbols (waveform + halo +
+            // glow) into a presence that breathes. Mood adapts to streak
+            // state — excited when on a streak, calm otherwise. Per the
+            // design rules: motion + color + shape, no illustration.
+            NoumCharacter(
+                mood: heroCharacterMood,
+                tint: heroGradientTint,
+                size: 76
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.trailing, Spacing.sm)
+            .padding(.top, -10)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text("\(heroGreeting), \(heroTitle)")
+                        .font(Typography.sectionHero)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if sessionStreak > 0 {
+                        streakChip(streak: sessionStreak)
+                    }
+                }
+                Text(heroSubtitle)
+                    .font(Typography.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: max(0, 64 + min(0, homeScrollOffset)))
-        .opacity(max(0, 1 + (homeScrollOffset / 42)))
+        .frame(height: max(0, 104 + min(0, homeScrollOffset)))
+        .opacity(collapseFactor)
         .clipped()
+    }
+
+    private func streakChip(streak: Int) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "flame.fill")
+                .font(.caption2.weight(.bold))
+            Text("\(streak)")
+                .font(.caption.weight(.bold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.standardSpring, value: streak)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.orange.opacity(0.12), in: Capsule(style: .continuous))
+        .accessibilityLabel("\(streak)-day streak")
     }
 
     // MARK: - First Session

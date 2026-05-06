@@ -80,18 +80,18 @@ struct FirstRepCelebration: View {
     // MARK: - Subviews
 
     private var pulseBadge: some View {
+        // The first finished rep is the highest-emotion moment in the
+        // app, so the coach character lands on the .excited state — the
+        // bouncy spring + sparkle ring are exactly what this moment
+        // wants. White tint reads against the brand-blue celebration
+        // gradient backdrop.
         ZStack {
             Circle()
                 .stroke(Color.white.opacity(0.16), lineWidth: 2)
-                .frame(width: 140, height: 140)
+                .frame(width: 160, height: 160)
                 .scaleEffect(pulseScale)
                 .opacity(2 - pulseScale)
-            Circle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 110, height: 110)
-            Image(systemName: "waveform.and.mic")
-                .font(.system(size: 44, weight: .bold))
-                .foregroundStyle(.white)
+            NoumCharacter(mood: .excited, tint: .white, size: 110)
         }
     }
 

@@ -39,6 +39,7 @@ struct SettingsView: View {
     @State private var showPaywall = false
     @State private var showYourData = false
     @State private var showPrivacyPolicy = false
+    @State private var showSoundscape = false
     @State private var showSignOutAlert = false
     @State private var showDeleteSheet = false
     @State private var debugMessage: String?
@@ -58,6 +59,7 @@ struct SettingsView: View {
                     profileHero
 
                     section(label: "Practice") { practiceCard }
+                    section(label: "Pre-rep prep") { soundscapeCard }
                     section(label: "Coaching") { coachingProfileCard }
                     section(label: "Feedback") { feedbackCard }
                     section(label: "Subscription") { subscriptionCard }
@@ -118,6 +120,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showPrivacyPolicy) {
             PrivacyPolicyView()
+        }
+        .sheet(isPresented: $showSoundscape) {
+            SoundscapePickerView()
         }
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
@@ -403,6 +408,22 @@ struct SettingsView: View {
         .accessibilityLabel("\(difficulty.title) difficulty")
         .accessibilityHint(difficulty.subtitle)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - Soundscape Card
+
+    private var soundscapeCard: some View {
+        let mode = SoundscapeSettings.savedMode
+        return cardContainer(spacing: Spacing.sm) {
+            SettingsNavRow(
+                title: "Pre-rep ambience",
+                value: mode == .off ? "Off" : mode.title,
+                icon: mode.symbolName,
+                accessibilityHint: "Pick an ambient texture that plays during the pre-rep countdown."
+            ) {
+                showSoundscape = true
+            }
+        }
     }
 
     // MARK: - Coaching Profile Card

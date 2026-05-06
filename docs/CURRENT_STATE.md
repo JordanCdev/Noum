@@ -152,6 +152,23 @@ _Last updated: 2026-05-04_
   freeze; protects the streak across one missed day per ISO week.
   Wires the app icon badge through `UNUserNotificationCenter.setBadgeCount`
   (passively gated on authorization, never triggers a prompt).
+- `Noum/Noum/NoumCharacter.swift` — abstract speaker-character composed
+  from SF Symbols (waveform variants + halos + glow), four moods (calm /
+  listening / excited / coaching), state-specific accents (sparkle ribbon
+  on excited, symmetric arc-pulses on listening, slight tilt on coaching).
+  Used on the home hero, FirstRepCelebration, and ProfileView header.
+  Brand-rule compliant: motion + color + shape, no illustration.
+- `Noum/Noum/SoundscapeEngine.swift` + `Noum/Noum/SoundscapePickerView.swift`
+  — pre-rep ambience generator (`AVAudioSourceNode`-based pink/brown
+  noise + sine drones), 4 modes (Off/Focus/Calm/Steady), Pro-gated for
+  non-Off modes. Wired into Timed thinking-window, AhCounter launch
+  countdown, and SuddenDeath countdown phase. Cuts the moment recording
+  starts so it never bleeds onto the rep.
+- `Noum/Noum/TierPromotionOverlay.swift` — full-screen tier-up
+  celebration (Bronze→Silver, etc.). Detected by `LeagueManager` via
+  `lastSeenTier` persistence; fires through `fullScreenCover(item:)` so
+  promotions earned mid-session show on next home open. First-launch
+  guard prevents false promotion celebrations on brand-new installs.
 - `Noum/Noum/FirstRepCelebration.swift` + `Noum/Noum/ConfettiLayer.swift`
   — first-rep moment: full-screen overlay + share sheet rendered via
   `ImageRenderer`. Fires once, persists per-account.

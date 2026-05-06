@@ -5456,6 +5456,7 @@ struct PracticeSessionDraft {
     let transcriptionProvider: String?
     let pressureLevel: PressureLevel
     let isRated: Bool
+    let pauseMetrics: PauseMetrics?
 
     init(
         transcript: String,
@@ -5467,7 +5468,8 @@ struct PracticeSessionDraft {
         transcriptConfidence: Double? = nil,
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
-        isRated: Bool = false
+        isRated: Bool = false,
+        pauseMetrics: PauseMetrics? = nil
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -5479,6 +5481,7 @@ struct PracticeSessionDraft {
         self.transcriptionProvider = transcriptionProvider
         self.pressureLevel = pressureLevel
         self.isRated = isRated
+        self.pauseMetrics = pauseMetrics
     }
 }
 
@@ -5544,7 +5547,8 @@ final class PracticeSessionStore: ObservableObject {
             transcriptConfidence: draft.transcriptConfidence,
             transcriptionProvider: draft.transcriptionProvider,
             pressureLevel: draft.pressureLevel,
-            isRated: draft.isRated
+            isRated: draft.isRated,
+            pauseMetrics: draft.pauseMetrics
         )
         sessions.insert(session, at: 0)
         persist()

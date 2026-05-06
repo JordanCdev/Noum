@@ -79,6 +79,13 @@ enum PathNodeCriterion {
     case cleanRunsInWindow(_ count: Int, minScore: Int)
     case totalLessonCrowns(Int)
     case anyLessonMastered
+    /// User has held a single silent pause of at least `seconds` in any
+    /// session. "Silent" = the pause was unfilled (no disfluency inside it).
+    case heldSilentPause(seconds: Double)
+    /// At least one session has a pause-fill ratio at or below `maxRatio`
+    /// (lower = more composed pauses). Requires a session with ≥ 2 pauses
+    /// so a single deliberate pause doesn't trivially complete the node.
+    case cleanPauseSession(maxRatio: Double, minPauses: Int)
 
     func progress(for input: PathProgressInput) -> Double {
         switch self {
@@ -123,6 +130,24 @@ enum PathNodeCriterion {
             return clamp(input.totalLessonCrowns, target)
         case .anyLessonMastered:
             return input.maxLessonCrown >= 5 ? 1.0 : Double(input.maxLessonCrown) / 5.0
+        case .heldSilentPause(let target):
+            // Best longest-pause across sessions where the pause was
+            // unfilled (filledRatio == 0). Sessions whose longest pause
+            // happened to be filled don't contribute even if the duration
+            // hits the bar — the goal is silent composure.
+            let bestSilent = input.sessions
+                .compactMap { s -> Double? in
+                    guard let m = s.pauseMetrics, m.count > 0, m.filledRatio == 0 else { return nil }
+                    return m.longestSeconds
+                }
+                .max() ?? 0
+            return min(1.0, bestSilent / target)
+        case .cleanPauseSession(let maxRatio, let minPauses):
+            let any = input.sessions.contains { s in
+                guard let m = s.pauseMetrics, m.count >= minPauses else { return false }
+                return m.filledRatio <= maxRatio
+            }
+            return any ? 1.0 : 0.0
         }
     }
 
@@ -393,6 +418,34 @@ enum PathNodeRegistry {
                 symbolName: "rosette"
             ),
             .anyLessonMastered
+        ),
+        (
+            PathNode(
+                id: "held_silent_pause",
+                order: 18,
+                tier: .gold,
+                title: "Hold a silent beat",
+                detail: "Hold a single silent pause of 1.5 seconds or longer in any rep.",
+                coachLine: "Silence reads as composure. One held beat shows you're choosing the moment, not searching for it.",
+                actionLabel: "Start a rep",
+                actionDestination: .practiceSelection,
+                symbolName: "pause.circle.fill"
+            ),
+            .heldSilentPause(seconds: 1.5)
+        ),
+        (
+            PathNode(
+                id: "clean_pause_session",
+                order: 19,
+                tier: .platinum,
+                title: "Composed pauses",
+                detail: "Land a session with three or more pauses, fewer than 25% filled with disfluency.",
+                coachLine: "Composed delivery isn't no pauses — it's pauses that sound chosen. This is the bar.",
+                actionLabel: "Start a rep",
+                actionDestination: .practiceSelection,
+                symbolName: "waveform.path"
+            ),
+            .cleanPauseSession(maxRatio: 0.25, minPauses: 3)
         )
     ]
 }

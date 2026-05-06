@@ -85,6 +85,22 @@ enum LeagueTier: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+// MARK: - Tier Promotion
+
+/// Captures a tier-up event so the home screen can celebrate it on next
+/// open. Codable so it survives across launches — a rating bump
+/// mid-session shouldn't get swallowed by a sudden app close.
+struct TierPromotion: Codable, Equatable, Identifiable {
+    let previousTier: LeagueTier
+    let newTier: LeagueTier
+    let date: Date
+
+    /// The new tier's raw value is enough to identify the event for
+    /// SwiftUI's `fullScreenCover(item:)` — only one promotion is
+    /// pending at a time per account.
+    var id: String { newTier.rawValue }
+}
+
 // MARK: - League Manager
 
 #if canImport(SwiftUI)
@@ -108,6 +124,15 @@ final class LeagueManager: ObservableObject {
     @Published private(set) var bucketKey: String = ""
     @Published private(set) var lastFetchedAt: Date?
     @Published private(set) var isLoading: Bool = false
+    /// Tier-promotion event waiting to be celebrated. Set when the user's
+    /// rating crosses up into a new tier; cleared once the home screen
+    /// has shown the celebration overlay. Persisted across launches so a
+    /// promotion mid-session shows on next app open, not silently.
+    @Published var pendingPromotion: TierPromotion?
+
+    private let lastSeenTierKey = "league.lastSeenTier"
+    private let lastSeenTierInitializedKey = "league.lastSeenTierInitialized"
+    private let pendingPromotionKey = "league.pendingPromotion"
 
     private static let refreshThrottle: TimeInterval = 60
     private var lastFetchAttempt: Date?
@@ -115,6 +140,7 @@ final class LeagueManager: ObservableObject {
     private var ratingSubscription: AnyCancellable?
 
     private init() {
+        loadPendingPromotion()
         recomputeTierAndBucket()
         observeStateChanges()
     }
@@ -122,17 +148,72 @@ final class LeagueManager: ObservableObject {
     // MARK: - Public API
 
     /// Recompute the tier/bucket from the current rating. Called when the
-    /// user's rating changes or a new ISO week starts.
+    /// user's rating changes or a new ISO week starts. Detects upward
+    /// tier crossings and queues a promotion celebration.
     func recomputeTierAndBucket() {
         let newTier = LeagueTier.tier(for: RatingStore.shared.rating.overall)
         let newBucket = Self.bucketKey(for: newTier, on: Date())
         let bucketChanged = newBucket != bucketKey
+
+        // First-ever launch: stamp the user's current tier without
+        // queuing a celebration. Otherwise every new install with a
+        // mid-tier seeded rating would trigger "Promoted to Silver" on
+        // open, which is a lie (they didn't earn it just now).
+        if !UserDefaults.standard.bool(forKey: lastSeenTierInitializedKey) {
+            persistLastSeenTier(newTier)
+            UserDefaults.standard.set(true, forKey: lastSeenTierInitializedKey)
+        } else {
+            // Detect promotion: only fire on upward crossings, never on
+            // demotion (downward changes happen quietly so we don't
+            // shame a user whose rating dipped).
+            let lastSeen = lastSeenTier()
+            if newTier.ratingFloor > lastSeen.ratingFloor {
+                queuePromotion(from: lastSeen, to: newTier)
+            }
+            persistLastSeenTier(newTier)
+        }
+
         tier = newTier
         bucketKey = newBucket
         if bucketChanged {
             members = []
             lastFetchedAt = nil
         }
+    }
+
+    /// Mark the pending promotion as consumed. Called by the home screen
+    /// once the celebration overlay has been shown and dismissed.
+    func consumePendingPromotion() {
+        pendingPromotion = nil
+        UserDefaults.standard.removeObject(forKey: pendingPromotionKey)
+    }
+
+    private func queuePromotion(from previous: LeagueTier, to next: LeagueTier) {
+        let promotion = TierPromotion(previousTier: previous, newTier: next, date: Date())
+        pendingPromotion = promotion
+        if let data = try? JSONEncoder().encode(promotion) {
+            UserDefaults.standard.set(data, forKey: pendingPromotionKey)
+        }
+    }
+
+    private func lastSeenTier() -> LeagueTier {
+        guard let raw = UserDefaults.standard.string(forKey: lastSeenTierKey),
+              let tier = LeagueTier(rawValue: raw) else {
+            return .bronze
+        }
+        return tier
+    }
+
+    private func persistLastSeenTier(_ tier: LeagueTier) {
+        UserDefaults.standard.set(tier.rawValue, forKey: lastSeenTierKey)
+    }
+
+    private func loadPendingPromotion() {
+        guard let data = UserDefaults.standard.data(forKey: pendingPromotionKey),
+              let promotion = try? JSONDecoder().decode(TierPromotion.self, from: data) else {
+            return
+        }
+        pendingPromotion = promotion
     }
 
     /// Write the user's membership in the current bucket. Caller passes in

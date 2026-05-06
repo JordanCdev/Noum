@@ -758,7 +758,7 @@ private struct SessionHistoryDetailView: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(width: 22, height: 22)
-                        .background(Color.blue, in: Circle())
+                        .background(AppColor.brandBlue, in: Circle())
                     Text(insight)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

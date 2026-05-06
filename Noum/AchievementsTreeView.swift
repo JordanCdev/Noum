@@ -88,6 +88,8 @@ struct AchievementsTreeView: View {
                 Text("\(unlockedCount) of \(totalCount)")
                     .font(Typography.bigStat.monospacedDigit())
                     .foregroundStyle(AppColor.textPrimary)
+                    .contentTransition(.numericText())
+                    .animation(.standardSpring, value: unlockedCount)
 
                 Text("achievements unlocked")
                     .font(Typography.caption)
@@ -104,6 +106,16 @@ struct AchievementsTreeView: View {
             }
 
             Spacer(minLength: 0)
+
+            // Coach character anchors the right side. Mood scales with
+            // progress: excited once half the achievements are unlocked,
+            // coaching otherwise (reads as "still teaching you").
+            NoumCharacter(
+                mood: overallFraction >= 0.5 ? .excited : .coaching,
+                tint: AppColor.brandBlue,
+                size: 56
+            )
+            .accessibilityHidden(true)
         }
         .padding(Spacing.lg)
         .background(

@@ -882,6 +882,11 @@ struct SuddenDeathPracticeView: View {
             startLiveActivityIfNeeded()
         }
         switch newPhase {
+        case .countdown:
+            // Pre-rep ambience runs only through the countdown so it
+            // never bleeds into the rep itself or the NPC's turn.
+            SoundscapeEngine.shared.startPreferredMode()
+
         case .npcTurn:
             // Reset transcript for new round
             speechVM.stopRecording()
@@ -893,13 +898,16 @@ struct SuddenDeathPracticeView: View {
             startTypingAnimation()
 
         case .userTurnWaiting:
-            // Start recording for this round
+            // Start recording for this round; cut soundscape if it's
+            // still running so it doesn't compete with the user's voice.
+            SoundscapeEngine.shared.stop()
             speechVM.prepareSession(mode: .suddenDeath)
             speechVM.pressureDrillPrompt = engine.currentPromptText
             speechVM.startRecording()
 
         case .sessionComplete(let result):
             speechVM.stopRecording()
+            SoundscapeEngine.shared.stop()
             finalizeSession(result: result)
 
         default:
@@ -956,7 +964,8 @@ struct SuddenDeathPracticeView: View {
                 date: Date(),
                 mode: .suddenDeath,
                 pressureLevel: pressure,
-                isRated: pressureOn
+                isRated: pressureOn,
+                pauseMetrics: speechVM.currentSessionPauseMetrics()
             ),
             annotation: PracticeSessionAnnotation(
                 score: result.score,
