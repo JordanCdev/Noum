@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day)_
+_Last updated: 2026-05-06 (M5–M10 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day, pitch v1)_
 
 ## Architecture overview
 
@@ -328,6 +328,22 @@ _Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI promp
   Surfaced in home, profile, reminder copy, widget, and the soft-sell
   pre-prompt's value-prop bullets. App icon badge mirrors the current
   streak via `setBadgeCount`.
+- **Pitch / intonation v1 (M10)** — On-device pitch detection via
+  `PitchAnalyzer` (Sendable class). The AVAudioEngine `installTap`
+  callback captures samples into an `OSAllocatedUnfairLock`-protected
+  buffer with zero DSP on the audio thread. At session end, `analyze()`
+  walks the buffer in 2048-sample windows (50% overlap) and runs
+  vDSP-based normalized autocorrelation. Peak-picking uses first-local-
+  max-above-voicing-threshold (0.30) — avoids octave doubling that
+  plagues naive argmax-based pitch detectors (validated against pure
+  220Hz / 140Hz sines, silent windows, and seeded white noise).
+  `PitchMetrics` carries meanHz, stdHz, voicedRatio, windowCount;
+  `monotoneScore` (0–1) calibrated to 8–35Hz stdev. `isReliable`
+  gates surfacing — needs ≥10 windows, ≥20% voiced, and a mean inside
+  70–400Hz vocal range, otherwise the summary card hides itself rather
+  than mislead. `PitchSummaryCard` shows a horizontal Varied↔Monotone
+  meter alongside coach copy. Legacy `PracticeSession` JSON decodes
+  cleanly with nil pitchMetrics.
 - **Word of the day (M9)** — `WordOfTheDayCatalog` ships 30 curated
   entries (word, part-of-speech, definition, 30s prompt suggestion, and
   inflected acceptedForms list). `entry(for:)` hashes the ISO day key

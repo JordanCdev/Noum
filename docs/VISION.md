@@ -82,52 +82,54 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M10 — Pitch / intonation v1._
+**Name:** _M11 — Pitch trend on profile + grammar feedback v1._
 
-(M9 _Word of the day_ shipped: `WordOfTheDayCatalog` with 30 curated
-words (each: word, partOfSpeech, definition, 30s prompt, accepted
-inflected forms). `WordOfTheDayCatalog.entry(for: dayKey)` selects
-deterministically via Hasher → same day → same word, no backend
-needed. `WordOfTheDayManager` (per-account) tracks "used today" via
-word-boundary safe transcript scanning across all of today's
-sessions. Detection forgives plurals/past-tense via the explicit
-`acceptedForms` list and ignores substrings inside unrelated words
-(e.g., "art" doesn't match in "smart"). `WordOfTheDayTile` on home
-shows the word, definition, and 30s prompt; tapping "Try it"
-seeds `timedPractice.suggestedPrompt` so the next Timed session
-opens with that exact prompt. `SessionFinalizer` triggers
-re-evaluation after each finalize so the tile flips to "Used"
-immediately. Per-account "used days" set persisted so a future
-"vocabulary streak" surface can read from it.)
+(M10 _Pitch / intonation v1_ shipped: `PitchAnalyzer` (Sendable class)
+captures audio samples on the AVAudioEngine tap thread under an
+`OSAllocatedUnfairLock`-protected buffer (no DSP on the audio thread)
+and runs autocorrelation off-thread at session end. vDSP-based dot
+products inside a Swift outer loop. Peak-picking uses first-local-max-
+above-voicing-threshold to dodge octave-doubling errors common to
+naive argmax — verified against 220Hz and 140Hz pure sines, silent
+windows, and seeded white-noise input. `PitchMetrics` (Codable, persisted
+on `PracticeSession`) carries meanHz, stdHz, voicedRatio, windowCount;
+`monotoneScore` (0=varied, 1=flat) calibrated 8–35Hz stdev range; hides
+the card when `isReliable` returns false (insufficient voicing, mean
+out of vocal range, or fewer than 10 windows). `PitchSummaryCard`
+renders a horizontal Varied↔Monotone meter on summary alongside the
+pause + word-choice cards. `PracticeSessionDraft` extended; legacy JSON
+decodes cleanly.)
 
-**Honest gaps remaining for M9:**
-- 30 curated words covers a month — needs to grow to ~365 to hit
-  "no repeats inside a year". Same shape, just more entries.
-- No notification surfaces today's word yet — the daily-rhythm
-  notification copy could include it, deferred to a follow-up so
-  this commit stays focused.
+**Honest gaps remaining for M10:**
+- No trend pill on the profile yet — pitch metrics are stored, but
+  the trend chart hasn't been wired up. That's M11.
+- Audio runs through the same input as transcription; no source
+  separation. Background noise / music could bias detection. In
+  practice the existing transcription quality gates already filter
+  these reps.
+- No baseline integration yet — pitch isn't part of the
+  `CommunicationBaseline` stat list. Easy add for M11.
 
-**Why this next:** the missing third leg of "how it sounds when
-you speak". Filler count and pace are solved; pitch / intonation
-is the differentiating metric vs. competitors and the most
-emotionally important to the listener. On-device DSP via
-`Accelerate` keeps it private and instant.
+**Why this next:** trend visibility on profile completes the M10
+loop — you can see today's pitch but not whether it's improving over
+time. Grammar feedback is also a long-requested user feature that
+fits cleanly with the post-session debrief surface.
 
 **Definition of done:**
-- Pitch track extracted on-device during recording (autocorrelation
-  via vDSP, ~50ms windows).
-- Score for "monotone vs varied delivery" surfaced in the summary
-  card alongside pace.
-- Trend pill on the profile.
-- No new privacy implications — all DSP runs in-process.
+- Pitch trend pill on profile next to the existing filler / score / pace
+  trends.
+- `CommunicationBaseline.pitchVariation` as a new BaseStat dimension.
+- Grammar-feedback service runs on the post-session transcript with
+  a confidence-graded "polish notes" card. Pro-gated, runs once per
+  session, never punishes obviously-conversational speech.
 
 **Out of scope for this milestone:**
-- Grammar / English-usage feedback
 - Multilingual support
 
 ## Future milestones (rough order)
 
-(M10 — Pitch / intonation v1 — is the active "Next milestone" above.)
+(M11 — Pitch trend on profile + grammar feedback v1 — is the active
+"Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

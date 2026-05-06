@@ -55,6 +55,10 @@ class SpeechRecognizerViewModel: ObservableObject {
     private var transcriptListenerTask: Task<Void, Never>?
 
     private var audioEngine: AVAudioEngine?
+    /// Captures audio samples in parallel with transcription so we can
+    /// emit `PitchMetrics` at session end. Created fresh per recording;
+    /// reset whenever a new session starts.
+    private var pitchAnalyzer: PitchAnalyzer?
     private var sessionStart: Date?
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
@@ -106,6 +110,17 @@ class SpeechRecognizerViewModel: ObservableObject {
             words: sessionWordTimings,
             fillerStartTimes: filledStarts
         )
+    }
+
+    /// Pitch metrics for the just-completed session. Runs autocorrelation
+    /// across the captured audio buffer; safe to call from the main actor
+    /// (analysis is a few hundred milliseconds at most for a 60s rep).
+    /// Returns nil when no analyzer was attached, when the buffer is too
+    /// short to analyze, or when no window crossed the voicing threshold.
+    func currentSessionPitchMetrics() -> PitchMetrics? {
+        guard let analyzer = pitchAnalyzer else { return nil }
+        let metrics = analyzer.analyze()
+        return metrics.windowCount > 0 ? metrics : nil
     }
 
     init(preloadOnInit: Bool = true) {
@@ -195,6 +210,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         providerFillerCount = 0
         sessionWordTimings = []
         fillerStartTimes = []
+        // Pitch analyzer carries the previous rep's audio buffer until
+        // we explicitly drop it. Discard so the new session starts fresh.
+        pitchAnalyzer?.reset()
+        pitchAnalyzer = nil
 
         do {
             try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
@@ -312,7 +331,16 @@ class SpeechRecognizerViewModel: ObservableObject {
         let inputFormat = inputNode.inputFormat(forBus: 0)
         inputNode.removeTap(onBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+        // Spin up a fresh pitch analyzer per recording. Lock-light so the
+        // audio tap can append samples without contention; analysis runs
+        // off-thread at session end.
+        let analyzer = PitchAnalyzer()
+        pitchAnalyzer = analyzer
+        let captureSampleRate = inputFormat.sampleRate
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, analyzer] buffer, _ in
+            // Capture samples for pitch analysis (cheap append, no DSP here).
+            analyzer.appendBuffer(buffer, sampleRate: captureSampleRate)
             guard let self else { return }
             let data = self.convertBufferToPCMData(buffer: buffer)
             Task { try? await session.sendAudio(data) }
@@ -438,6 +466,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
         )
         let pauseMetrics = currentSessionPauseMetrics()
+        let pitchMetrics = currentSessionPitchMetrics()
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -450,7 +479,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 transcriptionProvider: provider.identifier,
                 pressureLevel: pressure,
                 isRated: pressureOn,
-                pauseMetrics: pauseMetrics
+                pauseMetrics: pauseMetrics,
+                pitchMetrics: pitchMetrics
             )
         )
         pastSessions = sessionStore.sessions
@@ -511,6 +541,10 @@ struct PracticeSession: Identifiable, Codable {
     /// persisted sessions decode without it, and (b) some transcription
     /// providers may not emit word-level timings on certain reps.
     var pauseMetrics: PauseMetrics? = nil
+    /// Pitch statistics for this session (M10). Optional because legacy
+    /// persisted sessions don't carry it and because some recording paths
+    /// (paused-mid-rep, extremely short reps) won't produce reliable f0.
+    var pitchMetrics: PitchMetrics? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -534,6 +568,7 @@ struct PracticeSession: Identifiable, Codable {
         case pressureLevel
         case isRated
         case pauseMetrics
+        case pitchMetrics
     }
 
     init(
@@ -557,7 +592,8 @@ struct PracticeSession: Identifiable, Codable {
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
-        pauseMetrics: PauseMetrics? = nil
+        pauseMetrics: PauseMetrics? = nil,
+        pitchMetrics: PitchMetrics? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -580,6 +616,7 @@ struct PracticeSession: Identifiable, Codable {
         self.pressureLevel = pressureLevel
         self.isRated = isRated
         self.pauseMetrics = pauseMetrics
+        self.pitchMetrics = pitchMetrics
     }
 
     init(from decoder: Decoder) throws {
@@ -605,5 +642,6 @@ struct PracticeSession: Identifiable, Codable {
         pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
+        pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
     }
 }

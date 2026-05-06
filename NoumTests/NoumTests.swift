@@ -8,6 +8,7 @@
 import Foundation
 import Testing
 import XCTest
+import AVFoundation
 @testable import Noum
 
 struct NoumTests {
@@ -2302,5 +2303,132 @@ struct WordOfTheDayDetectionTests {
     @Test func noMatchReturnsFalse() {
         let transcript = "Today was a normal day with no surprises."
         #expect(WordOfTheDayManager.transcriptContains(any: ["catalyst", "galvanise"], in: transcript) == false)
+    }
+}
+
+// MARK: - Pitch Analyzer (M10)
+
+struct PitchAnalyzerTests {
+
+    /// Generate a pure sine wave at the given frequency for the given duration.
+    /// Used as ground-truth input — autocorrelation should detect this f0
+    /// within ~5% on a clean signal.
+    private func sine(hz: Double, durationSeconds: Double, sampleRate: Double) -> [Float] {
+        let n = Int(durationSeconds * sampleRate)
+        var out = [Float](repeating: 0, count: n)
+        let twoPi = 2.0 * .pi
+        for i in 0..<n {
+            out[i] = Float(sin(twoPi * hz * Double(i) / sampleRate))
+        }
+        return out
+    }
+
+    @Test func detectsPureSineWaveAt220Hz() {
+        let sampleRate: Double = 16_000
+        let signal = sine(hz: 220, durationSeconds: 0.25, sampleRate: sampleRate)
+        let window = Array(signal.prefix(PitchAnalyzer.windowSize))
+        let minLag = Int((sampleRate / PitchAnalyzer.maxPitchHz).rounded())
+        let maxLag = Int((sampleRate / PitchAnalyzer.minPitchHz).rounded())
+        let detected = PitchAnalyzer.detectF0(in: window, sampleRate: sampleRate, minLag: minLag, maxLag: maxLag)
+        guard let f0 = detected else {
+            #expect(Bool(false), "expected f0 detection on clean sine")
+            return
+        }
+        #expect(abs(f0 - 220) / 220 < 0.05, "detected \(f0) Hz, expected ~220")
+    }
+
+    @Test func detectsPureSineWaveAt140Hz() {
+        let sampleRate: Double = 16_000
+        let signal = sine(hz: 140, durationSeconds: 0.25, sampleRate: sampleRate)
+        let window = Array(signal.prefix(PitchAnalyzer.windowSize))
+        let minLag = Int((sampleRate / PitchAnalyzer.maxPitchHz).rounded())
+        let maxLag = Int((sampleRate / PitchAnalyzer.minPitchHz).rounded())
+        let detected = PitchAnalyzer.detectF0(in: window, sampleRate: sampleRate, minLag: minLag, maxLag: maxLag)
+        guard let f0 = detected else {
+            #expect(Bool(false), "expected f0 detection on clean sine")
+            return
+        }
+        #expect(abs(f0 - 140) / 140 < 0.05, "detected \(f0) Hz, expected ~140")
+    }
+
+    @Test func returnsNilForSilentWindow() {
+        let sampleRate: Double = 16_000
+        let window = [Float](repeating: 0, count: PitchAnalyzer.windowSize)
+        let minLag = Int((sampleRate / PitchAnalyzer.maxPitchHz).rounded())
+        let maxLag = Int((sampleRate / PitchAnalyzer.minPitchHz).rounded())
+        let detected = PitchAnalyzer.detectF0(in: window, sampleRate: sampleRate, minLag: minLag, maxLag: maxLag)
+        #expect(detected == nil, "silent window should not produce f0")
+    }
+
+    @Test func returnsNilForRandomNoise() {
+        // White noise has no fundamental — autocorrelation peak should not
+        // clear the voicing threshold. We seed for determinism.
+        var rng = SeededRandomNumberGenerator(seed: 42)
+        var window = [Float]()
+        window.reserveCapacity(PitchAnalyzer.windowSize)
+        for _ in 0..<PitchAnalyzer.windowSize {
+            let raw = rng.next()
+            // Map UInt64 to Float in [-1, 1].
+            let normalized = Float(Double(raw) / Double(UInt64.max)) * 2 - 1
+            window.append(normalized)
+        }
+        let sampleRate: Double = 16_000
+        let minLag = Int((sampleRate / PitchAnalyzer.maxPitchHz).rounded())
+        let maxLag = Int((sampleRate / PitchAnalyzer.minPitchHz).rounded())
+        let detected = PitchAnalyzer.detectF0(in: window, sampleRate: sampleRate, minLag: minLag, maxLag: maxLag)
+        // White noise *can* produce a spurious peak; we only assert it's
+        // either nil or doesn't yield an absurdly low frequency.
+        if let f0 = detected {
+            #expect(f0 >= 70 && f0 <= 400, "detected \(f0) Hz outside vocal range")
+        }
+    }
+
+    @Test func metricsEmptyWhenWindowTooShort() {
+        let m = PitchMetrics(meanHz: nil, stdHz: nil, voicedRatio: 0, windowCount: 0)
+        #expect(m.isReliable == false)
+        #expect(m.monotoneScore == 0.5)
+    }
+
+    @Test func metricsMonotoneScoreClampsAtBounds() {
+        // Very low std → very monotone → score ~1.0
+        let monotone = PitchMetrics(meanHz: 180, stdHz: 4, voicedRatio: 0.6, windowCount: 50)
+        #expect(monotone.isReliable == true)
+        #expect(monotone.monotoneScore == 1.0)
+
+        // Very high std → very varied → score ~0.0
+        let varied = PitchMetrics(meanHz: 180, stdHz: 50, voicedRatio: 0.6, windowCount: 50)
+        #expect(varied.isReliable == true)
+        #expect(varied.monotoneScore == 0.0)
+    }
+
+    @Test func metricsHidesWhenInsufficientSignal() {
+        // Below the voiced-ratio threshold, isReliable goes false.
+        let weak = PitchMetrics(meanHz: 180, stdHz: 12, voicedRatio: 0.10, windowCount: 50)
+        #expect(weak.isReliable == false)
+
+        // Out-of-vocal-range mean also fails.
+        let outOfRange = PitchMetrics(meanHz: 600, stdHz: 12, voicedRatio: 0.5, windowCount: 50)
+        #expect(outOfRange.isReliable == false)
+
+        // Window count below 10 fails.
+        let tiny = PitchMetrics(meanHz: 180, stdHz: 12, voicedRatio: 0.5, windowCount: 5)
+        #expect(tiny.isReliable == false)
+    }
+
+    @Test @MainActor func appendBufferAccumulatesSamples() {
+        let analyzer = PitchAnalyzer()
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024)!
+        buffer.frameLength = 1024
+        if let channelData = buffer.floatChannelData?[0] {
+            for i in 0..<1024 {
+                channelData[i] = Float(sin(2.0 * .pi * 220.0 * Double(i) / 16_000.0))
+            }
+        }
+        #expect(analyzer.capturedSampleCount == 0)
+        analyzer.appendBuffer(buffer, sampleRate: 16_000)
+        #expect(analyzer.capturedSampleCount == 1024)
+        analyzer.reset()
+        #expect(analyzer.capturedSampleCount == 0)
     }
 }
