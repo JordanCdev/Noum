@@ -82,38 +82,47 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M7 — AI-driven topic prompts (recurrence-aware)._
+**Name:** _M8 — Daily-challenge rhythm v1._
 
-(M6 _High-score & rivalry surface — peak-rating wall_ shipped client-side:
-`SpeakingRating.weekPeakRating` + `weekPeakISOWeek/Year` with automatic
-ISO-week boundary reset (no carry-over of last-week's peak); legacy
-JSON decodes cleanly. `PeakRatingWallCard` on `ProfileView` shows
-**Best ever** / **Best this week** / **Best in friends** — never fakes
-data: friends without linked accounts say "Awaiting sync"; user's own
-"now" badge only appears if currently at peak. `NoumFriend.lastKnownPeakRating`
-synced from `PublicProfileSnapshot.peakRating`.
+(M7 _AI-driven topic prompts — recurrence-aware_ shipped client-side:
+`AIPromptGeneratorService` actor mirrors the GoalParaphraseService
+provider plumbing (Gemini / OpenAI / DeepSeek). 70/30 mix between the
+curated 200-prompt pool and AI generation, gated by 14-day per-account
+dedup via `PromptHistoryStore`. Strict 3-second latency budget on the
+AI hop — falls back to the pool on any failure or timeout so the user
+never waits noticeably. Deterministic content filter (`PromptContentFilter`)
+rejects directives, missing terminal `?`, length out of bounds, PII
+shapes, and chained exclamations. Generated prompts are biased by the
+user's `CoachingPriority` + weakest baseline dimension; theme bias is
+applied to pool fallbacks too. Wired into `TimedPracticeView`
+(beginSession + newPromptSession + onAppear seed) and
+`SuddenDeathPracticeView` (beginSession + retrySession). Mini-drills
+and async-challenge prompts intentionally retain the deterministic
+`PracticeTopics.random()` / `seeded(by:)` paths.)
 
-**Honest gaps remaining for full M6:**
-- "Best in current league bucket" (peer max within `LeagueManager.members`)
-  needs `FIRESTORE_RULES.md` deployed before peer reads return real data.
-  Card already handles empty `members` correctly today.
-- No share-out from peak card yet — adding share sheet would let users
-  post their PB. Out of scope for this pass.)
+**Honest gaps remaining for full M7:**
+- AI calls only fire when an `AIProvider` is configured (Gemini /
+  OpenAI / DeepSeek API key in `AIConfig.plist` or env). Without a
+  provider, all sessions use the curated pool — same as before, no
+  regression but also no AI freshness.
+- The 30% sampling means a typical user sees an AI prompt every
+  ~3 sessions. May want to crank to 50% or make it opt-in via
+  Settings if power users want more variety.
 
-**Why this next:** prompt staleness is a quiet retention killer once
-users have seen the curated 200-prompt pool 2-3 times. AI-generated
-prompts biased by user's goal + weakest pattern + recent prompt
-history create infinite freshness without diluting the curated pool's
-quality.
+**Why this next:** the current daily-rhythm tile is a single rolling
+status — "you've practiced today" / "streak warning". A real daily
+challenge with claim moments and expiry pressure creates the open-the-
+app rhythm a fully gamified coach needs.
 
 **Definition of done:**
-- Pull from the 200-prompt pool 70% of the time, generate fresh ones
-  via `AINPCChatService` 30% of the time.
-- Generated prompts biased by `CoachingProfile.primaryGoal` and the
-  baseline's weakest dimension.
-- Prompt-history dedup: no repeats inside a 14-day window (per-account).
-- Generated prompts pass a content filter (length, no PII, no off-topic
-  drift) before reaching the user.
+- A daily challenge resets at local midnight with 3 quick rotating
+  options (e.g., "Hold a 3-second pause", "Land a 30-word answer",
+  "Zero panic fillers in Sudden Death").
+- Each challenge has a "claim" moment when completed — XP reward
+  + brief celebration.
+- Expiry pressure: unclaimed challenges fade at 9pm with a soft
+  copy nudge (no shame).
+- Daily-challenge tile on home replaces today's rolling-status tile.
 
 **Out of scope for this milestone:**
 - Pitch / intonation
@@ -123,7 +132,7 @@ quality.
 
 ## Future milestones (rough order)
 
-(M7 — AI-driven topic prompts — is the active "Next milestone" above.)
+(M8 — Daily-challenge rhythm v1 — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

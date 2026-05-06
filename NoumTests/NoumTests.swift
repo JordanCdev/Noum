@@ -1910,3 +1910,175 @@ struct WeekPeakRatingTests {
         #expect(decoded.isWeekPeakCurrent == true)
     }
 }
+
+// MARK: - AI prompt content filter (M7)
+
+struct AIPromptContentFilterTests {
+
+    @Test func acceptsCleanQuestion() {
+        let raw = "What is the most overrated skill in your industry?"
+        #expect(PromptContentFilter.accept(raw) == raw)
+    }
+
+    @Test func stripsEnclosingDoubleQuotes() {
+        let raw = "\"What changes when leaders admit uncertainty?\""
+        let cleaned = PromptContentFilter.accept(raw)
+        #expect(cleaned == "What changes when leaders admit uncertainty?")
+    }
+
+    @Test func rejectsMissingQuestionMark() {
+        let raw = "The most overrated skill in your industry."
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsLeadingDirective() {
+        let raw = "Tell me about a moment that changed your perspective?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsDescribeDirective() {
+        let raw = "Describe a hard decision you've made recently?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsTooShort() {
+        let raw = "Why care?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsTooLong() {
+        let raw = String(repeating: "a", count: 250) + "?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsEmailLikeContent() {
+        let raw = "What would you say to admin@example.com if asked?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsPhoneLikeContent() {
+        let raw = "Would you call +1 (555) 123-4567 to speak up?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func rejectsExcessiveExclamation() {
+        let raw = "What is the wildest belief you've changed your mind on!!?"
+        #expect(PromptContentFilter.accept(raw) == nil)
+    }
+
+    @Test func collapsesInternalWhitespace() {
+        let raw = "What  is  the    most  underrated   habit?"
+        let cleaned = PromptContentFilter.accept(raw)
+        #expect(cleaned == "What is the most underrated habit?")
+    }
+}
+
+// MARK: - PromptHistoryStore (M7)
+
+struct PromptHistoryStoreTests {
+
+    @Test @MainActor func recordsAndDetectsFreshPrompt() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        let prompt = "What is the most underrated skill in your field?"
+        #expect(store.wasRecentlySeen(prompt) == false)
+        store.record(prompt)
+        #expect(store.wasRecentlySeen(prompt) == true)
+        store.reset()
+    }
+
+    @Test @MainActor func dedupNormalizesCase() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        store.record("What is success?")
+        // Same prompt with different casing should still be considered seen.
+        #expect(store.wasRecentlySeen("WHAT IS SUCCESS?") == true)
+        #expect(store.wasRecentlySeen("  what is success?  ") == true)
+        store.reset()
+    }
+
+    @Test @MainActor func emptyWindowReturnsFalse() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        #expect(store.wasRecentlySeen("Anything at all?") == false)
+        #expect(store.recentCount == 0)
+    }
+
+    @Test @MainActor func recordingTwiceDoesNotInflateCount() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        store.record("Why does honesty cost more than people think?")
+        store.record("Why does honesty cost more than people think?")
+        #expect(store.recentCount == 1)
+        store.reset()
+    }
+
+    @Test @MainActor func hashIsStableAcrossWhitespaceAndCase() {
+        let a = PromptHistoryStore.hash(of: "What matters most?")
+        let b = PromptHistoryStore.hash(of: "  WHAT MATTERS MOST?  ")
+        #expect(a == b)
+    }
+}
+
+// MARK: - PracticeTopics goal-aware orchestrator (M7)
+
+struct PracticeTopicsM7Tests {
+
+    @Test func themeBiasMapsConciseToWorkCareer() {
+        let p = makeProfile(goal: .moreConcise, context: .work)
+        #expect(PracticeTopics.themeBias(for: p) == .workCareer)
+    }
+
+    @Test func themeBiasMapsCalmerDeliveryToEthics() {
+        let p = makeProfile(goal: .calmerDelivery, context: .work)
+        #expect(PracticeTopics.themeBias(for: p) == .ethicsOpinions)
+    }
+
+    @Test func themeBiasMapsThinkFasterFreezingToGeneral() {
+        let p = makeProfile(goal: .thinkFaster, context: .work, challenge: .freezing)
+        #expect(PracticeTopics.themeBias(for: p) == .general)
+    }
+
+    @Test func themeBiasMapsReduceFillersToAll() {
+        let p = makeProfile(goal: .reduceFillers, context: .work)
+        #expect(PracticeTopics.themeBias(for: p) == .all)
+    }
+
+    @Test func weakestDimensionPicksWorstStat() {
+        var b = CommunicationBaseline.empty
+        b.fillerRate = BaselineStat(value: 8, sampleCount: 10, confidence: .moderate, trend: .stable, percentile25: 0, percentile75: 10)
+        b.openingStrength = BaselineStat(value: 2.5, sampleCount: 10, confidence: .moderate, trend: .stable, percentile25: 1, percentile75: 3)
+        b.clarity = BaselineStat(value: 2.8, sampleCount: 10, confidence: .moderate, trend: .stable, percentile25: 1, percentile75: 3)
+        // Filler 8/min is far worse than the 1-3 stats; engine should label it.
+        let label = PracticeTopics.weakestDimensionLabel(for: b)
+        #expect(label == "filler control")
+    }
+
+    @Test func weakestDimensionIgnoresInsufficientStats() {
+        // All-empty baseline has insufficient confidence on every stat —
+        // there's no honest "weakest" to claim, so we return nil.
+        let b = CommunicationBaseline.empty
+        #expect(PracticeTopics.weakestDimensionLabel(for: b) == nil)
+    }
+
+    // MARK: helpers
+
+    private func makeProfile(
+        goal: CoachingPriority,
+        context: SpeakingContext,
+        challenge: SpeakingChallenge = .fillerWords
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: context,
+            primaryGoal: goal,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: challenge,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+}

@@ -559,6 +559,7 @@ struct TimedPracticeView: View {
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var premium = PremiumManager.shared
 
     // Session state
@@ -715,7 +716,11 @@ struct TimedPracticeView: View {
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
             if question.isEmpty {
-                question = PracticeTopics.random()
+                question = await PracticeTopics.next(
+                    profile: coachingProfileStore.profile,
+                    baseline: baselineStore.baseline,
+                    theme: selectedTheme
+                )
             }
             speechVM.prepareForInteractiveUse()
             prewarmTTS()
@@ -1983,39 +1988,47 @@ struct TimedPracticeView: View {
             return
         }
 
-        question = PracticeTopics.random(theme: selectedTheme)
-
-        // Ensure TTS is ready (may already be prewarmed from onAppear)
-        if ttsEngine.delegate == nil { configureTTSDelegate() }
-
-        // Haptic feedback for session start
+        // Haptic feedback for session start fires before the AI hop so the
+        // tap feels immediate even if prompt selection takes a beat.
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
-        // Classic always gets 15-second thinking time; Coach respects the toggle
-        // Pressure mode halves thinking time for increased challenge
-        let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
-        let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
+        // Pre-rep ambience starts now so the user has audio feedback while
+        // we resolve the prompt + warm up TTS.
+        SoundscapeEngine.shared.startPreferredMode()
 
-        if useThinkingTime {
-            thinkingCountdown = thinkingDuration
-            withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
-            // Pre-rep ambience runs through the thinking window — long
-            // enough for the user to feel it, cuts the moment recording
-            // starts inside `startSpeaking()` so it never bleeds onto the
-            // rep itself.
-            SoundscapeEngine.shared.startPreferredMode()
-            startThinkingCountdown(thinkingDuration: thinkingDuration)
-        } else if !keepPromptVisible {
-            withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
-            SoundscapeEngine.shared.startPreferredMode()
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                if phase == .briefReveal {
-                    await MainActor.run { startSpeaking() }
+        // Resolve the prompt asynchronously — gives PracticeTopics.next() a
+        // budget to attempt an AI-generated prompt without blocking. Falls
+        // back to the curated pool on timeout/failure (≤ 3s).
+        Task { @MainActor in
+            question = await PracticeTopics.next(
+                profile: coachingProfileStore.profile,
+                baseline: baselineStore.baseline,
+                theme: selectedTheme
+            )
+
+            // Ensure TTS is ready (may already be prewarmed from onAppear)
+            if ttsEngine.delegate == nil { configureTTSDelegate() }
+
+            // Classic always gets 15-second thinking time; Coach respects the toggle
+            // Pressure mode halves thinking time for increased challenge
+            let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+            let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
+
+            if useThinkingTime {
+                thinkingCountdown = thinkingDuration
+                withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+                startThinkingCountdown(thinkingDuration: thinkingDuration)
+            } else if !keepPromptVisible {
+                withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    if phase == .briefReveal {
+                        await MainActor.run { startSpeaking() }
+                    }
                 }
+            } else {
+                startSpeaking()
             }
-        } else {
-            startSpeaking()
         }
     }
 
@@ -2160,8 +2173,14 @@ struct TimedPracticeView: View {
     private func newPromptSession() {
         cleanup()
         resetState(keepPrompt: false)
-        question = PracticeTopics.random(theme: selectedTheme)
-        launchSessionFlow()
+        Task { @MainActor in
+            question = await PracticeTopics.next(
+                profile: coachingProfileStore.profile,
+                baseline: baselineStore.baseline,
+                theme: selectedTheme
+            )
+            launchSessionFlow()
+        }
     }
 
     private func resetState(keepPrompt: Bool) {

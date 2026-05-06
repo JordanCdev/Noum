@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5 Coach memory v1 + M6 Peak rating wall shipped)_
+_Last updated: 2026-05-06 (M5 Coach memory + M6 Peak rating wall + M7 AI prompts shipped)_
 
 ## Architecture overview
 
@@ -342,8 +342,20 @@ _Last updated: 2026-05-06 (M5 Coach memory v1 + M6 Peak rating wall shipped)_
 - **Difficulty levels — Timed and Sudden Death** — Easy / Medium /
   Hard for both. Sudden Death difficulty scales filler tolerance and
   start-window.
-- **Topic / prompt generation** — 200+ curated prompts in
-  `PracticeTopics.swift` across 8 themes. **No AI generation.**
+- **Topic / prompt generation (M7)** — 200+ curated prompts in
+  `PracticeTopics.swift` across 8 themes, plus a 70/30 mix with
+  `AIPromptGeneratorService`. The AI generator is an actor that mirrors
+  `GoalParaphraseService`'s provider plumbing (Gemini / OpenAI / DeepSeek)
+  and produces one prompt biased by `CoachingPriority` + weakest baseline
+  dimension. Deterministic `PromptContentFilter` rejects directives,
+  missing terminal `?`, length out of bounds, PII shapes, and chained
+  exclamations before any prompt reaches the user. `PromptHistoryStore`
+  dedupes within a 14-day per-account window. The orchestrator runs the
+  AI hop under a strict 3-second latency budget — falls back to the pool
+  on any failure or timeout. Without an `AIProvider` configured, all
+  sessions use the curated pool (no regression). Wired into
+  `TimedPracticeView` and `SuddenDeathPracticeView`; mini-drills and
+  async-challenge prompts intentionally keep deterministic seeding.
 - **AI coaching reads** — Coach Mode + Coach Read via
   `AINPCChatService` (Gemini / OpenAI / DeepSeek), gated to Pro,
   100/mo limit.

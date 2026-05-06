@@ -348,4 +348,137 @@ struct PracticeTopics {
         let key = storageKey(for: theme)
         UserDefaults.standard.set(Array(seen), forKey: key)
     }
+
+    // MARK: - Goal-aware selection (M7)
+    //
+    // Higher-level orchestrator over `random()`. Honors:
+    //   • 14-day prompt-history dedup via PromptHistoryStore
+    //   • 70/30 mix between curated pool and AIPromptGeneratorService
+    //   • Goal-mapped theme bias when the caller hasn't pinned a theme
+    //   • Curated-pool fallback when AI fails or content filter rejects
+    //
+    // Synchronous overload returns immediately from the curated pool —
+    // existing call sites that don't have a profile/baseline keep working
+    // unchanged.
+    //
+    // Async overload `next(profile:baseline:theme:)` is the one new call
+    // sites should adopt — it does the AI hop with a budget and falls
+    // back to the pool gracefully.
+
+    /// Probability of attempting an AI-generated prompt when one would
+    /// otherwise come from the curated pool.
+    static let aiGenerationProbability = 0.30
+
+    /// Hard ceiling on AI prompt generation latency. If the API takes longer
+    /// than this, we fall back to the curated pool so the user never waits
+    /// noticeably for a prompt to appear after tapping Begin.
+    static let aiGenerationBudget: TimeInterval = 3.0
+
+    /// Async goal-aware prompt selector. Returns one prompt that:
+    ///   • is not in the user's last-14-day history (best-effort),
+    ///   • biased toward the user's coaching goal,
+    ///   • generated via `AIPromptGeneratorService` ~30% of the time when
+    ///     a provider is configured; falls through to the curated pool
+    ///     otherwise.
+    /// The returned prompt is recorded in history before return.
+    @MainActor
+    static func next(
+        profile: CoachingProfile?,
+        baseline: CommunicationBaseline?,
+        theme: PromptTheme = .all
+    ) async -> String {
+        let history = PromptHistoryStore.shared
+
+        // Try the AI generator on the 30% sampling, with a hard latency budget.
+        if let profile,
+           Double.random(in: 0..<1) < aiGenerationProbability {
+            let weakest = baseline.flatMap(weakestDimensionLabel(for:))
+            if let generated = await Self.generateWithBudget(
+                profile: profile,
+                weakestDimension: weakest
+            ), !history.wasRecentlySeen(generated) {
+                history.record(generated)
+                return generated
+            }
+        }
+
+        // Curated pool path. Reroll up to 5 times to dodge a recently-seen prompt.
+        let resolvedTheme = theme == .all ? (profile.map(themeBias(for:)) ?? .all) : theme
+        var pick = random(theme: resolvedTheme)
+        var attempts = 0
+        while history.wasRecentlySeen(pick) && attempts < 5 {
+            pick = random(theme: resolvedTheme)
+            attempts += 1
+        }
+        history.record(pick)
+        return pick
+    }
+
+    /// Run the AI generator under a strict time budget. Returns nil if either
+    /// the generator returns nil or the budget elapses first — caller falls
+    /// back to the pool in either case.
+    private static func generateWithBudget(
+        profile: CoachingProfile,
+        weakestDimension: String?
+    ) async -> String? {
+        await withTaskGroup(of: String?.self) { group in
+            group.addTask {
+                await AIPromptGeneratorService.shared.generate(
+                    profile: profile,
+                    weakestDimension: weakestDimension
+                )
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(aiGenerationBudget * 1_000_000_000))
+                return nil
+            }
+            // First completion wins. If it's the timeout, the AI task is left
+            // running but its result is dropped — URLSession will continue and
+            // be deallocated when its data is no longer awaited.
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// Map a coaching profile to a preferred theme for impromptu prompts.
+    /// Identical to `RecommendationBiasEngine.suggestedTheme(for:)` but
+    /// available statically here so practice views can call it without
+    /// the full blueprint pipeline.
+    static func themeBias(for profile: CoachingProfile) -> PromptTheme {
+        switch profile.primaryGoal {
+        case .moreConcise:
+            return profile.speakingContext == .interviews ? .interviewPrep : .workCareer
+        case .thinkFaster:
+            return profile.biggestChallenge == .freezing ? .general : .funRandom
+        case .reduceFillers:
+            return .all
+        case .calmerDelivery:
+            return profile.speakingContext == .social ? .socialConfidence : .ethicsOpinions
+        }
+    }
+
+    /// Map a baseline's weakest dimension to a short coaching label the
+    /// AI prompt can target. Used to make generated prompts actually
+    /// challenge what the user needs to practice.
+    static func weakestDimensionLabel(for baseline: CommunicationBaseline) -> String? {
+        var weakest: (label: String, value: Double)?
+        let candidates: [(String, BaselineStat)] = [
+            ("filler control",     baseline.fillerRate),
+            ("structured opening", baseline.openingStrength),
+            ("clear closing",      baseline.closingStrength),
+            ("answer depth",       baseline.answerDepth),
+            ("structure",          baseline.structureQuality),
+            ("clarity",            baseline.clarity)
+        ]
+        for (label, stat) in candidates {
+            guard stat.confidence != .insufficient else { continue }
+            // For fillerRate, higher = worse. For everything else, lower = worse.
+            let normalized = label == "filler control" ? -stat.value : stat.value
+            if weakest == nil || normalized < weakest!.value {
+                weakest = (label, normalized)
+            }
+        }
+        return weakest?.label
+    }
 }

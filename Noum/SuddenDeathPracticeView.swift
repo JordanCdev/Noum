@@ -13,6 +13,7 @@ struct SuddenDeathPracticeView: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var engine = PressureTimerEngine()
 
     /// Live Activity coordinator. Lazily initialised on first use because
@@ -825,27 +826,37 @@ struct SuddenDeathPracticeView: View {
     // MARK: - Session Control
 
     private func beginSession() {
-        let openingPrompt = PracticeTopics.random()
-        resetSpeechState()
-        engine.configure(
-            openingPrompt: openingPrompt,
-            followUpProvider: PressureFollowUpService.shared,
-            previousBest: previousBestRounds,
-            difficulty: difficulty
-        )
-        engine.beginCountdown()
+        Task { @MainActor in
+            let openingPrompt = await PracticeTopics.next(
+                profile: coachingProfileStore.profile,
+                baseline: baselineStore.baseline
+            )
+            resetSpeechState()
+            engine.configure(
+                openingPrompt: openingPrompt,
+                followUpProvider: PressureFollowUpService.shared,
+                previousBest: previousBestRounds,
+                difficulty: difficulty
+            )
+            engine.beginCountdown()
+        }
     }
 
     private func retrySession() {
-        let openingPrompt = PracticeTopics.random()
-        resetSpeechState()
-        engine.configure(
-            openingPrompt: openingPrompt,
-            followUpProvider: PressureFollowUpService.shared,
-            previousBest: previousBestRounds,
-            difficulty: difficulty
-        )
-        engine.beginCountdown()
+        Task { @MainActor in
+            let openingPrompt = await PracticeTopics.next(
+                profile: coachingProfileStore.profile,
+                baseline: baselineStore.baseline
+            )
+            resetSpeechState()
+            engine.configure(
+                openingPrompt: openingPrompt,
+                followUpProvider: PressureFollowUpService.shared,
+                previousBest: previousBestRounds,
+                difficulty: difficulty
+            )
+            engine.beginCountdown()
+        }
     }
 
     private func resetSpeechState() {
