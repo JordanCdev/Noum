@@ -186,6 +186,13 @@ enum SessionFinalizer {
             profile: coachingProfileStore.profile
         )
 
+        // Daily challenges (M8) — re-evaluate the day's three challenges
+        // against the latest session so any newly-satisfied ones flip to
+        // "ready to claim" on the home tile. Manager also auto-rolls the
+        // day at midnight, so this doubles as the daily refresh trigger.
+        DailyChallengesManager.shared.ensureForToday()
+        DailyChallengesManager.shared.recomputeReady()
+
         // Notification pre-prompt — soft sell before iOS's hard system
         // dialog. Fires once on session 1, then respects 30-day cooldown
         // on decline.

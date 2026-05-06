@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5 Coach memory + M6 Peak rating wall + M7 AI prompts shipped)_
+_Last updated: 2026-05-06 (M5–M8 shipped: coach memory, peak ratings, AI prompts, daily challenges)_
 
 ## Architecture overview
 
@@ -328,6 +328,21 @@ _Last updated: 2026-05-06 (M5 Coach memory + M6 Peak rating wall + M7 AI prompts
   Surfaced in home, profile, reminder copy, widget, and the soft-sell
   pre-prompt's value-prop bullets. App icon badge mirrors the current
   streak via `setBadgeCount`.
+- **Daily challenges (M8)** — `DailyChallenge.swift` defines 8 strict
+  challenge kinds keyed to real `PracticeSession` fields (held pause
+  ≥ 3s unfilled, zero-filler rep ≥ 14 words, score ≥ 8/10, etc.).
+  `DailyChallengeGenerator` returns a deterministic 3-of-8 trio per
+  ISO date via Splitmix64 — same day produces same trio across launches.
+  `DailyChallengesManager` (per-account, `@MainActor`) auto-rolls at
+  midnight, re-evaluates after each session via the SessionStore
+  subscription, and exposes `readyToClaim` for tile state. Claim is
+  user-tap-only; XP awarded via `ProfileManager.shared.addXP`. 9pm
+  local soft-expiry switches the tile to a faded treatment (no shame)
+  but stays claimable until midnight. `DailyChallengeTile` is the
+  third card on populated home, between `DailyGoalCard` and
+  `streakCard`. `SessionFinalizer` triggers `ensureForToday()` +
+  `recomputeReady()` after every finalize. Per-device claim state —
+  not synced across devices yet.
 - **First-rep celebration** — full-screen overlay + share sheet on
   the user's first finished rep. Persists per-account.
 - **XP / levels / ranks** — XP persistent per-account, levels derived

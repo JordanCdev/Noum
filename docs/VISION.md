@@ -82,57 +82,53 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M8 — Daily-challenge rhythm v1._
+**Name:** _M9 — Word of the day._
 
-(M7 _AI-driven topic prompts — recurrence-aware_ shipped client-side:
-`AIPromptGeneratorService` actor mirrors the GoalParaphraseService
-provider plumbing (Gemini / OpenAI / DeepSeek). 70/30 mix between the
-curated 200-prompt pool and AI generation, gated by 14-day per-account
-dedup via `PromptHistoryStore`. Strict 3-second latency budget on the
-AI hop — falls back to the pool on any failure or timeout so the user
-never waits noticeably. Deterministic content filter (`PromptContentFilter`)
-rejects directives, missing terminal `?`, length out of bounds, PII
-shapes, and chained exclamations. Generated prompts are biased by the
-user's `CoachingPriority` + weakest baseline dimension; theme bias is
-applied to pool fallbacks too. Wired into `TimedPracticeView`
-(beginSession + newPromptSession + onAppear seed) and
-`SuddenDeathPracticeView` (beginSession + retrySession). Mini-drills
-and async-challenge prompts intentionally retain the deterministic
-`PracticeTopics.random()` / `seeded(by:)` paths.)
+(M8 _Daily-challenge rhythm v1_ shipped: `DailyChallenge` model with 8
+challenge kinds (heldPause, shortAnswer, zeroFillers, sustainedAnswer,
+cleanSuddenDeath, crispDelivery, highScoreSession, multiplePauses), each
+keyed to strict pass criteria over real `PracticeSession` fields.
+`DailyChallengeGenerator` produces a deterministic 3-of-8 trio per ISO
+date via a Splitmix64 seeded RNG — same day, same trio, no jitter on
+relaunch. `DailyChallengesManager` (per-account) auto-rolls at midnight,
+re-evaluates against the latest session via the SessionStore subscription,
+and surfaces a "ready to claim" state when criteria are satisfied. Claim
+explicitly user-triggered — XP grants through `ProfileManager.shared.addXP`,
+celebration via `pendingClaim` + brief tile-overhead toast. 9pm soft
+expiry switches the tile to a faded treatment with softer copy (no shame),
+still claimable until midnight. `DailyChallengeTile` lives on populated
+home as a third card alongside DailyGoalCard. `SessionFinalizer` calls
+`ensureForToday()` + `recomputeReady()` after each finalize.)
 
-**Honest gaps remaining for full M7:**
-- AI calls only fire when an `AIProvider` is configured (Gemini /
-  OpenAI / DeepSeek API key in `AIConfig.plist` or env). Without a
-  provider, all sessions use the curated pool — same as before, no
-  regression but also no AI freshness.
-- The 30% sampling means a typical user sees an AI prompt every
-  ~3 sessions. May want to crank to 50% or make it opt-in via
-  Settings if power users want more variety.
+**Honest gaps remaining for M8:**
+- No backend / cross-device sync for claim state — challenges are
+  per-device. If the user practices on another device, the trio is
+  the same (deterministic) but claim state isn't shared.
+- No notification fired at 9pm soft expiry; the existing daily-rhythm
+  notifications already cover that surface.
 
-**Why this next:** the current daily-rhythm tile is a single rolling
-status — "you've practiced today" / "streak warning". A real daily
-challenge with claim moments and expiry pressure creates the open-the-
-app rhythm a fully gamified coach needs.
+**Why this next:** small daily commitment point distinct from "do a
+rep". Lapsed users get a tiny reason to open the app even when they
+don't have time for a full session. Builds vocabulary stretch into the
+practice loop without being pedantic.
 
 **Definition of done:**
-- A daily challenge resets at local midnight with 3 quick rotating
-  options (e.g., "Hold a 3-second pause", "Land a 30-word answer",
-  "Zero panic fillers in Sudden Death").
-- Each challenge has a "claim" moment when completed — XP reward
-  + brief celebration.
-- Expiry pressure: unclaimed challenges fade at 9pm with a soft
-  copy nudge (no shame).
-- Daily-challenge tile on home replaces today's rolling-status tile.
+- One curated word per day surfaced on home and in the daily-rhythm
+  notification.
+- Tied to a 30s prompt that asks the user to use it naturally.
+- Track "used / not used" automatically by checking the session
+  transcript for the day's word.
+- Reset at local midnight; deterministic so the same day shows the
+  same word across devices.
 
 **Out of scope for this milestone:**
 - Pitch / intonation
 - Grammar / English-usage feedback
-- Word of the day
 - Multilingual support
 
 ## Future milestones (rough order)
 
-(M8 — Daily-challenge rhythm v1 — is the active "Next milestone" above.)
+(M9 — Word of the day — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

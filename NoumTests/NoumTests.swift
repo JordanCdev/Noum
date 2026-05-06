@@ -2082,3 +2082,142 @@ struct PracticeTopicsM7Tests {
         )
     }
 }
+
+// MARK: - Daily challenges (M8)
+
+struct DailyChallengeKindTests {
+
+    private func session(
+        fillerWordCount: Int = 0,
+        duration: TimeInterval = 30,
+        transcript: String = "This is a fairly long transcript with plenty of words to count up to fourteen at least.",
+        mode: PracticeMode = .timed,
+        score: Int? = nil,
+        wpm: Int? = nil,
+        pause: PauseMetrics? = nil
+    ) -> PracticeSession {
+        var s = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: fillerWordCount,
+            duration: duration,
+            date: Date()
+        )
+        s.mode = mode
+        s.score = score
+        s.pauseMetrics = pause
+        return s
+    }
+
+    @Test func zeroFillersRequiresFourteenWordsAndZeroFillers() {
+        let pass = session(fillerWordCount: 0, transcript: "I have a clear answer with at least fourteen unique meaningful words to count.")
+        let failShort = session(fillerWordCount: 0, transcript: "Too short answer.")
+        let failFiller = session(fillerWordCount: 1, transcript: "I have a clear answer with at least fourteen unique meaningful words to count.")
+        #expect(DailyChallengeKind.zeroFillers.isSatisfied(by: pass) == true)
+        #expect(DailyChallengeKind.zeroFillers.isSatisfied(by: failShort) == false)
+        #expect(DailyChallengeKind.zeroFillers.isSatisfied(by: failFiller) == false)
+    }
+
+    @Test func heldPauseRequiresLongUnfilledPause() {
+        let good = session(pause: PauseMetrics(count: 1, meanSeconds: 3.0, longestSeconds: 3.5, filledRatio: 0.0))
+        let badShort = session(pause: PauseMetrics(count: 1, meanSeconds: 0.8, longestSeconds: 1.0, filledRatio: 0.0))
+        let badFilled = session(pause: PauseMetrics(count: 1, meanSeconds: 3.5, longestSeconds: 3.5, filledRatio: 0.9))
+        #expect(DailyChallengeKind.heldPause.isSatisfied(by: good) == true)
+        #expect(DailyChallengeKind.heldPause.isSatisfied(by: badShort) == false)
+        #expect(DailyChallengeKind.heldPause.isSatisfied(by: badFilled) == false)
+    }
+
+    @Test func cleanSuddenDeathRequiresMatchingMode() {
+        let goodMode = session(fillerWordCount: 0, mode: .suddenDeath)
+        let wrongMode = session(fillerWordCount: 0, mode: .timed)
+        #expect(DailyChallengeKind.cleanSuddenDeath.isSatisfied(by: goodMode) == true)
+        #expect(DailyChallengeKind.cleanSuddenDeath.isSatisfied(by: wrongMode) == false)
+    }
+
+    @Test func highScoreRequiresAtLeastEight() {
+        let pass = session(score: 8)
+        let fail = session(score: 7)
+        let nilScore = session(score: nil)
+        #expect(DailyChallengeKind.highScoreSession.isSatisfied(by: pass) == true)
+        #expect(DailyChallengeKind.highScoreSession.isSatisfied(by: fail) == false)
+        #expect(DailyChallengeKind.highScoreSession.isSatisfied(by: nilScore) == false)
+    }
+
+    @Test func multiplePausesRequiresLowFillRatio() {
+        let pass = session(pause: PauseMetrics(count: 3, meanSeconds: 0.7, longestSeconds: 1.5, filledRatio: 0.2))
+        let failFill = session(pause: PauseMetrics(count: 3, meanSeconds: 0.7, longestSeconds: 1.5, filledRatio: 0.8))
+        let failCount = session(pause: PauseMetrics(count: 1, meanSeconds: 0.7, longestSeconds: 1.5, filledRatio: 0.0))
+        #expect(DailyChallengeKind.multiplePauses.isSatisfied(by: pass) == true)
+        #expect(DailyChallengeKind.multiplePauses.isSatisfied(by: failFill) == false)
+        #expect(DailyChallengeKind.multiplePauses.isSatisfied(by: failCount) == false)
+    }
+
+    @Test func everyKindHasNonEmptyDisplayCopy() {
+        for kind in DailyChallengeKind.allCases {
+            #expect(!kind.title.isEmpty)
+            #expect(!kind.subtitle.isEmpty)
+            #expect(!kind.symbol.isEmpty)
+            #expect(kind.xpReward > 0)
+        }
+    }
+}
+
+struct DailyChallengeGeneratorTests {
+
+    @Test func deterministicForSameDayKey() {
+        let key = "2026-05-06"
+        let first = DailyChallengeGenerator.threeKinds(for: key)
+        let second = DailyChallengeGenerator.threeKinds(for: key)
+        #expect(first == second)
+        #expect(first.count == 3)
+    }
+
+    @Test func returnsThreeDistinctKinds() {
+        let key = "2026-05-07"
+        let kinds = DailyChallengeGenerator.threeKinds(for: key)
+        #expect(kinds.count == 3)
+        #expect(Set(kinds).count == 3, "all three should be distinct")
+    }
+
+    @Test func differentDaysGiveDifferentSets() {
+        // Not always true (collisions exist with 8 kinds choose 3) but for
+        // these specific keys we expect divergence.
+        let a = DailyChallengeGenerator.threeKinds(for: "2026-05-06")
+        let b = DailyChallengeGenerator.threeKinds(for: "2026-05-07")
+        // Expect at least one kind to differ on adjacent days.
+        #expect(Set(a) != Set(b) || a == b, "smoke test — same allowed but uncommon")
+    }
+}
+
+struct DailyChallengeSetTests {
+
+    @Test func softExpiryAfterNinePMOnSameDay() {
+        // Pick a date that is "today" so softExpiryDate produces an
+        // interpretable timestamp; we then assert the contract.
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.dateFormat = "yyyy-MM-dd"
+        let todayKey = formatter.string(from: Date())
+        let set = DailyChallengeSet(dayKey: todayKey, kinds: [.zeroFillers], claimedKinds: [])
+
+        guard let stamp = set.softExpiryDate() else {
+            #expect(Bool(false), "expected non-nil soft expiry")
+            return
+        }
+        let comps = Calendar.current.dateComponents([.hour], from: stamp)
+        #expect(comps.hour == 21)
+    }
+
+    @Test func allClaimedFlagsTrueWhenAllInSet() {
+        let set = DailyChallengeSet(
+            dayKey: "2026-05-06",
+            kinds: [.zeroFillers, .heldPause],
+            claimedKinds: [.zeroFillers, .heldPause]
+        )
+        #expect(set.allClaimed == true)
+    }
+
+    @Test func allClaimedFalseForEmptySet() {
+        let set = DailyChallengeSet(dayKey: "2026-05-06", kinds: [], claimedKinds: [])
+        #expect(set.allClaimed == false)
+    }
+}

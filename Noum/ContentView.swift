@@ -107,12 +107,13 @@ struct ContentView: View {
                             )
                             .cardEntrance(1)
                             DailyGoalCard(manager: dailyGoal).cardEntrance(2)
-                            streakCard.cardEntrance(3)
-                            nextLessonCard.cardEntrance(4)
-                            quickStartCard.cardEntrance(5)
-                            journeyPreviewCard.cardEntrance(6)
-                            progressCard.cardEntrance(7)
-                            suggestedPracticeCard.cardEntrance(8)
+                            DailyChallengeTile().cardEntrance(3)
+                            streakCard.cardEntrance(4)
+                            nextLessonCard.cardEntrance(5)
+                            quickStartCard.cardEntrance(6)
+                            journeyPreviewCard.cardEntrance(7)
+                            progressCard.cardEntrance(8)
+                            suggestedPracticeCard.cardEntrance(9)
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -249,6 +250,8 @@ struct ContentView: View {
         }
         .onAppear {
             dailyGoal.recompute()
+            DailyChallengesManager.shared.ensureForToday()
+            DailyChallengesManager.shared.recomputeReady()
         }
         .task {
             guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
