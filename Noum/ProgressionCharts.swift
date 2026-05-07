@@ -229,7 +229,7 @@ struct ProgressionChartsCard: View {
 @available(iOS 17.0, macOS 12.0, *)
 extension ProgressionChartsCard {
     enum ChartSeries: CaseIterable {
-        case score, fillerRate, pace, pauseRate
+        case score, fillerRate, pace, pauseRate, intonation
 
         var shortLabel: String {
             switch self {
@@ -237,6 +237,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return "Fillers"
             case .pace:       return "Pace"
             case .pauseRate:  return "Pauses"
+            case .intonation: return "Pitch"
             }
         }
 
@@ -246,6 +247,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return "speaker.slash.fill"
             case .pace:       return "speedometer"
             case .pauseRate:  return "pause.circle.fill"
+            case .intonation: return "waveform.path"
             }
         }
 
@@ -255,6 +257,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return AppColor.caution
             case .pace:       return AppColor.modeAhCounter
             case .pauseRate:  return AppColor.modeIM
+            case .intonation: return AppColor.brandBlue
             }
         }
 
@@ -264,16 +267,19 @@ extension ProgressionChartsCard {
             case .fillerRate: return point.fillerRate
             case .pace:       return point.pace
             case .pauseRate:  return point.pauseRate ?? 0
+            case .intonation: return point.intonationVariety ?? 0
             }
         }
 
         /// Returns true only when the underlying point has real data for
         /// this series. Used to filter out sessions whose transcription
-        /// provider didn't capture word timings (pause series only).
+        /// provider didn't capture word timings (pause series only) or
+        /// whose recording was too short for honest pitch analysis.
         func hasValue(in point: ChartPoint) -> Bool {
             switch self {
-            case .pauseRate: return point.pauseRate != nil
-            default:         return true
+            case .pauseRate:  return point.pauseRate != nil
+            case .intonation: return point.intonationVariety != nil
+            default:          return true
             }
         }
 
@@ -283,6 +289,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return String(format: "%.1f/min", value)
             case .pace:       return String(format: "%.0f WPM", value)
             case .pauseRate:  return String(format: "%.1f/min", value)
+            case .intonation: return String(format: "%.0f", value)
             }
         }
 
@@ -300,6 +307,9 @@ extension ProgressionChartsCard {
             case .pauseRate:
                 if abs(delta) < 0.05 { return "Even" }
                 return String(format: "%+.1f/min", delta)
+            case .intonation:
+                if abs(delta) < 1 { return "Even" }
+                return String(format: "%+.0f", delta)
             }
         }
 
@@ -318,6 +328,10 @@ extension ProgressionChartsCard {
                 // up to a ceiling (~6/min). Treat upward movement as
                 // improvement until we have enough data to model the curve.
                 return delta >= 0.1
+            case .intonation:
+                // Higher variety score = less monotone. Up is good until
+                // we have enough data to penalise oversold extremes.
+                return delta >= 1
             }
         }
     }
@@ -332,6 +346,9 @@ extension ProgressionChartsCard {
         /// timings. Filtered out at the chart-render layer for the
         /// `.pauseRate` series so we don't draw fake zeros.
         let pauseRate: Double?
+        /// Intonation variety score (0–100) — nil when the session didn't
+        /// have enough voiced audio for an honest read.
+        let intonationVariety: Double?
 
         init?(session: PracticeSession) {
             guard let score = session.score else { return nil }
@@ -346,6 +363,12 @@ extension ProgressionChartsCard {
                 self.pauseRate = Double(metrics.count) / minutes
             } else {
                 self.pauseRate = nil
+            }
+            if let intonation = session.intonationMetrics,
+               intonation.voicedFrameCount >= IntonationMetrics.minimumVoicedFrames {
+                self.intonationVariety = Double(intonation.varietyScore)
+            } else {
+                self.intonationVariety = nil
             }
         }
     }

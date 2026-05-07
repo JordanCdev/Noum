@@ -52,9 +52,10 @@ addressed in app code:
 
 Where the product is now **underweight**:
 
-- **Speech metrics stop at fillers + pace.** Pause length and word-
-  choice variety are the next-most-differentiating signals, and both
-  are partially scaffolded but not yet first-class session metrics.
+- **Speech metrics now read fillers, pace, pauses, word-choice variety,
+  and pitch / intonation** — the full "how it sounds" stack. The next
+  honest gap is the words themselves (grammar / usage), tracked under
+  M11.
 - **Goal capture is still mostly a write-once event.** Goals don't
   shape drill selection or evaluation weighting yet — they live in
   reminder bodies and recommendation rationale.
@@ -82,52 +83,61 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M10 — Pitch / intonation v1._
+**Name:** _M11 — Grammar / English-usage v1._
 
-(M9 _Word of the day_ shipped: `WordOfTheDayCatalog` with 30 curated
-words (each: word, partOfSpeech, definition, 30s prompt, accepted
-inflected forms). `WordOfTheDayCatalog.entry(for: dayKey)` selects
-deterministically via Hasher → same day → same word, no backend
-needed. `WordOfTheDayManager` (per-account) tracks "used today" via
-word-boundary safe transcript scanning across all of today's
-sessions. Detection forgives plurals/past-tense via the explicit
-`acceptedForms` list and ignores substrings inside unrelated words
-(e.g., "art" doesn't match in "smart"). `WordOfTheDayTile` on home
-shows the word, definition, and 30s prompt; tapping "Try it"
-seeds `timedPractice.suggestedPrompt` so the next Timed session
-opens with that exact prompt. `SessionFinalizer` triggers
-re-evaluation after each finalize so the tile flips to "Used"
-immediately. Per-account "used days" set persisted so a future
-"vocabulary streak" surface can read from it.)
+(M10 _Pitch / intonation v1_ shipped: `PitchEngine.swift` adds
+on-device autocorrelation pitch tracking via `Accelerate`/vDSP.
+`PitchAnalyzer` runs off the real-time audio thread on a dedicated
+serial queue, slicing input into 50 ms windows with a 25 ms hop,
+applying a Hanning window, then running an autocorrelation peak
+search across the human-voice lag band (75–400 Hz) with parabolic
+sub-sample refinement. Voicing is gated by RMS > -46 dBFS *and*
+normalised peak-to-zero-lag ratio > 0.5 so silence and fricatives
+don't poison the track. The track condenses at finalize into
+`IntonationMetrics` (median Hz, semitone stddev, 10–90 percentile
+range, 0–100 monotone-vs-varied score). `IntonationCard` surfaces
+the read in the summary alongside pause and word-choice cards;
+`ProgressionCharts` gains a fifth "Pitch" series; `TrendAnalyzer`
+gains `analyzeIntonation` keyed to the existing `vocalEmphasis`
+skill area. Card and chart hide when fewer than 12 voiced frames
+were captured — better silence than fake certainty. All DSP runs
+in-process; no new privacy implications, no audio ever leaves the
+device for pitch.)
 
-**Honest gaps remaining for M9:**
-- 30 curated words covers a month — needs to grow to ~365 to hit
-  "no repeats inside a year". Same shape, just more entries.
-- No notification surfaces today's word yet — the daily-rhythm
-  notification copy could include it, deferred to a follow-up so
-  this commit stays focused.
+**Honest gaps remaining for M10:**
+- Card copy uses a fixed scoring band (3 semitones reference). Real
+  user data may shift the band as we collect production sessions —
+  expect a tuning pass once N≥1000 sessions are observed.
+- The `vocalEmphasis` SkillArea is overloaded — pitch variety lives
+  in the same bucket as deliberate emphasis drills. If trend rotation
+  surfaces it too aggressively as a focus area, split the bucket.
+- No live in-session HUD for pitch (parallel to `LiveEloquenceHUD`).
+  Deferred — the post-session card is enough for v1.
 
-**Why this next:** the missing third leg of "how it sounds when
-you speak". Filler count and pace are solved; pitch / intonation
-is the differentiating metric vs. competitors and the most
-emotionally important to the listener. On-device DSP via
-`Accelerate` keeps it private and instant.
+**Why this next:** with pitch shipped, "how it sounds" is now well
+covered (fillers, pace, pauses, intonation). The remaining gap on
+the post-session read is "are the words themselves clean" —
+subject-verb agreement, run-on sentences, redundant phrasing.
+LLM pass with caching is the right shape; risk is feeling
+pedantic, so the bar for shipping is "useful, not nitpicky".
 
 **Definition of done:**
-- Pitch track extracted on-device during recording (autocorrelation
-  via vDSP, ~50ms windows).
-- Score for "monotone vs varied delivery" surfaced in the summary
-  card alongside pace.
-- Trend pill on the profile.
-- No new privacy implications — all DSP runs in-process.
+- Lightweight grammar / usage pass on the post-session transcript
+  (subject-verb, run-ons, redundancy, hedge stacking).
+- Surfaces inside the existing `AISessionDebriefCard` rather than
+  a new card — keep the summary lean.
+- Cached per-session-hash so repeated viewing of the same summary
+  doesn't re-spend AI quota.
+- Falls back to a deterministic heuristic when no AI provider is
+  configured (matches the `AIPromptGeneratorService` pattern).
 
 **Out of scope for this milestone:**
-- Grammar / English-usage feedback
-- Multilingual support
+- Multilingual support (still en-US only)
+- Real-time grammar feedback in-session
 
 ## Future milestones (rough order)
 
-(M10 — Pitch / intonation v1 — is the active "Next milestone" above.)
+(M11 — Grammar / English-usage v1 — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the
@@ -151,11 +161,9 @@ emotionally important to the listener. On-device DSP via
    point that's distinct from "do a rep", giving lapsed users a tiny
    reason to open the app even when they don't have time for a full
    session._
-6. **Pitch / intonation v1.** Add a pitch track to the audio pipeline
-   (likely on-device DSP, `Accelerate` framework). Score monotone vs
-   varied delivery. Render alongside pace. — _Why: the missing third
-   leg of "how it sounds when you speak", and the most differentiating
-   metric vs. competitors who only count fillers._
+6. **Pitch / intonation v1 — shipped.** On-device DSP via `Accelerate`
+   surfaces a 0–100 monotone-vs-varied score and a semitone range read
+   in the summary, with a "Pitch" line series on the profile chart.
 7. **Grammar / English-usage v1.** Light grammar feedback (subject-verb
    agreement, run-on sentences, redundant phrasing) on the post-session
    transcript. Probably an LLM pass with caching. — _Why: requested
