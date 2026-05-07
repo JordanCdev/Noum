@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day)_
+_Last updated: 2026-05-07 (M5–M10 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day, on-device pitch / intonation v1)_
 
 ## Architecture overview
 
@@ -165,6 +165,22 @@ _Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI promp
   no metrics; integrates into BaselineEngine + ProgressionCharts +
   TrendAnalyzer + path-node criteria (`heldSilentPause`,
   `cleanPauseSession`).
+- `Noum/Noum/PitchEngine.swift` + `Noum/Noum/IntonationCard.swift` —
+  **M10 v1: on-device pitch / intonation.** `PitchAnalyzer` accumulates
+  audio buffers off the audio thread on a dedicated serial queue,
+  windows them into 50 ms frames with a 25 ms hop, applies a Hanning
+  window, and runs `vDSP`-based autocorrelation in the human-voice lag
+  band (75–400 Hz) with parabolic peak refinement. Voicing gate is
+  RMS > -46 dBFS plus normalised peak-to-zero-lag ratio > 0.5. Result
+  is a `[PitchPoint]` track condensed at finalize into
+  `IntonationMetrics` (median Hz, semitone stddev + 10–90 percentile
+  range, 0–100 monotone-vs-varied score). Card hides when fewer than
+  12 voiced frames so a 5-word reply doesn't get a fake number.
+  Persists on `PracticeSession` + drafts (Codable, optional). Wired
+  into `ProgressionCharts` as a fifth series ("Pitch") and into
+  `TrendAnalyzer.analyzeIntonation` (returns a `SkillTrend` keyed to
+  `vocalEmphasis`). Privacy posture unchanged — DSP runs in-process,
+  no audio leaves the device for pitch.
 - `Noum/Noum/WordChoiceMetrics.swift` + `Noum/Noum/WordChoiceCard.swift`
   — M4 v1: unique-content-word ratio + top 3 repeated content words
   after stop-word + filler filtering. Card hides for sessions under
@@ -518,8 +534,6 @@ _Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI promp
 
 ### Not started
 
-- **Pitch / intonation analysis** — zero pitch tracking. The audio
-  pipeline drops the signal at transcription time.
 - **Grammar / English-usage evaluation** — no parser, no AST, no
   grammar feedback.
 - **Word of the day** — not present.

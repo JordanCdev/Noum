@@ -19,6 +19,9 @@ struct SkillSnapshot: Identifiable, Codable {
     /// captured. Lets the trend analyzer pick up pause progress without
     /// re-reading the transcript.
     let pauseRate: Double?
+    /// Intonation variety score (0–100), or nil if too little voiced
+    /// audio. Lets the trend analyzer track delivery flatness over time.
+    let intonationVariety: Double?
 
     struct CompletedDrillRef: Codable {
         let variationId: String
@@ -36,7 +39,8 @@ struct SkillSnapshot: Identifiable, Codable {
         score: Int,
         categoryRatings: [String: String] = [:],
         drillCompleted: CompletedDrillRef? = nil,
-        pauseRate: Double? = nil
+        pauseRate: Double? = nil,
+        intonationVariety: Double? = nil
     ) {
         self.id = UUID()
         self.sessionId = sessionId
@@ -49,11 +53,12 @@ struct SkillSnapshot: Identifiable, Codable {
         self.categoryRatings = categoryRatings
         self.drillCompleted = drillCompleted
         self.pauseRate = pauseRate
+        self.intonationVariety = intonationVariety
     }
 
     enum CodingKeys: String, CodingKey {
         case id, sessionId, date, fillerCount, duration, wordCount, wpm
-        case score, categoryRatings, drillCompleted, pauseRate
+        case score, categoryRatings, drillCompleted, pauseRate, intonationVariety
     }
 
     init(from decoder: Decoder) throws {
@@ -69,6 +74,7 @@ struct SkillSnapshot: Identifiable, Codable {
         categoryRatings = try c.decodeIfPresent([String: String].self, forKey: .categoryRatings) ?? [:]
         drillCompleted = try c.decodeIfPresent(CompletedDrillRef.self, forKey: .drillCompleted)
         pauseRate = try c.decodeIfPresent(Double.self, forKey: .pauseRate)
+        intonationVariety = try c.decodeIfPresent(Double.self, forKey: .intonationVariety)
     }
 }
 
@@ -98,6 +104,7 @@ class SkillTrendStore: ObservableObject {
         fillerCount: Int,
         duration: TimeInterval,
         wordCount: Int,
+        intonationVariety: Double? = nil,
         score: Int,
         categoryRatings: [String: String] = [:],
         drillCompleted: SkillSnapshot.CompletedDrillRef? = nil,
@@ -113,7 +120,8 @@ class SkillTrendStore: ObservableObject {
             score: score,
             categoryRatings: categoryRatings,
             drillCompleted: drillCompleted,
-            pauseRate: pauseRate
+            pauseRate: pauseRate,
+            intonationVariety: intonationVariety
         )
         record(snapshot)
     }
@@ -211,8 +219,65 @@ enum TrendAnalyzer {
         if let pauseTrend = analyzePause(snapshots) {
             trends.append(pauseTrend)
         }
+        if let intonationTrend = analyzeIntonation(snapshots) {
+            trends.append(intonationTrend)
+        }
 
         return trends
+    }
+
+    /// Intonation-variety trend across snapshots that captured pitch.
+    /// Returns nil when too few snapshots have an intonation read.
+    static func analyzeIntonation(_ snapshots: [SkillSnapshot]) -> SkillTrend? {
+        let withVariety = snapshots.filter { $0.intonationVariety != nil }
+        guard withVariety.count >= 3 else { return nil }
+
+        let recent = Array(withVariety.prefix(3))
+        let previous = Array(withVariety.dropFirst(3).prefix(3))
+
+        let recentAvg = recent.compactMap(\.intonationVariety).reduce(0, +) / Double(max(1, recent.count))
+        let prevAvg = previous.isEmpty
+            ? recentAvg
+            : previous.compactMap(\.intonationVariety).reduce(0, +) / Double(previous.count)
+        let delta = recentAvg - prevAvg
+
+        let direction: TrendDirection
+        if previous.isEmpty {
+            direction = .stable
+        } else if delta >= 6 {
+            direction = .improving
+        } else if delta <= -6 {
+            direction = .declining
+        } else {
+            direction = .stable
+        }
+
+        let level: SkillLevel
+        if recentAvg >= 70 { level = .strong }
+        else if recentAvg >= 50 { level = .solid }
+        else if recentAvg >= 30 { level = .developing }
+        else { level = .weak }
+
+        let confidence: TrendConfidence = withVariety.count >= 8 ? .high
+            : (withVariety.count >= 4 ? .medium : .low)
+
+        let deltaText: String? = {
+            guard !previous.isEmpty, abs(delta) >= 3 else { return nil }
+            let sign = delta > 0 ? "+" : ""
+            return "\(sign)\(Int(delta.rounded())) variety vs prior"
+        }()
+
+        // We use `vocalEmphasis` as the SkillArea bucket — pitch variety
+        // is the closest existing skill family. Drill rotation will keep
+        // this honest if it shows up as the primary focus too often.
+        return SkillTrend(
+            skillArea: .vocalEmphasis,
+            direction: direction,
+            confidence: confidence,
+            windowSize: withVariety.count,
+            currentLevel: level,
+            recentDelta: deltaText
+        )
     }
 
     /// Pause-rate trend across the snapshots that captured pause data.

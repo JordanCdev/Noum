@@ -133,11 +133,22 @@ enum SessionFinalizer {
                   effectiveDuration > 0 else { return nil }
             return Double(metrics.count) / (effectiveDuration / 60.0)
         }()
+        // Mirror the on-device intonation read into the snapshot so the
+        // pitch trend chart and trend analyzer can read it without
+        // touching the audio pipeline again.
+        let intonationVariety: Double? = {
+            guard let intonation = sessionStore.sessions.first?.intonationMetrics,
+                  intonation.voicedFrameCount >= IntonationMetrics.minimumVoicedFrames else {
+                return nil
+            }
+            return Double(intonation.varietyScore)
+        }()
         SkillTrendStore.shared.recordFromSession(
             sessionId: latestSessionID ?? UUID(),
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
+            intonationVariety: intonationVariety,
             score: scoreValue,
             categoryRatings: categoryMap,
             pauseRate: pauseRate

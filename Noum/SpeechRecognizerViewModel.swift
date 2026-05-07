@@ -84,6 +84,27 @@ class SpeechRecognizerViewModel: ObservableObject {
         sessionWordTimings
     }
 
+    // Pitch / intonation (M10 v1). The analyser is created at session
+    // start with the input node's actual sample rate and torn down on
+    // stop. A dedicated serial queue keeps autocorrelation off the
+    // real-time audio thread.
+    private var pitchAnalyzer: PitchAnalyzer?
+    private let pitchProcessingQueue = DispatchQueue(
+        label: "com.jordancoaten.noum.pitch",
+        qos: .userInitiated
+    )
+
+    /// Compute intonation metrics from the live pitch analyser. Returns
+    /// `nil` when there isn't enough voiced audio to read honestly.
+    /// Per-mode views can call this when assembling their own drafts.
+    func currentSessionIntonationMetrics() -> IntonationMetrics? {
+        guard let analyzer = pitchAnalyzer else { return nil }
+        return IntonationMetrics.compute(
+            from: analyzer.snapshot(),
+            hopSeconds: analyzer.hopSeconds
+        )
+    }
+
     /// Compute pause metrics from the session's captured word timings.
     /// Returns nil when the provider didn't emit word data (so we don't
     /// store a misleading "0 pauses" reading on a session we couldn't
@@ -312,8 +333,29 @@ class SpeechRecognizerViewModel: ObservableObject {
         let inputFormat = inputNode.inputFormat(forBus: 0)
         inputNode.removeTap(onBus: 0)
 
+        // Spin up a fresh pitch analyser sized to whatever the hardware
+        // is actually emitting (16 / 24 / 44.1 / 48 kHz are all valid
+        // depending on AirPods / Bluetooth).
+        let analyzer = PitchAnalyzer(sampleRate: inputFormat.sampleRate)
+        self.pitchAnalyzer = analyzer
+        let pitchQueue = self.pitchProcessingQueue
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
+            // Snapshot mono samples now — the buffer is reused by
+            // AVFoundation, so we cannot pass it to a background queue.
+            let frames = Int(buffer.frameLength)
+            if frames > 0, let channelData = buffer.floatChannelData?[0] {
+                var samples = [Float](repeating: 0, count: frames)
+                samples.withUnsafeMutableBufferPointer { dst in
+                    if let dstBase = dst.baseAddress {
+                        memcpy(dstBase, channelData, frames * MemoryLayout<Float>.size)
+                    }
+                }
+                pitchQueue.async {
+                    analyzer.process(samples: samples)
+                }
+            }
             let data = self.convertBufferToPCMData(buffer: buffer)
             Task { try? await session.sendAudio(data) }
         }
@@ -327,6 +369,8 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         self.audioEngine = nil
+        // Don't drop the analyser yet — `saveCurrentSession` reads its
+        // snapshot. Cleared in `resetCurrentSession` on the next start.
     }
 
     private func failStartRecording(with error: Error) {
@@ -415,6 +459,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         finalTranscript = ""
         partialTranscript = ""
         connectionError = nil
+        pitchAnalyzer = nil
     }
 
     private func saveCurrentSession() {
@@ -438,6 +483,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
         )
         let pauseMetrics = currentSessionPauseMetrics()
+        let intonation = currentSessionIntonationMetrics()
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -450,7 +496,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 transcriptionProvider: provider.identifier,
                 pressureLevel: pressure,
                 isRated: pressureOn,
-                pauseMetrics: pauseMetrics
+                pauseMetrics: pauseMetrics,
+                intonationMetrics: intonation
             )
         )
         pastSessions = sessionStore.sessions
@@ -511,6 +558,11 @@ struct PracticeSession: Identifiable, Codable {
     /// persisted sessions decode without it, and (b) some transcription
     /// providers may not emit word-level timings on certain reps.
     var pauseMetrics: PauseMetrics? = nil
+    /// On-device pitch / intonation read for this session. Optional —
+    /// older persisted sessions decode without it; sessions with too
+    /// little voiced audio also leave this `nil` rather than publish
+    /// a misleading number.
+    var intonationMetrics: IntonationMetrics? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -534,6 +586,7 @@ struct PracticeSession: Identifiable, Codable {
         case pressureLevel
         case isRated
         case pauseMetrics
+        case intonationMetrics
     }
 
     init(
@@ -557,7 +610,8 @@ struct PracticeSession: Identifiable, Codable {
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
-        pauseMetrics: PauseMetrics? = nil
+        pauseMetrics: PauseMetrics? = nil,
+        intonationMetrics: IntonationMetrics? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -580,6 +634,7 @@ struct PracticeSession: Identifiable, Codable {
         self.pressureLevel = pressureLevel
         self.isRated = isRated
         self.pauseMetrics = pauseMetrics
+        self.intonationMetrics = intonationMetrics
     }
 
     init(from decoder: Decoder) throws {
@@ -605,5 +660,6 @@ struct PracticeSession: Identifiable, Codable {
         pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
+        intonationMetrics = try container.decodeIfPresent(IntonationMetrics.self, forKey: .intonationMetrics)
     }
 }

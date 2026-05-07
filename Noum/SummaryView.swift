@@ -504,6 +504,10 @@ struct SummaryView: View {
                             if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
                                 PauseSummaryCard(metrics: pauseMetrics)
                             }
+                            if let intonation = sessionStore.sessions.first?.intonationMetrics,
+                               intonation.voicedFrameCount >= IntonationMetrics.minimumVoicedFrames {
+                                IntonationCard(metrics: intonation)
+                            }
                             WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
                             FillerBreakdownCard(transcriptText: transcriptText)
                             YourNextMoveCard(

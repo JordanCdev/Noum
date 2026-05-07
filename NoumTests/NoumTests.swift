@@ -2304,3 +2304,244 @@ struct WordOfTheDayDetectionTests {
         #expect(WordOfTheDayManager.transcriptContains(any: ["catalyst", "galvanise"], in: transcript) == false)
     }
 }
+
+// MARK: - Pitch Engine (M10 v1)
+
+/// Build a pure sine wave at `hz` for `seconds` at the given sample rate.
+/// Used to validate the autocorrelation pitch estimator and analyser
+/// against a known-frequency signal.
+private func sineSamples(hz: Double, seconds: Double, sampleRate: Double, amplitude: Float = 0.5) -> [Float] {
+    let count = Int(sampleRate * seconds)
+    let twoPiOverSr = 2.0 * .pi / sampleRate
+    var out = [Float](repeating: 0, count: count)
+    for i in 0..<count {
+        out[i] = amplitude * Float(sin(Double(i) * twoPiOverSr * hz))
+    }
+    return out
+}
+
+/// Stack several sine segments together to produce a "varied" tone.
+private func variedSineSamples(
+    hzs: [Double],
+    secondsEach: Double,
+    sampleRate: Double,
+    amplitude: Float = 0.5
+) -> [Float] {
+    var out: [Float] = []
+    for hz in hzs {
+        out.append(contentsOf: sineSamples(
+            hz: hz,
+            seconds: secondsEach,
+            sampleRate: sampleRate,
+            amplitude: amplitude
+        ))
+    }
+    return out
+}
+
+struct PitchEstimatorTests {
+    @Test func estimatesPitchOfSineWave() {
+        let sampleRate: Double = 16000
+        let target: Double = 220 // A3 — well inside human voice range
+        let frame = sineSamples(hz: target, seconds: 0.05, sampleRate: sampleRate)
+        let minLag = Int(sampleRate / 400)
+        let maxLag = Int(sampleRate / 75)
+        let estimate = PitchAnalyzer.estimatePitch(
+            frame: frame,
+            sampleRate: sampleRate,
+            minLag: minLag,
+            maxLag: maxLag
+        )
+        guard let estimate else {
+            Issue.record("Expected pitch estimate for clean 220 Hz tone")
+            return
+        }
+        // Within 5% of the target — autocorrelation on a 50ms frame at
+        // 16kHz has integer-lag granularity, so we allow some tolerance.
+        #expect(abs(estimate - target) / target < 0.05)
+    }
+
+    @Test func estimatesHigherPitchSineWave() {
+        let sampleRate: Double = 16000
+        let target: Double = 330 // E4
+        let frame = sineSamples(hz: target, seconds: 0.05, sampleRate: sampleRate)
+        let minLag = Int(sampleRate / 400)
+        let maxLag = Int(sampleRate / 75)
+        let estimate = PitchAnalyzer.estimatePitch(
+            frame: frame,
+            sampleRate: sampleRate,
+            minLag: minLag,
+            maxLag: maxLag
+        )
+        guard let estimate else {
+            Issue.record("Expected pitch estimate for clean 330 Hz tone")
+            return
+        }
+        #expect(abs(estimate - target) / target < 0.05)
+    }
+
+    @Test func silentFrameYieldsNil() {
+        let sampleRate: Double = 16000
+        let frame = [Float](repeating: 0, count: Int(sampleRate * 0.05))
+        let estimate = PitchAnalyzer.estimatePitch(
+            frame: frame,
+            sampleRate: sampleRate,
+            minLag: Int(sampleRate / 400),
+            maxLag: Int(sampleRate / 75)
+        )
+        #expect(estimate == nil)
+    }
+
+    @Test func whiteNoiseProducesFiniteOrNilEstimate() {
+        // Low-correlation noise should typically fail the NCC voicing
+        // gate. Seeded LCG keeps the test deterministic across runs.
+        let sampleRate: Double = 16000
+        let count = Int(sampleRate * 0.05)
+        var seed: UInt64 = 0xDEADBEEF
+        var frame = [Float](repeating: 0, count: count)
+        for i in 0..<count {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            let normalized = Float(Int32(truncatingIfNeeded: seed >> 32)) / Float(Int32.max)
+            frame[i] = 0.3 * normalized
+        }
+        let estimate = PitchAnalyzer.estimatePitch(
+            frame: frame,
+            sampleRate: sampleRate,
+            minLag: Int(sampleRate / 400),
+            maxLag: Int(sampleRate / 75)
+        )
+        // We don't assert a hard nil — accept either nil (gate held)
+        // or a finite reading (false positive). Either way the
+        // estimator must not crash or return NaN/Inf.
+        if let estimate {
+            #expect(estimate.isFinite)
+        }
+    }
+}
+
+struct PitchAnalyzerTests {
+    @Test func tracksConstantPitch() {
+        let sampleRate: Double = 16000
+        let analyzer = PitchAnalyzer(sampleRate: sampleRate)
+        let samples = sineSamples(hz: 200, seconds: 1.0, sampleRate: sampleRate)
+        analyzer.process(samples: samples)
+
+        let voiced = analyzer.snapshot().compactMap(\.hz)
+        // 1 second of 25 ms hops → ~40 frames. Some edge frames may be
+        // unvoiced under the gate; we just require a healthy majority.
+        #expect(voiced.count > 25)
+        let mean = voiced.reduce(0, +) / Double(voiced.count)
+        #expect(abs(mean - 200) / 200 < 0.05)
+    }
+
+    @Test func metricsReadVariedPitchAsHigherScore() {
+        let sampleRate: Double = 16000
+        // Step through a one-octave-and-a-bit spread to simulate varied
+        // delivery: 110 → 165 → 220 → 165 → 110 Hz, 0.4s each.
+        let varied = variedSineSamples(
+            hzs: [110, 165, 220, 165, 110],
+            secondsEach: 0.4,
+            sampleRate: sampleRate
+        )
+        let variedAnalyzer = PitchAnalyzer(sampleRate: sampleRate)
+        variedAnalyzer.process(samples: varied)
+        let variedMetrics = IntonationMetrics.compute(
+            from: variedAnalyzer.snapshot(),
+            hopSeconds: variedAnalyzer.hopSeconds
+        )
+
+        // A flat 165 Hz tone of the same total length.
+        let flat = sineSamples(hz: 165, seconds: 2.0, sampleRate: sampleRate)
+        let flatAnalyzer = PitchAnalyzer(sampleRate: sampleRate)
+        flatAnalyzer.process(samples: flat)
+        let flatMetrics = IntonationMetrics.compute(
+            from: flatAnalyzer.snapshot(),
+            hopSeconds: flatAnalyzer.hopSeconds
+        )
+
+        guard let variedMetrics, let flatMetrics else {
+            Issue.record("Expected metrics for both varied and flat tones")
+            return
+        }
+        // Varied tone should land a much higher variety score and a
+        // wider semitone range than the flat tone.
+        #expect(variedMetrics.varietyScore > flatMetrics.varietyScore + 20)
+        #expect(variedMetrics.rangeSemitones > flatMetrics.rangeSemitones)
+    }
+
+    @Test func tooShortInputProducesNilMetrics() {
+        let sampleRate: Double = 16000
+        let analyzer = PitchAnalyzer(sampleRate: sampleRate)
+        // 100 ms — fewer than `minimumVoicedFrames` hops. Honest answer
+        // is "we don't know" → nil.
+        analyzer.process(samples: sineSamples(hz: 200, seconds: 0.1, sampleRate: sampleRate))
+        let metrics = IntonationMetrics.compute(
+            from: analyzer.snapshot(),
+            hopSeconds: analyzer.hopSeconds
+        )
+        #expect(metrics == nil)
+    }
+
+    @Test func resetClearsPriorTrack() {
+        let sampleRate: Double = 16000
+        let analyzer = PitchAnalyzer(sampleRate: sampleRate)
+        analyzer.process(samples: sineSamples(hz: 200, seconds: 0.5, sampleRate: sampleRate))
+        #expect(analyzer.snapshot().count > 0)
+        analyzer.reset()
+        #expect(analyzer.snapshot().isEmpty)
+    }
+}
+
+struct IntonationMetricsTests {
+    @Test func emptyTrackProducesNil() {
+        #expect(IntonationMetrics.compute(from: []) == nil)
+    }
+
+    @Test func unvoicedOnlyTrackProducesNil() {
+        let track = (0..<40).map { i in
+            PitchPoint(time: TimeInterval(i) * 0.025, hz: nil)
+        }
+        #expect(IntonationMetrics.compute(from: track) == nil)
+    }
+
+    @Test func headlineCopyAvoidsExclamations() {
+        // Voice rules: no "Let's", no exclamations, no emoji.
+        let cases: [IntonationMetrics] = [
+            IntonationMetrics(voicedFrameCount: 0, voicedSeconds: 0, medianHz: 0, stddevSemitones: 0, rangeSemitones: 0, varietyScore: 0),
+            IntonationMetrics(voicedFrameCount: 200, voicedSeconds: 5, medianHz: 130, stddevSemitones: 0.4, rangeSemitones: 1.0, varietyScore: 13),
+            IntonationMetrics(voicedFrameCount: 200, voicedSeconds: 5, medianHz: 145, stddevSemitones: 1.6, rangeSemitones: 4.0, varietyScore: 53),
+            IntonationMetrics(voicedFrameCount: 200, voicedSeconds: 5, medianHz: 175, stddevSemitones: 2.4, rangeSemitones: 6.0, varietyScore: 80),
+            IntonationMetrics(voicedFrameCount: 200, voicedSeconds: 5, medianHz: 175, stddevSemitones: 3.2, rangeSemitones: 8.0, varietyScore: 100)
+        ]
+        for metrics in cases {
+            #expect(!metrics.headline.contains("!"))
+            #expect(!metrics.headline.lowercased().contains("let's"))
+            #expect(!metrics.coachLine.contains("!"))
+        }
+    }
+
+    @Test func varietyScoreScalesWithStdev() {
+        // Construct a synthetic track where voiced frames are evenly
+        // distributed around a median to control stddev exactly.
+        func makeTrack(median: Double, semitoneOffsets: [Double]) -> [PitchPoint] {
+            semitoneOffsets.enumerated().map { idx, offset in
+                let hz = median * pow(2.0, offset / 12.0)
+                return PitchPoint(time: TimeInterval(idx) * 0.025, hz: hz)
+            }
+        }
+
+        let flat = makeTrack(median: 150, semitoneOffsets: Array(repeating: 0, count: 40))
+        let varied = makeTrack(median: 150, semitoneOffsets:
+            (0..<40).map { Double(($0 % 7) - 3) }
+        )
+
+        let flatMetrics = IntonationMetrics.compute(from: flat)
+        let variedMetrics = IntonationMetrics.compute(from: varied)
+        guard let flatMetrics, let variedMetrics else {
+            Issue.record("Expected non-nil metrics for synthetic 40-frame tracks")
+            return
+        }
+        #expect(flatMetrics.varietyScore == 0)
+        #expect(variedMetrics.varietyScore > 50)
+    }
+}
