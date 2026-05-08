@@ -229,7 +229,7 @@ struct ProgressionChartsCard: View {
 @available(iOS 17.0, macOS 12.0, *)
 extension ProgressionChartsCard {
     enum ChartSeries: CaseIterable {
-        case score, fillerRate, pace, pauseRate
+        case score, fillerRate, pace, pauseRate, pitch
 
         var shortLabel: String {
             switch self {
@@ -237,6 +237,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return "Fillers"
             case .pace:       return "Pace"
             case .pauseRate:  return "Pauses"
+            case .pitch:      return "Pitch"
             }
         }
 
@@ -246,6 +247,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return "speaker.slash.fill"
             case .pace:       return "speedometer"
             case .pauseRate:  return "pause.circle.fill"
+            case .pitch:      return "waveform.path"
             }
         }
 
@@ -255,6 +257,7 @@ extension ProgressionChartsCard {
             case .fillerRate: return AppColor.caution
             case .pace:       return AppColor.modeAhCounter
             case .pauseRate:  return AppColor.modeIM
+            case .pitch:      return .pink
             }
         }
 
@@ -264,15 +267,19 @@ extension ProgressionChartsCard {
             case .fillerRate: return point.fillerRate
             case .pace:       return point.pace
             case .pauseRate:  return point.pauseRate ?? 0
+            // Render variation (1 - monotone) so up = better, like score.
+            case .pitch:      return point.pitchVariation ?? 0
             }
         }
 
         /// Returns true only when the underlying point has real data for
         /// this series. Used to filter out sessions whose transcription
-        /// provider didn't capture word timings (pause series only).
+        /// provider didn't capture word timings (pause series), and
+        /// sessions where pitch wasn't reliable (pitch series).
         func hasValue(in point: ChartPoint) -> Bool {
             switch self {
             case .pauseRate: return point.pauseRate != nil
+            case .pitch:     return point.pitchVariation != nil
             default:         return true
             }
         }
@@ -283,6 +290,8 @@ extension ProgressionChartsCard {
             case .fillerRate: return String(format: "%.1f/min", value)
             case .pace:       return String(format: "%.0f WPM", value)
             case .pauseRate:  return String(format: "%.1f/min", value)
+            // Pitch variation as a percentage — easier to read than raw 0–1.
+            case .pitch:      return "\(Int((value * 100).rounded()))%"
             }
         }
 
@@ -300,6 +309,10 @@ extension ProgressionChartsCard {
             case .pauseRate:
                 if abs(delta) < 0.05 { return "Even" }
                 return String(format: "%+.1f/min", delta)
+            case .pitch:
+                let pct = delta * 100
+                if abs(pct) < 2 { return "Even" }
+                return String(format: "%+.0f%%", pct)
             }
         }
 
@@ -318,6 +331,10 @@ extension ProgressionChartsCard {
                 // up to a ceiling (~6/min). Treat upward movement as
                 // improvement until we have enough data to model the curve.
                 return delta >= 0.1
+            case .pitch:
+                // Higher variation (= lower monotone) is the improvement.
+                // We render variation, so positive delta is good.
+                return delta >= 0.02
             }
         }
     }
@@ -332,6 +349,10 @@ extension ProgressionChartsCard {
         /// timings. Filtered out at the chart-render layer for the
         /// `.pauseRate` series so we don't draw fake zeros.
         let pauseRate: Double?
+        /// 1.0 - monotone score (so up = more varied = good). nil when the
+        /// pitch reading wasn't reliable. Filtered out at the chart-render
+        /// layer for the `.pitch` series so flaky reads don't drag the line.
+        let pitchVariation: Double?
 
         init?(session: PracticeSession) {
             guard let score = session.score else { return nil }
@@ -346,6 +367,11 @@ extension ProgressionChartsCard {
                 self.pauseRate = Double(metrics.count) / minutes
             } else {
                 self.pauseRate = nil
+            }
+            if let metrics = session.pitchMetrics, metrics.isReliable {
+                self.pitchVariation = 1.0 - metrics.monotoneScore
+            } else {
+                self.pitchVariation = nil
             }
         }
     }

@@ -133,6 +133,14 @@ enum SessionFinalizer {
                   effectiveDuration > 0 else { return nil }
             return Double(metrics.count) / (effectiveDuration / 60.0)
         }()
+        // Pull pitch monotone score for the trend analyzer — only when the
+        // PitchAnalyzer reading was reliable (≥10 voiced windows, mean inside
+        // 70–400Hz). Hides M10's noisy reads from the trend pill.
+        let pitchMonotone: Double? = {
+            guard let metrics = sessionStore.sessions.first?.pitchMetrics,
+                  metrics.isReliable else { return nil }
+            return metrics.monotoneScore
+        }()
         SkillTrendStore.shared.recordFromSession(
             sessionId: latestSessionID ?? UUID(),
             fillerCount: effectiveFillerCount,
@@ -140,7 +148,8 @@ enum SessionFinalizer {
             wordCount: transcriptWordCount,
             score: scoreValue,
             categoryRatings: categoryMap,
-            pauseRate: pauseRate
+            pauseRate: pauseRate,
+            pitchMonotone: pitchMonotone
         )
 
         // Schedule follow-up reminder

@@ -82,54 +82,53 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M11 — Pitch trend on profile + grammar feedback v1._
+**Name:** _M12 — Multilingual v1 (start with Spanish + French)._
 
-(M10 _Pitch / intonation v1_ shipped: `PitchAnalyzer` (Sendable class)
-captures audio samples on the AVAudioEngine tap thread under an
-`OSAllocatedUnfairLock`-protected buffer (no DSP on the audio thread)
-and runs autocorrelation off-thread at session end. vDSP-based dot
-products inside a Swift outer loop. Peak-picking uses first-local-max-
-above-voicing-threshold to dodge octave-doubling errors common to
-naive argmax — verified against 220Hz and 140Hz pure sines, silent
-windows, and seeded white-noise input. `PitchMetrics` (Codable, persisted
-on `PracticeSession`) carries meanHz, stdHz, voicedRatio, windowCount;
-`monotoneScore` (0=varied, 1=flat) calibrated 8–35Hz stdev range; hides
-the card when `isReliable` returns false (insufficient voicing, mean
-out of vocal range, or fewer than 10 windows). `PitchSummaryCard`
-renders a horizontal Varied↔Monotone meter on summary alongside the
-pause + word-choice cards. `PracticeSessionDraft` extended; legacy JSON
-decodes cleanly.)
+(M11 _Pitch trend on profile + grammar feedback v1_ shipped:
+`CommunicationBaseline.pitchVariation` is a new BaseStat dimension —
+EMA-tracked from `PitchMetrics.monotoneScore` only when isReliable, with
+`decodeIfPresent` backward-compat for older persisted baselines.
+`SkillSnapshot.pitchMonotone` carries the per-session reading into the
+trend store; `TrendAnalyzer.analyzePitch` returns improving / declining /
+stable mapped to `vocalEmphasis`. `ProgressionChartsCard` gains a 5th
+"Pitch" series rendering variation (1 - monotone) so up = better, matching
+the score series. New strength "Vocal variety" (≤ 0.35 monotone) and
+blocker "Monotone delivery" (≥ 5 reliable reads at ≥ 0.75) drop into the
+existing identify paths. AI promptContext now grounds feedback in the
+pitch baseline. **Grammar polish:** `GrammarFeedbackService` is a Pro-
+gated actor (Gemini / OpenAI / DeepSeek) with conservative skip rules
+(under 12s duration, under 25 words, confidence below 0.55, or ≥30% filler
+ratio). System prompt forbids stylistic preferences and filler nags;
+excerpt validation drops fabricated quotes. No template fallback — without
+an AI provider we show nothing rather than invent grammar issues.
+`GrammarPolishCard` surfaces up to 3 notes with category chip, severity
+tint, verbatim excerpt, and imperative suggestion; "Looks clean" appears
+when the pass ran with nothing to flag. Free users see no card. Tested
+at skip-rule + parser + trend + baseline-decode levels.)
 
-**Honest gaps remaining for M10:**
-- No trend pill on the profile yet — pitch metrics are stored, but
-  the trend chart hasn't been wired up. That's M11.
-- Audio runs through the same input as transcription; no source
-  separation. Background noise / music could bias detection. In
-  practice the existing transcription quality gates already filter
-  these reps.
-- No baseline integration yet — pitch isn't part of the
-  `CommunicationBaseline` stat list. Easy add for M11.
-
-**Why this next:** trend visibility on profile completes the M10
-loop — you can see today's pitch but not whether it's improving over
-time. Grammar feedback is also a long-requested user feature that
-fits cleanly with the post-session debrief surface.
+**Why this next:** the core single-locale product is complete. The next
+real expansion lever is locale support — the filler lexicon, prompt pool,
+and provider configuration are all locale-keyed in shape, just locked to
+en-US today. Spanish + French unlock most of Western Europe and a large
+US-resident segment without rewriting the coaching surfaces.
 
 **Definition of done:**
-- Pitch trend pill on profile next to the existing filler / score / pace
-  trends.
-- `CommunicationBaseline.pitchVariation` as a new BaseStat dimension.
-- Grammar-feedback service runs on the post-session transcript with
-  a confidence-graded "polish notes" card. Pro-gated, runs once per
-  session, never punishes obviously-conversational speech.
+- User-selectable practice locale in settings (en-US default).
+- Filler-word lexicon ships per-locale (es-ES, fr-FR alongside en-US).
+- Curated prompt pool ships per-locale, with the same theme structure.
+- Transcription providers (AWS / Deepgram / Google) honour the selected
+  locale where supported; degrades gracefully when not.
+- All in-app coaching copy stays English for now — only practice
+  surfaces switch language. UI localization is a follow-up milestone.
 
 **Out of scope for this milestone:**
-- Multilingual support
+- UI localization (settings, summary, profile copy)
+- AI prompts and grammar polish in non-English (fall back to en-US AI
+  surfaces; the practice loop still works in the chosen language)
 
 ## Future milestones (rough order)
 
-(M11 — Pitch trend on profile + grammar feedback v1 — is the active
-"Next milestone" above.)
+(M12 — Multilingual v1 — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

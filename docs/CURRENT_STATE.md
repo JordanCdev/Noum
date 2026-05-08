@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5–M10 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day, pitch v1)_
+_Last updated: 2026-05-08 (M5–M11 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day, pitch v1, pitch trend + baseline + grammar polish)_
 
 ## Architecture overview
 
@@ -328,6 +328,38 @@ _Last updated: 2026-05-06 (M5–M10 shipped: coach memory, peak ratings, AI prom
   Surfaced in home, profile, reminder copy, widget, and the soft-sell
   pre-prompt's value-prop bullets. App icon badge mirrors the current
   streak via `setBadgeCount`.
+- **Pitch trend on profile + baseline integration + grammar polish (M11)** —
+  M10's known gaps are closed. `CommunicationBaseline.pitchVariation` is a
+  new BaseStat dimension; only sessions with `PitchMetrics.isReliable`
+  contribute (older / silent / out-of-range reps don't drag the value).
+  Decoded with `decodeIfPresent` for backward compat. `SkillSnapshot.pitchMonotone`
+  is a new field on the trend store; `SessionFinalizer` writes it after every
+  session that captured a reliable reading. `TrendAnalyzer.analyzePitch`
+  produces an improving/declining/stable read mapped to `vocalEmphasis` skill
+  area (closest existing match — pitch variation is one lever vocal emphasis
+  pulls). `ProgressionChartsCard` gains a 5th series — Pitch — rendering
+  variation (1 - monotone) so up = better, matching the score series. Series
+  is auto-included since `ChartSeries` is `CaseIterable`. New strength
+  ("Vocal variety", monotone ≤ 0.35) and persistent blocker ("Monotone
+  delivery", ≥ 5 reliable reads at ≥ 0.75 monotone) drop into existing
+  identifyStrengths / identifyBlockers paths. AI promptContext now mentions
+  pitch baseline so the coach reads can ground feedback in flat-vs-varied
+  delivery. **Grammar polish service** — `GrammarFeedbackService` is a Pro-
+  gated actor mirroring `AIInsightsService`'s provider plumbing
+  (Gemini/OpenAI/DeepSeek). Conservative skip rules: under 12s duration,
+  under 25 words, transcript confidence below 0.55, or filler ratio ≥ 30%
+  (throat-clearing). System prompt forbids stylistic preferences and
+  filler nags (FillerWordDetector owns that surface). Excerpt validation
+  drops any note whose quote isn't actually in the transcript — defensive
+  against fabrication. Cached per session ID, never re-spends quota for
+  the same input. **No template fallback** — without an AI provider we
+  show nothing rather than invent grammar issues. `GrammarPolishCard`
+  renders up to 3 notes with category chip + severity tint + verbatim
+  excerpt + imperative suggestion. "Looks clean" appears when the pass
+  ran and found nothing — that's the signal that grammar was reviewed,
+  not that the feature is broken. Hidden for free users (belt-and-braces
+  gate at both card and service). Skipped sessions render nothing rather
+  than a noisy empty state. Unit-tested at the skip-rule + parser level.
 - **Pitch / intonation v1 (M10)** — On-device pitch detection via
   `PitchAnalyzer` (Sendable class). The AVAudioEngine `installTap`
   callback captures samples into an `OSAllocatedUnfairLock`-protected
@@ -534,11 +566,6 @@ _Last updated: 2026-05-06 (M5–M10 shipped: coach memory, peak ratings, AI prom
 
 ### Not started
 
-- **Pitch / intonation analysis** — zero pitch tracking. The audio
-  pipeline drops the signal at transcription time.
-- **Grammar / English-usage evaluation** — no parser, no AST, no
-  grammar feedback.
-- **Word of the day** — not present.
 - **Multilingual support** — every transcription provider is hardcoded
   to `en-US`; all copy and prompts are English.
 - **Sponsor / advertisement surfaces** — none, and they conflict with

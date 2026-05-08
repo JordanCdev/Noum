@@ -2432,3 +2432,298 @@ struct PitchAnalyzerTests {
         #expect(analyzer.capturedSampleCount == 0)
     }
 }
+
+// MARK: - Grammar Feedback Service (M11)
+
+struct GrammarFeedbackServiceTests {
+
+    @Test func skipsWhenSessionTooShort() {
+        // Below the 12s duration floor.
+        let runs = GrammarFeedbackService.shouldRun(
+            transcript: "I think the team has been doing really well this quarter.",
+            duration: 8,
+            wordCount: 30,
+            fillerWordCount: 0,
+            transcriptConfidence: 0.9
+        )
+        #expect(runs == false)
+    }
+
+    @Test func skipsWhenWordCountTooLow() {
+        let runs = GrammarFeedbackService.shouldRun(
+            transcript: "Yeah I guess so honestly not sure.",
+            duration: 30,
+            wordCount: 10,
+            fillerWordCount: 0,
+            transcriptConfidence: 0.9
+        )
+        #expect(runs == false)
+    }
+
+    @Test func skipsWhenTranscriptConfidenceLow() {
+        let runs = GrammarFeedbackService.shouldRun(
+            transcript: String(repeating: "word ", count: 60),
+            duration: 30,
+            wordCount: 60,
+            fillerWordCount: 0,
+            transcriptConfidence: 0.40
+        )
+        #expect(runs == false)
+    }
+
+    @Test func skipsWhenFillerHeavy() {
+        // 30+ % filler ratio = throat-clearing; nothing to grade.
+        let runs = GrammarFeedbackService.shouldRun(
+            transcript: "um uh like so um you know like really um the thing is um uh well",
+            duration: 25,
+            wordCount: 30,
+            fillerWordCount: 12,
+            transcriptConfidence: 0.9
+        )
+        #expect(runs == false)
+    }
+
+    @Test func runsOnHealthySession() {
+        let runs = GrammarFeedbackService.shouldRun(
+            transcript: "The biggest opportunity for our team is to ship faster without sacrificing quality.",
+            duration: 35,
+            wordCount: 60,
+            fillerWordCount: 1,
+            transcriptConfidence: 0.85
+        )
+        #expect(runs == true)
+    }
+
+    @Test func runsWhenTranscriptConfidenceMissing() {
+        // Some providers don't emit a confidence — don't reject by default.
+        let runs = GrammarFeedbackService.shouldRun(
+            transcript: "We were planning the launch carefully because the deadline is real.",
+            duration: 30,
+            wordCount: 35,
+            fillerWordCount: 0,
+            transcriptConfidence: nil
+        )
+        #expect(runs == true)
+    }
+
+    @Test func parseRejectsExcerptThatIsntInTranscript() async {
+        // Excerpt the model returns must actually appear in the transcript;
+        // otherwise we drop the note (defensive against fabrication).
+        let transcript = "We launched the product on Tuesday."
+        let payload: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "content": #"{"notes": [{"category": "agreement", "severity": "moderate", "excerpt": "the team are happy", "suggestion": "Use 'team is' for singular agreement.", "rationale": null}]}"#
+                ]
+            ]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed != nil)
+        #expect(parsed?.notes.isEmpty == true)
+        #expect(parsed?.aiBacked == true)
+    }
+
+    @Test func parseAcceptsRealExcerpt() async {
+        let transcript = "The team are planning to ship faster this quarter."
+        let payload: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "content": #"{"notes": [{"category": "agreement", "severity": "moderate", "excerpt": "team are planning", "suggestion": "Use 'team is planning' for collective subject.", "rationale": null}]}"#
+                ]
+            ]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed != nil)
+        #expect(parsed?.notes.count == 1)
+        #expect(parsed?.notes.first?.category == .agreement)
+        #expect(parsed?.notes.first?.severity == .moderate)
+        #expect(parsed?.notes.first?.suggestion.contains("team is") == true)
+    }
+
+    @Test func parseCapsAtThreeNotes() async {
+        let transcript = "The team are happy. The data shows interesting result. Their is room. Its been a long week."
+        // Four valid notes — service must cap at 3.
+        let json = #"""
+        {"notes": [
+          {"category": "agreement", "severity": "moderate", "excerpt": "team are happy", "suggestion": "Use 'team is happy' for collective subject.", "rationale": null},
+          {"category": "agreement", "severity": "minor", "excerpt": "data shows interesting result", "suggestion": "Use 'results' (plural).", "rationale": null},
+          {"category": "wordChoice", "severity": "material", "excerpt": "Their is room", "suggestion": "Use 'There is' — possessive vs existential.", "rationale": null},
+          {"category": "wordChoice", "severity": "minor", "excerpt": "Its been a long week", "suggestion": "Use 'It's been' (contraction of 'it has').", "rationale": null}
+        ]}
+        """#
+        let payload: [String: Any] = [
+            "choices": [["message": ["content": json]]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed?.notes.count == 3)
+    }
+
+    @Test func parseAcceptsEmptyNotes() async {
+        let transcript = "We launched the product on Tuesday and the team handled it well."
+        let payload: [String: Any] = [
+            "choices": [["message": ["content": #"{"notes": []}"#]]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed != nil)
+        #expect(parsed?.notes.isEmpty == true)
+        #expect(parsed?.isCleanRun == true)
+    }
+}
+
+// MARK: - Trend Analyzer pitch (M11)
+
+struct TrendAnalyzerPitchTests {
+
+    /// Build a synthetic snapshot with just the fields the pitch analyzer cares about.
+    private func snapshot(daysAgo: Int, monotone: Double?) -> SkillSnapshot {
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return SkillSnapshot(
+            sessionId: UUID(),
+            date: date,
+            fillerCount: 2,
+            duration: 40,
+            wordCount: 80,
+            wpm: 120,
+            score: 6,
+            categoryRatings: [:],
+            drillCompleted: nil,
+            pauseRate: nil,
+            pitchMonotone: monotone
+        )
+    }
+
+    @Test func returnsNilWhenInsufficientData() {
+        // Only 2 snapshots with pitch — below the 3-rep floor.
+        let snapshots = [
+            snapshot(daysAgo: 0, monotone: 0.5),
+            snapshot(daysAgo: 1, monotone: 0.5),
+            snapshot(daysAgo: 2, monotone: nil)
+        ]
+        let trend = TrendAnalyzer.analyzePitch(snapshots)
+        #expect(trend == nil)
+    }
+
+    @Test func detectsImprovement() {
+        // Recent reps are more varied (lower monotone) than older ones.
+        let snapshots = [
+            snapshot(daysAgo: 0, monotone: 0.30),
+            snapshot(daysAgo: 1, monotone: 0.32),
+            snapshot(daysAgo: 2, monotone: 0.35),
+            snapshot(daysAgo: 3, monotone: 0.70),
+            snapshot(daysAgo: 4, monotone: 0.72),
+            snapshot(daysAgo: 5, monotone: 0.74)
+        ]
+        let trend = TrendAnalyzer.analyzePitch(snapshots)
+        #expect(trend != nil)
+        #expect(trend?.direction == .improving)
+        #expect(trend?.skillArea == .vocalEmphasis)
+    }
+
+    @Test func detectsDeclining() {
+        // Recent reps are flatter (higher monotone) than older ones.
+        let snapshots = [
+            snapshot(daysAgo: 0, monotone: 0.80),
+            snapshot(daysAgo: 1, monotone: 0.78),
+            snapshot(daysAgo: 2, monotone: 0.82),
+            snapshot(daysAgo: 3, monotone: 0.40),
+            snapshot(daysAgo: 4, monotone: 0.42),
+            snapshot(daysAgo: 5, monotone: 0.38)
+        ]
+        let trend = TrendAnalyzer.analyzePitch(snapshots)
+        #expect(trend?.direction == .declining)
+    }
+
+    @Test func skillLevelMapsFromMonotoneAverage() {
+        let strong = [
+            snapshot(daysAgo: 0, monotone: 0.20),
+            snapshot(daysAgo: 1, monotone: 0.22),
+            snapshot(daysAgo: 2, monotone: 0.25)
+        ]
+        #expect(TrendAnalyzer.analyzePitch(strong)?.currentLevel == .strong)
+
+        let weak = [
+            snapshot(daysAgo: 0, monotone: 0.85),
+            snapshot(daysAgo: 1, monotone: 0.88),
+            snapshot(daysAgo: 2, monotone: 0.82)
+        ]
+        #expect(TrendAnalyzer.analyzePitch(weak)?.currentLevel == .weak)
+    }
+}
+
+// MARK: - Baseline pitch dimension (M11)
+
+struct BaselinePitchTests {
+
+    @Test func emptyBaselineHasEmptyPitchStat() {
+        let baseline = CommunicationBaseline.empty
+        #expect(baseline.pitchVariation == .empty)
+        #expect(baseline.pitchVariation.isReliable == false)
+    }
+
+    @Test func decoderRestoresMissingPitchAsEmpty() throws {
+        // Older persisted baselines won't carry the field.
+        let json = """
+        {
+          "lastUpdated": 720000000.0,
+          "sessionCount": 5,
+          "qualifyingSessionCount": 5,
+          "fillerRate": {"value": 1.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 0.5, "percentile75": 1.5},
+          "pace": {"value": 130, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 110, "percentile75": 145},
+          "paceVariance": {"value": 8, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 5, "percentile75": 10},
+          "durationTendency": {"value": 45, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 30, "percentile75": 60},
+          "openingStrength": {"value": 2.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 1.5, "percentile75": 2.5},
+          "closingStrength": {"value": 2.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 1.5, "percentile75": 2.5},
+          "structureQuality": {"value": 2.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 1.5, "percentile75": 2.5},
+          "answerDepth": {"value": 2.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 1.5, "percentile75": 2.5},
+          "clarity": {"value": 2.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 1.5, "percentile75": 2.5},
+          "vocabularyRange": {"value": 0.65, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 0.55, "percentile75": 0.75},
+          "hedgingRate": {"value": 1.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 0.5, "percentile75": 1.5},
+          "averageScore": {"value": 7.0, "sampleCount": 5, "confidence": 1, "trend": "stable", "percentile25": 6.5, "percentile75": 7.5},
+          "topStrengths": ["Filler control"],
+          "persistentBlockers": []
+        }
+        """
+        let data = json.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(CommunicationBaseline.self, from: data)
+        #expect(decoded.pitchVariation == .empty)
+        #expect(decoded.fillerRate.value == 1.0)
+    }
+
+    @Test func vocalVarietyShowsAsStrengthWhenVaried() throws {
+        // Build a baseline where pitchVariation is reliable and varied.
+        let varied = BaselineStat(value: 0.20, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 0.18, percentile75: 0.25)
+        var baseline = CommunicationBaseline.empty
+        baseline = CommunicationBaseline(
+            lastUpdated: Date(),
+            sessionCount: 12,
+            qualifyingSessionCount: 12,
+            fillerRate: .empty,
+            pace: .empty,
+            paceVariance: .empty,
+            durationTendency: .empty,
+            pauseRate: .empty,
+            pauseFilledRatio: .empty,
+            openingStrength: .empty,
+            closingStrength: .empty,
+            structureQuality: .empty,
+            answerDepth: .empty,
+            clarity: .empty,
+            vocabularyRange: .empty,
+            hedgingRate: .empty,
+            pitchVariation: varied,
+            averageScore: .empty,
+            clutchWordFrequencies: [:],
+            topStrengths: [],
+            persistentBlockers: []
+        )
+        // Re-encoding/decoding round-trips without losing the field.
+        let data = try JSONEncoder().encode(baseline)
+        let decoded = try JSONDecoder().decode(CommunicationBaseline.self, from: data)
+        #expect(decoded.pitchVariation.value == 0.20)
+        #expect(decoded.pitchVariation.isReliable == true)
+    }
+}

@@ -187,6 +187,13 @@ struct CommunicationBaseline: Codable, Equatable {
     // Layer 3: Style Signals
     var vocabularyRange: BaselineStat    // Unique word ratio
     var hedgingRate: BaselineStat        // Hedge phrases per minute (e.g., "I think", "maybe", "sort of")
+    /// Average monotone score across recent reps where pitch was reliable.
+    /// 0.0 = varied delivery (good), 1.0 = flat/monotone (worse). Sources from
+    /// `PitchMetrics.monotoneScore`. Only sessions with `isReliable` pitch
+    /// contribute — older sessions and provider-degraded reps leave this
+    /// untouched so the value never drifts to a fake "very flat" reading on
+    /// missing data.
+    var pitchVariation: BaselineStat
 
     // Layer 4: Overall
     var averageScore: BaselineStat
@@ -258,6 +265,7 @@ struct CommunicationBaseline: Codable, Equatable {
         clarity: .empty,
         vocabularyRange: .empty,
         hedgingRate: .empty,
+        pitchVariation: .empty,
         averageScore: .empty,
         clutchWordFrequencies: [:],
         topStrengths: [],
@@ -275,7 +283,7 @@ struct CommunicationBaseline: Codable, Equatable {
         case fillerRate, pace, paceVariance, durationTendency
         case pauseRate, pauseFilledRatio
         case openingStrength, closingStrength, structureQuality, answerDepth, clarity
-        case vocabularyRange, hedgingRate, averageScore
+        case vocabularyRange, hedgingRate, pitchVariation, averageScore
         case clutchWordFrequencies, topStrengths, persistentBlockers
     }
 
@@ -297,6 +305,7 @@ struct CommunicationBaseline: Codable, Equatable {
         clarity = try c.decode(BaselineStat.self, forKey: .clarity)
         vocabularyRange = try c.decode(BaselineStat.self, forKey: .vocabularyRange)
         hedgingRate = try c.decode(BaselineStat.self, forKey: .hedgingRate)
+        pitchVariation = try c.decodeIfPresent(BaselineStat.self, forKey: .pitchVariation) ?? .empty
         averageScore = try c.decode(BaselineStat.self, forKey: .averageScore)
         clutchWordFrequencies = try c.decodeIfPresent([String: BaselineStat].self, forKey: .clutchWordFrequencies) ?? [:]
         topStrengths = try c.decode([String].self, forKey: .topStrengths)
@@ -320,6 +329,7 @@ struct CommunicationBaseline: Codable, Equatable {
         clarity: BaselineStat,
         vocabularyRange: BaselineStat,
         hedgingRate: BaselineStat,
+        pitchVariation: BaselineStat = .empty,
         averageScore: BaselineStat,
         clutchWordFrequencies: [String: BaselineStat],
         topStrengths: [String],
@@ -341,6 +351,7 @@ struct CommunicationBaseline: Codable, Equatable {
         self.clarity = clarity
         self.vocabularyRange = vocabularyRange
         self.hedgingRate = hedgingRate
+        self.pitchVariation = pitchVariation
         self.averageScore = averageScore
         self.clutchWordFrequencies = clutchWordFrequencies
         self.topStrengths = topStrengths
@@ -621,6 +632,18 @@ enum BaselineEngine {
             baseline.hedgingRate = buildStat(from: hedgingRates, allSamples: qualifying.count)
         }
 
+        // Pitch variation — uses PitchMetrics.monotoneScore (0=varied, 1=flat).
+        // Only counts sessions where the pitch reading was reliable (≥10
+        // voiced windows, mean inside 70–400Hz, ≥20% voiced ratio). Older
+        // sessions and provider-degraded reps don't drag the value.
+        let monotoneScores = recent.compactMap { s -> Double? in
+            guard let metrics = s.pitchMetrics, metrics.isReliable else { return nil }
+            return metrics.monotoneScore
+        }
+        if !monotoneScores.isEmpty {
+            baseline.pitchVariation = buildStat(from: monotoneScores, allSamples: monotoneScores.count)
+        }
+
         // Average score
         let scores = recent.compactMap { $0.score }.map { Double($0) }
         if !scores.isEmpty {
@@ -712,6 +735,19 @@ enum BaselineEngine {
             let hedgeCount = HedgeDetector.count(in: session.transcript)
             let hedgeRate = Double(hedgeCount) / (session.duration / 60.0)
             updated.hedgingRate = updateStat(updated.hedgingRate, newValue: hedgeRate, alpha: alpha, totalSamples: totalQualifying)
+        }
+
+        // Pitch variation — only contribute when the session captured a
+        // reliable pitch reading. Sessions that didn't (e.g. very short reps,
+        // mostly silent, mic noise outside vocal range) leave the existing
+        // baseline pitch stat untouched.
+        if let metrics = session.pitchMetrics, metrics.isReliable {
+            updated.pitchVariation = updateStat(
+                updated.pitchVariation,
+                newValue: metrics.monotoneScore,
+                alpha: alpha,
+                totalSamples: max(updated.pitchVariation.sampleCount + 1, totalQualifying)
+            )
         }
 
         // Update strengths and blockers
@@ -894,6 +930,11 @@ enum BaselineEngine {
         }
         if baseline.hedgingRate.isReliable {
             lines.append("Hedging rate: \(String(format: "%.1f", baseline.hedgingRate.value)) hedge phrases/min")
+        }
+        if baseline.pitchVariation.isReliable {
+            let label = baseline.pitchVariation.value < 0.35 ? "varied"
+                : baseline.pitchVariation.value < 0.65 ? "mixed" : "flat"
+            lines.append("Pitch delivery baseline: \(label) (monotone score \(String(format: "%.2f", baseline.pitchVariation.value)))")
         }
 
         // Category quality signals
@@ -1117,6 +1158,9 @@ enum BaselineEngine {
         if baseline.structureQuality.isReliable && baseline.structureQuality.value >= 2.5 {
             strengths.append("Structure")
         }
+        if baseline.pitchVariation.isReliable && baseline.pitchVariation.value <= 0.35 {
+            strengths.append("Vocal variety")
+        }
         return Array(strengths.prefix(3))
     }
 
@@ -1137,6 +1181,11 @@ enum BaselineEngine {
         }
         if baseline.structureQuality.isReliable && baseline.structureQuality.value < 1.5 {
             blockers.append("Structure")
+        }
+        // Persistently flat delivery (≥0.75 monotone score across 5+ reliable
+        // pitch reads) is a real coachable pattern.
+        if baseline.pitchVariation.isReliable && baseline.pitchVariation.sampleCount >= 5 && baseline.pitchVariation.value >= 0.75 {
+            blockers.append("Monotone delivery")
         }
         return blockers
     }

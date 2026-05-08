@@ -508,6 +508,7 @@ struct SummaryView: View {
                                 PitchSummaryCard(metrics: pitchMetrics)
                             }
                             WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
+                            GrammarPolishCard(session: sessionStore.sessions.first)
                             FillerBreakdownCard(transcriptText: transcriptText)
                             YourNextMoveCard(
                                 drill: drillRecommendationV2,
