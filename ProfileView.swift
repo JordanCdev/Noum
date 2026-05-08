@@ -105,6 +105,24 @@ struct ProfileView: View {
         return out
     }
 
+    /// Lightweight section divider used to cluster the Profile sections
+    /// into named groups (Progression / Coaching / Community). Same
+    /// micro-eyebrow treatment as the rest of the app — uppercase,
+    /// tracked, secondary tint — so it visually disappears into the
+    /// rhythm without dominating any card below it.
+    private func clusterHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(Typography.micro.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(1.0)
+            Spacer()
+        }
+        .padding(.top, 8)
+        .padding(.horizontal, 4)
+    }
+
     private var coachingInsight: String {
         if let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile) {
             return plan.encouragement
@@ -115,20 +133,35 @@ struct ProfileView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
+                // M14: cluster the 14 sections into four named groups so
+                // the Profile reads as "identity → progression → coaching
+                // → community" instead of a 14-card stack. Same surfaces,
+                // intentional structure. Cluster labels use the same
+                // micro-eyebrow treatment as the rest of the app
+                // (Typography.micro, uppercase, tracking 0.8) so they
+                // disappear into the rhythm without dominating.
+
                 identityHeader
                 rankPanel
                 speakingRatingCard
+
+                clusterHeader("Progression")
                 PeakRatingWallCard()
                 ProgressionChartsCard(sessionStore: sessionStore)
-                leaguePanel
                 ModeMasteryCard()
-                coachingDirectionCard
-                activeChallengePanel
                 achievementsPanel
+
+                clusterHeader("Coaching")
+                coachingDirectionCard
                 speechPatternsCard
+                activeChallengePanel
                 feedbackInboxCard
-                statsRow
+
+                clusterHeader("Community")
+                leaguePanel
                 socialSection
+
+                statsRow
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
