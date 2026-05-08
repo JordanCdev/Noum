@@ -52,14 +52,17 @@ addressed in app code:
 
 Where the product is now **underweight**:
 
-- **Speech metrics stop at fillers + pace.** Pause length and word-
-  choice variety are the next-most-differentiating signals, and both
-  are partially scaffolded but not yet first-class session metrics.
+- **Speech metrics now cover fillers, pace, pauses, vocabulary, and
+  pitch.** Pause length and word-choice variety landed as first-class
+  metrics in M4; pitch / intonation landed in M10 with on-device
+  autocorrelation. The remaining gap on the *language* side is light
+  grammar feedback (M11), which is polish-tier rather than core.
 - **Goal capture is still mostly a write-once event.** Goals don't
   shape drill selection or evaluation weighting yet — they live in
   reminder bodies and recommendation rationale.
-- **Daily-challenge tile is a single rolling status**, not a true
-  daily reset rhythm with claim moments and expiry pressure.
+- **Pitch is descriptive, not prescriptive yet.** M10 surfaces variety
+  and trend; the bridge from "you were monotone" to a wired
+  `vocalEmphasis` mini-drill is M11+.
 - **Real-device QA gaps:** Live Activity can't be exercised on
   simulator, and `NoumWatch` is detached from the iOS scheme until
   the watchOS 26.2 simulator runtime is installed locally.
@@ -82,89 +85,88 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M10 — Pitch / intonation v1._
+**Name:** _M11 — Grammar / English-usage v1._
 
-(M9 _Word of the day_ shipped: `WordOfTheDayCatalog` with 30 curated
-words (each: word, partOfSpeech, definition, 30s prompt, accepted
-inflected forms). `WordOfTheDayCatalog.entry(for: dayKey)` selects
-deterministically via Hasher → same day → same word, no backend
-needed. `WordOfTheDayManager` (per-account) tracks "used today" via
-word-boundary safe transcript scanning across all of today's
-sessions. Detection forgives plurals/past-tense via the explicit
-`acceptedForms` list and ignores substrings inside unrelated words
-(e.g., "art" doesn't match in "smart"). `WordOfTheDayTile` on home
-shows the word, definition, and 30s prompt; tapping "Try it"
-seeds `timedPractice.suggestedPrompt` so the next Timed session
-opens with that exact prompt. `SessionFinalizer` triggers
-re-evaluation after each finalize so the tile flips to "Used"
-immediately. Per-account "used days" set persisted so a future
-"vocabulary streak" surface can read from it.)
+(M10 _Pitch / intonation v1_ shipped: `PitchTracker` runs on-device
+autocorrelation via `Accelerate.vDSP` over 50ms Hann-windowed frames
+(25ms hop) on the same `AVAudioEngine` input tap the transcription
+provider uses — no second audio session, no new privacy surface.
+Voicing is gated on autocorrelation strength ≥ 0.3 + an energy floor.
+Parabolic interpolation around the peak gives sub-sample F0 accuracy
+in the 70–500 Hz band. `PitchMetrics` reduces the per-frame track to
+five numbers (meanHz, voicedSeconds, semitoneStdDev, varietyScore,
+rangeSemitones), persisted on every `PracticeSession` and synced
+through `PracticeSessionStore`. Variety is a soft logistic over
+semitone std-dev — ≤1 ST reads as monotone, ≥4 ST as expressive.
+`PitchSummaryCard` surfaces the variety bar + headline alongside
+the pause card; hides itself for reps under 4s of voiced audio rather
+than reading false certainty into a whisper. `ProgressionChartsCard`
+gains a fifth `pitchVariety` series so the trend pill on the profile
+plots monotone-vs-varied across the last 30 days, filtering out
+no-signal sessions. `TrendAnalyzer.analyzePitch` folds pitch variety
+into the same direction/level/confidence shape as pause-rate so it
+feeds drill focus selection like every other skill area, on the
+existing `vocalEmphasis` SkillArea. Fully covered by 9 unit tests
+including a synthetic sine-wave end-to-end through the autocorrelator.)
 
-**Honest gaps remaining for M9:**
-- 30 curated words covers a month — needs to grow to ~365 to hit
-  "no repeats inside a year". Same shape, just more entries.
-- No notification surfaces today's word yet — the daily-rhythm
-  notification copy could include it, deferred to a follow-up so
-  this commit stays focused.
+**Honest gaps remaining for M10:**
+- No mid-session pitch HUD yet — the live tap could power a "lift the
+  next word" coaching nudge once we want to compete on real-time
+  feedback. Held back so the v1 ships small.
+- Provider-emitted Live Activity / watchOS surfaces don't read pitch
+  yet — it lives in summary + trend only.
+- Pitch is descriptive, not yet prescriptive — no `vocalEmphasis`
+  drill is wired specifically to pitch metrics. The drill family
+  exists; the bridge from "you were monotone" → "do this drill" is
+  M11+.
 
-**Why this next:** the missing third leg of "how it sounds when
-you speak". Filler count and pace are solved; pitch / intonation
-is the differentiating metric vs. competitors and the most
-emotionally important to the listener. On-device DSP via
-`Accelerate` keeps it private and instant.
+**Why this next:** vocabulary range, pace, fillers, pauses, and pitch
+together cover the *audio* side of speaking. The remaining gap is the
+*language* side — light grammar feedback (subject-verb agreement,
+run-ons, redundant phrasing) on the post-session transcript, probably
+an LLM pass with caching. Polish-tier rather than core, but the next
+biggest non-redundant signal we can add.
 
 **Definition of done:**
-- Pitch track extracted on-device during recording (autocorrelation
-  via vDSP, ~50ms windows).
-- Score for "monotone vs varied delivery" surfaced in the summary
-  card alongside pace.
-- Trend pill on the profile.
-- No new privacy implications — all DSP runs in-process.
+- LLM grammar pass over the post-session transcript with cached
+  results so the same rep doesn't re-spend AI quota.
+- Two-to-four concrete suggestions surfaced as a `GrammarFindingsCard`
+  alongside the eloquence findings — same conservative threshold
+  pattern: hide the card when nothing notable was found.
+- Soft framing: "smoother phrasing" rather than "errors". Voice rules
+  apply (no scolding, no exclamation, no Let's).
+- Provider plumbing reuses `AINPCChatService` / `AIInsightsService` —
+  no new provider abstraction.
 
 **Out of scope for this milestone:**
-- Grammar / English-usage feedback
 - Multilingual support
+- Real-time grammar correction during the rep
 
 ## Future milestones (rough order)
 
-(M10 — Pitch / intonation v1 — is the active "Next milestone" above.)
+(M11 — Grammar / English-usage v1 — is the active "Next milestone" above.
+M6 through M10 have all shipped end-to-end on Redesign.)
 
-1. **High-score & rivalry surface — peak-rating wall.** A "Best in
-   week", "Best ever", "Best in your friends" surface that creates the
-   loss-aversion / chase loop without faking ranks. Tied to the league
-   from M2. — _Why: completes the pull loop with public proof
-   of progress._
-2. **AI-driven topic prompts — recurrence-aware.** Pull from the
-   200-prompt pool 70% of the time, generate fresh ones via
-   `AINPCChatService` 30% of the time, biased by the user's goal,
-   weakest pattern, and recent prompt history (no repeats inside 14
-   days). — _Why: prompt staleness is a quiet retention killer once
-   users have seen the pool 2–3 times._
-3. **Daily-challenge rhythm v1.** Replace the single rolling tile with
-   a real daily reset (claim moment, expiry pressure, rotating set of
-   3 quick challenges). Feeds the league tier check at the same time. —
-   _Why: the current tile drives some pull but not the daily-open
-   rhythm a fully gamified coach can._
-5. **Word of the day — vocabulary stretch.** One curated word per day
-   tied to a 30s prompt that asks the user to use it naturally. Track
-   "used / not used" automatically. — _Why: small daily commitment
-   point that's distinct from "do a rep", giving lapsed users a tiny
-   reason to open the app even when they don't have time for a full
-   session._
-6. **Pitch / intonation v1.** Add a pitch track to the audio pipeline
-   (likely on-device DSP, `Accelerate` framework). Score monotone vs
-   varied delivery. Render alongside pace. — _Why: the missing third
-   leg of "how it sounds when you speak", and the most differentiating
-   metric vs. competitors who only count fillers._
-7. **Grammar / English-usage v1.** Light grammar feedback (subject-verb
+1. **Grammar / English-usage v1.** Light grammar feedback (subject-verb
    agreement, run-on sentences, redundant phrasing) on the post-session
-   transcript. Probably an LLM pass with caching. — _Why: requested
-   feature; lower priority because it touches polish rather than core
-   skill, and risks feeling pedantic._
-8. **Multilingual v1 — start with Spanish, French, German.** Provider
-    locale becomes user-selectable; filler-word lexicon and prompt
-    pool ship per locale. — _Why: market expansion; not core to the
-    product story but a reasonable late-roadmap move._
+   transcript. LLM pass with per-rep caching. — _Why: rounds out the
+   language-side coverage now that the audio side (fillers, pace,
+   pauses, pitch, vocabulary) is solid._
+2. **Pitch-driven coaching nudges.** Live "lift the next word" HUD that
+   reads from the same `PitchTracker` already feeding M10. Wires the
+   existing `vocalEmphasis` drill family to concrete pitch metrics so
+   the next-action engine can actually prescribe a vocal-emphasis
+   drill when the rep was monotone. — _Why: makes pitch prescriptive
+   rather than descriptive._
+3. **Word of the day — catalog growth.** Expand the M9 `WordOfTheDayCatalog`
+   from 30 to ~365 entries to satisfy the "no repeats inside a year"
+   target. Same shape, more content. — _Why: pure content work, no
+   engineering risk; closes the only honest gap remaining from M9._
+4. **Multilingual v1 — start with Spanish, French, German.** Provider
+   locale becomes user-selectable; filler-word lexicon and prompt
+   pool ship per locale. Pitch metrics already work language-agnostic
+   so M10 carries forward unchanged. — _Why: market expansion; not
+   core to the product story but a reasonable late-roadmap move._
 
 ## Anti-goals
 

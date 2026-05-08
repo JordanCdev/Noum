@@ -2304,3 +2304,137 @@ struct WordOfTheDayDetectionTests {
         #expect(WordOfTheDayManager.transcriptContains(any: ["catalyst", "galvanise"], in: transcript) == false)
     }
 }
+
+// MARK: - Pitch Metrics (M10 — pitch / intonation v1)
+//
+// Tests run on synthetic frames so they don't depend on the autocorrelation
+// implementation; they cover the reduction math (semitone std-dev, range,
+// variety logistic) and the readability gate. The autocorrelation path is
+// covered separately by `PitchTrackerSyntheticTests` below using a known
+// sine-wave input.
+
+struct PitchMetricsTests {
+    private func frame(hz: Double, voiced: Bool = true) -> PitchTracker.Frame {
+        PitchTracker.Frame(isVoiced: voiced, frequencyHz: hz)
+    }
+
+    @Test func emptyFramesProduceEmptyMetrics() {
+        let metrics = PitchMetrics.reduce(frames: [], frameDuration: 0.025)
+        #expect(metrics == .empty)
+    }
+
+    @Test func unvoicedFramesAreIgnored() {
+        let frames = [
+            frame(hz: 0, voiced: false),
+            frame(hz: 0, voiced: false)
+        ]
+        let metrics = PitchMetrics.reduce(frames: frames, frameDuration: 0.025)
+        #expect(metrics == .empty)
+    }
+
+    @Test func monotoneInputProducesLowVariety() {
+        // 200 voiced frames at exactly 130 Hz → 0 ST std-dev → variety ~0.
+        let frames = Array(repeating: frame(hz: 130), count: 200)
+        let metrics = PitchMetrics.reduce(frames: frames, frameDuration: 0.025)
+        #expect(metrics.semitoneStdDev < 0.01)
+        #expect(metrics.varietyScore < 0.10)
+        #expect(metrics.rangeSemitones < 0.01)
+        #expect(metrics.voicedSeconds > PitchMetrics.minVoicedSecondsForReadout)
+    }
+
+    @Test func variedInputProducesHighVariety() {
+        // Alternate between 110 Hz and 220 Hz (one octave = 12 ST). Std
+        // dev is ~6 ST, well into "varied" territory.
+        var frames: [PitchTracker.Frame] = []
+        for i in 0..<400 {
+            frames.append(frame(hz: i % 2 == 0 ? 110 : 220))
+        }
+        let metrics = PitchMetrics.reduce(frames: frames, frameDuration: 0.025)
+        #expect(metrics.semitoneStdDev > 4.0)
+        #expect(metrics.varietyScore > 0.85)
+        #expect(metrics.rangeSemitones >= 11.5)  // ~12 ST minus median centring
+    }
+
+    @Test func tinyVoicedSliceFailsReadabilityGate() {
+        // 20 frames × 25ms = 0.5s — well below the 4s gate.
+        let frames = Array(repeating: frame(hz: 150), count: 20)
+        let metrics = PitchMetrics.reduce(frames: frames, frameDuration: 0.025)
+        #expect(metrics.hasReadableSignal == false)
+    }
+
+    @Test func meanHzIsAverageOfVoicedFrames() {
+        let frames: [PitchTracker.Frame] = [
+            frame(hz: 100), frame(hz: 200), frame(hz: 300),
+            frame(hz: 0, voiced: false)  // ignored
+        ]
+        let metrics = PitchMetrics.reduce(frames: frames, frameDuration: 0.025)
+        #expect(abs(metrics.meanHz - 200) < 0.01)
+    }
+
+    @Test func headlineCopyIsOnVoice() {
+        // Voice rules: no exclamations, no "Let's", no emoji.
+        let metrics = PitchMetrics(
+            meanHz: 140, voicedSeconds: 30,
+            semitoneStdDev: 0.5, varietyScore: 0.10, rangeSemitones: 1.0
+        )
+        let line = metrics.headline
+        #expect(!line.contains("!"))
+        #expect(!line.lowercased().contains("let's"))
+    }
+}
+
+// MARK: - Pitch tracker (synthetic sine-wave end-to-end)
+
+struct PitchTrackerSyntheticTests {
+    /// Generate a sine wave at `hz` for `seconds` at `sampleRate`. The
+    /// tracker should detect this as a single voiced frequency.
+    private func sineSamples(hz: Double, seconds: Double, sampleRate: Double, amplitude: Float = 0.3) -> [Float] {
+        let count = Int(seconds * sampleRate)
+        var samples = [Float](repeating: 0, count: count)
+        let twoPi = 2.0 * Double.pi
+        for i in 0..<count {
+            samples[i] = amplitude * Float(sin(twoPi * hz * Double(i) / sampleRate))
+        }
+        return samples
+    }
+
+    @Test func detectsKnownSineFrequency() async throws {
+        let sampleRate = 16000.0
+        let tracker = PitchTracker(sampleRate: sampleRate)
+        tracker.ingest(samples: sineSamples(hz: 200, seconds: 1.0, sampleRate: sampleRate))
+
+        // Tracker drains on its serial queue; let it settle before snapshotting.
+        try? await Task.sleep(for: .milliseconds(50))
+        let frames = tracker.snapshotFrames()
+        let voiced = frames.filter(\.isVoiced)
+        #expect(voiced.count > 10)
+
+        let mean = voiced.map(\.frequencyHz).reduce(0, +) / Double(max(1, voiced.count))
+        // Allow a 5% tolerance — autocorrelation + parabolic interp should
+        // get us within ~1 Hz, but window boundary effects can shift it.
+        #expect(abs(mean - 200) / 200 < 0.05)
+    }
+
+    @Test func silenceProducesNoVoicedFrames() async throws {
+        let sampleRate = 16000.0
+        let tracker = PitchTracker(sampleRate: sampleRate)
+        // Pure zeros — should fall through the energy gate.
+        tracker.ingest(samples: [Float](repeating: 0, count: Int(sampleRate)))
+        try? await Task.sleep(for: .milliseconds(50))
+
+        let frames = tracker.snapshotFrames()
+        let voiced = frames.filter(\.isVoiced)
+        #expect(voiced.count == 0)
+    }
+
+    @Test func resetClearsFrames() async throws {
+        let sampleRate = 16000.0
+        let tracker = PitchTracker(sampleRate: sampleRate)
+        tracker.ingest(samples: sineSamples(hz: 180, seconds: 0.5, sampleRate: sampleRate))
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(tracker.snapshotFrames().count > 0)
+
+        tracker.reset()
+        #expect(tracker.snapshotFrames().count == 0)
+    }
+}

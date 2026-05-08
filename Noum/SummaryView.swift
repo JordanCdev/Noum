@@ -504,6 +504,9 @@ struct SummaryView: View {
                             if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
                                 PauseSummaryCard(metrics: pauseMetrics)
                             }
+                            if let pitchMetrics = sessionStore.sessions.first?.pitchMetrics {
+                                PitchSummaryCard(metrics: pitchMetrics)
+                            }
                             WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
                             FillerBreakdownCard(transcriptText: transcriptText)
                             YourNextMoveCard(
