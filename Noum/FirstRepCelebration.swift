@@ -36,23 +36,23 @@ struct FirstRepCelebration: View {
 
     var body: some View {
         ZStack {
-            // Backdrop — softer than a black overlay; this is a celebration,
-            // not a modal alert.
-            LinearGradient(
-                colors: [
-                    AppColor.brandBlue.opacity(0.96),
-                    AppColor.brandBlueLight.opacity(0.92)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Layered backdrop — depth comes from three stacked elements
+            // instead of a single flat gradient. Old version read as
+            // generic-blue-corporate; this gives the screen the
+            // "premium speaking coach" feel called out in the brand spec.
+            backdropLayers
+                .ignoresSafeArea()
+
+            // Slow-drifting orbs add motion without being noisy. Brand
+            // rule respected — no illustration, just shape + blur + opacity.
+            FloatingOrbsLayer()
+                .ignoresSafeArea()
 
             ConfettiLayer(active: confettiActive, pieceCount: 36, duration: 2.0)
                 .ignoresSafeArea()
 
-            VStack(spacing: 32) {
-                Spacer(minLength: 60)
+            VStack(spacing: 28) {
+                Spacer(minLength: 48)
                 pulseBadge
                 SparkleRibbon(tint: .white)
                     .opacity(phase >= .reveal ? 1 : 0)
@@ -77,36 +77,98 @@ struct FirstRepCelebration: View {
         }
     }
 
+    /// Three stacked layers that produce a richer celebration backdrop:
+    ///   1. Deep blue base — anchors the brand identity.
+    ///   2. Radial highlight at top-leading — lifts the character into
+    ///      the frame instead of pinning it to flat colour.
+    ///   3. Subtle vignette at the bottom — pulls focus back to the CTA.
+    private var backdropLayers: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.13, green: 0.32, blue: 0.85),  // deep brand
+                    AppColor.brandBlue,
+                    AppColor.brandBlueLight.opacity(0.92)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(0.18),
+                    Color.white.opacity(0.0)
+                ],
+                center: .topLeading,
+                startRadius: 20,
+                endRadius: 380
+            )
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(0.18)
+                ],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+        }
+    }
+
     // MARK: - Subviews
 
     private var pulseBadge: some View {
         // The first finished rep is the highest-emotion moment in the
-        // app, so the coach character lands on the .excited state — the
-        // bouncy spring + sparkle ring are exactly what this moment
-        // wants. White tint reads against the brand-blue celebration
-        // gradient backdrop.
+        // app, so the coach character lands on the .excited state. Three
+        // concentric rings + a white inner halo give it more presence
+        // than the single-ring v1 — visual weight matches emotional weight.
         ZStack {
+            // Outermost slow-pulse ring — drifts through the breath cycle.
             Circle()
-                .stroke(Color.white.opacity(0.16), lineWidth: 2)
-                .frame(width: 160, height: 160)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1.5)
+                .frame(width: 220, height: 220)
+                .scaleEffect(pulseScale * 1.04)
+                .opacity(1.6 - pulseScale)
+            Circle()
+                .stroke(Color.white.opacity(0.18), lineWidth: 2)
+                .frame(width: 175, height: 175)
                 .scaleEffect(pulseScale)
                 .opacity(2 - pulseScale)
-            NoumCharacter(mood: .excited, tint: .white, size: 110)
+            // Inner soft halo so the character lifts off the backdrop.
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color.white.opacity(0.20),
+                            Color.white.opacity(0.0)
+                        ],
+                        center: .center,
+                        startRadius: 6,
+                        endRadius: 90
+                    )
+                )
+                .frame(width: 160, height: 160)
+            NoumCharacter(mood: .excited, tint: .white, size: 116)
         }
     }
 
     private var headerCopy: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
+            // Eyebrow micro-label adds editorial weight without forcing
+            // the headline larger than it needs to be.
+            Text("FIRST REP COMPLETE")
+                .font(Typography.micro)
+                .tracking(2.0)
+                .foregroundStyle(Color.white.opacity(0.66))
             Text("Your baseline is set")
-                .font(Typography.screenTitle)
+                .font(Typography.hero)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
+                .shadow(color: Color.black.opacity(0.18), radius: 8, y: 2)
             Text("This is the line every future rep is measured against.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
         }
         .opacity(phase >= .reveal ? 1 : 0)
         .offset(y: phase >= .reveal ? 0 : 12)
@@ -236,6 +298,47 @@ struct FirstRepCelebration: View {
         guard session.duration >= 1, words > 0 else { return "—" }
         let wpm = Double(words) / (session.duration / 60.0)
         return "\(Int(wpm.rounded())) WPM"
+    }
+}
+
+// MARK: - Floating orbs backdrop (M14 polish)
+
+/// Three slow-drifting blurred circles that add depth to celebration
+/// surfaces without violating the no-illustration brand rule. Reduce-Motion
+/// turns them static; otherwise they breathe on a 4–6s cycle. White-on-blue
+/// only — sized + positioned so they read as ambient light, not decoration.
+@available(iOS 17.0, macOS 12.0, *)
+private struct FloatingOrbsLayer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack {
+                orb(size: 240, x: w * 0.2, y: h * (0.18 + 0.02 * phase), opacity: 0.18)
+                orb(size: 320, x: w * 0.85, y: h * (0.34 - 0.03 * phase), opacity: 0.12)
+                orb(size: 200, x: w * 0.7,  y: h * (0.78 + 0.04 * phase), opacity: 0.16)
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(
+                .easeInOut(duration: 5.4).repeatForever(autoreverses: true)
+            ) {
+                phase = 1
+            }
+        }
+    }
+
+    private func orb(size: CGFloat, x: CGFloat, y: CGFloat, opacity: Double) -> some View {
+        Circle()
+            .fill(Color.white.opacity(opacity))
+            .frame(width: size, height: size)
+            .blur(radius: size * 0.35)
+            .position(x: x, y: y)
     }
 }
 

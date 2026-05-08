@@ -28,6 +28,7 @@ struct ProfileView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
+    @State private var selectedFeedbackRequest: StoredFeedbackRequest?
     @StateObject private var league = LeagueManager.shared
 
     @State private var showAchievementsPage = false
@@ -767,8 +768,6 @@ struct ProfileView: View {
 
     // MARK: - Feedback Inbox
 
-    @State private var selectedFeedbackRequest: StoredFeedbackRequest?
-
     private var feedbackInboxCard: some View {
         Group {
             if !feedbackManager.requests.isEmpty {
@@ -788,12 +787,23 @@ struct ProfileView: View {
                     }
 
                     ForEach(feedbackManager.requests.prefix(5)) { request in
-                        feedbackRequestRow(request)
+                        // M14 fix: rows were previously a static HStack —
+                        // tapping them on a real device did nothing. Wrap
+                        // in a Button so users can open the report detail.
+                        Button {
+                            selectedFeedbackRequest = request
+                        } label: {
+                            feedbackRequestRow(request)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(Spacing.lg)
                 .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
             }
+        }
+        .sheet(item: $selectedFeedbackRequest) { request in
+            FeedbackRequestDetailSheet(request: request)
         }
     }
 

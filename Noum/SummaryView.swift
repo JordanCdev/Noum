@@ -1683,7 +1683,14 @@ struct SummaryView: View {
                 Label("Share Achievement Card", systemImage: "photo.fill")
             }
             Button {
-                showFeedbackRequestSheet = true
+                // SwiftUI guards against two presentations at once — if we
+                // flip the sheet binding here, it races the dialog dismissal
+                // and the runtime drops the sheet with "Currently, only
+                // presenting a single sheet is supported." Defer the binding
+                // flip until the dialog has fully dismissed.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    showFeedbackRequestSheet = true
+                }
             } label: {
                 Label("Request Feedback", systemImage: "person.2.fill")
             }

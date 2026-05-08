@@ -849,4 +849,214 @@ struct FeedbackReviewScreen: View {
     }
 }
 
+// MARK: - Feedback Request Detail Sheet
+//
+// Opens when the user taps a feedback request row on Profile. Shows
+// the request status, the prompt + transcript snippet they shared, and
+// any responses received. Honest empty state when no one has replied
+// yet — "Awaiting responses" rather than a fake 0% bar.
+
+@available(iOS 17.0, *)
+struct FeedbackRequestDetailSheet: View {
+    let request: StoredFeedbackRequest
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    headerCard
+                    if request.responses.isEmpty {
+                        awaitingCard
+                    } else {
+                        responsesSection
+                    }
+                    sessionContextCard
+                }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.vertical, Spacing.lg)
+            }
+            .background(AppColor.screenBackground.ignoresSafeArea())
+            .navigationTitle("Feedback request")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                statusPill
+                Spacer()
+                Text(request.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text("To \(request.recipientName)")
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+            Text("\(request.mode.displayLabel) · score \(request.score)/10")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+            if !request.requestNote.isEmpty {
+                Text(request.requestNote)
+                    .font(Typography.body)
+                    .foregroundStyle(.primary)
+                    .padding(.top, 4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 4) {
+            Image(systemName: statusIcon)
+                .font(.system(size: 11, weight: .bold))
+            Text(statusLabel)
+                .font(Typography.micro.weight(.bold))
+                .textCase(.uppercase)
+                .tracking(0.6)
+        }
+        .foregroundStyle(statusColor)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(statusColor.opacity(0.14), in: Capsule())
+    }
+
+    private var statusLabel: String {
+        switch request.status {
+        case .pending: return "Awaiting"
+        case .responded: return "Response in"
+        case .archived: return "Archived"
+        }
+    }
+
+    private var statusIcon: String {
+        switch request.status {
+        case .pending: return "hourglass"
+        case .responded: return "checkmark.circle.fill"
+        case .archived: return "archivebox.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch request.status {
+        case .pending: return .orange
+        case .responded: return AppColor.brandBlue
+        case .archived: return .secondary
+        }
+    }
+
+    // MARK: - Awaiting state
+
+    private var awaitingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.orange)
+                Text("Awaiting responses")
+                    .font(Typography.headline)
+            }
+            Text("This request hasn't been answered yet. We'll surface responses here as soon as your reviewer sends them.")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    // MARK: - Responses
+
+    private var responsesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(request.responses.count) response\(request.responses.count == 1 ? "" : "s")")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            ForEach(request.responses) { response in
+                responseCard(response)
+            }
+        }
+    }
+
+    private func responseCard(_ response: StoredFeedbackResponse) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(response.responderName)
+                    .font(Typography.headline)
+                Spacer()
+                Text(response.respondedAt.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !response.textFeedback.isEmpty {
+                Text(response.textFeedback)
+                    .font(Typography.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !response.dimensionRatings.isEmpty {
+                ratingsRow(response.dimensionRatings)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    private func ratingsRow(_ ratings: [String: String]) -> some View {
+        let sorted = ratings.sorted(by: { $0.key < $1.key })
+        return FlowLayout(spacing: 6) {
+            ForEach(Array(sorted), id: \.key) { dim, rating in
+                Text("\(dim): \(rating)")
+                    .font(Typography.micro.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+        }
+    }
+
+    // MARK: - Session context
+
+    private var sessionContextCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Session shared")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+            if let prompt = request.prompt, !prompt.isEmpty {
+                Text(prompt)
+                    .font(Typography.caption.italic())
+                    .foregroundStyle(.secondary)
+            }
+            Text(request.transcript)
+                .font(Typography.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+}
+
 #endif

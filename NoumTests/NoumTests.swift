@@ -2913,3 +2913,82 @@ struct LocalizableCatalogTests {
         }
     }
 }
+
+// MARK: - Score recalibration (real-device feedback fix)
+//
+// Real-device QA surfaced that an obviously-poor rep (80 WPM, 2 fillers,
+// 30s on Medium) was scoring 8/10 — too generous. The fix tightened the
+// pace bands and score formula. These tests pin the new behaviour so we
+// don't regress to the old bands.
+
+struct ScoreCalibrationTests {
+
+    /// 80 WPM is genuinely halting speech, not "controlled and calm".
+    /// Old behaviour returned 0.72 (encouraging) — caller's score got
+    /// lifted by ~1.4 points across that band. New behaviour: ≤ 0.5.
+    @Test func paceScore80WPMIsHonestlyPoor() {
+        let score = PracticeEvaluator.paceScoreForTesting(wpm: 80, wordCount: 40)
+        #expect(score <= 0.5, "80 WPM should not get >0.5 pace credit; got \(score)")
+    }
+
+    @Test func paceScoreInTargetRangeReturnsFullCredit() {
+        // 145 WPM is mid-target.
+        let score = PracticeEvaluator.paceScoreForTesting(wpm: 145, wordCount: 40)
+        #expect(score == 1.0)
+    }
+
+    @Test func paceScoreOver200WPMIsRushed() {
+        let score = PracticeEvaluator.paceScoreForTesting(wpm: 220, wordCount: 60)
+        #expect(score <= 0.3, "220 WPM is sprinting; pace credit must be low")
+    }
+
+    /// Halting label, not "Measured" — copy must match the new band.
+    @Test func paceSnapshotAt80WPMUsesHonestLabel() {
+        let snap = PracticeEvaluator.paceSnapshotForTesting(wpm: 80, wordCount: 40)
+        #expect(snap.label == "Hesitant" || snap.label == "Halting",
+                "label was \(snap.label); old 'Measured' was the bug")
+    }
+
+    /// The original real-device read: 80 WPM, 2 fillers, 30s on Medium
+    /// difficulty. Score should NOT be 8 anymore.
+    @Test func realWorldPoorRepDoesNotScoreEight() {
+        // Build a transcript with ~40 words to hit 80 WPM in 30s.
+        let words = Array(repeating: "word", count: 40).joined(separator: " ")
+        let evaluation = PracticeEvaluator.evaluateTimedPractice(
+            transcript: words,
+            fillerCount: 2,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil,
+            transcriptConfidence: nil
+        )
+        #expect(evaluation.score <= 6,
+                "80 WPM + 2 fillers + 30s Medium scored \(evaluation.score); old bug returned 8")
+    }
+
+    /// Filler penalty must accelerate past 4 fillers — old cap of 3.0
+    /// meant 10 fillers looked the same as 4. New cap is 5.5 with
+    /// non-linear ramp.
+    @Test func highFillerCountCostsMoreThanLowCount() {
+        let lowFillerWords = Array(repeating: "word", count: 60).joined(separator: " ")
+        let lowEval = PracticeEvaluator.evaluateTimedPractice(
+            transcript: lowFillerWords,
+            fillerCount: 2,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil
+        )
+        let highEval = PracticeEvaluator.evaluateTimedPractice(
+            transcript: lowFillerWords,
+            fillerCount: 10,
+            duration: 30,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil
+        )
+        #expect(lowEval.score > highEval.score,
+                "10 fillers (\(highEval.score)) should score lower than 2 (\(lowEval.score))")
+    }
+}

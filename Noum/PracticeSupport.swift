@@ -4637,7 +4637,10 @@ enum PracticeEvaluator {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
         let durationProgress = durationRangeScore(duration, difficulty: difficulty)
-        let contentProgress = min(Double(wordCount) / 35.0, 1.0)
+        // Content cap raised from 35 → 65 words. 35 was ~12s of speech and
+        // gave full content credit too easily — the user's real-device
+        // 8/10 read came partly from this cap being too lenient.
+        let contentProgress = min(Double(wordCount) / 65.0, 1.0)
         let wordsPerMinute = paceValue(wordCount: wordCount, duration: duration)
         let paceSnapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
@@ -4646,13 +4649,24 @@ enum PracticeEvaluator {
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
         let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0  // Reduce 40% when audio quality is poor
-        let fillerPenalty = min(Double(fillerCount) * 0.7 * fillerPenaltyMultiplier, 3.0)
+        // Filler penalty: linear up to 4 fillers, then accelerates so 6+
+        // genuinely costs the score. Old cap of 3.0 meant 10 fillers
+        // looked the same as 4 — that hid bad reps.
+        let fillerPenalty: Double = {
+            let raw: Double
+            if fillerCount <= 4 {
+                raw = Double(fillerCount) * 0.8
+            } else {
+                raw = 3.2 + Double(fillerCount - 4) * 1.1
+            }
+            return min(raw * fillerPenaltyMultiplier, 5.5)
+        }()
         let difficultyBonus: Double = {
             switch difficulty {
             case .free: return 0.0
             case .easy: return 0.2
-            case .medium: return 0.6
-            case .hard: return 1.0
+            case .medium: return 0.5
+            case .hard: return 0.8
             }
         }()
 
@@ -4662,7 +4676,23 @@ enum PracticeEvaluator {
         if wordCount < 3 || duration < 3 {
             score = 1
         } else {
-            let rawScore = 1.0 + (durationProgress * 3.2) + (contentProgress * 2.8) + (paceProgress * 2.0) + (styleAlignment * 1.5) - fillerPenalty + difficultyBonus
+            // Honest-assessment recalibration. Old formula: base 1.0 +
+            // (3.2 * dur + 2.8 * content + 2.0 * pace + 1.5 * style) -
+            // fillerPenalty + diffBonus. That floored the score at ~6 even
+            // for poor speech because pace 80 WPM still scored 0.72 and
+            // content capped at 35 words. New formula:
+            //   • drops the base 1.0 floor (0.5 instead)
+            //   • content carries less weight (was 2.8, now 2.4) since the cap is harder to hit
+            //   • pace and duration carry more (they're the honest signal)
+            //   • style alignment carries less (it's a soft signal that
+            //     shouldn't lift a poor delivery)
+            let rawScore = 0.5
+                + (durationProgress * 3.4)
+                + (contentProgress * 2.4)
+                + (paceProgress * 2.6)
+                + (styleAlignment * 1.0)
+                - fillerPenalty
+                + difficultyBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -5042,14 +5072,35 @@ enum PracticeEvaluator {
         duration > 0 ? (Double(wordCount) / duration) * 60.0 : 0
     }
 
+    /// Test hook — exposes the private `paceScore` for honest-assessment
+    /// regression tests. Internal-visibility only; production callers go
+    /// through the full evaluation pipeline.
+    static func paceScoreForTesting(wpm: Double, wordCount: Int) -> Double {
+        paceScore(for: wpm, wordCount: wordCount)
+    }
+
+    /// Test hook — exposes the private `paceSnapshot` for label
+    /// regression tests after the M14 calibration fix.
+    static func paceSnapshotForTesting(wpm: Double, wordCount: Int) -> PaceSnapshot {
+        paceSnapshot(for: wpm, wordCount: wordCount)
+    }
+
+    /// Pace scoring bands recalibrated for honest assessment — typical
+    /// confident conversational speech is 130–160 WPM, and anything under
+    /// 100 WPM is genuinely halting/disfluent rather than "controlled and
+    /// calm." Old bands (70–95 WPM = 0.72 "Measured") were too generous.
+    /// Now: only 130–160 WPM gets full credit; 100–130 is acceptable;
+    /// below 100 is honestly poor; above 175 is rushed.
     private static func paceScore(for wordsPerMinute: Double, wordCount: Int) -> Double {
         guard wordCount >= 6 else { return 0.15 }
         switch wordsPerMinute {
-        case ..<70: return 0.35
-        case 70..<95: return 0.72
-        case 95..<145: return 1.0
-        case 145..<170: return 0.72
-        default: return 0.35
+        case ..<70:           return 0.10  // halting, often disfluent
+        case 70..<100:        return 0.35  // slow, hesitant
+        case 100..<130:       return 0.70  // deliberate but acceptable
+        case 130..<160:       return 1.00  // target — confident conversational
+        case 160..<180:       return 0.78  // edges fast
+        case 180..<200:       return 0.50  // rushed
+        default:              return 0.25  // unintelligibly fast
         }
     }
 
@@ -5065,15 +5116,19 @@ enum PracticeEvaluator {
 
         switch wordsPerMinute {
         case ..<70:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Too slow", coachNote: "Your pace is very measured. Bring a little more forward energy so the answer feels more alive.")
-        case 70..<95:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Measured", coachNote: "Your pace is controlled and calm. Keep that composure while sharpening the structure.")
-        case 95..<145:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Strong", coachNote: "Your pace is in a strong range for clear, confident speech.")
-        case 145..<170:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Halting", coachNote: "Your pace was below 70 WPM — that's slow enough to feel disfluent to a listener. Aim for 130–160 WPM with deliberate pauses, not pauses inside sentences.")
+        case 70..<100:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Hesitant", coachNote: "Your pace is well below conversational speed. Push the engine harder — start the next answer with the strongest opening line you have, then let momentum carry you.")
+        case 100..<130:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Deliberate", coachNote: "Your pace is steady but slower than a confident conversational rhythm. Lean a touch faster on the connective material; reserve slowness for the points that need weight.")
+        case 130..<160:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Confident", coachNote: "Your pace is in the target range for clear, confident speech.")
+        case 160..<180:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Quick", coachNote: "Your pace is edging fast. Create a little more space between points so authority can come through.")
-        default:
+        case 180..<200:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Rushed", coachNote: "Your pace is rushing the message. Slow the opening and finish each sentence before moving on.")
+        default:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Sprinting", coachNote: "Above 200 WPM is hard for any listener to keep up with. Cut the pace by ~30% and the same content will land with twice the authority.")
         }
     }
 
