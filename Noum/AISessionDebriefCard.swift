@@ -29,13 +29,25 @@ struct AISessionDebriefCard: View {
         if session == nil {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-                if isLoading && insight == nil {
-                    skeleton
-                } else if let insight {
-                    bodyContent(insight: insight)
+            HStack(alignment: .top, spacing: 12) {
+                // M14: NoumCharacter is the coach. Anchored to the left
+                // so the headline + body read as a quote from the
+                // character — the user said the app didn't feel like
+                // coaching enough; making the messenger present (not
+                // an abstract speech-bubble icon) closes that gap
+                // without adding more cards.
+                NoumCharacter(mood: .coaching, tint: AppColor.brandBlue, size: 44)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    header
+                    if isLoading && insight == nil {
+                        skeleton
+                    } else if let insight {
+                        bodyContent(insight: insight)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -54,9 +66,6 @@ struct AISessionDebriefCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: AIInsightKind.sessionDebrief.symbolName)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(AppColor.brandBlue)
             Text("Coach read")
                 .font(Typography.micro)
                 .foregroundStyle(.secondary)
