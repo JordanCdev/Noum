@@ -41,6 +41,13 @@ struct PrivacyPolicyView: View {
             .navigationTitle("Privacy policy")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Link(destination: NoumWebURLs.privacy) {
+                        Image(systemName: "safari")
+                    }
+                    .foregroundStyle(AppColor.brandBlue)
+                    .accessibilityLabel("Open privacy policy on web")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(AppColor.brandBlue)
