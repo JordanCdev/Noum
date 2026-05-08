@@ -217,6 +217,13 @@ enum SessionFinalizer {
 
         // Milestone detection
         let skillTrends = TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
+
+        // Skill-progression level-up detection (M14). Compares the new
+        // trend levels against the per-account snapshot from the last
+        // session. Any upward crossing (e.g., developing → solid)
+        // queues a SkillLevelUpEvent that the summary inline-celebrates.
+        // Downward crossings are stored silently — we never punish-shame.
+        SkillProgressionStore.shared.record(trends: skillTrends)
         let milestone = detectMilestone(
             levelBefore: levelBefore,
             levelAfter: levelAfter,

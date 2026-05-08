@@ -45,6 +45,7 @@ struct SummaryView: View {
     @StateObject private var premium = PremiumManager.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var skillProgression = SkillProgressionStore.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -509,6 +510,18 @@ struct SummaryView: View {
                                 xpEarned: xpEarned,
                                 celebrationVisible: celebrationVisible
                             )
+                            // Skill level-up celebration cards — render at
+                            // the top of the result stack so the moment lands
+                            // before the standard coach-note flow. Stacks
+                            // vertically if multiple skills crossed in one
+                            // session (rare).
+                            ForEach(skillProgression.pendingLevelUps) { event in
+                                SkillLevelUpCard(event: event) {
+                                    // Card consumes the event from the store
+                                    // itself; this is just a hook for any
+                                    // future analytics/animation cleanup.
+                                }
+                            }
                             CoachNoteCard(
                                 coachNote: coachNote,
                                 coachNoteRevealed: coachNoteRevealed

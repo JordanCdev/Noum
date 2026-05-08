@@ -2914,6 +2914,89 @@ struct LocalizableCatalogTests {
     }
 }
 
+// MARK: - Skill Level-Up detection
+//
+// Asks the question: when a session bumps a SkillTrend up a band, do we
+// queue a celebration event? And do we silently ignore drops, never
+// firing a "punish" moment? The detection logic itself is pure — these
+// tests don't touch UserDefaults; they exercise the static `detect`
+// helper directly.
+
+struct SkillLevelUpDetectionTests {
+
+    private func trend(_ area: SkillArea, _ level: SkillLevel) -> SkillTrend {
+        SkillTrend(
+            skillArea: area,
+            direction: .stable,
+            confidence: .medium,
+            windowSize: 5,
+            currentLevel: level
+        )
+    }
+
+    @Test func upwardCrossingFiresEvent() {
+        let previous: [SkillArea: SkillLevel] = [.fillerReduction: .developing]
+        let current = [trend(.fillerReduction, .solid)]
+        let events = SkillLevelUpEvent.detect(previous: previous, current: current)
+        #expect(events.count == 1)
+        #expect(events.first?.previousLevel == .developing)
+        #expect(events.first?.newLevel == .solid)
+    }
+
+    @Test func downwardCrossingDoesNotFire() {
+        // Per the brand anti-goal "never punish-shame a miss in copy",
+        // drops are stored silently. No event fires.
+        let previous: [SkillArea: SkillLevel] = [.paceControl: .solid]
+        let current = [trend(.paceControl, .developing)]
+        let events = SkillLevelUpEvent.detect(previous: previous, current: current)
+        #expect(events.isEmpty)
+    }
+
+    @Test func sameLevelDoesNotFire() {
+        let previous: [SkillArea: SkillLevel] = [.structure: .solid]
+        let current = [trend(.structure, .solid)]
+        #expect(SkillLevelUpEvent.detect(previous: previous, current: current).isEmpty)
+    }
+
+    @Test func firstObservationDoesNotFire() {
+        // No previous reading for this skill — first time it's been ranked.
+        // We don't celebrate the first sighting; we wait for an actual
+        // upward transition before firing the moment.
+        let previous: [SkillArea: SkillLevel] = [:]
+        let current = [trend(.openingStrength, .solid)]
+        #expect(SkillLevelUpEvent.detect(previous: previous, current: current).isEmpty)
+    }
+
+    @Test func multipleSkillsCanCrossInOneSession() {
+        // Rare but real — a strong session can move multiple skills.
+        let previous: [SkillArea: SkillLevel] = [
+            .fillerReduction: .developing,
+            .paceControl:     .developing,
+            .structure:       .weak
+        ]
+        let current = [
+            trend(.fillerReduction, .solid),     // up
+            trend(.paceControl,     .developing), // unchanged
+            trend(.structure,       .developing)  // up
+        ]
+        let events = SkillLevelUpEvent.detect(previous: previous, current: current)
+        #expect(events.count == 2)
+        let areas = Set(events.map { $0.skillArea })
+        #expect(areas == [.fillerReduction, .structure])
+    }
+
+    @Test func headlineCopyMatchesSkill() {
+        let event = SkillLevelUpEvent(
+            skillArea: .fillerReduction,
+            previousLevel: .developing,
+            newLevel: .solid,
+            date: Date()
+        )
+        #expect(event.headline == "Filler Words leveled up")
+        #expect(event.subline == "Developing → Solid")
+    }
+}
+
 // MARK: - AI Rewrite voice-preservation (real-device feedback fix)
 //
 // User-stated requirement at M14: "don't want them to learn how to speak
