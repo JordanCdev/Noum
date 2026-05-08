@@ -34,6 +34,10 @@ actor AIPromptGeneratorService {
         profile: CoachingProfile,
         weakestDimension: String?
     ) async -> String? {
+        // M13: skip AI generation when the user is practising in a locale
+        // we haven't localised AI prompts for. Falling back to the curated
+        // pool is honest; an English prompt mid-Spanish session is not.
+        guard await activeLocaleSupportsAI() else { return nil }
         guard let provider = await currentProvider(),
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
@@ -88,6 +92,13 @@ actor AIPromptGeneratorService {
     @MainActor
     private func currentProvider() -> AIProvider? {
         AISettingsManager.shared.activeProvider
+    }
+
+    /// True when the active practice locale has AI surfaces enabled.
+    /// Reads `LocaleSettingsManager.shared.current.aiSupported`.
+    @MainActor
+    private func activeLocaleSupportsAI() -> Bool {
+        LocaleSettingsManager.shared.current.aiSupported
     }
 
     private func apiKey(for provider: AIProvider) -> String? {

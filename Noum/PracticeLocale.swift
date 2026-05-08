@@ -50,6 +50,20 @@ enum PracticeLocale: String, CaseIterable, Codable, Identifiable, Sendable {
     /// the brand rule is "no emoji decorations". UI uses `shortLabel`
     /// inside an `AppColor` capsule instead.
     var systemSymbol: String { "globe" }
+
+    /// True when the AI coaching surfaces (prompt generation, grammar
+    /// polish, insights debrief) are available in this locale. M12/M13
+    /// ship the practice loop in es-ES + fr-FR but the AI services are
+    /// English-only — calling them on a non-English transcript would
+    /// produce confused output that gets shown to the user as if it
+    /// were valid coaching. We skip honestly until those surfaces are
+    /// localised in a future milestone.
+    var aiSupported: Bool {
+        switch self {
+        case .enUS: return true
+        case .esES, .frFR: return false
+        }
+    }
 }
 
 // MARK: - Settings Manager

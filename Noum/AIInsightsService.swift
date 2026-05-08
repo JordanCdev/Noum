@@ -107,6 +107,15 @@ actor AIInsightsService {
 
         let templated = templatedFallback(for: input)
 
+        // M13: AI insight surfaces are English-only in this milestone.
+        // Non-English practice sessions get the deterministic template
+        // fallback so the card stays useful but never produces English
+        // coaching text on a Spanish or French session.
+        guard await activeLocaleSupportsAI() else {
+            cache[cacheKey] = templated
+            return templated
+        }
+
         guard let provider = await currentProvider(),
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
@@ -160,6 +169,12 @@ actor AIInsightsService {
     @MainActor
     private func currentProvider() -> AIProvider? {
         AISettingsManager.shared.activeProvider
+    }
+
+    /// True when the active practice locale has AI surfaces enabled.
+    @MainActor
+    private func activeLocaleSupportsAI() -> Bool {
+        LocaleSettingsManager.shared.current.aiSupported
     }
 
     private func apiKey(for provider: AIProvider) -> String? {

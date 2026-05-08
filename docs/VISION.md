@@ -82,7 +82,60 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M13 — UI localisation v1 (Spanish + French)._
+**Name:** _M14 — Open the loop: deploy Firestore rules + host privacy URL + ship to TestFlight._
+
+(M13 _UI localisation v1_ shipped: bundled `Localizable.xcstrings`
+catalog with curated Spanish + French translations for ~30 high-
+priority keys (Settings section labels, common buttons, home tile
+labels, peak-rating frames, goal-distance phrases, daily-challenge
+copy). `NoumApp` applies `\.locale` from `LocaleSettingsManager.current`
+at the root WindowGroup with `.id(localeCode)` so a Settings change
+forces a re-render and translations land instantly.
+`SettingsSectionLabel` and the `section(label:)` helper now take
+`LocalizedStringKey` so existing Settings call sites auto-translate.
+`PracticeLocale.aiSupported` (true for en-US, false for es/fr) gates
+the four AI surfaces — `AIPromptGeneratorService.generate`,
+`AIInsightsService.insight` (falls through to the deterministic
+template), `GrammarFeedbackService.polish`, and downstream consumers.
+This is the honest call: an English coaching debrief on a Spanish
+session would be worse than a deterministic template fallback.)
+
+**Honest gaps remaining for M13:**
+- The catalog covers ~30 keys today. Hundreds of strings remain
+  hardcoded across the app (Summary card bodies, Profile section
+  headers beyond the simple labels, AI Coach setup copy). M13
+  bundles the infrastructure; further string migration is a copy
+  job, not a code change.
+- AI surfaces stay English. When a Spanish or French user
+  finishes a session, `AISessionDebriefCard` shows the template
+  fallback — useful but less differentiated. Until those prompts
+  are localised, this is the right tradeoff.
+- `PracticeLocalePickerSheet` strings ("Full curated pool — 200+
+  prompts, 8 themes.") are themselves not yet localised.
+
+**Why this next:** the product is feature-complete enough to ship.
+The remaining blockers are operational, not engineering: the
+`FIRESTORE_RULES.md` rules need to be deployed for the league + peer
+surfaces to work in production; a public privacy-policy URL needs
+to be hosted for the App Store submission to succeed; and the
+existing build needs to be QA'd on real hardware before TestFlight.
+
+**Definition of done:**
+- `firebase deploy --only firestore:rules` from the documented rules.
+- Public privacy-policy URL hosted (Firebase Hosting or similar) and
+  wired into Settings → Privacy & Data.
+- TestFlight build cut against a real device, with the four
+  high-risk surfaces (Live Activity, AI prompt latency, soundscape
+  audio session, paywall purchase) verified manually.
+- Out-of-box: bug fixes from real-device QA.
+
+**Out of scope for this milestone:**
+- New features. Engineering goal is to *stop adding* and *start
+  shipping*.
+
+## Future milestones (rough order)
+
+(M14 — Open the loop — is the active "Next milestone" above.)
 
 (M12 _Multilingual v1_ shipped: `PracticeLocale` enum (en-US, es-ES,
 fr-FR) with BCP-47 codes, display names, and short labels.
@@ -131,8 +184,6 @@ point and is a copy-only effort against the existing surfaces.
 - Right-to-left languages (Arabic / Hebrew) — separate effort.
 
 ## Future milestones (rough order)
-
-(M13 — UI localisation v1 — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

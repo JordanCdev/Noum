@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-08 (M5–M12 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day, pitch v1, pitch trend + baseline + grammar polish, multilingual v1)_
+_Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisation v1)_
 
 ## Architecture overview
 

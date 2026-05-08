@@ -183,7 +183,7 @@ struct SettingsView: View {
     // MARK: - Section Wrapper
 
     @ViewBuilder
-    private func section<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(label: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             SettingsSectionLabel(title: label)
             content()

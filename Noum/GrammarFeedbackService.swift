@@ -124,6 +124,11 @@ actor GrammarFeedbackService {
     ) async -> GrammarPolishResult? {
         if let cached = cache[sessionId] { return cached }
         guard isPro else { return nil }
+        // M13: skip when the active practice locale isn't English. The
+        // grammar pass uses English-language conventions (subject-verb
+        // agreement, common confusables) — running it on a Spanish or
+        // French transcript would produce noise dressed up as coaching.
+        guard await activeLocaleSupportsAI() else { return nil }
         guard shouldRun(
             transcript: transcript,
             duration: duration,
@@ -225,6 +230,12 @@ actor GrammarFeedbackService {
     @MainActor
     private func currentProvider() -> AIProvider? {
         AISettingsManager.shared.activeProvider
+    }
+
+    /// True when the active practice locale has AI surfaces enabled.
+    @MainActor
+    private func activeLocaleSupportsAI() -> Bool {
+        LocaleSettingsManager.shared.current.aiSupported
     }
 
     private func apiKey(for provider: AIProvider) -> String? {

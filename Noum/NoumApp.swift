@@ -17,6 +17,7 @@ import GoogleSignIn
 struct NoumApp: App {
     @State private var showSplash = true
     @StateObject private var onboardingHero = OnboardingHeroManager.shared
+    @StateObject private var localeSettings = LocaleSettingsManager.shared
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
 
@@ -67,6 +68,13 @@ struct NoumApp: App {
         // override with the Figtree-backed `Typography.headline` /
         // `Typography.cardTitle` etc. for headlines.
         .environment(\.font, Typography.body)
+        // M13: drive the in-app locale from LocaleSettingsManager so any
+        // `Text("key")` call site reads from the matching translation in
+        // `Localizable.xcstrings`. The .id(...) modifier forces a re-render
+        // when the user picks a different locale in Settings — without it,
+        // already-rendered Text views keep their original locale.
+        .environment(\.locale, Locale(identifier: localeSettings.current.code))
+        .id(localeSettings.current.code)
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             // Re-arm scheduled notifications with the latest streak +

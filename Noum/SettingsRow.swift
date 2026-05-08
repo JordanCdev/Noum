@@ -5,8 +5,18 @@ import SwiftUI
 
 /// Uppercase tracked micro-label rendered above each card group.
 /// Matches the existing pattern at `ContentView.swift:526–530`.
+///
+/// M13: takes `LocalizedStringKey` so callers passing string literals
+/// (`"Practice"`) get auto-translated through the app's
+/// `Localizable.xcstrings` catalog when the active practice locale
+/// has a matching entry. Callers passing dynamic non-localizable
+/// strings (rare) need to wrap explicitly via `Text(verbatim:)`.
 struct SettingsSectionLabel: View {
-    let title: String
+    let title: LocalizedStringKey
+
+    init(title: LocalizedStringKey) {
+        self.title = title
+    }
 
     var body: some View {
         Text(title)
