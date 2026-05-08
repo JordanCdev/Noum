@@ -158,6 +158,23 @@ struct SummaryView: View {
     // MARK: - v2 Drill System
 
     /// The v2 drill recommendation using trend intelligence and drill catalog.
+    /// Maps the drill recommendation's primary skill area to a Weakness
+    /// the AIRewriteService can act on. Returns nil for skill areas that
+    /// don't have a rewrite path yet (filler reduction, pace, pauses,
+    /// emphasis, confidence) — those are practice-mode interventions,
+    /// not rewrite-the-script ones.
+    private var primaryWeakness: AIRewriteService.Weakness? {
+        switch drillRecommendationV2.skillArea {
+        case .openingStrength:    return .opening
+        case .closingStrength:    return .closing
+        case .structure:          return .structure
+        case .conciseSpeaking:    return .concise
+        case .answerDevelopment:  return .structure
+        case .fillerReduction, .paceControl, .pauseUsage, .vocalEmphasis, .confidence:
+            return nil
+        }
+    }
+
     private var drillRecommendationV2: DrillRecommendationV2 {
         let categoryTuples = feedbackCategories.map { ($0.dimension, $0.rating.rawValue) }
         return DrillEngineV2.recommend(
@@ -521,6 +538,16 @@ struct SummaryView: View {
                                 },
                                 onStartDrill: onStartDrill
                             )
+                            // Pro-gated rewrite card — preserves the user's
+                            // voice instead of producing AI-default coaching
+                            // text. Only renders when there's a clear
+                            // weakness category to act on AND the user is Pro.
+                            if let weakness = primaryWeakness, premium.isPremium {
+                                RewriteSuggestionCard(
+                                    transcript: transcriptText,
+                                    weakness: weakness
+                                )
+                            }
                             BaselineComparisonCard(
                                 baseline: baselineStore.baseline,
                                 transcriptText: transcriptText,

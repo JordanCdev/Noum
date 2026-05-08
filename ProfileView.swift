@@ -77,6 +77,34 @@ struct ProfileView: View {
         return list.allSatisfy { $0.accountID == nil }
     }
 
+    /// One captured free-text reflection — the user's own words from the
+    /// deferred-capture sheets. Surfaced on the coaching card so users see
+    /// that what they wrote is actually being held by the app.
+    private struct CapturedReflection: Identifiable {
+        let id: String
+        let label: String
+        let text: String
+    }
+
+    /// Pull non-empty captured reflection fields off the profile and
+    /// label them for display. Order: goal → why-now → success-vision.
+    private func capturedReflections(for profile: CoachingProfile) -> [CapturedReflection] {
+        var out: [CapturedReflection] = []
+        let goal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !goal.isEmpty {
+            out.append(CapturedReflection(id: "goal", label: "What I'm working on", text: goal))
+        }
+        let why = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !why.isEmpty {
+            out.append(CapturedReflection(id: "why", label: "Why now", text: why))
+        }
+        let vision = profile.successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !vision.isEmpty {
+            out.append(CapturedReflection(id: "vision", label: "If this improves", text: vision))
+        }
+        return out
+    }
+
     private var coachingInsight: String {
         if let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile) {
             return plan.encouragement
@@ -498,6 +526,43 @@ struct ProfileView: View {
                             .foregroundStyle(label == "On track" ? AppColor.brandBlue : .secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // M14: surface the user's own captured reflection text so
+                // they see that what they wrote in the deferred-capture
+                // sheets ("What do you want to get better at?", "Why
+                // does this matter right now?", "If this improves, what
+                // changes?") is actually being held by the app.
+                let reflections = capturedReflections(for: profile)
+                if !reflections.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("In your own words")
+                            .font(Typography.micro)
+                            .foregroundStyle(.tertiary)
+                            .textCase(.uppercase)
+                            .tracking(0.8)
+
+                        ForEach(reflections) { reflection in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "quote.opening")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 3)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(reflection.label)
+                                        .font(Typography.micro.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+                                        .tracking(0.6)
+                                    Text(reflection.text)
+                                        .font(Typography.caption)
+                                        .foregroundStyle(.primary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
                 }
             }
 

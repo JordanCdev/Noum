@@ -2914,6 +2914,129 @@ struct LocalizableCatalogTests {
     }
 }
 
+// MARK: - AI Rewrite voice-preservation (real-device feedback fix)
+//
+// User-stated requirement at M14: "don't want them to learn how to speak
+// like chatgpt/AI right, THIS IS VERY IMPORTANT". These tests pin the
+// deterministic pieces of the rewrite service — VoiceSignals + the
+// content filter — so the voice-preservation contract can't regress
+// silently. The actual model call is integration-only; we don't test it
+// here.
+
+struct VoiceSignalsTests {
+
+    @Test func detectsContractions() {
+        let s = VoiceSignals.compute(transcript: "I'm not sure about it. I don't know yet, but it's something I'm working on.")
+        #expect(s.usesContractions == true)
+    }
+
+    @Test func absenceOfContractionsReadsAsFormal() {
+        let s = VoiceSignals.compute(transcript: "I am not sure about it. I do not know yet, but it is something I am working on.")
+        #expect(s.usesContractions == false)
+    }
+
+    @Test func detectsHedging() {
+        let s = VoiceSignals.compute(transcript: "It's kind of like a thing where I sort of feel that way, you know?")
+        #expect(s.usesHedging == true)
+    }
+
+    @Test func averageSentenceLengthIsRoughlyCorrect() {
+        // Three sentences of ~6 words each.
+        let s = VoiceSignals.compute(transcript: "I think this matters a lot. We should look at it. The team can probably help.")
+        #expect(s.avgSentenceLength >= 5 && s.avgSentenceLength <= 8)
+    }
+
+    @Test func firstPersonHeavyDetected() {
+        let s = VoiceSignals.compute(transcript: "I think I'm pretty good at this. I've been doing it for a while. I just need to keep going. I really like it.")
+        #expect(s.firstPersonHeavy == true)
+    }
+
+    @Test func distinctiveWordsExcludeStopwords() {
+        let s = VoiceSignals.compute(transcript: "Strategic thinking really matters because everything around it depends on people understanding the framework before they actually start.")
+        // "really", "actually", "everything", "around", "people", "before"
+        // are stopwords and should be excluded.
+        #expect(!s.distinctiveWords.contains("really"))
+        #expect(!s.distinctiveWords.contains("actually"))
+        #expect(!s.distinctiveWords.contains("everything"))
+        // "framework" and "strategic" should make it through.
+        #expect(s.distinctiveWords.contains("strategic") || s.distinctiveWords.contains("framework"))
+    }
+
+    @Test func emptyTranscriptReturnsEmptySignals() {
+        let s = VoiceSignals.compute(transcript: "")
+        #expect(s.avgSentenceLength == 0)
+        #expect(s.distinctiveWords.isEmpty)
+    }
+}
+
+struct RewriteContentFilterTests {
+
+    private let casualSignals = VoiceSignals(
+        avgSentenceLength: 8,
+        usesContractions: true,
+        usesHedging: true,
+        firstPersonHeavy: true,
+        distinctiveWords: ["meeting", "project", "manager"]
+    )
+
+    @Test func rejectsCorporateJargonUserDidNotSay() {
+        // User never said "leverage" — model output containing it must be
+        // rejected. This is the AI-tell guard the user explicitly asked for.
+        let raw = "We can leverage the meeting to align on the project."
+        #expect(RewriteContentFilter.accept(raw, signals: casualSignals) == nil)
+    }
+
+    @Test func rejectsValueAddPhrasing() {
+        let raw = "It's really a value-add for the project — strategic thinking matters."
+        #expect(RewriteContentFilter.accept(raw, signals: casualSignals) == nil)
+    }
+
+    @Test func rejectsMissingContractionsWhenUserUsesThem() {
+        // User uses contractions; rewrite without any contraction reads
+        // formal vs. their voice — reject.
+        let raw = "I will share the update with the team in the meeting."
+        #expect(RewriteContentFilter.accept(raw, signals: casualSignals) == nil)
+    }
+
+    @Test func acceptsCleanCasualRewrite() {
+        let raw = "I'll share the update with the team in the meeting."
+        let cleaned = RewriteContentFilter.accept(raw, signals: casualSignals)
+        #expect(cleaned == "I'll share the update with the team in the meeting.")
+    }
+
+    @Test func rejectsTooShort() {
+        let raw = "I will."
+        #expect(RewriteContentFilter.accept(raw, signals: casualSignals) == nil)
+    }
+
+    @Test func rejectsTooLong() {
+        let raw = String(repeating: "x", count: 250) + "."
+        #expect(RewriteContentFilter.accept(raw, signals: casualSignals) == nil)
+    }
+
+    @Test func stripsEnclosingDoubleQuotes() {
+        let raw = "\"I'll keep this concise — here's the answer in one line for the team.\""
+        let cleaned = RewriteContentFilter.accept(raw, signals: casualSignals)
+        #expect(cleaned == "I'll keep this concise — here's the answer in one line for the team.")
+    }
+
+    @Test func acceptsAITellWordIfUserActuallyUsedIt() {
+        // If the user actually said "strategic" themselves, the rewrite
+        // is allowed to keep it. The filter is "no NEW jargon", not
+        // "no jargon at all."
+        let signals = VoiceSignals(
+            avgSentenceLength: 8,
+            usesContractions: false,
+            usesHedging: false,
+            firstPersonHeavy: false,
+            distinctiveWords: ["strategic", "meeting", "project"]
+        )
+        let raw = "The meeting is strategic for our project this quarter."
+        let cleaned = RewriteContentFilter.accept(raw, signals: signals)
+        #expect(cleaned != nil)
+    }
+}
+
 // MARK: - Score recalibration (real-device feedback fix)
 //
 // Real-device QA surfaced that an obviously-poor rep (80 WPM, 2 fillers,
