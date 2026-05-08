@@ -52,10 +52,11 @@ struct FillerAnalysis {
 // MARK: - Filler Word Detector
 
 struct FillerWordDetector {
-    static let baseFillerWords: Set<String> = [
-        "uh", "um", "er", "erm", "ah", "eh", "huh",
-        "like", "so", "you know"
-    ]
+    /// The English (US) filler set is kept here for source-compat with
+    /// every pre-M12 caller. M12 callers should use
+    /// `FillerLexicon.words(for:)` to pull the right set for the user's
+    /// active practice locale.
+    static let baseFillerWords: Set<String> = FillerLexicon.enUS
 
     /// Deepgram-supported filler words (returned when filler_words=true).
     static let deepgramFillerWords: Set<String> = [
@@ -67,9 +68,23 @@ struct FillerWordDetector {
         baseFillerWords.union(customWords.map { $0.lowercased() })
     }
 
+    /// Resolve the filler set for a specific locale plus any user custom
+    /// words. Callers in M12 practice flows should use this overload —
+    /// the no-arg `effectiveWordSet` keeps existing pre-M12 sites working
+    /// unchanged.
+    static func effectiveWordSet(
+        for locale: PracticeLocale,
+        customWords: Set<String> = []
+    ) -> Set<String> {
+        FillerLexicon.words(for: locale).union(customWords.map { $0.lowercased() })
+    }
+
     static func buildRegexes(for words: Set<String>) -> [NSRegularExpression] {
         var regexes: [NSRegularExpression] = []
-        // Dynamic vocal hesitation patterns
+        // Dynamic vocal hesitation patterns. English-shaped — Spanish and
+        // French explicit tokens cover their canonical hesitations; longer
+        // drawn-out forms typically get collapsed by transcription
+        // providers before they reach this layer.
         if let dynamic = try? NSRegularExpression(
             pattern: #"(?i)(?<!\w)(?:u+h{2,}|u+m{2,}|hu+h+|er{2,}|er+m{2,}|ah+|eh+|h+m+|m{2,})(?=\b|[^\w]|$)"#
         ) {
@@ -85,8 +100,27 @@ struct FillerWordDetector {
         return regexes
     }
 
-    // Default regexes using base set only (for backward compat)
+    // Default regexes using English base set (for backward compat)
     static let fillerWordRegexes: [NSRegularExpression] = buildRegexes(for: baseFillerWords)
+
+    /// Locale-aware regex builder. Cached per locale on first request so
+    /// repeated session inits don't re-compile the regex bundle.
+    private static let regexCache: NSCache<NSString, RegexBundle> = NSCache()
+
+    private final class RegexBundle: NSObject {
+        let regexes: [NSRegularExpression]
+        init(regexes: [NSRegularExpression]) { self.regexes = regexes }
+    }
+
+    static func regexes(for locale: PracticeLocale) -> [NSRegularExpression] {
+        let key = locale.rawValue as NSString
+        if let cached = regexCache.object(forKey: key) {
+            return cached.regexes
+        }
+        let built = buildRegexes(for: FillerLexicon.words(for: locale))
+        regexCache.setObject(RegexBundle(regexes: built), forKey: key)
+        return built
+    }
 
     static func matches(in text: String) -> [NSTextCheckingResult] {
         fillerWordRegexes.flatMap { regex in

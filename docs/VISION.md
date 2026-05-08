@@ -82,53 +82,57 @@ awards XP per detection.
 
 ## Next milestone
 
-**Name:** _M12 — Multilingual v1 (start with Spanish + French)._
+**Name:** _M13 — UI localisation v1 (Spanish + French)._
 
-(M11 _Pitch trend on profile + grammar feedback v1_ shipped:
-`CommunicationBaseline.pitchVariation` is a new BaseStat dimension —
-EMA-tracked from `PitchMetrics.monotoneScore` only when isReliable, with
-`decodeIfPresent` backward-compat for older persisted baselines.
-`SkillSnapshot.pitchMonotone` carries the per-session reading into the
-trend store; `TrendAnalyzer.analyzePitch` returns improving / declining /
-stable mapped to `vocalEmphasis`. `ProgressionChartsCard` gains a 5th
-"Pitch" series rendering variation (1 - monotone) so up = better, matching
-the score series. New strength "Vocal variety" (≤ 0.35 monotone) and
-blocker "Monotone delivery" (≥ 5 reliable reads at ≥ 0.75) drop into the
-existing identify paths. AI promptContext now grounds feedback in the
-pitch baseline. **Grammar polish:** `GrammarFeedbackService` is a Pro-
-gated actor (Gemini / OpenAI / DeepSeek) with conservative skip rules
-(under 12s duration, under 25 words, confidence below 0.55, or ≥30% filler
-ratio). System prompt forbids stylistic preferences and filler nags;
-excerpt validation drops fabricated quotes. No template fallback — without
-an AI provider we show nothing rather than invent grammar issues.
-`GrammarPolishCard` surfaces up to 3 notes with category chip, severity
-tint, verbatim excerpt, and imperative suggestion; "Looks clean" appears
-when the pass ran with nothing to flag. Free users see no card. Tested
-at skip-rule + parser + trend + baseline-decode levels.)
+(M12 _Multilingual v1_ shipped: `PracticeLocale` enum (en-US, es-ES,
+fr-FR) with BCP-47 codes, display names, and short labels.
+`LocaleSettingsManager` is a per-account `@MainActor` singleton with
+UserDefaults persistence keyed `noum.practiceLocale.<accountID>`.
+`FillerLexicon` carries per-locale filler-word sets — en-US matches
+the legacy `baseFillerWords` set so pre-M12 behavior is preserved.
+`FillerWordDetector.regexes(for:)` caches a built `RegexBundle` per
+locale via `NSCache`. `PracticeTopics` ships a curated Spanish and
+French pool (~24 prompts each across all 8 themes); `random()` and
+`prompts(for:)` honor the active locale automatically. The shuffle-
+deck dedup is keyed per (theme, locale) so switching languages
+doesn't reset progress through whichever pool the user was working
+through. `PracticeTopics.seeded(by:)` always reads English so async-
+challenge fairness is preserved across locales. `SpeechRecognizerView-
+Model` reads the active locale at session start and passes it through
+`TranscriptionConfig.languageCode`. `AWSTranscribeProvider` maps
+"en-US"/"es-ES"/"fr-FR" to the corresponding `LanguageCode` enum
+case; Deepgram and Google already pass the string through.
+`PracticeLocalePickerSheet` is the user-facing picker, reachable
+from Settings → "Practice language".)
 
-**Why this next:** the core single-locale product is complete. The next
-real expansion lever is locale support — the filler lexicon, prompt pool,
-and provider configuration are all locale-keyed in shape, just locked to
-en-US today. Spanish + French unlock most of Western Europe and a large
-US-resident segment without rewriting the coaching surfaces.
+**Honest gaps remaining for M12:**
+- All in-app coaching copy (summary cards, profile, settings, AI
+  feedback) stays English by design — only practice surfaces switch.
+  UI localisation is M13.
+- Grammar polish service still runs en-US-only when the user
+  practices in es-ES or fr-FR. Skip rules in `GrammarFeedbackService`
+  could gate this; not yet in scope.
+- Spanish + French pools ship at ~24 prompts each. Smaller than the
+  English 200+. Growing them is a copy job, not a code change.
+
+**Why this next:** with practice locales in place, native-speaker
+users still see English in Settings, Profile, Summary. UI
+localisation removes the last "this is an English app" friction
+point and is a copy-only effort against the existing surfaces.
 
 **Definition of done:**
-- User-selectable practice locale in settings (en-US default).
-- Filler-word lexicon ships per-locale (es-ES, fr-FR alongside en-US).
-- Curated prompt pool ships per-locale, with the same theme structure.
-- Transcription providers (AWS / Deepgram / Google) honour the selected
-  locale where supported; degrades gracefully when not.
-- All in-app coaching copy stays English for now — only practice
-  surfaces switch language. UI localization is a follow-up milestone.
+- `Localizable.strings` files for Spanish + French covering Settings,
+  Summary card headlines, Profile section labels.
+- AI prompts and grammar polish opt-in for non-English locales.
+- All hardcoded English strings in user-facing views move into
+  string catalogs.
 
 **Out of scope for this milestone:**
-- UI localization (settings, summary, profile copy)
-- AI prompts and grammar polish in non-English (fall back to en-US AI
-  surfaces; the practice loop still works in the chosen language)
+- Right-to-left languages (Arabic / Hebrew) — separate effort.
 
 ## Future milestones (rough order)
 
-(M12 — Multilingual v1 — is the active "Next milestone" above.)
+(M13 — UI localisation v1 — is the active "Next milestone" above.)
 
 1. **High-score & rivalry surface — peak-rating wall.** A "Best in
    week", "Best ever", "Best in your friends" surface that creates the

@@ -33,10 +33,12 @@ struct SettingsView: View {
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var premium = PremiumManager.shared
     @StateObject private var dailyGoal = DailyGoalManager.shared
+    @StateObject private var localeSettings = LocaleSettingsManager.shared
 
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
     @State private var showPaywall = false
+    @State private var showLocalePicker = false
     @State private var showYourData = false
     @State private var showPrivacyPolicy = false
     @State private var showSoundscape = false
@@ -59,6 +61,7 @@ struct SettingsView: View {
                     profileHero
 
                     section(label: "Practice") { practiceCard }
+                    section(label: "Practice language") { localeCard }
                     section(label: "Pre-rep prep") { soundscapeCard }
                     section(label: "Coaching") { coachingProfileCard }
                     section(label: "Feedback") { feedbackCard }
@@ -123,6 +126,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showSoundscape) {
             SoundscapePickerView()
+        }
+        .sheet(isPresented: $showLocalePicker) {
+            PracticeLocalePickerSheet()
         }
         .sheet(isPresented: $showDeleteSheet) {
             DeleteAccountConfirmationSheet(
@@ -422,6 +428,21 @@ struct SettingsView: View {
                 accessibilityHint: "Pick an ambient texture that plays during the pre-rep countdown."
             ) {
                 showSoundscape = true
+            }
+        }
+    }
+
+    // MARK: - Practice Language Card (M12)
+
+    private var localeCard: some View {
+        cardContainer(spacing: Spacing.sm) {
+            SettingsNavRow(
+                title: "Practice language",
+                value: localeSettings.current.displayName,
+                icon: "globe",
+                accessibilityHint: "Pick the language you want to practice in. Switches transcription, filler-word detection, and the prompt pool."
+            ) {
+                showLocalePicker = true
             }
         }
     }

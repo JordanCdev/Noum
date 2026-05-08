@@ -223,8 +223,9 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
 
         let sampleRate = Int(AVAudioSession.sharedInstance().sampleRate)
+        let practiceLocale = LocaleSettingsManager.shared.current
         let config = TranscriptionConfig(
-            languageCode: "en-US",
+            languageCode: practiceLocale.code,
             sampleRate: sampleRate,
             encoding: .pcmSigned16Bit,
             enableFillerWordDetection: true

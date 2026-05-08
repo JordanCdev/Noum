@@ -59,9 +59,21 @@ final class AWSTranscribeSession: TranscriptionSession, @unchecked Sendable {
             self.requestStreamContinuation = continuation
         }
 
+        // Map the BCP-47 code from the practice locale to AWS Transcribe's
+        // enum. Falls back to en-US for any unknown code so a future locale
+        // addition won't crash users on older builds.
+        let awsLanguage: TranscribeStreamingClientTypes.LanguageCode = {
+            switch config.languageCode {
+            case "en-US": return .enUs
+            case "es-ES": return .esEs
+            case "fr-FR": return .frFr
+            default:      return .enUs
+            }
+        }()
+
         let request = StartStreamTranscriptionInput(
             audioStream: audioStream,
-            languageCode: .enUs,
+            languageCode: awsLanguage,
             mediaEncoding: .pcm,
             mediaSampleRateHertz: config.sampleRate
         )

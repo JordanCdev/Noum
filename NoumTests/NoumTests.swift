@@ -2727,3 +2727,138 @@ struct BaselinePitchTests {
         #expect(decoded.pitchVariation.isReliable == true)
     }
 }
+
+// MARK: - Practice Locale (M12)
+
+struct PracticeLocaleTests {
+
+    @Test func allLocalesHaveCodeAndDisplayName() {
+        for locale in PracticeLocale.allCases {
+            #expect(!locale.code.isEmpty)
+            #expect(!locale.displayName.isEmpty)
+            #expect(!locale.shortLabel.isEmpty)
+        }
+    }
+
+    @Test func bcp47CodesMatchExpectedFormat() {
+        #expect(PracticeLocale.enUS.code == "en-US")
+        #expect(PracticeLocale.esES.code == "es-ES")
+        #expect(PracticeLocale.frFR.code == "fr-FR")
+    }
+}
+
+struct FillerLexiconTests {
+
+    @Test func enUSMatchesLegacyBaseSet() {
+        // M12 refactored FillerWordDetector.baseFillerWords to read from
+        // FillerLexicon.enUS — the lexicon must keep that set intact so
+        // pre-M12 callers behave unchanged.
+        #expect(FillerWordDetector.baseFillerWords == FillerLexicon.enUS)
+    }
+
+    @Test func eachLocaleHasAtLeastSixEntries() {
+        for locale in PracticeLocale.allCases {
+            let words = FillerLexicon.words(for: locale)
+            #expect(words.count >= 6, "lexicon for \(locale.code) too small: \(words.count)")
+        }
+    }
+
+    @Test func spanishLexiconContainsCanonicalHesitation() {
+        #expect(FillerLexicon.esES.contains("este"))
+        #expect(FillerLexicon.esES.contains("eh"))
+    }
+
+    @Test func frenchLexiconContainsCanonicalHesitation() {
+        #expect(FillerLexicon.frFR.contains("euh"))
+        #expect(FillerLexicon.frFR.contains("ben"))
+    }
+
+    @Test func effectiveWordSetUnionsCustomWordsLowercased() {
+        let resolved = FillerWordDetector.effectiveWordSet(
+            for: .enUS,
+            customWords: ["Basically", "ACTUALLY"]
+        )
+        #expect(resolved.contains("basically"))
+        #expect(resolved.contains("actually"))
+        // Existing base-set entries still present
+        #expect(resolved.contains("uh"))
+        #expect(resolved.contains("um"))
+    }
+
+    @Test func regexBundleNotEmptyPerLocale() {
+        for locale in PracticeLocale.allCases {
+            #expect(!FillerWordDetector.regexes(for: locale).isEmpty)
+        }
+    }
+}
+
+struct PracticeTopicsLocaleTests {
+
+    @Test func enUSPoolReadsLegacyDictionary() {
+        let prompts = PracticeTopics.prompts(for: .general, locale: .enUS)
+        #expect(!prompts.isEmpty)
+    }
+
+    @Test func spanishPoolHasPromptsAcrossThemes() {
+        for theme in PromptTheme.allCases where theme != .all {
+            let prompts = PracticeTopics.prompts(for: theme, locale: .esES)
+            #expect(!prompts.isEmpty, "es-ES \(theme.rawValue) pool is empty")
+        }
+    }
+
+    @Test func frenchPoolHasPromptsAcrossThemes() {
+        for theme in PromptTheme.allCases where theme != .all {
+            let prompts = PracticeTopics.prompts(for: theme, locale: .frFR)
+            #expect(!prompts.isEmpty, "fr-FR \(theme.rawValue) pool is empty")
+        }
+    }
+
+    @Test func allThemeFlattensPerLocale() {
+        let en = PracticeTopics.prompts(for: .all, locale: .enUS)
+        let es = PracticeTopics.prompts(for: .all, locale: .esES)
+        let fr = PracticeTopics.prompts(for: .all, locale: .frFR)
+        #expect(en.count >= 100)
+        #expect(es.count >= 20)
+        #expect(fr.count >= 20)
+    }
+
+    @Test func explicitLocaleRandomReturnsFromCorrectPool() {
+        let esPool = Set(PracticeTopics.prompts(for: .all, locale: .esES))
+        for _ in 0..<10 {
+            let pick = PracticeTopics.random(theme: .all, locale: .esES)
+            #expect(esPool.contains(pick), "es-ES random returned non-Spanish prompt: \(pick)")
+        }
+    }
+
+    @Test func seededByAlwaysReadsEnglishPool() {
+        // Async-challenge fairness contract: same seed = same prompt across
+        // devices regardless of each user's practice locale setting.
+        let a = PracticeTopics.seeded(by: "challenge-42")
+        let b = PracticeTopics.seeded(by: "challenge-42")
+        #expect(a == b)
+        let englishPool = Set(PracticeTopics.prompts(for: .all, locale: .enUS))
+        #expect(englishPool.contains(a))
+    }
+}
+
+@MainActor
+struct LocaleSettingsManagerTests {
+
+    @Test func currentLocaleIsValid() {
+        let m = LocaleSettingsManager.shared
+        #expect(PracticeLocale.allCases.contains(m.current))
+    }
+
+    @Test func roundTripsLocaleChange() {
+        let m = LocaleSettingsManager.shared
+        let original = m.current
+        defer { m.current = original }
+
+        m.current = .esES
+        #expect(m.current == .esES)
+        m.current = .frFR
+        #expect(m.current == .frFR)
+        m.current = .enUS
+        #expect(m.current == .enUS)
+    }
+}
