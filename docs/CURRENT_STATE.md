@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day)_
+_Last updated: 2026-05-08 (M5–M10 shipped: coach memory, peak ratings, AI prompts, daily challenges, word of the day, pitch / intonation v1)_
 
 ## Architecture overview
 
@@ -119,6 +119,22 @@ _Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI promp
   question). Conservative thresholds; covered by 9 unit tests.
 - `Noum/Noum/EloquenceXP.swift` — 5–25 XP per detected device,
   60-cap per session, diminishing returns inside a single rep.
+- `Noum/Noum/PitchMetrics.swift` — M10 pitch / intonation v1.
+  `PitchTracker` runs on-device autocorrelation via `Accelerate.vDSP`
+  on 50ms Hann-windowed frames (25ms hop) over the same audio tap
+  the transcription provider uses (no second audio session). 70–500 Hz
+  band, voicing gated on autocorrelation strength ≥ 0.3 + an energy
+  floor; parabolic interpolation around the peak gives sub-sample F0
+  accuracy. `PitchMetrics` reduces the per-frame track to five numbers
+  (meanHz, voicedSeconds, semitoneStdDev, varietyScore, rangeSemitones)
+  persisted on every `PracticeSession`. Variety is a soft logistic over
+  semitone std-dev — ≤1 ST reads as monotone, ≥4 ST as expressive.
+  Hides the summary card when voiced audio is under 4s rather than
+  reading false certainty into a whisper. Folds into
+  `TrendAnalyzer.analyzePitch` on the existing `vocalEmphasis`
+  SkillArea so it picks up drill focus selection like every other
+  skill. Covered by 9 unit tests including a synthetic sine-wave
+  end-to-end through the autocorrelator.
 - `Noum/Noum/AIInsightsService.swift` — narrative insight generator
   (weeklyNarrative / sessionDebrief / patternBreak). Reuses the
   Gemini/OpenAI/DeepSeek provider plumbing; falls back to a template
@@ -328,6 +344,30 @@ _Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI promp
   Surfaced in home, profile, reminder copy, widget, and the soft-sell
   pre-prompt's value-prop bullets. App icon badge mirrors the current
   streak via `setBadgeCount`.
+- **Pitch / intonation (M10)** — `PitchTracker` runs on-device
+  autocorrelation via `Accelerate.vDSP` on 50ms windows / 25ms hops
+  over the existing `AVAudioEngine` input tap (no second audio
+  session, no new privacy surface). Voicing gated on autocorrelation
+  strength ≥ 0.3 plus an energy floor; parabolic interpolation around
+  the autocorr peak gives sub-sample F0 accuracy in the 70–500 Hz
+  band. `PitchMetrics` reduces the per-frame track to a 5-number
+  Codable struct (meanHz, voicedSeconds, semitoneStdDev, varietyScore,
+  rangeSemitones) persisted on every `PracticeSession`. Variety is a
+  soft logistic over semitone std-dev — ≤1 ST reads as monotone,
+  ≥4 ST as expressive. `PitchSummaryCard` surfaces a variety bar +
+  on-voice headline alongside the pause card; hides itself for reps
+  under 4s of voiced audio. `ProgressionChartsCard` gains a fifth
+  `pitchVariety` series that filters out no-signal sessions so the
+  trend pill on the profile only plots real readings.
+  `TrendAnalyzer.analyzePitch` folds variety into the same
+  direction/level/confidence shape as pause-rate so the next-action
+  engine can pick `vocalEmphasis` as a primary focus when the user is
+  consistently flat. Sudden Death and IM modes attach metrics through
+  the same `currentSessionPitchMetrics()` path Timed already uses.
+  Fully covered by 9 unit tests including a synthetic sine-wave
+  end-to-end. **Honest gap:** pitch is descriptive, not prescriptive
+  yet — no `vocalEmphasis` mini-drill is wired specifically to pitch
+  metrics. Drill family exists; bridging is M11+.
 - **Word of the day (M9)** — `WordOfTheDayCatalog` ships 30 curated
   entries (word, part-of-speech, definition, 30s prompt suggestion, and
   inflected acceptedForms list). `entry(for:)` hashes the ISO day key
@@ -518,13 +558,11 @@ _Last updated: 2026-05-06 (M5–M9 shipped: coach memory, peak ratings, AI promp
 
 ### Not started
 
-- **Pitch / intonation analysis** — zero pitch tracking. The audio
-  pipeline drops the signal at transcription time.
 - **Grammar / English-usage evaluation** — no parser, no AST, no
-  grammar feedback.
-- **Word of the day** — not present.
+  grammar feedback. Active "Next milestone" (M11).
 - **Multilingual support** — every transcription provider is hardcoded
-  to `en-US`; all copy and prompts are English.
+  to `en-US`; all copy and prompts are English. Pitch metrics work
+  language-agnostic so M10 carries forward unchanged when this lands.
 - **Sponsor / advertisement surfaces** — none, and they conflict with
   the paid model. Mentioned on the original Trello but flagged here
   as "do not build".

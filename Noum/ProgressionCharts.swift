@@ -229,60 +229,67 @@ struct ProgressionChartsCard: View {
 @available(iOS 17.0, macOS 12.0, *)
 extension ProgressionChartsCard {
     enum ChartSeries: CaseIterable {
-        case score, fillerRate, pace, pauseRate
+        case score, fillerRate, pace, pauseRate, pitchVariety
 
         var shortLabel: String {
             switch self {
-            case .score:      return "Score"
-            case .fillerRate: return "Fillers"
-            case .pace:       return "Pace"
-            case .pauseRate:  return "Pauses"
+            case .score:         return "Score"
+            case .fillerRate:    return "Fillers"
+            case .pace:          return "Pace"
+            case .pauseRate:     return "Pauses"
+            case .pitchVariety:  return "Pitch"
             }
         }
 
         var symbolName: String {
             switch self {
-            case .score:      return "star.fill"
-            case .fillerRate: return "speaker.slash.fill"
-            case .pace:       return "speedometer"
-            case .pauseRate:  return "pause.circle.fill"
+            case .score:         return "star.fill"
+            case .fillerRate:    return "speaker.slash.fill"
+            case .pace:          return "speedometer"
+            case .pauseRate:     return "pause.circle.fill"
+            case .pitchVariety:  return "waveform.path.ecg"
             }
         }
 
         var tint: Color {
             switch self {
-            case .score:      return AppColor.brandBlue
-            case .fillerRate: return AppColor.caution
-            case .pace:       return AppColor.modeAhCounter
-            case .pauseRate:  return AppColor.modeIM
+            case .score:         return AppColor.brandBlue
+            case .fillerRate:    return AppColor.caution
+            case .pace:          return AppColor.modeAhCounter
+            case .pauseRate:     return AppColor.modeIM
+            case .pitchVariety:  return AppColor.modeAhCounter
             }
         }
 
         func value(from point: ChartPoint) -> Double {
             switch self {
-            case .score:      return point.score
-            case .fillerRate: return point.fillerRate
-            case .pace:       return point.pace
-            case .pauseRate:  return point.pauseRate ?? 0
+            case .score:         return point.score
+            case .fillerRate:    return point.fillerRate
+            case .pace:          return point.pace
+            case .pauseRate:     return point.pauseRate ?? 0
+            case .pitchVariety:  return (point.pitchVariety ?? 0) * 100
             }
         }
 
         /// Returns true only when the underlying point has real data for
         /// this series. Used to filter out sessions whose transcription
-        /// provider didn't capture word timings (pause series only).
+        /// provider didn't capture word timings (pause series only) or
+        /// whose pitch tracker didn't get readable voiced audio.
         func hasValue(in point: ChartPoint) -> Bool {
             switch self {
-            case .pauseRate: return point.pauseRate != nil
-            default:         return true
+            case .pauseRate:     return point.pauseRate != nil
+            case .pitchVariety:  return point.pitchVariety != nil
+            default:             return true
             }
         }
 
         func formatValue(_ value: Double) -> String {
             switch self {
-            case .score:      return String(format: "%.1f", value)
-            case .fillerRate: return String(format: "%.1f/min", value)
-            case .pace:       return String(format: "%.0f WPM", value)
-            case .pauseRate:  return String(format: "%.1f/min", value)
+            case .score:         return String(format: "%.1f", value)
+            case .fillerRate:    return String(format: "%.1f/min", value)
+            case .pace:          return String(format: "%.0f WPM", value)
+            case .pauseRate:     return String(format: "%.1f/min", value)
+            case .pitchVariety:  return String(format: "%.0f / 100", value)
             }
         }
 
@@ -300,6 +307,9 @@ extension ProgressionChartsCard {
             case .pauseRate:
                 if abs(delta) < 0.05 { return "Even" }
                 return String(format: "%+.1f/min", delta)
+            case .pitchVariety:
+                if abs(delta) < 1 { return "Even" }
+                return String(format: "%+.0f", delta)
             }
         }
 
@@ -318,6 +328,9 @@ extension ProgressionChartsCard {
                 // up to a ceiling (~6/min). Treat upward movement as
                 // improvement until we have enough data to model the curve.
                 return delta >= 0.1
+            case .pitchVariety:
+                // More variety = less monotone. Up is good.
+                return delta >= 1
             }
         }
     }
@@ -332,6 +345,10 @@ extension ProgressionChartsCard {
         /// timings. Filtered out at the chart-render layer for the
         /// `.pauseRate` series so we don't draw fake zeros.
         let pauseRate: Double?
+        /// 0...1 pitch variety — nil when the session had no readable
+        /// voiced audio (whisper, near-silence). Filtered out at the
+        /// chart-render layer for the `.pitchVariety` series. M10.
+        let pitchVariety: Double?
 
         init?(session: PracticeSession) {
             guard let score = session.score else { return nil }
@@ -346,6 +363,11 @@ extension ProgressionChartsCard {
                 self.pauseRate = Double(metrics.count) / minutes
             } else {
                 self.pauseRate = nil
+            }
+            if let metrics = session.pitchMetrics, metrics.hasReadableSignal {
+                self.pitchVariety = metrics.varietyScore
+            } else {
+                self.pitchVariety = nil
             }
         }
     }

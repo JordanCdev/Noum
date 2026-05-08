@@ -1162,7 +1162,8 @@ struct IMPracticeView: View {
                             ),
                             pressureLevel: pressure,
                             isRated: pressureOn,
-                            pauseMetrics: speechVM.currentSessionPauseMetrics()
+                            pauseMetrics: speechVM.currentSessionPauseMetrics(),
+                            pitchMetrics: speechVM.currentSessionPitchMetrics()
                         ),
                         annotation: PracticeSessionAnnotation(
                             score: finalEvaluation.overallScore,

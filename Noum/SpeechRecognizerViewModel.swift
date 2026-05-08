@@ -77,6 +77,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// at finalize to classify pauses as filled vs unfilled.
     private var fillerStartTimes: [TimeInterval] = []
 
+    /// On-device pitch tracker (M10). Lazily allocated so unit tests and
+    /// preview-only paths don't pay the autocorrelation setup cost.
+    /// Reset and reused across sessions; sample rate is locked when the
+    /// audio engine reports its actual input format.
+    private var pitchTracker: PitchTracker?
+
     /// Snapshot of accumulated word timings, intended for SessionFinalizer
     /// to compute pause metrics. Returns an empty array if the active
     /// transcription provider didn't emit word-level data.
@@ -106,6 +112,22 @@ class SpeechRecognizerViewModel: ObservableObject {
             words: sessionWordTimings,
             fillerStartTimes: filledStarts
         )
+    }
+
+    /// Compute pitch metrics from the session's pitch track (M10). Returns
+    /// nil when no tracker ran (e.g., audio engine never reached the input
+    /// tap), or when the rep had no voiced audio worth reading. Public so
+    /// per-mode views (Sudden Death, IM) can attach metrics to their own
+    /// session drafts the same way they do with pause metrics.
+    func currentSessionPitchMetrics() -> PitchMetrics? {
+        guard let tracker = pitchTracker else { return nil }
+        let frames = tracker.snapshotFrames()
+        guard !frames.isEmpty else { return nil }
+        let metrics = PitchMetrics.reduce(
+            frames: frames,
+            frameDuration: tracker.frameDuration
+        )
+        return metrics.hasReadableSignal ? metrics : nil
     }
 
     init(preloadOnInit: Bool = true) {
@@ -195,6 +217,7 @@ class SpeechRecognizerViewModel: ObservableObject {
         providerFillerCount = 0
         sessionWordTimings = []
         fillerStartTimes = []
+        pitchTracker?.reset()
 
         do {
             try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
@@ -312,14 +335,37 @@ class SpeechRecognizerViewModel: ObservableObject {
         let inputFormat = inputNode.inputFormat(forBus: 0)
         inputNode.removeTap(onBus: 0)
 
+        // M10 — multiplex the existing tap to feed the on-device pitch
+        // tracker. We never open a second audio session; the tracker reads
+        // the same Float32 samples the transcription provider gets, just
+        // before they're converted to Int16 PCM.
+        let trackerSampleRate = inputFormat.sampleRate
+        if pitchTracker == nil || pitchTracker?.sampleRate != trackerSampleRate {
+            pitchTracker = PitchTracker(sampleRate: trackerSampleRate)
+        }
+        pitchTracker?.reset()
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
+            self.feedPitchTracker(buffer: buffer)
             let data = self.convertBufferToPCMData(buffer: buffer)
             Task { try? await session.sendAudio(data) }
         }
 
         audioEngine!.prepare()
         try audioEngine!.start()
+    }
+
+    /// Forward the raw Float32 mono samples on channel 0 into the pitch
+    /// tracker. Heavy DSP is deferred onto the tracker's serial queue, so
+    /// this stays cheap on the audio thread.
+    private func feedPitchTracker(buffer: AVAudioPCMBuffer) {
+        guard let tracker = pitchTracker else { return }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+        if let channelData = buffer.floatChannelData?[0] {
+            tracker.ingest(channelData, count: frameLength)
+        }
     }
 
     private func teardownAudioStream() {
@@ -438,6 +484,7 @@ class SpeechRecognizerViewModel: ObservableObject {
             streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
         )
         let pauseMetrics = currentSessionPauseMetrics()
+        let pitchMetrics = currentSessionPitchMetrics()
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -450,7 +497,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 transcriptionProvider: provider.identifier,
                 pressureLevel: pressure,
                 isRated: pressureOn,
-                pauseMetrics: pauseMetrics
+                pauseMetrics: pauseMetrics,
+                pitchMetrics: pitchMetrics
             )
         )
         pastSessions = sessionStore.sessions
@@ -511,6 +559,11 @@ struct PracticeSession: Identifiable, Codable {
     /// persisted sessions decode without it, and (b) some transcription
     /// providers may not emit word-level timings on certain reps.
     var pauseMetrics: PauseMetrics? = nil
+    /// Pitch / intonation statistics (M10). Optional because (a) older
+    /// persisted sessions decode without it, and (b) reps with too little
+    /// voiced audio (whisper, near-silence) get a nil reading rather than
+    /// a fake "0 monotone" reading.
+    var pitchMetrics: PitchMetrics? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -534,6 +587,7 @@ struct PracticeSession: Identifiable, Codable {
         case pressureLevel
         case isRated
         case pauseMetrics
+        case pitchMetrics
     }
 
     init(
@@ -557,7 +611,8 @@ struct PracticeSession: Identifiable, Codable {
         transcriptionProvider: String? = nil,
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
-        pauseMetrics: PauseMetrics? = nil
+        pauseMetrics: PauseMetrics? = nil,
+        pitchMetrics: PitchMetrics? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -580,6 +635,7 @@ struct PracticeSession: Identifiable, Codable {
         self.pressureLevel = pressureLevel
         self.isRated = isRated
         self.pauseMetrics = pauseMetrics
+        self.pitchMetrics = pitchMetrics
     }
 
     init(from decoder: Decoder) throws {
@@ -605,5 +661,6 @@ struct PracticeSession: Identifiable, Codable {
         pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
+        pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
     }
 }

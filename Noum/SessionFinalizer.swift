@@ -133,6 +133,12 @@ enum SessionFinalizer {
                   effectiveDuration > 0 else { return nil }
             return Double(metrics.count) / (effectiveDuration / 60.0)
         }()
+        // M10 — pitch variety. nil when the rep had no readable voiced
+        // audio (whisper, near-silence) so the trend chart never draws a
+        // fake-zero point.
+        let pitchVariety: Double? = sessionStore.sessions.first?.pitchMetrics.flatMap {
+            $0.hasReadableSignal ? $0.varietyScore : nil
+        }
         SkillTrendStore.shared.recordFromSession(
             sessionId: latestSessionID ?? UUID(),
             fillerCount: effectiveFillerCount,
@@ -140,7 +146,8 @@ enum SessionFinalizer {
             wordCount: transcriptWordCount,
             score: scoreValue,
             categoryRatings: categoryMap,
-            pauseRate: pauseRate
+            pauseRate: pauseRate,
+            pitchVariety: pitchVariety
         )
 
         // Schedule follow-up reminder
