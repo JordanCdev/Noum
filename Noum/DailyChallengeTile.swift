@@ -16,6 +16,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct DailyChallengeTile: View {
     @StateObject private var manager = DailyChallengesManager.shared
+    @StateObject private var dailyGoal = DailyGoalManager.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showClaimToast = false
     @State private var lastClaim: DailyChallengeKind?
@@ -67,20 +68,51 @@ struct DailyChallengeTile: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "target")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(headerAccent)
-            Text("Daily challenges")
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-            Spacer()
-            Text(headerSummary)
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(headerAccent)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "target")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(headerAccent)
+                Text("Today")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Text(headerSummary)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(headerAccent)
+            }
+            // Inline rep counter — folded in from the retired DailyGoalCard
+            // so home keeps "rep count today" visibility without needing
+            // its own card.
+            HStack(spacing: 8) {
+                Text(repCounterText)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+                Spacer()
+                if dailyGoal.hasReachedGoal {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Goal hit")
+                            .font(Typography.micro.weight(.bold))
+                    }
+                    .foregroundStyle(AppColor.brandBlue)
+                }
+            }
         }
+    }
+
+    /// Folded-in rep counter from the (retired) DailyGoalCard — kept on
+    /// one row so the home tile stays compact. Says "1 of 1 rep today"
+    /// when the goal is 1, "2 of 3 reps today" when it's 3.
+    private var repCounterText: String {
+        let n = dailyGoal.repsToday
+        let g = dailyGoal.goalReps
+        let unit = g == 1 ? "rep" : "reps"
+        return "\(n) of \(g) \(unit) today"
     }
 
     private var headerAccent: Color {

@@ -95,26 +95,44 @@ struct ContentView: View {
                             DailyGoalCard(manager: dailyGoal).cardEntrance(2)
                             secondaryDiscoveryCard.cardEntrance(3)
                         } else {
-                            // Populated: the AI weekly narrative is the #2
-                            // surface — it's the strongest differentiator
-                            // and deserves visibility.
+                            // Populated home — editorial pass (M14).
+                            //
+                            // Reduced from 11 cards to 6. Each remaining
+                            // card earns its place; nothing is duplicated:
+                            //
+                            //  1. heroCard — greeting + character + streak chip.
+                            //  2. quickStartCard — primary CTA, promoted to
+                            //     second slot.
+                            //  3. DailyChallengeTile — daily-open mechanic
+                            //     with an inline "N of M reps today" header
+                            //     so we don't need a separate DailyGoalCard.
+                            //  4. WordOfTheDayTile — small daily stretch.
+                            //  5. AIWeeklyInsightCard — differentiator;
+                            //     keeps the narrative-coaching feel.
+                            //  6. journeyPreviewCard — long-game path CTA.
+                            //
+                            // Removed and where the surface still lives:
+                            //  • DailyGoalCard — rep counter folded into
+                            //    the DailyChallengeTile header.
+                            //  • streakCard — already in the hero chip.
+                            //  • nextLessonCard — reachable via Path /
+                            //    Review.
+                            //  • progressCard — rank/level is identity,
+                            //    lives on Profile.
+                            //  • suggestedPracticeCard — duplicated the
+                            //    quickStartCard's primary intent.
                             heroCard.cardEntrance(0)
+                            quickStartCard.cardEntrance(1)
+                            DailyChallengeTile().cardEntrance(2)
+                            WordOfTheDayTile(navigationPath: $navigationPath).cardEntrance(3)
                             AIWeeklyInsightCard(
                                 sessionStore: sessionStore,
                                 ratingStore: RatingStore.shared,
                                 clutchWordStore: ClutchWordStore.shared,
                                 coachingProfileStore: coachingProfileStore
                             )
-                            .cardEntrance(1)
-                            DailyGoalCard(manager: dailyGoal).cardEntrance(2)
-                            DailyChallengeTile().cardEntrance(3)
-                            WordOfTheDayTile(navigationPath: $navigationPath).cardEntrance(4)
-                            streakCard.cardEntrance(5)
-                            nextLessonCard.cardEntrance(6)
-                            quickStartCard.cardEntrance(7)
-                            journeyPreviewCard.cardEntrance(8)
-                            progressCard.cardEntrance(9)
-                            suggestedPracticeCard.cardEntrance(10)
+                            .cardEntrance(4)
+                            journeyPreviewCard.cardEntrance(5)
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -226,11 +244,16 @@ struct ContentView: View {
                 .zIndex(99)
             }
         }
-        // Deferred profile capture — fired by SessionFinalizer when the
-        // user hits a session-count milestone with an unanswered prompt.
-        .sheet(item: $deferredCapture.pendingPrompt) { prompt in
-            DeferredProfileCaptureSheet(prompt: prompt)
-        }
+        // Deferred profile capture — M14 UX rework.
+        //
+        // Previously fired as a full-screen sheet that hijacked the
+        // post-session moment. Real-device feedback flagged this as too
+        // much decision pressure right after a rep ("need a more user
+        // friendly way of adding it"). Now the pending prompt surfaces
+        // as an inline card on SummaryView (`DeferredCaptureInlineCard`)
+        // that the user can answer or scroll past — no modal block.
+        // Captured text lands on Profile via the "In your own words"
+        // section so users see their reflections being held by the app.
         // Goal refresh — 2-week cadence "still your goal?" lightweight sheet.
         .sheet(isPresented: $goalRefresh.shouldPresent) {
             GoalRefreshSheet()

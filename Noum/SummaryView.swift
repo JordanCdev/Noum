@@ -517,6 +517,11 @@ struct SummaryView: View {
                                 session: sessionStore.sessions.first,
                                 recentSessions: Array(sessionStore.sessions.prefix(5))
                             )
+                            // Inline reflection prompt — replaces the old
+                            // full-screen sheet so the user isn't blocked
+                            // post-rep. Renders only when a prompt is
+                            // pending; auto-hides after submit/skip.
+                            DeferredCaptureInlineCard()
                             EloquenceFindingsCard(findings: eloquenceFindings)
                             if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
                                 PauseSummaryCard(metrics: pauseMetrics)
