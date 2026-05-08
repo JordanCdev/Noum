@@ -576,10 +576,23 @@ enum VerdictEngine {
             }
 
         case .openingStrength:
-            return "Your opening didn't land with impact. The first sentence is where confidence is established."
+            // M14: real-device feedback asked us to back up the claim with
+            // reasoning, not just assert it. The opening signal lives in
+            // the first ~12s of the rep — filler density there + how
+            // declarative the first sentence reads. We can cite the
+            // observable data point (filler count) without pretending we
+            // analysed prosody on the opening specifically.
+            if fillerCount >= 3 && duration >= 15 {
+                return "Your opening didn't land — \(fillerCount) fillers in the first stretch made the start sound uncertain. The first sentence is where listeners decide whether to lean in."
+            }
+            return "Your opening didn't land — the first sentence read tentative rather than declarative. Listeners decide whether to lean in inside the first eight seconds."
 
         case .closingStrength:
-            return "Your answer trailed off rather than ending with conviction. A strong close is what stays with the listener."
+            // M14: same reasoning treatment as openingStrength.
+            if duration < 18 {
+                return "Your close trailed off — at \(Int(duration))s the rep ended before the answer could resolve. A strong close is what stays with the listener."
+            }
+            return "Your close trailed off rather than ending with conviction. The last sentence is what listeners walk away repeating — make it land."
 
         case .paceControl:
             if wpm > 160 {

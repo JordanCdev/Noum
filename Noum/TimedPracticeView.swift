@@ -823,9 +823,46 @@ struct TimedPracticeView: View {
                 // Settings card
                 settingsCard
 
+                // M14: live camera preview during setup so the user can
+                // see themselves and adjust framing BEFORE the rep starts.
+                // Real-device feedback: the preview was only rendering during
+                // the speaking phase, so users had no visibility while
+                // they were prepping. Tap the toggle in settings → preview
+                // appears here.
+                if enableVideoRecording, let session = videoManager.captureSession {
+                    cameraSetupPreview(session: session)
+                }
+
                 Spacer(minLength: 100)
             }
             .padding(.horizontal, 20)
+        }
+    }
+
+    @available(iOS 17.0, *)
+    private func cameraSetupPreview(session: AVCaptureSession) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.pink)
+                Text("Camera preview")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Text("Visible only to you")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            CameraPreviewView(session: session)
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                )
         }
     }
 

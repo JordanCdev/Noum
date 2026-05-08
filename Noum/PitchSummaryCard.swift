@@ -24,6 +24,13 @@ struct PitchSummaryCard: View {
 
     @ViewBuilder
     private var content: some View {
+        // M14 simplification (real-device feedback): the user said
+        // "I dont know if Hz is relevant, like what does 141 Hz mean
+        // etc. And windows?? Voiced?". Stripped the three technical
+        // stat cells (Variation ±Hz, Voiced %, Windows count) and the
+        // raw Hz number from the headline. The card now reads as
+        // coaching: headline + meter + one coach line. Power users
+        // can still see the precise reads in the trend chart on profile.
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "waveform.path")
@@ -33,12 +40,6 @@ struct PitchSummaryCard: View {
                     .font(Typography.cardTitle)
                     .foregroundStyle(.primary)
                 Spacer()
-                if let mean = metrics.meanHz {
-                    Text("\(Int(mean.rounded())) Hz")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
             }
 
             meter
@@ -47,12 +48,6 @@ struct PitchSummaryCard: View {
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 12) {
-                stat(label: "Variation", value: stdLabel)
-                stat(label: "Voiced", value: voicedLabel)
-                stat(label: "Windows", value: "\(metrics.windowCount)")
-            }
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,37 +93,12 @@ struct PitchSummaryCard: View {
         .accessibilityLabel("Monotone score \(Int(metrics.monotoneScore * 100)) percent.")
     }
 
-    private func stat(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(Typography.micro)
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
-                .tracking(0.6)
-            Text(value)
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-                .monospacedDigit()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     // MARK: - Helpers
 
     private var accent: Color {
         if metrics.monotoneScore < 0.30 { return AppColor.brandBlue }
         if metrics.monotoneScore < 0.65 { return .orange }
         return .secondary
-    }
-
-    private var stdLabel: String {
-        guard let std = metrics.stdHz else { return "—" }
-        return String(format: "±%.0f Hz", std)
-    }
-
-    private var voicedLabel: String {
-        let pct = Int((metrics.voicedRatio * 100).rounded())
-        return "\(pct)%"
     }
 }
 

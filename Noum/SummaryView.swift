@@ -684,6 +684,13 @@ struct SummaryView: View {
             // Session Details (collapsed by default)
             DisclosureGroup(isExpanded: $showSecondaryDetails) {
                 VStack(spacing: 14) {
+                    // M14: transcript was nowhere on the summary — real-device
+                    // feedback flagged "no where to see transcript". Lives
+                    // here so it's discoverable without dominating the view.
+                    if !transcriptText.isEmpty {
+                        transcriptDetailCard
+                    }
+
                     // Category grid
                     if !feedbackCategories.isEmpty {
                         categoryGrid
@@ -874,6 +881,44 @@ struct SummaryView: View {
                 }
             }
         }
+    }
+
+    /// Transcript card. Visible inside Session Details so power users
+    /// can read what the speech engine actually heard. Selectable for
+    /// copy/paste; truncation handled by SwiftUI's intrinsic line-wrap.
+    /// M14: added in response to real-device feedback ("no where to
+    /// see transcript").
+    private var transcriptDetailCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("Transcript")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Text("\(wordCountText)")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Text(transcriptText)
+                .font(Typography.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private var wordCountText: String {
+        let count = transcriptText.split { !$0.isLetter && !$0.isNumber }.count
+        return "\(count) word\(count == 1 ? "" : "s")"
     }
 
     /// Video playback button for the expandable section
@@ -1654,27 +1699,28 @@ struct SummaryView: View {
 
     private var actionBar: some View {
         HStack(spacing: 0) {
-            // Home
+            // Home — accent matches the home nav's "Train" bucket (brand blue)
             Button { onHome() } label: {
-                actionBarItem(icon: "house.fill", label: "Home")
+                actionBarItem(icon: "house.fill", label: "Home", accent: AppColor.brandBlue)
             }
             .buttonStyle(.pressable)
 
-            // Retry Same Prompt
+            // Retry Same Prompt — primary action; filled brand-blue circle
             Button { onPracticeAgain() } label: {
-                actionBarItem(icon: "arrow.clockwise", label: "Retry", highlighted: true)
+                actionBarItem(icon: "arrow.clockwise", label: "Retry", accent: AppColor.brandBlue, highlighted: true)
             }
             .buttonStyle(.pressable)
 
-            // New Prompt
+            // New Prompt — orange to mirror the home Review tab's accent
             Button { onSelectPracticeMode() } label: {
-                actionBarItem(icon: "sparkles", label: "New")
+                actionBarItem(icon: "sparkles", label: "New", accent: .orange)
             }
             .buttonStyle(.pressable)
 
-            // Share (opens dual-flow menu)
+            // Share — green to mirror the home Settings tab's accent;
+            // share-out reads as a settings-adjacent secondary action.
             Button { showShareMenu = true } label: {
-                actionBarItem(icon: "square.and.arrow.up", label: "Share")
+                actionBarItem(icon: "square.and.arrow.up", label: "Share", accent: .green)
             }
             .buttonStyle(.pressable)
         }
@@ -1723,21 +1769,33 @@ struct SummaryView: View {
         }
     }
 
-    private func actionBarItem(icon: String, label: String, highlighted: Bool = false) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(highlighted ? .white : .primary.opacity(0.6))
-                .frame(width: 44, height: 44)
-                .background(
-                    highlighted
-                        ? AnyShapeStyle(Color.primary.opacity(0.85))
-                        : AnyShapeStyle(Color(.systemGray6)),
-                    in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                )
+    /// Summary action bar — matches the home bottom-nav design language so the
+    /// app feels of-a-piece across surfaces. Real-device feedback flagged the
+    /// previous treatment (gray-tinted squares with primary-coloured icon, blue
+    /// label only on highlighted) as visually inconsistent with home's
+    /// accent-tinted circular icons + accent-coloured uppercase labels.
+    ///
+    /// Retry stays the loud primary action — its accent is brand-blue,
+    /// rendered as a filled circle (vs the soft 12%-opacity tinted circles
+    /// on the secondary actions). That preserves the "this is the action
+    /// you want" hierarchy without breaking visual coherence with home.
+    private func actionBarItem(icon: String, label: String, accent: Color, highlighted: Bool = false) -> some View {
+        VStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill(highlighted
+                          ? AnyShapeStyle(accent)
+                          : AnyShapeStyle(accent.opacity(0.12)))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(highlighted ? Color.white : accent)
+            }
             Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(highlighted ? .blue : .secondary)
+                .font(Typography.nav)
+                .textCase(.uppercase)
+                .tracking(0.4)
+                .foregroundStyle(accent.opacity(0.85))
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())

@@ -80,18 +80,20 @@ struct PitchMetrics: Codable, Equatable {
     }
 
     /// One-line coach line tailored to the score. Voice rules: no chirpy
-    /// filler, second-person, ≤ 22 words.
+    /// filler, second-person, ≤ 22 words. M14: stripped raw Hz numbers
+    /// per real-device feedback — "what does 141 Hz mean?" — so the
+    /// copy reads as coaching, not a DSP readout.
     var coachLine: String {
-        guard isReliable, let mean = meanHz, let std = stdHz else {
-            return "Speak a little louder or longer to give the analyzer something to read."
+        guard isReliable else {
+            return "Speak a little longer next rep so we have a clean read on your pitch."
         }
         let m = monotoneScore
         if m < 0.30 {
             return "Your voice moved across the line — that's how listeners stay with you. Keep the variation."
         }
         if m < 0.65 {
-            return String(format: "Mean pitch %.0f Hz, varying by ±%.0f. There's room to lean into emphasis on the lines that matter.", mean, std)
+            return "There's room to lean into emphasis on the lines that matter — try lifting key words, settling on closes."
         }
-        return String(format: "You stayed close to %.0f Hz throughout. Try varying pitch on key words — questions go up, conclusions land down.", mean)
+        return "Your pitch sat flat across the rep. Try varying it on key words — questions go up, conclusions land down."
     }
 }
