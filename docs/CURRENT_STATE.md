@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisation v1)_
+_Last updated: 2026-05-09 (M5–M13 shipped: coach memory through UI localisation v1; picker-sheet copy now localised; WOTD catalog grown to 71 entries)_
 
 ## Architecture overview
 
@@ -388,8 +388,9 @@ _Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisatio
   populated home shows the word + definition + suggested prompt;
   "Try it" seeds `timedPractice.suggestedPrompt` and pushes
   `AppDestination.timedPractice`. `SessionFinalizer` triggers
-  evaluation after each session. Catalog covers ~30 days; needs growth
-  to ~365 to satisfy the "no repeats inside a year" target.
+  evaluation after each session. Catalog grew from 30 → 71 entries on
+  2026-05-09 (still trending toward the ~365 year-coverage target, but
+  a meaningful step away from the every-month repeat regime).
 - **Daily challenges (M8)** — `DailyChallenge.swift` defines 8 strict
   challenge kinds keyed to real `PracticeSession` fields (held pause
   ≥ 3s unfilled, zero-filler rep ≥ 14 words, score ≥ 8/10, etc.).

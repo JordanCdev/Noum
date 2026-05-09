@@ -110,8 +110,12 @@ session would be worse than a deterministic template fallback.)
   finishes a session, `AISessionDebriefCard` shows the template
   fallback — useful but less differentiated. Until those prompts
   are localised, this is the right tradeoff.
-- `PracticeLocalePickerSheet` strings ("Full curated pool — 200+
-  prompts, 8 themes.") are themselves not yet localised.
+- ~~`PracticeLocalePickerSheet` strings ("Full curated pool — 200+
+  prompts, 8 themes.") are themselves not yet localised.~~ Closed
+  2026-05-09 — picker-sheet body copy + per-locale subtitle strings
+  added to `Localizable.xcstrings` with curated Spanish + French
+  translations; `subtitle(for:)` now returns `LocalizedStringKey` so
+  SwiftUI's auto-localising `Text` overload picks them up.
 
 **Why this next:** the product is feature-complete enough to ship.
 The remaining blockers are operational, not engineering: the
