@@ -270,6 +270,293 @@ enum WordOfTheDayCatalog {
             definition: "The grain or feel of something — surface or speech.",
             promptSuggestion: "What gives a conversation real texture rather than a flat exchange?",
             forms: ["textures", "textured"]
+        ),
+        WordOfTheDayEntry(
+            word: "Cadence",
+            partOfSpeech: "noun",
+            definition: "The rhythm and flow of how something is spoken or done.",
+            promptSuggestion: "What is your natural cadence when you're speaking with confidence?",
+            forms: ["cadences"]
+        ),
+        WordOfTheDayEntry(
+            word: "Tether",
+            partOfSpeech: "verb",
+            definition: "To bind or connect something to a fixed point.",
+            promptSuggestion: "What value do you tether your decisions to when things get noisy?",
+            forms: ["tethered", "tethers", "tethering"]
+        ),
+        WordOfTheDayEntry(
+            word: "Kindred",
+            partOfSpeech: "adjective",
+            definition: "Sharing a similar nature, spirit, or feeling.",
+            promptSuggestion: "Who is the most kindred mind you've spoken to recently?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Steward",
+            partOfSpeech: "verb",
+            definition: "To responsibly look after or manage something on behalf of others.",
+            promptSuggestion: "What is something you steward that others are counting on?",
+            forms: ["stewards", "stewarded", "stewarding", "stewardship"]
+        ),
+        WordOfTheDayEntry(
+            word: "Astute",
+            partOfSpeech: "adjective",
+            definition: "Sharp in judgement; quick to read a situation.",
+            promptSuggestion: "What is the most astute observation someone has ever made about you?",
+            forms: ["astutely"]
+        ),
+        WordOfTheDayEntry(
+            word: "Weather",
+            partOfSpeech: "verb",
+            definition: "To withstand and come through a difficult period.",
+            promptSuggestion: "What is something hard you've weathered that you don't talk about often?",
+            forms: ["weathered", "weathers", "weathering"]
+        ),
+        WordOfTheDayEntry(
+            word: "Provenance",
+            partOfSpeech: "noun",
+            definition: "The origin or source of something — the trail it came from.",
+            promptSuggestion: "What is the provenance of an idea you've been carrying for years?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Lattice",
+            partOfSpeech: "noun",
+            definition: "A structure of crossing supports — small parts holding a whole.",
+            promptSuggestion: "What lattice of small habits is keeping a bigger goal of yours upright?",
+            forms: ["lattices"]
+        ),
+        WordOfTheDayEntry(
+            word: "Quell",
+            partOfSpeech: "verb",
+            definition: "To put down or quiet — usually a feeling or a disturbance.",
+            promptSuggestion: "How do you quell the urge to fill a silence that's working in your favour?",
+            forms: ["quelled", "quells", "quelling"]
+        ),
+        WordOfTheDayEntry(
+            word: "Latitude",
+            partOfSpeech: "noun",
+            definition: "Room to move; freedom from rigid limits.",
+            promptSuggestion: "Where do you give yourself the most latitude, and where do you give the least?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Reckon",
+            partOfSpeech: "verb",
+            definition: "To work out, judge, or come to terms with something.",
+            promptSuggestion: "What are you still reckoning with that you thought you'd settled?",
+            forms: ["reckoned", "reckons", "reckoning"]
+        ),
+        WordOfTheDayEntry(
+            word: "Vivid",
+            partOfSpeech: "adjective",
+            definition: "Strikingly bright, clear, and lifelike.",
+            promptSuggestion: "What is the most vivid memory you can describe in three sentences?",
+            forms: ["vividly", "vividness"]
+        ),
+        WordOfTheDayEntry(
+            word: "Sober",
+            partOfSpeech: "adjective",
+            definition: "Serious, clear-eyed, free of exaggeration.",
+            promptSuggestion: "What is your sober read of where you are versus where you wanted to be?",
+            forms: ["soberly", "sobering"]
+        ),
+        WordOfTheDayEntry(
+            word: "Buoyant",
+            partOfSpeech: "adjective",
+            definition: "Light; cheerful and resilient under pressure.",
+            promptSuggestion: "What keeps you buoyant when a week stretches longer than you expected?",
+            forms: ["buoyancy", "buoyantly"]
+        ),
+        WordOfTheDayEntry(
+            word: "Pith",
+            partOfSpeech: "noun",
+            definition: "The essential, concentrated core of something.",
+            promptSuggestion: "What is the pith of an argument you keep having to make?",
+            forms: ["pithy", "pithily"]
+        ),
+        WordOfTheDayEntry(
+            word: "Linger",
+            partOfSpeech: "verb",
+            definition: "To stay longer than expected; to dwell.",
+            promptSuggestion: "What is one comment from this year that still lingers with you?",
+            forms: ["lingered", "lingers", "lingering"]
+        ),
+        WordOfTheDayEntry(
+            word: "Sharpen",
+            partOfSpeech: "verb",
+            definition: "To make more precise, more clear, more pointed.",
+            promptSuggestion: "What is one thing you'd sharpen about how you make a first impression?",
+            forms: ["sharpened", "sharpens", "sharpening"]
+        ),
+        WordOfTheDayEntry(
+            word: "Equanimity",
+            partOfSpeech: "noun",
+            definition: "Mental calm and balance, especially under strain.",
+            promptSuggestion: "What practice has done the most for your equanimity this year?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Decisive",
+            partOfSpeech: "adjective",
+            definition: "Settling an outcome; acting with clear intent.",
+            promptSuggestion: "What was the most decisive 60 seconds of your last big choice?",
+            forms: ["decisively", "decisiveness"]
+        ),
+        WordOfTheDayEntry(
+            word: "Patina",
+            partOfSpeech: "noun",
+            definition: "The surface character that comes only with time and use.",
+            promptSuggestion: "What part of your work has a patina that newer people can't fake?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Restless",
+            partOfSpeech: "adjective",
+            definition: "Unable to settle; charged with the need to move.",
+            promptSuggestion: "What is making you restless right now that you haven't named out loud?",
+            forms: ["restlessly", "restlessness"]
+        ),
+        WordOfTheDayEntry(
+            word: "Agile",
+            partOfSpeech: "adjective",
+            definition: "Quick to adapt; light on the feet, mentally or physically.",
+            promptSuggestion: "Where do you need to be more agile than you currently are?",
+            forms: ["agilely", "agility"]
+        ),
+        WordOfTheDayEntry(
+            word: "Refrain",
+            partOfSpeech: "verb",
+            definition: "To hold back from doing something on purpose.",
+            promptSuggestion: "What is one thing you've trained yourself to refrain from saying?",
+            forms: ["refrained", "refrains", "refraining"]
+        ),
+        WordOfTheDayEntry(
+            word: "Resolute",
+            partOfSpeech: "adjective",
+            definition: "Firm in purpose; not wavering once a decision is made.",
+            promptSuggestion: "When were you most resolute, and what made it possible to hold the line?",
+            forms: ["resolutely", "resolution"]
+        ),
+        WordOfTheDayEntry(
+            word: "Supple",
+            partOfSpeech: "adjective",
+            definition: "Bending easily without breaking; adaptive but strong.",
+            promptSuggestion: "What part of your thinking has stayed supple while the rest hardened?",
+            forms: ["supplely", "suppleness"]
+        ),
+        WordOfTheDayEntry(
+            word: "Conviction",
+            partOfSpeech: "noun",
+            definition: "A firmly held belief, expressed or not.",
+            promptSuggestion: "What is one conviction you've grown into rather than inherited?",
+            forms: ["convictions"]
+        ),
+        WordOfTheDayEntry(
+            word: "Glide",
+            partOfSpeech: "verb",
+            definition: "To move smoothly, with little visible effort.",
+            promptSuggestion: "Which conversations do you glide through, and what makes them feel that way?",
+            forms: ["glided", "glides", "gliding"]
+        ),
+        WordOfTheDayEntry(
+            word: "Discern",
+            partOfSpeech: "verb",
+            definition: "To recognise or distinguish with care.",
+            promptSuggestion: "What can you discern about a person within the first sixty seconds?",
+            forms: ["discerned", "discerns", "discerning", "discernment"]
+        ),
+        WordOfTheDayEntry(
+            word: "Contour",
+            partOfSpeech: "noun",
+            definition: "The shape or outline of something — its defining edges.",
+            promptSuggestion: "What contour does your best work share that your weakest doesn't?",
+            forms: ["contours", "contoured"]
+        ),
+        WordOfTheDayEntry(
+            word: "Steady",
+            partOfSpeech: "verb",
+            definition: "To make firm; to balance against motion or pressure.",
+            promptSuggestion: "What steadies you in the last sixty seconds before a hard conversation?",
+            forms: ["steadied", "steadies", "steadying"]
+        ),
+        WordOfTheDayEntry(
+            word: "Vouch",
+            partOfSpeech: "verb",
+            definition: "To assert with confidence based on direct experience.",
+            promptSuggestion: "What is one outcome you'd vouch for personally even when no one is checking?",
+            forms: ["vouched", "vouches", "vouching"]
+        ),
+        WordOfTheDayEntry(
+            word: "Latent",
+            partOfSpeech: "adjective",
+            definition: "Existing but not yet visible or active.",
+            promptSuggestion: "What latent skill of yours hasn't been called on for a while?",
+            forms: ["latency"]
+        ),
+        WordOfTheDayEntry(
+            word: "Yield",
+            partOfSpeech: "verb",
+            definition: "To produce; to give way under measured pressure.",
+            promptSuggestion: "What has thirty minutes a day reliably yielded for you over the years?",
+            forms: ["yielded", "yields", "yielding"]
+        ),
+        WordOfTheDayEntry(
+            word: "Render",
+            partOfSpeech: "verb",
+            definition: "To express or represent something in a particular form.",
+            promptSuggestion: "How would you render an idea you care about to someone who's never heard it?",
+            forms: ["rendered", "renders", "rendering"]
+        ),
+        WordOfTheDayEntry(
+            word: "Revise",
+            partOfSpeech: "verb",
+            definition: "To reconsider and change something with new understanding.",
+            promptSuggestion: "What is a belief you've quietly revised in the last twelve months?",
+            forms: ["revised", "revises", "revising", "revision"]
+        ),
+        WordOfTheDayEntry(
+            word: "Tempo",
+            partOfSpeech: "noun",
+            definition: "The pace or speed at which something unfolds.",
+            promptSuggestion: "What tempo do you do your sharpest thinking at, and how do you find it?",
+            forms: ["tempos"]
+        ),
+        WordOfTheDayEntry(
+            word: "Brevity",
+            partOfSpeech: "noun",
+            definition: "Shortness in time or in words.",
+            promptSuggestion: "Where has brevity served you better than a longer answer would have?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Prudent",
+            partOfSpeech: "adjective",
+            definition: "Acting with care and forethought, not just speed.",
+            promptSuggestion: "What is a prudent decision you nearly didn't make?",
+            forms: ["prudence", "prudently"]
+        ),
+        WordOfTheDayEntry(
+            word: "Fortitude",
+            partOfSpeech: "noun",
+            definition: "Strength of mind that lets you bear pain or hardship.",
+            promptSuggestion: "When did fortitude get you through something talent could not?",
+            forms: []
+        ),
+        WordOfTheDayEntry(
+            word: "Gentle",
+            partOfSpeech: "verb",
+            definition: "To soften, ease, or reduce force without losing the message.",
+            promptSuggestion: "What is one truth you've learnt to gentle without losing its edge?",
+            forms: ["gentled", "gentles", "gentling"]
+        ),
+        WordOfTheDayEntry(
+            word: "Prevail",
+            partOfSpeech: "verb",
+            definition: "To succeed against opposition or difficulty.",
+            promptSuggestion: "Where have you prevailed quietly without anyone else seeing it?",
+            forms: ["prevailed", "prevails", "prevailing"]
         )
     ]
 

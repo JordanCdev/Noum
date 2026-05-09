@@ -562,6 +562,57 @@
           }
         }
       }
+    },
+    "Switches the prompt pool, filler-word detection, and transcription provider language. Coaching feedback stays in English for now." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambia el banco de temas, la detección de muletillas y el idioma del proveedor de transcripción. El feedback del coach sigue en inglés por ahora."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifie la banque de sujets, la détection de tics de langage et la langue du service de transcription. Le feedback du coach reste en anglais pour l'instant."
+          }
+        }
+      }
+    },
+    "Full curated pool — 200+ prompts, 8 themes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Banco completo curado — más de 200 temas, 8 categorías."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Banque complète sélectionnée — 200+ sujets, 8 thèmes."
+          }
+        }
+      }
+    },
+    "Curated v1 — 24+ prompts, 8 themes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selección v1 — más de 24 temas, 8 categorías."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélection v1 — 24+ sujets, 8 thèmes."
+          }
+        }
+      }
     }
   }
 }
