@@ -175,7 +175,8 @@ final class NotificationManager: ObservableObject {
         let content = UNMutableNotificationContent()
         let copy = NotificationCopy.dailyReminder(
             streakDays: SharedNoumState.read().currentStreak,
-            todayDone: SharedNoumState.read().repsToday > 0
+            todayDone: SharedNoumState.read().repsToday > 0,
+            locale: LocaleSettingsManager.shared.current
         )
         content.title = copy.title
         content.body = copy.body
@@ -209,7 +210,8 @@ final class NotificationManager: ObservableObject {
         let content = UNMutableNotificationContent()
         let copy = NotificationCopy.streakWarning(
             streakDays: snapshot.currentStreak,
-            freezesAvailable: snapshot.freezesAvailable
+            freezesAvailable: snapshot.freezesAvailable,
+            locale: LocaleSettingsManager.shared.current
         )
         content.title = copy.title
         content.body = copy.body
@@ -233,7 +235,10 @@ final class NotificationManager: ObservableObject {
     private func scheduleWeeklyDigest() async {
 #if canImport(UserNotifications)
         let content = UNMutableNotificationContent()
-        let copy = NotificationCopy.weeklyDigest(weeklyReps: SharedNoumState.read().weeklyReps)
+        let copy = NotificationCopy.weeklyDigest(
+            weeklyReps: SharedNoumState.read().weeklyReps,
+            locale: LocaleSettingsManager.shared.current
+        )
         content.title = copy.title
         content.body = copy.body
         content.sound = .default

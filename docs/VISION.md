@@ -101,17 +101,26 @@ This is the honest call: an English coaching debrief on a Spanish
 session would be worse than a deterministic template fallback.)
 
 **Honest gaps remaining for M13:**
-- The catalog covers ~30 keys today. Hundreds of strings remain
+- The catalog covers ~33 keys today. Hundreds of strings remain
   hardcoded across the app (Summary card bodies, Profile section
   headers beyond the simple labels, AI Coach setup copy). M13
   bundles the infrastructure; further string migration is a copy
   job, not a code change.
-- AI surfaces stay English. When a Spanish or French user
-  finishes a session, `AISessionDebriefCard` shows the template
-  fallback — useful but less differentiated. Until those prompts
-  are localised, this is the right tradeoff.
-- `PracticeLocalePickerSheet` strings ("Full curated pool — 200+
-  prompts, 8 themes.") are themselves not yet localised.
+- AI surfaces stay English *for the AI hop*. The deterministic
+  template fallback is now locale-aware (en / es / fr) via
+  `TemplateCopy.*` so a Spanish or French user finishing a session
+  gets a Spanish / French debrief card — not English boilerplate
+  on a non-English transcript. The live LLM hop is still gated to
+  en-US until the prompt set is translated and validated.
+- ~~`PracticeLocalePickerSheet` strings ("Full curated pool — 200+
+  prompts, 8 themes.") are themselves not yet localised.~~ Closed:
+  picker subtitle + pool descriptions are catalog-driven
+  (`locale.picker.subtitle`, `locale.pool.full`, `locale.pool.curated`).
+- **Notification copy is now locale-aware** (M14 polish). All three
+  daily-rhythm surfaces (`dailyReminder`, `streakWarning`,
+  `weeklyDigest`) and their loss-aversion variants render in the
+  user's selected practice locale. `NotificationManager` passes
+  `LocaleSettingsManager.shared.current` at the call site.
 
 **Why this next:** the product is feature-complete enough to ship.
 The remaining blockers are operational, not engineering: the
