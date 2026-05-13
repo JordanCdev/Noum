@@ -28,7 +28,7 @@ struct PracticeLocalePickerSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Practice language")
                     .font(Typography.cardTitle)
-                Text("Switches the prompt pool, filler-word detection, and transcription provider language. Coaching feedback stays in English for now.")
+                Text("locale.picker.subtitle")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -88,11 +88,10 @@ struct PracticeLocalePickerSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func subtitle(for locale: PracticeLocale) -> String {
+    private func subtitle(for locale: PracticeLocale) -> LocalizedStringKey {
         switch locale {
-        case .enUS: return "Full curated pool — 200+ prompts, 8 themes."
-        case .esES: return "Curated v1 — 24+ prompts, 8 themes."
-        case .frFR: return "Curated v1 — 24+ prompts, 8 themes."
+        case .enUS: return "locale.pool.full"
+        case .esES, .frFR: return "locale.pool.curated"
         }
     }
 }

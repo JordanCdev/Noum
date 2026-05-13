@@ -562,6 +562,75 @@
           }
         }
       }
+    },
+    "locale.picker.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switches the prompt pool, filler-word detection, and transcription provider language. Coaching feedback stays in English for now."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambia el banco de prompts, la detección de muletillas y el idioma de transcripción. El feedback de coaching sigue en inglés por ahora."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change le pool de prompts, la détection des tics et la langue de transcription. Le feedback de coaching reste en anglais pour l'instant."
+          }
+        }
+      }
+    },
+    "locale.pool.full" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full curated pool — 200+ prompts, 8 themes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Banco completo — 200+ prompts, 8 temas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pool complet — 200+ prompts, 8 thèmes."
+          }
+        }
+      }
+    },
+    "locale.pool.curated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Curated v1 — 24+ prompts, 8 themes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selección v1 — 24+ prompts, 8 temas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélection v1 — 24+ prompts, 8 thèmes."
+          }
+        }
+      }
     }
   }
 }

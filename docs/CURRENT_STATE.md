@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisation v1)_
+_Last updated: 2026-05-13 (M5–M13 shipped; M14 in-flight: locale polish for AI fallback templates + lock-screen notification copy)_
 
 ## Architecture overview
 
@@ -481,7 +481,22 @@ _Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisatio
   three daily-rhythm surfaces (daily reminder, streak warning, weekly
   digest) plus the legacy 18h follow-up. Lock-screen-safe copy that
   never quotes the user's typed goal. Passive scenePhase refresh —
-  no surprise prompts.
+  no surprise prompts. **M14 polish:** `NotificationCopy` is now
+  locale-aware (`locale: PracticeLocale = .enUS`), and
+  `NotificationManager` passes `LocaleSettingsManager.shared.current`
+  so a Spanish or French user gets Spanish / French lock-screen copy
+  for the daily reminder, streak warning, and weekly digest. Voice
+  rules (no chirpy filler, no emoji, lock-screen safe, concrete
+  numbers) carry through in every translation.
+- **AI debrief template fallback — locale-aware (M14 polish)** —
+  `TemplateCopy.weekly` / `.debrief` / `.patternBreak` ship curated
+  English / Spanish / French phrase sets. `AIInsightsService.insight`
+  reads the active practice locale up front, threads it into the
+  cache key (so a locale switch never serves stale copy in the
+  previous language), and uses the locale-aware template both when
+  the practice locale gates the AI hop (es / fr) and when the AI
+  call fails / times out. A French user finishing a session now
+  sees a French debrief card instead of English boilerplate.
 - **Widget extension** — five sizes (small/medium/large + lock-screen
   rectangular/circular) reading the App Group `SharedNoumState`
   snapshot. Updates after every session finalize and on scenePhase
