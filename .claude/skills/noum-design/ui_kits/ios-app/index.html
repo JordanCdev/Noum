@@ -83,16 +83,26 @@
   @keyframes noum-twinkle { 0%,100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
   @keyframes noum-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
   @keyframes noum-tile-pop {
-    0%   { opacity: 0; transform: translateY(8px) scale(0.96); }
-    100% { opacity: 1; transform: translateY(0)   scale(1); }
+    0%   { opacity: 0; transform: translateY(10px) scale(0.94); }
+    60%  { opacity: 1; transform: translateY(-2px) scale(1.015); }
+    100% { opacity: 1; transform: translateY(0)    scale(1); }
   }
   @keyframes noum-new-lift {
     0%   { opacity: 0; transform: translateY(4px); }
     100% { opacity: 1; transform: translateY(0); }
   }
+  /* ScoreRing arc-sweep — shimmer dash travels from the start of the filled arc
+     to the end. Geometry: r=61, c~=383, filled@86%~=329, dash=36 → sweep ~293px. */
   @keyframes noum-ring-shimmer {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0%   { stroke-dashoffset: 0;     opacity: 0;   }
+    10%  {                            opacity: 1;   }
+    80%  { stroke-dashoffset: -293px; opacity: 0.6; }
+    100% { stroke-dashoffset: -293px; opacity: 0;   }
+  }
+  /* Celebration card entrance — soft scale + lift, premium-feeling settle */
+  @keyframes noum-celebration-in {
+    0%   { opacity: 0; transform: translateY(22px) scale(0.97); }
+    100% { opacity: 1; transform: translateY(0)    scale(1); }
   }
 </style>
 </head>
@@ -106,6 +116,7 @@
       <button class="nav-btn" data-screen="practice">Practice</button>
       <button class="nav-btn" data-screen="summary">Summary</button>
       <button class="nav-btn" data-screen="progress">Progress</button>
+      <button class="nav-btn" data-screen="celebration">Personal Best</button>
       <div class="caption" style="margin-top:12px">Click a screen name to swap the device preview. Tap CTAs in-app to fly through the flow.</div>
     </div>
     <div class="phone" id="phone">
@@ -121,6 +132,7 @@
   <script type="text/babel" src="HomeScreen.jsx"></script>
   <script type="text/babel" src="Screens.jsx"></script>
   <script type="text/babel" src="ProgressScreen.jsx"></script>
+  <script type="text/babel" src="CelebrationScreen.jsx"></script>
 
   <script type="text/babel">
     const { useState } = React;
@@ -144,12 +156,13 @@
       }, []);
 
       const screens = {
-        login:    <LoginScreen onNavigate={navigate}/>,
-        home:     <HomeScreen onNavigate={navigate}/>,
-        modes:    <ModePickerScreen onNavigate={navigate}/>,
-        practice: <PracticeScreen mode={state.mode} onNavigate={navigate}/>,
-        summary:  <SummaryScreen mode={state.mode} onNavigate={navigate}/>,
-        progress: <ProgressScreen onNavigate={navigate}/>,
+        login:       <LoginScreen onNavigate={navigate}/>,
+        home:        <HomeScreen onNavigate={navigate}/>,
+        modes:       <ModePickerScreen onNavigate={navigate}/>,
+        practice:    <PracticeScreen mode={state.mode} onNavigate={navigate}/>,
+        summary:     <SummaryScreen mode={state.mode} onNavigate={navigate}/>,
+        progress:    <ProgressScreen onNavigate={navigate}/>,
+        celebration: <CelebrationScreen onNavigate={navigate}/>,
       };
       return screens[state.screen];
     }

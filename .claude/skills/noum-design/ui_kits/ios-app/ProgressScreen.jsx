@@ -20,11 +20,14 @@ const ProgressScreen = ({ onNavigate }) => {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const ringPct = score / 10; // 0..1
+  // Score ring geometry. Sweep distance for the shimmer keyframe is hardcoded
+  // in index.html (-293px) and assumes ringSize=132, ringStroke=10, fill=0.86.
+  // If you change the ring, update the keyframe too.
   const ringSize = 132, ringStroke = 10;
   const r = (ringSize - ringStroke) / 2;
   const c = 2 * Math.PI * r;
-  const dash = c * ringPct;
+  const filledLen = c * (score / 10);
+  const SHIMMER_LEN = 36;
 
   const milestones = [
     { id:'streak',   track:'Consistency', tint:'#F28C26', icon:'flame',    title:'7-Day Streak',         frac:'5 / 7',  pct:5/7, isNew:true  },
@@ -69,23 +72,26 @@ const ProgressScreen = ({ onNavigate }) => {
             <div style={{display:'flex',justifyContent:'center',marginBottom:14,position:'relative'}}>
               <div style={{position:'relative',width:ringSize,height:ringSize}}>
                 <svg width={ringSize} height={ringSize} style={{transform:'rotate(-90deg)'}}>
+                  {/* Track */}
                   <circle cx={ringSize/2} cy={ringSize/2} r={r}
                     stroke={`${cur.tint}1a`} strokeWidth={ringStroke} fill="none"/>
+                  {/* Fill arc (animated by dasharray as score counts up) */}
                   <circle cx={ringSize/2} cy={ringSize/2} r={r}
                     stroke={cur.tint} strokeWidth={ringStroke} fill="none"
                     strokeLinecap="round"
-                    strokeDasharray={`${dash} ${c-dash}`}
+                    strokeDasharray={`${filledLen} ${c-filledLen}`}
                     style={{transition:'stroke-dasharray 60ms linear'}}/>
+                  {/* Shimmer sweep — short dash that travels around the arc by offsetting */}
+                  <circle cx={ringSize/2} cy={ringSize/2} r={r}
+                    stroke="rgba(255,255,255,0.55)" strokeWidth={ringStroke} fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${SHIMMER_LEN} ${c - SHIMMER_LEN}`}
+                    style={{
+                      animation:'noum-ring-shimmer 2.4s ease-in-out infinite',
+                      animationDelay:'1s',
+                      opacity:0,
+                    }}/>
                 </svg>
-                {/* Specular shimmer overlay on filled arc */}
-                <div style={{
-                  position:'absolute',inset:0,borderRadius:'50%',
-                  background:`conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.4) 14deg, transparent 28deg, transparent 360deg)`,
-                  mask:`radial-gradient(circle, transparent ${r-ringStroke/2}px, #000 ${r-ringStroke/2}px, #000 ${r+ringStroke/2}px, transparent ${r+ringStroke/2}px)`,
-                  WebkitMask:`radial-gradient(circle, transparent ${r-ringStroke/2}px, #000 ${r-ringStroke/2}px, #000 ${r+ringStroke/2}px, transparent ${r+ringStroke/2}px)`,
-                  animation:'noum-ring-shimmer 2.4s linear infinite',
-                  opacity:0.55,
-                }}/>
                 <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
                   <div style={{fontFamily:'Nunito,system-ui',fontSize:44,fontWeight:800,color:cur.tint,lineHeight:1,letterSpacing:'-0.01em'}}>{score.toFixed(1)}</div>
                   <div style={{fontSize:12,fontWeight:700,color:'#697382',marginTop:4}}>/ 10</div>
@@ -139,11 +145,14 @@ const ProgressScreen = ({ onNavigate }) => {
             ))}
           </div>
 
-          {/* NEXT MILESTONE card */}
+          {/* NEXT MILESTONE card — padding-box/border-box trick gives us a real
+              gradient stroke without relying on borderImage (which clips weirdly
+              with rounded corners in WebKit). */}
           <Pressable onClick={()=>onNavigate('modes')} style={{
-            background:'#fff',borderRadius:24,padding:'16px 18px',
-            border:'1.2px solid',
-            borderImage:`linear-gradient(135deg, rgba(255,255,255,.9), ${MODES.suddenDeath.tint}33) 1`,
+            borderRadius:24,padding:'16px 18px',
+            background:`linear-gradient(#fff,#fff) padding-box,
+              linear-gradient(135deg, rgba(255,255,255,0.9) 0%, ${MODES.suddenDeath.tint} 100%) border-box`,
+            border:'1.2px solid transparent',
             boxShadow:`0 8px 20px ${MODES.suddenDeath.tint}1a`,
             display:'flex',alignItems:'center',gap:14,
           }}>
