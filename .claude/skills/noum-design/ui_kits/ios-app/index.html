@@ -82,6 +82,18 @@
   @keyframes noum-pulse-fill { 0%,100% { transform: scale(0.9); opacity: 0.35; } 50% { transform: scale(1); opacity: 0.55; } }
   @keyframes noum-twinkle { 0%,100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
   @keyframes noum-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes noum-tile-pop {
+    0%   { opacity: 0; transform: translateY(8px) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+  @keyframes noum-new-lift {
+    0%   { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes noum-ring-shimmer {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
@@ -93,6 +105,7 @@
       <button class="nav-btn" data-screen="modes">Mode Picker</button>
       <button class="nav-btn" data-screen="practice">Practice</button>
       <button class="nav-btn" data-screen="summary">Summary</button>
+      <button class="nav-btn" data-screen="progress">Progress</button>
       <div class="caption" style="margin-top:12px">Click a screen name to swap the device preview. Tap CTAs in-app to fly through the flow.</div>
     </div>
     <div class="phone" id="phone">
@@ -107,6 +120,7 @@
   <script type="text/babel" src="Primitives.jsx"></script>
   <script type="text/babel" src="HomeScreen.jsx"></script>
   <script type="text/babel" src="Screens.jsx"></script>
+  <script type="text/babel" src="ProgressScreen.jsx"></script>
 
   <script type="text/babel">
     const { useState } = React;
@@ -135,6 +149,7 @@
         modes:    <ModePickerScreen onNavigate={navigate}/>,
         practice: <PracticeScreen mode={state.mode} onNavigate={navigate}/>,
         summary:  <SummaryScreen mode={state.mode} onNavigate={navigate}/>,
+        progress: <ProgressScreen onNavigate={navigate}/>,
       };
       return screens[state.screen];
     }

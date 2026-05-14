@@ -34,6 +34,8 @@ const Icon = ({ name, size = 18, color = 'currentColor', fill = 'none', strokeWi
     settings_gear: <g><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></g>,
     target: <g><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill={color} stroke="none"/></g>,
     bubble_two: <g><path d="M3 8a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H8l-3 3V8z" fill={color} stroke="none" opacity="0.6"/><path d="M10 13a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3h-2l-3 3v-3" fill={color} stroke="none"/></g>,
+    trending_up: <g><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></g>,
+    mic_clean: <g><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 12a7 7 0 0 0 14 0M12 19v3M8 22h8"/></g>,
   }[name] || null;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color}
