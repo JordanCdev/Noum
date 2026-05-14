@@ -22,3 +22,11 @@ Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme
 Noum/test.swift
 Noum/Info.plist
 Noum/Noum/Info.plist
+
+# Transcription provider dev keys (Phase 2)
+Noum/TranscriptionProviders.plist
+Noum/Noum/TranscriptionProviders.plist
+
+# Internal planning docs
+PLAN.md
+.claude/worktrees/elated-murdock-572717/

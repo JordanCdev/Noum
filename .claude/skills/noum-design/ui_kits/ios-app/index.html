@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Noum · iOS UI Kit</title>
+<link rel="stylesheet" href="../../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(180deg, #EDF2FF 0%, #F7F7FF 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    box-sizing: border-box;
+  }
+  .stage {
+    display: flex;
+    gap: 40px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .phone {
+    width: 390px;
+    height: 760px;
+    border-radius: 48px;
+    overflow: hidden;
+    position: relative;
+    background: #F2F2F7;
+    box-shadow: 0 40px 80px rgba(33,38,51,0.14), 0 0 0 10px #1b1d26, 0 0 0 12px #000;
+  }
+  .phone .screen-root { width: 100%; height: 100%; overflow: hidden; position: relative; }
+  /* Dynamic island */
+  .phone::before {
+    content: "";
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    width: 118px; height: 34px; border-radius: 20px; background: #000; z-index: 50;
+  }
+  /* Status bar */
+  .phone::after {
+    content: "9:41";
+    position: absolute; top: 16px; left: 28px; z-index: 49;
+    font-family: 'Nunito', -apple-system, system-ui;
+    font-weight: 700; font-size: 15px; color: var(--fg-primary);
+  }
+  .phone.dark::after { color: #fff; }
+  .phone-top-pad { height: 52px; }
+
+  .controls {
+    display: flex; flex-direction: column; gap: 8px;
+    width: 220px;
+  }
+  .controls h2 {
+    font: var(--type-micro);
+    letter-spacing: var(--tracking-micro);
+    text-transform: uppercase;
+    color: var(--fg-secondary);
+    margin-bottom: 4px;
+  }
+  .nav-btn {
+    font-family: 'Nunito', system-ui;
+    font-weight: 700; font-size: 14px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(0,0,0,0.06);
+    background: #fff;
+    color: var(--fg-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: transform 260ms cubic-bezier(0.2,1,0.3,1), background 200ms;
+  }
+  .nav-btn.active { background: var(--brand-blue); color: #fff; border-color: transparent; }
+  .nav-btn:active { transform: scale(0.97); opacity: 0.85; }
+  .caption { font-size: 12px; color: var(--fg-secondary); line-height: 1.4; }
+
+  /* Keyframes for motion primitives */
+  @keyframes noum-shimmer { 0% { transform: translateX(-40px); } 100% { transform: translateX(340px); } }
+  @keyframes noum-pulse-ring { 0%,100% { transform: scale(0.94); opacity: 0.8; } 50% { transform: scale(1.06); opacity: 0.4; } }
+  @keyframes noum-pulse-fill { 0%,100% { transform: scale(0.9); opacity: 0.35; } 50% { transform: scale(1); opacity: 0.55; } }
+  @keyframes noum-twinkle { 0%,100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
+  @keyframes noum-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes noum-tile-pop {
+    0%   { opacity: 0; transform: translateY(10px) scale(0.94); }
+    60%  { opacity: 1; transform: translateY(-2px) scale(1.015); }
+    100% { opacity: 1; transform: translateY(0)    scale(1); }
+  }
+  @keyframes noum-new-lift {
+    0%   { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  /* ScoreRing arc-sweep — shimmer dash travels from the start of the filled arc
+     to the end. Geometry: r=61, c~=383, filled@86%~=329, dash=36 → sweep ~293px. */
+  @keyframes noum-ring-shimmer {
+    0%   { stroke-dashoffset: 0;     opacity: 0;   }
+    10%  {                            opacity: 1;   }
+    80%  { stroke-dashoffset: -293px; opacity: 0.6; }
+    100% { stroke-dashoffset: -293px; opacity: 0;   }
+  }
+  /* Celebration card entrance — soft scale + lift, premium-feeling settle */
+  @keyframes noum-celebration-in {
+    0%   { opacity: 0; transform: translateY(22px) scale(0.97); }
+    100% { opacity: 1; transform: translateY(0)    scale(1); }
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="controls">
+      <h2>Noum · iOS UI Kit</h2>
+      <button class="nav-btn" data-screen="login">Login</button>
+      <button class="nav-btn active" data-screen="home">Home</button>
+      <button class="nav-btn" data-screen="modes">Mode Picker</button>
+      <button class="nav-btn" data-screen="practice">Practice</button>
+      <button class="nav-btn" data-screen="summary">Summary</button>
+      <button class="nav-btn" data-screen="progress">Progress</button>
+      <button class="nav-btn" data-screen="celebration">Personal Best</button>
+      <div class="caption" style="margin-top:12px">Click a screen name to swap the device preview. Tap CTAs in-app to fly through the flow.</div>
+    </div>
+    <div class="phone" id="phone">
+      <div class="screen-root" id="root"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="Primitives.jsx"></script>
+  <script type="text/babel" src="HomeScreen.jsx"></script>
+  <script type="text/babel" src="Screens.jsx"></script>
+  <script type="text/babel" src="ProgressScreen.jsx"></script>
+  <script type="text/babel" src="CelebrationScreen.jsx"></script>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    function App() {
+      const [state, setState] = useState({ screen: 'home', mode: 'timed' });
+
+      const navigate = (screen, mode) => {
+        setState(s => ({ screen, mode: mode || s.mode }));
+        document.querySelectorAll('.nav-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.screen === screen);
+        });
+        document.getElementById('phone').classList.toggle('dark', screen === 'login');
+      };
+
+      // Wire up nav buttons
+      React.useEffect(() => {
+        document.querySelectorAll('.nav-btn').forEach(b => {
+          b.onclick = () => navigate(b.dataset.screen);
+        });
+      }, []);
+
+      const screens = {
+        login:       <LoginScreen onNavigate={navigate}/>,
+        home:        <HomeScreen onNavigate={navigate}/>,
+        modes:       <ModePickerScreen onNavigate={navigate}/>,
+        practice:    <PracticeScreen mode={state.mode} onNavigate={navigate}/>,
+        summary:     <SummaryScreen mode={state.mode} onNavigate={navigate}/>,
+        progress:    <ProgressScreen onNavigate={navigate}/>,
+        celebration: <CelebrationScreen onNavigate={navigate}/>,
+      };
+      return screens[state.screen];
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

@@ -28,7 +28,17 @@ struct ContentView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var dailyGoal = DailyGoalManager.shared
+    @StateObject private var streakFreeze = StreakFreezeManager.shared
+    @StateObject private var pathProgress = PathProgressManager.shared
+    @StateObject private var deferredCapture = DeferredProfileCaptureManager.shared
+    @StateObject private var goalRefresh = GoalRefreshManager.shared
+    @StateObject private var notificationPrePrompt = NotificationPrePromptManager.shared
+    @StateObject private var deepLinkRouter = DeepLinkRouter.shared
+    @StateObject private var league = LeagueManager.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
+    @State private var showDailyGoalCelebration = false
+    @State private var showFreezeNudge = false
     @State private var aiRecommendation: AIHomeRecommendation?
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
@@ -47,6 +57,8 @@ struct ContentView: View {
         let recommendedScenario: IMConversationScenario?
         let benefit: String
         let tint: Color
+        var suggestedTimedDifficulty: TimedPracticeDifficulty? = nil
+        var suggestedTheme: PromptTheme = .all
     }
 
     private struct ModeSnapshot {
@@ -72,14 +84,47 @@ struct ContentView: View {
                     .frame(height: 0)
 
                     VStack(spacing: Spacing.cardGap) {
-                        heroCard
-                        progressCard
-                        journeyPreviewCard
-                        suggestedPracticeCard
+                        if sessionStore.sessions.isEmpty {
+                            // Empty-state: a single, clear primary action.
+                            // Lessons + Path are surfaced below the fold so
+                            // the user sees the curriculum exists, but
+                            // they're never asked to choose between four
+                            // CTAs before they've done anything.
+                            heroCard.cardEntrance(0)
+                            firstSessionCard.cardEntrance(1)
+                            DailyGoalCard(manager: dailyGoal).cardEntrance(2)
+                            secondaryDiscoveryCard.cardEntrance(3)
+                        } else {
+                            // Populated: the AI weekly narrative is the #2
+                            // surface — it's the strongest differentiator
+                            // and deserves visibility.
+                            heroCard.cardEntrance(0)
+                            AIWeeklyInsightCard(
+                                sessionStore: sessionStore,
+                                ratingStore: RatingStore.shared,
+                                clutchWordStore: ClutchWordStore.shared,
+                                coachingProfileStore: coachingProfileStore
+                            )
+                            .cardEntrance(1)
+                            DailyGoalCard(manager: dailyGoal).cardEntrance(2)
+                            DailyChallengeTile().cardEntrance(3)
+                            WordOfTheDayTile(navigationPath: $navigationPath).cardEntrance(4)
+                            streakCard.cardEntrance(5)
+                            nextLessonCard.cardEntrance(6)
+                            quickStartCard.cardEntrance(7)
+                            journeyPreviewCard.cardEntrance(8)
+                            progressCard.cardEntrance(9)
+                            suggestedPracticeCard.cardEntrance(10)
+                        }
                     }
                     .padding(.horizontal, Spacing.screenH)
                     .padding(.top, 12)
-                    .padding(.bottom, 24)
+                    // Generous bottom inset so the last card never sits
+                    // under the floating bottom-nav pill. The pill lives
+                    // in `safeAreaInset(edge: .bottom)` further below; if
+                    // we trim this any tighter the populated home's
+                    // bottom card gets clipped on first paint.
+                    .padding(.bottom, 96)
                 }
             }
             .coordinateSpace(name: "homeScroll")
@@ -90,6 +135,56 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 bottomNavigation
             }
+            .navigationDestination(for: AppDestination.self) { destination in
+                switch destination {
+                case .practiceSelection:
+                    PracticeModeSelectionView(selectedMode: $selectedPracticeMode, navigationPath: $navigationPath)
+                case .timedPractice:
+                    TimedPracticeView(navigationPath: $navigationPath)
+                case .suddenDeathPractice:
+                    SuddenDeathPracticeView(navigationPath: $navigationPath)
+                case .ahCounterPractice:
+                    AhCounterView(navigationPath: $navigationPath)
+                case .imPractice(let scenario, let tone):
+                    if IMModeAvailability.isAvailable {
+                        IMPracticeView(
+                            navigationPath: $navigationPath,
+                            preferredScenario: scenario,
+                            preferredTone: tone
+                        )
+                    } else {
+                        TimedPracticeView(navigationPath: $navigationPath)
+                    }
+                case .cutTheCrutchPractice:
+                    CutTheCrutchView(navigationPath: $navigationPath)
+                case .friendLeaderboard:
+                    FriendLeaderboardView()
+                case .league:
+                    LeagueView()
+                case .speechProjects:
+                    SpeechProjectsView(navigationPath: $navigationPath)
+                case .lessons:
+                    LessonsHomeView(navigationPath: $navigationPath)
+                case .lesson(let id):
+                    if let lesson = LessonsCatalog.lesson(id: id) {
+                        LessonView(lesson: lesson, navigationPath: $navigationPath)
+                    } else {
+                        LessonsHomeView(navigationPath: $navigationPath)
+                    }
+                case .summary(let payload):
+                    SummaryView(payload: payload, navigationPath: $navigationPath)
+                case .sessionHistory:
+                    SessionHistoryView(navigationPath: $navigationPath)
+                case .socialProfile:
+                    ProfileView()
+                case .settings:
+                    SettingsView()
+                case .speakingRank:
+                    SpeakingRankView()
+                case .pathJourney:
+                    PathJourneyView(navigationPath: $navigationPath)
+                }
+            }
         }
         .accessibilityIdentifier("home.screen")
         .fullScreenCover(
@@ -99,6 +194,66 @@ struct ContentView: View {
             )
         ) {
             CoachingOnboardingView()
+        }
+        // Tier promotion celebration. Surfaces over the home with a
+        // tinted radial gradient + sparkle ribbon. Cleared when the
+        // user taps Continue or the backdrop.
+        .fullScreenCover(item: $league.pendingPromotion) { promotion in
+            TierPromotionOverlay(promotion: promotion) {
+                league.consumePendingPromotion()
+            }
+            .presentationBackground(.clear)
+        }
+        .overlay {
+            if showDailyGoalCelebration {
+                DailyGoalCelebration {
+                    showDailyGoalCelebration = false
+                    dailyGoal.consumeGoalCelebration()
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
+        }
+        .overlay {
+            if let unlockedNode = pendingPathCelebration {
+                PathNodeCelebration(
+                    node: unlockedNode,
+                    onDismiss: {
+                        pathProgress.consumeCelebration()
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(99)
+            }
+        }
+        // Deferred profile capture — fired by SessionFinalizer when the
+        // user hits a session-count milestone with an unanswered prompt.
+        .sheet(item: $deferredCapture.pendingPrompt) { prompt in
+            DeferredProfileCaptureSheet(prompt: prompt)
+        }
+        // Goal refresh — 2-week cadence "still your goal?" lightweight sheet.
+        .sheet(isPresented: $goalRefresh.shouldPresent) {
+            GoalRefreshSheet()
+        }
+        // Notification pre-prompt — soft sell before iOS's hard prompt.
+        // Fires once on session 1 with a 30-day cool-down on decline.
+        .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
+            NotificationPrePromptSheet()
+        }
+        .onChange(of: deepLinkRouter.pending) { _, url in
+            guard let url else { return }
+            consumeDeepLink(url)
+        }
+        .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
+            if isPending {
+                showDailyGoalCelebration = true
+            }
+        }
+        .onAppear {
+            dailyGoal.recompute()
+            DailyChallengesManager.shared.ensureForToday()
+            DailyChallengesManager.shared.recomputeReady()
+            WordOfTheDayManager.shared.ensureForToday()
         }
         .task {
             guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
@@ -127,24 +282,521 @@ struct ContentView: View {
         displayName == "Guest Speaker" ? "Guest" : displayName
     }
 
+    private var heroSubtitle: String {
+        let sessions = sessionStore.sessions
+
+        // 1. No sessions at all
+        if sessions.isEmpty {
+            return "One rep sets your baseline"
+        }
+
+        // 2. Seven-day streak or higher
+        if sessionStreak >= 7 {
+            return "\(sessionStreak)-day streak — that's a habit"
+        }
+
+        // 3. Three-day streak or higher
+        if sessionStreak >= 3 {
+            return "\(sessionStreak) days in a row — building a habit"
+        }
+
+        // 4. Filler trend (need at least 10 sessions for two groups of 5)
+        if sessions.count >= 10 {
+            let recentFillers = sessions.prefix(5).map { Double($0.fillerWordCount) }
+            let previousFillers = sessions.dropFirst(5).prefix(5).map { Double($0.fillerWordCount) }
+            let recentAvg = recentFillers.reduce(0, +) / Double(recentFillers.count)
+            let previousAvg = previousFillers.reduce(0, +) / Double(previousFillers.count)
+            if recentAvg < previousAvg {
+                return "Your filler count is trending down"
+            }
+        }
+
+        // 5. Score trend (need at least 6 scored sessions for two groups of 3)
+        let scored = sessions.filter { $0.score != nil }
+        if scored.count >= 6 {
+            let recentScores = scored.prefix(3).compactMap(\.score).map(Double.init)
+            let previousScores = scored.dropFirst(3).prefix(3).compactMap(\.score).map(Double.init)
+            if !recentScores.isEmpty && !previousScores.isEmpty {
+                let recentAvg = recentScores.reduce(0, +) / Double(recentScores.count)
+                let previousAvg = previousScores.reduce(0, +) / Double(previousScores.count)
+                if recentAvg > previousAvg {
+                    return "Your scores are climbing"
+                }
+            }
+        }
+
+        // 6. Practiced today
+        if sessionStreak == 1 {
+            return "Already practiced today — stack a second rep"
+        }
+
+        // 7. Last session was yesterday
+        if daysSinceLastSession == 1 {
+            return "Welcome back — keep the momentum"
+        }
+
+        // 8. Been a few days
+        if daysSinceLastSession >= 3 {
+            return "Ready to pick up where you left off?"
+        }
+
+        // 9. Default
+        return "Every rep makes you sharper"
+    }
+
+    /// Time-of-day-aware greeting that feels like the coach is reading
+    /// the user's day, not just dropping a generic "Hello". Streak +
+    /// recency shape the variant chosen.
+    private var heroGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let streak = sessionStreak
+        // Lapsed user: name the absence first, before the time of day.
+        if daysSinceLastSession >= 3, !sessionStore.sessions.isEmpty {
+            return "Welcome back"
+        }
+        // Late-night reps: read the discipline.
+        if hour >= 22 || hour < 5 { return "Late rep" }
+        // Streak-aware morning frame.
+        if hour < 12 {
+            return streak >= 3 ? "Morning, day \(streak)" : "Good morning"
+        }
+        if hour < 17 { return "Good afternoon" }
+        return streak >= 3 ? "Evening, day \(streak)" : "Good evening"
+    }
+
+    /// Mood for the hero's coach character. Excited only on long
+    /// streaks (≥7 days) so the moment lands; everything else stays
+    /// calm to keep the home grounded.
+    private var heroCharacterMood: NoumCharacter.Mood {
+        sessionStreak >= 7 ? .excited : .calm
+    }
+
+    /// Tint for the hero's gradient. Alive streak pulls toward brand
+    /// blue; lapsed users get a softer tint so the surface doesn't
+    /// shame them on a return rep.
+    private var heroGradientTint: Color {
+        let streak = sessionStreak
+        if daysSinceLastSession >= 3 { return AppColor.brandBlue.opacity(0.6) }
+        if streak >= 7 { return AppColor.brandBlue }
+        if streak >= 3 { return AppColor.brandBlue.opacity(0.85) }
+        return AppColor.brandBlue.opacity(0.7)
+    }
+
     private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Hello, \(heroTitle)")
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-            
-            Text("Ready to level up your speaking?")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        let collapseFactor = max(0, 1 + (homeScrollOffset / 42))
+        return ZStack(alignment: .topLeading) {
+            // Soft tinted gradient. Subtler than a full card so the
+            // hero feels like a header, not a banner ad.
+            LinearGradient(
+                colors: [
+                    heroGradientTint.opacity(0.10),
+                    heroGradientTint.opacity(0.02)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+
+            // Coach character. Composes SF Symbols (waveform + halo +
+            // glow) into a presence that breathes. Mood adapts to streak
+            // state — excited when on a streak, calm otherwise. Per the
+            // design rules: motion + color + shape, no illustration.
+            NoumCharacter(
+                mood: heroCharacterMood,
+                tint: heroGradientTint,
+                size: 76
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.trailing, Spacing.sm)
+            .padding(.top, -10)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text("\(heroGreeting), \(heroTitle)")
+                        .font(Typography.sectionHero)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if sessionStreak > 0 {
+                        streakChip(streak: sessionStreak)
+                    }
+                }
+                Text(heroSubtitle)
+                    .font(Typography.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: max(0, 64 + min(0, homeScrollOffset)))
-        .opacity(max(0, 1 + (homeScrollOffset / 42)))
+        .frame(height: max(0, 104 + min(0, homeScrollOffset)))
+        .opacity(collapseFactor)
         .clipped()
     }
 
+    private func streakChip(streak: Int) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "flame.fill")
+                .font(.caption2.weight(.bold))
+            Text("\(streak)")
+                .font(.caption.weight(.bold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.standardSpring, value: streak)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.orange.opacity(0.12), in: Capsule(style: .continuous))
+        .accessibilityLabel("\(streak)-day streak")
+    }
+
+    // MARK: - First Session
+
+    private var firstSessionWelcomeMessage: String {
+        if let profile = coachingProfileStore.profile {
+            let challenge: String
+            switch profile.biggestChallenge {
+            case .fillerWords:
+                challenge = "cleaning up filler words"
+            case .rambling:
+                challenge = "tightening your structure"
+            case .freezing:
+                challenge = "thinking faster on the spot"
+            case .rushing:
+                challenge = "slowing down under pressure"
+            }
+            return "You want to work on \(challenge). One short rep sets your starting line."
+        }
+        return "One short rep is all it takes to set your starting line."
+    }
+
+    private var firstSessionCard: some View {
+        Button { navigationPath.append(AppDestination.timedPractice) } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Find your starting point")
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(.primary)
+
+                    Text(firstSessionWelcomeMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 12) {
+                    Text("Start your first rep")
+                        .font(.headline.weight(.semibold))
+
+                    Spacer()
+
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.16))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: "arrow.right")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, Spacing.md)
+                .background(
+                    LinearGradient(
+                        colors: [AppColor.brandBlue, AppColor.brandBlue.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: Capsule(style: .continuous)
+                )
+
+                Text("Your first rep sets your baseline \u{2014} no pressure")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Spacing.lg)
+            .background(
+                AppColor.cardBackground,
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(AppColor.brandBlue.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("home.firstSession")
+    }
+
+    // MARK: - Secondary discovery (empty state)
+
+    /// Compact two-row card used only in the empty state. Surfaces lessons
+    /// + path as a *discovery* surface so the new user sees the curriculum
+    /// exists, but neither row competes with the primary "Start your first
+    /// rep" CTA. Intentionally lower visual weight than the firstSessionCard.
+    private var secondaryDiscoveryCard: some View {
+        VStack(spacing: 0) {
+            discoveryRow(
+                icon: "books.vertical.fill",
+                title: "Bite-sized lessons",
+                subtitle: "Three steps. Two minutes. Earn a crown.",
+                tint: AppColor.brandBlue,
+                destination: .lessons,
+                accessibilityID: "home.discovery.lessons"
+            )
+            Divider().padding(.leading, 60)
+            discoveryRow(
+                icon: "signpost.right.fill",
+                title: "Your path",
+                subtitle: "Clear nodes by hitting concrete goals.",
+                tint: AppColor.positive,
+                destination: .pathJourney,
+                accessibilityID: "home.discovery.path"
+            )
+        }
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+    }
+
+    private func discoveryRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        tint: Color,
+        destination: AppDestination,
+        accessibilityID: String
+    ) -> some View {
+        Button {
+            navigationPath.append(destination)
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .fill(tint.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(tint)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.headline)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityID)
+    }
+
+    // MARK: - Next Lesson
+
+    /// "Your next lesson" home card. Picks the lesson the user should
+    /// work on next from `LessonStore.nextRecommendedLesson`. Shows the
+    /// crown progress on the picked lesson + a one-tap CTA that opens
+    /// the lesson directly. Hides itself when every lesson is mastered.
+    @ViewBuilder
+    private var nextLessonCard: some View {
+        if let lesson = LessonStore.shared.nextRecommendedLesson {
+            let crowns = LessonStore.shared.crownLevel(for: lesson.id)
+            Button {
+                navigationPath.append(AppDestination.lesson(id: lesson.id))
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .fill(AppColor.brandBlue.opacity(0.14))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: lesson.symbolName)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(AppColor.brandBlue)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(crowns == 0 ? "Next lesson" : "Earn another crown")
+                            .font(Typography.micro)
+                            .foregroundStyle(AppColor.brandBlue)
+                            .textCase(.uppercase)
+                            .tracking(0.8)
+                        Text(lesson.title)
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(lesson.tagline)
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        crownPips(crowns: crowns)
+                            .padding(.top, 2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 14)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        .stroke(Color.white.opacity(0.75), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.nextLesson")
+        }
+    }
+
+    private func crownPips(crowns: Int) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<LessonStore.crownCap, id: \.self) { i in
+                Image(systemName: i < crowns ? "crown.fill" : "crown")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(i < crowns ? AppColor.brandBlue : Color.secondary.opacity(0.30))
+            }
+        }
+    }
+
+    // MARK: - Quick Start
+
+    private var quickStartCard: some View {
+        let suggestion = effectiveSuggestion
+        return Button { navigationPath.append(practiceAppDestination(for: suggestion)) } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(suggestion.tint.gradient)
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Quick start")
+                        .font(Typography.headline)
+                        .foregroundStyle(.primary)
+                    Text(suggestion.title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "arrow.right")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(suggestion.tint)
+            }
+            .padding(Spacing.md)
+            .background(
+                LinearGradient(
+                    colors: [suggestion.tint.opacity(0.10), suggestion.tint.opacity(0.04)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(suggestion.tint.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .simultaneousGesture(TapGesture().onEnded {
+            selectedPracticeMode = suggestion.mode
+            recommendationLearningStore.markTapped(mode: suggestion.mode)
+        })
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("home.quickStart")
+    }
+
+    // MARK: - Streak Card
+
+    /// Compact streak pill with optional freeze badge. Replaces the legacy
+    /// `streakChallengeCard` — the "today's challenge" half is now covered by
+    /// `DailyGoalCard`, which makes the source of truth singular.
+    private var streakCard: some View {
+        let streak = streakFreeze.currentStreak
+        let isAlive = streak > 0
+        let savedByFreeze = streakFreeze.freezeJustConsumedToday
+
+        return Button {
+            if savedByFreeze { streakFreeze.consumeFreezeNudge() }
+            navigationPath.append(AppDestination.friendLeaderboard)
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(isAlive ? .orange : Color.secondary.opacity(0.4))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(streak)")
+                        .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(isAlive ? .orange : .secondary)
+                        .contentTransition(.numericText())
+                        .animation(.standardSpring, value: streak)
+                    Text(savedByFreeze ? "Saved by a freeze" : "day streak")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(savedByFreeze ? AppColor.brandBlue : .secondary)
+                }
+
+                Spacer()
+
+                if streakFreeze.freezesAvailable > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "snowflake")
+                            .font(.caption.weight(.bold))
+                        Text("Freeze")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+                    .accessibilityLabel("Streak freeze available")
+                    .accessibilityHint("One free miss this week is automatically protected.")
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(minHeight: 44)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("\(streak) day streak")
+        .accessibilityHint("Open the weekly leaderboard.")
+    }
+
     private var progressCard: some View {
-        NavigationLink(destination: SpeakingRankView()) {
+        Button { navigationPath.append(AppDestination.socialProfile) } label: {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: rankSymbol)
@@ -158,7 +810,7 @@ struct ContentView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Text(rankTitle)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Open progress, unlocked achievements, and recent coaching insights")
@@ -185,7 +837,7 @@ struct ContentView: View {
                             .foregroundStyle(.blue)
                     }
 
-                    ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: .blue)
+                    ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -230,7 +882,7 @@ struct ContentView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             Text("Recommended Practice")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(Typography.micro)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
@@ -267,11 +919,19 @@ struct ContentView: View {
         )
     }
 
+    /// "Your next node" home surface. The header area pushes the full path
+    /// on tap; the inline CTA capsule jumps straight to the action that
+    /// progresses *this* node, so the user never has to stop at the path
+    /// map. The two affordances live as sibling buttons (no nesting) so
+    /// hit-testing is unambiguous.
     private var journeyPreviewCard: some View {
-        NavigationLink(destination: PathJourneyView()) {
-            VStack(alignment: .leading, spacing: 12) {
+        let status = pathProgress.currentNode
+        return VStack(alignment: .leading, spacing: 12) {
+            Button {
+                navigationPath.append(AppDestination.pathJourney)
+            } label: {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
+                    Image(systemName: status?.node.symbolName ?? "checkmark.seal.fill")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(AppColor.positive)
                         .frame(width: 46, height: 46)
@@ -280,60 +940,102 @@ struct ContentView: View {
                             in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                         )
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Your Path")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-                        Text(journeySnapshot.progressLabel)
-                            .font(.subheadline.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(status == nil ? "Path cleared" : "Your next node")
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(AppColor.positive)
+                            .textCase(.uppercase)
+                            .tracking(0.6)
+                        Text(status?.node.title ?? "Defend your gains")
+                            .font(Typography.cardTitle)
+                            .foregroundStyle(.primary)
+                        Text(status?.node.coachLine ?? "You've cleared every node. Hold the path with one rep a day.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("home.path.nextMilestone")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.path")
 
-                HStack {
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
+            if let status, status.progress > 0 && !status.isComplete {
+                ProgressView(value: status.progress)
+                    .progressViewStyle(.linear)
+                    .tint(AppColor.positive)
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                if let status {
+                    Button {
+                        navigationPath.append(status.node.actionDestination)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(status.node.actionLabel)
+                                .font(.caption.weight(.bold))
+                            Image(systemName: "arrow.right")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(AppColor.positive, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("home.path.action")
+                } else {
+                    Button {
+                        navigationPath.append(AppDestination.pathJourney)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Open path")
+                                .font(.caption.weight(.bold))
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                        }
+                        .foregroundStyle(AppColor.positive)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 78)
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, 12)
-            .background(
-                AppColor.cardBackground,
-                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(Color.white.opacity(0.75), lineWidth: 1)
-            )
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("home.path")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 14)
+        .background(
+            AppColor.cardBackground,
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.white.opacity(0.75), lineWidth: 1)
+        )
     }
 
     private var bottomNavigation: some View {
         HStack(spacing: 10) {
             Group {
-                NavigationLink(destination: PracticeModeSelectionView(selectedMode: $selectedPracticeMode, goHome: { navigationPath = NavigationPath() })) {
+                Button { navigationPath.append(AppDestination.practiceSelection) } label: {
                     navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
                 }
                 .accessibilityIdentifier("nav.practice")
 
-                NavigationLink(destination: SessionHistoryView()) {
+                Button { navigationPath.append(AppDestination.sessionHistory) } label: {
                     navItem(title: "Review", systemImage: "book.fill", accent: .orange)
                 }
                 .accessibilityIdentifier("nav.history")
 
-                NavigationLink(destination: SocialProfileView()) {
-                    navItem(title: "Social", systemImage: "person.2.fill", accent: .purple)
+                Button { navigationPath.append(AppDestination.socialProfile) } label: {
+                    navItem(title: "Profile", systemImage: "person.fill", accent: .purple)
                 }
                 .accessibilityIdentifier("nav.social")
 
-                NavigationLink(destination: SettingsView()) {
+                Button { navigationPath.append(AppDestination.settings) } label: {
                     navItem(title: "Settings", systemImage: "slider.horizontal.3", accent: .green)
                 }
                 .accessibilityIdentifier("nav.settings")
@@ -355,13 +1057,17 @@ struct ContentView: View {
         suggestion: PracticeSuggestion,
         systemImage: String
     ) -> some View {
-        NavigationLink(destination: practiceDestination(for: suggestion)) {
+        Button {
+            selectedPracticeMode = suggestion.mode
+            recommendationLearningStore.markTapped(mode: suggestion.mode)
+            navigationPath.append(practiceAppDestination(for: suggestion))
+        } label: {
             HStack(alignment: .center, spacing: 14) {
                 PulseBadge(systemImage: systemImage, tint: suggestion.tint)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(suggestion.title)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(Typography.headline)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -402,18 +1108,29 @@ struct ContentView: View {
                     .stroke(suggestion.tint.opacity(0.10), lineWidth: 1)
             )
         }
-        .simultaneousGesture(TapGesture().onEnded {
-            selectedPracticeMode = suggestion.mode
-            recommendationLearningStore.markTapped(mode: suggestion.mode)
-        })
     }
 
     private var coachingFocusCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(recommendedPracticeSummary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            if let lastAction = LastNextActionSnapshot.load() {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.blue)
+                    Text("Your next move")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.blue)
+                }
+                Text(lastAction.reasoning)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(recommendedPracticeSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
@@ -433,7 +1150,7 @@ struct ContentView: View {
                     .symbolEffect(.pulse, options: .repeating.speed(0.6))
             }
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .font(Typography.nav)
                 .textCase(.uppercase)
                 .tracking(0.4)
                 .foregroundStyle(accent.opacity(0.85))
@@ -569,7 +1286,9 @@ struct ContentView: View {
             recommendedTone: bias.recommendedTone,
             recommendedScenario: bias.recommendedScenario,
             benefit: bias.modeBenefit,
-            tint: AppColor.tint(for: bias.recommendedMode)
+            tint: AppColor.tint(for: bias.recommendedMode),
+            suggestedTimedDifficulty: bias.suggestedTimedDifficulty,
+            suggestedTheme: bias.suggestedTheme
         )
     }
 
@@ -669,8 +1388,47 @@ struct ContentView: View {
         }
     }
 
-    private var journeySnapshot: PracticeJourneySnapshot {
-        PracticeJourneySnapshot.make(from: sessionStore.sessions)
+    /// Routes a `noum://` URL to the right destination on the navigation
+    /// path. Called when `DeepLinkRouter.pending` changes (set by
+    /// `NoumApp.onOpenURL`). Clears the pending URL after consumption so
+    /// it doesn't fire twice.
+    private func consumeDeepLink(_ url: URL) {
+        defer { deepLinkRouter.pending = nil }
+        guard url.scheme == "noum" else { return }
+        let host = url.host ?? ""
+        let path = url.path
+        switch host {
+        case "lesson":
+            // noum://lesson/<id>
+            let lessonID = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            guard !lessonID.isEmpty,
+                  LessonsCatalog.lesson(id: lessonID) != nil else { return }
+            navigationPath.append(AppDestination.lesson(id: lessonID))
+        case "practice":
+            navigationPath.append(AppDestination.practiceSelection)
+        case "league":
+            navigationPath.append(AppDestination.league)
+        case "path":
+            navigationPath.append(AppDestination.pathJourney)
+        case "lessons":
+            navigationPath.append(AppDestination.lessons)
+        case "friend":
+            // Add the inviter as a friend immediately, then surface the
+            // profile so the user sees the new entry. `acceptInvite`
+            // is idempotent — re-scanning the same URL is a no-op.
+            FriendsManager.shared.acceptInvite(from: url)
+            navigationPath.append(AppDestination.socialProfile)
+        default:
+            // Unrecognised — no-op rather than crash.
+            break
+        }
+    }
+
+    /// The node that was just newly-unlocked, if any. Drives the path
+    /// celebration overlay. Cleared by `pathProgress.consumeCelebration()`.
+    private var pendingPathCelebration: PathNode? {
+        guard let id = pathProgress.pendingCelebrationNodeID else { return nil }
+        return PathNodeRegistry.all.first(where: { $0.0.id == id })?.0
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
@@ -831,19 +1589,12 @@ struct ContentView: View {
         return currentAverage - previousAverage
     }
 
+    /// Single source of truth for the user-visible streak count: the
+    /// `StreakFreezeManager`, which applies freezes. This used to be
+    /// computed twice (raw calculation + freeze-applied) and the home
+    /// could show two different numbers. Now both reads pull from here.
     private var sessionStreak: Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(sessionStore.sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
-
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+        streakFreeze.currentStreak
     }
 
     private var daysSinceLastSession: Int {
@@ -880,24 +1631,30 @@ struct ContentView: View {
         )
     }
 
-    @ViewBuilder
-    private func practiceDestination(for suggestion: PracticeSuggestion) -> some View {
-        let home = { navigationPath = NavigationPath() }
+    private func practiceAppDestination(for suggestion: PracticeSuggestion) -> AppDestination {
+        if suggestion.mode == .timed {
+            // Seed the theme picker with the goal-biased suggestion so the first
+            // topic the user sees is matched to their coaching goal. User can still
+            // change it inside the practice view.
+            if suggestion.suggestedTheme != .all {
+                UserDefaults.standard.set(
+                    suggestion.suggestedTheme.rawValue,
+                    forKey: "timedPractice.selectedTheme"
+                )
+            }
+        }
         switch suggestion.mode {
         case .timed:
-            TimedPracticeView(goHome: home)
+            return .timedPractice
         case .suddenDeath:
-            SuddenDeathPracticeView()
+            return .suddenDeathPractice
         case .ahCounter:
-            AhCounterView()
+            return .ahCounterPractice
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                IMPracticeView(
-                    preferredScenario: suggestion.recommendedScenario,
-                    preferredTone: suggestion.recommendedTone
-                )
+                return .imPractice(scenario: suggestion.recommendedScenario, tone: suggestion.recommendedTone)
             } else {
-                TimedPracticeView(goHome: home)
+                return .timedPractice
             }
         }
     }
@@ -929,44 +1686,13 @@ struct ContentView: View {
         return "Mode: \(suggestion.mode.displayLabel) • \(scenario.title) • \(tone.title)"
     }
 
-    private var levelProgressLabel: String {
-        "\(Int((profile.progressTowardsNextLevel * 100).rounded()))%"
-    }
-
-    private var rankSymbol: String {
-        let title = profile.levelTitle
-        if title.contains("Beginner") { return "sparkles" }
-        if title.contains("Novice") { return "figure.stand" }
-        if title.contains("Average") { return "waveform.path.ecg" }
-        if title.contains("Professional") { return "shield.lefthalf.filled" }
-        return "crown.fill"
-    }
-
-    private var rankTint: Color {
-        let title = profile.levelTitle
-        if title.contains("Beginner") { return .blue }
-        if title.contains("Novice") { return .teal }
-        if title.contains("Average") { return .indigo }
-        if title.contains("Professional") { return .orange }
-        return .yellow
-    }
-
-    private var rankDescriptor: String {
-        let title = profile.levelTitle
-        if title.contains("Beginner") { return "Foundational tier" }
-        if title.contains("Novice") { return "Developing tier" }
-        if title.contains("Average") { return "Steady tier" }
-        if title.contains("Professional") { return "Advanced tier" }
-        return "Elite tier"
-    }
-
-    private var rankTitle: String {
-        "Speaker \(max(1, (profile.xp / 1000) + 1))"
-    }
-
-    private var nextRankTitle: String {
-        "Next: Speaker \(max(2, (profile.xp / 1000) + 2))"
-    }
+    // Rank helpers forwarded from ProfileManager extension (PracticeSupport.swift)
+    private var levelProgressLabel: String { profile.levelProgressLabel }
+    private var rankSymbol: String { profile.rankSymbol }
+    private var rankTint: Color { profile.rankTint }
+    private var rankDescriptor: String { profile.rankDescriptor }
+    private var rankTitle: String { profile.rankTitle }
+    private var nextRankTitle: String { profile.nextRankTitle }
 
 }
 #endif

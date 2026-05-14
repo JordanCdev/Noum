@@ -82,6 +82,8 @@ enum AppColor {
     static let modeAhCounter = Color(red: 0.14, green: 0.60, blue: 0.44)
     /// IM Conversation mode
     static let modeIM = Color(red: 0.32, green: 0.43, blue: 0.94)
+    /// Cut the Crutch — control / restraint drill (warm rose, distinct from pressure tints)
+    static let modeCrutch = Color(red: 0.78, green: 0.32, blue: 0.50)
 
     // MARK: Semantic Feedback
 
@@ -126,6 +128,25 @@ extension Animation {
     static let snappySpring = Animation.spring(response: 0.26, dampingFraction: 0.88)
     /// Bouncy spring for celebrations, emphasis
     static let bouncySpring = Animation.spring(response: 0.40, dampingFraction: 0.65)
+
+    // MARK: Reward & Progress Animations
+
+    /// Score number count-up landing — smooth deceleration
+    static let scoreReveal = Animation.easeOut(duration: 0.8)
+    /// Stat delta badge pop-in — delayed bouncy spring
+    static let statDelta = Animation.spring(response: 0.4, dampingFraction: 0.65).delay(0.3)
+    /// Achievement badge or icon appearance
+    static let achievementPop = Animation.spring(response: 0.5, dampingFraction: 0.55)
+    /// Progress bar fill — smooth linear-to-ease
+    static let progressFill = Animation.easeOut(duration: 0.6)
+    /// Staggered list item entrance — pass index for delay
+    static func stagger(_ index: Int) -> Animation {
+        .spring(response: 0.34, dampingFraction: 0.84).delay(Double(index) * 0.08)
+    }
+    /// Coach note line appearance — staggered reading rhythm
+    static func coachLineStagger(_ index: Int) -> Animation {
+        .easeOut(duration: 0.3).delay(0.15 + Double(index) * 0.15)
+    }
 }
 
 // MARK: - Shared View Components
@@ -221,12 +242,13 @@ struct SectionHeader<Trailing: View>: View {
 }
 
 /// Button style that provides a subtle press-down effect for tactile feedback.
+/// Uses only opacity (no scaleEffect) to avoid shrinking the hit-test area on press.
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .opacity(configuration.isPressed ? 0.85 : 1.0)
-            .animation(.snappySpring, value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -315,6 +337,105 @@ func dismissRecursively(from dismiss: DismissAction, times: Int = 2) {
         DispatchQueue.main.async {
             dismissRecursively(from: dismiss, times: times - 1)
         }
+    }
+}
+
+// MARK: - Milestone Celebration Overlay
+
+/// A full-screen milestone celebration that interrupts to celebrate achievements.
+struct MilestoneCelebrationOverlay: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    let detail: String?
+    let onDismiss: () -> Void
+
+    @State private var appeared = false
+    @State private var dismissed = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(appeared ? 0.45 : 0)
+                .ignoresSafeArea()
+                .onTapGesture { dismissCelebration() }
+
+            VStack(spacing: 20) {
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(0.15))
+                        .frame(width: 100, height: 100)
+                        .scaleEffect(appeared ? 1.2 : 0.5)
+                    Circle()
+                        .stroke(tint.opacity(0.25), lineWidth: 2)
+                        .frame(width: 110, height: 110)
+                        .scaleEffect(appeared ? 1.3 : 0.4)
+                    Image(systemName: icon)
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundStyle(tint)
+                        .scaleEffect(appeared ? 1.0 : 0.3)
+                }
+
+                Text(title)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+
+                Text(subtitle)
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+
+                if let detail {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                }
+
+                Button {
+                    dismissCelebration()
+                } label: {
+                    Text("Continue")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(tint)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, Spacing.sm)
+                        .background(.white, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .padding(.top, 8)
+            }
+            .padding(32)
+            .scaleEffect(appeared ? 1.0 : 0.7)
+            .opacity(appeared ? 1.0 : 0)
+        }
+        .opacity(dismissed ? 0 : 1)
+        .onAppear {
+            withAnimation(.bouncySpring) { appeared = true }
+#if canImport(UIKit)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+#endif
+        }
+    }
+
+    private func dismissCelebration() {
+        withAnimation(.easeOut(duration: 0.25)) { dismissed = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onDismiss() }
+    }
+}
+
+/// Represents a milestone event to celebrate.
+struct MilestoneEvent: Identifiable, Equatable {
+    let id = UUID()
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    let detail: String?
+
+    static func == (lhs: MilestoneEvent, rhs: MilestoneEvent) -> Bool {
+        lhs.id == rhs.id
     }
 }
 #endif

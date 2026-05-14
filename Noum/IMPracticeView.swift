@@ -7,6 +7,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct IMPracticeView: View {
     @Environment(\.dismiss) private var dismiss
+    @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM: SpeechRecognizerViewModel
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
@@ -25,17 +26,26 @@ struct IMPracticeView: View {
     @State private var isWrappingUp = false
     @State private var totalDuration: TimeInterval = 0
     @State private var totalFillers = 0
-    @State private var showSummary = false
+    // Mini-drill navigation
+
     @State private var summaryTranscript = AttributedString("")
     @State private var summaryEvaluation: IMConversationEvaluation?
     @State private var serviceErrorMessage: String?
     @State private var isEndingConversation = false
+    @State private var evaluationFailed = false
     @State private var setupStep: SetupStep = .scenario
     @State private var typingPhase = 0
     @State private var processingStripeOffset: CGFloat = -140
     @State private var sessionContext = IMSessionContextProvider.current()
     @State private var latestUserSignal: IMUserMessageSignal?
     @State private var cachedRelationshipProfile = IMRelationshipProfile.initial(for: .socialCatchUp)
+    @State private var showExitConfirmation = false
+    @State private var sessionElapsedSeconds = 0
+    @State private var sessionTimeoutNudge: String?
+    @State private var sessionTimerTask: Task<Void, Never>?
+
+    private static let sessionMaxSeconds = 900    // 15-minute hard cap
+    private static let sessionNudgeSeconds = 720  // 12-minute gentle nudge
 
     private let preferredScenario: IMConversationScenario?
     private let preferredTone: IMTargetTone?
@@ -44,9 +54,11 @@ struct IMPracticeView: View {
     private let evaluationService: IMConversationEvaluatorServicing = IMConversationEvaluationService()
 
     init(
+        navigationPath: Binding<NavigationPath>,
         preferredScenario: IMConversationScenario? = nil,
         preferredTone: IMTargetTone? = nil
     ) {
+        _navigationPath = navigationPath
         _speechVM = StateObject(wrappedValue: SpeechRecognizerViewModel(preloadOnInit: false))
         self.preferredScenario = preferredScenario
         self.preferredTone = preferredTone
@@ -154,6 +166,29 @@ struct IMPracticeView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    if isSessionActive {
+                        showExitConfirmation = true
+                    } else {
+                        dismiss()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                        Text("Back")
+                    }
+                }
+            }
+        }
+        .alert("End session?", isPresented: $showExitConfirmation) {
+            Button("Keep Practicing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("Your current session will be lost.")
+        }
         .alert("IM Mode Unavailable", isPresented: .constant(serviceErrorMessage != nil), actions: {
             Button("OK", role: .cancel) { serviceErrorMessage = nil }
         }, message: {
@@ -187,44 +222,7 @@ struct IMPracticeView: View {
                 processingStripeOffset = -140
             }
         }
-        .navigationDestination(isPresented: $showSummary) {
-            SummaryView(
-                transcript: summaryTranscript,
-                fillerCount: totalFillers,
-                duration: totalDuration,
-                score: summaryEvaluation?.overallScore,
-                progressSegments: min(4, userTurnCount),
-                xpEarned: summaryEvaluation?.xpEarned ?? 0,
-                showDuration: true,
-                practiceTitle: "IM Mode • \(resolvedScenario.title)",
-                feedbackOverride: summaryEvaluation?.feedback,
-                headlineOverride: summaryEvaluation?.headline,
-                scoreBreakdown: summaryEvaluation?.segments ?? [],
-                insights: summaryInsights,
-                recentSessions: sessionStore.sessions,
-                imConversationDetails: IMConversationDetails(
-                    setup: setup ?? IMConversationSetup(scenario: resolvedScenario, targetTone: resolvedTargetTone),
-                    turns: turns,
-                    actualTone: summaryEvaluation?.actualTone,
-                    finalState: conversationState,
-                    outcome: summaryEvaluation?.outcome,
-                    relationshipSnapshot: relationshipProfile,
-                    contextSnapshot: sessionContext
-                ), 
-                onSelectPracticeMode: {
-                    showSummary = false
-                    dismiss(times: 2)
-                },
-                onHome: {
-                    showSummary = false
-                    dismiss(times: 3)
-                },
-                onPracticeAgain: {
-                    showSummary = false
-                    resetConversation()
-                }
-            )
-        }
+        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
         .onAppear {
             if let preferredScenario {
                 scenario = preferredScenario
@@ -470,6 +468,16 @@ struct IMPracticeView: View {
                         typingBubble
                             .id("typing-indicator")
                     }
+
+                    if let nudge = sessionTimeoutNudge {
+                        Text(nudge)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .id("timeout-nudge")
+                    }
                 }
                 .padding(6)
             }
@@ -554,45 +562,65 @@ struct IMPracticeView: View {
     }
 
     private var endingConversationScreen: some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 24)
+        VStack(spacing: 24) {
+            Spacer(minLength: 40)
 
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.10))
-                    .frame(width: 82, height: 82)
+            if evaluationFailed {
+                VStack(spacing: 12) {
+                    Text("Couldn't finish")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
 
-                HStack(spacing: 7) {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .fill(Color.blue.opacity(0.80))
-                            .frame(width: 9, height: 9)
-                            .scaleEffect(typingPhase == index ? 1.12 : 0.72)
-                            .opacity(typingPhase == index ? 1 : 0.4)
-                            .animation(.easeInOut(duration: 0.18), value: typingPhase)
+                    Text("Something went wrong building your feedback. You can try again or skip to the home screen.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                VStack(spacing: 12) {
+                    Button {
+                        retryEvaluation()
+                    } label: {
+                        Text("Try Again")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.blue, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                            .foregroundStyle(.white)
+                    }
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Skip & Go Home")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .padding(.horizontal, 24)
+            } else {
+                VStack(spacing: 12) {
+                    Text("Wrapping up")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+
+                    Text(endingStageMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                processingIndicator
+                    .padding(.horizontal, 36)
+
+                sessionWrapUpCard
             }
 
-            VStack(spacing: 8) {
-                Text("Ending the chat")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text(endingStageMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-            }
-
-            processingIndicator
-                .padding(.horizontal, 28)
-
-            sessionWrapUpCard
-
+            Spacer()
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.top, 18)
         .padding(.bottom, 24)
     }
@@ -931,6 +959,7 @@ struct IMPracticeView: View {
 #endif
         resetConversation()
         isSessionActive = true
+        startSessionTimer()
         cachedRelationshipProfile = relationshipStore.profile(for: scenario)
         conversationState = relationshipStore.startingState(for: scenario)
         isAwaitingNPC = true
@@ -1063,6 +1092,8 @@ struct IMPracticeView: View {
         guard !isEndingConversation else { return }
         guard let setup else { return }
         isEndingConversation = true
+        stopSessionTimer()
+        CoachHaptic.sessionComplete()
         Task {
             let transcript = combinedUserTranscript
             guard !transcript.isEmpty else {
@@ -1106,6 +1137,12 @@ struct IMPracticeView: View {
                     summaryEvaluation = finalEvaluation
                     summaryTranscript = AttributedString(transcript)
 
+                    let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
+                    let pressure = BaselineEngine.classifyPressure(
+                        mode: .imConversation,
+                        isPressureModeOn: pressureOn,
+                        streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
+                    )
                     _ = PracticeSessionFinalizer.finalize(
                         store: sessionStore,
                         draft: PracticeSessionDraft(
@@ -1122,7 +1159,10 @@ struct IMPracticeView: View {
                                 outcome: finalEvaluation.outcome,
                                 relationshipSnapshot: updatedRelationship,
                                 contextSnapshot: sessionContext
-                            )
+                            ),
+                            pressureLevel: pressure,
+                            isRated: pressureOn,
+                            pauseMetrics: speechVM.currentSessionPauseMetrics()
                         ),
                         annotation: PracticeSessionAnnotation(
                             score: finalEvaluation.overallScore,
@@ -1132,16 +1172,47 @@ struct IMPracticeView: View {
                             coachSummary: finalEvaluation.feedback
                         )
                     )
-                    showSummary = true
+                    pushSummary()
                     isEndingConversation = false
                 }
             } catch {
                 await MainActor.run {
-                    isEndingConversation = false
-                    serviceErrorMessage = error.localizedDescription
+                    evaluationFailed = true
                 }
             }
         }
+    }
+
+    private func retryEvaluation() {
+        evaluationFailed = false
+        isEndingConversation = false
+        endConversation()
+    }
+
+    // MARK: - Session Timer (wall-clock cap)
+
+    private func startSessionTimer() {
+        sessionElapsedSeconds = 0
+        sessionTimeoutNudge = nil
+        sessionTimerTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    sessionElapsedSeconds += 1
+                    if sessionElapsedSeconds == Self.sessionNudgeSeconds {
+                        sessionTimeoutNudge = "Great conversation — wrapping up in a few minutes."
+                    } else if sessionElapsedSeconds >= Self.sessionMaxSeconds {
+                        endConversation()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopSessionTimer() {
+        sessionTimerTask?.cancel()
+        sessionTimerTask = nil
     }
 
     private func resetConversation() {
@@ -1155,6 +1226,9 @@ struct IMPracticeView: View {
         isWrappingUp = false
         totalDuration = 0
         totalFillers = 0
+        sessionElapsedSeconds = 0
+        sessionTimeoutNudge = nil
+        stopSessionTimer()
         summaryEvaluation = nil
         summaryTranscript = AttributedString("")
         serviceErrorMessage = nil
@@ -1213,13 +1287,49 @@ struct IMPracticeView: View {
             .filter { !$0.normalized.isEmpty }
     }
 
-    private func dismiss(times: Int) {
-        guard times > 0 else { return }
-        withAnimation(.none) { dismiss() }
-        if times > 1 {
-            DispatchQueue.main.async { dismiss(times: times - 1) }
-        }
+    // MARK: - Navigation
+
+    private func pushSummary() {
+        let payloadId = UUID()
+        let entry = SummaryDataStore.Entry(
+            transcript: summaryTranscript,
+            fillerCount: totalFillers,
+            duration: totalDuration,
+            score: summaryEvaluation?.overallScore,
+            progressSegments: min(4, userTurnCount),
+            xpEarned: summaryEvaluation?.xpEarned ?? 0,
+            showDuration: true,
+            practiceTitle: "IM Mode • \(resolvedScenario.title)",
+            feedbackOverride: summaryEvaluation?.feedback,
+            headlineOverride: summaryEvaluation?.headline,
+            scoreBreakdown: summaryEvaluation?.segments ?? [],
+            insights: summaryInsights,
+            recentSessions: sessionStore.sessions,
+            imConversationDetails: IMConversationDetails(
+                setup: setup ?? IMConversationSetup(scenario: resolvedScenario, targetTone: resolvedTargetTone),
+                turns: turns,
+                actualTone: summaryEvaluation?.actualTone,
+                finalState: conversationState,
+                outcome: summaryEvaluation?.outcome,
+                relationshipSnapshot: relationshipProfile,
+                contextSnapshot: sessionContext
+            ),
+            explicitMode: .imConversation,
+            recordingURL: nil,
+            sessionPrompt: nil,
+            sessionTheme: nil,
+            feedbackCategories: [],
+            strongMoments: [],
+            weakMoments: [],
+            durationAssessment: .onTarget,
+            targetRange: (30, 60, 120),
+            onStartDrill: nil
+        )
+        SummaryDataStore.shared.store(entry, for: payloadId)
+        let payload = SummaryPayload(id: payloadId, mode: .imConversation)
+        navigationPath.append(AppDestination.summary(payload))
     }
+
 }
 
 private enum SetupStep {
@@ -1239,7 +1349,7 @@ private struct TranscriptWord {
 
 #Preview {
     if #available(iOS 17.0, macOS 12.0, *) {
-        IMPracticeView()
+        IMPracticeView(navigationPath: .constant(NavigationPath()))
     }
 }
 #endif

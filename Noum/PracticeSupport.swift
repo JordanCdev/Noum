@@ -6,6 +6,82 @@ import SwiftUI
 import AVFAudio
 #endif
 
+// MARK: - Navigation Destination Types
+
+enum AppDestination: Hashable {
+    case practiceSelection
+    case timedPractice
+    case suddenDeathPractice
+    case ahCounterPractice
+    case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
+    case cutTheCrutchPractice
+    case friendLeaderboard
+    case league
+    case speechProjects
+    case lessons
+    case lesson(id: String)
+    case summary(SummaryPayload)
+    case sessionHistory
+    case socialProfile
+    case settings
+    case speakingRank
+    case pathJourney
+}
+
+struct SummaryPayload: Identifiable, Hashable {
+    let id: UUID
+    let mode: PracticeMode
+}
+
+/// Holds the non-Hashable data that SummaryView needs, keyed by SummaryPayload.id.
+/// Practice views store their data here before pushing a `.summary(payload)` onto the navigation path.
+@MainActor
+final class SummaryDataStore {
+    static let shared = SummaryDataStore()
+    private init() {}
+
+    struct Entry {
+        let transcript: AttributedString
+        let fillerCount: Int
+        let duration: TimeInterval
+        let score: Int?
+        let progressSegments: Int
+        let xpEarned: Int
+        let showDuration: Bool
+        let practiceTitle: String
+        let feedbackOverride: String?
+        let headlineOverride: String?
+        let scoreBreakdown: [PracticeScoreSegment]
+        let insights: [String]
+        let recentSessions: [PracticeSession]
+        let imConversationDetails: IMConversationDetails?
+        let explicitMode: PracticeMode?
+        let recordingURL: URL?
+        let sessionPrompt: String?
+        let sessionTheme: PromptTheme?
+        let feedbackCategories: [FeedbackCategory]
+        let strongMoments: [String]
+        let weakMoments: [String]
+        let durationAssessment: DurationAssessment
+        let targetRange: (min: Double, target: Double, max: Double)
+        let onStartDrill: ((DrillRecommendation) -> Void)?
+    }
+
+    private var entries: [UUID: Entry] = [:]
+
+    func store(_ entry: Entry, for id: UUID) {
+        entries[id] = entry
+    }
+
+    func retrieve(for id: UUID) -> Entry? {
+        entries[id]
+    }
+
+    func remove(for id: UUID) {
+        entries.removeValue(forKey: id)
+    }
+}
+
 enum LocalConfigLoader {
     static func value(forKey key: String, plistNamed plistName: String) -> String? {
         guard let url = Bundle.main.url(forResource: plistName, withExtension: "plist"),
@@ -61,6 +137,71 @@ enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
         case .easy: return 1.0
         case .medium: return 1.15
         case .hard: return 1.35
+        }
+    }
+
+    /// Target duration range: (minimum acceptable, ideal target, maximum acceptable) in seconds.
+    /// Duration within this range scores highest. Too short or too long both reduce the score.
+    var targetRange: (min: Double, target: Double, max: Double) {
+        switch self {
+        case .free:   return (min: 30, target: 60,  max: 120)  // Free: aim for 30–120s, sweet spot 60s
+        case .easy:   return (min: 45, target: 60,  max: 90)   // Easy (60s): aim for 45–90s
+        case .medium: return (min: 20, target: 30,  max: 50)   // Medium (30s): aim for 20–50s
+        case .hard:   return (min: 10, target: 15,  max: 25)   // Hard (15s): aim for 10–25s
+        }
+    }
+}
+
+/// How the speaker's duration compares to the target range.
+enum DurationAssessment: String {
+    case tooShort = "Too short"
+    case onTarget = "On target"
+    case tooLong = "Too long"
+
+    var icon: String {
+        switch self {
+        case .tooShort: return "arrow.down.circle.fill"
+        case .onTarget: return "checkmark.circle.fill"
+        case .tooLong: return "arrow.up.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .tooShort: return AppColor.caution
+        case .onTarget: return AppColor.positive
+        case .tooLong: return AppColor.caution
+        }
+    }
+}
+
+extension PracticeEvaluator {
+    /// Assess how the actual duration compares to the difficulty's target range.
+    static func assessDuration(_ duration: TimeInterval, difficulty: TimedPracticeDifficulty) -> DurationAssessment {
+        let range = difficulty.targetRange
+        if duration < range.min { return .tooShort }
+        if duration > range.max { return .tooLong }
+        return .onTarget
+    }
+
+    /// Score duration on a 0–1 scale using the target range. 1.0 = ideal, tapering toward 0 outside range.
+    static func durationRangeScore(_ duration: TimeInterval, difficulty: TimedPracticeDifficulty) -> Double {
+        let range = difficulty.targetRange
+        if duration >= range.min && duration <= range.max {
+            // Within acceptable range — score based on closeness to target
+            let distanceFromTarget = abs(duration - range.target)
+            let maxDistance = max(range.target - range.min, range.max - range.target)
+            return maxDistance > 0 ? 1.0 - (distanceFromTarget / maxDistance) * 0.2 : 1.0
+        } else if duration < range.min {
+            // Too short — linear taper from min down to 0
+            let shortfall = range.min - duration
+            let maxShortfall = range.min // At 0s, score = 0
+            return max(0, 1.0 - (shortfall / maxShortfall))
+        } else {
+            // Too long — gentler penalty, max penalty at 2x max
+            let overshoot = duration - range.max
+            let maxOvershoot = range.max // At 2x max, score ≈ 0
+            return max(0, 1.0 - (overshoot / maxOvershoot))
         }
     }
 }
@@ -226,6 +367,11 @@ struct CoachingProfile: Codable, Equatable {
     var coachingBrief: String
     var motivationWhyNow: String
     var successVision: String
+    /// AI-paraphrased, single-sentence rendering of the user's goal. Set once
+    /// at onboarding by `GoalParaphraseService` (best-effort, never blocks).
+    /// Read-only post-capture: raw inputs stay for export, the paraphrase is
+    /// the sanitised version safe to surface in UI and notifications.
+    var paraphrasedGoal: String?
 
     var isComplete: Bool { true }
     var personalGoalReference: String {
@@ -256,6 +402,7 @@ struct CoachingProfile: Codable, Equatable {
         case coachingBrief
         case motivationWhyNow
         case successVision
+        case paraphrasedGoal
     }
 
     init(
@@ -268,7 +415,8 @@ struct CoachingProfile: Codable, Equatable {
         styleReference: String,
         coachingBrief: String,
         motivationWhyNow: String,
-        successVision: String
+        successVision: String,
+        paraphrasedGoal: String? = nil
     ) {
         self.speakingContext = speakingContext
         self.primaryGoal = primaryGoal
@@ -280,6 +428,7 @@ struct CoachingProfile: Codable, Equatable {
         self.coachingBrief = coachingBrief
         self.motivationWhyNow = motivationWhyNow
         self.successVision = successVision
+        self.paraphrasedGoal = paraphrasedGoal
     }
 
     init(from decoder: Decoder) throws {
@@ -294,10 +443,27 @@ struct CoachingProfile: Codable, Equatable {
         coachingBrief = try container.decodeIfPresent(String.self, forKey: .coachingBrief) ?? ""
         motivationWhyNow = try container.decodeIfPresent(String.self, forKey: .motivationWhyNow) ?? ""
         successVision = try container.decodeIfPresent(String.self, forKey: .successVision) ?? ""
+        paraphrasedGoal = try container.decodeIfPresent(String.self, forKey: .paraphrasedGoal)
     }
 }
 
 extension CoachingProfile {
+    /// On-voice, single-sentence rendering of the user's goal — safe for any
+    /// user-facing surface including lock-screen notifications, weekly digests,
+    /// and result cards. Prefers the AI paraphrase set at onboarding by
+    /// `GoalParaphraseService`; falls back to a deterministic template when
+    /// no paraphrase has been written yet (no provider, network failure, or
+    /// legacy profile).
+    var displayableGoal: String {
+        if let trimmed = paraphrasedGoal?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            return trimmed
+        }
+        let action = primaryGoal.title.lowercased()
+        let style = speakingStyleGoal.coachingDescription
+        return "You want to \(action) and \(style)."
+    }
+
     var communicationNorthStar: String {
         let goalReference = personalGoalReference.isEmpty
             ? desiredOutcome.title.lowercased()
@@ -370,7 +536,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
     var model: String {
         switch self {
         case .none: return ""
-        case .openAI: return "gpt-5-mini"
+        case .openAI: return "gpt-4o-mini"
         case .deepSeek: return "deepseek-chat"
         case .gemini: return "gemini-2.5-flash"
         }
@@ -2926,11 +3092,23 @@ final class PracticeSettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(timedDifficulty.rawValue, forKey: timedDifficultyKey) }
     }
 
+    @Published var pressureModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(pressureModeEnabled, forKey: pressureModeKey) }
+    }
+
+    @Published var fillerAlertSoundEnabled: Bool {
+        didSet { UserDefaults.standard.set(fillerAlertSoundEnabled, forKey: fillerAlertSoundKey) }
+    }
+
     private let timedDifficultyKey = "timedPracticeDifficulty"
+    private let pressureModeKey = "pressureModeEnabled"
+    private let fillerAlertSoundKey = "fillerAlertSoundEnabled"
 
     private init() {
         let rawValue = UserDefaults.standard.string(forKey: timedDifficultyKey)
         timedDifficulty = TimedPracticeDifficulty(rawValue: rawValue ?? "") ?? .easy
+        pressureModeEnabled = UserDefaults.standard.bool(forKey: pressureModeKey)
+        fillerAlertSoundEnabled = UserDefaults.standard.bool(forKey: fillerAlertSoundKey)
     }
 }
 
@@ -2966,6 +3144,31 @@ final class CoachingProfileStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         shouldPresentInitialOnboarding = false
         syncProfileIfPossible(profile, accountID: accountID)
+        paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
+    }
+
+    /// Single-shot AI paraphrase of the user's goal at capture time. Best-effort:
+    /// silent on failure (no provider, no network, model error) — `displayableGoal`
+    /// falls back to the deterministic template. Guarded so we never repeat the
+    /// pass for the same profile, even across launches.
+    private func paraphraseGoalIfNeeded(profile: CoachingProfile, accountID: String) {
+        guard profile.paraphrasedGoal == nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let paraphrase = await GoalParaphraseService.shared.paraphrase(profile: profile),
+                  !paraphrase.isEmpty
+            else { return }
+            await MainActor.run {
+                guard self.currentAccountID == accountID else { return }
+                guard var current = self.profile, current.paraphrasedGoal == nil else { return }
+                current.paraphrasedGoal = paraphrase
+                self.profile = current
+                if let data = try? JSONEncoder().encode(current) {
+                    UserDefaults.standard.set(data, forKey: self.profileKey(for: accountID))
+                }
+                self.syncProfileIfPossible(current, accountID: accountID)
+            }
+        }
     }
 
     func reloadForCurrentAccount() {
@@ -3175,7 +3378,17 @@ final class AISettingsManager: ObservableObject {
 
     private let countKey = "aiMonthlyAnalysisCount"
     private let monthKey = "aiMonthlyAnalysisMonth"
-    private let monthlyAnalysisLimit = 20
+    private let disclosureKeyPrefix = "hasAcknowledgedAIDisclosure."
+
+    // MARK: - Usage Tiers
+    // Premium: generous 100/month — most active users won't hit this.
+    // Free: 20/month — enough to experience value, encourages upgrade.
+    private static let premiumMonthlyLimit = 100
+    private static let freeMonthlyLimit = 20
+
+    /// The threshold (as fraction of limit) at which we surface a gentle heads-up.
+    /// Set at 90% so users get a soft nudge, not a wall.
+    static let usageAwarenessThreshold: Double = 0.90
 
     private init() {
         analysisCountThisMonth = UserDefaults.standard.integer(forKey: countKey)
@@ -3183,15 +3396,51 @@ final class AISettingsManager: ObservableObject {
     }
 
     var activeProvider: AIProvider? {
-        [.gemini, .openAI, .deepSeek].first(where: hasAPIKey(for:))
+        [.gemini, .openAI].first(where: hasAPIKey(for:))
+    }
+
+    /// Current monthly limit based on subscription tier.
+    var monthlyLimit: Int {
+        PremiumManager.shared.isPremium ? Self.premiumMonthlyLimit : Self.freeMonthlyLimit
     }
 
     var remainingAnalyses: Int {
-        max(0, monthlyAnalysisLimit - analysisCountThisMonth)
+        max(0, monthlyLimit - analysisCountThisMonth)
     }
 
     var canRequestAnalysis: Bool {
         activeProvider != nil && remainingAnalyses > 0
+    }
+
+    /// Whether the user is approaching their limit (≥90% used).
+    /// Returns false if they still have plenty of headroom.
+    var isApproachingLimit: Bool {
+        let limit = monthlyLimit
+        guard limit > 0 else { return true }
+        return Double(analysisCountThisMonth) / Double(limit) >= Self.usageAwarenessThreshold
+    }
+
+    /// True when the monthly cap has been reached.
+    var hasReachedLimit: Bool {
+        analysisCountThisMonth >= monthlyLimit
+    }
+
+    /// Estimated date when the counter resets (first of next month).
+    var resetDate: Date {
+        let cal = Calendar.current
+        let now = Date()
+        if let nextMonth = cal.date(byAdding: .month, value: 1, to: cal.startOfDay(for: now)) {
+            let comps = cal.dateComponents([.year, .month], from: nextMonth)
+            return cal.date(from: comps) ?? nextMonth
+        }
+        return now
+    }
+
+    /// Human-readable reset date (e.g., "May 1").
+    var resetDateFormatted: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMMM d"
+        return fmt.string(from: resetDate)
     }
 
     func recordAnalysis() {
@@ -3207,6 +3456,28 @@ final class AISettingsManager: ObservableObject {
         if savedMonth != currentMonth {
             UserDefaults.standard.set(currentMonth, forKey: monthKey)
             analysisCountThisMonth = 0
+        }
+    }
+
+    // MARK: - AI Transcript Disclosure
+
+    /// Whether the current user has acknowledged that speech transcripts are sent to cloud AI.
+    var hasAcknowledgedAIDisclosure: Bool {
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        return UserDefaults.standard.bool(forKey: disclosureKeyPrefix + accountID)
+    }
+
+    func acknowledgeAIDisclosure() {
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        UserDefaults.standard.set(true, forKey: disclosureKeyPrefix + accountID)
+    }
+
+    /// The user-facing name of the active AI provider (e.g., "Google Gemini", "OpenAI").
+    var activeProviderDisplayName: String {
+        switch activeProvider {
+        case .gemini: return "Google Gemini"
+        case .openAI: return "OpenAI"
+        default: return "a cloud AI provider"
         }
     }
 
@@ -3314,7 +3585,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
     case auto
     case backend
     case googleCloud
-    case elevenLabs
     case openAI
 
     static var allCases: [IMVoiceEngine] {
@@ -3331,8 +3601,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
             return "Backend"
         case .googleCloud:
             return "Google Cloud"
-        case .elevenLabs:
-            return "ElevenLabs"
         case .openAI:
             return "AI"
         }
@@ -3346,8 +3614,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
             return "Use Noum backend voice synthesis when cloud voice providers are unavailable."
         case .googleCloud:
             return "Use Google Cloud Text-to-Speech as the primary premium voice path."
-        case .elevenLabs:
-            return "Use ElevenLabs voice synthesis when API keys and voice IDs are configured."
         case .openAI:
             return "Use OpenAI TTS as the backup premium voice if Google Cloud is unavailable."
         }
@@ -3453,6 +3719,77 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
 
     func resetSessionPlaybackState() { stop() }
 
+    // MARK: - Prompt Readout (Timed Practice Mode)
+
+    /// Speak a practice prompt using the best available cloud TTS provider.
+    /// Returns true if cloud audio was successfully played, false if caller should fall back to on-device TTS.
+    func speakPrompt(_ text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        stop()
+
+        // Build a minimal setup for voice selection — use a calm, coaching-like persona
+        let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .confident)
+        let engines = candidateEngines(for: setup)
+        guard !engines.isEmpty else { return false }
+
+        for engine in engines {
+            if await playPrompt(trimmed, using: engine, setup: setup) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func playPrompt(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+        switch engine {
+        case .openAI:
+            return await playPromptWithOpenAI(text)
+        case .googleCloud:
+            return await playWithGoogleCloud(text, setup: setup)
+        case .backend:
+            return await playWithBackend(text, setup: setup)
+        case .auto:
+            return false
+        }
+    }
+
+    /// OpenAI TTS specifically tuned for prompt readout — calm, clear coaching voice
+    private func playPromptWithOpenAI(_ text: String) async -> Bool {
+        guard let apiKey = openAIAPIKey(),
+              let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+            return false
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8
+
+        let body = OpenAITTSSpeechRequest(
+            model: "tts-1",
+            voice: "nova",
+            input: text,
+            responseFormat: "mp3",
+            instructions: "Read this speaking prompt clearly and warmly, like a calm speaking coach presenting a question. Natural pace, confident tone, slight warmth. Do not rush."
+        )
+        request.httpBody = try? JSONEncoder().encode(body)
+        guard request.httpBody != nil else { return false }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+            return playAudioData(data)
+        } catch {
+            return false
+        }
+    }
+
     func stop() {
         speechTask?.cancel()
         speechTask = nil
@@ -3488,16 +3825,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             if backendTTSAvailable() {
                 appendUnique(.backend, to: &engines)
             }
-        case .elevenLabs:
-            if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
-                appendUnique(.elevenLabs, to: &engines)
-            }
-            if openAIAPIKey() != nil {
-                appendUnique(.openAI, to: &engines)
-            }
-            if backendTTSAvailable() {
-                appendUnique(.backend, to: &engines)
-            }
         case .openAI:
             appendUnique(.openAI, to: &engines)
             if backendTTSAvailable() {
@@ -3513,8 +3840,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return await playWithBackend(text, setup: setup)
         case .googleCloud:
             return await playWithGoogleCloud(text, setup: setup)
-        case .elevenLabs:
-            return await playWithElevenLabs(text, setup: setup)
         case .openAI:
             return await playWithOpenAI(text, setup: setup)
         case .auto:
@@ -3529,9 +3854,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return await executeWarmupRequest(request)
         case .openAI:
             guard let request = openAIRequest(for: ".", setup: setup) else { return false }
-            return await executeWarmupRequest(request)
-        case .elevenLabs:
-            guard let request = elevenLabsRequest(for: ".", setup: setup) else { return false }
             return await executeWarmupRequest(request)
         case .backend:
             guard let request = backendRequest(for: ".", setup: setup) else { return false }
@@ -3818,65 +4140,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func elevenLabsAPIKey() -> String? {
-        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: "ELEVENLABS_API_KEY", plistNamed: "AIConfig")
-    }
 
-    private func elevenLabsModelID() -> String {
-        ProcessInfo.processInfo.environment["ELEVENLABS_MODEL_ID"]
-            ?? LocalConfigLoader.value(forKey: "ELEVENLABS_MODEL_ID", plistNamed: "AIConfig")
-            ?? "eleven_flash_v2_5"
-    }
-
-    private func elevenLabsVoiceID(for scenario: IMConversationScenario) -> String? {
-        let scenarioKey: String
-        switch scenario {
-        case .socialCatchUp:
-            scenarioKey = "ELEVENLABS_VOICE_ID_MAYA"
-        case .workUpdate:
-            scenarioKey = "ELEVENLABS_VOICE_ID_JORDAN"
-        case .difficultConversation:
-            scenarioKey = "ELEVENLABS_VOICE_ID_SAM"
-        case .networking:
-            scenarioKey = "ELEVENLABS_VOICE_ID_ALEX"
-        }
-
-        if let value = ProcessInfo.processInfo.environment[scenarioKey], !value.isEmpty {
-            return value
-        }
-        if let value = LocalConfigLoader.value(forKey: scenarioKey, plistNamed: "AIConfig") {
-            return value
-        }
-        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_VOICE_ID_DEFAULT"], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: "ELEVENLABS_VOICE_ID_DEFAULT", plistNamed: "AIConfig")
-    }
-
-    private func playWithElevenLabs(_ text: String, setup: IMConversationSetup) async -> Bool {
-        guard let request = elevenLabsRequest(for: text, setup: setup) else {
-            lastFailureReason = "ElevenLabs credentials or voice ID are missing."
-            return false
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard !Task.isCancelled,
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                lastFailureReason = "ElevenLabs request failed."
-                return false
-            }
-
-            return playAudioData(data)
-        } catch {
-            lastFailureReason = "ElevenLabs error: \(error.localizedDescription)"
-            return false
-        }
-    }
 
     private func backendRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
         guard let baseURL = backendBaseURL() else { return nil }
@@ -3964,33 +4228,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         return request.httpBody == nil ? nil : request
     }
 
-    private func elevenLabsRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
-        guard let apiKey = elevenLabsAPIKey(),
-              let voiceID = elevenLabsVoiceID(for: setup.scenario),
-              let endpoint = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)") else {
-            return nil
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
-
-        let body = ElevenLabsSpeechRequest(
-            text: text,
-            modelID: elevenLabsModelID(),
-            voiceSettings: ElevenLabsVoiceSettings(
-                stability: 0.48,
-                similarityBoost: 0.78,
-                style: 0.22,
-                useSpeakerBoost: true,
-                speed: 0.96
-            )
-        )
-        request.httpBody = try? JSONEncoder().encode(body)
-        return request.httpBody == nil ? nil : request
-    }
 }
 
 private struct BackendIMTTSRequest: Codable {
@@ -4077,33 +4314,7 @@ private struct GoogleCloudTTSSpeechResponse: Codable {
     }
 }
 
-private struct ElevenLabsSpeechRequest: Codable {
-    let text: String
-    let modelID: String
-    let voiceSettings: ElevenLabsVoiceSettings
 
-    enum CodingKeys: String, CodingKey {
-        case text
-        case modelID = "model_id"
-        case voiceSettings = "voice_settings"
-    }
-}
-
-private struct ElevenLabsVoiceSettings: Codable {
-    let stability: Double
-    let similarityBoost: Double
-    let style: Double
-    let useSpeakerBoost: Bool
-    let speed: Double
-
-    enum CodingKeys: String, CodingKey {
-        case stability
-        case similarityBoost = "similarity_boost"
-        case style
-        case useSpeakerBoost = "use_speaker_boost"
-        case speed
-    }
-}
 #endif
 #endif
 
@@ -4117,6 +4328,8 @@ struct PracticeEvaluation {
     var categories: [FeedbackCategory] = []
     var strongMoments: [String] = []
     var weakMoments: [String] = []
+    var durationAssessment: DurationAssessment = .onTarget
+    var targetRange: (min: Double, target: Double, max: Double) = (30, 60, 120)
 }
 
 struct PracticeScoreSegment: Identifiable {
@@ -4124,6 +4337,214 @@ struct PracticeScoreSegment: Identifiable {
     let title: String
     let value: String
     let tintName: String
+}
+
+// MARK: - Next Rep Drill System
+
+/// A single, opinionated drill recommendation generated from session metrics.
+struct DrillRecommendation: Identifiable {
+    let id = UUID()
+    let type: DrillType
+    let title: String
+    let reason: String           // Why this drill, based on what happened
+    let constraint: String       // The one rule to follow
+    let successGoal: String      // How to know you nailed it
+    let icon: String             // SF Symbol
+    let tint: Color
+
+    /// The drill types available in the system, ordered by priority.
+    enum DrillType: String {
+        case pauseAndBreathe       // High fillers — replace fillers with silence
+        case slowOpen              // Rushed pace — deliberately slow first 2 sentences
+        case extendAndDevelop      // Too short — hit a minimum duration
+        case structuredResponse    // No structure — use intro/point/close
+        case cleanRun              // Moderate fillers — aim for zero
+        case powerOpen             // Weak opening — nail the first sentence
+        case paceSetter            // Too slow — hit a natural pace
+        case closingStatement      // Weak close — end with a deliberate sentence
+        case depthDive             // Shallow content — develop one idea fully
+        case confidenceHold        // Good session — maintain under harder conditions
+        case freeRepeat            // Clean session — just do it again
+    }
+}
+
+/// Generates a single drill recommendation from raw session metrics.
+/// Deterministic, template-driven — no AI call needed.
+enum DrillEngine {
+
+    static func recommend(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        score: Int,
+        feedbackCategories: [FeedbackCategory],
+        durationAssessment: DurationAssessment
+    ) -> DrillRecommendation {
+
+        let wpm = duration > 0 ? Double(wordCount) / duration * 60 : 0
+        let isMinimal = wordCount < 5 || duration < 5
+
+        // Helper to find worst category
+        func rating(for dimension: String) -> FeedbackRating? {
+            feedbackCategories.first(where: { $0.dimension == dimension })?.rating
+        }
+
+        // --- Priority cascade (most impactful issue first) ---
+
+        // 1. No speech / minimal effort → just get them talking
+        if wordCount == 0 || isMinimal {
+            return DrillRecommendation(
+                type: .extendAndDevelop,
+                title: "Commit to 30 Seconds",
+                reason: "Your last attempt was too short to practice anything meaningful.",
+                constraint: "Keep talking for at least 30 seconds — no stopping early.",
+                successGoal: "Reach 30 seconds with a clear point",
+                icon: "timer",
+                tint: .orange
+            )
+        }
+
+        // 2. High fillers (≥5) → pause & breathe drill
+        if fillerCount >= 5 {
+            return DrillRecommendation(
+                type: .pauseAndBreathe,
+                title: "Silent Transitions",
+                reason: "You used \(fillerCount) filler words — most appeared between ideas when your brain was searching for the next thought.",
+                constraint: "Pause silently for a full beat before every new point. No \"um\", \"uh\", or \"like\" allowed.",
+                successGoal: "Fewer than 2 filler words",
+                icon: "waveform.path",
+                tint: .red
+            )
+        }
+
+        // 3. Very short duration (<15s) → extend
+        if duration < 15 {
+            return DrillRecommendation(
+                type: .extendAndDevelop,
+                title: "Develop the Thought",
+                reason: "Your answer was only \(Int(duration)) seconds — too short to show structure or control.",
+                constraint: "After your opening, add one example and one closing sentence. Don't stop until you've made all three.",
+                successGoal: "Speak for at least 30 seconds with 3 distinct sections",
+                icon: "text.line.last.and.arrowtriangle.forward",
+                tint: .orange
+            )
+        }
+
+        // 4. Rushed pace (>160 WPM) → slow open
+        if wpm > 160 {
+            return DrillRecommendation(
+                type: .slowOpen,
+                title: "Slow Your Start",
+                reason: "Your pace hit \(Int(wpm)) WPM — noticeably fast. Speed undermines clarity even when the content is strong.",
+                constraint: "Deliberately slow your first two sentences. Count one beat between them.",
+                successGoal: "Pace below 150 WPM",
+                icon: "hare.fill",
+                tint: .orange
+            )
+        }
+
+        // 5. Moderate fillers (2-4) → clean run
+        if fillerCount >= 2 {
+            return DrillRecommendation(
+                type: .cleanRun,
+                title: "Zero Filler Run",
+                reason: "You had \(fillerCount) filler words — they cluster at transition points and make you sound less certain.",
+                constraint: "Deliver your answer with zero filler words. Replace every urge to say \"um\" with silence.",
+                successGoal: "Zero filler words",
+                icon: "sparkles",
+                tint: Color(.systemIndigo)
+            )
+        }
+
+        // 6. Weak opening
+        if rating(for: "Opening") == .couldImprove {
+            return DrillRecommendation(
+                type: .powerOpen,
+                title: "Nail the First Line",
+                reason: "Your opening didn't grab attention. A strong first sentence sets confidence for everything after.",
+                constraint: "Start with a clear, declarative statement — no hedge words, no throat-clearing.",
+                successGoal: "Opening rated OK or better",
+                icon: "bolt.fill",
+                tint: .blue
+            )
+        }
+
+        // 7. Weak structure
+        if rating(for: "Structure") == .couldImprove {
+            return DrillRecommendation(
+                type: .structuredResponse,
+                title: "Build a Framework",
+                reason: "Your answer lacked clear structure. Without a framework, ideas blur together.",
+                constraint: "Use a strict 3-part structure: opening statement, one supporting example, closing sentence.",
+                successGoal: "Structure rated OK or better",
+                icon: "list.number",
+                tint: .blue
+            )
+        }
+
+        // 8. Weak close
+        if rating(for: "Close") == .couldImprove {
+            return DrillRecommendation(
+                type: .closingStatement,
+                title: "Stick the Landing",
+                reason: "Your answer trailed off instead of ending with intention. A strong close leaves a lasting impression.",
+                constraint: "End with one deliberate closing sentence that summarizes your main point.",
+                successGoal: "Close rated OK or better",
+                icon: "flag.checkered",
+                tint: .purple
+            )
+        }
+
+        // 9. Too slow (<100 WPM, duration ≥15s)
+        if wpm > 0 && wpm < 100 && duration >= 15 {
+            return DrillRecommendation(
+                type: .paceSetter,
+                title: "Find Your Flow",
+                reason: "Your pace was \(Int(wpm)) WPM — quite slow. Hesitation can make you sound uncertain.",
+                constraint: "Commit to each sentence before starting it, then deliver at conversational speed — no long pauses mid-thought.",
+                successGoal: "Pace above 110 WPM",
+                icon: "metronome.fill",
+                tint: .blue
+            )
+        }
+
+        // 10. Shallow depth
+        if rating(for: "Depth") == .couldImprove {
+            return DrillRecommendation(
+                type: .depthDive,
+                title: "Go Deeper",
+                reason: "Your answer stayed surface-level. One well-developed idea beats three shallow ones.",
+                constraint: "Pick one point and give a specific, concrete example to support it.",
+                successGoal: "Depth rated OK or better",
+                icon: "arrow.down.to.line",
+                tint: .blue
+            )
+        }
+
+        // 11. Good session (score ≥7) → confidence hold / free repeat
+        if score >= 7 {
+            return DrillRecommendation(
+                type: .confidenceHold,
+                title: "Hold the Standard",
+                reason: "Strong session. Now prove it wasn't a one-off — repeat the same quality on the same prompt.",
+                constraint: "Match or beat your score. Stay clean, stay structured, stay in control.",
+                successGoal: "Score \(score) or higher",
+                icon: "flame.fill",
+                tint: .green
+            )
+        }
+
+        // 12. Default fallback — free repeat with structure focus
+        return DrillRecommendation(
+            type: .freeRepeat,
+            title: "One More Rep",
+            reason: "Your delivery had room to improve. The best way to get better is to try again with intention.",
+            constraint: "Focus on a strong open, one clear point, and a deliberate close.",
+            successGoal: "Improve your overall score",
+            icon: "arrow.clockwise",
+            tint: .blue
+        )
+    }
 }
 
 // MARK: - Feedback Categories (7 dimensions)
@@ -4210,12 +4631,12 @@ enum PracticeEvaluator {
         duration: TimeInterval,
         difficulty: TimedPracticeDifficulty,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
-        let targetDuration = Double(difficulty.duration ?? 45)
-        let durationProgress = min(duration / targetDuration, 1.0)
+        let durationProgress = durationRangeScore(duration, difficulty: difficulty)
         let contentProgress = min(Double(wordCount) / 35.0, 1.0)
         let wordsPerMinute = paceValue(wordCount: wordCount, duration: duration)
         let paceSnapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
@@ -4223,7 +4644,9 @@ enum PracticeEvaluator {
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 0.7, 3.0)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0  // Reduce 40% when audio quality is poor
+        let fillerPenalty = min(Double(fillerCount) * 0.7 * fillerPenaltyMultiplier, 3.0)
         let difficultyBonus: Double = {
             switch difficulty {
             case .free: return 0.0
@@ -4247,21 +4670,30 @@ enum PracticeEvaluator {
         let xpFromDuration = durationProgress * 18
         let xpEarned = max(5, Int(round((xpBase + xpFromDuration) * difficulty.xpMultiplier)))
 
-        let headline: String
+        let baseHeadline: String
         switch score {
         case 9...10:
-            headline = "Table-topics ready"
+            baseHeadline = "Table-topics ready"
         case 7...8:
-            headline = "Solid response"
+            baseHeadline = "Solid response"
         case 4...6:
-            headline = "Getting there"
+            baseHeadline = "Building momentum"
         default:
-            headline = "Needs another rep"
+            baseHeadline = "Good warmup"
         }
+        let headline = isLowConfidence ? "Based on what we could hear" : baseHeadline
+
+        let durationAssessment = assessDuration(duration, difficulty: difficulty)
 
         let feedback: String
         if wordCount < 3 || duration < 3 {
             feedback = "This response ended before the answer could develop. Aim for a clear opening, one supporting point, and a brief close."
+        } else if durationAssessment == .tooShort && fillerCount <= 2 {
+            let range = difficulty.targetRange
+            feedback = "Your answer was only \(Int(duration))s — the target range is \(Int(range.min))–\(Int(range.max))s. Give your answer more room to develop."
+        } else if durationAssessment == .tooLong {
+            let range = difficulty.targetRange
+            feedback = "At \(Int(duration))s you went well past the \(Int(range.max))s mark. Tighten the structure: opening, one strong point, then close."
         } else if fillerCount == 0 && durationProgress >= 0.8 {
             feedback = "Strong control. You kept the answer clean while giving it enough shape to sound complete."
         } else if fillerCount <= 2 && durationProgress >= 0.6 {
@@ -4273,7 +4705,7 @@ enum PracticeEvaluator {
         }
 
         let segments = [
-            PracticeScoreSegment(title: "Depth", value: "+\(Int(round(durationProgress * 3)))", tintName: "blue"),
+            PracticeScoreSegment(title: "Timing", value: durationAssessment.rawValue, tintName: durationAssessment == .onTarget ? "green" : "orange"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 3)))", tintName: "orange"),
             PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green"),
             PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"),
@@ -4294,6 +4726,9 @@ enum PracticeEvaluator {
             insights.append(styleTrendNote)
         }
         insights.append(styleSnapshot.coachingNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
 
         // Generate 7-dimension feedback categories
         let categories = buildFeedbackCategories(
@@ -4320,7 +4755,9 @@ enum PracticeEvaluator {
             insights: Array(insights.prefix(3)),
             categories: categories,
             strongMoments: strongMoments,
-            weakMoments: weakMoments
+            weakMoments: weakMoments,
+            durationAssessment: durationAssessment,
+            targetRange: difficulty.targetRange
         )
     }
 
@@ -4357,7 +4794,7 @@ enum PracticeEvaluator {
             FeedbackCategory(dimension: "Structure", rating: structure, note: structure == .good ? "Well-organized answer" : structure == .ok ? "Add one more supporting point" : "Break into intro → point → close"),
             FeedbackCategory(dimension: "Relevance", rating: relevance, note: relevance == .good ? "Stayed on topic" : relevance == .ok ? "Mostly relevant" : "Connect more directly to the prompt"),
             FeedbackCategory(dimension: "Depth", rating: depth, note: depth == .good ? "Good detail and development" : depth == .ok ? "Push for more examples" : "Expand your supporting points"),
-            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Too many verbal crutches"),
+            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Filler words interrupted flow"),
             FeedbackCategory(dimension: "Pace", rating: pace, note: pace == .good ? "Comfortable, natural pace" : pace == .ok ? "Slightly rushed" : "Slow down and use pauses"),
             FeedbackCategory(dimension: "Close", rating: close, note: close == .good ? "Strong finish" : close == .ok ? "Ended a bit abruptly" : "Add a deliberate closing sentence"),
         ]
@@ -4387,7 +4824,8 @@ enum PracticeEvaluator {
         duration: TimeInterval,
         pressureEventsHandled: Int,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4396,11 +4834,13 @@ enum PracticeEvaluator {
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let level = max(1, Int(duration / 30.0) + 1)
         let durationProgress = min(duration / Double(level * 30), 1.0)
         let contentProgress = min(Double(wordCount) / 24.0, 1.0)
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 2.0, 6.0)
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
+        let fillerPenalty = min(Double(fillerCount) * 2.0 * fillerPenaltyMultiplier, 6.0)
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
@@ -4421,9 +4861,9 @@ enum PracticeEvaluator {
         case 9...10:
             headline = level >= 3 ? "High-pressure composure" : "Composed under pressure"
         case 6...8:
-            headline = "Pressure exposed a few cracks"
+            headline = "Held up under pressure"
         default:
-            headline = "Needs another rep"
+            headline = "Good warmup"
         }
         let feedback: String
         if wordCount < 3 || duration < 3 {
@@ -4466,6 +4906,9 @@ enum PracticeEvaluator {
             insights.append(styleTrendNote)
         }
         insights.append(paceSnapshot.coachNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
         insights.append(styleSnapshot.coachingNote)
 
         return PracticeEvaluation(
@@ -4483,7 +4926,8 @@ enum PracticeEvaluator {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4494,8 +4938,10 @@ enum PracticeEvaluator {
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 0.8, 5.0)
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
+        let fillerPenalty = min(Double(fillerCount) * 0.8 * fillerPenaltyMultiplier, 5.0)
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
@@ -4511,7 +4957,7 @@ enum PracticeEvaluator {
         switch score {
         case 8...10: headline = "Good awareness"
         case 5...7: headline = "Useful awareness rep"
-        default: headline = "Needs another rep"
+        default: headline = "Good warmup"
         }
 
         let feedback: String
@@ -4546,6 +4992,9 @@ enum PracticeEvaluator {
         }
         insights.append(paceSnapshot.coachNote)
         insights.append(styleSnapshot.coachingNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
 
         return PracticeEvaluation(
             score: score,
@@ -4951,6 +5400,49 @@ extension PracticeSession {
         guard duration > 0 else { return 0 }
         return Int((Double(wordCount) / duration * 60).rounded())
     }
+
+    // MARK: - Streak Calculation
+
+    /// Calculates the current practice streak from a list of sessions.
+    ///
+    /// A streak counts consecutive days with at least one session, starting from
+    /// today and walking backward. A **one-day grace period** allows a single
+    /// missed day inside the streak without breaking it (two consecutive missed
+    /// days end the streak).
+    static func calculateStreak(from sessions: [PracticeSession]) -> Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        var gracePeriodUsed = false
+
+        // Check if today has a session; if not, start from yesterday
+        if !uniqueDays.contains(cursor) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor) else { return 0 }
+            // If yesterday also doesn't have a session, streak is 0
+            guard uniqueDays.contains(yesterday) else { return 0 }
+            cursor = yesterday
+        }
+
+        while true {
+            if uniqueDays.contains(cursor) {
+                streak += 1
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                cursor = previousDay
+            } else if !gracePeriodUsed {
+                // One grace day — skip this day but keep counting
+                gracePeriodUsed = true
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                cursor = previousDay
+            } else {
+                break
+            }
+        }
+
+        return streak
+    }
 }
 
 struct PracticeSessionDraft {
@@ -4960,6 +5452,12 @@ struct PracticeSessionDraft {
     let date: Date
     let mode: PracticeMode
     let imDetails: IMConversationDetails?
+    let transcriptConfidence: Double?
+    let transcriptionProvider: String?
+    let pressureLevel: PressureLevel
+    let isRated: Bool
+    let pauseMetrics: PauseMetrics?
+    let pitchMetrics: PitchMetrics?
 
     init(
         transcript: String,
@@ -4967,7 +5465,13 @@ struct PracticeSessionDraft {
         duration: TimeInterval,
         date: Date,
         mode: PracticeMode,
-        imDetails: IMConversationDetails? = nil
+        imDetails: IMConversationDetails? = nil,
+        transcriptConfidence: Double? = nil,
+        transcriptionProvider: String? = nil,
+        pressureLevel: PressureLevel = .standard,
+        isRated: Bool = false,
+        pauseMetrics: PauseMetrics? = nil,
+        pitchMetrics: PitchMetrics? = nil
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -4975,6 +5479,12 @@ struct PracticeSessionDraft {
         self.date = date
         self.mode = mode
         self.imDetails = imDetails
+        self.transcriptConfidence = transcriptConfidence
+        self.transcriptionProvider = transcriptionProvider
+        self.pressureLevel = pressureLevel
+        self.isRated = isRated
+        self.pauseMetrics = pauseMetrics
+        self.pitchMetrics = pitchMetrics
     }
 }
 
@@ -5024,6 +5534,8 @@ final class PracticeSessionStore: ObservableObject {
 
     func endSession() {
         sessions = []
+        // Also clear persisted data so old sessions don't reappear on reload
+        UserDefaults.standard.removeObject(forKey: Self.storageKey(for: currentAccountID))
     }
 
     @discardableResult
@@ -5034,7 +5546,13 @@ final class PracticeSessionStore: ObservableObject {
             duration: draft.duration,
             date: draft.date,
             mode: draft.mode,
-            imConversationDetails: draft.imDetails
+            imConversationDetails: draft.imDetails,
+            transcriptConfidence: draft.transcriptConfidence,
+            transcriptionProvider: draft.transcriptionProvider,
+            pressureLevel: draft.pressureLevel,
+            isRated: draft.isRated,
+            pauseMetrics: draft.pauseMetrics,
+            pitchMetrics: draft.pitchMetrics
         )
         sessions.insert(session, at: 0)
         persist()
@@ -5074,6 +5592,11 @@ final class PracticeSessionStore: ObservableObject {
         sessions[index].aiCoachFeedback = feedback
         persist()
         syncSessionIfPossible(sessions[index])
+    }
+
+    func deleteSession(id: UUID) {
+        sessions.removeAll { $0.id == id }
+        persist()
     }
 
     func replaceFromRemote(_ remoteSessions: [PracticeSession]) {
@@ -5117,6 +5640,52 @@ final class PracticeSessionStore: ObservableObject {
 }
 #endif
 
+// MARK: - Rank Helpers (shared across ContentView, ProfileView, SpeakingRankView)
+
+#if canImport(SwiftUI)
+import SwiftUI
+
+extension ProfileManager {
+    var rankSymbol: String {
+        let title = levelTitle
+        if title.contains("Beginner") { return "sparkles" }
+        if title.contains("Novice") { return "figure.stand" }
+        if title.contains("Average") { return "waveform.path.ecg" }
+        if title.contains("Professional") { return "shield.lefthalf.filled" }
+        return "crown.fill"
+    }
+
+    var rankTint: Color {
+        let title = levelTitle
+        if title.contains("Beginner") { return .blue }
+        if title.contains("Novice") { return .teal }
+        if title.contains("Average") { return .indigo }
+        if title.contains("Professional") { return .orange }
+        return .yellow
+    }
+
+    var rankDescriptor: String {
+        let title = levelTitle
+        if title.contains("Beginner") { return "Foundational tier" }
+        if title.contains("Novice") { return "Developing tier" }
+        if title.contains("Average") { return "Steady tier" }
+        if title.contains("Professional") { return "Advanced tier" }
+        return "Elite tier"
+    }
+
+    var rankTitle: String {
+        "Speaker \(max(1, (xp / 1000) + 1))"
+    }
+
+    var nextRankTitle: String {
+        "Next: Speaker \(max(2, (xp / 1000) + 2))"
+    }
+
+    var levelProgressLabel: String {
+        "\(Int((progressTowardsNextLevel * 100).rounded()))%"
+    }
+}
+#endif
 #if canImport(SwiftUI)
 struct RecommendationExposure: Codable, Equatable {
     let fingerprint: String
@@ -5342,7 +5911,31 @@ enum PracticeSessionFinalizer {
         if annotation != .empty {
             store.annotate(sessionID: session.id, annotation: annotation)
         }
-        return store.sessions.first(where: { $0.id == session.id }) ?? session
+        let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
+
+        // Analyze verbal habits before refreshing the baseline so clutch words are included immediately.
+        ClutchWordStore.shared.analyzeSession(transcript: draft.transcript)
+
+        // Record baseline data
+        BaselineStore.shared.recordSession(finalized, pressure: draft.pressureLevel)
+
+        // Check personal bests (for all sessions)
+        let streak = PracticeSession.calculateStreak(from: store.sessions)
+        RatingStore.shared.checkPersonalBests(session: finalized, currentStreak: streak)
+
+        // Update speaking rating (only for rated/pressure sessions)
+        if draft.isRated, let score = finalized.score {
+            RatingStore.shared.recordRatedSession(
+                score: score,
+                sessionId: finalized.id,
+                pressureLevel: draft.pressureLevel
+            )
+        }
+
+        // Evaluate achievements
+        AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
+
+        return finalized
     }
 }
 
@@ -5652,6 +6245,11 @@ struct RecommendationBiasBlueprint {
     let modeBenefit: String
     let whyMode: String
     let whyNow: String
+    /// Suggested Timed difficulty based on the user's coaching goal.
+    /// `nil` if the recommended mode is not Timed or no profile is set.
+    let suggestedTimedDifficulty: TimedPracticeDifficulty?
+    /// Prompt theme that best matches this user's coaching goal.
+    let suggestedTheme: PromptTheme
 }
 
 enum RecommendationBiasEngine {
@@ -5693,7 +6291,9 @@ enum RecommendationBiasEngine {
                 target: mode == .ahCounter ? "Cut fillers by 1" : "One complete rep",
                 modeBenefit: playbookEntry(for: mode).benefit,
                 whyMode: playbookEntry(for: mode).bestFor,
-                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline."
+                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline.",
+                suggestedTimedDifficulty: nil,
+                suggestedTheme: .all
             )
         }
 
@@ -5705,6 +6305,8 @@ enum RecommendationBiasEngine {
         let target = target(for: mode, profile: profile, input: input)
         let focus = focus(for: mode, profile: profile)
         let whyNow = whyNow(for: mode, profile: profile, input: input)
+        let difficulty = mode == .timed ? suggestedTimedDifficulty(for: profile) : nil
+        let theme = suggestedTheme(for: profile)
 
         return RecommendationBiasBlueprint(
             recommendedMode: mode,
@@ -5714,8 +6316,34 @@ enum RecommendationBiasEngine {
             target: target,
             modeBenefit: benefit.benefit,
             whyMode: benefit.bestFor + " This lines up with the user's north star.",
-            whyNow: whyNow
+            whyNow: whyNow,
+            suggestedTimedDifficulty: difficulty,
+            suggestedTheme: theme
         )
+    }
+
+    /// Maps a coaching goal to a suggested Timed difficulty.
+    private static func suggestedTimedDifficulty(for profile: CoachingProfile) -> TimedPracticeDifficulty {
+        switch profile.primaryGoal {
+        case .moreConcise:  return .hard    // 15s forces conciseness
+        case .thinkFaster:  return .medium  // 30s balanced speed + structure
+        case .reduceFillers: return .medium // 30s — enough time to self-monitor
+        case .calmerDelivery: return .easy  // 60s — room to compose and pace
+        }
+    }
+
+    /// Maps a coaching goal to the prompt theme most likely to surface useful practice.
+    private static func suggestedTheme(for profile: CoachingProfile) -> PromptTheme {
+        switch profile.primaryGoal {
+        case .moreConcise:
+            return profile.speakingContext == .interviews ? .interviewPrep : .workCareer
+        case .thinkFaster:
+            return profile.biggestChallenge == .freezing ? .general : .funRandom
+        case .reduceFillers:
+            return .all
+        case .calmerDelivery:
+            return profile.speakingContext == .social ? .socialConfidence : .ethicsOpinions
+        }
     }
 
     private static func prioritizedModes(for profile: CoachingProfile) -> [PracticeMode] {
@@ -6404,16 +7032,47 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
     private var systemPrompt: String {
         """
-        You are evaluating a short voice-driven instant message conversation for a speaking coach app.
+        You are a sharp, experienced communication coach evaluating an instant-message conversation.
+        You think in three layers:
+
+        LAYER 1 — FUNDAMENTALS (universal)
+        Clarity, composure, filler-word discipline, vocabulary range.
+        These are table stakes. Judge them honestly but don't belabor what's fine.
+
+        LAYER 2 — CONTEXT FIT (conversation-specific)
+        Did the user read the room? Did they move the conversation forward?
+        Did trust or engagement shift in the right direction?
+        Was the tone appropriate for this specific scenario and relationship?
+        A technically clear message that ignores the other person's state is still a miss.
+
+        LAYER 3 — IDENTITY LENS (personal style direction)
+        The user has a speaking-style goal. This is a direction, not a destination.
+        Map their goal to traits (e.g. "speak like a king" → authority, decisiveness, calm).
+        Judge whether they moved toward those traits in this conversation — even slightly.
+        Never evaluate whether they literally sounded like someone else.
+
+        BASELINE CONTEXT:
+        If a speaker baseline is provided, use it to calibrate your evaluation:
+        - Compare this session's metrics against their established baseline, not abstract ideals.
+        - If they improved relative to their baseline, acknowledge the progress specifically.
+        - If they regressed, name the regression honestly but without alarm — one session doesn't define a trend.
+        - Reference persistent blockers if provided — these are the patterns they've been stuck on.
+        - Reference strengths if provided — these are what they can rely on.
+        - If baseline confidence is low ("tentative" or "early"), frame comparisons softly: "early signal" or "initial read."
+        - If the session was under elevated or high pressure, weight composure-under-pressure more heavily.
+        - If a style goal is provided, note whether this session moved toward it.
+
+        WRITING RULES:
+        - Write like a coach who's watched the tape, not like an AI summarizing.
+        - Use plain, direct language. No corporate jargon. No "Great job!" unless they genuinely nailed it.
+        - headline: a short, honest read. "You held the room" or "You backed off too early" — not a compliment sandwich.
+        - feedback: 2-3 sentences max. One thing they did well, one thing to work on. Be specific — reference an actual moment or turn from the conversation. When baseline data is available, ground your feedback in it (e.g. "filler rate dropped below your usual" rather than "good job on fillers").
+        - insights: exactly 3 concise strings. Each should be a concrete observation, not a vague principle. At least one insight should reference the baseline or a trend when available.
+        - If the conversation was very short (under 3 turns), soften your confidence. Use language like "early read" or "hard to tell from this much" rather than definitive judgments.
+
         Return JSON only with keys:
         actualTone, toneMatch, clarityScore, composureScore, vocabularyScore, conversationScore, headline, feedback, insights, suggestedDrill.
-        Scoring rules:
-        - all numeric scores are integers from 1 to 10
-        - insights must contain exactly 3 concise strings
-        - headline must be short
-        - feedback should be 2-4 sentences, practical and coach-like
-        - actualTone should describe how the speaker actually came across
-        - judge target tone vs actual tone, conversational relevance, clarity, pacing signals, vocabulary, and composure
+        All numeric scores are integers from 1 to 10.
         """
     }
 
@@ -6438,51 +7097,52 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             return "\(speaker): \(turn.text)"
         }.joined(separator: "\n")
 
+        let turnCount = turns.filter { $0.speaker == .user }.count
+        let isShortSession = turnCount <= 2 || duration < 30
+
         return """
+        --- LAYER 1: FUNDAMENTALS ---
+        Filler words: \(fillerCount) (recent avg: \(String(format: "%.1f", recentAverageFillers)))
+        Duration: \(Int(duration))s (recent avg: \(Int(recentAverageDuration))s)
+        Words per minute: \(pace.wordsPerMinute) (\(pace.label))
+        User turns: \(turnCount)
+        \(isShortSession ? "⚠️ SHORT SESSION — soften confidence in all judgments." : "")
+
+        --- LAYER 2: CONTEXT FIT ---
         Scenario: \(setup.scenario.title)
-        Target tone: \(setup.targetTone.title)
-        Tone goal: \(setup.targetTone.coachingPrompt)
-        Scenario coaching focus: \(setup.scenario.coachingFocus)
-        Final trust: \(finalState?.normalizedTrust ?? 5)/10
-        Final engagement: \(finalState?.normalizedEngagement ?? 5)/10
-        Final tension: \(finalState?.normalizedTension ?? 4)/10
-        Final conversation beat: \(finalState?.beat ?? "Not captured")
-        Speaker context: \(profile?.speakingContext.title ?? "unknown")
-        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
-        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
-        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
-        Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
-        Personal goal reference: \(profile?.personalGoalReference ?? "none")
-        Communication north star: \(profile?.communicationNorthStar ?? "Help the user become a stronger communicator over time.")
-        In-conversation training focus: \(profile?.inConversationTrainingFocus ?? "Reward clear, human, well-calibrated communication that would strengthen a real relationship.")
-        Relationship baseline before this session: \(relationship?.promptSummary ?? "No stored relationship history.")
-        Filler words: \(fillerCount)
-        Duration seconds: \(Int(duration))
-        Words per minute: \(pace.wordsPerMinute)
-        Pace label: \(pace.label)
-        Speaking identity: \(identity.identity)
-        Identity evidence: \(identity.evidence)
-        Recent average fillers: \(String(format: "%.1f", recentAverageFillers))
-        Recent average duration: \(Int(recentAverageDuration))
+        Coaching focus: \(setup.scenario.coachingFocus)
+        Target tone: \(setup.targetTone.title) — \(setup.targetTone.coachingPrompt)
+        Trust: \(finalState?.normalizedTrust ?? 5)/10
+        Engagement: \(finalState?.normalizedEngagement ?? 5)/10
+        Tension: \(finalState?.normalizedTension ?? 4)/10
+        Beat reached: \(finalState?.beat ?? "Not captured")
+        Relationship history: \(relationship?.promptSummary ?? "First conversation.")
         Real-world context:
         \(context.summaryLines.joined(separator: "\n"))
 
-        Full conversation:
+        --- LAYER 3: IDENTITY LENS ---
+        Style direction: \(profile?.speakingStyleGoal.title ?? "not set")
+        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        North star: \(profile?.communicationNorthStar ?? "Become a stronger communicator over time.")
+        Training focus: \(profile?.inConversationTrainingFocus ?? "Clear, human, well-calibrated communication.")
+        Current speaking identity: \(identity.identity)
+        Identity evidence: \(identity.evidence)
+
+        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile, currentPressureLevel: BaselineEngine.classifyPressure(mode: .imConversation, isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled, streakDays: PracticeSession.calculateStreak(from: recentSessions)), styleGoal: profile?.speakingStyleGoal.title))
+
+        --- FULL CONVERSATION ---
         \(transcriptLog)
 
-        Combined user transcript:
+        --- USER TRANSCRIPT ONLY ---
         \(transcript)
 
-        Evaluate not only speaking delivery but conversational quality:
-        - directness
-        - relevance to the other person
-        - tone consistency
-        - recovery after awkward or pressured moments
-        - whether the user actually moved the conversation forward
-        - whether trust/engagement improved or tension escalated appropriately
-        - whether any gain in trust feels earned through responsiveness, steadiness, and specificity rather than empty positivity
-        - whether the user got meaningfully closer to their communication north star
-        - whether the user handled their biggest challenge better than they usually do
+        EVALUATION FOCUS:
+        Layer 2 matters most here. This is a conversation, not a speech.
+        - Did the user read the other person and respond to what was actually happening?
+        - Did they move the conversation forward or just react?
+        - Was any trust gain earned through specificity and responsiveness, or just politeness?
+        - Did tension resolve productively or get avoided?
+        - For Layer 3: did the user move even slightly toward their style direction? Note it if so.
         """
     }
 
@@ -6696,7 +7356,20 @@ struct AICoachService: AICoachServicing {
         profile: CoachingProfile?,
         plan: CoachingPlan?
     ) -> String {
-        """
+        let baselineStore = BaselineStore.shared
+        let pressureLevel = BaselineEngine.classifyPressure(
+            mode: input.mode,
+            isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled,
+            streakDays: PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
+        )
+        let baselineContext = BaselineEngine.promptContext(
+            baseline: baselineStore.baseline,
+            pressure: baselineStore.pressureProfile,
+            currentPressureLevel: pressureLevel,
+            styleGoal: profile?.speakingStyleGoal.title
+        )
+
+        return """
         Session mode: \(input.mode.rawValue)
         Score: \(input.score.map(String.init) ?? "n/a") / 10
         Filler words: \(input.fillerCount)
@@ -6712,6 +7385,8 @@ struct AICoachService: AICoachServicing {
         Coaching brief: \(profile?.coachingBrief ?? "none")
         Current focus suggestion: \(plan?.currentFocus ?? "none")
         Suggested drill: \(plan?.suggestedDrill ?? "none")
+
+        \(baselineContext)
 
         Transcript:
         \(input.transcript)
@@ -7018,3 +7693,291 @@ private struct GeminiErrorResponse: Codable {
 
     let error: ErrorBody
 }
+// MARK: - Video Analysis Service
+
+#if canImport(AVFoundation) && canImport(UIKit)
+import AVFoundation
+import UIKit
+
+@MainActor
+final class VideoAnalysisService {
+    static let shared = VideoAnalysisService()
+
+    private let settings = AISettingsManager.shared
+    private let frameCount = 4  // Extract 4 frames evenly spaced
+
+    private init() {}
+
+    func analyzeRecording(at url: URL) async throws -> VideoAnalysisResult {
+        guard let provider = settings.activeProvider else {
+            throw AICoachError.missingAPIKey
+        }
+        guard settings.canRequestAnalysis else {
+            throw AICoachError.providerDisabled
+        }
+        guard let apiKey = apiKey(for: provider) else {
+            throw AICoachError.missingAPIKey
+        }
+
+        // Extract frames from video
+        let frames = try await extractFrames(from: url)
+        guard !frames.isEmpty else {
+            throw AICoachError.invalidResponse
+        }
+
+        // Encode frames to base64 JPEG
+        let base64Frames = frames.compactMap { image -> String? in
+            guard let data = image.jpegData(compressionQuality: 0.6) else { return nil }
+            return data.base64EncodedString()
+        }
+
+        // Build API request based on provider
+        let jsonData: Data
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI:
+            jsonData = try await callOpenAIVision(apiKey: apiKey, frames: base64Frames)
+        case .deepSeek:
+            // DeepSeek doesn't support vision — fall back to text-only analysis prompt
+            jsonData = try await callTextOnlyAnalysis(provider: provider, apiKey: apiKey)
+        case .gemini:
+            jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
+        }
+
+        let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
+        await MainActor.run { settings.recordAnalysis() }
+        return result
+    }
+
+    // MARK: - Frame Extraction
+
+    private func extractFrames(from url: URL) async throws -> [UIImage] {
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration)
+        let durationSeconds = CMTimeGetSeconds(duration)
+        guard durationSeconds > 0 else { return [] }
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 512, height: 512)
+
+        var frames: [UIImage] = []
+        let interval = durationSeconds / Double(frameCount + 1)
+
+        for i in 1...frameCount {
+            let time = CMTime(seconds: interval * Double(i), preferredTimescale: 600)
+            do {
+                let (cgImage, _) = try await generator.image(at: time)
+                frames.append(UIImage(cgImage: cgImage))
+            } catch {
+                continue
+            }
+        }
+        return frames
+    }
+
+    // MARK: - OpenAI Vision
+
+    private func callOpenAIVision(apiKey: String, frames: [String]) async throws -> Data {
+        let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 60
+
+        // Build multimodal content array
+        var contentParts: [[String: Any]] = [
+            ["type": "text", "text": videoAnalysisPrompt]
+        ]
+        for base64 in frames {
+            contentParts.append([
+                "type": "image_url",
+                "image_url": ["url": "data:image/jpeg;base64,\(base64)", "detail": "low"]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "model": "gpt-4o-mini",
+            "messages": [
+                ["role": "system", "content": videoAnalysisSystemPrompt],
+                ["role": "user", "content": contentParts]
+            ],
+            "temperature": 0.3,
+            "response_format": ["type": "json_object"]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+        guard let content = chatResponse.choices.first?.message.content,
+              let jsonData = content.data(using: .utf8) else {
+            throw AICoachError.invalidResponse
+        }
+        return jsonData
+    }
+
+    // MARK: - Gemini Vision
+
+    private func callGeminiVision(apiKey: String, frames: [String]) async throws -> Data {
+        let model = "gemini-2.5-flash"
+        let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.timeoutInterval = 60
+
+        // Build parts with text + images
+        var parts: [[String: Any]] = [
+            ["text": videoAnalysisPrompt]
+        ]
+        for base64 in frames {
+            parts.append([
+                "inline_data": [
+                    "mime_type": "image/jpeg",
+                    "data": base64
+                ]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "system_instruction": ["parts": [["text": videoAnalysisSystemPrompt]]],
+            "contents": [["parts": parts]],
+            "generationConfig": [
+                "temperature": 0.3,
+                "responseMimeType": "application/json"
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
+              let jsonData = content.data(using: .utf8) else {
+            throw AICoachError.invalidResponse
+        }
+        return jsonData
+    }
+
+    // MARK: - Text-Only Fallback (for providers without vision)
+
+    private func callTextOnlyAnalysis(provider: AIProvider, apiKey: String) async throws -> Data {
+        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+
+        let fallbackPrompt = """
+        I recorded a speaking practice session on video but cannot share the frames with you.
+        Please provide a balanced, generic video analysis based on common areas speakers should focus on.
+        Rate each dimension as "good", "ok", or "couldImprove" and provide brief, actionable notes.
+        """
+
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body = OpenAICompatibleChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: videoAnalysisSystemPrompt),
+                    .init(role: "user", content: fallbackPrompt)
+                ],
+                temperature: 0.3,
+                responseFormat: .jsonObject
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiGenerateContentRequest(
+                systemInstruction: .init(parts: [.init(text: videoAnalysisSystemPrompt)]),
+                contents: [.init(parts: [.init(text: fallbackPrompt)])],
+                generationConfig: .init(temperature: 0.3, responseMimeType: "application/json")
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            guard let content = chatResponse.choices.first?.message.content,
+                  let jsonData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return jsonData
+        case .gemini:
+            let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
+                  let jsonData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return jsonData
+        }
+    }
+
+    // MARK: - Prompts
+
+    private var videoAnalysisSystemPrompt: String {
+        """
+        You are an expert speaking coach analyzing video frames from a practice speaking session.
+        Evaluate the speaker's visual delivery across six dimensions.
+        Return JSON only with these exact keys:
+        posture, postureNote, eyeContact, eyeContactNote, facialExpression, facialExpressionNote,
+        gestureUse, gestureNote, energyConfidence, energyNote, presenceDelivery, presenceNote, overallNote.
+        Rating values must be exactly one of: "good", "ok", "couldImprove".
+        Notes should be 1 sentence, specific, and actionable.
+        overallNote should be 2 sentences summarizing the key strength and primary improvement area.
+        Be encouraging but honest. Focus on what's observable.
+        """
+    }
+
+    private var videoAnalysisPrompt: String {
+        """
+        Analyze these frames from a speaking practice session. Evaluate:
+        1. Posture — upright, stable, open body position
+        2. Eye Contact — looking at camera/audience, avoiding looking down
+        3. Facial Expression — warmth, engagement, appropriate emotion
+        4. Gesture Use — deliberate hand movements, not fidgeting or frozen
+        5. Energy & Confidence — vocal projection visible in body, forward lean, engagement
+        6. Presence & Delivery — overall command, use of space, intentional pauses reflected in stillness
+
+        Rate each as "good", "ok", or "couldImprove" and provide a brief actionable note.
+        End with an overall note summarizing the biggest strength and the #1 thing to improve.
+        """
+    }
+
+    // MARK: - Helpers
+
+    private func apiKey(for provider: AIProvider) -> String? {
+        if let keyName = provider.environmentKey,
+           let value = ProcessInfo.processInfo.environment[keyName],
+           !value.isEmpty {
+            return value
+        }
+        if let keyName = provider.environmentKey,
+           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
+            return value
+        }
+        return nil
+    }
+}
+#endif

@@ -84,7 +84,9 @@ final class PremiumManager: ObservableObject {
 
     /// Fallback purchase for when StoreKit products aren't loaded (simulated)
     func purchaseSimulated() {
+        #if DEBUG
         upgradeToPremium()
+        #endif
     }
 
     // MARK: - Restore
@@ -152,11 +154,6 @@ final class PremiumManager: ObservableObject {
     // MARK: - Manual Entitlement (for testing / promo codes)
 
     func upgradeToPremium() {
-        isPremium = true
-        UserDefaults.standard.set(true, forKey: storageKey)
-    }
-
-    func restorePurchase() {
         isPremium = true
         UserDefaults.standard.set(true, forKey: storageKey)
     }
@@ -317,6 +314,7 @@ struct PaywallView: View {
                                 .frame(width: 36, height: 36)
                                 .background(Color.white.opacity(0.1), in: Circle())
                         }
+                        .accessibilityLabel("Close")
                     }
                     .padding(.top, 8)
 
@@ -342,16 +340,39 @@ struct PaywallView: View {
                             .foregroundStyle(.white.opacity(0.6))
                     }
 
+                    // Already included — free
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Already included — free")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.5))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            freeFeatureRow(icon: "mic.fill", text: "Classic practice mode")
+                            freeFeatureRow(icon: "brain.head.profile", text: "AI-powered scoring")
+                            freeFeatureRow(icon: "waveform.badge.magnifyingglass", text: "Filler word detection")
+                            freeFeatureRow(icon: "clock.arrow.circlepath", text: "Session history")
+                            freeFeatureRow(icon: "flame.fill", text: "Streaks & daily challenges")
+                            freeFeatureRow(icon: "person.fill.checkmark", text: "Coaching onboarding")
+                        }
+                    }
+                    .padding(Spacing.lg)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+
                     // Features
                     VStack(spacing: 0) {
-                        featureRow(icon: "text.magnifyingglass", title: "Coach Mode", description: "Full transcript-led practice with deeper feedback")
-                        featureRow(icon: "text.quote", title: "Live Transcript", description: "See your words in real time as you speak")
-                        featureRow(icon: "video.fill", title: "Video Recording", description: "Record yourself and review your delivery")
-                        featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler Tracking", description: "Detect and reduce verbal crutches")
-                        featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend Analytics", description: "Track improvement across sessions")
-                        featureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges", description: "Challenge friends to the same prompt")
-                        featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI Video Analysis", description: "Nonverbal coaching — 5 analyses/month")
-                        featureRow(icon: "tray.full.fill", title: "Saved Transcripts", description: "Review and compare past sessions")
+                        featureRow(icon: "text.magnifyingglass", title: "Coach mode", description: "Full transcript-led practice with deeper feedback")
+                        featureRow(icon: "text.quote", title: "Live transcript", description: "See your words in real time as you speak")
+                        featureRow(icon: "video.fill", title: "Video recording", description: "Record yourself and review your delivery")
+                        featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler tracking", description: "Detect and reduce verbal crutches")
+                        featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend analytics", description: "Track improvement across sessions")
+                        featureRow(icon: "person.2.wave.2.fill", title: "Unlimited async challenges", description: "Challenge friends to the same prompt")
+                        featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI video analysis", description: "Nonverbal coaching — 5 analyses/month")
+                        featureRow(icon: "brain.fill", title: "100 AI coaching reads", description: "5× more monthly AI analyses than free tier")
+                        featureRow(icon: "tray.full.fill", title: "Saved transcripts", description: "Review and compare past sessions")
                     }
                     .padding(4)
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
@@ -380,7 +401,7 @@ struct PaywallView: View {
                                     Image(systemName: "crown.fill")
                                         .font(.headline)
                                 }
-                                Text(isPurchasing ? "Processing..." : "Subscribe Now")
+                                Text(isPurchasing ? "Processing\u{2026}" : "Subscribe")
                                     .font(.headline.weight(.bold))
                             }
                             .frame(maxWidth: .infinity)
@@ -405,7 +426,7 @@ struct PaywallView: View {
                                 .foregroundStyle(.red.opacity(0.8))
                         }
 
-                        Button("Restore Purchase") {
+                        Button("Restore") {
                             Task {
                                 await premium.restorePurchases()
                                 if premium.isPremium {
@@ -466,6 +487,18 @@ struct PaywallView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, Spacing.md)
+    }
+
+    private func freeFeatureRow(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(AppColor.positive)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+        }
     }
 
     private func planCard(_ plan: PlanOption) -> some View {
@@ -538,12 +571,20 @@ struct PaywallView: View {
                     }
                 }
             } else {
-                // Products not available (sandbox/dev) — simulate purchase
+                // Products not available
+                #if DEBUG
+                // Simulate purchase in development
                 try? await Task.sleep(for: .seconds(1.0))
                 await MainActor.run {
                     premium.purchaseSimulated()
                     isPurchasing = false
                 }
+                #else
+                await MainActor.run {
+                    errorMessage = "Unable to connect to the App Store. Please check your connection and try again."
+                    isPurchasing = false
+                }
+                #endif
             }
         }
     }

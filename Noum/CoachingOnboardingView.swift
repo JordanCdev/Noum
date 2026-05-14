@@ -2,32 +2,27 @@
 import SwiftUI
 
 private enum OnboardingStage: Int, CaseIterable {
+    // Three load-bearing questions only. Free-text fields (goal text,
+    // why-now, success vision) are captured *after* the first rep via
+    // contextual prompts — Duolingo doesn't ask for an essay before
+    // letting you start, neither do we.
     case context
     case challenge
     case style
-    case goal
-    case whyNow
-    case successVision
 
     var title: String {
         switch self {
         case .context: return "Where do you want the most help?"
-        case .challenge: return "What usually breaks first?"
+        case .challenge: return "Where do you want the most growth?"
         case .style: return "How should you come across?"
-        case .goal: return "What do you want to get better at?"
-        case .whyNow: return "Why does this matter right now?"
-        case .successVision: return "If this improves, what changes?"
         }
     }
 
     var subtitle: String {
         switch self {
         case .context: return "Pick the situation Noum should coach first."
-        case .challenge: return "Choose the pattern that hurts you most."
+        case .challenge: return "Pick the area you'd most like to strengthen."
         case .style: return "Pick the voice you want to reinforce."
-        case .goal: return "One clear answer is enough."
-        case .whyNow: return "Give Noum the current stakes."
-        case .successVision: return "Describe the payoff in real life."
         }
     }
 }
@@ -54,6 +49,7 @@ struct CoachingOnboardingView: View {
     @State private var processingMessageIndex = 0
     @State private var processingRingProgress: CGFloat = 0
     @State private var showWelcome = false
+    @State private var showProfileCard = false
     @State private var processingCircleScale: CGFloat = 1.0
     @State private var isEditingExistingProfile = false
     @State private var editorOverlayField: InputField? = nil
@@ -229,7 +225,7 @@ struct CoachingOnboardingView: View {
                     }
                 } label: {
                     HStack(spacing: 12) {
-                        Text("Let's get started")
+                        Text("Begin")
                             .font(.headline.weight(.semibold))
 
                         Spacer()
@@ -312,7 +308,7 @@ struct CoachingOnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(stage.title)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(Typography.bigStat)
                     .foregroundStyle(AppColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -330,27 +326,6 @@ struct CoachingOnboardingView: View {
                         optionList(options: SpeakingChallenge.allCases, selectedID: biggestChallenge.id) { biggestChallenge = $0 }
                     case .style:
                         optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal.id) { speakingStyleGoal = $0 }
-                    case .goal:
-                        editorCard(
-                            prompt: "Example: lead updates in meetings without second-guessing every sentence.",
-                            text: $coachingGoal,
-                            field: .goal,
-                            identifier: "coaching.goal"
-                        )
-                    case .whyNow:
-                        editorCard(
-                            prompt: "Example: I need to sound sharper in high-visibility conversations.",
-                            text: $whyNow,
-                            field: .whyNow,
-                            identifier: "coaching.whyNow"
-                        )
-                    case .successVision:
-                        editorCard(
-                            prompt: "Example: I will feel calmer, clearer, and more credible at work.",
-                            text: $successVision,
-                            field: .successVision,
-                            identifier: "coaching.successVision"
-                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -361,7 +336,7 @@ struct CoachingOnboardingView: View {
                 if let helper = helperText(for: stage) {
                     Text(helper)
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.48, green: 0.51, blue: 0.57))
+                        .foregroundStyle(AppColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -371,7 +346,7 @@ struct CoachingOnboardingView: View {
                     advance(from: stage)
                 } label: {
                     HStack(spacing: 8) {
-                        Text(stage == .successVision ? "Finish" : "Next")
+                        Text(stage == .style ? "Finish" : "Next")
                             .font(.subheadline.weight(.semibold))
 
                         ZStack {
@@ -431,96 +406,287 @@ struct CoachingOnboardingView: View {
 
     private func summaryScreen(size: CGSize) -> some View {
         VStack(spacing: 0) {
-            Spacer()
-
-            if showWelcome {
-                // Welcome / completion state
-                VStack(spacing: 24) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        AppColor.brandBlue,
-                                        Color(red: 0.33, green: 0.70, blue: 1.00)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 120, height: 120)
-                            .shadow(color: AppColor.brandBlue.opacity(0.3), radius: 30, y: 10)
-
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 44, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
-
-                    VStack(spacing: 8) {
-                        Text(isEditingExistingProfile ? "Profile updated!" : "Welcome to Noum!")
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(AppColor.textPrimary)
-
-                        Text(isEditingExistingProfile
-                            ? "Your coaching is now recalibrated."
-                            : "Your coaching journey starts now.")
-                            .font(.headline.weight(.medium))
-                            .foregroundStyle(Color(red: 0.48, green: 0.51, blue: 0.57))
-                    }
-                    .transition(.opacity.combined(with: .offset(y: 16)))
-                }
-                .padding(.horizontal, 40)
+            if showProfileCard {
+                // Interactive profile summary card
+                profileSummaryCard(size: size)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.95).combined(with: .opacity),
+                        removal: .opacity
+                    ))
             } else {
-                // Processing state
-                VStack(spacing: 36) {
-                    ZStack {
-                        Circle()
-                            .stroke(Color(red: 0.88, green: 0.91, blue: 0.96), lineWidth: 8)
-                            .frame(width: 100, height: 100)
+                Spacer()
 
-                        Circle()
-                            .trim(from: 0, to: processingRingProgress)
-                            .stroke(
-                                AngularGradient(
-                                    colors: [
-                                        Color(red: 1.00, green: 0.79, blue: 0.42),
-                                        AppColor.brandBlue,
-                                        Color(red: 0.33, green: 0.70, blue: 1.00)
-                                    ],
-                                    center: .center
-                                ),
-                                style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                            )
-                            .frame(width: 100, height: 100)
-                            .rotationEffect(.degrees(-90))
+                if showWelcome {
+                    // Welcome / completion state (brief, transitions to profile card)
+                    VStack(spacing: 24) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            AppColor.brandBlue,
+                                            Color(red: 0.33, green: 0.70, blue: 1.00)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 120, height: 120)
+                                .shadow(color: AppColor.brandBlue.opacity(0.3), radius: 30, y: 10)
 
-                        Image(systemName: "waveform")
-                            .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(AppColor.brandBlue)
-                            .symbolEffect(.variableColor.iterative, options: .repeating, value: processingMessageIndex)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 44, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+
+                        VStack(spacing: 8) {
+                            Text(isEditingExistingProfile ? "Profile updated!" : "Welcome to Noum!")
+                                .font(Typography.screenTitle)
+                                .foregroundStyle(AppColor.textPrimary)
+
+                            Text(isEditingExistingProfile
+                                ? "Your coaching is now recalibrated."
+                                : "Your coaching journey starts now.")
+                                .font(.headline.weight(.medium))
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
+                        .transition(.opacity.combined(with: .offset(y: 16)))
                     }
-                    .scaleEffect(processingCircleScale)
+                    .padding(.horizontal, 40)
+                } else {
+                    // Processing state
+                    VStack(spacing: 36) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color(red: 0.88, green: 0.91, blue: 0.96), lineWidth: 8)
+                                .frame(width: 100, height: 100)
 
-                    Text(processingMessages[processingMessageIndex])
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AppColor.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .id(processingMessageIndex)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .offset(y: 10)),
-                            removal: .opacity.combined(with: .offset(y: -10))
-                        ))
+                            Circle()
+                                .trim(from: 0, to: processingRingProgress)
+                                .stroke(
+                                    AngularGradient(
+                                        colors: [
+                                            Color(red: 1.00, green: 0.79, blue: 0.42),
+                                            AppColor.brandBlue,
+                                            Color(red: 0.33, green: 0.70, blue: 1.00)
+                                        ],
+                                        center: .center
+                                    ),
+                                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                                )
+                                .frame(width: 100, height: 100)
+                                .rotationEffect(.degrees(-90))
+
+                            Image(systemName: "waveform")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundStyle(AppColor.brandBlue)
+                                .symbolEffect(.variableColor.iterative, options: .repeating, value: processingMessageIndex)
+                        }
+                        .scaleEffect(processingCircleScale)
+
+                        Text(processingMessages[processingMessageIndex])
+                            .font(.system(size: 20, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .id(processingMessageIndex)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .offset(y: 10)),
+                                removal: .opacity.combined(with: .offset(y: -10))
+                            ))
+                    }
+                    .padding(.horizontal, 40)
                 }
-                .padding(.horizontal, 40)
-            }
 
-            Spacer()
+                Spacer()
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             startProcessingAnimation()
         }
+    }
+
+    private func profileSummaryCard(size: CGSize) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: Spacing.lg) {
+                    // Header
+                    VStack(spacing: Spacing.xs) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            AppColor.brandBlue,
+                                            Color(red: 0.33, green: 0.70, blue: 1.00)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 64, height: 64)
+                                .shadow(color: AppColor.brandBlue.opacity(0.25), radius: 16, y: 6)
+
+                            Image(systemName: "person.text.rectangle.fill")
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.bottom, Spacing.xxs)
+
+                        Text("Your Coaching Profile")
+                            .font(Typography.bigStat)
+                            .foregroundStyle(AppColor.textPrimary)
+
+                        Text("Here's how Noum will coach you.")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Spacing.lg)
+
+                    // Profile detail rows
+                    VStack(spacing: Spacing.sm) {
+                        profileRow(
+                            icon: "mappin.and.ellipse",
+                            label: "Focus area",
+                            value: speakingContext.title
+                        )
+
+                        profileRow(
+                            icon: "flame.fill",
+                            label: "Biggest challenge",
+                            value: biggestChallenge.title
+                        )
+
+                        profileRow(
+                            icon: "wand.and.stars",
+                            label: "Style goal",
+                            value: speakingStyleGoal.title
+                        )
+
+                        if !coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            profileRow(
+                                icon: "target",
+                                label: "Your goal",
+                                value: coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+                            )
+                        }
+
+                        if !whyNow.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            profileRow(
+                                icon: "bolt.fill",
+                                label: "Why now",
+                                value: whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
+                            )
+                        }
+
+                        if !successVision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            profileRow(
+                                icon: "star.fill",
+                                label: "Success looks like",
+                                value: successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+                            )
+                        }
+                    }
+                    .padding(.horizontal, Spacing.md)
+                }
+                .padding(.bottom, Spacing.lg)
+            }
+            .scrollIndicators(.hidden)
+
+            // CTA button pinned at bottom
+            VStack(spacing: 0) {
+                Divider()
+                    .opacity(0.3)
+
+                Button {
+                    saveProfile()
+                    dismiss()
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Text(isEditingExistingProfile ? "Save Changes" : "Start Practicing")
+                            .font(.headline.weight(.semibold))
+
+                        Spacer()
+
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.16))
+                                .frame(width: 44, height: 44)
+
+                            Image(systemName: isEditingExistingProfile ? "checkmark" : "arrow.right")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, Spacing.md)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                AppColor.brandBlue,
+                                AppColor.brandBlueLight
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule(style: .continuous)
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+                    .shadow(color: AppColor.brandBlue.opacity(0.22), radius: 16, y: 8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("coaching.startPracticing")
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.xs)
+            }
+        }
+        .padding(.top, Spacing.xs)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func profileRow(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                    .fill(AppColor.brandBlue.opacity(0.10))
+                    .frame(width: 36, height: 36)
+
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(label.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.textSecondary)
+
+                Text(value)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .fill(Color.white.opacity(0.95))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(Color(red: 0.90, green: 0.92, blue: 0.96), lineWidth: 1)
+        )
     }
 
     private func startProcessingAnimation() {
@@ -548,10 +714,11 @@ struct CoachingOnboardingView: View {
             }
         }
 
-        // Save and dismiss after welcome is shown
-        DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration + 2.5) {
-            saveProfile()
-            dismiss()
+        // After a brief welcome moment, reveal the interactive profile card
+        DispatchQueue.main.asyncAfter(deadline: .now() + processingDuration + 2.0) {
+            withAnimation(.standardSpring) {
+                showProfileCard = true
+            }
         }
     }
 
@@ -685,17 +852,19 @@ struct CoachingOnboardingView: View {
         let prompt: String
         let binding: Binding<String>
 
+        // Editor overlay is reused by `DeferredProfileCapture` (post-first-rep
+        // prompts). The titles match the questions the deferred prompts ask.
         switch field {
         case .goal:
-            title = OnboardingStage.goal.title
+            title = "What do you want to get better at?"
             prompt = "Example: lead updates in meetings without second-guessing every sentence."
             binding = $coachingGoal
         case .whyNow:
-            title = OnboardingStage.whyNow.title
+            title = "Why does this matter right now?"
             prompt = "Example: I need to sound sharper in high-visibility conversations."
             binding = $whyNow
         case .successVision:
-            title = OnboardingStage.successVision.title
+            title = "If this improves, what changes?"
             prompt = "Example: I will feel calmer, clearer, and more credible at work."
             binding = $successVision
         }
@@ -851,29 +1020,14 @@ struct CoachingOnboardingView: View {
     }
 
     private func helperText(for stage: OnboardingStage) -> String? {
-        switch stage {
-        case .goal:
-            return "Specific beats impressive."
-        case .whyNow:
-            return "Tell Noum what makes this urgent."
-        case .successVision:
-            return "Keep it concrete and personal."
-        default:
-            return nil
-        }
+        // Multi-choice stages don't need helper text.
+        nil
     }
 
     private func canAdvance(from stage: OnboardingStage) -> Bool {
-        switch stage {
-        case .goal:
-            return coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
-        case .whyNow:
-            return whyNow.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
-        case .successVision:
-            return successVision.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
-        default:
-            return true
-        }
+        // After the onboarding-cut to 3 multi-choice screens, every stage
+        // has a default selection, so the user can always advance.
+        return true
     }
 
     private func advance(from stage: OnboardingStage) {

@@ -1,0 +1,226 @@
+/* Noum Design System — colors_and_type.css
+ * Canonical CSS custom properties lifted 1:1 from Noum/DesignSystem.swift.
+ * Every hex is converted from the SwiftUI sRGB triples in AppColor.
+ */
+
+/* Figtree — self-hosted variable font (display / rounded). */
+@font-face {
+  font-family: 'Figtree';
+  src: url('fonts/Figtree-VariableFont_wght.ttf') format('truetype-variations');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Figtree';
+  src: url('fonts/Figtree-Italic-VariableFont_wght.ttf') format('truetype-variations');
+  font-weight: 300 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Manrope — self-hosted variable font (text / UI). */
+@font-face {
+  font-family: 'Manrope';
+  src: url('fonts/Manrope-VariableFont_wght.ttf') format('truetype-variations');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ────────── COLORS ────────── */
+
+  /* Backgrounds */
+  --bg-screen: #F2F2F7;              /* systemGroupedBackground */
+  --bg-card: #FFFFFF;                /* cardBackground */
+  --bg-inner: #F7F7FA;               /* innerSurface */
+  --bg-light-gradient-start: #F7F7FF;
+  --bg-light-gradient-end: #EDF2FF;
+  --bg-light-gradient: linear-gradient(135deg, var(--bg-light-gradient-start) 0%, var(--bg-light-gradient-end) 100%);
+
+  /* Brand */
+  --brand-blue: #3378F5;             /* 0.20, 0.47, 0.96 */
+  --brand-blue-light: #42A1FF;       /* 0.26, 0.63, 1.00 */
+  --brand-blue-gradient: linear-gradient(180deg, var(--brand-blue-light) 0%, var(--brand-blue) 100%);
+
+  /* Premium */
+  --pro: #8F47EB;                    /* 0.56, 0.28, 0.92 */
+  --pro-light: #D185FF;              /* 0.82, 0.52, 1.00 */
+  --pro-gradient: linear-gradient(180deg, var(--pro-light) 0%, var(--pro) 100%);
+
+  /* Mode tints — meaningful, load-bearing colors */
+  --mode-timed: #3378F5;             /* blue  — Timed Practice */
+  --mode-sudden-death: #F28C26;      /* orange — Sudden Death */
+  --mode-ah-counter: #249970;        /* green — Ah-Counter */
+  --mode-im: #526EF0;                /* indigo — IM Conversation */
+
+  /* Semantic feedback */
+  --positive: #199966;               /* good score */
+  --caution:  #D4851A;               /* okay */
+  --warning:  #BD3833;               /* needs improvement */
+
+  /* Text */
+  --fg-primary: #212633;             /* textPrimary */
+  --fg-secondary: #697382;           /* textSecondary */
+  --fg-on-tint: #FFFFFF;             /* white on capsule CTAs */
+
+  /* Surfaces / strokes */
+  --tag-bg: rgba(0,0,0,0.04);
+  --subtle-border: rgba(0,0,0,0.05);
+  --card-border: rgba(255,255,255,0.72);
+  --card-border-heavy: rgba(255,255,255,0.55);
+
+  /* Dark (login screen only) */
+  --dark-bg-1: #14182D;
+  --dark-bg-2: #1E1E3D;
+  --dark-bg-3: #2D2938;
+  --dark-gradient: linear-gradient(180deg, var(--dark-bg-1) 0%, var(--dark-bg-2) 50%, var(--dark-bg-3) 100%);
+  --dark-fg: #FFFFFF;
+  --dark-fg-muted: rgba(255,255,255,0.6);
+  --dark-fg-subtle: rgba(255,255,255,0.35);
+  --dark-divider: rgba(255,255,255,0.12);
+
+  /* ────────── CORNER RADII ────────── */
+  --radius-sm: 12px;   /* chips, tags, inner containers */
+  --radius-md: 18px;   /* stat cards, secondary containers */
+  --radius-lg: 24px;   /* primary content cards */
+  --radius-xl: 28px;   /* hero cards, full-width panels, sheets */
+  --radius-capsule: 999px;
+
+  /* ────────── SPACING (8pt grid) ────────── */
+  --space-xxs: 4px;
+  --space-xs:  8px;
+  --space-sm:  12px;
+  --space-md:  16px;
+  --space-lg:  20px;
+  --space-screen-h: 20px;
+  --space-card-gap: 14px;
+
+  /* ────────── SHADOWS (always tinted) ────────── */
+  --shadow-card: 0 8px 24px rgba(33, 38, 51, 0.06);
+  --shadow-selected: 0 8px 16px rgba(51, 120, 245, 0.10);
+  --shadow-recommendation: 0 4px 12px rgba(51, 120, 245, 0.08);
+
+  /* ────────── SPRING TIMING (approx from SwiftUI springs) ────────── */
+  --ease-standard: cubic-bezier(0.22, 1.2, 0.36, 1);   /* response .34 damp .84 */
+  --ease-snappy:   cubic-bezier(0.2, 1.0, 0.3, 1);     /* response .26 damp .88 */
+  --ease-bouncy:   cubic-bezier(0.34, 1.56, 0.64, 1);  /* response .40 damp .65 */
+  --dur-standard: 340ms;
+  --dur-snappy:   260ms;
+  --dur-bouncy:   400ms;
+
+  /* ────────── TYPOGRAPHY ────────── */
+  /* Noum brand fonts.
+     Display / Rounded: Figtree   — geometric, friendly, Apple-system-adjacent.
+     Text / UI:        Manrope   — warm geometric humanist, pairs cleanly with Figtree.
+     Both Google Fonts, SIL OFL, free for web + iOS app embedding.
+     On Apple devices SF Pro Rounded / SF Pro Text fall through if Figtree/Manrope
+     fail to load. */
+  --font-rounded: 'Figtree', 'SF Pro Rounded', -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-text:    'Manrope', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+
+  /* Display scale — rounded, bold */
+  --type-display: 700 42px/1.05 var(--font-rounded);       /* Splash "Noum" */
+  --type-hero:    700 40px/1.1  var(--font-rounded);       /* Login headline */
+  --type-screen-title: 700 30px/1.15 var(--font-rounded);  /* "Choose your next rep" */
+  --type-section-hero: 600 26px/1.2 var(--font-rounded);   /* "Hello, Jordan" */
+  --type-big-stat:    700 28px/1.1 var(--font-rounded);    /* "Speaker 1", big stat values */
+  --type-card-title:  700 20px/1.2 var(--font-rounded);    /* card headings */
+  --type-headline:    700 18px/1.3 var(--font-rounded);    /* recommendation title */
+  --type-subhead:     500 16px/1.4 var(--font-text);       /* login subcopy */
+  --type-body:        400 15px/1.45 var(--font-text);      /* mode descriptions */
+  --type-caption:     600 13px/1.3 var(--font-text);       /* labels, targets, badges */
+  --type-micro:       700 10px/1.2 var(--font-rounded);    /* uppercase category micro-labels */
+  --type-nav:         600 10px/1.2 var(--font-rounded);    /* TRAIN REVIEW SOCIAL */
+
+  --tracking-micro: 0.8px;
+  --tracking-nav:   0.4px;
+  --tracking-wordmark: 4px;
+
+  /* ────────── LAYERS / Z ────────── */
+  --z-nav: 20;
+  --z-sheet: 30;
+  --z-toast: 40;
+}
+
+/* ────────── SEMANTIC DEFAULTS ────────── */
+html, body {
+  background: var(--bg-screen);
+  color: var(--fg-primary);
+  font: var(--type-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1 { font: var(--type-screen-title); color: var(--fg-primary); margin: 0; }
+h2 { font: var(--type-section-hero); color: var(--fg-primary); margin: 0; }
+h3 { font: var(--type-card-title); color: var(--fg-primary); margin: 0; }
+h4 { font: var(--type-headline); color: var(--fg-primary); margin: 0; }
+p  { font: var(--type-body); color: var(--fg-primary); margin: 0; }
+small { font: var(--type-caption); color: var(--fg-secondary); }
+
+.micro-label {
+  font: var(--type-micro);
+  letter-spacing: var(--tracking-micro);
+  text-transform: uppercase;
+  color: var(--fg-secondary);
+}
+
+.nav-label {
+  font: var(--type-nav);
+  letter-spacing: var(--tracking-nav);
+  text-transform: uppercase;
+}
+
+/* Card primitive */
+.noum-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-card);
+}
+.noum-card--xl { border-radius: var(--radius-xl); }
+
+/* Press state — the universal interaction */
+.noum-pressable {
+  transition: transform var(--dur-snappy) var(--ease-snappy),
+              opacity var(--dur-snappy) var(--ease-snappy),
+              filter var(--dur-snappy) var(--ease-snappy);
+}
+.noum-pressable:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+@media (hover: hover) {
+  .noum-pressable:hover { filter: brightness(0.97); }
+}
+
+/* Primary CTA capsule */
+.noum-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-capsule);
+  background: var(--brand-blue-gradient);
+  color: var(--fg-on-tint);
+  font: var(--type-headline);
+  border: 0;
+  cursor: pointer;
+}
+.noum-cta--timed        { background: linear-gradient(180deg, #5E9BFF 0%, var(--mode-timed) 100%); }
+.noum-cta--sudden-death { background: linear-gradient(180deg, #FFB066 0%, var(--mode-sudden-death) 100%); }
+.noum-cta--ah-counter   { background: linear-gradient(180deg, #4FC49A 0%, var(--mode-ah-counter) 100%); }
+.noum-cta--im           { background: linear-gradient(180deg, #7D92F5 0%, var(--mode-im) 100%); }
+
+/* Tag chip */
+.noum-chip {
+  background: var(--tag-bg);
+  color: var(--fg-primary);
+  padding: 4px 8px;
+  border-radius: var(--radius-capsule);
+  font: var(--type-caption);
+}

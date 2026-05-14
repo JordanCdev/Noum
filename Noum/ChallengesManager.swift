@@ -363,6 +363,8 @@ final class ChallengesManager: ObservableObject {
     // MARK: - Async Friend Challenges
 
     /// Create a new async challenge with a friend. Both get the same prompt.
+    /// The challenge is mirrored to the backend so the opponent can pick it
+    /// up on their device.
     @discardableResult
     func createAsyncChallenge(opponentID: UUID, opponentName: String) -> AsyncChallenge {
         let challenge = AsyncChallenge(
@@ -377,10 +379,18 @@ final class ChallengesManager: ObservableObject {
         )
         asyncChallenges.insert(challenge, at: 0)
         persistAsync()
+        Task { await BackendSyncManager.shared.syncAsyncChallenge(challenge) }
         return challenge
     }
 
-    /// Record the current user's score after completing an async challenge
+    /// Record the current user's score after completing an async challenge.
+    /// Writes the local cache and pushes the slice the user is allowed to
+    /// edit (their own fields) to the backend. If the opponent isn't a
+    /// backend-addressable account (legacy friends with no `accountID`)
+    /// the local simulator fills the other side after a short delay so
+    /// the challenge can complete instead of hanging in "Waiting...".
+    /// `refreshFromBackend()` overwrites any simulated value if a real
+    /// opponent submission arrives later.
     func recordAsyncResult(challengeID: UUID, score: Int, duration: TimeInterval, summary: String?) {
         guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
         let isCreator = asyncChallenges[index].creatorID == currentUserID
@@ -395,15 +405,16 @@ final class ChallengesManager: ObservableObject {
             asyncChallenges[index].opponentSummary = summary
         }
 
-        // Simulate opponent response (local-first MVP — later replaced by server sync)
-        if !asyncChallenges[index].bothHavePlayed {
+        let updated = asyncChallenges[index]
+        persistAsync()
+        Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
+
+        if !updated.bothHavePlayed && !isOpponentBackendAddressable(challenge: updated) {
             simulateOpponentResponse(challengeID: challengeID)
         }
-
-        persistAsync()
     }
 
-    /// Add a reaction to a completed challenge
+    /// Add a reaction to a completed challenge. Synced server-side.
     func addReaction(challengeID: UUID, reaction: AsyncChallenge.Reaction) {
         guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
         let isCreator = asyncChallenges[index].creatorID == currentUserID
@@ -413,15 +424,31 @@ final class ChallengesManager: ObservableObject {
         } else {
             asyncChallenges[index].opponentReaction = reaction
         }
+        let updated = asyncChallenges[index]
         persistAsync()
+        Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
     }
 
-    /// Simulate the opponent's response (for local-only MVP)
+    /// True when the other party in the challenge has a known account ID
+    /// recorded against the friend graph, i.e. a real backend roundtrip is
+    /// possible. Until friends are routinely added by accountID this will
+    /// be false for most challenges, so the simulator carries the v1.
+    private func isOpponentBackendAddressable(challenge: AsyncChallenge) -> Bool {
+        let myID = currentUserID
+        let theirLocalID = (challenge.creatorID == myID) ? challenge.opponentID : challenge.creatorID
+        return FriendsManager.shared.friends.contains { friend in
+            friend.id == theirLocalID && friend.accountID != nil
+        }
+    }
+
+    /// Local-MVP fallback. Drops in a plausible opponent score after a short
+    /// delay so the user gets a comparison instead of a stuck "Waiting" state.
+    /// Only invoked when the opponent isn't backend-addressable; real Firestore
+    /// data overwrites the simulated values via `refreshFromBackend()`.
     private func simulateOpponentResponse(challengeID: UUID) {
         guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
         let isCreator = asyncChallenges[index].creatorID == currentUserID
 
-        // Simulate after a brief delay to feel async
         Task {
             try? await Task.sleep(for: .seconds(Double.random(in: 2...5)))
             await MainActor.run {
@@ -433,7 +460,6 @@ final class ChallengesManager: ObservableObject {
                     asyncChallenges[idx].opponentScore = simScore
                     asyncChallenges[idx].opponentDuration = simDuration
                     asyncChallenges[idx].opponentSummary = "Solid impromptu response with good structure."
-                    // Random reaction from opponent
                     asyncChallenges[idx].opponentReaction = AsyncChallenge.Reaction.allCases.randomElement()
                 } else {
                     asyncChallenges[idx].creatorScore = simScore
@@ -444,6 +470,38 @@ final class ChallengesManager: ObservableObject {
                 persistAsync()
             }
         }
+    }
+
+    /// Pull challenges where the current user is a participant. Used at
+    /// app launch and when the social profile screen appears, so the
+    /// opponent's submission and reactions show up without a round-trip.
+    func refreshFromBackend() async {
+        let participantID = currentUserID.uuidString
+        let remote = await BackendSyncManager.shared.fetchAsyncChallenges(forParticipant: participantID)
+        guard !remote.isEmpty else { return }
+
+        // Merge: server-side wins for fields already set there. Local wins
+        // for fields not yet known to the backend (e.g. user just played and
+        // the network is still in flight).
+        var merged: [UUID: AsyncChallenge] = [:]
+        for local in asyncChallenges { merged[local.id] = local }
+        for remoteChallenge in remote {
+            if var existing = merged[remoteChallenge.id] {
+                existing.creatorScore = remoteChallenge.creatorScore ?? existing.creatorScore
+                existing.creatorDuration = remoteChallenge.creatorDuration ?? existing.creatorDuration
+                existing.creatorSummary = remoteChallenge.creatorSummary ?? existing.creatorSummary
+                existing.creatorReaction = remoteChallenge.creatorReaction ?? existing.creatorReaction
+                existing.opponentScore = remoteChallenge.opponentScore ?? existing.opponentScore
+                existing.opponentDuration = remoteChallenge.opponentDuration ?? existing.opponentDuration
+                existing.opponentSummary = remoteChallenge.opponentSummary ?? existing.opponentSummary
+                existing.opponentReaction = remoteChallenge.opponentReaction ?? existing.opponentReaction
+                merged[remoteChallenge.id] = existing
+            } else {
+                merged[remoteChallenge.id] = remoteChallenge
+            }
+        }
+        asyncChallenges = merged.values.sorted { $0.createdAt > $1.createdAt }
+        persistAsync()
     }
 
     /// Active async challenges (not expired, not both completed)
