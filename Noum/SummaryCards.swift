@@ -50,6 +50,8 @@ struct HeroScoreCard: View {
             }
             .scaleEffect(celebrationVisible ? 1.06 : 1.0)
             .animation(.bouncySpring, value: celebrationVisible)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Score \(scoreValue) out of 10")
 
             // Headline
             HStack(spacing: 8) {
@@ -212,6 +214,8 @@ struct CoachNoteCard: View {
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Coach note. Momentum: \(coachNote.momentum). Leverage: \(coachNote.leverage). Next step: \(coachNote.nextStep).")
     }
 }
 
@@ -387,6 +391,8 @@ struct YourNextMoveCard: View {
                     .background(drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                 }
                 .buttonStyle(.pressable)
+                .accessibilityLabel("Start quick drill: \(drill.title)")
+                .accessibilityHint("45 second focused practice")
 
                 // Alternate: full retry
                 if let onStartDrill {
@@ -398,6 +404,7 @@ struct YourNextMoveCard: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
+                    .accessibilityHint("Re-run the full session with this constraint")
                 }
             } else {
                 // Full retry is the primary action
@@ -417,6 +424,8 @@ struct YourNextMoveCard: View {
                         .background(drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
                     }
                     .buttonStyle(.pressable)
+                    .accessibilityLabel("Start full retry: \(drill.title)")
+                    .accessibilityHint("Re-run the full session with this constraint")
                 }
 
                 // Alternate: mini drill
@@ -428,6 +437,7 @@ struct YourNextMoveCard: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
+                .accessibilityHint("45 second focused practice")
             }
 
             // AI Coach suggested drill (if available, shown subtly)

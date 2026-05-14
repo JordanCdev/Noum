@@ -729,7 +729,8 @@ struct SummaryView: View {
             if !skillTrends.isEmpty {
                 SkillProgressView(
                     trends: skillTrends,
-                    drillHistory: DrillHistoryStore.shared.entries
+                    drillHistory: DrillHistoryStore.shared.entries,
+                    snapshots: SkillTrendStore.shared.snapshots
                 )
             }
 
