@@ -58,19 +58,47 @@ struct SettingsView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Spacing.lg) {
+                    // M14 editorial pass — cluster the nine sections into
+                    // four named zones (Practice / Coaching / Account / About)
+                    // so Settings reads as intentional groups instead of a
+                    // flat 9-card stack. Same surfaces, same labels, same
+                    // scrolling distance — visual structure only. Mirrors
+                    // the Profile clustering at `ProfileView.swift:113`.
+                    //
+                    //   Identity (no header — implicit hero)
+                    //     • profileHero
+                    //
+                    //   Practice (the act of speaking)
+                    //     • practiceCard, localeCard, soundscapeCard
+                    //
+                    //   Coaching (the coaching relationship)
+                    //     • coachingProfileCard, feedbackCard
+                    //
+                    //   Account (the user as customer)
+                    //     • subscriptionCard, privacyCard, accountCard
+                    //
+                    //   aboutCard stays as the trailing meta band, no
+                    //   header — same role `statsRow` plays on Profile.
                     profileHero
 
+                    clusterHeader("Practice")
                     section(label: "Practice") { practiceCard }
                     section(label: "Practice language") { localeCard }
                     section(label: "Pre-rep prep") { soundscapeCard }
+
+                    clusterHeader("Coaching")
                     section(label: "Coaching") { coachingProfileCard }
                     section(label: "Feedback") { feedbackCard }
+
+                    clusterHeader("Account")
                     section(label: "Subscription") { subscriptionCard }
                     section(label: "Privacy & Data") { privacyCard }
                     section(label: "Account") { accountCard }
+
                     section(label: "About") { aboutCard }
 
                     if authManager.isDeveloper {
+                        clusterHeader("Developer")
                         section(label: "Developer Tools") { transcriptionProviderCard }
                         section(label: "Diagnostics") { recommendationDiagnosticsCard }
                         section(label: "Seed Data") { developerSeedCard }
@@ -188,6 +216,26 @@ struct SettingsView: View {
             SettingsSectionLabel(title: label)
             content()
         }
+    }
+
+    /// Cluster eyebrow used to group related Settings sections into named
+    /// zones (Practice / Coaching / Account / Developer). Same micro-eyebrow
+    /// treatment as `SettingsSectionLabel` so it reads as part of the same
+    /// type system, with extra top padding so the zone break lands as
+    /// breathing room rather than as a second-tier title competing with
+    /// the per-section labels below it. Mirrors `ProfileView.clusterHeader`.
+    private func clusterHeader(_ title: LocalizedStringKey) -> some View {
+        HStack {
+            Text(title)
+                .font(Typography.micro.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(1.0)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+        }
+        .padding(.top, 8)
+        .padding(.horizontal, 4)
     }
 
     // MARK: - Profile Hero
