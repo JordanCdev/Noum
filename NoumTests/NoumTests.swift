@@ -3198,3 +3198,132 @@ struct ScoreCalibrationTests {
                 "10 fillers (\(highEval.score)) should score lower than 2 (\(lowEval.score))")
     }
 }
+
+// MARK: - Goal-Priority Drill & Coach Note Tests
+
+/// The user's onboarding goal (`CoachingPriority`) should be a live driver of
+/// drill focus and the Coach Note's next step — not a write-once value buried
+/// in reminder copy. These tests pin the contract for that wiring.
+struct GoalPriorityFocusTests {
+
+    @Test func priorityMapsToExpectedSkillArea() {
+        #expect(CoachingPriority.reduceFillers.preferredSkillArea == .fillerReduction)
+        #expect(CoachingPriority.moreConcise.preferredSkillArea == .conciseSpeaking)
+        #expect(CoachingPriority.thinkFaster.preferredSkillArea == .answerDevelopment)
+        #expect(CoachingPriority.calmerDelivery.preferredSkillArea == .paceControl)
+    }
+
+    @Test func coldStartUsesGoalWhenNoTrendsAndCleanSession() {
+        // No trend data, no urgent session signal — goal should pick the
+        // focus instead of the legacy "structure" default. This is the
+        // brand-new-user experience.
+        let snapshot = SkillSnapshot(
+            sessionId: UUID(),
+            fillerCount: 0,
+            duration: 45,
+            wordCount: 120,
+            wpm: 135,
+            score: 8,
+            categoryRatings: [:]
+        )
+        let focus = TrendAnalyzer.primaryFocus(
+            trends: [],
+            currentSessionSnapshot: snapshot,
+            recentDrills: [],
+            goalPriority: .calmerDelivery
+        )
+        #expect(focus == .paceControl,
+                "Cold-start clean session should route to user's goal area. Got: \(focus)")
+    }
+
+    @Test func goalBreaksTiesInPrimaryFocus() {
+        // Two skills, identical trend signal — goal-aligned one wins the
+        // tiebreaker (+5 priority bump). Without the goal, ordering depends
+        // on Array.max stability and the result is arbitrary.
+        let trends: [SkillTrend] = [
+            SkillTrend(skillArea: .conciseSpeaking, direction: .stable,
+                       confidence: .medium, windowSize: 5,
+                       currentLevel: .developing, recentDelta: nil),
+            SkillTrend(skillArea: .pauseUsage, direction: .stable,
+                       confidence: .medium, windowSize: 5,
+                       currentLevel: .developing, recentDelta: nil),
+        ]
+        let focus = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            goalPriority: .moreConcise
+        )
+        #expect(focus == .conciseSpeaking,
+                "Goal-aligned area should win ties in trend-based focus. Got: \(focus)")
+    }
+
+    @Test func declineStillBeatsGoalTiebreaker() {
+        // The +5 goal bump must not outrank a high-confidence decline (100)
+        // on a different area. Severe signals always win against goal nudge.
+        let trends: [SkillTrend] = [
+            SkillTrend(skillArea: .conciseSpeaking, direction: .stable,
+                       confidence: .medium, windowSize: 5,
+                       currentLevel: .developing, recentDelta: nil),
+            SkillTrend(skillArea: .openingStrength, direction: .declining,
+                       confidence: .high, windowSize: 8,
+                       currentLevel: .weak, recentDelta: nil),
+        ]
+        let focus = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            goalPriority: .moreConcise
+        )
+        #expect(focus == .openingStrength,
+                "High-confidence decline should beat goal tiebreaker. Got: \(focus)")
+    }
+
+    @Test func strongGoalAreaDoesNotBlockRotation() {
+        // If the goal area is already strong, we shouldn't keep biasing the
+        // user back to it — that fights the anti-staleness logic and the
+        // graduate-off-resolved-issues principle in the vision plan.
+        let trends: [SkillTrend] = [
+            SkillTrend(skillArea: .conciseSpeaking, direction: .stable,
+                       confidence: .high, windowSize: 10,
+                       currentLevel: .strong, recentDelta: nil),
+            SkillTrend(skillArea: .pauseUsage, direction: .stable,
+                       confidence: .medium, windowSize: 5,
+                       currentLevel: .developing, recentDelta: nil),
+        ]
+        let focus = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            goalPriority: .moreConcise
+        )
+        #expect(focus != .conciseSpeaking,
+                "Strong goal area should not block rotation. Got: \(focus)")
+    }
+
+    @Test func coachNoteNamesGoalWhenFocusMatches() {
+        let note = VerdictEngine.generate(
+            fillerCount: 6, duration: 45, wordCount: 100, wpm: 133, score: 5,
+            categoryRatings: [:],
+            trends: [], primaryFocus: .fillerReduction, drillHistory: [],
+            goalPriority: .reduceFillers
+        )
+        let lowered = note.nextStep.lowercased()
+        #expect(lowered.contains("set out") || lowered.contains("goal you came in with"),
+                "Goal-matched leverage should name the onboarding goal. Got: \(note.nextStep)")
+    }
+
+    @Test func coachNoteStaysSilentWhenGoalDoesNotMatchFocus() {
+        // Goal is fillers; current focus is structure — naming the goal here
+        // would feel disconnected, so the goal note should stay off.
+        let note = VerdictEngine.generate(
+            fillerCount: 0, duration: 45, wordCount: 100, wpm: 130, score: 6,
+            categoryRatings: ["Structure": "Could improve"],
+            trends: [], primaryFocus: .structure, drillHistory: [],
+            goalPriority: .reduceFillers
+        )
+        let lowered = note.nextStep.lowercased()
+        #expect(!lowered.contains("set out") && !lowered.contains("goal you came in with"),
+                "Goal note should be suppressed when focus area doesn't match goal. Got: \(note.nextStep)")
+    }
+}

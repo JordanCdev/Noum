@@ -145,7 +145,8 @@ enum VerdictEngine {
         pressureProfile: PressureProfile? = nil,
         pressureLevel: PressureLevel = .standard,
         styleGoal: String? = nil,
-        imContext: IMContextFit? = nil
+        imContext: IMContextFit? = nil,
+        goalPriority: CoachingPriority? = nil
     ) -> CoachNote {
         let confidence = baseline?.overallConfidence ?? .insufficient
 
@@ -189,6 +190,18 @@ enum VerdictEngine {
             let styleNote = buildStyleNote(goal: goal, fillerCount: fillerCount, wpm: wpm, duration: duration, categoryRatings: categoryRatings)
             if !styleNote.isEmpty {
                 nextStep = nextStep + " " + styleNote
+            }
+        }
+
+        // --- Goal lens: name the user's stated goal when the leverage area
+        // matches it, so onboarding intent stays a live, visible thread
+        // through the coaching. Skip when the goal doesn't map to the
+        // current focus — naming it then would feel disconnected.
+        if let goalPriority, goalPriority.preferredSkillArea == primaryFocus {
+            let trendForFocus = trends.first(where: { $0.skillArea == primaryFocus })
+            let goalNote = buildGoalNote(goalPriority: goalPriority, trend: trendForFocus)
+            if !goalNote.isEmpty {
+                nextStep = nextStep + " " + goalNote
             }
         }
 
@@ -553,6 +566,29 @@ enum VerdictEngine {
         return mismatches.first ?? ""
     }
 
+    // MARK: - Goal Lens
+
+    /// One-sentence callback that names the user's onboarding goal when the
+    /// current leverage area maps to it. Trend-aware so we acknowledge
+    /// momentum on the goal rather than only naming it as unfinished work.
+    /// Kept short — this is a closer line, not a paragraph.
+    private static func buildGoalNote(
+        goalPriority: CoachingPriority,
+        trend: SkillTrend?
+    ) -> String {
+        let phrase = goalPriority.goalPhrase
+        switch trend?.direction {
+        case .improving:
+            return "This is exactly what you set out to work on — \(phrase) — and you're moving on it."
+        case .declining:
+            return "This is the goal you came in with — \(phrase) — and it's the one to defend right now."
+        case .newIssue:
+            return "Worth catching now — this is what you set out to \(phrase) on."
+        case .stable, .resolved, .none:
+            return "This is exactly what you set out to work on: \(phrase)."
+        }
+    }
+
     // MARK: - Dynamic Drill Rationale
 
     /// Generate a session-specific rationale for why this drill was selected.
@@ -636,7 +672,9 @@ enum DrillEngineV2 {
 
     /// Generate a drill recommendation using session data + cross-session trends.
     /// When `targetArea` is provided, the engine skips its own focus determination
-    /// and drills into the requested skill area directly.
+    /// and drills into the requested skill area directly. `goalPriority`, when
+    /// provided, gives the user's onboarding goal a soft tiebreaker vote in
+    /// focus selection so the goal stays a live driver post-onboarding.
     static func recommend(
         fillerCount: Int,
         duration: TimeInterval,
@@ -644,6 +682,7 @@ enum DrillEngineV2 {
         score: Int,
         feedbackCategories: [(dimension: String, rating: String)],
         targetArea: SkillArea? = nil,
+        goalPriority: CoachingPriority? = nil,
         trendStore: SkillTrendStore = .shared,
         drillHistory: DrillHistoryStore = .shared
     ) -> DrillRecommendationV2 {
@@ -683,7 +722,8 @@ enum DrillEngineV2 {
                 categoryRatings: categoryRatings,
                 trends: trends,
                 sessionSnapshot: sessionSnapshot,
-                drillHistory: drillHistory
+                drillHistory: drillHistory,
+                goalPriority: goalPriority
             )
         }
 
@@ -740,7 +780,8 @@ enum DrillEngineV2 {
         categoryRatings: [String: String],
         trends: [SkillTrend],
         sessionSnapshot: SkillSnapshot,
-        drillHistory: DrillHistoryStore
+        drillHistory: DrillHistoryStore,
+        goalPriority: CoachingPriority? = nil
     ) -> SkillArea {
         // First: check if current session has a clear, urgent weakness
         let urgentFocus = urgentSessionFocus(
@@ -755,7 +796,8 @@ enum DrillEngineV2 {
             let trendFocus = TrendAnalyzer.primaryFocus(
                 trends: trends,
                 currentSessionSnapshot: sessionSnapshot,
-                recentDrills: drillHistory.entries
+                recentDrills: drillHistory.entries,
+                goalPriority: goalPriority
             )
 
             // If session has an urgent weakness AND trend analysis agrees, use it
@@ -775,13 +817,15 @@ enum DrillEngineV2 {
             return trendFocus
         }
 
-        // No trend data — fall back to session-only analysis
+        // No trend data — fall back to session-only analysis, with the
+        // user's goal as a final cold-start tiebreaker.
         return urgentFocus ?? sessionOnlyFocus(
             fillerCount: fillerCount,
             wpm: wpm,
             duration: duration,
             score: score,
-            categoryRatings: categoryRatings
+            categoryRatings: categoryRatings,
+            goalPriority: goalPriority
         )
     }
 
@@ -805,12 +849,16 @@ enum DrillEngineV2 {
     }
 
     /// Session-only focus when no trend data exists (new users).
+    /// On a clean session (no weak signals) we route a new user toward their
+    /// stated goal before falling back to structure — onboarding shouldn't
+    /// be a write-once event.
     private static func sessionOnlyFocus(
         fillerCount: Int,
         wpm: Double,
         duration: TimeInterval,
         score: Int,
-        categoryRatings: [String: String]
+        categoryRatings: [String: String],
+        goalPriority: CoachingPriority? = nil
     ) -> SkillArea {
         if fillerCount >= 5 { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
@@ -821,6 +869,7 @@ enum DrillEngineV2 {
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
         if wpm > 0 && wpm < 100 && duration >= 15 { return .paceControl }
         if categoryRatings["Depth"] == "Could improve" { return .answerDevelopment }
+        if let goalArea = goalPriority?.preferredSkillArea { return goalArea }
         if score >= 7 { return .confidence }
         return .structure
     }

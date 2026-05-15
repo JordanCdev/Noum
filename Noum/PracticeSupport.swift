@@ -240,6 +240,30 @@ enum CoachingPriority: String, CaseIterable, Codable, Identifiable {
         case .calmerDelivery: return "Sound calmer and more composed"
         }
     }
+
+    /// Skill area the user's stated goal maps to. Drill selection and the
+    /// Coach Note's next step use this to keep the goal a live driver of
+    /// the experience instead of a write-once onboarding answer.
+    var preferredSkillArea: SkillArea {
+        switch self {
+        case .reduceFillers: return .fillerReduction
+        case .moreConcise: return .conciseSpeaking
+        case .thinkFaster: return .answerDevelopment
+        case .calmerDelivery: return .paceControl
+        }
+    }
+
+    /// Short phrase used inline in coach copy to name the goal without
+    /// echoing the user's raw text. Lowercase so it composes inside a
+    /// sentence ("you set out to …").
+    var goalPhrase: String {
+        switch self {
+        case .reduceFillers: return "speak more cleanly"
+        case .moreConcise: return "be more concise"
+        case .thinkFaster: return "think faster on the spot"
+        case .calmerDelivery: return "sound calmer under pressure"
+        }
+    }
 }
 
 enum ConfidenceLevel: String, CaseIterable, Codable, Identifiable {

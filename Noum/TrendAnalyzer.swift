@@ -343,10 +343,16 @@ enum TrendAnalyzer {
     }
 
     /// Find the single highest-leverage focus area for the next drill.
+    ///
+    /// `goalPriority`, when present, is a soft tiebreaker toward the skill
+    /// area the user set as their goal. Strong session signals (urgent
+    /// weakness, declining trends) still win — the goal nudges close calls
+    /// and resolves the cold-start ambiguity for new users.
     static func primaryFocus(
         trends: [SkillTrend],
         currentSessionSnapshot: SkillSnapshot?,
-        recentDrills: [DrillHistoryStore.Entry]
+        recentDrills: [DrillHistoryStore.Entry],
+        goalPriority: CoachingPriority? = nil
     ) -> SkillArea {
         // Count how many consecutive sessions the same skill was the focus
         let recentFocusAreas = recentDrills.prefix(4).map(\.skillArea)
@@ -355,6 +361,8 @@ enum TrendAnalyzer {
             let first = recentFocusAreas.first!
             return recentFocusAreas.allSatisfy({ $0 == first }) ? first : nil
         }()
+
+        let goalArea = goalPriority?.preferredSkillArea
 
         // Priority scoring
         struct ScoredArea {
@@ -405,6 +413,14 @@ enum TrendAnalyzer {
                 priority = max(priority - 50, 0)
             }
 
+            // Goal tiebreaker: small bump toward the user's stated goal so
+            // it wins close calls without overriding genuine weaknesses.
+            // Skip the bump when the goal area is already strong — the
+            // anti-staleness logic above wants us to graduate off it.
+            if trend.skillArea == goalArea && priority > 0 && trend.currentLevel < .strong {
+                priority += 5
+            }
+
             scored.append(ScoredArea(skillArea: trend.skillArea, priority: priority))
         }
 
@@ -413,12 +429,17 @@ enum TrendAnalyzer {
             return best.skillArea
         }
 
-        // Final fallback: use current session metrics
+        // Final fallback: use current session metrics, then the user's goal,
+        // then the structure default. Goal-first cold start matters: a brand-
+        // new user with no trend data should still feel the app aimed at what
+        // they said they wanted.
         if let snapshot = currentSessionSnapshot {
             if snapshot.fillerCount >= 3 { return .fillerReduction }
             if snapshot.wpm > 160 { return .paceControl }
             if snapshot.duration < 15 { return .answerDevelopment }
         }
+
+        if let goalArea { return goalArea }
 
         return .structure
     }
