@@ -104,6 +104,10 @@ struct NextActionInput {
     let sessionCount: Int
     let streakDays: Int
     let styleGoal: String?
+    /// The user's onboarding goal as a structured priority. Threads through
+    /// into drill focus selection so the goal stays a live driver after the
+    /// first session, not a one-shot capture.
+    let goalPriority: CoachingPriority?
 }
 
 // MARK: - Next Action Engine
@@ -329,7 +333,8 @@ enum NextActionEngine {
             wordCount: input.wordCount,
             score: input.score,
             feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) },
-            targetArea: area
+            targetArea: area,
+            goalPriority: input.goalPriority
         )
     }
 
@@ -340,7 +345,8 @@ enum NextActionEngine {
             duration: input.duration,
             wordCount: input.wordCount,
             score: input.score,
-            feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) }
+            feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) },
+            goalPriority: input.goalPriority
         )
         return .drill(rec)
     }

@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisation v1)_
+_Last updated: 2026-05-15 (M14 in progress: + goal-aware drill focus & Coach Note)_
 
 ## Architecture overview
 
@@ -547,10 +547,22 @@ _Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisatio
 
 ### Stubbed / placeholder
 
-- **Goal-driven coaching feedback in mid-session UI** — the goal is
-  captured but only used in reminder copy and recommendation rationale.
-  It does not influence drill prompt selection, evaluation weighting,
-  or session debrief framing.
+- **Goal-driven coaching feedback in mid-session UI** — `CoachingPriority`
+  now maps to a `preferredSkillArea` and threads through
+  `TrendAnalyzer.primaryFocus`, `DrillEngineV2.recommend`, and
+  `VerdictEngine.generate` (post-session Coach Note). Drill focus uses
+  the goal as a soft tiebreaker (+5 priority) when trend signals are
+  close, and as the cold-start default when there's no trend data and
+  no urgent session weakness. The Coach Note's next-step names the goal
+  in plain language ("This is exactly what you set out to work on…") only
+  when the chosen focus area maps to the user's goal — silent otherwise
+  so the callback never feels disconnected. Strong session signals
+  (severe fillers, high-confidence decline) still win against the goal
+  so we don't drag the user away from a real, urgent issue. Tests in
+  `GoalPriorityFocusTests` pin the contract. Still missing: goal-aware
+  drill **prompt** selection inside `PracticeTopics` / the AI generator,
+  and goal-weighted evaluation in `BaselineEngine` — those remain
+  out-of-scope of this pass.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked

@@ -253,6 +253,8 @@ enum SessionFinalizer {
             comparisons = [:]
         }
 
+        let goalPriority = coachingProfileStore.profile?.primaryGoal
+
         // NextAction recommendation
         let nextAction: NextAction? = {
             guard baseline.qualifyingSessionCount >= 2 else { return nil }
@@ -271,7 +273,8 @@ enum SessionFinalizer {
                 drillHistory: DrillHistoryStore.shared.entries,
                 sessionCount: sessionStore.sessions.count,
                 streakDays: currentStreak,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+                goalPriority: goalPriority
             )
             let action = NextActionEngine.recommend(input: input)
             LastNextActionSnapshot.save(action)
@@ -291,7 +294,8 @@ enum SessionFinalizer {
                     score: scoreValue,
                     categoryRatings: categoryMap
                 ),
-                recentDrills: DrillHistoryStore.shared.entries
+                recentDrills: DrillHistoryStore.shared.entries,
+                goalPriority: goalPriority
             )
             return VerdictEngine.generate(
                 fillerCount: effectiveFillerCount,
@@ -306,7 +310,8 @@ enum SessionFinalizer {
                 baseline: baselineStore.baseline,
                 pressureProfile: baselineStore.pressureProfile,
                 pressureLevel: pressureLevel,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+                goalPriority: goalPriority
             )
         }()
 

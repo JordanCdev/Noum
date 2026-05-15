@@ -183,7 +183,8 @@ struct SummaryView: View {
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
             score: scoreValue,
-            feedbackCategories: categoryTuples
+            feedbackCategories: categoryTuples,
+            goalPriority: coachingProfileStore.profile?.primaryGoal
         )
     }
 
@@ -208,7 +209,8 @@ struct SummaryView: View {
             categoryRatings: categoryRatings,
             trends: skillTrends,
             primaryFocus: drillRecommendationV2.skillArea,
-            drillHistory: DrillHistoryStore.shared.entries
+            drillHistory: DrillHistoryStore.shared.entries,
+            goalPriority: coachingProfileStore.profile?.primaryGoal
         )
     }
 
