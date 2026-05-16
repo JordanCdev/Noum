@@ -101,17 +101,17 @@ This is the honest call: an English coaching debrief on a Spanish
 session would be worse than a deterministic template fallback.)
 
 **Honest gaps remaining for M13:**
-- The catalog covers ~30 keys today. Hundreds of strings remain
-  hardcoded across the app (Summary card bodies, Profile section
-  headers beyond the simple labels, AI Coach setup copy). M13
-  bundles the infrastructure; further string migration is a copy
-  job, not a code change.
+- The catalog now covers 637 Spanish + French keys across the
+  top user-facing surfaces (settings, profile, summary, lessons,
+  league, friends, paywall, onboarding, error copy). New strings
+  added by future milestones still need translation as they land.
 - AI surfaces stay English. When a Spanish or French user
   finishes a session, `AISessionDebriefCard` shows the template
   fallback — useful but less differentiated. Until those prompts
   are localised, this is the right tradeoff.
-- `PracticeLocalePickerSheet` strings ("Full curated pool — 200+
-  prompts, 8 themes.") are themselves not yet localised.
+- `PracticeLocalePickerSheet` subtitle strings are now driven by
+  `LocalizedStringKey` and translated alongside the rest of the
+  catalog.
 
 **Why this next:** the product is feature-complete enough to ship.
 The remaining blockers are operational, not engineering: the

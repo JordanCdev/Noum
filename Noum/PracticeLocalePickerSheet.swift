@@ -67,7 +67,7 @@ struct PracticeLocalePickerSheet: View {
                     Text(locale.displayName)
                         .font(Typography.headline)
                         .foregroundStyle(.primary)
-                    Text(subtitle(for: locale))
+                    Text(subtitleKey(for: locale))
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -88,7 +88,7 @@ struct PracticeLocalePickerSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func subtitle(for locale: PracticeLocale) -> String {
+    private func subtitleKey(for locale: PracticeLocale) -> LocalizedStringKey {
         switch locale {
         case .enUS: return "Full curated pool — 200+ prompts, 8 themes."
         case .esES: return "Curated v1 — 24+ prompts, 8 themes."

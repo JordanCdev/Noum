@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisation v1)_
+_Last updated: 2026-05-16 (M13 catalog expansion: ~30 → 637 ES/FR keys, picker subtitles localised)_
 
 ## Architecture overview
 
