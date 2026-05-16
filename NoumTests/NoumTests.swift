@@ -3198,3 +3198,108 @@ struct ScoreCalibrationTests {
                 "10 fillers (\(highEval.score)) should score lower than 2 (\(lowEval.score))")
     }
 }
+
+// MARK: - StableHash (cross-launch determinism)
+//
+// Swift's `Hasher` is randomised per process for collection-attack
+// resistance. Code that uses `Hasher().finalize()` for cache keys,
+// day-of-year word picks, or cross-device async-challenge seeding gets
+// silently different values every launch. These tests lock down
+// FNV-1a 64-bit fixtures so a regression to `Hasher` would fail loudly.
+
+struct StableHashTests {
+
+    @Test func emptyStringFixture() {
+        // FNV-1a offset basis itself — known constant.
+        #expect(StableHash.hash("") == 0xCBF2_9CE4_8422_2325)
+    }
+
+    @Test func singleByteFixture() {
+        #expect(StableHash.hash("a") == 0xAF63_DC4C_8601_EC8C)
+    }
+
+    @Test func helloFixture() {
+        #expect(StableHash.hash("hello") == 0xA430_D846_80AA_BD0B)
+    }
+
+    @Test func dateKeyFixture() {
+        // The shape used by Word of the Day and DailyChallengeGenerator.
+        #expect(StableHash.hash("2026-05-16") == 0x4C03_05F6_FB67_80EB)
+    }
+
+    @Test func brandFixture() {
+        #expect(StableHash.hash("Noum") == 0x668A_10C6_D2CB_4890)
+    }
+
+    @Test func equalInputsProduceEqualHashes() {
+        // Belt-and-braces: even without fixtures, hashes of identical
+        // inputs must be equal within a single test run.
+        #expect(StableHash.hash("equality") == StableHash.hash("equality"))
+        #expect(StableHash.hash("") == StableHash.hash(""))
+    }
+
+    @Test func differentInputsProduceDifferentHashes() {
+        // FNV-1a doesn't guarantee uniqueness, but for these obviously
+        // different inputs collisions would be a red flag.
+        #expect(StableHash.hash("alpha") != StableHash.hash("beta"))
+        #expect(StableHash.hash("2026-05-16") != StableHash.hash("2026-05-17"))
+    }
+
+    @Test func indexInRespectsCollectionBounds() {
+        let pool = ["a", "b", "c", "d", "e"]
+        for seed in ["one", "two", "three", "four", "five"] {
+            let idx = StableHash.index(in: pool, seed: seed)
+            #expect(idx != nil)
+            if let idx { #expect(idx >= 0 && idx < pool.count) }
+        }
+    }
+
+    @Test func indexInReturnsNilForEmptyCollection() {
+        let empty: [String] = []
+        #expect(StableHash.index(in: empty, seed: "anything") == nil)
+    }
+}
+
+// MARK: - Per-day stability for date-keyed surfaces
+
+struct DateKeyedStabilityTests {
+
+    @Test func wordOfTheDayLandsOnFixedFixture() {
+        // Lock the picked word for a known date so a future refactor
+        // that swaps StableHash back to a process-random Hasher trips
+        // the test immediately.
+        let entries = WordOfTheDayCatalog.entries
+        let idx = Int(StableHash.hash("2026-05-16") % UInt64(entries.count))
+        let expected = entries[idx]
+        let actual = WordOfTheDayCatalog.entry(for: "2026-05-16")
+        #expect(actual == expected)
+    }
+
+    @Test func dailyChallengeTrioStableAcrossInvocations() {
+        // Same dayKey must yield the same trio every call — not just
+        // within a process, but across launches. The fixture-based
+        // StableHashTests above prove the underlying hash is stable;
+        // this test pins the generator's contract.
+        let a = DailyChallengeGenerator.threeKinds(for: "2026-05-16")
+        let b = DailyChallengeGenerator.threeKinds(for: "2026-05-16")
+        #expect(a == b)
+        #expect(a.count == 3)
+        // And distinct days produce a different trio (catches a regression
+        // where the seed isn't actually being consumed).
+        let c = DailyChallengeGenerator.threeKinds(for: "2026-05-17")
+        #expect(a != c)
+    }
+
+    @Test func seededPromptStableForSameSeed() {
+        // Async-challenge fairness — both participants pass the same
+        // seed and must land on the same prompt.
+        let a = PracticeTopics.seeded(by: "challenge-001")
+        let b = PracticeTopics.seeded(by: "challenge-001")
+        #expect(a == b)
+        let c = PracticeTopics.seeded(by: "challenge-002")
+        // Different seeds should (with vanishingly few exceptions) yield
+        // different prompts. We don't assert strict inequality on every
+        // pair; we assert this one because the fixtures are known-distinct.
+        #expect(a != c || PracticeTopics.allPrompts.count <= 1)
+    }
+}

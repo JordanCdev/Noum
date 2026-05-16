@@ -448,12 +448,12 @@ struct PracticeTopics {
         }
     }
 
-    /// Return a stable random topic seeded by a given string (for shared challenges)
+    /// Return a stable random topic seeded by a given string (for shared challenges).
+    /// Uses StableHash so async-challenge participants on different devices
+    /// land on the same prompt — Swift's `Hasher` is process-randomised and
+    /// would silently break fairness here.
     static func seeded(by seed: String) -> String {
-        var hasher = Hasher()
-        hasher.combine(seed)
-        let hash = hasher.finalize()
-        let index = abs(hash) % allPrompts.count
+        let index = Int(StableHash.hash(seed) % UInt64(allPrompts.count))
         return allPrompts[index]
     }
 
@@ -464,10 +464,7 @@ struct PracticeTopics {
     static func seeded(by seed: String, theme: PromptTheme) -> String {
         let pool = prompts(for: theme, locale: .enUS)
         guard !pool.isEmpty else { return seeded(by: seed) }
-        var hasher = Hasher()
-        hasher.combine(seed)
-        let hash = hasher.finalize()
-        let index = abs(hash) % pool.count
+        let index = Int(StableHash.hash(seed) % UInt64(pool.count))
         return pool[index]
     }
 

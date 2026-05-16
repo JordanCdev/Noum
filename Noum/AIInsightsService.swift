@@ -466,17 +466,22 @@ actor AIInsightsService {
     // MARK: - Cache key
 
     private func cacheKey(for input: AIInsightInput) -> String {
-        var hasher = Hasher()
-        hasher.combine(input.kind.rawValue)
-        hasher.combine(input.weeklyReps)
-        hasher.combine(input.weeklyDelta)
-        hasher.combine(input.currentStreak)
-        hasher.combine(input.topFillerWord ?? "")
-        hasher.combine(input.focusSessions.first?.id)
-        let calendar = Calendar.current
-        let week = calendar.component(.weekOfYear, from: Date())
-        hasher.combine(week)
-        return "\(hasher.finalize())"
+        // Concatenate cache inputs into a single canonical string, then
+        // StableHash. We can't use Swift's `Hasher` here — its random
+        // per-process seed would invalidate the on-disk cache on every
+        // launch, defeating the point of caching.
+        let week = Calendar.current.component(.weekOfYear, from: Date())
+        let focusID = input.focusSessions.first?.id.uuidString ?? "-"
+        let composed = [
+            input.kind.rawValue,
+            "\(input.weeklyReps)",
+            "\(input.weeklyDelta)",
+            "\(input.currentStreak)",
+            input.topFillerWord ?? "",
+            focusID,
+            "\(week)"
+        ].joined(separator: "|")
+        return "\(StableHash.hash(composed))"
     }
 
     private func isStale(_ insight: AIInsight) -> Bool {

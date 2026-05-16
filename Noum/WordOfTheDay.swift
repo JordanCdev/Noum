@@ -270,15 +270,217 @@ enum WordOfTheDayCatalog {
             definition: "The grain or feel of something — surface or speech.",
             promptSuggestion: "What gives a conversation real texture rather than a flat exchange?",
             forms: ["textures", "textured"]
+        ),
+        WordOfTheDayEntry(
+            word: "Cadence",
+            partOfSpeech: "noun",
+            definition: "The rhythm or flow of speech — how words land in time.",
+            promptSuggestion: "How does your cadence change when the room is paying close attention?",
+            forms: ["cadences"]
+        ),
+        WordOfTheDayEntry(
+            word: "Specific",
+            partOfSpeech: "adjective",
+            definition: "Pointed and exact, with detail rather than generality.",
+            promptSuggestion: "What is one specific moment that taught you more than any book did?",
+            forms: ["specifically", "specifics", "specificity"]
+        ),
+        WordOfTheDayEntry(
+            word: "Steady",
+            partOfSpeech: "adjective",
+            definition: "Firm and unshaken; not pulled by the wind of the room.",
+            promptSuggestion: "Who is the steadiest person you know, and what do they do differently?",
+            forms: ["steadily", "steadiness"]
+        ),
+        WordOfTheDayEntry(
+            word: "Listen",
+            partOfSpeech: "verb",
+            definition: "To take in what is said and what is meant beneath it.",
+            promptSuggestion: "When was the last time being listened to changed how you felt about something?",
+            forms: ["listens", "listened", "listening", "listener"]
+        ),
+        WordOfTheDayEntry(
+            word: "Restrain",
+            partOfSpeech: "verb",
+            definition: "To hold back from saying or doing more than is needed.",
+            promptSuggestion: "When has restraint served you better than a full answer would have?",
+            forms: ["restrained", "restrains", "restraining", "restraint"]
+        ),
+        WordOfTheDayEntry(
+            word: "Frame",
+            partOfSpeech: "verb",
+            definition: "To set how something is seen by what surrounds it.",
+            promptSuggestion: "How do you frame bad news so the other person can still act on it?",
+            forms: ["framed", "frames", "framing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Brevity",
+            partOfSpeech: "noun",
+            definition: "The discipline of saying it short.",
+            promptSuggestion: "Where in your work would brevity earn you more trust than detail does?",
+            forms: ["brief", "briefly"]
+        ),
+        WordOfTheDayEntry(
+            word: "Surface",
+            partOfSpeech: "verb",
+            definition: "To bring something hidden up where it can be seen.",
+            promptSuggestion: "What is a concern you wish someone would surface instead of work around?",
+            forms: ["surfaced", "surfaces", "surfacing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Tether",
+            partOfSpeech: "noun",
+            definition: "A line that keeps you connected to something steady.",
+            promptSuggestion: "What is your tether back to calm when a conversation pulls you off-balance?",
+            forms: ["tethers", "tethered", "tethering"]
+        ),
+        WordOfTheDayEntry(
+            word: "Refine",
+            partOfSpeech: "verb",
+            definition: "To improve by removing what isn't needed.",
+            promptSuggestion: "What is one idea of yours that you've refined most over the past year?",
+            forms: ["refined", "refines", "refining", "refinement"]
+        ),
+        WordOfTheDayEntry(
+            word: "Yield",
+            partOfSpeech: "verb",
+            definition: "To give way without giving up.",
+            promptSuggestion: "When did yielding in a conversation move you forward more than holding the line?",
+            forms: ["yielded", "yields", "yielding"]
+        ),
+        WordOfTheDayEntry(
+            word: "Articulate",
+            partOfSpeech: "verb",
+            definition: "To put something into words clearly enough to be acted on.",
+            promptSuggestion: "What is something you've felt for years but only recently learned to articulate?",
+            forms: ["articulated", "articulates", "articulating", "articulation"]
+        ),
+        WordOfTheDayEntry(
+            word: "Patience",
+            partOfSpeech: "noun",
+            definition: "Calm endurance when the answer hasn't arrived yet.",
+            promptSuggestion: "Where has patience cost you nothing and earned you something real?",
+            forms: ["patient", "patiently"]
+        ),
+        WordOfTheDayEntry(
+            word: "Signal",
+            partOfSpeech: "noun",
+            definition: "A small, deliberate cue that carries real information.",
+            promptSuggestion: "What signal do you give without realising it when you're under pressure?",
+            forms: ["signals", "signalled", "signaled", "signalling", "signaling"]
+        ),
+        WordOfTheDayEntry(
+            word: "Ground",
+            partOfSpeech: "verb",
+            definition: "To root a statement in something concrete the listener can hold.",
+            promptSuggestion: "What is one number, name, or example you can ground your next big point in?",
+            forms: ["grounded", "grounds", "grounding"]
+        ),
+        WordOfTheDayEntry(
+            word: "Quiet",
+            partOfSpeech: "adjective",
+            definition: "Free of noise — outside or inside the head.",
+            promptSuggestion: "Where do you do your quietest thinking, and what does that quiet give you?",
+            forms: ["quietly", "quietness", "quieted", "quieting"]
+        ),
+        WordOfTheDayEntry(
+            word: "Trust",
+            partOfSpeech: "noun",
+            definition: "A line of credit between two people — slow to build, fast to spend.",
+            promptSuggestion: "What is one small habit that has built trust faster than any speech could?",
+            forms: ["trusts", "trusted", "trusting", "trustworthy"]
+        ),
+        WordOfTheDayEntry(
+            word: "Conviction",
+            partOfSpeech: "noun",
+            definition: "Belief that you'd carry into a room where no one agrees with you.",
+            promptSuggestion: "What is one conviction of yours that has only deepened with experience?",
+            forms: ["convicted", "convictions"]
+        ),
+        WordOfTheDayEntry(
+            word: "Repair",
+            partOfSpeech: "verb",
+            definition: "To mend what a misstep or a hard word did to a relationship.",
+            promptSuggestion: "How do you repair a conversation that went sideways without making it worse?",
+            forms: ["repaired", "repairs", "repairing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Generous",
+            partOfSpeech: "adjective",
+            definition: "Inclined to give more than the rule asks for.",
+            promptSuggestion: "When has being generous with credit changed how a team treated you back?",
+            forms: ["generously", "generosity"]
+        ),
+        WordOfTheDayEntry(
+            word: "Pause",
+            partOfSpeech: "verb",
+            definition: "To stop briefly on purpose — a beat that says \"I mean this.\"",
+            promptSuggestion: "Where in a sentence does pausing earn more attention than speaking does?",
+            forms: ["paused", "pauses", "pausing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Honest",
+            partOfSpeech: "adjective",
+            definition: "Truthful — including when the truth costs something.",
+            promptSuggestion: "When has being honest with yourself been harder than being honest with someone else?",
+            forms: ["honestly", "honesty"]
+        ),
+        WordOfTheDayEntry(
+            word: "Pace",
+            partOfSpeech: "noun",
+            definition: "The speed at which words and ideas land for the listener.",
+            promptSuggestion: "How do you find the right pace when you can feel the room rushing you?",
+            forms: ["paced", "paces", "pacing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Command",
+            partOfSpeech: "noun",
+            definition: "Quiet authority that comes from knowing the material and the room.",
+            promptSuggestion: "Who do you know with real command of a room, and what do they avoid doing?",
+            forms: ["commanded", "commands", "commanding"]
+        ),
+        WordOfTheDayEntry(
+            word: "Bridge",
+            partOfSpeech: "noun",
+            definition: "A short phrase that carries the listener from one idea to the next.",
+            promptSuggestion: "What is one bridge phrase you reach for when you need to redirect a conversation?",
+            forms: ["bridges", "bridged", "bridging"]
+        ),
+        WordOfTheDayEntry(
+            word: "Edit",
+            partOfSpeech: "verb",
+            definition: "To remove on purpose so what remains lands harder.",
+            promptSuggestion: "If you could edit one sentence out of a past conversation, which one would it be?",
+            forms: ["edited", "edits", "editing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Witness",
+            partOfSpeech: "noun",
+            definition: "Someone who watches closely enough to tell the story truthfully.",
+            promptSuggestion: "Who has been a witness to your growth in a way nobody else could be?",
+            forms: ["witnesses", "witnessed", "witnessing"]
+        ),
+        WordOfTheDayEntry(
+            word: "Adapt",
+            partOfSpeech: "verb",
+            definition: "To change shape without changing direction.",
+            promptSuggestion: "Where have you had to adapt without abandoning what you actually believe?",
+            forms: ["adapted", "adapts", "adapting", "adaptable", "adaptation"]
+        ),
+        WordOfTheDayEntry(
+            word: "Settle",
+            partOfSpeech: "verb",
+            definition: "To come to rest — usually after motion or tension.",
+            promptSuggestion: "How do you settle yourself in the minute before a hard conversation starts?",
+            forms: ["settled", "settles", "settling"]
         )
     ]
 
     /// Pick today's word deterministically from the catalog.
+    /// Must be stable across launches and devices — uses StableHash, not
+    /// Swift's process-randomised Hasher.
     static func entry(for dayKey: String) -> WordOfTheDayEntry {
-        var hasher = Hasher()
-        hasher.combine(dayKey)
-        let h = hasher.finalize()
-        let idx = abs(h) % entries.count
+        let idx = Int(StableHash.hash(dayKey) % UInt64(entries.count))
         return entries[idx]
     }
 }
