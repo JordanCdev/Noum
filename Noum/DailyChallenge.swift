@@ -157,9 +157,9 @@ enum DailyChallengeGenerator {
     }
 
     private static func hash(_ key: String) -> UInt64 {
-        var hasher = Hasher()
-        hasher.combine(key)
-        return UInt64(bitPattern: Int64(hasher.finalize()))
+        // StableHash, not Swift's Hasher — the per-day trio must be the
+        // same trio across launches, devices, and OS versions.
+        StableHash.hash(key)
     }
 }
 

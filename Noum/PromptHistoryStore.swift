@@ -99,12 +99,13 @@ final class PromptHistoryStore {
 
     /// Stable hash for prompt text. We strip whitespace and lowercase first
     /// so cosmetic edits ("Tell me…" vs " tell me… ") collapse to the same key.
+    /// Uses StableHash, not Swift's process-randomised Hasher — otherwise
+    /// persisted history entries from a previous launch wouldn't match a
+    /// re-hashed lookup, and recently-shown prompts would re-appear.
     static func hash(of prompt: String) -> Int {
         let normalized = prompt
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        var hasher = Hasher()
-        hasher.combine(normalized)
-        return hasher.finalize()
+        return Int(bitPattern: UInt(truncatingIfNeeded: StableHash.hash(normalized)))
     }
 }
