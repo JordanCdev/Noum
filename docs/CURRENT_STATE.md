@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard)_
+_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD)_
 
 ## Architecture overview
 
@@ -555,10 +555,23 @@ _Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   on successful drills that align with the user's
   `SpeakingStyleGoal`. Alignment map lives on
   `SpeakingStyleGoal.alignedSkillAreas` in `DrillSystem.swift` (e.g.
-  `.concise` → `[conciseSpeaking, structure, fillerReduction]`). Mid-
-  session live UI still doesn't read the goal — that's a separate
-  surface and probably the right next push (e.g. live HUD adapts copy
-  for the user's voice goal during the rep).
+  `.concise` → `[conciseSpeaking, structure, fillerReduction]`).
+  **Mid-session live UI now reads the goal too**: a sister mapping
+  `SpeakingStyleGoal.alignedEloquenceDevices` ties each voice to the
+  rhetorical moves that most directly serve it (e.g. `.warm` →
+  `[anaphora, diacope, rhetoricalQuestion, alliteration]`).
+  `LiveEloquenceHUD` accepts a `styleGoal:` and swaps its chip subtext
+  from the neutral "noticed" to "toward your <voice> voice" the moment
+  a goal-aligned rhetorical move lands during the rep, with a slightly
+  brighter stroke + shadow on aligned chips so the visual rhythm
+  matches the copy. `VoiceAnchorBanner` (new, restrained) pulses for
+  ~4s at the top of `TimedPracticeView` on the first false→true
+  transition of `speechVM.isRecording` per session, says "Toward your
+  <voice> voice" once, then fades — suppressed when an active drill
+  already owns the in-the-moment intent surface, and silent when no
+  `CoachingProfile` is set. Together those two surfaces give every
+  Timed rep at least one personalized touchpoint (banner) and a richer
+  one when the listener earns a goal-aligned rhetorical move (HUD).
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked

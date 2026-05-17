@@ -134,6 +134,13 @@ final class LiveEloquenceObserver: ObservableObject {
 @available(iOS 17.0, macOS 12.0, *)
 struct LiveEloquenceHUD: View {
     @ObservedObject var speechVM: SpeechRecognizerViewModel
+    /// User's chosen voice goal, if onboarding has been completed. When the
+    /// listener earns a rhetorical move aligned with this voice, the chip's
+    /// subtext swaps from "noticed" to "toward your <voice> voice" — the
+    /// in-the-moment counterpart to `MiniDrillResultView`'s goal capsule.
+    /// Nil for users without a CoachingProfile (or pre-onboarding sessions)
+    /// — chip falls back to the neutral subtext.
+    var styleGoal: SpeakingStyleGoal? = nil
     @StateObject private var observer = LiveEloquenceObserver()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -168,16 +175,27 @@ struct LiveEloquenceHUD: View {
     // MARK: - Chip
 
     private func chip(for finding: EloquenceFinding) -> some View {
-        HStack(spacing: 8) {
+        let aligned = styleGoal?.aligns(with: finding.device) ?? false
+        let subtext: String = {
+            if let goal = styleGoal, aligned {
+                return "toward your \(goal.shortVoiceLabel)"
+            }
+            return "noticed"
+        }()
+        let strokeOpacity: Double = aligned ? 0.32 : 0.22
+        let shadowOpacity: Double = aligned ? 0.24 : 0.18
+
+        return HStack(spacing: 8) {
             Image(systemName: symbolName(for: finding.device))
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(AppColor.brandBlue)
             Text(finding.device.title)
                 .font(Typography.caption)
                 .foregroundStyle(.primary)
-            Text("noticed")
+            Text(subtext)
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
@@ -187,11 +205,18 @@ struct LiveEloquenceHUD: View {
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(AppColor.brandBlue.opacity(0.22), lineWidth: 1)
+                .stroke(AppColor.brandBlue.opacity(strokeOpacity), lineWidth: 1)
         )
-        .shadow(color: AppColor.brandBlue.opacity(0.18), radius: 10, x: 0, y: 4)
+        .shadow(color: AppColor.brandBlue.opacity(shadowOpacity), radius: 10, x: 0, y: 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Rhetorical move noticed: \(finding.device.title)")
+        .accessibilityLabel(accessibilityLabel(for: finding, aligned: aligned))
+    }
+
+    private func accessibilityLabel(for finding: EloquenceFinding, aligned: Bool) -> String {
+        if aligned, let goal = styleGoal {
+            return "Rhetorical move toward your \(goal.shortVoiceLabel): \(finding.device.title)"
+        }
+        return "Rhetorical move noticed: \(finding.device.title)"
     }
 
     /// Slide in from the leading edge with a soft fade. Reduce-motion

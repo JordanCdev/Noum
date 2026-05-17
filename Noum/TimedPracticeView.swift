@@ -1191,6 +1191,13 @@ struct TimedPracticeView: View {
                     drillBanner(drill)
                 }
 
+                // Goal-aware intent reminder — shows for ~4s at session start
+                // so the user sees what voice they're working toward every rep.
+                // Suppressed when an active drill already owns the intent surface.
+                if activeDrill == nil, let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                    VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
+                }
+
                 if isFullScreenCameraActive {
                     cameraOverlayLayout
                 } else if showLiveTranscript {
@@ -1204,7 +1211,12 @@ struct TimedPracticeView: View {
             // Real-time positive feedback — pulses when the engine catches
             // a rhetorical move. Self-contained: lifecycle is bound to the
             // speech VM's recording flag, so it resets between sessions.
-            LiveEloquenceHUD(speechVM: speechVM)
+            // styleGoal makes the chip's subtext goal-aware when the device
+            // aligns with the user's chosen voice (e.g. "toward your warm voice").
+            LiveEloquenceHUD(
+                speechVM: speechVM,
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+            )
                 .padding(.top, 4)
         }
     }

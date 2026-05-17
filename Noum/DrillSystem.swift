@@ -144,6 +144,51 @@ extension SpeakingStyleGoal {
         if let exact = SpeakingStyleGoal(rawValue: value) { return exact }
         return SpeakingStyleGoal.allCases.first { $0.title.caseInsensitiveCompare(value) == .orderedSame }
     }
+
+    /// Rhetorical devices whose presence most directly serves this voice goal.
+    /// Used by `LiveEloquenceHUD` to swap the chip's subtext from "noticed" to
+    /// "toward your <voice> voice" when the listener earns a goal-aligned move
+    /// mid-rep — the in-the-moment counterpart to `alignedSkillAreas`.
+    ///
+    /// Mapping is intentionally narrow (2–4 devices per voice). A device not
+    /// in the list isn't "off-style" — it's just not the most direct lever
+    /// for that voice and gets the neutral "noticed" treatment.
+    var alignedEloquenceDevices: Set<EloquenceDevice> {
+        switch self {
+        case .authoritative:
+            // Steady command: rule-of-three lands verdicts; epistrophe nails
+            // the closing word; antithesis sharpens contrast.
+            return [.tricolon, .ruleOfThree, .epistrophe, .antithesis]
+        case .warm:
+            // Rhythmic care: anaphora builds inviting rhythm; diacope makes
+            // a key word return with weight; rhetorical questions pull the
+            // listener in instead of pushing.
+            return [.anaphora, .diacope, .rhetoricalQuestion, .alliteration]
+        case .concise:
+            // Sharp cuts: asyndeton drops conjunctions for speed; isocolon
+            // gives parallel weight without padding.
+            return [.asyndeton, .isocolon]
+        case .persuasive:
+            // Conviction architecture: rule-of-three completes the case;
+            // antithesis frames the choice; anaphora drives the through-line.
+            return [.tricolon, .ruleOfThree, .antithesis, .anaphora]
+        case .executive:
+            // Composed clarity: parallel grammar reads as deliberate;
+            // rule-of-three is the boardroom move; antithesis frames trade-offs.
+            return [.isocolon, .tricolon, .ruleOfThree, .antithesis]
+        case .storytelling:
+            // Memorable shape: anaphora is the narrator's rhythm; diacope
+            // returns to a phrase; epizeuxis lands a beat; alliteration
+            // makes a phrase stick.
+            return [.anaphora, .diacope, .epizeuxis, .alliteration]
+        }
+    }
+
+    /// True when this rhetorical device is one of the most direct moves
+    /// toward this voice goal.
+    func aligns(with device: EloquenceDevice) -> Bool {
+        alignedEloquenceDevices.contains(device)
+    }
 }
 
 // MARK: - Drill Format

@@ -528,6 +528,60 @@ struct SpeakingStyleGoalAlignmentTests {
                 "shortVoiceLabel must not end with a period; the caller adds it.")
         }
     }
+
+    // MARK: - Rhetorical-device alignment (mid-session HUD subtext)
+
+    @Test func alignedEloquenceDevicesAreNonEmpty() {
+        for goal in SpeakingStyleGoal.allCases {
+            #expect(!goal.alignedEloquenceDevices.isEmpty,
+                "\(goal) must have at least one aligned rhetorical device")
+        }
+    }
+
+    @Test func alignsMatchesAlignedDevicesSet() {
+        let authoritative: SpeakingStyleGoal = .authoritative
+        #expect(authoritative.aligns(with: .tricolon))
+        #expect(authoritative.aligns(with: .ruleOfThree))
+        #expect(authoritative.aligns(with: .epistrophe))
+        #expect(authoritative.aligns(with: .antithesis))
+        #expect(!authoritative.aligns(with: .polysyndeton),
+            "authoritative shouldn't claim alignment with conjunction-stacking")
+    }
+
+    @Test func conciseAlignsWithSharpCuts() {
+        let concise: SpeakingStyleGoal = .concise
+        #expect(concise.aligns(with: .asyndeton),
+            "concise voice should claim asyndeton — dropping conjunctions speeds delivery")
+        #expect(concise.aligns(with: .isocolon),
+            "concise voice should claim isocolon — parallel grammar, no padding")
+        #expect(!concise.aligns(with: .polysyndeton),
+            "concise voice should NOT claim polysyndeton — stacking conjunctions slows delivery")
+    }
+
+    @Test func storytellingAlignsWithRhythmicDevices() {
+        let story: SpeakingStyleGoal = .storytelling
+        #expect(story.aligns(with: .anaphora))
+        #expect(story.aligns(with: .diacope))
+        #expect(story.aligns(with: .epizeuxis))
+        #expect(story.aligns(with: .alliteration))
+    }
+
+    @Test func warmAlignsWithInvitingDevices() {
+        let warm: SpeakingStyleGoal = .warm
+        #expect(warm.aligns(with: .anaphora))
+        #expect(warm.aligns(with: .rhetoricalQuestion),
+            "warm voice pulls the listener in via rhetorical questions")
+    }
+
+    @Test func everyDeviceAlignsWithAtLeastOneVoice() {
+        // Sanity check: no rhetorical device is universally orphaned.
+        // Coverage matters — every move the EloquenceEngine detects should
+        // be claimable by at least one of the six voice goals.
+        for device in EloquenceDevice.allCases {
+            let claimed = SpeakingStyleGoal.allCases.contains { $0.aligns(with: device) }
+            #expect(claimed, "\(device) should align with at least one SpeakingStyleGoal")
+        }
+    }
 }
 
 // MARK: - VerdictEngine Tests
