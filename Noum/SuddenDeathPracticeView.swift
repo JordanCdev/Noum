@@ -52,6 +52,15 @@ struct SuddenDeathPracticeView: View {
             content
                 .animation(.snappySpring, value: phaseGroup)
         }
+        .overlay(alignment: .bottom) {
+            // Goal-aware whisper — fires once per round when the user starts
+            // speaking, surfacing a cue tied to their chosen voice goal.
+            // Silent when no goal is set or the screen isn't in a live phase.
+            if phaseGroup == .live {
+                VoiceGoalWhisperHUD(speechVM: speechVM)
+                    .padding(.bottom, 96) // sit above the Done button area
+            }
+        }
         .accessibilityIdentifier("suddenDeath.screen")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)

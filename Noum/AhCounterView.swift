@@ -327,6 +327,13 @@ struct AhCounterView: View {
                 .allowsHitTesting(false)
             }
         }
+        .overlay(alignment: .bottom) {
+            // Goal-aware whisper — fires once when recording starts,
+            // surfacing a cue tied to the user's chosen voice goal.
+            // Silent when no goal is set.
+            VoiceGoalWhisperHUD(speechVM: speechVM)
+                .padding(.bottom, 12)
+        }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(speechVM.isRecording)

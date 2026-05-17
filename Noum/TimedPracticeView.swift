@@ -1207,6 +1207,13 @@ struct TimedPracticeView: View {
             LiveEloquenceHUD(speechVM: speechVM)
                 .padding(.top, 4)
         }
+        .overlay(alignment: .bottom) {
+            // Goal-aware whisper — surfaces one short cue tied to the user's
+            // chosen voice goal each time recording starts. Silent when no
+            // goal is set. Lives at the bottom so the eloquence chip (top)
+            // and this surface never compete for the same patch of screen.
+            VoiceGoalWhisperHUD(speechVM: speechVM)
+        }
     }
 
     /// Compact banner shown at top during a drill session, reminding the user of their constraint.

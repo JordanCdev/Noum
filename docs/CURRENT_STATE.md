@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard)_
+_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + live VoiceGoalWhisper HUD)_
 
 ## Architecture overview
 
@@ -548,17 +548,21 @@ _Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching 
 ### Stubbed / placeholder
 
 - **Goal-driven coaching feedback in mid-session UI** — the goal is
-  captured and now reaches post-session coaching surfaces:
+  captured and reaches both post-session and mid-session surfaces:
   `NextActionEngine.recommend` appends a goal-aligned suffix to the
-  reasoning when the chosen drill targets an aligned skill area, and
+  reasoning when the chosen drill targets an aligned skill area,
   `MiniDrillResultView` shows a "Closer to your <voice> voice" capsule
   on successful drills that align with the user's
-  `SpeakingStyleGoal`. Alignment map lives on
-  `SpeakingStyleGoal.alignedSkillAreas` in `DrillSystem.swift` (e.g.
-  `.concise` → `[conciseSpeaking, structure, fillerReduction]`). Mid-
-  session live UI still doesn't read the goal — that's a separate
-  surface and probably the right next push (e.g. live HUD adapts copy
-  for the user's voice goal during the rep).
+  `SpeakingStyleGoal`, and `VoiceGoalWhisperHUD` surfaces one
+  rotating cue tied to the user's voice goal each time recording
+  starts in Timed / Sudden Death / Ah Counter modes. The cue library
+  (`VoiceGoalCueLibrary` in `VoiceGoalWhisper.swift`) ships 5 cues
+  per goal, deterministically rotated by session count for freshness.
+  All cues map to an aligned skill area so icon/tint visually rhyme
+  with the post-session drill recommendation. Silent when no profile
+  is set or no voice goal has been chosen. IM mode intentionally
+  excluded — the conversational composer bar competes for the same
+  bottom-of-screen real estate.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
