@@ -146,6 +146,78 @@ extension SpeakingStyleGoal {
     }
 }
 
+// MARK: - Style Goal Alignment — Rhetorical Devices
+//
+// Sibling mapping to `SpeakingStyleGoal.alignedSkillAreas`, but tied to the
+// rhetorical devices `EloquenceEngine` surfaces in-session. Used by the live
+// HUD to ground its chip copy in the user's chosen voice ("for your concise
+// voice") when a fired device is a high-leverage move toward that voice.
+//
+// Intentionally narrow — each device aligns with 1–3 goals, never all six.
+// A device not in a goal's list isn't "off-style"; it just isn't a *direct*
+// expression of that voice, and the chip falls back to the neutral "noticed"
+// copy. False alignment would dilute the signal more than no alignment does.
+
+extension EloquenceDevice {
+    /// Voice goals for which firing this device is a recognisable step toward
+    /// the user's chosen voice. Curated against device function:
+    /// - Persuasive rhetoric: tricolon, anaphora, isocolon, antithesis, rhetorical question.
+    /// - Compression / sharpness: asyndeton (concise / executive).
+    /// - Emphasis / texture: alliteration, diacope, epizeuxis (storytelling, vocal emphasis).
+    /// - Gravity / weight: polysyndeton, epistrophe (authoritative, storytelling).
+    var alignedVoiceGoals: Set<SpeakingStyleGoal> {
+        switch self {
+        case .tricolon, .ruleOfThree:
+            return [.persuasive, .authoritative, .executive]
+        case .anaphora:
+            return [.persuasive, .authoritative]
+        case .epistrophe:
+            return [.authoritative, .persuasive]
+        case .alliteration:
+            return [.storytelling, .warm]
+        case .isocolon:
+            return [.executive, .persuasive]
+        case .antithesis:
+            return [.persuasive, .executive]
+        case .polysyndeton:
+            return [.storytelling, .authoritative]
+        case .asyndeton:
+            return [.concise, .executive]
+        case .diacope:
+            return [.storytelling]
+        case .epizeuxis:
+            return [.storytelling, .authoritative]
+        case .rhetoricalQuestion:
+            return [.persuasive, .warm]
+        }
+    }
+
+    /// True when firing this device is a direct expression of `goal`.
+    func aligns(with goal: SpeakingStyleGoal) -> Bool {
+        alignedVoiceGoals.contains(goal)
+    }
+}
+
+// MARK: - Live HUD Chip Copy
+//
+// Pure helper for the in-session live HUD. Given a fired device and the
+// user's voice goal, returns the trailing chip phrase. Lives here next to
+// the alignment maps so the resolver and its data live together; the view
+// itself reads this through a thin call site, no logic inside SwiftUI.
+
+enum LiveEloquenceChipCopy {
+    /// Trailing phrase on a live eloquence chip. Returns the goal-grounded
+    /// "for your <voice>" phrase when the device aligns with the user's
+    /// chosen voice; otherwise the neutral "noticed" observation.
+    ///
+    /// Contract: never empty, never ends with a period, always slots
+    /// behind the device title in the existing chip layout.
+    static func trailingPhrase(device: EloquenceDevice, goal: SpeakingStyleGoal?) -> String {
+        guard let goal, device.aligns(with: goal) else { return "noticed" }
+        return "for your \(goal.shortVoiceLabel)"
+    }
+}
+
 // MARK: - Drill Format
 
 /// Whether the drill is a quick focused exercise or a full re-practice.

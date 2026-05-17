@@ -548,17 +548,26 @@ _Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching 
 ### Stubbed / placeholder
 
 - **Goal-driven coaching feedback in mid-session UI** — the goal is
-  captured and now reaches post-session coaching surfaces:
-  `NextActionEngine.recommend` appends a goal-aligned suffix to the
-  reasoning when the chosen drill targets an aligned skill area, and
-  `MiniDrillResultView` shows a "Closer to your <voice> voice" capsule
-  on successful drills that align with the user's
+  captured and now reaches both post-session and mid-session coaching
+  surfaces. Post-session: `NextActionEngine.recommend` appends a
+  goal-aligned suffix to the reasoning when the chosen drill targets an
+  aligned skill area, and `MiniDrillResultView` shows a "Closer to your
+  <voice> voice" capsule on successful drills that align with the user's
   `SpeakingStyleGoal`. Alignment map lives on
   `SpeakingStyleGoal.alignedSkillAreas` in `DrillSystem.swift` (e.g.
-  `.concise` → `[conciseSpeaking, structure, fillerReduction]`). Mid-
-  session live UI still doesn't read the goal — that's a separate
-  surface and probably the right next push (e.g. live HUD adapts copy
-  for the user's voice goal during the rep).
+  `.concise` → `[conciseSpeaking, structure, fillerReduction]`).
+  Mid-session: `LiveEloquenceHUD` now captures the user's voice goal
+  at session start (`LiveEloquenceObserver.start(_:voiceGoal:)`) and
+  swaps the chip's neutral trailing word ("noticed") for a goal-grounded
+  phrase ("for your concise voice") when the fired device aligns with
+  the user's voice. Mapping lives on `EloquenceDevice.alignedVoiceGoals`
+  in `DrillSystem.swift` (e.g. asyndeton → `[.concise, .executive]`,
+  alliteration → `[.storytelling, .warm]`). Silent on misalignment or
+  nil goal, same pattern as `NextActionEngine`. Resolver lives at
+  `LiveEloquenceChipCopy.trailingPhrase(device:goal:)` so the SwiftUI
+  view stays logic-free. VoiceOver narration carries the alignment
+  context too ("Tricolon — a direct step toward your persuasive
+  voice.").
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
