@@ -357,18 +357,29 @@ struct SuddenDeathPracticeView: View {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
 
-            if case .countdown(let value) = engine.phase {
-                Text("\(value)")
-                    .font(.system(size: 110, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: accentColor.opacity(0.5), radius: 30, y: 8)
-                    .transition(.scale.combined(with: .opacity))
-            } else if case .go = engine.phase {
-                Text("GO")
-                    .font(.system(size: 110, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: Color.green.opacity(0.5), radius: 30, y: 8)
-                    .transition(.scale.combined(with: .opacity))
+            VStack(spacing: Spacing.lg) {
+                if case .countdown(let value) = engine.phase {
+                    Text("\(value)")
+                        .font(.system(size: 110, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .shadow(color: accentColor.opacity(0.5), radius: 30, y: 8)
+                        .transition(.scale.combined(with: .opacity))
+                } else if case .go = engine.phase {
+                    Text("GO")
+                        .font(.system(size: 110, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .shadow(color: Color.green.opacity(0.5), radius: 30, y: 8)
+                        .transition(.scale.combined(with: .opacity))
+                }
+
+                // Goal anchor — quietly reinforces the user's voice goal
+                // during the pre-rep moment. Pressure mode benefits most
+                // from the reminder — the few seconds before "go" is when
+                // intent is set.
+                if let goal = coachingProfileStore.profile?.speakingStyleGoal {
+                    GoalAnchorCapsule(goal: goal, style: .onDark)
+                        .accessibilityIdentifier("suddenDeath.goalAnchor")
+                }
             }
         }
     }

@@ -246,6 +246,11 @@ struct IMPracticeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     headerCard
+                    if let goal = coachingProfileStore.profile?.speakingStyleGoal {
+                        GoalAnchorCapsule(goal: goal, style: .onLight)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("imPractice.goalAnchor")
+                    }
                     setupPanel
                     bottomSetupBar
                 }

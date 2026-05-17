@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard)_
+_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + pre-rep GoalAnchorCapsule across all four practice modes)_
 
 ## Architecture overview
 
@@ -555,10 +555,18 @@ _Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   on successful drills that align with the user's
   `SpeakingStyleGoal`. Alignment map lives on
   `SpeakingStyleGoal.alignedSkillAreas` in `DrillSystem.swift` (e.g.
-  `.concise` → `[conciseSpeaking, structure, fillerReduction]`). Mid-
-  session live UI still doesn't read the goal — that's a separate
-  surface and probably the right next push (e.g. live HUD adapts copy
-  for the user's voice goal during the rep).
+  `.concise` → `[conciseSpeaking, structure, fillerReduction]`). **The
+  pre-rep moment now reads the goal too:** `GoalAnchorCapsule`
+  surfaces an "Aim: <voice> voice" capsule across all four practice
+  modes — the Timed thinking phase, the Sudden Death countdown, the
+  Ah Counter setup state, and the IM Mode setup panel. Pure pre-rep:
+  it disappears once the user starts speaking so the goal shapes
+  intent without becoming visual noise during delivery. Hidden when
+  no profile is captured (anonymous first session). Two-style API
+  (`.onLight` for cardlike surfaces, `.onDark` for saturated/gradient
+  backgrounds) keeps the capsule legible across mode tints. Mid-rep
+  live HUD copy (e.g. `LiveEloquenceHUD` chips adapting to the voice
+  goal) remains open.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked

@@ -136,6 +136,18 @@ struct AhCounterView: View {
                     .padding(Spacing.lg)
                     .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
 
+                    // MARK: Goal Anchor (pre-recording only)
+                    // Pre-rep reminder of the user's chosen voice goal.
+                    // Folds into the standard prompt-and-launch rhythm so the
+                    // goal shapes intent before the recording starts.
+                    if !speechVM.isRecording && elapsedSeconds == 0 && speechVM.fillerWordCount == 0,
+                       let goal = coachingProfileStore.profile?.speakingStyleGoal {
+                        GoalAnchorCapsule(goal: goal, style: .onLight)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("ahCounter.goalAnchor")
+                            .transition(.opacity)
+                    }
+
                     // MARK: Prompt Suggestion (pre-recording only)
                     if !speechVM.isRecording && elapsedSeconds == 0 && speechVM.fillerWordCount == 0 {
                         VStack(spacing: Spacing.sm) {
