@@ -530,6 +530,80 @@ struct SpeakingStyleGoalAlignmentTests {
     }
 }
 
+// MARK: - GoalAnchorCapsule Copy Tests
+
+/// Verifies the pre-rep goal anchor renders coherent, voice-safe copy for
+/// every SpeakingStyleGoal. The capsule itself is a SwiftUI view, but the
+/// copy helpers are pure functions — testable without spinning up a host.
+@available(iOS 17.0, *)
+struct GoalAnchorCapsuleTests {
+
+    @Test func anchorTextNonEmptyForEveryGoal() {
+        for goal in SpeakingStyleGoal.allCases {
+            let text = GoalAnchorCapsule.anchorText(for: goal)
+            #expect(!text.isEmpty, "anchorText should never be empty for \(goal)")
+        }
+    }
+
+    @Test func anchorTextStartsWithAimPrefix() {
+        // Consistent prefix so users learn to recognise the anchor at a glance.
+        for goal in SpeakingStyleGoal.allCases {
+            let text = GoalAnchorCapsule.anchorText(for: goal)
+            #expect(text.hasPrefix("Aim: "), "anchorText should use the Aim: prefix. Got: \(text)")
+        }
+    }
+
+    @Test func anchorTextEmbedsGoalLabel() {
+        for goal in SpeakingStyleGoal.allCases {
+            let text = GoalAnchorCapsule.anchorText(for: goal)
+            #expect(text.contains(goal.shortVoiceLabel),
+                "anchorText for \(goal) should embed its shortVoiceLabel. Got: \(text)")
+        }
+    }
+
+    @Test func anchorTextHasNoTrailingPunctuation() {
+        // Capsule label is single-line — no period, no exclamation.
+        for goal in SpeakingStyleGoal.allCases {
+            let text = GoalAnchorCapsule.anchorText(for: goal)
+            #expect(!text.hasSuffix("."), "anchor should not end with a period. Got: \(text)")
+            #expect(!text.hasSuffix("!"), "anchor should not end with an exclamation. Got: \(text)")
+        }
+    }
+
+    @Test func anchorTextIsVoiceSafe() {
+        // Voice rules: no "Let's", no chirpy intros. Anchor is a coach
+        // setting intent, not a cheerleader.
+        for goal in SpeakingStyleGoal.allCases {
+            let text = GoalAnchorCapsule.anchorText(for: goal)
+            let lowered = text.lowercased()
+            #expect(!lowered.contains("let's"), "Voice violation: \(text)")
+            #expect(!lowered.contains("you've got this"), "Voice violation: \(text)")
+            #expect(!lowered.contains("crush"), "Voice violation: \(text)")
+        }
+    }
+
+    @Test func accessibilityTextIsFullSentence() {
+        // VoiceOver should read a complete instruction, not the same
+        // truncated capsule label sighted users see.
+        for goal in SpeakingStyleGoal.allCases {
+            let text = GoalAnchorCapsule.accessibilityText(for: goal)
+            #expect(text.lowercased().contains("aim"),
+                "Accessibility text should mention aiming. Got: \(text)")
+            #expect(text.contains(goal.shortVoiceLabel),
+                "Accessibility text should embed goal label. Got: \(text)")
+        }
+    }
+
+    @Test func anchorTextDistinguishesGoals() {
+        // Two different goals must render different anchors — guarantees
+        // the surface actually communicates which voice the user chose.
+        let texts = SpeakingStyleGoal.allCases.map { GoalAnchorCapsule.anchorText(for: $0) }
+        let unique = Set(texts)
+        #expect(unique.count == SpeakingStyleGoal.allCases.count,
+            "Each goal should produce a unique anchor. Got duplicates in: \(texts)")
+    }
+}
+
 // MARK: - VerdictEngine Tests
 
 struct VerdictEngineTests {

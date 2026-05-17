@@ -1095,6 +1095,15 @@ struct TimedPracticeView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
 
+            // Goal anchor — surfaces the user's chosen voice goal so the
+            // prep window shapes intent, not just timing. Hidden when no
+            // profile is captured.
+            if let goal = coachingProfileStore.profile?.speakingStyleGoal {
+                GoalAnchorCapsule(goal: goal, style: .onDark)
+                    .padding(.top, Spacing.md)
+                    .accessibilityIdentifier("timed.goalAnchor")
+            }
+
             Spacer(minLength: 40)
 
             // Countdown with breathing indicator
