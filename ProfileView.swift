@@ -181,6 +181,7 @@ struct ProfileView: View {
         )
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("profile.screen")
         .sheet(isPresented: $showPaywall) { PaywallView() }
         .sheet(isPresented: $showChallengePickFriend) {
             ChallengePickFriendSheet(friends: friends, challenges: challenges)

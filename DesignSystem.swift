@@ -87,8 +87,8 @@ enum AppColor {
 
     // MARK: Semantic Feedback
 
-    /// Positive / good score
-    static let positive = Color(red: 0.10, green: 0.56, blue: 0.40)
+    /// Positive / good score (#199966)
+    static let positive = Color(red: 0.10, green: 0.60, blue: 0.40)
     /// Caution / okay score
     static let caution = Color(red: 0.83, green: 0.52, blue: 0.10)
     /// Warning / needs improvement

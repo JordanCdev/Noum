@@ -52,6 +52,7 @@ struct SuddenDeathPracticeView: View {
             content
                 .animation(.snappySpring, value: phaseGroup)
         }
+        .accessibilityIdentifier("suddenDeath.screen")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(phaseGroup != .setup)

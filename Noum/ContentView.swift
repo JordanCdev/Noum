@@ -36,6 +36,7 @@ struct ContentView: View {
     @StateObject private var notificationPrePrompt = NotificationPrePromptManager.shared
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
+    @StateObject private var ratingStore = RatingStore.shared
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
@@ -121,13 +122,21 @@ struct ContentView: View {
                             //    lives on Profile.
                             //  • suggestedPracticeCard — duplicated the
                             //    quickStartCard's primary intent.
+                            // Premium personal-best anchor — only surfaces when
+                            // there's a live peak this week. This is the
+                            // Figma "PERSONAL BEST" hero; it's reserved for
+                            // real moments, so most days the home falls back
+                            // to the calm six-card stack below.
+                            if ratingStore.rating.isWeekPeakCurrent {
+                                personalBestHeroCard.cardEntrance(0)
+                            }
                             heroCard.cardEntrance(0)
                             quickStartCard.cardEntrance(1)
                             DailyChallengeTile().cardEntrance(2)
                             WordOfTheDayTile(navigationPath: $navigationPath).cardEntrance(3)
                             AIWeeklyInsightCard(
                                 sessionStore: sessionStore,
-                                ratingStore: RatingStore.shared,
+                                ratingStore: ratingStore,
                                 clutchWordStore: ClutchWordStore.shared,
                                 coachingProfileStore: coachingProfileStore
                             )
@@ -198,7 +207,7 @@ struct ContentView: View {
                 case .settings:
                     SettingsView()
                 case .speakingRank:
-                    SpeakingRankView()
+                    ProfileView()
                 case .pathJourney:
                     PathJourneyView(navigationPath: $navigationPath)
                 }
@@ -403,6 +412,46 @@ struct ContentView: View {
         if streak >= 7 { return AppColor.brandBlue }
         if streak >= 3 { return AppColor.brandBlue.opacity(0.85) }
         return AppColor.brandBlue.opacity(0.7)
+    }
+
+    // MARK: - Personal-best anchor (Figma "Premium Hero")
+    //
+    // Only rendered when `ratingStore.rating.isWeekPeakCurrent` is true. The
+    // copy and stats are derived live from the rating store so the card
+    // reflects what actually happened this week — never invented.
+
+    private var personalBestHeroCard: some View {
+        let rating = ratingStore.rating
+        let peak = rating.weekPeakRating
+        let current = rating.overall
+        let allTime = rating.peakRating
+        let headline = peak >= allTime
+            ? "Your highest rating yet."
+            : "A new high for this week."
+        let body: String = {
+            let diff = peak - current
+            if diff > 0 {
+                return "You held \(peak) earlier this week — \(diff) above where you sit now."
+            }
+            return "You're sitting at this week's peak. Hold it through one more rep."
+        }()
+        let diff = peak - allTime
+        let diffValue = diff >= 0 ? "+\(diff)" : "\(diff)"
+        let diffLabel = diff >= 0 ? "vs all-time" : "to all-time"
+
+        return PersonalBestHeroCard(
+            kicker: "Personal best · this week",
+            headline: headline,
+            body: body,
+            stats: [
+                .init(value: "\(peak)", label: "Peak this week"),
+                .init(value: diffValue, label: diffLabel)
+            ],
+            ctaTitle: "See your peaks",
+            ctaAction: {
+                navigationPath.append(AppDestination.socialProfile)
+            }
+        )
     }
 
     private var heroCard: some View {

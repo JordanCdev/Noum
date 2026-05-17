@@ -78,6 +78,72 @@ enum DevSeedData {
                 categoryRatings: categoryRatingsForSession(session)
             )
         }
+
+        // Seed a plausible SpeakingRating so the premium personal-best hero
+        // has something honest to display. The current-week peak is held
+        // a few points above the live overall so the "you held N earlier
+        // this week" line reads truthfully against the seed history.
+        RatingStore.shared.replaceForDebug(seedRating(for: profile))
+    }
+
+    /// Build a `SpeakingRating` aligned with the seed profile's narrative.
+    /// `improvingIntermediate` is the showcase profile, so it gets a clear
+    /// current-week peak that drives the Figma-spec premium hero.
+    private static func seedRating(for profile: SeedProfile) -> SpeakingRating {
+        let comps = Calendar.current.dateComponents([.weekOfYear, .yearForWeekOfYear], from: Date())
+        let week = comps.weekOfYear ?? 1
+        let year = comps.yearForWeekOfYear ?? 2026
+
+        switch profile {
+        case .improvingIntermediate:
+            return SpeakingRating(
+                overall: 612,
+                peakRating: 624,
+                ratingHistory: [],
+                personalBests: [],
+                totalRatedSessions: 12,
+                weekPeakRating: 624,
+                weekPeakISOWeek: week,
+                weekPeakISOYear: year
+            )
+        case .plateauedAdvanced:
+            return SpeakingRating(
+                overall: 720,
+                peakRating: 740,
+                ratingHistory: [],
+                personalBests: [],
+                totalRatedSessions: 20,
+                weekPeakRating: 728,
+                weekPeakISOWeek: week,
+                weekPeakISOYear: year
+            )
+        case .fillerFree:
+            return SpeakingRating(
+                overall: 780,
+                peakRating: 820,
+                ratingHistory: [],
+                personalBests: [],
+                totalRatedSessions: 18,
+                weekPeakRating: 820,
+                weekPeakISOWeek: week,
+                weekPeakISOYear: year
+            )
+        case .pressureVulnerable:
+            return SpeakingRating(
+                overall: 540,
+                peakRating: 612,
+                ratingHistory: [],
+                personalBests: [],
+                totalRatedSessions: 15,
+                weekPeakRating: 568,
+                weekPeakISOWeek: week,
+                weekPeakISOYear: year
+            )
+        case .beginner:
+            // Beginner: no peak yet, stay at initial so the home falls back
+            // to the calm hero rather than mis-celebrating.
+            return .initial
+        }
     }
 
     /// Generate a summary of what a seed profile produces (for debug display).

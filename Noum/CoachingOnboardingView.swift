@@ -788,6 +788,7 @@ struct CoachingOnboardingView: View {
                     .shadow(color: isSelected ? Color(red: 0.18, green: 0.53, blue: 0.98).opacity(0.08) : .clear, radius: 10, y: 5)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("coaching.option.\(option.id)")
             }
         }
     }

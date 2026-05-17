@@ -21,6 +21,29 @@ struct PeakRatingWallCard: View {
     @StateObject private var friendsManager = FriendsManager.shared
 
     var body: some View {
+        // When a peak landed this week, surface the premium purple hero (the
+        // canonical Figma "personal best" anchor). Otherwise fall back to the
+        // calm three-row list — peaks are honest, so a non-current week
+        // doesn't get the celebration treatment.
+        if ratingStore.rating.isWeekPeakCurrent {
+            premiumHero
+        } else {
+            calmList
+        }
+    }
+
+    private var premiumHero: some View {
+        PersonalBestHeroCard(
+            kicker: "Personal best · this week",
+            headline: weekHeadline,
+            body: weekBody,
+            stats: weekStats,
+            ctaTitle: "See your peaks",
+            ctaAction: {}
+        )
+    }
+
+    private var calmList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "trophy.fill")
@@ -60,6 +83,42 @@ struct PeakRatingWallCard: View {
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    // MARK: - Premium hero copy + stats
+
+    private var weekHeadline: String {
+        // Declarative; matches the spec's "Voice rules" — no selling, no
+        // exclamation. Pick from a small set so the same numbers don't read
+        // the same way week-to-week.
+        let peak = ratingStore.rating.weekPeakRating
+        let allTime = ratingStore.rating.peakRating
+        if peak >= allTime {
+            return "Your highest rating yet."
+        }
+        return "A new high for this week."
+    }
+
+    private var weekBody: String {
+        let peak = ratingStore.rating.weekPeakRating
+        let current = ratingStore.rating.overall
+        let diff = peak - current
+        if diff > 0 {
+            return "You held \(peak) earlier this week — \(diff) above where you sit right now."
+        }
+        return "You're sitting right at this week's peak. Hold it through one more rep."
+    }
+
+    private var weekStats: [PersonalBestHeroCard<Image>.Stat] {
+        let peak = ratingStore.rating.weekPeakRating
+        let allTime = ratingStore.rating.peakRating
+        let diff = peak - allTime
+        let diffLabel = diff >= 0 ? "vs all-time" : "to all-time"
+        let diffValue = diff >= 0 ? "+\(diff)" : "\(diff)"
+        return [
+            .init(value: "\(peak)", label: "Peak this week"),
+            .init(value: diffValue, label: diffLabel)
+        ]
     }
 
     // MARK: - Row builder

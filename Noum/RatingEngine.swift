@@ -419,6 +419,16 @@ final class RatingStore: ObservableObject {
         load()
     }
 
+    #if DEBUG
+    /// Debug-only injector for `DevSeedData`. Lets seed profiles ship a
+    /// plausible peak rating so the home / Profile premium hero surfaces.
+    /// Never called in release builds.
+    func replaceForDebug(_ rating: SpeakingRating) {
+        self.rating = rating
+        save()
+    }
+    #endif
+
     /// Get the PB record for a category, if it exists.
     func personalBest(for category: PBCategory) -> PersonalBestRecord? {
         rating.personalBests.first { $0.category == category }
