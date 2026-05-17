@@ -34,6 +34,13 @@ final class LiveEloquenceObserver: ObservableObject {
     /// The chip currently on screen (if any). Nil while idle.
     @Published private(set) var visibleFinding: EloquenceFinding?
 
+    /// User's voice goal for this session. Captured once at `start()` —
+    /// goal is a write-once setting from onboarding, so reading it
+    /// reactively mid-rep would be wasted overhead. When set, devices
+    /// that align with the goal render a "for your <voice>" trailing
+    /// phrase on the chip instead of the neutral "noticed".
+    private(set) var voiceGoal: SpeakingStyleGoal?
+
     /// Devices already announced this session. Each device fires at most
     /// once — repeating "tricolon" wouldn't be new information, and
     /// re-pulsing during a session would feel noisy.
@@ -55,9 +62,11 @@ final class LiveEloquenceObserver: ObservableObject {
     private var lastAnalyseAt: Date = .distantPast
 
     /// Begin observing the speech VM. Idempotent — calling twice rewires
-    /// the subscription cleanly.
-    func start(transcriptPublisher: AnyPublisher<String, Never>) {
+    /// the subscription cleanly. Captures the user's voice goal at the
+    /// start of the session so chip copy can be goal-grounded.
+    func start(transcriptPublisher: AnyPublisher<String, Never>, voiceGoal: SpeakingStyleGoal? = nil) {
         cancellable?.cancel()
+        self.voiceGoal = voiceGoal
         cancellable = transcriptPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] transcript in
@@ -75,6 +84,7 @@ final class LiveEloquenceObserver: ObservableObject {
         announced.removeAll()
         pending.removeAll()
         visibleFinding = nil
+        voiceGoal = nil
         lastAnalyseAt = .distantPast
     }
 
@@ -135,7 +145,15 @@ final class LiveEloquenceObserver: ObservableObject {
 struct LiveEloquenceHUD: View {
     @ObservedObject var speechVM: SpeechRecognizerViewModel
     @StateObject private var observer = LiveEloquenceObserver()
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Voice goal at the moment a session starts. Read once via
+    /// `CoachingProfileStore.shared` — the goal is a write-once onboarding
+    /// setting, so observing the store reactively here would be overkill.
+    private var currentVoiceGoal: SpeakingStyleGoal? {
+        coachingProfileStore.profile?.speakingStyleGoal
+    }
 
     var body: some View {
         ZStack {
@@ -151,16 +169,18 @@ struct LiveEloquenceHUD: View {
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.42, dampingFraction: 0.78), value: observer.visibleFinding?.id)
         .allowsHitTesting(false)
         .onAppear {
-            observer.start(transcriptPublisher: speechVM.$transcribedText.eraseToAnyPublisher())
+            observer.start(transcriptPublisher: speechVM.$transcribedText.eraseToAnyPublisher(), voiceGoal: currentVoiceGoal)
         }
         .onDisappear { observer.stop() }
         .onChange(of: speechVM.isRecording) { _, isRecording in
             // When a new session starts (recording flips on), reset the
             // announced-device set so each rep can re-celebrate the same
-            // devices the listener earned last time.
+            // devices the listener earned last time. Re-read the goal so a
+            // mid-life-of-the-view goal change (Settings → onboarding redo)
+            // surfaces on the next rep.
             if isRecording {
                 observer.stop()
-                observer.start(transcriptPublisher: speechVM.$transcribedText.eraseToAnyPublisher())
+                observer.start(transcriptPublisher: speechVM.$transcribedText.eraseToAnyPublisher(), voiceGoal: currentVoiceGoal)
             }
         }
     }
@@ -168,16 +188,18 @@ struct LiveEloquenceHUD: View {
     // MARK: - Chip
 
     private func chip(for finding: EloquenceFinding) -> some View {
-        HStack(spacing: 8) {
+        let trailing = LiveEloquenceChipCopy.trailingPhrase(device: finding.device, goal: observer.voiceGoal)
+        return HStack(spacing: 8) {
             Image(systemName: symbolName(for: finding.device))
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(AppColor.brandBlue)
             Text(finding.device.title)
                 .font(Typography.caption)
                 .foregroundStyle(.primary)
-            Text("noticed")
+            Text(trailing)
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
@@ -191,7 +213,17 @@ struct LiveEloquenceHUD: View {
         )
         .shadow(color: AppColor.brandBlue.opacity(0.18), radius: 10, x: 0, y: 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Rhetorical move noticed: \(finding.device.title)")
+        .accessibilityLabel(accessibilityLabel(for: finding, trailing: trailing))
+    }
+
+    /// VoiceOver narration. When the chip is goal-grounded, the announcement
+    /// tells the listener which voice it ties to so the alignment isn't only
+    /// visual.
+    private func accessibilityLabel(for finding: EloquenceFinding, trailing: String) -> String {
+        if trailing == "noticed" {
+            return "Rhetorical move noticed: \(finding.device.title)"
+        }
+        return "\(finding.device.title) — a direct step toward your \(observer.voiceGoal?.shortVoiceLabel ?? "voice")."
     }
 
     /// Slide in from the leading edge with a soft fade. Reduce-motion

@@ -530,6 +530,116 @@ struct SpeakingStyleGoalAlignmentTests {
     }
 }
 
+// MARK: - EloquenceDevice Voice Goal Alignment Tests
+
+struct EloquenceDeviceVoiceGoalAlignmentTests {
+
+    @Test func tricolonAlignsWithPersuasiveAuthoritativeExecutive() {
+        let tricolon: EloquenceDevice = .tricolon
+        #expect(tricolon.aligns(with: .persuasive))
+        #expect(tricolon.aligns(with: .authoritative))
+        #expect(tricolon.aligns(with: .executive))
+        #expect(!tricolon.aligns(with: .warm),
+            "Tricolon is a rhetoric move — warmth isn't a direct expression of it.")
+    }
+
+    @Test func asyndetonAlignsWithConciseAndExecutive() {
+        let asyndeton: EloquenceDevice = .asyndeton
+        // Dropping conjunctions = compression. Direct lever for concise and
+        // executive voices; storytelling pulls the other way.
+        #expect(asyndeton.aligns(with: .concise))
+        #expect(asyndeton.aligns(with: .executive))
+        #expect(!asyndeton.aligns(with: .storytelling))
+    }
+
+    @Test func alliterationAlignsWithStorytellingAndWarm() {
+        let alliteration: EloquenceDevice = .alliteration
+        #expect(alliteration.aligns(with: .storytelling))
+        #expect(alliteration.aligns(with: .warm))
+        #expect(!alliteration.aligns(with: .concise),
+            "Alliteration is texture — concise voices avoid it.")
+    }
+
+    @Test func everyDeviceHasAtLeastOneAlignedGoal() {
+        // Every device should be a recognisable step toward at least one
+        // voice goal — otherwise the alignment map is silently dropping it.
+        for device in EloquenceDevice.allCases {
+            #expect(!device.alignedVoiceGoals.isEmpty,
+                "\(device) is missing a voice goal alignment.")
+        }
+    }
+
+    @Test func everyGoalHasAtLeastOneAlignedDevice() {
+        // Symmetric guarantee — every voice goal should have at least one
+        // device that surfaces a chip in their flavour. Without this, the
+        // live HUD silently never fires goal-grounded copy for a user
+        // who picked that voice in onboarding.
+        for goal in SpeakingStyleGoal.allCases {
+            let hits = EloquenceDevice.allCases.filter { $0.aligns(with: goal) }
+            #expect(!hits.isEmpty,
+                "Voice goal \(goal) has no aligned eloquence device — live HUD will never light up for them.")
+        }
+    }
+
+    @Test func alignmentMapStayedNarrow() {
+        // No device should claim alignment with all six voices — that'd be
+        // a sign the map has drifted toward "everything aligns with everything",
+        // which would dilute the coaching signal back down to noise.
+        for device in EloquenceDevice.allCases {
+            #expect(device.alignedVoiceGoals.count <= 4,
+                "\(device) aligns with too many voice goals (\(device.alignedVoiceGoals.count)); the map should stay narrow.")
+        }
+    }
+}
+
+// MARK: - LiveEloquenceChipCopy Tests
+
+struct LiveEloquenceChipCopyTests {
+
+    @Test func neutralPhraseWhenGoalIsNil() {
+        let phrase = LiveEloquenceChipCopy.trailingPhrase(device: .tricolon, goal: nil)
+        #expect(phrase == "noticed",
+            "No goal means no voice-grounded suffix — fall back to neutral observation.")
+    }
+
+    @Test func neutralPhraseWhenDeviceMisaligned() {
+        // Alliteration doesn't directly express a concise voice — should
+        // stay neutral rather than force a goal label that doesn't fit.
+        let phrase = LiveEloquenceChipCopy.trailingPhrase(device: .alliteration, goal: .concise)
+        #expect(phrase == "noticed",
+            "Misaligned device + goal should still render the neutral phrase.")
+    }
+
+    @Test func goalGroundedPhraseWhenAligned() {
+        // Tricolon aligns with persuasive — the chip should swap "noticed"
+        // for "for your persuasive voice".
+        let phrase = LiveEloquenceChipCopy.trailingPhrase(device: .tricolon, goal: .persuasive)
+        #expect(phrase == "for your persuasive voice",
+            "Aligned device + goal should produce a goal-grounded trailing phrase. Got: \(phrase)")
+    }
+
+    @Test func goalGroundedPhraseHandlesExecutivePresenceLabel() {
+        // "Executive presence" is the only goal whose shortVoiceLabel
+        // doesn't end in "voice" — verify the phrase still reads cleanly.
+        let phrase = LiveEloquenceChipCopy.trailingPhrase(device: .asyndeton, goal: .executive)
+        #expect(phrase == "for your executive presence",
+            "Executive presence label should slot in without forcing a 'voice' suffix. Got: \(phrase)")
+    }
+
+    @Test func trailingPhraseNeverEndsWithPeriod() {
+        // Copy contract — the trailing phrase is a chip suffix, not a
+        // sentence. Adding a period would look broken in the layout.
+        for device in EloquenceDevice.allCases {
+            for goal in SpeakingStyleGoal.allCases.map(Optional.some) + [nil] {
+                let phrase = LiveEloquenceChipCopy.trailingPhrase(device: device, goal: goal)
+                #expect(!phrase.hasSuffix("."),
+                    "Trailing phrase must not end with a period. Got: \(phrase) for \(device) + \(String(describing: goal))")
+                #expect(!phrase.isEmpty)
+            }
+        }
+    }
+}
+
 // MARK: - VerdictEngine Tests
 
 struct VerdictEngineTests {
