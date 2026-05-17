@@ -3307,3 +3307,99 @@ struct ScoreCalibrationTests {
                 "10 fillers (\(highEval.score)) should score lower than 2 (\(lowEval.score))")
     }
 }
+
+// MARK: - VoiceGoalCueLibrary Tests
+//
+// Covers the goal-aware mid-session whisper added to close the
+// "live HUD adapts copy for the user's voice goal during the rep" gap
+// from docs/CURRENT_STATE.md. Verifies the cue catalog is complete,
+// deterministic, voice-rule compliant, and that every cue ties to a
+// SkillArea actually aligned with its voice goal.
+
+struct VoiceGoalCueLibraryTests {
+
+    @Test func everyGoalHasFiveCues() {
+        for goal in SpeakingStyleGoal.allCases {
+            let bank = VoiceGoalCueLibrary.cues(for: goal)
+            #expect(bank.count == 5, "\(goal) should have exactly 5 cues, got \(bank.count)")
+        }
+    }
+
+    @Test func everyCueAlignsWithItsGoal() {
+        // Every cue's skillArea should be one of the goal's aligned skills,
+        // except for one allowed "stretch" cue per goal that targets a
+        // second-degree skill. This keeps the rotation fresh without losing
+        // the goal connection. Test: at least 80% of cues match strictly.
+        for goal in SpeakingStyleGoal.allCases {
+            let bank = VoiceGoalCueLibrary.cues(for: goal)
+            let aligned = bank.filter { goal.aligns(with: $0.skillArea) }
+            let ratio = Double(aligned.count) / Double(bank.count)
+            #expect(ratio >= 0.8,
+                "\(goal): at least 80% of cues must target an aligned skill area. Got \(aligned.count)/\(bank.count).")
+        }
+    }
+
+    @Test func cueLookupIsDeterministic() {
+        // Same goal + same rotation index → same cue. Across launches.
+        let goal: SpeakingStyleGoal = .concise
+        let a = VoiceGoalCueLibrary.cue(for: goal, rotationIndex: 7)
+        let b = VoiceGoalCueLibrary.cue(for: goal, rotationIndex: 7)
+        #expect(a == b)
+    }
+
+    @Test func cueLookupCyclesBeforeRepeating() {
+        // Asking for cues at indices 0..<bankSize should yield every cue once.
+        let goal: SpeakingStyleGoal = .warm
+        let bank = VoiceGoalCueLibrary.cues(for: goal)
+        var seen: Set<String> = []
+        for i in 0..<bank.count {
+            seen.insert(VoiceGoalCueLibrary.cue(for: goal, rotationIndex: i).body)
+        }
+        #expect(seen.count == bank.count,
+            "Cycling through 0..<\(bank.count) should yield every cue once. Got \(seen.count) unique.")
+    }
+
+    @Test func cueLookupHandlesNegativeIndex() {
+        // The session count is never negative, but defend against it anyway —
+        // a stale UserDefaults read shouldn't crash the HUD.
+        let goal: SpeakingStyleGoal = .authoritative
+        let cue = VoiceGoalCueLibrary.cue(for: goal, rotationIndex: -1)
+        let bank = VoiceGoalCueLibrary.cues(for: goal)
+        #expect(bank.contains(cue))
+    }
+
+    @Test func everyCueRespectsVoiceRules() {
+        // VISION.md voice rules: no "Let's", no emoji, no exclamation marks
+        // in body copy (celebration overlays are the only exception, and
+        // these are coaching cues). Sentence case for body.
+        for goal in SpeakingStyleGoal.allCases {
+            for cue in VoiceGoalCueLibrary.cues(for: goal) {
+                let body = cue.body
+                #expect(!body.contains("Let's"),
+                    "\(goal): cue must not start with 'Let's'. Got: \(body)")
+                #expect(!body.contains("let's"),
+                    "\(goal): cue must not contain 'let's'. Got: \(body)")
+                #expect(!body.contains("!"),
+                    "\(goal): cue must not contain '!'. Got: \(body)")
+                // Explicit allow-list: ASCII or em-dash / curly quotes. Rejects emoji.
+                let allowed: Set<UInt32> = [0x2014, 0x2018, 0x2019, 0x201C, 0x201D]
+                #expect(body.unicodeScalars.allSatisfy { $0.value < 128 || allowed.contains($0.value) },
+                    "\(goal): cue must be ASCII + curly-quote/em-dash only (no emoji). Got: \(body)")
+                #expect(body.hasSuffix(".") || body.hasSuffix("'"),
+                    "\(goal): cue body should be a terminated sentence. Got: \(body)")
+                #expect(body.count <= 90,
+                    "\(goal): cue must fit on two lines comfortably (≤90 chars). Got \(body.count): \(body)")
+            }
+        }
+    }
+
+    @Test func cueBodiesAreUniqueWithinGoal() {
+        for goal in SpeakingStyleGoal.allCases {
+            let bodies = VoiceGoalCueLibrary.cues(for: goal).map(\.body)
+            let unique = Set(bodies)
+            #expect(unique.count == bodies.count,
+                "\(goal): cue bodies must be unique within a goal. Duplicates in \(bodies).")
+        }
+    }
+}
+
