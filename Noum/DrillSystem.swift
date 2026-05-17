@@ -88,6 +88,64 @@ enum FeedbackSensitivity: String, Codable {
     case gentle     // Fillers, confidence — anxiety-adjacent, be careful
 }
 
+// MARK: - Style Goal Alignment
+
+/// Maps a user's chosen speaking-style goal (Authoritative / Warm / Concise / …)
+/// to the SkillArea drills that most directly move them toward that voice.
+/// Used by NextActionEngine to ground reasoning in the user's goal, and by
+/// MiniDrillResultView to frame post-drill wins through the goal lens.
+///
+/// Mapping is intentionally narrow (2–3 skills per style) — broader alignment
+/// would dilute the coaching signal. A skill not in the list isn't "wrong"
+/// for that style, it's just not the most direct lever.
+extension SpeakingStyleGoal {
+    var alignedSkillAreas: Set<SkillArea> {
+        switch self {
+        case .authoritative:
+            return [.confidence, .closingStrength, .openingStrength]
+        case .warm:
+            return [.paceControl, .vocalEmphasis, .answerDevelopment]
+        case .concise:
+            return [.conciseSpeaking, .structure, .fillerReduction]
+        case .persuasive:
+            return [.structure, .answerDevelopment, .closingStrength]
+        case .executive:
+            return [.confidence, .conciseSpeaking, .openingStrength]
+        case .storytelling:
+            return [.answerDevelopment, .vocalEmphasis, .pauseUsage]
+        }
+    }
+
+    /// True when working on `skill` is one of the highest-leverage moves
+    /// toward this style goal.
+    func aligns(with skill: SkillArea) -> Bool {
+        alignedSkillAreas.contains(skill)
+    }
+
+    /// Short label used inline in coach copy — e.g. "warm voice", "concise voice".
+    /// Lowercase, no article. Pair with a verb in the caller.
+    var shortVoiceLabel: String {
+        switch self {
+        case .authoritative: return "authoritative voice"
+        case .warm:          return "warm voice"
+        case .concise:       return "concise voice"
+        case .persuasive:    return "persuasive voice"
+        case .executive:     return "executive presence"
+        case .storytelling:  return "storytelling voice"
+        }
+    }
+
+    /// Resolve a `SpeakingStyleGoal` from either its raw value (e.g. "warm")
+    /// or its display title (e.g. "Warm and welcoming"). NextActionEngine and
+    /// other consumers receive the goal as `String?` for backward-compatible
+    /// callsites — this lookup avoids forcing the type to change everywhere.
+    static func resolve(_ value: String?) -> SpeakingStyleGoal? {
+        guard let value, !value.isEmpty else { return nil }
+        if let exact = SpeakingStyleGoal(rawValue: value) { return exact }
+        return SpeakingStyleGoal.allCases.first { $0.title.caseInsensitiveCompare(value) == .orderedSame }
+    }
+}
+
 // MARK: - Drill Format
 
 /// Whether the drill is a quick focused exercise or a full re-practice.

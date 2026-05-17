@@ -449,6 +449,62 @@ struct YourNextMoveCard: View {
     }
 }
 
+// MARK: - Looking Ahead Card
+
+/// Quiet "next session" suggestion shown at the bottom of the expandable
+/// details on the summary screen. Surfaces the mode-level recommendation
+/// (computed by RecommendationBiasEngine) without competing with the
+/// in-the-moment drill CTA above. Only renders when the suggestion would
+/// actually shift the user's direction — see `lookingAheadHint` gating
+/// in SummaryView.
+struct LookingAheadCard: View {
+    struct Hint {
+        let mode: PracticeMode
+        let whyMode: String
+        let whyNow: String
+    }
+
+    let hint: Hint
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.forward.circle")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text("Looking ahead")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+            }
+
+            Text("For your next session, try \(hint.mode.displayLabel).")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(hint.whyMode)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !hint.whyNow.isEmpty {
+                Text(hint.whyNow)
+                    .font(.caption)
+                    .foregroundStyle(.secondary.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Looking ahead. For your next session, try \(hint.mode.displayLabel). \(hint.whyMode). \(hint.whyNow)")
+    }
+}
+
 // MARK: - Baseline Comparison Card
 
 struct BaselineComparisonCard: View {

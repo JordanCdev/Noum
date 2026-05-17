@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisation v1)_
+_Last updated: 2026-05-17 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard)_
 
 ## Architecture overview
 
@@ -548,16 +548,27 @@ _Last updated: 2026-05-08 (M5–M13 shipped: coach memory through UI localisatio
 ### Stubbed / placeholder
 
 - **Goal-driven coaching feedback in mid-session UI** — the goal is
-  captured but only used in reminder copy and recommendation rationale.
-  It does not influence drill prompt selection, evaluation weighting,
-  or session debrief framing.
+  captured and now reaches post-session coaching surfaces:
+  `NextActionEngine.recommend` appends a goal-aligned suffix to the
+  reasoning when the chosen drill targets an aligned skill area, and
+  `MiniDrillResultView` shows a "Closer to your <voice> voice" capsule
+  on successful drills that align with the user's
+  `SpeakingStyleGoal`. Alignment map lives on
+  `SpeakingStyleGoal.alignedSkillAreas` in `DrillSystem.swift` (e.g.
+  `.concise` → `[conciseSpeaking, structure, fillerReduction]`). Mid-
+  session live UI still doesn't read the goal — that's a separate
+  surface and probably the right next push (e.g. live HUD adapts copy
+  for the user's voice goal during the rep).
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
-  per-mode line when no profile / no session history exists. The
-  blueprint's `focus`, `target`, and `modeBenefit` fields are still
-  unused at the call site — those could feed a richer "Recommended
-  for you" expanded card if we want to surface more.
+  per-mode line when no profile / no session history exists.
+  `modeBenefit` + `whyNow` also surface on the post-session summary
+  via `LookingAheadCard` at the bottom of the expandable details
+  section — gated on ≥3 sessions of signal AND a different
+  recommended mode than the one just finished, so the in-the-moment
+  drill stays the hero. The blueprint's `focus` and `target` fields
+  remain home-screen only.
 - **Hosted privacy policy URL** — the bundled `PrivacyPolicy.md` is
   now rendered in-app via `PrivacyPolicyView`, reachable from
   Settings → Privacy & Data → Privacy policy. App Store submission

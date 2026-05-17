@@ -123,6 +123,7 @@ enum NextActionEngine {
 
     static func recommend(input: NextActionInput) -> NextAction {
         let confidence = input.baseline.overallConfidence
+        let style = SpeakingStyleGoal.resolve(input.styleGoal)
 
         // --- Priority 1: Severe session issue ---
         if let severe = checkSevereIssue(input: input) {
@@ -139,7 +140,7 @@ enum NextActionEngine {
             return NextAction(
                 primary: blocker,
                 secondary: nil,
-                reasoning: "This has been a persistent pattern across many sessions — focused work here has the highest leverage.",
+                reasoning: groundInGoal("This has been a persistent pattern across many sessions — focused work here has the highest leverage.", action: blocker, style: style),
                 confidenceLevel: confidence
             )
         }
@@ -156,10 +157,11 @@ enum NextActionEngine {
 
         // --- Priority 4: Declining trend ---
         if let declining = checkDecliningTrend(input: input) {
+            let base = ConfidencePhrasing.frame("A skill that was strong is slipping — a focused drill can reverse this before it becomes a pattern.", confidence: confidence)
             return NextAction(
                 primary: declining,
                 secondary: nil,
-                reasoning: ConfidencePhrasing.frame("A skill that was strong is slipping — a focused drill can reverse this before it becomes a pattern.", confidence: confidence),
+                reasoning: groundInGoal(base, action: declining, style: style),
                 confidenceLevel: confidence
             )
         }
@@ -169,17 +171,18 @@ enum NextActionEngine {
             return NextAction(
                 primary: newIssue,
                 secondary: nil,
-                reasoning: "This issue just appeared — catching it early prevents it from becoming a habit.",
+                reasoning: groundInGoal("This issue just appeared — catching it early prevents it from becoming a habit.", action: newIssue, style: style),
                 confidenceLevel: confidence
             )
         }
 
         // --- Priority 6: Improving trend ---
         if let reinforcing = checkImprovingTrend(input: input) {
+            let base = ConfidencePhrasing.frame("You're making progress — one more rep can lock it in.", confidence: confidence)
             return NextAction(
                 primary: reinforcing,
                 secondary: stretchChallenge(input: input),
-                reasoning: ConfidencePhrasing.frame("You're making progress — one more rep can lock it in.", confidence: confidence),
+                reasoning: groundInGoal(base, action: reinforcing, style: style),
                 confidenceLevel: confidence
             )
         }
@@ -202,6 +205,23 @@ enum NextActionEngine {
             reasoning: "Continued practice builds your baseline and reveals where to focus next.",
             confidenceLevel: confidence
         )
+    }
+
+    /// Append a short goal-grounded suffix when the recommended drill targets
+    /// a skill that's directly aligned with the user's chosen voice goal.
+    /// Silent when the action isn't a drill or the skill isn't aligned —
+    /// staying quiet beats forcing a connection that isn't there.
+    private static func groundInGoal(_ base: String, action: ActionRecommendation, style: SpeakingStyleGoal?) -> String {
+        guard let style else { return base }
+        let skill: SkillArea? = {
+            switch action {
+            case .drill(let rec): return rec.skillArea
+            case .confidenceRebuilding(let rec): return rec.skillArea
+            case .practiceMode, .pressureExposure, .stabilizingRep: return nil
+            }
+        }()
+        guard let skill, style.aligns(with: skill) else { return base }
+        return base + " It's a direct step toward your \(style.shortVoiceLabel)."
     }
 
     // MARK: - Priority Checks

@@ -13,6 +13,10 @@ struct MiniDrillResultView: View {
     let xpEarned: Int
     let xpBreakdown: DrillXPEngine.Breakdown?
     let streak: Int                         // Current streak for this skill area
+    /// Optional voice goal — when set and the drill's skill area aligns with
+    /// the goal, a small "Closer to your X voice" line surfaces on success.
+    /// Silent on fail or misalignment — we never claim progress we didn't earn.
+    var styleGoal: SpeakingStyleGoal? = nil
     let onDone: () -> Void
     let onTryAnother: (() -> Void)?
 
@@ -20,6 +24,13 @@ struct MiniDrillResultView: View {
 
     private var wpm: Double {
         outcome.duration > 0 ? Double(outcome.wordCount) / outcome.duration * 60 : 0
+    }
+
+    private var goalAlignmentLine: String? {
+        guard let styleGoal,
+              outcome.succeeded,
+              styleGoal.aligns(with: outcome.drill.skillArea) else { return nil }
+        return "Closer to your \(styleGoal.shortVoiceLabel)."
     }
 
     var body: some View {
@@ -78,6 +89,21 @@ struct MiniDrillResultView: View {
                                     .foregroundStyle(.white.opacity(0.42))
                             }
                         }
+                    }
+
+                    if let goalAlignmentLine {
+                        HStack(spacing: 6) {
+                            Image(systemName: "target")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(outcome.drill.tint.opacity(0.8))
+                            Text(goalAlignmentLine)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(outcome.drill.tint.opacity(0.12), in: Capsule())
+                        .accessibilityLabel(goalAlignmentLine)
                     }
                 }
                 .scaleEffect(phase >= 3 ? 1.0 : 0.8)

@@ -419,6 +419,115 @@ struct NextActionEngineTests {
         #expect(!result.primary.displayTitle.isEmpty, "Should always have a recommendation")
         #expect(!result.reasoning.isEmpty, "Should always have reasoning")
     }
+
+    // MARK: Goal-aware reasoning
+
+    @Test func decliningTrendReasoningMentionsAlignedStyleGoal() {
+        // .concise aligns with .fillerReduction → reasoning should reference
+        // the user's voice goal when the chosen drill matches.
+        let input = NextActionInput(
+            fillerCount: 4, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing)],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "concise"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        #expect(result.reasoning.lowercased().contains("concise voice"),
+            "Aligned style goal should be reflected in reasoning. Got: \(result.reasoning)")
+    }
+
+    @Test func styleGoalResolvesFromDisplayTitle() {
+        // SessionFinalizer passes the localized title (not the raw value);
+        // resolver should still match.
+        let input = NextActionInput(
+            fillerCount: 4, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing)],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "Concise and sharp"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        #expect(result.reasoning.lowercased().contains("concise voice"),
+            "Resolver should accept display title. Got: \(result.reasoning)")
+    }
+
+    @Test func unalignedStyleGoalLeavesReasoningUnchanged() {
+        // .warm does not align with .fillerReduction → no goal suffix.
+        let input = NextActionInput(
+            fillerCount: 4, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing)],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "warm"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        #expect(!result.reasoning.lowercased().contains("warm voice"),
+            "Unaligned style goal should NOT be referenced — would feel forced. Got: \(result.reasoning)")
+    }
+
+    @Test func nilStyleGoalLeavesReasoningUnchanged() {
+        let input = NextActionInput(
+            fillerCount: 4, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing)],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: nil
+        )
+        let result = NextActionEngine.recommend(input: input)
+        #expect(!result.reasoning.lowercased().contains("voice."),
+            "No style goal should produce no voice suffix. Got: \(result.reasoning)")
+    }
+}
+
+// MARK: - SpeakingStyleGoal Tests
+
+struct SpeakingStyleGoalAlignmentTests {
+
+    @Test func aligningSkillsAreNonEmpty() {
+        for goal in SpeakingStyleGoal.allCases {
+            #expect(!goal.alignedSkillAreas.isEmpty, "\(goal) must have at least one aligned skill")
+        }
+    }
+
+    @Test func alignsMatchesAlignedSkillAreasSet() {
+        let concise: SpeakingStyleGoal = .concise
+        #expect(concise.aligns(with: .conciseSpeaking))
+        #expect(concise.aligns(with: .fillerReduction))
+        #expect(!concise.aligns(with: .answerDevelopment),
+            ".concise should not falsely claim alignment with depth")
+    }
+
+    @Test func resolveAcceptsRawValueAndTitle() {
+        #expect(SpeakingStyleGoal.resolve("warm") == .warm)
+        #expect(SpeakingStyleGoal.resolve("Warm and welcoming") == .warm)
+        #expect(SpeakingStyleGoal.resolve("WARM AND WELCOMING") == .warm)
+        #expect(SpeakingStyleGoal.resolve(nil) == nil)
+        #expect(SpeakingStyleGoal.resolve("") == nil)
+        #expect(SpeakingStyleGoal.resolve("nonsense") == nil)
+    }
+
+    @Test func shortVoiceLabelEndsConsistently() {
+        // Copy contract — every label should slot cleanly into
+        // "Closer to your <label>." or "step toward your <label>."
+        for goal in SpeakingStyleGoal.allCases {
+            #expect(!goal.shortVoiceLabel.isEmpty)
+            #expect(!goal.shortVoiceLabel.hasSuffix("."),
+                "shortVoiceLabel must not end with a period; the caller adds it.")
+        }
+    }
 }
 
 // MARK: - VerdictEngine Tests

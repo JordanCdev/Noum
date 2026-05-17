@@ -660,6 +660,7 @@ struct SummaryView: View {
                 xpEarned: miniDrillAwardedXP,
                 xpBreakdown: miniDrillXPBreakdown,
                 streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
                 onDone: {
                     print("[QuickDrill] Done — dismissing result")
                     miniDrillOutcome = nil
@@ -787,7 +788,33 @@ struct SummaryView: View {
 
             // XP Progress
             xpProgressCard
+
+            // Quiet "what to do next session" hint — only shown when the
+            // recommended mode is different from the one just finished and
+            // we have at least a little baseline signal. Lives at the very
+            // bottom of the expandable area so it never competes with the
+            // in-the-moment drill CTA above.
+            if let lookingAhead = lookingAheadHint {
+                LookingAheadCard(hint: lookingAhead)
+            }
         }
+    }
+
+    /// Computed "next session" suggestion derived from the existing
+    /// `RecommendationBiasBlueprint`. Returns nil when there's no useful
+    /// hint — staying quiet beats forcing advice the data can't back.
+    private var lookingAheadHint: LookingAheadCard.Hint? {
+        // Need at least 3 sessions of signal before nudging direction —
+        // checked first so we skip the blueprint computation on early reps.
+        guard sessionStore.sessions.count >= 3 else { return nil }
+        let blueprint = summaryRecommendation
+        // No need to suggest the mode the user just finished.
+        guard blueprint.recommendedMode != currentMode else { return nil }
+        return LookingAheadCard.Hint(
+            mode: blueprint.recommendedMode,
+            whyMode: blueprint.modeBenefit,
+            whyNow: blueprint.whyNow
+        )
     }
 
     // MARK: - Pro Preview Card (Free Users)
