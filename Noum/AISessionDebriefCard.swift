@@ -178,7 +178,8 @@ struct AISessionDebriefCard: View {
             topFillerWord: topFiller,
             goalParaphrase: goalParaphrase,
             currentStreak: streakFreezeManager.currentStreak,
-            goalDistance: goalDistance
+            goalDistance: goalDistance,
+            styleGoal: profile?.speakingStyleGoal
         )
         let next = await AIInsightsService.shared.insight(for: input)
         await MainActor.run {

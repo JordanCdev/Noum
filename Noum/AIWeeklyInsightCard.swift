@@ -178,7 +178,8 @@ struct AIWeeklyInsightCard: View {
             topFillerWord: topFiller,
             goalParaphrase: goalParaphrase,
             currentStreak: streakFreezeManager.currentStreak,
-            goalDistance: goalDistance
+            goalDistance: goalDistance,
+            styleGoal: profile?.speakingStyleGoal
         )
 
         isRefreshing = true

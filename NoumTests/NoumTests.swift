@@ -3887,3 +3887,132 @@ struct VoiceAlignmentTests {
         }
     }
 }
+
+// MARK: - AI Weekly Insight (voice-aware template fallback)
+
+struct AIWeeklyInsightVoiceTests {
+
+    private func makeBaseline() -> CommunicationBaseline {
+        let stat = BaselineStat(value: 7.0, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 6.0, percentile75: 8.0)
+        return CommunicationBaseline(
+            lastUpdated: Date(),
+            sessionCount: 12,
+            qualifyingSessionCount: 12,
+            fillerRate: BaselineStat(value: 2.0, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 1.5, percentile75: 2.5),
+            pace: BaselineStat(value: 135, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 125, percentile75: 145),
+            paceVariance: .empty,
+            durationTendency: BaselineStat(value: 45, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 35, percentile75: 55),
+            pauseRate: .empty,
+            pauseFilledRatio: .empty,
+            openingStrength: .empty,
+            closingStrength: .empty,
+            structureQuality: .empty,
+            answerDepth: .empty,
+            clarity: .empty,
+            vocabularyRange: .empty,
+            hedgingRate: .empty,
+            averageScore: stat,
+            clutchWordFrequencies: [:],
+            topStrengths: [],
+            persistentBlockers: []
+        )
+    }
+
+    private func makeInput(
+        weeklyReps: Int,
+        weeklyDelta: Int = 0,
+        styleGoal: SpeakingStyleGoal? = nil
+    ) -> AIInsightInput {
+        AIInsightInput(
+            kind: .weeklyNarrative,
+            sessions: [],
+            baseline: makeBaseline(),
+            rating: .initial,
+            weeklyDelta: weeklyDelta,
+            weeklyReps: weeklyReps,
+            topFillerWord: nil,
+            goalParaphrase: nil,
+            currentStreak: 3,
+            goalDistance: nil,
+            styleGoal: styleGoal
+        )
+    }
+
+    // MARK: Voice-anchor enrichment
+
+    @Test func voiceAnchorAppendsWhenGoalSetAndRepsPositive() {
+        let input = makeInput(weeklyReps: 3, styleGoal: .warm)
+        let insight = AIInsightsService.weeklyTemplate(input: input)
+        #expect(insight.body.contains("toward your warm voice"),
+                "Voice-aware body should end with the warm-voice anchor. Got: \(insight.body)")
+    }
+
+    @Test func voiceAnchorReferencesEachVoiceByItsShortLabel() {
+        // Every SpeakingStyleGoal must render with its canonical short label —
+        // this is the same label VoiceAnchorBanner/VoiceAlignmentChip use, so
+        // the user sees consistent voice copy across the app.
+        for voice in SpeakingStyleGoal.allCases {
+            let insight = AIInsightsService.weeklyTemplate(input: makeInput(weeklyReps: 2, styleGoal: voice))
+            #expect(insight.body.contains(voice.shortVoiceLabel),
+                    "\(voice) body must contain its shortVoiceLabel. Got: \(insight.body)")
+        }
+    }
+
+    // MARK: Restraint paths (silent when not earned)
+
+    @Test func voiceAnchorSkippedWhenNoStyleGoalSet() {
+        let goalFree = makeInput(weeklyReps: 3, styleGoal: nil)
+        let warmGoal = makeInput(weeklyReps: 3, styleGoal: .warm)
+        let goalFreeInsight = AIInsightsService.weeklyTemplate(input: goalFree)
+        let warmGoalInsight = AIInsightsService.weeklyTemplate(input: warmGoal)
+        #expect(!goalFreeInsight.body.contains("voice"),
+                "Goal-free body must not invent voice copy. Got: \(goalFreeInsight.body)")
+        #expect(warmGoalInsight.body.count > goalFreeInsight.body.count,
+                "Voice-goal body should be strictly longer than goal-free body.")
+    }
+
+    @Test func voiceAnchorSkippedOnEmptyWeek() {
+        // Zero reps is the "Quiet week — streak isn't lost yet" copy. Adding
+        // voice-anchor language to a hollow week would feel like manufactured
+        // personalization. The restraint contract: voice anchor only fires
+        // when there's real activity to attach it to.
+        let input = makeInput(weeklyReps: 0, styleGoal: .concise)
+        let insight = AIInsightsService.weeklyTemplate(input: input)
+        #expect(!insight.body.contains("voice"),
+                "Empty-week body must not contain voice copy. Got: \(insight.body)")
+        #expect(insight.headline == "Quiet week",
+                "Empty-week headline preserved. Got: \(insight.headline)")
+    }
+
+    // MARK: Brand voice / regression guards
+
+    @Test func voiceAnchorCopyFollowsBrandVoice() {
+        // Lock in: no exclamation marks, no "let's"/chirp, no emoji creep.
+        // This mirrors the chipCopyFollowsBrandVoice contract on the home
+        // recommendation chip so the weekly-digest voice anchor can't drift
+        // away from the rest of the goal-aware surfaces.
+        for voice in SpeakingStyleGoal.allCases {
+            let body = AIInsightsService.weeklyTemplate(input: makeInput(weeklyReps: 2, styleGoal: voice)).body
+            #expect(!body.contains("!"),
+                    "\(voice) body contains an exclamation. Got: \(body)")
+            #expect(!body.lowercased().contains("let's"),
+                    "\(voice) body contains 'let's'. Got: \(body)")
+            #expect(!body.lowercased().contains("great job"),
+                    "\(voice) body contains 'great job'. Got: \(body)")
+        }
+    }
+
+    @Test func voiceAnchorPreservesDataDrivenHeadlineAndAction() {
+        // The voice anchor is additive — it tweaks the body, not the
+        // four-branch headline/action selection. A "Pressure caught you" week
+        // must still recommend Land the Pause, regardless of voice goal.
+        let input = makeInput(weeklyReps: 3, weeklyDelta: -8, styleGoal: .warm)
+        let insight = AIInsightsService.weeklyTemplate(input: input)
+        #expect(insight.headline == "Pressure caught you",
+                "Voice anchor must not override data-driven headline. Got: \(insight.headline)")
+        #expect(insight.action?.contains("Land the Pause") == true,
+                "Voice anchor must not override data-driven action. Got: \(insight.action ?? "nil")")
+        #expect(insight.body.contains("toward your warm voice"),
+                "Voice anchor must still attach to the body. Got: \(insight.body)")
+    }
+}
