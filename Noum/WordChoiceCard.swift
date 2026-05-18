@@ -49,7 +49,7 @@ struct WordChoiceCard: View {
                     .fill(tint.opacity(0.12))
                     .frame(width: 40, height: 40)
                 Image(systemName: "text.word.spacing")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(Typography.headline)
                     .foregroundStyle(tint)
             }
             .accessibilityHidden(true)

@@ -27,7 +27,7 @@ struct PauseSummaryCard: View {
                         .fill(tint.opacity(0.12))
                         .frame(width: 40, height: 40)
                     Image(systemName: "pause.circle.fill")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(Typography.headline)
                         .foregroundStyle(tint)
                 }
                 .accessibilityHidden(true)
@@ -80,7 +80,7 @@ struct PauseSummaryCard: View {
     private func statCell(value: String, label: String) -> some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
+                .font(Typography.figtreeNumeric(size: 20, relativeTo: .title3))
                 .foregroundStyle(.primary)
             Text(label)
                 .font(Typography.caption)

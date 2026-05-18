@@ -27,10 +27,10 @@ struct SplashScreenView: View {
 
             VStack(spacing: 18) {
                 Text("Noum")
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .font(Typography.display)
 
                 Text("Sharper speaking, one rep at a time.")
-                    .font(.subheadline)
+                    .font(Typography.subheadline)
                     .foregroundStyle(.secondary)
 
                 ProgressView()

@@ -964,7 +964,7 @@ struct SummaryView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "text.bubble.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(Typography.caption.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)
                 Text("Transcript")
                     .font(Typography.micro)

@@ -60,14 +60,14 @@ struct PersonalBestHeroCard<CTAIcon: View>: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(headline)
-                    .font(Typography.figtree(size: 28, weight: .bold))
+                    .font(Typography.figtree(size: 28, weight: .bold, relativeTo: .title))
                     .foregroundStyle(.white)
                     .tracking(-0.4) // -0.015em at 28pt ≈ -0.42pt
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
 
                 Text(bodyCopy)
-                    .font(Typography.manrope(size: 16, weight: .medium))
+                    .font(Typography.manrope(size: 16, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(Color.white.opacity(0.72))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
@@ -124,14 +124,14 @@ struct PersonalBestHeroCard<CTAIcon: View>: View {
     private func statTile(_ stat: Stat) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(stat.value)
-                .font(Typography.figtree(size: 32, weight: .bold))
+                .font(Typography.figtree(size: 32, weight: .bold, relativeTo: .title))
                 .foregroundStyle(.white)
                 .monospacedDigit()
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
 
             Text(stat.label)
-                .font(Typography.manrope(size: 13, weight: .semibold))
+                .font(Typography.manrope(size: 13, weight: .semibold, relativeTo: .footnote))
                 .foregroundStyle(Color.white.opacity(0.72))
                 .lineLimit(1)
         }
@@ -153,10 +153,10 @@ struct PersonalBestHeroCard<CTAIcon: View>: View {
         Button(action: ctaAction) {
             HStack(spacing: 8) {
                 Text(ctaTitle)
-                    .font(Typography.figtree(size: 16, weight: .bold))
+                    .font(Typography.figtree(size: 16, weight: .bold, relativeTo: .headline))
                     .foregroundStyle(AppColor.pro)
                 ctaIcon()
-                    .font(.system(size: 13, weight: .bold))
+                    .font(Typography.caption.weight(.bold))
                     .foregroundStyle(AppColor.pro)
             }
             .frame(maxWidth: .infinity)

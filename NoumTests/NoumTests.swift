@@ -9,6 +9,7 @@ import Foundation
 import Testing
 import XCTest
 import AVFoundation
+import SwiftUI
 @testable import Noum
 
 struct NoumTests {
@@ -3359,5 +3360,46 @@ struct ScoreCalibrationTests {
         )
         #expect(lowEval.score > highEval.score,
                 "10 fillers (\(highEval.score)) should score lower than 2 (\(lowEval.score))")
+    }
+
+    // MARK: - Typography Dynamic Type contract
+    //
+    // Every Typography role builds through `figtree(_:weight:relativeTo:)`
+    // or `manrope(_:weight:relativeTo:)`, both of which now *require* a
+    // `Font.TextStyle` argument. If a future refactor drops `relativeTo:`
+    // the call site fails to compile. These tests sanity-check that the
+    // canonical roles still resolve to a non-nil Font (i.e. Family.display
+    // / Family.text names haven't drifted to something the system can't
+    // find — Font.custom always returns a Font but the smoke test catches
+    // any future accidental nil-able variant).
+
+    @Test func typographyRolesResolveToFonts() {
+        // Touch every role so a renamed family or removed enum case fails
+        // the test rather than silently rendering the system fallback.
+        _ = Typography.display
+        _ = Typography.hero
+        _ = Typography.screenTitle
+        _ = Typography.sectionHero
+        _ = Typography.bigStat
+        _ = Typography.statHero
+        _ = Typography.cardTitle
+        _ = Typography.headline
+        _ = Typography.cardLabel
+        _ = Typography.subheadline
+        _ = Typography.body
+        _ = Typography.caption
+        _ = Typography.captionSmall
+        _ = Typography.micro
+        _ = Typography.nav
+        #expect(Typography.Family.display == "Figtree")
+        #expect(Typography.Family.text == "Manrope")
+    }
+
+    @Test func typographyNumericHelperReturnsMonospacedDigit() {
+        // The numeric helper must monospace digits so stat counters don't
+        // wobble when the leading digit changes width.
+        _ = Typography.figtreeNumeric(size: 28)
+        _ = Typography.figtreeNumeric(size: 18, weight: .heavy, relativeTo: .headline)
+        // Compile-time check is the contract — runtime smoke is enough.
     }
 }

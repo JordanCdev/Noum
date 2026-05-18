@@ -225,7 +225,7 @@ struct FirstRepCelebration: View {
                 Text("See your full read")
                     .font(Typography.headline)
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(Typography.subheadline.weight(.bold))
             }
             .foregroundStyle(AppColor.brandBlue)
             .frame(maxWidth: .infinity)
@@ -248,7 +248,7 @@ struct FirstRepCelebration: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(Typography.subheadline.weight(.bold))
                 Text("Share your starting line")
                     .font(Typography.caption.weight(.bold))
             }

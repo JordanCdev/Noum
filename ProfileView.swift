@@ -269,7 +269,7 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: profile.rankSymbol)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(Typography.cardTitle.weight(.bold))
                     .foregroundStyle(profile.rankTint)
                     .frame(width: 52, height: 52)
                     .background(profile.rankTint.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
@@ -339,7 +339,7 @@ struct ProfileView: View {
                     HStack(alignment: .bottom, spacing: 16) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(rating.overall)")
-                                .font(.system(size: 44, weight: .bold, design: .rounded))
+                                .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
                                 .foregroundStyle(AppColor.brandBlue)
                                 .contentTransition(.numericText())
                                 .animation(.standardSpring, value: rating.overall)
@@ -483,7 +483,7 @@ struct ProfileView: View {
                         .fill(leagueTierTint.opacity(0.16))
                         .frame(width: 44, height: 44)
                     Image(systemName: "rosette")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(Typography.headline)
                         .foregroundStyle(leagueTierTint)
                 }
 
@@ -543,7 +543,7 @@ struct ProfileView: View {
             if let profile = coachingProfileStore.profile {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "target")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(Typography.subheadline.weight(.semibold))
                         .foregroundStyle(AppColor.brandBlue)
                         .frame(width: 32, height: 32)
                         .background(AppColor.brandBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -579,7 +579,7 @@ struct ProfileView: View {
                         ForEach(reflections) { reflection in
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "quote.opening")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(Typography.captionSmall.weight(.bold))
                                     .foregroundStyle(.tertiary)
                                     .padding(.top, 3)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -619,7 +619,7 @@ struct ProfileView: View {
 
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(Typography.cardLabel)
                     .foregroundStyle(.orange)
                     .frame(width: 42, height: 42)
                     .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
@@ -1047,7 +1047,7 @@ struct ProfileView: View {
             if active.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "person.2.wave.2")
-                        .font(.system(size: 36))
+                        .font(.system(.largeTitle))
                         .foregroundStyle(.secondary.opacity(0.4))
 
                     Text("No active speak-offs")
