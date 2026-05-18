@@ -189,6 +189,50 @@ extension SpeakingStyleGoal {
     func aligns(with device: EloquenceDevice) -> Bool {
         alignedEloquenceDevices.contains(device)
     }
+
+    /// True when working a rep in `mode` measurably moves the speaker toward
+    /// this voice goal — i.e. the mode's primary skill areas overlap with
+    /// the voice's aligned skills. Used by the home `suggestionLink` to
+    /// surface a "Toward your <voice>" chip on the recommendation tile when
+    /// the recommended mode and the user's chosen voice line up.
+    ///
+    /// Returns `false` (silent) when the intersection is empty — every voice
+    /// has at least one mode it aligns with and at least one it doesn't, so
+    /// the chip fires some of the time and stays out of the way the rest of
+    /// the time. No fake personalization on off-goal recommendations.
+    func aligns(with mode: PracticeMode) -> Bool {
+        !alignedSkillAreas.isDisjoint(with: mode.primarySkillAreas)
+    }
+}
+
+// MARK: - PracticeMode → Skill Areas
+//
+// The skill areas each practice mode most directly trains. Intentionally
+// narrow (2–3 per mode) — broader mappings dilute the alignment signal that
+// `SpeakingStyleGoal.aligns(with:)` reads from this.
+//
+// Reflects the mode's actual coaching purpose, not its surface label:
+//   • timed — soft clock, room for structure → answer architecture skills
+//   • suddenDeath — one filler ends the round → composure under pressure
+//   • ahCounter — live filler + pace tracking → in-the-moment delivery
+//   • imConversation — live two-way exchange → tone + relational depth
+//
+// Aligned with the consumers of this map: the home recommendation chip
+// (M14 voice-aware loop, fifth surface) and any future code that needs a
+// canonical mode→skill projection.
+extension PracticeMode {
+    var primarySkillAreas: Set<SkillArea> {
+        switch self {
+        case .timed:
+            return [.structure, .answerDevelopment, .openingStrength]
+        case .suddenDeath:
+            return [.confidence, .fillerReduction]
+        case .ahCounter:
+            return [.fillerReduction, .paceControl, .pauseUsage]
+        case .imConversation:
+            return [.vocalEmphasis, .answerDevelopment]
+        }
+    }
 }
 
 // MARK: - Drill Format

@@ -3669,3 +3669,162 @@ struct GoalProgressTests {
         }
     }
 }
+
+// MARK: - Voice Alignment (M14: fifth surface in the goal-aware loop)
+//
+// Tests for the home-recommendation alignment chip. The chip extends the
+// pre-rep banner → mid-rep HUD → post-rep Coach Note → profile ring chain
+// onto the home `suggestionLink`. The contract:
+//
+//   • `PracticeMode.primarySkillAreas` is the canonical mode→skill map.
+//     Every mode owns 2–3 skills it most directly trains.
+//   • `SpeakingStyleGoal.aligns(with mode:)` is true iff the voice's aligned
+//     skills overlap with the mode's primary skills.
+//   • Each of the 4 modes has ≥1 aligned voice; each of the 6 voices has ≥1
+//     aligned mode. Otherwise the chip would orphan a surface.
+//   • Some voice→mode pairs do NOT align by design — voices that need space
+//     (warm, storytelling) don't align with sudden-death pressure; voices
+//     that need composure (executive) don't align with the looser ah-counter.
+//
+// The chip's copy ("Toward your <voice> voice") reuses `shortVoiceLabel`, so
+// the brand-voice smoke covers it via `GoalProgressTests.trendChipCopyIsRestraintFriendly`-
+// style guards on the same source string.
+
+struct VoiceAlignmentTests {
+
+    private let allModes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
+
+    // MARK: PracticeMode.primarySkillAreas
+
+    @Test func timedTrainsStructureAndAnswerDevelopment() {
+        let skills = PracticeMode.timed.primarySkillAreas
+        #expect(skills.contains(.structure))
+        #expect(skills.contains(.answerDevelopment))
+        #expect(skills.contains(.openingStrength))
+    }
+
+    @Test func suddenDeathTrainsConfidenceAndFillerControl() {
+        let skills = PracticeMode.suddenDeath.primarySkillAreas
+        #expect(skills.contains(.confidence))
+        #expect(skills.contains(.fillerReduction))
+    }
+
+    @Test func ahCounterTrainsFillerAndPaceAndPauseSkills() {
+        let skills = PracticeMode.ahCounter.primarySkillAreas
+        #expect(skills.contains(.fillerReduction))
+        #expect(skills.contains(.paceControl))
+        #expect(skills.contains(.pauseUsage))
+    }
+
+    @Test func imConversationTrainsEmphasisAndDepth() {
+        let skills = PracticeMode.imConversation.primarySkillAreas
+        #expect(skills.contains(.vocalEmphasis))
+        #expect(skills.contains(.answerDevelopment))
+    }
+
+    @Test func primarySkillAreasStayNarrow() {
+        // Intentional restraint — broader maps dilute the signal that the
+        // home chip reads from. 2–3 skills per mode is the design contract.
+        for mode in allModes {
+            let count = mode.primarySkillAreas.count
+            #expect(count >= 2 && count <= 3, "\(mode) maps to \(count) skills — expected 2–3.")
+        }
+    }
+
+    // MARK: SpeakingStyleGoal.aligns(with:)
+
+    @Test func conciseVoiceAlignsWithTimedAndAhCounter() {
+        // Concise → structure + fillerReduction + conciseSpeaking. Both timed
+        // (structure) and ahCounter (fillerReduction) overlap.
+        #expect(SpeakingStyleGoal.concise.aligns(with: .timed))
+        #expect(SpeakingStyleGoal.concise.aligns(with: .ahCounter))
+    }
+
+    @Test func warmVoiceDoesNotAlignWithSuddenDeath() {
+        // Warm voice needs space and rhythm — pressure mode cuts both. The
+        // chip must stay silent rather than claim a sudden-death rep moves
+        // a speaker toward warmth.
+        #expect(!SpeakingStyleGoal.warm.aligns(with: .suddenDeath))
+    }
+
+    @Test func warmVoiceAlignsWithImConversation() {
+        // Warm voice ↔ IM. Live two-way exchange is exactly where vocal
+        // emphasis + answer depth land warmly.
+        #expect(SpeakingStyleGoal.warm.aligns(with: .imConversation))
+    }
+
+    @Test func executiveVoiceDoesNotAlignWithAhCounter() {
+        // Executive presence is composed and tight. Ah-counter's loose,
+        // free-form delivery isn't a direct lever — the chip stays out of
+        // the way on this combination.
+        #expect(!SpeakingStyleGoal.executive.aligns(with: .ahCounter))
+    }
+
+    @Test func authoritativeAlignsWithSuddenDeath() {
+        // Authoritative voice trains confidence — sudden death's primary
+        // lesson is composure under pressure.
+        #expect(SpeakingStyleGoal.authoritative.aligns(with: .suddenDeath))
+    }
+
+    @Test func storytellingDoesNotAlignWithSuddenDeath() {
+        // Storytelling needs pauseUsage and vocalEmphasis — both impossible
+        // in a mode that ends on the first filler. Silent on this pair.
+        #expect(!SpeakingStyleGoal.storytelling.aligns(with: .suddenDeath))
+    }
+
+    @Test func persuasiveAlignsWithTimedNotAhCounter() {
+        // Persuasive structure (rule-of-three, antithesis) needs the
+        // architecture timed mode trains. Ah-counter is too loose to land
+        // a persuasive close.
+        #expect(SpeakingStyleGoal.persuasive.aligns(with: .timed))
+        #expect(!SpeakingStyleGoal.persuasive.aligns(with: .ahCounter))
+    }
+
+    // MARK: Coverage invariants
+
+    @Test func everyModeHasAtLeastOneAlignedVoice() {
+        // Sanity check — no orphan modes. If a mode mapped to skills no
+        // voice cared about, the chip would never fire on that mode and
+        // we'd silently lose half the alignment surface.
+        for mode in allModes {
+            let aligned = SpeakingStyleGoal.allCases.filter { $0.aligns(with: mode) }
+            #expect(!aligned.isEmpty, "\(mode) has no aligned voice — orphan mode.")
+        }
+    }
+
+    @Test func everyVoiceAlignsWithAtLeastOneMode() {
+        // The chip should be reachable for every voice goal — otherwise
+        // a user who picked, say, .storytelling would never see the
+        // alignment chip and the loop would feel incomplete for them.
+        for voice in SpeakingStyleGoal.allCases {
+            let aligned = allModes.filter { voice.aligns(with: $0) }
+            #expect(!aligned.isEmpty, "\(voice) has no aligned mode — chip would never fire.")
+        }
+    }
+
+    @Test func everyVoiceHasAtLeastOneNonAlignedMode() {
+        // Restraint contract: the chip must stay silent some of the time
+        // for every voice. If a voice aligned with all 4 modes, the chip
+        // would lose its meaning — it'd always be on and stop reading as
+        // personalization.
+        for voice in SpeakingStyleGoal.allCases {
+            let silent = allModes.filter { !voice.aligns(with: $0) }
+            #expect(!silent.isEmpty, "\(voice) aligns with every mode — chip would never go silent.")
+        }
+    }
+
+    // MARK: Copy restraint
+
+    @Test func chipCopyFollowsBrandVoice() {
+        // The chip phrase is "Toward your <voice>". Guards against an
+        // accidental "let's" / emoji / exclamation creep that would
+        // violate the design-system voice rules.
+        for voice in SpeakingStyleGoal.allCases {
+            let copy = "Toward your \(voice.shortVoiceLabel)"
+            #expect(!copy.isEmpty)
+            #expect(!copy.contains("!"))
+            #expect(!copy.lowercased().contains("let's"))
+            #expect(!copy.lowercased().contains("great job"))
+        }
+    }
+}

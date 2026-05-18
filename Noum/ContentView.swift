@@ -1147,6 +1147,11 @@ struct ContentView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    VoiceAlignmentChip(
+                        styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                        mode: suggestion.mode,
+                        tint: suggestion.tint
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 

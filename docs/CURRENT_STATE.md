@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile)_
+_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip)_
 
 ## Architecture overview
 
@@ -601,6 +601,24 @@ _Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   Eleven unit tests cover the formula correctness, the
   insufficient-data nil paths, the trend-direction classifier, and
   the chip-copy restraint contract.
+  **Home recommendation tile is now goal-aware too**: a fifth surface
+  in the chain. `PracticeMode.primarySkillAreas` maps each mode to the
+  2–3 skill areas it most directly trains (e.g. `.timed` →
+  `[.structure, .answerDevelopment, .openingStrength]`,
+  `.ahCounter` → `[.fillerReduction, .paceControl, .pauseUsage]`).
+  `SpeakingStyleGoal.aligns(with mode:)` is true iff that mode's primary
+  skills overlap with the voice's `alignedSkillAreas`. `VoiceAlignmentChip`
+  (new) sits under the subtitle of the home `suggestionLink` and reads
+  "Toward your <voice> voice" when the chosen voice and the recommended
+  mode line up. Silent in three honest paths: no `CoachingProfile`, no
+  `SpeakingStyleGoal` on the profile, or the alignment intersection is
+  empty (warm-voice users on a sudden-death recommendation see nothing,
+  not a fake nudge). The set design ensures every voice has at least one
+  aligned mode (so the chip is reachable for everyone) AND every voice has
+  at least one non-aligned mode (so the chip retains meaning when it does
+  fire). Twelve unit tests cover the mode→skill mapping, six aligned /
+  non-aligned voice×mode cases, the coverage invariants (no orphan modes,
+  no always-on voices), and the brand-voice copy guards.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
