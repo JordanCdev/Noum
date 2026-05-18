@@ -141,6 +141,16 @@ enum SessionFinalizer {
                   metrics.isReliable else { return nil }
             return metrics.monotoneScore
         }()
+        // Pull the filled-pause ratio so calmer-delivery users get a real
+        // week-over-week reading on the profile goal-progress ring. Only
+        // emit when the session actually contained pauses — a zero-pause
+        // rep would falsely look like "perfect calmness" (filledRatio = 0
+        // by definition when count = 0).
+        let pauseFilledRatio: Double? = {
+            guard let metrics = sessionStore.sessions.first?.pauseMetrics,
+                  metrics.count > 0 else { return nil }
+            return metrics.filledRatio
+        }()
         SkillTrendStore.shared.recordFromSession(
             sessionId: latestSessionID ?? UUID(),
             fillerCount: effectiveFillerCount,
@@ -149,7 +159,8 @@ enum SessionFinalizer {
             score: scoreValue,
             categoryRatings: categoryMap,
             pauseRate: pauseRate,
-            pitchMonotone: pitchMonotone
+            pitchMonotone: pitchMonotone,
+            pauseFilledRatio: pauseFilledRatio
         )
 
         // Schedule follow-up reminder

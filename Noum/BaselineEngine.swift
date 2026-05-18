@@ -271,11 +271,10 @@ struct CommunicationBaseline: Codable, Equatable {
     /// run over an arbitrary snapshot slice — lets a UI surface compare a
     /// recent window against the prior window for week-over-week trend.
     ///
-    /// Returns nil when:
-    ///   • fewer than `minimumSamples` snapshots are provided, or
-    ///   • the goal isn't measurable from snapshot signals (`.calmerDelivery`
-    ///     reads `pauseFilledRatio`, which isn't stored per-snapshot — the
-    ///     trend chip stays hidden for that goal rather than mislead).
+    /// Returns nil when fewer than `minimumSamples` qualifying snapshots are
+    /// provided. For `.calmerDelivery` "qualifying" additionally means the
+    /// snapshot carries a non-nil `pauseFilledRatio` — zero-pause reps don't
+    /// contribute a calmness reading, so the helper refuses to fake one.
     static func distanceFromGoal(
         _ goal: CoachingPriority,
         in snapshots: [SkillSnapshot],
@@ -296,7 +295,13 @@ struct CommunicationBaseline: Codable, Equatable {
             let mean = Double(snapshots.reduce(0) { $0 + $1.score }) / Double(snapshots.count)
             return max(0, 1.0 - mean / 7.5)
         case .calmerDelivery:
-            return nil
+            // Mirrors the persistent `distanceFromGoal(_:)` formula but runs
+            // over snapshots that actually carried pauses. Same target band:
+            // ≤ 0.2 filled ratio = "On track", 1.0 filled = distance 1.0.
+            let ratios = snapshots.compactMap { $0.pauseFilledRatio }
+            guard ratios.count >= minimumSamples else { return nil }
+            let mean = ratios.reduce(0, +) / Double(ratios.count)
+            return min(mean / 0.8, 1.0)
         }
     }
 

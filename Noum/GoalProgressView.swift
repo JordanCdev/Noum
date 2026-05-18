@@ -18,10 +18,11 @@ import SwiftUI
 //     for this goal's underlying dimension — shows "Learning your baseline"
 //     instead of a fake 50%.
 //   • The trend chip ("Closer this week" / "Slipped" / "Holding steady") only
-//     fires when at least 3 recent + 3 prior qualifying SkillSnapshots exist
-//     AND the goal is measurable from snapshot signals. `.calmerDelivery`
-//     reads `pauseFilledRatio` which isn't stored per-snapshot, so the chip
-//     stays hidden for that goal rather than mislead.
+//     fires when at least 3 recent + 3 prior qualifying SkillSnapshots exist.
+//     For `.calmerDelivery` "qualifying" additionally means the snapshot
+//     carried a non-nil `pauseFilledRatio` (zero-pause reps don't contribute
+//     a calmness reading) — so until the user accumulates pause history the
+//     chip stays hidden rather than fake a delta.
 
 @available(iOS 17.0, *)
 struct GoalProgressView: View {

@@ -3477,9 +3477,10 @@ struct ScoreCalibrationTests {
 // MARK: - Goal Progress Tests (M14)
 //
 // Locks the contract for the profile's goal-progress ring:
-//   • Snapshot-window distance computes from raw signal aggregates for the
-//     three measurable goals; .calmerDelivery returns nil because
-//     pauseFilledRatio isn't stored per-snapshot.
+//   • Snapshot-window distance computes from raw signal aggregates for all
+//     four goals — `.calmerDelivery` reads the per-snapshot
+//     `pauseFilledRatio` field and skips zero-pause reps so the loop is
+//     closed across every voice without faking a "perfectly calm" read.
 //   • measuredDistanceFromGoal returns nil on insufficient baseline data so
 //     the UI can render "Early signal" rather than a fake 50%.
 //   • Trend compute classifies closer / steady / slipped honestly and
@@ -3491,7 +3492,8 @@ struct GoalProgressTests {
         daysAgo: Int,
         fillerCount: Int,
         duration: TimeInterval,
-        score: Int
+        score: Int,
+        pauseFilledRatio: Double? = nil
     ) -> SkillSnapshot {
         let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
         return SkillSnapshot(
@@ -3505,7 +3507,8 @@ struct GoalProgressTests {
             categoryRatings: [:],
             drillCompleted: nil,
             pauseRate: nil,
-            pitchMonotone: nil
+            pitchMonotone: nil,
+            pauseFilledRatio: pauseFilledRatio
         )
     }
 
@@ -3552,12 +3555,51 @@ struct GoalProgressTests {
         #expect(d == 0.0, "Score-8 mean should pin distance at 0.0. Got: \(d)")
     }
 
-    @Test func snapshotDistanceCalmerDeliveryUnmeasurable() {
-        // pauseFilledRatio isn't stored per-snapshot — the helper returns nil
-        // so the trend chip can stay hidden rather than fake a value.
+    @Test func snapshotDistanceCalmerDeliveryHiddenWithoutPauseHistory() {
+        // Reps without any captured pauses don't contribute a calmness
+        // reading — the helper returns nil so the trend chip stays hidden
+        // rather than treat zero-pause sessions as "perfectly calm".
         let snaps = (0..<6).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 45, score: 7) }
         let d = CommunicationBaseline.distanceFromGoal(.calmerDelivery, in: snaps)
-        #expect(d == nil, "calmerDelivery is not measurable from snapshots. Got: \(String(describing: d))")
+        #expect(d == nil, "calmerDelivery is unmeasurable without pause history. Got: \(String(describing: d))")
+    }
+
+    @Test func snapshotDistanceCalmerDeliveryTracksFilledPauseMean() {
+        // 5 reps with mean filledRatio = 0.4 → distance = 0.4 / 0.8 = 0.50.
+        let snaps = (0..<5).map { i in
+            snapshot(daysAgo: i, fillerCount: 1, duration: 45, score: 7, pauseFilledRatio: 0.4)
+        }
+        guard let d = CommunicationBaseline.distanceFromGoal(.calmerDelivery, in: snaps) else {
+            #expect(Bool(false), "Expected a measured distance once filled-ratio history exists.")
+            return
+        }
+        #expect(abs(d - 0.50) < 0.01, "0.4 filled-ratio mean should map to distance 0.50. Got: \(d)")
+    }
+
+    @Test func snapshotDistanceCalmerDeliverySaturatesAtFullyFilled() {
+        // Every pause filled with disfluency → mean 1.0 → distance clamps to 1.0.
+        let snaps = (0..<4).map { i in
+            snapshot(daysAgo: i, fillerCount: 4, duration: 30, score: 4, pauseFilledRatio: 1.0)
+        }
+        guard let d = CommunicationBaseline.distanceFromGoal(.calmerDelivery, in: snaps) else {
+            #expect(Bool(false), "Expected a measured distance for fully-filled pauses.")
+            return
+        }
+        #expect(d == 1.0, "1.0 filled mean must saturate at distance 1.0. Got: \(d)")
+    }
+
+    @Test func snapshotDistanceCalmerDeliverySkipsZeroPauseReps() {
+        // Mixed history: 2 reps with pauses (good calmness) + 3 zero-pause
+        // reps. Only the 2 reps with pause history qualify — that's below
+        // the 3-sample minimum, so the helper honestly returns nil.
+        var snaps: [SkillSnapshot] = []
+        snaps.append(snapshot(daysAgo: 0, fillerCount: 1, duration: 45, score: 7, pauseFilledRatio: 0.1))
+        snaps.append(snapshot(daysAgo: 1, fillerCount: 1, duration: 45, score: 7, pauseFilledRatio: 0.15))
+        snaps.append(contentsOf: (2..<5).map { i in
+            snapshot(daysAgo: i, fillerCount: 1, duration: 45, score: 7, pauseFilledRatio: nil)
+        })
+        let d = CommunicationBaseline.distanceFromGoal(.calmerDelivery, in: snaps)
+        #expect(d == nil, "Need ≥3 reps with non-nil filled ratio to read calmness. Got: \(String(describing: d))")
     }
 
     @Test func snapshotDistanceBelowMinimumSamplesReturnsNil() {
@@ -3646,13 +3688,30 @@ struct GoalProgressTests {
         #expect(trend == nil, "Trend must require ≥3 snapshots in each window. Got: \(String(describing: trend))")
     }
 
-    @Test func trendReturnsNilForUnmeasurableGoal() {
-        // calmerDelivery uses pauseFilledRatio which isn't in snapshots —
-        // even with a huge history, the trend chip stays hidden so the UI
-        // never claims a delta it can't actually compute.
+    @Test func trendReturnsNilForCalmerDeliveryWithoutPauseHistory() {
+        // Without filled-ratio readings on the snapshots, the trend chip
+        // stays hidden so the UI never claims a calmness delta it can't
+        // actually compute — restraint over coverage.
         let snaps = (0..<10).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 45, score: 7) }
         let trend = GoalProgressTrend.compute(goal: .calmerDelivery, snapshots: snaps)
         #expect(trend == nil)
+    }
+
+    @Test func trendDetectsCalmerDeliveryImprovement() {
+        // Recent 5 reps: filled-ratio 0.15 (calm). Prior 5 reps: 0.6 (noisy).
+        // Distance drops from 0.75 → 0.1875 → clearly "closer".
+        let recent = (0..<5).map { i in
+            snapshot(daysAgo: i, fillerCount: 1, duration: 45, score: 7, pauseFilledRatio: 0.15)
+        }
+        let prior = (5..<10).map { i in
+            snapshot(daysAgo: i, fillerCount: 3, duration: 45, score: 5, pauseFilledRatio: 0.6)
+        }
+        guard let trend = GoalProgressTrend.compute(goal: .calmerDelivery, snapshots: recent + prior) else {
+            #expect(Bool(false), "Expected a calmness trend once snapshots carry filled-ratio history.")
+            return
+        }
+        #expect(trend.direction == .closer, "Filled-ratio drop should classify as closer. Got: \(trend.direction)")
+        #expect(trend.delta < -GoalProgressTrend.steadyThreshold, "Closer trend must have a meaningfully negative delta. Got: \(trend.delta)")
     }
 
     @Test func trendChipCopyIsRestraintFriendly() {

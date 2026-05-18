@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip)_
+_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend)_
 
 ## Architecture overview
 
@@ -591,16 +591,23 @@ _Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   ≥ 25%, secondary otherwise). A week-over-week trend chip ("Closer
   this week" / "Holding steady" / "Slipped this week") fires when
   `GoalProgressTrend.compute` finds ≥ 3 recent + ≥ 3 prior qualifying
-  `SkillSnapshot`s; the chip stays hidden for `.calmerDelivery`
-  because `pauseFilledRatio` isn't stored per-snapshot and the helper
-  refuses to fake a delta it can't measure. Closes the M14 goal-aware
-  loop end-to-end: the same metric that anchors the pre-rep
+  `SkillSnapshot`s. `.calmerDelivery` is now measurable end-to-end:
+  `SkillSnapshot.pauseFilledRatio` is a new optional field written by
+  `SessionFinalizer` whenever the session contained ≥ 1 pause (zero-
+  pause reps stay nil so they can't be mistaken for "perfectly calm"),
+  and `CommunicationBaseline.distanceFromGoal(_:, in:)` aggregates the
+  qualifying ratios with the same 0.8 saturation target as the
+  persistent baseline. The chip stays hidden until the user has
+  accumulated ≥ 3 reps with real pause history in each window —
+  restraint over coverage. Closes the M14 goal-aware loop end-to-end
+  for every voice: the same metric that anchors the pre-rep
   `VoiceAnchorBanner`, biases the mid-rep `LiveEloquenceHUD`, and
   frames the post-rep Coach Note momentum is now visible on the
-  profile as a single proximity reading the user can watch move.
-  Eleven unit tests cover the formula correctness, the
-  insufficient-data nil paths, the trend-direction classifier, and
-  the chip-copy restraint contract.
+  profile as a single proximity reading the user can watch move,
+  for all four `CoachingPriority` values. Fifteen unit tests cover
+  the formula correctness across all four goals, the insufficient-
+  data nil paths (including the zero-pause skip), the trend-direction
+  classifier, and the chip-copy restraint contract.
   **Home recommendation tile is now goal-aware too**: a fifth surface
   in the chain. `PracticeMode.primarySkillAreas` maps each mode to the
   2–3 skill areas it most directly trains (e.g. `.timed` →

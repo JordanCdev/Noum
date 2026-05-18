@@ -24,6 +24,12 @@ struct SkillSnapshot: Identifiable, Codable {
     /// 0=varied, 1=flat. Lets the trend analyzer surface vocal-variety drift
     /// without re-reading the audio.
     let pitchMonotone: Double?
+    /// Fraction of this session's pauses that were filled with a disfluency,
+    /// 0…1. nil when the session emitted zero pauses (≥ 0.5s gaps) — a
+    /// zero-pause rep can't honestly contribute a calmness reading, so the
+    /// trend analyzer skips it rather than treat an empty session as
+    /// "perfectly calm".
+    let pauseFilledRatio: Double?
 
     struct CompletedDrillRef: Codable {
         let variationId: String
@@ -42,7 +48,8 @@ struct SkillSnapshot: Identifiable, Codable {
         categoryRatings: [String: String] = [:],
         drillCompleted: CompletedDrillRef? = nil,
         pauseRate: Double? = nil,
-        pitchMonotone: Double? = nil
+        pitchMonotone: Double? = nil,
+        pauseFilledRatio: Double? = nil
     ) {
         self.id = UUID()
         self.sessionId = sessionId
@@ -56,11 +63,13 @@ struct SkillSnapshot: Identifiable, Codable {
         self.drillCompleted = drillCompleted
         self.pauseRate = pauseRate
         self.pitchMonotone = pitchMonotone
+        self.pauseFilledRatio = pauseFilledRatio
     }
 
     enum CodingKeys: String, CodingKey {
         case id, sessionId, date, fillerCount, duration, wordCount, wpm
         case score, categoryRatings, drillCompleted, pauseRate, pitchMonotone
+        case pauseFilledRatio
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +86,7 @@ struct SkillSnapshot: Identifiable, Codable {
         drillCompleted = try c.decodeIfPresent(CompletedDrillRef.self, forKey: .drillCompleted)
         pauseRate = try c.decodeIfPresent(Double.self, forKey: .pauseRate)
         pitchMonotone = try c.decodeIfPresent(Double.self, forKey: .pitchMonotone)
+        pauseFilledRatio = try c.decodeIfPresent(Double.self, forKey: .pauseFilledRatio)
     }
 }
 
@@ -110,7 +120,8 @@ class SkillTrendStore: ObservableObject {
         categoryRatings: [String: String] = [:],
         drillCompleted: SkillSnapshot.CompletedDrillRef? = nil,
         pauseRate: Double? = nil,
-        pitchMonotone: Double? = nil
+        pitchMonotone: Double? = nil,
+        pauseFilledRatio: Double? = nil
     ) {
         let wpm = duration > 0 ? Double(wordCount) / duration * 60.0 : 0
         let snapshot = SkillSnapshot(
@@ -123,7 +134,8 @@ class SkillTrendStore: ObservableObject {
             categoryRatings: categoryRatings,
             drillCompleted: drillCompleted,
             pauseRate: pauseRate,
-            pitchMonotone: pitchMonotone
+            pitchMonotone: pitchMonotone,
+            pauseFilledRatio: pauseFilledRatio
         )
         record(snapshot)
     }
