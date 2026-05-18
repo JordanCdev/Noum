@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend)_
+_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + voice-aware weekly insight)_
 
 ## Architecture overview
 
@@ -626,6 +626,27 @@ _Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   fire). Twelve unit tests cover the mode→skill mapping, six aligned /
   non-aligned voice×mode cases, the coverage invariants (no orphan modes,
   no always-on voices), and the brand-voice copy guards.
+  **Home weekly insight is now goal-aware too**: the sixth surface in the
+  chain. `AIInsightInput.styleGoal` carries the user's `SpeakingStyleGoal`
+  into `AIInsightsService`; the AI prompt gains a "User's voice goal: warm
+  voice" line and a `weeklyNarrative` system-prompt instruction to reference
+  the voice once when the data supports it. The deterministic template
+  fallback (used when no AI provider is configured) appends one anchor
+  sentence — "Each clean rep moves you toward your <voice> voice." — to the
+  body when `styleGoal` is set AND `weeklyReps > 0`. Empty-week and goal-
+  free paths stay silent (no fake personalization on hollow data or off-
+  goal accounts). The four-branch headline/action selection stays data-
+  driven — a "Pressure caught you" week still recommends Land the Pause
+  regardless of voice — so the voice anchor is additive, not overriding.
+  The template helpers were lifted to `static internal` on
+  `AIInsightsService` so unit tests can exercise the deterministic copy
+  without spinning up the actor or the per-week cache. Six unit tests
+  cover the on-goal / off-goal / empty-week paths, the every-voice short-
+  label coverage, the data-driven-selection-preserved contract, and the
+  brand-voice copy guards (no `!`, no "let's", no "great job"). Both
+  `AIWeeklyInsightCard.refresh()` and `AISessionDebriefCard.refresh()`
+  now pass `profile?.speakingStyleGoal` through, so the AI version of
+  either surface can reference the voice when a real provider is wired.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked

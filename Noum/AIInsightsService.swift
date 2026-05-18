@@ -74,6 +74,40 @@ struct AIInsightInput {
     /// Normalized 0–1 distance from the user's coaching goal (from
     /// CommunicationBaseline.distanceFromGoal). nil if no goal is set.
     let goalDistance: Double?
+    /// User's chosen voice goal — drives the same "toward your <voice> voice"
+    /// language used by VoiceAnchorBanner, LiveEloquenceHUD, Coach Note
+    /// momentum line, GoalProgressView, and VoiceAlignmentChip. The AI prompt
+    /// references it explicitly when set; the deterministic template fallback
+    /// anchors its weekly narrative around it. nil ⇒ template stays voice-
+    /// neutral (no fake personalization on goal-free accounts).
+    let styleGoal: SpeakingStyleGoal?
+
+    init(
+        kind: AIInsightKind,
+        sessions: [PracticeSession],
+        baseline: CommunicationBaseline,
+        rating: SpeakingRating,
+        weeklyDelta: Int,
+        weeklyReps: Int,
+        topFillerWord: String?,
+        goalParaphrase: String?,
+        currentStreak: Int,
+        goalDistance: Double?,
+        styleGoal: SpeakingStyleGoal? = nil
+    ) {
+        self.kind = kind
+        self.sessions = sessions
+        self.baseline = baseline
+        self.rating = rating
+        self.weeklyDelta = weeklyDelta
+        self.weeklyReps = weeklyReps
+        self.topFillerWord = topFillerWord
+        self.goalParaphrase = goalParaphrase
+        self.currentStreak = currentStreak
+        self.goalDistance = goalDistance
+        self.styleGoal = styleGoal
+    }
+
     /// Sessions to focus on inside the prompt — usually the last 3–5.
     /// Trimmed by the caller so the prompt stays small.
     var focusSessions: [PracticeSession] {
@@ -206,9 +240,9 @@ actor AIInsightsService {
         """
         switch kind {
         case .weeklyNarrative:
-            return common + "\nThe goal is a one-paragraph narrative summary of the user's last 7 days of speaking practice. If a user goal is provided, open with one sentence connecting the week's trend to that goal."
+            return common + "\nThe goal is a one-paragraph narrative summary of the user's last 7 days of speaking practice. If a user goal is provided, open with one sentence connecting the week's trend to that goal. If a voice goal is provided (e.g. \"warm voice\", \"concise voice\"), reference it once by the exact label in the body — phrasing like \"your warm voice\" — when the week's data supports the framing."
         case .sessionDebrief:
-            return common + "\nThe goal is a coaching read of one specific session. If a user goal is provided, your first sentence MUST connect this session to that goal — e.g. 'You said you wanted to X — this session moved toward/away from that because…'. Then name what concretely changed."
+            return common + "\nThe goal is a coaching read of one specific session. If a user goal is provided, your first sentence MUST connect this session to that goal — e.g. 'You said you wanted to X — this session moved toward/away from that because…'. Then name what concretely changed. If a voice goal is provided, reference it once using the exact label."
         case .patternBreak:
             return common + "\nA pattern just shifted. Surface what changed and whether it was good or bad. If a user goal is provided, frame the shift in terms of that goal."
         }
@@ -223,6 +257,9 @@ actor AIInsightsService {
                 let pct = Int((1.0 - d) * 100)
                 lines.append("Goal progress (higher = closer to goal): \(pct)%")
             }
+        }
+        if let voice = input.styleGoal {
+            lines.append("User's voice goal: \(voice.shortVoiceLabel)")
         }
         lines.append("Sessions logged this week: \(input.weeklyReps)")
         lines.append("Rating delta this week: \(input.weeklyDelta >= 0 ? "+" : "")\(input.weeklyDelta)")
@@ -354,6 +391,13 @@ actor AIInsightsService {
     // MARK: - Templated fallback
 
     private func templatedFallback(for input: AIInsightInput) -> AIInsight {
+        Self.templatedFallback(for: input)
+    }
+
+    /// Pure, side-effect-free template generator. Lifted out of the actor so
+    /// unit tests can verify the deterministic copy without spinning up the
+    /// actor or worrying about the per-week cache.
+    static func templatedFallback(for input: AIInsightInput) -> AIInsight {
         switch input.kind {
         case .weeklyNarrative:
             return weeklyTemplate(input: input)
@@ -364,7 +408,7 @@ actor AIInsightsService {
         }
     }
 
-    private func weeklyTemplate(input: AIInsightInput) -> AIInsight {
+    static func weeklyTemplate(input: AIInsightInput) -> AIInsight {
         let evidence: [String] = [
             "\(input.weeklyReps) rep\(input.weeklyReps == 1 ? "" : "s") this week",
             "\(input.weeklyDelta >= 0 ? "+" : "")\(input.weeklyDelta) rating",
@@ -372,7 +416,7 @@ actor AIInsightsService {
         ].filter { !$0.isEmpty }
 
         let headline: String
-        let body: String
+        var body: String
         let action: String?
         if input.weeklyReps == 0 {
             headline = "Quiet week"
@@ -395,6 +439,17 @@ actor AIInsightsService {
             body = "A handful of reps kept the rating steady. The next gain comes from one extra session this week."
             action = "Add one rep tomorrow — same time, same prompt length."
         }
+
+        // Voice-aware anchor: when the user has chosen a SpeakingStyleGoal AND
+        // the week has real data, append one sentence tying the week to their
+        // voice — the same "toward your <voice> voice" language used by
+        // VoiceAnchorBanner, LiveEloquenceHUD, Coach Note momentum line,
+        // GoalProgressView, and VoiceAlignmentChip. Silent on empty-week and
+        // goal-free paths so this never invents personalization.
+        if let voice = input.styleGoal, input.weeklyReps > 0 {
+            body = body + " Each clean rep moves you toward your \(voice.shortVoiceLabel)."
+        }
+
         return AIInsight(
             kind: .weeklyNarrative,
             headline: headline,
@@ -406,7 +461,7 @@ actor AIInsightsService {
         )
     }
 
-    private func debriefTemplate(input: AIInsightInput) -> AIInsight {
+    static func debriefTemplate(input: AIInsightInput) -> AIInsight {
         guard let session = input.focusSessions.first else {
             return AIInsight(
                 kind: .sessionDebrief,
@@ -451,7 +506,7 @@ actor AIInsightsService {
         )
     }
 
-    private func patternBreakTemplate(input: AIInsightInput) -> AIInsight {
+    static func patternBreakTemplate(input: AIInsightInput) -> AIInsight {
         AIInsight(
             kind: .patternBreak,
             headline: "Pattern hold",
@@ -473,6 +528,7 @@ actor AIInsightsService {
         hasher.combine(input.currentStreak)
         hasher.combine(input.topFillerWord ?? "")
         hasher.combine(input.focusSessions.first?.id)
+        hasher.combine(input.styleGoal?.rawValue ?? "")
         let calendar = Calendar.current
         let week = calendar.component(.weekOfYear, from: Date())
         hasher.combine(week)
