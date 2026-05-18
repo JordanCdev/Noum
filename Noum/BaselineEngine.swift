@@ -248,6 +248,58 @@ struct CommunicationBaseline: Codable, Equatable {
         return "Early days"
     }
 
+    /// Measured distance from goal, or nil when the underlying dimension lacks
+    /// enough qualifying data to claim a number. Mirrors `distanceFromGoal` but
+    /// never returns a fake "0.5 / Getting closer" reading on insufficient
+    /// signal — UI surfaces use this when honesty matters more than coverage.
+    func measuredDistanceFromGoal(_ goal: CoachingPriority) -> Double? {
+        switch goal {
+        case .reduceFillers:
+            guard fillerRate.confidence != .insufficient else { return nil }
+        case .moreConcise:
+            guard durationTendency.confidence != .insufficient else { return nil }
+        case .thinkFaster:
+            guard averageScore.confidence != .insufficient else { return nil }
+        case .calmerDelivery:
+            guard pauseFilledRatio.confidence != .insufficient else { return nil }
+        }
+        return distanceFromGoal(goal)
+    }
+
+    /// Window-based goal distance computed from raw `SkillSnapshot` aggregates.
+    /// Same normalisation formulas as the persistent `distanceFromGoal`, but
+    /// run over an arbitrary snapshot slice — lets a UI surface compare a
+    /// recent window against the prior window for week-over-week trend.
+    ///
+    /// Returns nil when:
+    ///   • fewer than `minimumSamples` snapshots are provided, or
+    ///   • the goal isn't measurable from snapshot signals (`.calmerDelivery`
+    ///     reads `pauseFilledRatio`, which isn't stored per-snapshot — the
+    ///     trend chip stays hidden for that goal rather than mislead).
+    static func distanceFromGoal(
+        _ goal: CoachingPriority,
+        in snapshots: [SkillSnapshot],
+        minimumSamples: Int = 3
+    ) -> Double? {
+        guard snapshots.count >= minimumSamples else { return nil }
+        switch goal {
+        case .reduceFillers:
+            let totalSeconds = snapshots.reduce(0.0) { $0 + $1.duration }
+            guard totalSeconds > 0 else { return nil }
+            let totalFillers = snapshots.reduce(0) { $0 + $1.fillerCount }
+            let rate = Double(totalFillers) / (totalSeconds / 60.0)
+            return min(rate / 8.0, 1.0)
+        case .moreConcise:
+            let mean = snapshots.reduce(0.0) { $0 + $1.duration } / Double(snapshots.count)
+            return max(0, min((mean - 20) / 100.0, 1.0))
+        case .thinkFaster:
+            let mean = Double(snapshots.reduce(0) { $0 + $1.score }) / Double(snapshots.count)
+            return max(0, 1.0 - mean / 7.5)
+        case .calmerDelivery:
+            return nil
+        }
+    }
+
     static let empty = CommunicationBaseline(
         lastUpdated: Date(),
         sessionCount: 0,

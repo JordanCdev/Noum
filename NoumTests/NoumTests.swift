@@ -3473,3 +3473,199 @@ struct ScoreCalibrationTests {
         // Compile-time check is the contract — runtime smoke is enough.
     }
 }
+
+// MARK: - Goal Progress Tests (M14)
+//
+// Locks the contract for the profile's goal-progress ring:
+//   • Snapshot-window distance computes from raw signal aggregates for the
+//     three measurable goals; .calmerDelivery returns nil because
+//     pauseFilledRatio isn't stored per-snapshot.
+//   • measuredDistanceFromGoal returns nil on insufficient baseline data so
+//     the UI can render "Early signal" rather than a fake 50%.
+//   • Trend compute classifies closer / steady / slipped honestly and
+//     returns nil when either window has fewer than 3 qualifying snapshots.
+
+struct GoalProgressTests {
+
+    private func snapshot(
+        daysAgo: Int,
+        fillerCount: Int,
+        duration: TimeInterval,
+        score: Int
+    ) -> SkillSnapshot {
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return SkillSnapshot(
+            sessionId: UUID(),
+            date: date,
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: 120,
+            wpm: 130,
+            score: score,
+            categoryRatings: [:],
+            drillCompleted: nil,
+            pauseRate: nil,
+            pitchMonotone: nil
+        )
+    }
+
+    // MARK: distanceFromGoal(in:)
+
+    @Test func snapshotDistanceFillerHitsTargetAtCleanRate() {
+        // 6 reps × 60s × 1 filler each = 1.0 filler/min → distance 0.125
+        // (well inside "On track" band — proximity ≥ 87%).
+        let snaps = (0..<6).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 60, score: 7) }
+        guard let d = CommunicationBaseline.distanceFromGoal(.reduceFillers, in: snaps) else {
+            #expect(Bool(false), "Expected a measured distance for filler-clean reps.")
+            return
+        }
+        #expect(d < 0.20, "Clean filler reps should sit inside On-track band. Got: \(d)")
+    }
+
+    @Test func snapshotDistanceFillerSaturatesAtNoisyRate() {
+        // 6 reps × 30s × 8 fillers each = 16/min → clamps to 1.0.
+        let snaps = (0..<6).map { snapshot(daysAgo: $0, fillerCount: 8, duration: 30, score: 4) }
+        guard let d = CommunicationBaseline.distanceFromGoal(.reduceFillers, in: snaps) else {
+            #expect(Bool(false), "Expected a measured distance for filler-heavy reps.")
+            return
+        }
+        #expect(d == 1.0, "16 fillers/min must saturate at 1.0. Got: \(d)")
+    }
+
+    @Test func snapshotDistanceConciseTracksDurationMean() {
+        // 5 reps averaging 40s → distance = (40-20)/100 = 0.20.
+        let snaps = (0..<5).map { snapshot(daysAgo: $0, fillerCount: 0, duration: 40, score: 7) }
+        guard let d = CommunicationBaseline.distanceFromGoal(.moreConcise, in: snaps) else {
+            #expect(Bool(false), "Expected a measured distance for concise reps.")
+            return
+        }
+        #expect(abs(d - 0.20) < 0.01, "40s mean should map to distance 0.20. Got: \(d)")
+    }
+
+    @Test func snapshotDistanceThinkFasterTracksScoreMean() {
+        // 5 reps × score 8 → distance = max(0, 1 - 8/7.5) = 0.0.
+        let snaps = (0..<5).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 45, score: 8) }
+        guard let d = CommunicationBaseline.distanceFromGoal(.thinkFaster, in: snaps) else {
+            #expect(Bool(false), "Expected a measured distance for high-score reps.")
+            return
+        }
+        #expect(d == 0.0, "Score-8 mean should pin distance at 0.0. Got: \(d)")
+    }
+
+    @Test func snapshotDistanceCalmerDeliveryUnmeasurable() {
+        // pauseFilledRatio isn't stored per-snapshot — the helper returns nil
+        // so the trend chip can stay hidden rather than fake a value.
+        let snaps = (0..<6).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 45, score: 7) }
+        let d = CommunicationBaseline.distanceFromGoal(.calmerDelivery, in: snaps)
+        #expect(d == nil, "calmerDelivery is not measurable from snapshots. Got: \(String(describing: d))")
+    }
+
+    @Test func snapshotDistanceBelowMinimumSamplesReturnsNil() {
+        // Two snapshots is below the minimum-3 floor.
+        let snaps = (0..<2).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 60, score: 7) }
+        #expect(CommunicationBaseline.distanceFromGoal(.reduceFillers, in: snaps) == nil)
+    }
+
+    // MARK: measuredDistanceFromGoal
+
+    @Test func measuredDistanceHidesWhenConfidenceInsufficient() {
+        // .empty baseline → every dimension is .insufficient → measured
+        // returns nil for every goal so the ring renders "Early signal"
+        // rather than a fake 50% reading.
+        let baseline = CommunicationBaseline.empty
+        #expect(baseline.measuredDistanceFromGoal(.reduceFillers) == nil)
+        #expect(baseline.measuredDistanceFromGoal(.moreConcise) == nil)
+        #expect(baseline.measuredDistanceFromGoal(.thinkFaster) == nil)
+        #expect(baseline.measuredDistanceFromGoal(.calmerDelivery) == nil)
+    }
+
+    @Test func measuredDistanceSurfacesWhenConfidenceClearsThreshold() {
+        let baseline = CommunicationBaseline(
+            lastUpdated: Date(), sessionCount: 12, qualifyingSessionCount: 12,
+            fillerRate: BaselineStat(value: 2.0, sampleCount: 12, confidence: .established, trend: .stable, percentile25: 1.5, percentile75: 2.5),
+            pace: .empty, paceVariance: .empty, durationTendency: .empty,
+            pauseRate: .empty, pauseFilledRatio: .empty,
+            openingStrength: .empty, closingStrength: .empty,
+            structureQuality: .empty, answerDepth: .empty, clarity: .empty,
+            vocabularyRange: .empty, hedgingRate: .empty,
+            averageScore: .empty, clutchWordFrequencies: [:],
+            topStrengths: [], persistentBlockers: []
+        )
+        guard let d = baseline.measuredDistanceFromGoal(.reduceFillers) else {
+            #expect(Bool(false), "Expected a measured distance when fillerRate confidence is established.")
+            return
+        }
+        #expect(abs(d - 0.25) < 0.01, "2.0 fillers/min should map to distance 0.25. Got: \(d)")
+    }
+
+    // MARK: GoalProgressTrend.compute
+
+    @Test func trendDetectsImprovementWeekOverWeek() {
+        // Recent 5 reps: 1 filler/60s → 1/min. Prior 5 reps: 4 fillers/60s →
+        // 4/min. Distance drops from 0.5 to 0.125 — clearly "closer".
+        let recent = (0..<5).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 60, score: 7) }
+        let prior = (5..<10).map { snapshot(daysAgo: $0, fillerCount: 4, duration: 60, score: 5) }
+        guard let trend = GoalProgressTrend.compute(goal: .reduceFillers, snapshots: recent + prior) else {
+            #expect(Bool(false), "Expected a trend with 5+5 qualifying snapshots.")
+            return
+        }
+        #expect(trend.direction == .closer, "Filler drop should classify as closer. Got: \(trend.direction)")
+        #expect(trend.delta < -GoalProgressTrend.steadyThreshold, "Closer trend must have a meaningfully negative delta. Got: \(trend.delta)")
+    }
+
+    @Test func trendDetectsSlippageWeekOverWeek() {
+        // Recent reps drift longer (concise distance goes up).
+        let recent = (0..<5).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 90, score: 7) }
+        let prior = (5..<10).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 40, score: 7) }
+        guard let trend = GoalProgressTrend.compute(goal: .moreConcise, snapshots: recent + prior) else {
+            #expect(Bool(false), "Expected a trend for the slip case.")
+            return
+        }
+        #expect(trend.direction == .slipped, "Longer mean duration must classify as slipped. Got: \(trend.direction)")
+    }
+
+    @Test func trendClassifiesSteadyInsideNoiseBand() {
+        // Recent and prior windows hold the same filler rate — the chip
+        // should not celebrate movement that isn't there.
+        let all = (0..<10).map { snapshot(daysAgo: $0, fillerCount: 2, duration: 60, score: 7) }
+        guard let trend = GoalProgressTrend.compute(goal: .reduceFillers, snapshots: all) else {
+            #expect(Bool(false), "Expected a steady trend on identical windows.")
+            return
+        }
+        #expect(trend.direction == .steady, "Identical windows must classify as steady. Got: \(trend.direction)")
+        #expect(abs(trend.delta) < GoalProgressTrend.steadyThreshold)
+    }
+
+    @Test func trendReturnsNilWhenPriorWindowIsThin() {
+        // 5 recent snapshots but only 2 prior — below the 3-sample floor for
+        // the prior window. The chip stays hidden rather than celebrate a
+        // delta against a noisy baseline.
+        let recent = (0..<5).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 60, score: 7) }
+        let prior = (5..<7).map { snapshot(daysAgo: $0, fillerCount: 4, duration: 60, score: 5) }
+        let trend = GoalProgressTrend.compute(goal: .reduceFillers, snapshots: recent + prior)
+        #expect(trend == nil, "Trend must require ≥3 snapshots in each window. Got: \(String(describing: trend))")
+    }
+
+    @Test func trendReturnsNilForUnmeasurableGoal() {
+        // calmerDelivery uses pauseFilledRatio which isn't in snapshots —
+        // even with a huge history, the trend chip stays hidden so the UI
+        // never claims a delta it can't actually compute.
+        let snaps = (0..<10).map { snapshot(daysAgo: $0, fillerCount: 1, duration: 45, score: 7) }
+        let trend = GoalProgressTrend.compute(goal: .calmerDelivery, snapshots: snaps)
+        #expect(trend == nil)
+    }
+
+    @Test func trendChipCopyIsRestraintFriendly() {
+        // Quick smoke on the user-facing strings — guards against an
+        // accidental "let's" / emoji / exclamation creep that would violate
+        // the brand voice rules in the design system.
+        let closer = GoalProgressTrend(direction: .closer, delta: -0.1, windowSize: 5)
+        let steady = GoalProgressTrend(direction: .steady, delta: 0.0, windowSize: 5)
+        let slipped = GoalProgressTrend(direction: .slipped, delta: 0.1, windowSize: 5)
+        for chip in [closer, steady, slipped] {
+            #expect(!chip.label.isEmpty)
+            #expect(!chip.label.contains("!"))
+            #expect(!chip.label.lowercased().contains("let's"))
+        }
+    }
+}

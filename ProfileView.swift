@@ -26,6 +26,7 @@ struct ProfileView: View {
     @StateObject private var challenges = ChallengesManager.shared
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var trendStore = SkillTrendStore.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
     @State private var selectedFeedbackRequest: StoredFeedbackRequest?
@@ -541,25 +542,22 @@ struct ProfileView: View {
                 .tracking(0.8)
 
             if let profile = coachingProfileStore.profile {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "target")
-                        .font(Typography.subheadline.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(width: 32, height: 32)
-                        .background(AppColor.brandBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                // M14: visualise the same distance-from-goal metric that
+                // anchors the pre-rep VoiceAnchorBanner, biases the mid-rep
+                // LiveEloquenceHUD, and frames the post-rep Coach Note
+                // momentum. The user reads one proximity number end-to-end
+                // instead of just "Getting closer" text.
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(profile.displayableGoal)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(profile.displayableGoal)
-                            .font(Typography.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        let label = baselineStore.baseline.goalDistanceLabel(profile.primaryGoal)
-                        Text(label)
-                            .font(Typography.micro)
-                            .foregroundStyle(label == "On track" ? AppColor.brandBlue : .secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    GoalProgressView(
+                        goal: profile.primaryGoal,
+                        baseline: baselineStore.baseline,
+                        snapshots: trendStore.snapshots
+                    )
                 }
 
                 // M14: surface the user's own captured reflection text so

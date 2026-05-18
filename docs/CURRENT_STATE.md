@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum)_
+_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile)_
 
 ## Architecture overview
 
@@ -581,6 +581,26 @@ _Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   fires when there's a real improving trend on a goal-aligned skill,
   so it never invents personalization for off-goal wins. Three unit
   tests cover the celebrate / off-goal-silent / no-goal-silent paths.
+  **Profile now visualises distance-from-goal as a real progress
+  ring**: `GoalProgressView` (new) sits inside the Coaching Direction
+  card and reads `baseline.measuredDistanceFromGoal(primaryGoal)` —
+  a sibling of the existing `distanceFromGoal` that returns nil
+  instead of the legacy 0.5-default when the underlying dimension is
+  `.insufficient`. The ring fills to `(1 - distance) * 100%` and
+  colour-bands by proximity (positive ≥ 75%, brandBlue ≥ 50%, caution
+  ≥ 25%, secondary otherwise). A week-over-week trend chip ("Closer
+  this week" / "Holding steady" / "Slipped this week") fires when
+  `GoalProgressTrend.compute` finds ≥ 3 recent + ≥ 3 prior qualifying
+  `SkillSnapshot`s; the chip stays hidden for `.calmerDelivery`
+  because `pauseFilledRatio` isn't stored per-snapshot and the helper
+  refuses to fake a delta it can't measure. Closes the M14 goal-aware
+  loop end-to-end: the same metric that anchors the pre-rep
+  `VoiceAnchorBanner`, biases the mid-rep `LiveEloquenceHUD`, and
+  frames the post-rep Coach Note momentum is now visible on the
+  profile as a single proximity reading the user can watch move.
+  Eleven unit tests cover the formula correctness, the
+  insufficient-data nil paths, the trend-direction classifier, and
+  the chip-copy restraint contract.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
