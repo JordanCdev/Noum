@@ -665,6 +665,76 @@ struct VerdictEngineTests {
         #expect(note.momentum.lowercased().contains("pressure") || note.momentum.lowercased().contains("high"),
             "High-pressure session should acknowledge pressure. Got: \(note.momentum)")
     }
+
+    @Test func improvingTrendOnGoalAlignedSkillCelebratesVoice() {
+        // Warm voice aligns with paceControl, vocalEmphasis, answerDevelopment.
+        // An improving pace trend should produce a momentum clause that names
+        // the warm voice — the post-session counterpart to the voice anchor
+        // banner.
+        let paceImproving = SkillTrend(
+            skillArea: .paceControl,
+            direction: .improving,
+            confidence: .medium,
+            windowSize: 5,
+            currentLevel: .developing,
+            recentDelta: nil
+        )
+        let note = VerdictEngine.generate(
+            fillerCount: 2, duration: 45, wordCount: 110, wpm: 130, score: 7,
+            categoryRatings: ["Opening": "OK", "Structure": "Good"],
+            trends: [paceImproving], primaryFocus: .paceControl, drillHistory: [],
+            styleGoal: "warm"
+        )
+        #expect(note.momentum.lowercased().contains("warm voice"),
+            "Goal-aligned improvement should celebrate the warm voice in momentum. Got: \(note.momentum)")
+        // buildMomentum already names the improving skill — the goal clause
+        // adds the voice frame without repeating the skill word.
+        #expect(note.momentum.lowercased().contains("pace"),
+            "Underlying momentum should still name the gaining skill. Got: \(note.momentum)")
+    }
+
+    @Test func improvingTrendOffGoalDoesNotMentionVoice() {
+        // Concise voice aligns with conciseSpeaking, structure, fillerReduction.
+        // An improving closingStrength trend is NOT in that set — momentum
+        // should celebrate the gain but NOT manufacture a fake "toward your
+        // concise voice" suffix. No fake personalization is a Claude.MD rule.
+        let closingImproving = SkillTrend(
+            skillArea: .closingStrength,
+            direction: .improving,
+            confidence: .medium,
+            windowSize: 5,
+            currentLevel: .developing,
+            recentDelta: nil
+        )
+        let note = VerdictEngine.generate(
+            fillerCount: 3, duration: 60, wordCount: 140, wpm: 140, score: 7,
+            categoryRatings: ["Opening": "OK", "Close": "Good"],
+            trends: [closingImproving], primaryFocus: .closingStrength, drillHistory: [],
+            styleGoal: "concise"
+        )
+        #expect(!note.momentum.lowercased().contains("concise voice"),
+            "Off-goal improvement must not invent voice-alignment language. Got: \(note.momentum)")
+    }
+
+    @Test func goalAwareMomentumSkippedWhenNoGoalSet() {
+        // No styleGoal → no goal clause. Confirms the new enrichment is
+        // strictly opt-in via the user's coaching profile.
+        let paceImproving = SkillTrend(
+            skillArea: .paceControl,
+            direction: .improving,
+            confidence: .medium,
+            windowSize: 5,
+            currentLevel: .developing,
+            recentDelta: nil
+        )
+        let note = VerdictEngine.generate(
+            fillerCount: 2, duration: 45, wordCount: 110, wpm: 130, score: 7,
+            categoryRatings: ["Opening": "OK"],
+            trends: [paceImproving], primaryFocus: .paceControl, drillHistory: []
+        )
+        #expect(!note.momentum.lowercased().contains("voice"),
+            "Without a styleGoal, momentum must not reference a voice. Got: \(note.momentum)")
+    }
 }
 
 // MARK: - Baseline Prompt Context Tests

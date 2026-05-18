@@ -185,7 +185,12 @@ enum VerdictEngine {
         }
 
         // --- Layer 3: Style lens ---
+        // Two-sided: celebrate gains that move the user toward their chosen
+        // voice (momentum), and surface the one trait-mismatch worth fixing
+        // (nextStep). Both fire independently — a session can both win on
+        // an aligned skill and miss on a different trait.
         if let goal = styleGoal, !goal.isEmpty {
+            momentum = enrichMomentumWithStyleAlignment(momentum, trends: trends, styleGoal: goal)
             let styleNote = buildStyleNote(goal: goal, fillerCount: fillerCount, wpm: wpm, duration: duration, categoryRatings: categoryRatings)
             if !styleNote.isEmpty {
                 nextStep = nextStep + " " + styleNote
@@ -551,6 +556,41 @@ enum VerdictEngine {
         }
 
         return mismatches.first ?? ""
+    }
+
+    /// Appends a goal-celebrating clause to the momentum line when at least one
+    /// improving trend lands in the user's `SpeakingStyleGoal.alignedSkillAreas`.
+    ///
+    /// This is the post-session counterpart to `VoiceAnchorBanner` (pre-session)
+    /// and the goal-aware `LiveEloquenceHUD` chip (mid-session) — together they
+    /// make every M14 surface speak the user's chosen voice. The Coach Note's
+    /// momentum line is the highest-leverage post-session feedback surface, so
+    /// goal-alignment praise lives here rather than in a separate card.
+    ///
+    /// Restraint: only fires when there's a real improving trend AND it maps
+    /// onto an aligned skill area for the goal. No fake personalization; no
+    /// generic "moving toward your voice" suffix when nothing actually moved.
+    private static func enrichMomentumWithStyleAlignment(
+        _ momentum: String,
+        trends: [SkillTrend],
+        styleGoal: String
+    ) -> String {
+        guard let resolved = SpeakingStyleGoal.resolve(styleGoal) else { return momentum }
+        let aligned = resolved.alignedSkillAreas
+        guard !aligned.isEmpty else { return momentum }
+
+        // Find the first improving trend whose skill is on the goal's lever
+        // list. `buildMomentum` already names the specific skill ("Your pace
+        // is becoming more controlled."); this clause adds the voice-goal
+        // frame on top, without repeating the skill name.
+        let alignedImprovement = trends.first { trend in
+            trend.direction == .improving && aligned.contains(trend.skillArea)
+        }
+        guard alignedImprovement != nil else { return momentum }
+
+        let voiceLabel = resolved.shortVoiceLabel
+        let clause = "That's the work your \(voiceLabel) depends on."
+        return momentum + " " + clause
     }
 
     // MARK: - Dynamic Drill Rationale

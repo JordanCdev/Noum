@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract)_
+_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum)_
 
 ## Architecture overview
 
@@ -572,6 +572,15 @@ _Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   `CoachingProfile` is set. Together those two surfaces give every
   Timed rep at least one personalized touchpoint (banner) and a richer
   one when the listener earns a goal-aligned rhetorical move (HUD).
+  **Post-session momentum line is now goal-aware too**:
+  `VerdictEngine.generate` runs `enrichMomentumWithStyleAlignment` when
+  a `styleGoal` is set — for any improving `SkillTrend` whose
+  `skillArea` lands in `SpeakingStyleGoal.alignedSkillAreas`, the
+  Coach Note momentum line gains a clause like "Your pace gain moves
+  you toward your warm voice." Restraint built in: the helper only
+  fires when there's a real improving trend on a goal-aligned skill,
+  so it never invents personalization for off-goal wins. Three unit
+  tests cover the celebrate / off-goal-silent / no-goal-silent paths.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
