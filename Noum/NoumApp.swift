@@ -25,12 +25,52 @@ struct NoumApp: App {
         FirebaseBootstrap.configure()
         TypographyDebug.logRegisteredFamiliesOnce()
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("UI_TESTING_SEED") {
+        let args = ProcessInfo.processInfo.arguments
+        let hasSeed = args.contains("UI_TESTING_SEED")
+        // `UI_TESTING_SEED_FORCE` always reseeds — used by ScreenshotTour
+        // so the test starts from a deterministic populated state every
+        // run. Plain `UI_TESTING_SEED` only seeds when the store is empty
+        // (preserves hand-test data across launches).
+        let forceSeed = args.contains("UI_TESTING_SEED_FORCE")
+        if hasSeed || forceSeed {
             // Inject the "improving intermediate" dev profile before any view
             // binds to PracticeSessionStore so screenshot-tour UI tests open on
             // a populated state instead of the first-run empty card.
-            if PracticeSessionStore.shared.sessions.isEmpty {
+            if forceSeed || PracticeSessionStore.shared.sessions.isEmpty {
                 DevSeedData.injectProfile(.improvingIntermediate)
+                // Suppress overlay celebrations that fire from the seed's
+                // rating change (tier promotion) or persisted pending state
+                // (daily goal, path node, lesson) — they otherwise cover
+                // Home and intercept tap targets in the screenshot tour.
+                LeagueManager.shared.suppressCelebrationsForTesting()
+                DailyGoalManager.shared.consumeGoalCelebration()
+                PathProgressManager.shared.consumeCelebration()
+                LessonStore.shared.consumeCelebration()
+            }
+        }
+        // `FORCE_GOAL_REFRESH` / `FORCE_NOTIFICATION_PROMPT` flip the
+        // respective manager flags so ScreenshotTour can capture sheets
+        // that normally fire on a cadence (2-week goal refresh) or
+        // first-session-only (notification pre-prompt).
+        if args.contains("FORCE_GOAL_REFRESH") {
+            DispatchQueue.main.async {
+                GoalRefreshManager.shared.shouldPresent = true
+            }
+        }
+        if args.contains("FORCE_NOTIFICATION_PROMPT") {
+            DispatchQueue.main.async {
+                NotificationPrePromptManager.shared.pendingPrompt = true
+            }
+        }
+        // `-DeepLink noum://<host>` launch arg lets the noum-screenshots
+        // skill drive tab nav via `simctl launch --terminate-running-process`
+        // without triggering iOS's "Open in Noum?" confirmation that blocks
+        // headless `simctl openurl` automation.
+        if let idx = args.firstIndex(of: "-DeepLink"),
+           idx + 1 < args.count,
+           let url = URL(string: args[idx + 1]) {
+            DispatchQueue.main.async {
+                DeepLinkRouter.shared.pending = url
             }
         }
         #endif

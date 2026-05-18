@@ -1,19 +1,27 @@
 import XCTest
 
-/// Drives the app through the surfaces this advancement-pass touched and saves
-/// an XCTAttachment screenshot of each. Run via:
+/// Drives the app through every primary tab + scroll states + sub-flows + key
+/// surfaces and saves an XCTAttachment screenshot of each. Used by the
+/// `noum-screenshots` skill in `detailed` mode. Run via:
 ///
 ///     xcodebuild test \
 ///       -project Noum.xcodeproj -scheme Noum \
-///       -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+///       -destination 'platform=iOS Simulator,name=iPhone 17' \
 ///       -only-testing:NoumUITests/ScreenshotTour/testCaptureAdvancementSurfaces \
-///       -resultBundlePath ~/noum-result.xcresult
+///       -resultBundlePath /tmp/noum-tour.xcresult
 ///
 /// Then extract:
 ///
 ///     xcrun xcresulttool export attachments \
-///       --path ~/noum-result.xcresult \
-///       --output-path ~/noum-screens
+///       --path /tmp/noum-tour.xcresult \
+///       --output-path /tmp/noum-tour-attachments
+///
+/// `UI_TESTING_SEED_FORCE` always reseeds the `improvingIntermediate`
+/// profile so screenshots are deterministic. The seed suppresses overlay
+/// celebrations (tier promotion, daily goal, path node, lesson) that would
+/// otherwise cover Home and intercept tap targets — see `NoumApp.init`.
+/// `-DeepLink noum://<host>` jumps directly to a tab/screen without going
+/// through gesture navigation.
 final class ScreenshotTour: XCTestCase {
 
     override func setUpWithError() throws {
@@ -22,58 +30,208 @@ final class ScreenshotTour: XCTestCase {
 
     @MainActor
     func testCaptureAdvancementSurfaces() throws {
-        // ----- HOME (seeded) -----
+        // ============================================================
+        // SECTION A — Tabs + scroll states (5 tabs × top/mid/bottom)
+        // ============================================================
+
+        // ----- HOME -----
         let app = launchSeeded()
         XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 10))
-        Thread.sleep(forTimeInterval: 1.5)  // let seed inject + initial render settle
-        attach(app, name: "01-home")
-
-        // ----- PROFILE -----
-        let profileTab = app.buttons["nav.social"]
-        if profileTab.waitForExistence(timeout: 5) {
-            profileTab.tap()
-            Thread.sleep(forTimeInterval: 1.0)
-            attach(app, name: "02-profile-top")
-
-            app.swipeUp()
-            Thread.sleep(forTimeInterval: 0.5)
-            attach(app, name: "03-profile-mastery")
-        }
-
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(app, name: "01-home-top")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(app, name: "02-home-mid")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(app, name: "03-home-bottom")
         app.terminate()
 
+        // ----- PROFILE -----
+        let profileApp = launchSeededAt("noum://profile")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(profileApp, name: "04-profile-top")
+        profileApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(profileApp, name: "05-profile-mid")
+        profileApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(profileApp, name: "06-profile-bottom")
+        profileApp.terminate()
+
+        // ----- REVIEW -----
+        let reviewApp = launchSeededAt("noum://review")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(reviewApp, name: "07-review-top")
+        reviewApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(reviewApp, name: "08-review-bottom")
+
+        // Session detail — tap the first session row (`history.row.<uuid>`
+        // is added to each NavigationLink in SessionHistoryView). We don't
+        // know the UUID up front, so match by prefix via `containing`.
+        let firstSessionRow = reviewApp.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'history.row.'"))
+            .element(boundBy: 0)
+        if firstSessionRow.waitForExistence(timeout: 3) {
+            firstSessionRow.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            attach(reviewApp, name: "09-session-detail")
+        }
+        reviewApp.terminate()
+
+        // ----- SETTINGS -----
+        let settingsApp = launchSeededAt("noum://settings")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(settingsApp, name: "10-settings-top")
+        settingsApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(settingsApp, name: "11-settings-mid")
+        settingsApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(settingsApp, name: "12-settings-bottom")
+        settingsApp.terminate()
+
+        // ============================================================
+        // SECTION B — Practice mode picker + every mode setup
+        // ============================================================
+
         // ----- MODE PICKER -----
-        let pickerApp = launchSeeded()
-        XCTAssertTrue(pickerApp.otherElements["home.screen"].waitForExistence(timeout: 10))
+        let pickerApp = launchSeededAt("noum://train")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(pickerApp, name: "13-mode-picker")
+
+        // ----- TIMED PRACTICE SETUP -----
+        captureModeSetup(pickerApp, modeID: "practiceMode.timed", name: "14-timed-setup")
+
+        // ----- SUDDEN DEATH SETUP -----
+        captureModeSetup(pickerApp, modeID: "practiceMode.suddenDeath", name: "15-sudden-death-setup")
+
+        // ----- AH-COUNTER SETUP -----
+        captureModeSetup(pickerApp, modeID: "practiceMode.ahCounter", name: "16-ah-counter-setup")
+
+        // ----- IM CONVERSATION SETUP -----
+        captureModeSetup(pickerApp, modeID: "practiceMode.imConversation", name: "17-im-conversation-setup")
+
+        // ----- CUT THE CRUTCH SETUP -----
+        captureModeSetup(pickerApp, modeID: "practiceMode.cutTheCrutch", name: "18-cut-the-crutch-setup")
+
+        pickerApp.terminate()
+
+        // ----- LESSONS HOME (card-style entry, not a pressure mode) -----
+        let lessonsApp = launchSeededAt("noum://train")
         Thread.sleep(forTimeInterval: 1.0)
+        let lessonsCard = lessonsApp.buttons["practiceMode.lessons"]
+        if lessonsCard.waitForExistence(timeout: 5) {
+            lessonsCard.tap()
+            Thread.sleep(forTimeInterval: 1.2)
+            attach(lessonsApp, name: "19-lessons-home")
 
-        let trainTab = pickerApp.buttons["nav.practice"]
-        XCTAssertTrue(trainTab.waitForExistence(timeout: 5))
-        trainTab.tap()
-        XCTAssertTrue(pickerApp.otherElements["practiceModes.screen"].waitForExistence(timeout: 5))
-        Thread.sleep(forTimeInterval: 0.7)
-        attach(pickerApp, name: "04-mode-picker")
-
-        // ----- SUDDEN DEATH SETUP (difficulty selector) -----
-        let suddenDeathRow = pickerApp.buttons["practiceMode.suddenDeath"]
-        if suddenDeathRow.waitForExistence(timeout: 3) {
-            suddenDeathRow.tap()
-            Thread.sleep(forTimeInterval: 0.4)
-            let startCTA = pickerApp.buttons["practiceModes.start"]
-            if startCTA.waitForExistence(timeout: 3) {
-                startCTA.tap()
+            // ----- LESSON DETAIL — tap the first known lesson -----
+            let firstLesson = lessonsApp.buttons["lessons.row.pause_beats_filler"]
+            if firstLesson.waitForExistence(timeout: 3) {
+                firstLesson.tap()
                 Thread.sleep(forTimeInterval: 1.5)
-                attach(pickerApp, name: "05-sudden-death-setup")
+                attach(lessonsApp, name: "20-lesson-detail")
             }
         }
+        lessonsApp.terminate()
+
+        // ----- SPEECH PROJECTS -----
+        let projectsApp = launchSeededAt("noum://train")
+        Thread.sleep(forTimeInterval: 1.0)
+        let projectsCard = projectsApp.buttons["practiceMode.speechProjects"]
+        if projectsCard.waitForExistence(timeout: 5) {
+            projectsCard.tap()
+            Thread.sleep(forTimeInterval: 1.2)
+            attach(projectsApp, name: "21-speech-projects")
+        }
+        projectsApp.terminate()
+
+        // ============================================================
+        // SECTION C — Path + League (Profile-adjacent destinations)
+        // ============================================================
+
+        // ----- LEAGUE -----
+        let leagueApp = launchSeededAt("noum://league")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(leagueApp, name: "22-league")
+        leagueApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(leagueApp, name: "23-league-bottom")
+        leagueApp.terminate()
+
+        // ----- PATH JOURNEY -----
+        let pathApp = launchSeededAt("noum://path")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(pathApp, name: "24-path-journey")
+        pathApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        attach(pathApp, name: "25-path-journey-bottom")
+        pathApp.terminate()
+
+        // ============================================================
+        // SECTION D — Conditional sheets (forced via launch args)
+        // ============================================================
+
+        // ----- GOAL REFRESH SHEET -----
+        let goalRefreshApp = launchSeededWith(extraArgs: ["FORCE_GOAL_REFRESH"])
+        Thread.sleep(forTimeInterval: 2.5) // sheet animates in after a beat
+        attach(goalRefreshApp, name: "26-goal-refresh-sheet")
+        goalRefreshApp.terminate()
+
+        // ----- NOTIFICATION PRE-PROMPT SHEET -----
+        let notifPromptApp = launchSeededWith(extraArgs: ["FORCE_NOTIFICATION_PROMPT"])
+        Thread.sleep(forTimeInterval: 2.5)
+        attach(notifPromptApp, name: "27-notification-pre-prompt")
+        notifPromptApp.terminate()
     }
+
+    // MARK: - Helpers
 
     @MainActor
     private func launchSeeded() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING_SEED"]
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"]
         app.launch()
         return app
+    }
+
+    /// Cold-launch with seed + a `-DeepLink` arg so the app routes straight
+    /// to the target screen without going through gesture nav.
+    @MainActor
+    private func launchSeededAt(_ deepLink: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE", "-DeepLink", deepLink]
+        app.launch()
+        // Home screen is the deep-link consumption point; wait for it then
+        // give the routing one beat to flip the navigation path.
+        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1.0)
+        return app
+    }
+
+    /// Cold-launch with seed + extra launch args (e.g. `FORCE_GOAL_REFRESH`)
+    /// for capturing conditional sheets that don't fire on a normal launch.
+    @MainActor
+    private func launchSeededWith(extraArgs: [String]) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs
+        app.launch()
+        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        return app
+    }
+
+    /// From the mode picker screen, tap a mode row + Start CTA, capture the
+    /// setup view it lands on. Idempotent — caller must end on the picker.
+    @MainActor
+    private func captureModeSetup(_ app: XCUIApplication, modeID: String, name: String) {
+        let modeRow = app.buttons[modeID]
+        guard modeRow.waitForExistence(timeout: 3) else { return }
+        modeRow.tap()
+        Thread.sleep(forTimeInterval: 0.4)
+        let startCTA = app.buttons["practiceModes.start"]
+        guard startCTA.waitForExistence(timeout: 3) else { return }
+        startCTA.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(app, name: name)
+        // Back to picker for the next mode capture
+        let backButton = app.navigationBars.buttons.element(boundBy: 0)
+        if backButton.exists {
+            backButton.tap()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
     }
 
     @MainActor

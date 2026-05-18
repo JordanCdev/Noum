@@ -514,6 +514,8 @@ class AuthManager: ObservableObject {
             "noum.notifications.dailyReminderTime.\(accountID)",
             "noum.notifications.streakWarningEnabled.\(accountID)",
             "noum.notifications.weeklyDigestEnabled.\(accountID)",
+            // M14: peak-glow cursor (Home-only post-session celebration).
+            "speakingRating.lastShownWeekPeak.\(accountID)",
         ]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)

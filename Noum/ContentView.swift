@@ -37,6 +37,7 @@ struct ContentView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
     @StateObject private var ratingStore = RatingStore.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
     @State private var showFreezeNudge = false
@@ -122,26 +123,63 @@ struct ContentView: View {
                             //    lives on Profile.
                             //  • suggestedPracticeCard — duplicated the
                             //    quickStartCard's primary intent.
-                            // Premium personal-best anchor — only surfaces when
-                            // there's a live peak this week. This is the
-                            // Figma "PERSONAL BEST" hero; it's reserved for
-                            // real moments, so most days the home falls back
-                            // to the calm six-card stack below.
-                            if ratingStore.rating.isWeekPeakCurrent {
-                                personalBestHeroCard.cardEntrance(0)
+                            // Premium personal-best anchor — M14 demotion:
+                            // this is no longer the always-on top card
+                            // whenever there happens to be a current-week
+                            // peak. It's a post-session glow that fades in
+                            // for ~7s after the user finishes a rep that
+                            // raised their week peak, then self-dismisses
+                            // and stays gone until they earn a NEW peak.
+                            //
+                            // Why: rendering this whenever `isWeekPeakCurrent`
+                            // was true meant the home opened with a victory
+                            // lap before today's rep. That stole attention
+                            // from the coach. Glow keeps the celebration
+                            // honest — it only shows when something just
+                            // happened. The full peak list still lives on
+                            // Profile via `PeakRatingWallCard`.
+                            if ratingStore.pendingPeakGlow {
+                                personalBestHeroCard
+                                    .cardEntrance(0)
+                                    .transition(.opacity)
+                                    .task {
+                                        // Reduced-motion users get a slightly
+                                        // shorter window — the fade itself is
+                                        // suppressed, so the card just
+                                        // appears, sits, then disappears.
+                                        let seconds: UInt64 = reduceMotion ? 5 : 7
+                                        try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                                        if reduceMotion {
+                                            ratingStore.markPeakGlowConsumed()
+                                        } else {
+                                            withAnimation(.easeInOut(duration: 0.45)) {
+                                                ratingStore.markPeakGlowConsumed()
+                                            }
+                                        }
+                                    }
                             }
-                            heroCard.cardEntrance(0)
-                            quickStartCard.cardEntrance(1)
+                            // M14 redesign: HomeCoachCard replaces the old
+                            // heroCard + quickStartCard pair. One composed
+                            // hero with NoumCharacter present, the coach's
+                            // recommendation as primary copy, and a single
+                            // Begin CTA. The recommendation pipeline
+                            // (RecommendationBiasEngine + CoachingPlanner)
+                            // feeds it directly — no new coaching logic.
+                            HomeCoachCard(navigationPath: $navigationPath).cardEntrance(0)
+                            // HomeUtilityStrip is the thin status row beneath
+                            // the Coach Card: streak + word of the day as a
+                            // single low-emphasis pair, replacing what used
+                            // to need its own WordOfTheDayTile card.
+                            HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
                             DailyChallengeTile().cardEntrance(2)
-                            WordOfTheDayTile(navigationPath: $navigationPath).cardEntrance(3)
                             AIWeeklyInsightCard(
                                 sessionStore: sessionStore,
                                 ratingStore: ratingStore,
                                 clutchWordStore: ClutchWordStore.shared,
                                 coachingProfileStore: coachingProfileStore
                             )
-                            .cardEntrance(4)
-                            journeyPreviewCard.cardEntrance(5)
+                            .cardEntrance(3)
+                            journeyPreviewCard.cardEntrance(4)
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -286,6 +324,13 @@ struct ContentView: View {
             DailyChallengesManager.shared.ensureForToday()
             DailyChallengesManager.shared.recomputeReady()
             WordOfTheDayManager.shared.ensureForToday()
+            // Consume any deep link that was set before this view mounted
+            // (e.g. `-DeepLink` launch arg handled in `NoumApp.init`).
+            // `.onChange` only fires on subsequent mutations, so cold-start
+            // URLs would otherwise be missed.
+            if let url = deepLinkRouter.pending {
+                consumeDeepLink(url)
+            }
         }
         .task {
             guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
@@ -416,9 +461,14 @@ struct ContentView: View {
 
     // MARK: - Personal-best anchor (Figma "Premium Hero")
     //
-    // Only rendered when `ratingStore.rating.isWeekPeakCurrent` is true. The
-    // copy and stats are derived live from the rating store so the card
-    // reflects what actually happened this week — never invented.
+    // M14: gated on `ratingStore.pendingPeakGlow`, which the store sets
+    // briefly after a session finalize that raised the user's week peak.
+    // The home wrap site auto-dismisses the card after ~7s via
+    // `markPeakGlowConsumed()`, then the gate stays false until the user
+    // earns a new peak. The copy and stats are still derived live from the
+    // rating store so the card reflects what actually happened — never
+    // invented. The full peak list (week + all-time + best-in-friends)
+    // remains on Profile via `PeakRatingWallCard`.
 
     private var personalBestHeroCard: some View {
         let rating = ratingStore.rating
@@ -996,8 +1046,16 @@ struct ContentView: View {
     /// progresses *this* node, so the user never has to stop at the path
     /// map. The two affordances live as sibling buttons (no nesting) so
     /// hit-testing is unambiguous.
+    ///
+    /// Voice: the secondary line names the next node title (large) plus
+    /// the *concrete* gating distance the coach would actually mention —
+    /// "Two clean pauses from unlocked", "+88 rating to Platinum",
+    /// "3/10 unlocks it". Never shames a regression: if a session knocked
+    /// the user back below the bar, the line still leads with the next
+    /// clean rep, sourced from `PathProgressManager.currentNodeGatingPhrase`.
     private var journeyPreviewCard: some View {
         let status = pathProgress.currentNode
+        let gatingLine = journeyGatingLine(for: status)
         return VStack(alignment: .leading, spacing: 12) {
             Button {
                 navigationPath.append(AppDestination.pathJourney)
@@ -1013,15 +1071,15 @@ struct ContentView: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(status == nil ? "Path cleared" : "Your next node")
+                        Text(status == nil ? "Path cleared" : "Next")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(AppColor.positive)
                             .textCase(.uppercase)
                             .tracking(0.6)
-                        Text(status?.node.title ?? "Defend your gains")
+                        Text(status?.node.title ?? "Hold the path")
                             .font(Typography.cardTitle)
                             .foregroundStyle(.primary)
-                        Text(status?.node.coachLine ?? "You've cleared every node. Hold the path with one rep a day.")
+                        Text(gatingLine)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -1087,6 +1145,56 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                 .stroke(Color.white.opacity(0.75), lineWidth: 1)
         )
+    }
+
+    /// Coach-voice secondary line for the journey preview card.
+    ///
+    /// Resolution order:
+    /// 1. Path cleared → quiet "hold the path" line.
+    /// 2. Tier-aware variant when the user is within 100 rating of a
+    ///    league promotion AND the next node references rating —
+    ///    surface both the node and the league line so they reinforce.
+    /// 3. Otherwise, the criterion-derived gating phrase.
+    ///
+    /// Never punish-shame: regressions don't change the copy shape; the
+    /// gating helper only renders forward distance, and a recent rating
+    /// drop just updates the snapshot silently.
+    private func journeyGatingLine(for status: PathNodeStatus?) -> String {
+        guard let status else {
+            return "You've cleared every node. Hold the path with one rep a day."
+        }
+
+        // Tier-aware reinforcement — only when the next node IS the rating
+        // gate and the user is within striking distance (<=100 points). If
+        // the user is mid-tier on rating AND chasing a node-rating goal,
+        // we name the league promotion so both surfaces point the same way.
+        if let nextTierLine = tierPromotionReinforcement(for: status.node) {
+            return nextTierLine
+        }
+
+        return pathProgress.currentNodeGatingPhrase
+            ?? status.node.detail
+    }
+
+    /// Tier promotion reinforcement line — only fires when the current
+    /// node's gating criterion is itself a rating bar (so the league
+    /// line and the path line agree). Returns nil otherwise; we never
+    /// mention Platinum on a node about pauses.
+    private func tierPromotionReinforcement(for node: PathNode) -> String? {
+        // Only consider rating-gated nodes — looking the node up by id
+        // keeps this honest. Other criteria don't get a league overlay
+        // because the two surfaces would point at different work.
+        let ratingGated: Set<String> = ["rating_500", "rating_700"]
+        guard ratingGated.contains(node.id) else { return nil }
+
+        let tier = league.tier
+        guard let nextTier = tier.nextTier else { return nil }
+        let toGo = max(0, nextTier.ratingFloor - ratingStore.rating.overall)
+        // Stay quiet unless the user is within range — over 100 points
+        // off and "to Platinum" would feel like a far-future ask.
+        guard toGo > 0, toGo <= 100 else { return nil }
+
+        return "You're holding \(tier.title). +\(toGo) rating to \(nextTier.title)."
     }
 
     private var bottomNavigation: some View {
@@ -1481,8 +1589,20 @@ struct ContentView: View {
             guard !lessonID.isEmpty,
                   LessonsCatalog.lesson(id: lessonID) != nil else { return }
             navigationPath.append(AppDestination.lesson(id: lessonID))
-        case "practice":
+        case "practice", "train":
+            navigationPath = NavigationPath()
             navigationPath.append(AppDestination.practiceSelection)
+        case "review", "history":
+            navigationPath = NavigationPath()
+            navigationPath.append(AppDestination.sessionHistory)
+        case "profile", "social":
+            navigationPath = NavigationPath()
+            navigationPath.append(AppDestination.socialProfile)
+        case "settings":
+            navigationPath = NavigationPath()
+            navigationPath.append(AppDestination.settings)
+        case "home":
+            navigationPath = NavigationPath()
         case "league":
             navigationPath.append(AppDestination.league)
         case "path":

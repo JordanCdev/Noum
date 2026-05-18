@@ -188,6 +188,19 @@ final class LeagueManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: pendingPromotionKey)
     }
 
+    #if DEBUG
+    /// Stamp the current tier as last-seen and clear any queued promotion
+    /// without triggering a celebration. Used by the screenshot tour after
+    /// seed injection so the promotion overlay doesn't cover Home on every
+    /// fresh launch (the seed's rating change crosses tiers vs. baseline).
+    func suppressCelebrationsForTesting() {
+        pendingPromotion = nil
+        UserDefaults.standard.removeObject(forKey: pendingPromotionKey)
+        persistLastSeenTier(tier)
+        UserDefaults.standard.set(true, forKey: lastSeenTierInitializedKey)
+    }
+    #endif
+
     private func queuePromotion(from previous: LeagueTier, to next: LeagueTier) {
         let promotion = TierPromotion(previousTier: previous, newTier: next, date: Date())
         pendingPromotion = promotion

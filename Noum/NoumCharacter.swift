@@ -16,6 +16,9 @@ import SwiftUI
 // State-specific accents are layered on top — symmetric pulse rings
 // for "listening", sparkle ribbon for "excited", subtle tilt for
 // "coaching".
+//
+// `NoumCharacter.Inline` is a stripped variant sized for ~20pt use as a
+// section-header glyph so the coach can narrate sections, not just heroes.
 
 @available(iOS 17.0, macOS 12.0, *)
 struct NoumCharacter: View {
@@ -198,6 +201,177 @@ struct NoumCharacter: View {
     }
 }
 
+// MARK: - Inline variant
+//
+// A stripped composition for use at small sizes (section-header bullet,
+// inline-with-text glyph). The point is "presence at small scale" — the
+// coach narrating a section, not a hero ornament.
+//
+// Composition is intentionally minimal: one faint glow circle + the core
+// `waveform` symbol. No breathing halo, no sparkle ribbon, no listening
+// arcs. Motion at 20pt is busy and doesn't read, so the inline variant
+// stays static even when the parent's full variant would animate.
+
+@available(iOS 17.0, macOS 12.0, *)
+extension NoumCharacter {
+    struct Inline: View {
+        var size: CGFloat
+        var mood: Mood
+        var tint: Color
+
+        // No reduceMotion env — the Inline variant has no animations
+        // by design (motion at 20pt is busy and doesn't read), so the
+        // setting has no work to gate.
+
+        init(size: CGFloat = 20, mood: Mood = .calm, tint: Color = AppColor.brandBlue) {
+            self.size = size
+            self.mood = mood
+            self.tint = tint
+        }
+
+        var body: some View {
+            ZStack {
+                // Faint glow — no stroke, just a low-opacity fill. Mood
+                // bumps the opacity so .listening reads brighter without
+                // adding motion.
+                Circle()
+                    .fill(tint.opacity(glowOpacity))
+                    .frame(width: size, height: size)
+                    .blur(radius: size * 0.10)
+
+                // Core waveform — the "face" at small scale.
+                Image(systemName: coreSymbol)
+                    .font(.system(size: size * 0.85, weight: coreWeight))
+                    .foregroundStyle(tint)
+                    .symbolRenderingMode(.hierarchical)
+                    .rotationEffect(coreTilt)
+            }
+            .frame(width: size, height: size)
+            .accessibilityLabel(accessibilityCopy)
+        }
+
+        // MARK: - Mood resolution
+        //
+        // The inline variant collapses `.excited` to `.calm` — the
+        // sparkle ribbon doesn't read at 20pt and adding it would create
+        // visual noise next to a section title. `.coaching` keeps its
+        // tilt + warmer-weighted symbol; `.listening` keeps the brighter
+        // glow but never animates.
+
+        private var coreSymbol: String {
+            switch mood {
+            case .calm, .excited:   return "waveform"
+            case .listening:        return "waveform.and.mic"
+            case .coaching:         return "waveform.badge.magnifyingglass"
+            }
+        }
+
+        private var coreWeight: Font.Weight {
+            // Coaching mood reads warmer with a heavier weight; the
+            // others stay semibold so the glyph doesn't dominate the
+            // section title beside it.
+            mood == .coaching ? .heavy : .semibold
+        }
+
+        private var glowOpacity: Double {
+            switch mood {
+            case .listening: return 0.28
+            case .coaching:  return 0.20
+            case .calm,
+                 .excited:   return 0.16
+            }
+        }
+
+        private var coreTilt: Angle {
+            // The 4° lean is the inline echo of the full character's
+            // -6° "leaning in" tilt — present but restrained, since
+            // small glyphs amplify rotation visually.
+            mood == .coaching ? .degrees(-4) : .degrees(0)
+        }
+
+        private var accessibilityCopy: String {
+            switch mood {
+            case .calm,
+                 .excited:    return "Noum coach"
+            case .listening:  return "Noum coach, listening"
+            case .coaching:   return "Noum coach, reading your session"
+            }
+        }
+    }
+}
+
+// MARK: - Mood pulse hook
+//
+// Lets a call site briefly flash to a different mood without owning the
+// transient state. Example:
+//
+//     NoumCharacter(mood: .calm).moodPulse(.excited, duration: 1.0)
+//
+// During `duration` the character renders in the pulse mood; afterwards
+// it reverts to the underlying static mood. Reduce-motion users get the
+// pulse mood applied instantly (no fade transition).
+//
+// Implementation note: `moodPulse` is a method on `NoumCharacter` rather
+// than a generic `View` modifier because it needs `self.size` and
+// `self.tint` to render the pulse with the same visual weight as the
+// resting character — a generic modifier would lose those values.
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct MoodPulseWrapper: View {
+    let staticMood: NoumCharacter.Mood
+    let pulseMood: NoumCharacter.Mood
+    let tint: Color
+    let size: CGFloat
+    let duration: Double
+
+    // The transient mood is the *override*. While non-nil the character
+    // renders in that mood; once cleared we fall through to the static
+    // mood the call site originally specified.
+    @State private var transientMood: NoumCharacter.Mood?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Resolved mood for this frame: the transient pulse mood while the
+    /// timer is alive, otherwise the resting mood the caller passed in.
+    private var displayMood: NoumCharacter.Mood {
+        transientMood ?? staticMood
+    }
+
+    var body: some View {
+        NoumCharacter(mood: displayMood, tint: tint, size: size)
+            .onAppear {
+                guard duration > 0, transientMood == nil else { return }
+                transientMood = pulseMood
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(duration))
+                    if reduceMotion {
+                        transientMood = nil
+                    } else {
+                        withAnimation(.standardSpring) { transientMood = nil }
+                    }
+                }
+            }
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+extension NoumCharacter {
+    /// Briefly flashes the character to `pulseMood` for `duration` seconds,
+    /// then reverts to the static mood the view was initialised with.
+    ///
+    /// Useful for marking a moment — e.g. fire `.excited` for a second
+    /// after a clean rep posts, even while the surrounding surface holds
+    /// the calm hero state. Preserves the original `size` and `tint`.
+    func moodPulse(_ pulseMood: Mood, duration: Double = 1.0) -> some View {
+        MoodPulseWrapper(
+            staticMood: self.mood,
+            pulseMood: pulseMood,
+            tint: self.tint,
+            size: self.size,
+            duration: duration
+        )
+    }
+}
+
 #if DEBUG
 @available(iOS 17.0, *)
 #Preview("Calm") {
@@ -228,6 +402,34 @@ struct NoumCharacter: View {
     ZStack {
         AppColor.screenBackground.ignoresSafeArea()
         NoumCharacter(mood: .coaching, tint: AppColor.pro, size: 120)
+    }
+}
+
+@available(iOS 17.0, *)
+#Preview("Inline glyph") {
+    ZStack {
+        AppColor.screenBackground.ignoresSafeArea()
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(spacing: Spacing.xs) {
+                NoumCharacter.Inline(mood: .calm)
+                Text("Today")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: Spacing.xs) {
+                NoumCharacter.Inline(mood: .coaching, tint: AppColor.pro)
+                Text("This week")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: Spacing.xs) {
+                NoumCharacter.Inline(mood: .listening, tint: AppColor.modeAhCounter)
+                Text("Listening")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
     }
 }
 #endif

@@ -214,20 +214,38 @@ struct ErrorCard: View {
 }
 
 /// Standardized section header with optional trailing content.
+///
+/// Optionally accepts a `glyph: NoumCharacter.Inline?` so the coach can
+/// narrate the section — e.g. the "Today" and "This week" headers on the
+/// Home screen carry a small Noum glyph that signals "this is what the
+/// coach is reading from your data". The glyph is mutually-exclusive
+/// with the SF Symbol `icon` slot: when both are set the glyph wins, so
+/// the coach voice always takes precedence over a generic symbol.
 struct SectionHeader<Trailing: View>: View {
     let title: String
     let icon: String?
+    let glyph: NoumCharacter.Inline?
     @ViewBuilder let trailing: () -> Trailing
 
-    init(_ title: String, icon: String? = nil, @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
+    init(
+        _ title: String,
+        icon: String? = nil,
+        glyph: NoumCharacter.Inline? = nil,
+        @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }
+    ) {
         self.title = title
         self.icon = icon
+        self.glyph = glyph
         self.trailing = trailing
     }
 
     var body: some View {
-        HStack {
-            if let icon {
+        HStack(spacing: Spacing.xs) {
+            // Coach glyph wins over the SF Symbol icon — when both are
+            // set, the coach voice is the one narrating this section.
+            if let glyph {
+                glyph
+            } else if let icon {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)

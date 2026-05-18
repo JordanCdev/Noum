@@ -1579,8 +1579,8 @@ struct EloquenceEngineTests {
     @Test func tricolonInPreparedSentenceIsDetected() {
         let transcript = "We need clarity, courage, and conviction in everything we do."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        #expect(findings.contains(where: { $0.device == .tricolon || $0.device == .ruleOfThree }),
-                "Expected tricolon/ruleOfThree finding. Got: \(findings.map(\.device))")
+        let hasMatch = findings.contains(where: { $0.device == .tricolon || $0.device == .ruleOfThree })
+        #expect(hasMatch, "Expected tricolon/ruleOfThree finding. Got: \(findings.map { $0.device })")
     }
 
     @Test func anaphoraAcrossSentencesIsDetected() {
@@ -1589,42 +1589,42 @@ struct EloquenceEngineTests {
         """
         let findings = EloquenceEngine.analyse(transcript: transcript)
         #expect(findings.contains(where: { $0.device == .anaphora }),
-                "Expected anaphora finding. Got: \(findings.map(\.device))")
+                "Expected anaphora finding. Got: \(findings.map { $0.device })")
     }
 
     @Test func alliterationRunIsDetected() {
         let transcript = "Pride, prejudice, and proper preparation prevent panic."
         let findings = EloquenceEngine.analyse(transcript: transcript)
         #expect(findings.contains(where: { $0.device == .alliteration }),
-                "Expected alliteration finding. Got: \(findings.map(\.device))")
+                "Expected alliteration finding. Got: \(findings.map { $0.device })")
     }
 
     @Test func epizeuxisIsDetected() {
         let transcript = "Never, never give in. The work is hard, but worth it."
         let findings = EloquenceEngine.analyse(transcript: transcript)
         #expect(findings.contains(where: { $0.device == .epizeuxis }),
-                "Expected epizeuxis finding. Got: \(findings.map(\.device))")
+                "Expected epizeuxis finding. Got: \(findings.map { $0.device })")
     }
 
     @Test func diacopeIsDetected() {
         let transcript = "Bond, James Bond. The brand sells itself."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        #expect(findings.contains(where: { $0.device == .diacope || $0.device == .epizeuxis }),
-                "Expected diacope or epizeuxis. Got: \(findings.map(\.device))")
+        let hasMatch = findings.contains(where: { $0.device == .diacope || $0.device == .epizeuxis })
+        #expect(hasMatch, "Expected diacope or epizeuxis. Got: \(findings.map { $0.device })")
     }
 
     @Test func rhetoricalQuestionIsDetected() {
         let transcript = "What does that look like in practice? Three crisp answers, on the clock, no fillers."
         let findings = EloquenceEngine.analyse(transcript: transcript)
         #expect(findings.contains(where: { $0.device == .rhetoricalQuestion }),
-                "Expected rhetorical question finding. Got: \(findings.map(\.device))")
+                "Expected rhetorical question finding. Got: \(findings.map { $0.device })")
     }
 
     @Test func plainTranscriptHasNoFindings() {
         let transcript = "Yeah I think that's basically how I'd handle it. We could probably move forward."
         let findings = EloquenceEngine.analyse(transcript: transcript)
         // No tricolon / parallel / anaphora etc. expected here.
-        #expect(findings.count <= 1, "Plain transcript should produce at most 1 weak finding. Got: \(findings.map(\.device))")
+        #expect(findings.count <= 1, "Plain transcript should produce at most 1 weak finding. Got: \(findings.map { $0.device })")
     }
 
     @Test func veryShortTranscriptReturnsEmpty() {

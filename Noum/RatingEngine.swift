@@ -370,7 +370,23 @@ final class RatingStore: ObservableObject {
 
     @Published private(set) var rating: SpeakingRating = .initial
 
+    /// True when there's a fresh week-peak to celebrate on Home that hasn't
+    /// been shown yet. Flipped on by `recordRatedSession` when the new
+    /// week-peak strictly exceeds the last value Home consumed; flipped off
+    /// by `markPeakGlowConsumed()` once the post-session glow card fades.
+    ///
+    /// Drives the M14 demotion of the "Personal best" purple hero from a
+    /// permanent home anchor to a post-session glow. Never set on regression
+    /// (per `never_punish_shame.md`): downward changes update the snapshot
+    /// silently and never raise the glow.
+    @Published private(set) var pendingPeakGlow: Bool = false
+
     private let storageKey = "speakingRating"
+    /// Per-account persisted record of the last week-peak Home has already
+    /// shown the glow for. We only raise `pendingPeakGlow` when the newly
+    /// recorded peak strictly exceeds this value — so a brand-new install,
+    /// a flat week, or a downward rating swing never re-triggers the glow.
+    private let lastShownPeakKey = "speakingRating.lastShownWeekPeak"
 
     private init() {
         load()
@@ -380,6 +396,8 @@ final class RatingStore: ObservableObject {
     @discardableResult
     func recordRatedSession(score: Int, sessionId: UUID, pressureLevel: PressureLevel) -> Int {
         let previousRating = rating.overall
+        let previousWeekPeak = rating.weekPeakRating
+        let previousWeekISO = (rating.weekPeakISOWeek, rating.weekPeakISOYear)
         rating = RatingEngine.processRatedSession(
             rating: rating,
             sessionScore: score,
@@ -398,7 +416,45 @@ final class RatingStore: ObservableObject {
         }
 
         save()
+
+        // M14: post-session peak glow — only fire upward, and only when the
+        // new value strictly exceeds the last value Home has shown. A week
+        // boundary that resets `weekPeakRating` down to `overall` should not
+        // raise the glow even if the numeric value happens to equal a prior
+        // peak. We require both (a) a real week-peak rise inside the SAME
+        // ISO week, OR (b) a new ISO week whose peak exceeds the last shown
+        // value. Both reduce to the same check against `lastShownWeekPeak`.
+        let sameWeek = previousWeekISO.0 == rating.weekPeakISOWeek
+            && previousWeekISO.1 == rating.weekPeakISOYear
+        if rating.weekPeakRating > previousWeekPeak || !sameWeek {
+            notePeakReachedForGlow()
+        }
+
         return rating.overall - previousRating
+    }
+
+    /// Called when the rating store mutates `weekPeakRating` upward as part
+    /// of finalizing a session. Sets `pendingPeakGlow = true` iff the new
+    /// week peak strictly exceeds the last value Home consumed, then
+    /// persists the candidate so we don't re-fire on the next launch.
+    ///
+    /// Safe to call unconditionally — the strictly-greater guard means a
+    /// flat or downward swing is a silent no-op.
+    func notePeakReachedForGlow() {
+        let lastShown = loadLastShownPeak()
+        guard rating.weekPeakRating > lastShown else { return }
+        pendingPeakGlow = true
+        saveLastShownPeak(rating.weekPeakRating)
+    }
+
+    /// Called after the Home glow card finishes its display window. Clears
+    /// the pending flag so the card doesn't re-appear on the next Home
+    /// visit. The persisted `lastShownWeekPeak` (set when the glow was
+    /// raised) gates future fires until the user earns a strictly higher
+    /// peak.
+    func markPeakGlowConsumed() {
+        guard pendingPeakGlow else { return }
+        pendingPeakGlow = false
     }
 
     /// Check personal bests for a session (called for all sessions, not just rated).
@@ -451,6 +507,28 @@ final class RatingStore: ObservableObject {
         } else {
             rating = .initial
         }
+        // Glow is a UI-state flag, not part of `SpeakingRating`. Never
+        // restore it from a previous launch — the glow is only meaningful
+        // for the few seconds after a freshly-finished session.
+        pendingPeakGlow = false
+    }
+
+    private func loadLastShownPeak() -> Int {
+        let accountID = accountStorageKey()
+        let key = "\(lastShownPeakKey).\(accountID)"
+        // `object(forKey:)` lets us distinguish "never shown" from "shown 0".
+        // First-ever fire seeds the cursor at the current week peak so a
+        // brand-new install with no rated reps yet doesn't celebrate.
+        if UserDefaults.standard.object(forKey: key) == nil {
+            UserDefaults.standard.set(rating.weekPeakRating, forKey: key)
+            return rating.weekPeakRating
+        }
+        return UserDefaults.standard.integer(forKey: key)
+    }
+
+    private func saveLastShownPeak(_ value: Int) {
+        let accountID = accountStorageKey()
+        UserDefaults.standard.set(value, forKey: "\(lastShownPeakKey).\(accountID)")
     }
 
     private func accountStorageKey() -> String {

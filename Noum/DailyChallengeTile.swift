@@ -79,40 +79,101 @@ struct DailyChallengeTile: View {
                     .textCase(.uppercase)
                     .tracking(0.8)
                 Spacer()
-                Text(headerSummary)
+                Text(headerStatusChip)
                     .font(Typography.caption.weight(.semibold))
                     .foregroundStyle(headerAccent)
             }
-            // Inline rep counter — folded in from the retired DailyGoalCard
-            // so home keeps "rep count today" visibility without needing
-            // its own card.
-            HStack(spacing: 8) {
-                Text(repCounterText)
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                Spacer()
-                if dailyGoal.hasReachedGoal {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("Goal hit")
-                            .font(Typography.micro.weight(.bold))
-                    }
-                    .foregroundStyle(AppColor.brandBlue)
-                }
-            }
+            // Single coach-voice line that names today's challenge concretely
+            // and folds the rep count in as a fragment. Replaces the older
+            // two-row "1 of 1 rep today · Goal hit" stats treatment.
+            Text(coachVoiceHeadline)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("home.daily.coachline")
         }
     }
 
-    /// Folded-in rep counter from the (retired) DailyGoalCard — kept on
-    /// one row so the home tile stays compact. Says "1 of 1 rep today"
-    /// when the goal is 1, "2 of 3 reps today" when it's 3.
-    private var repCounterText: String {
-        let n = dailyGoal.repsToday
-        let g = dailyGoal.goalReps
-        let unit = g == 1 ? "rep" : "reps"
-        return "\(n) of \(g) \(unit) today"
+    /// Single coach-voice headline that adapts to the current state and
+    /// names today's anchor challenge by its concrete bar. Folds the
+    /// daily-rep count in as a fragment rather than a separate counter row.
+    private var coachVoiceHeadline: String {
+        Self.headlineCopy(
+            state: currentState,
+            anchor: anchorChallenge,
+            repsToday: dailyGoal.repsToday,
+            goalReps: dailyGoal.goalReps
+        )
+    }
+
+    /// The challenge the coach voice should reference in the headline.
+    /// Picks the first ready-to-claim challenge if there is one (so the
+    /// claim moment names the right reward), otherwise the first
+    /// unclaimed one (so the "what to do" line is concrete). Falls back
+    /// to the first kind in the day's trio when everything's claimed.
+    private var anchorChallenge: DailyChallengeKind? {
+        if let ready = manager.todays.first(where: { manager.readyToClaim.contains($0) }) {
+            return ready
+        }
+        if let unclaimed = manager.todays.first(where: { !manager.claimedKinds.contains($0) }) {
+            return unclaimed
+        }
+        return manager.todays.first
+    }
+
+    /// State enum derived from the manager — no new state storage, just
+    /// a single switch the copy helper can read.
+    fileprivate enum HeadlineState {
+        case cold              // no rep today, nothing ready
+        case inProgress        // at least one rep, no challenge ready yet
+        case readyToClaim      // at least one challenge satisfied, not claimed
+        case claimed           // every challenge claimed
+        case softExpiry        // past 9pm and still claimable
+    }
+
+    private var currentState: HeadlineState {
+        if manager.allClaimedToday { return .claimed }
+        if !manager.readyToClaim.isEmpty { return .readyToClaim }
+        if manager.isPastSoftExpiry { return .softExpiry }
+        if dailyGoal.repsToday > 0 { return .inProgress }
+        return .cold
+    }
+
+    /// Pure copy helper — easy to test, easy to localize later. State
+    /// drives shape; the anchor challenge contributes the concrete noun
+    /// (the 3-second pause, the zero-filler rep, etc.).
+    fileprivate static func headlineCopy(
+        state: HeadlineState,
+        anchor: DailyChallengeKind?,
+        repsToday: Int,
+        goalReps: Int
+    ) -> String {
+        let target = anchor?.targetPhrase ?? "a clean rep"
+        switch state {
+        case .cold:
+            return "Today's challenge — \(target). One rep gets you started."
+        case .inProgress:
+            let repFragment = repsToday == 1 ? "One rep in." : "\(repsToday) reps in."
+            return "Today's challenge — \(target). \(repFragment)"
+        case .readyToClaim:
+            guard let kind = anchor else {
+                return "Today's challenge is logged. Tap to claim."
+            }
+            return "\(kind.claimedNoun.capitalizedFirst) logged. Tap to claim — +\(kind.xpReward) XP."
+        case .claimed:
+            let extra = max(0, repsToday - goalReps)
+            if let kind = anchor, extra > 0 {
+                let unit = extra == 1 ? "rep" : "reps"
+                return "\(kind.claimedNoun.capitalizedFirst) logged and claimed. \(extra) \(unit) still in the bank if you want them."
+            }
+            if let kind = anchor {
+                return "\(kind.claimedNoun.capitalizedFirst) logged and claimed."
+            }
+            return "Today's challenges are logged and claimed."
+        case .softExpiry:
+            return "Today's challenge is still open — \(target)."
+        }
     }
 
     private var headerAccent: Color {
@@ -121,7 +182,10 @@ struct DailyChallengeTile: View {
         return AppColor.brandBlue
     }
 
-    private var headerSummary: String {
+    /// Right-edge status chip. Stays a small at-a-glance count so the
+    /// coach voice headline can run long without losing the "N to go"
+    /// scannable signal.
+    private var headerStatusChip: String {
         if manager.allClaimedToday { return "All claimed" }
         if manager.isPastSoftExpiry {
             return "\(manager.unclaimedCount) before midnight"
@@ -241,6 +305,56 @@ struct DailyChallengeTile: View {
         .background(AppColor.brandBlue, in: Capsule())
         .shadow(color: AppColor.brandBlue.opacity(0.30), radius: 12, x: 0, y: 4)
         .padding(.top, -16)
+    }
+}
+
+// MARK: - Coach-voice copy helpers
+//
+// These extensions live here (not in DailyChallenge.swift) because they're
+// presentation-layer copy, not domain logic. Keeping the imperative target
+// phrasing next to the tile that renders it makes both easier to revise.
+
+extension DailyChallengeKind {
+    /// Imperative target — drops into "Today's challenge — \(targetPhrase)."
+    /// Sentence-case, no trailing punctuation, no "you" (the wrapper line
+    /// supplies the address).
+    var targetPhrase: String {
+        switch self {
+        case .heldPause:        return "hold a 3 second pause cleanly"
+        case .shortAnswer:      return "land a 14-word answer under 30 seconds with at most one filler"
+        case .zeroFillers:      return "land a 14-word rep with zero fillers"
+        case .sustainedAnswer:  return "hold a 60-second answer with at most three fillers"
+        case .cleanSuddenDeath: return "clear a Sudden Death round with zero fillers"
+        case .crispDelivery:    return "land a 130 to 155 WPM rep with at most two fillers"
+        case .highScoreSession: return "land an 8 out of 10 session"
+        case .multiplePauses:   return "use silence twice in one rep, no filler bridges"
+        }
+    }
+
+    /// Noun phrase for the past-tense headline — drops into
+    /// "\(claimedNoun.capitalizedFirst) logged. Tap to claim …" so the
+    /// claim moment names what was earned. Lowercase, no article.
+    var claimedNoun: String {
+        switch self {
+        case .heldPause:        return "hold"
+        case .shortAnswer:      return "short answer"
+        case .zeroFillers:      return "clean rep"
+        case .sustainedAnswer:  return "long answer"
+        case .cleanSuddenDeath: return "clean Sudden Death round"
+        case .crispDelivery:    return "crisp rep"
+        case .highScoreSession: return "8 out of 10 session"
+        case .multiplePauses:   return "double-pause rep"
+        }
+    }
+}
+
+private extension String {
+    /// Lightweight first-letter capitalize that preserves the rest of the
+    /// string unchanged. Avoids `capitalized` which lowercases proper
+    /// nouns ("Sudden Death" → "Sudden death").
+    var capitalizedFirst: String {
+        guard let first = first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }
 

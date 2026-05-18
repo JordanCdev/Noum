@@ -140,6 +140,7 @@ struct SessionHistoryView: View {
                                     sessionRow(session)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("history.row.\(session.id.uuidString)")
                                 .contextMenu {
                                     Button(role: .destructive) {
                                         sessionToDelete = session
