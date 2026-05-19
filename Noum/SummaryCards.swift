@@ -462,6 +462,28 @@ struct LookingAheadCard: View {
         let mode: PracticeMode
         let whyMode: String
         let whyNow: String
+        /// User's chosen voice goal. Optional — pre-onboarding users and
+        /// users who skipped the voice step pass nil. When set AND the
+        /// voice aligns with `mode`, the post-session card mirrors the
+        /// home recommendation tile by surfacing a "Toward your <voice>
+        /// voice" chip. Sixth surface in the M14 goal-aware loop.
+        let styleGoal: SpeakingStyleGoal?
+
+        init(mode: PracticeMode, whyMode: String, whyNow: String, styleGoal: SpeakingStyleGoal? = nil) {
+            self.mode = mode
+            self.whyMode = whyMode
+            self.whyNow = whyNow
+            self.styleGoal = styleGoal
+        }
+
+        /// True when a voice goal is set AND it aligns with the recommended
+        /// mode. Lifted to a testable predicate so the gating is locked
+        /// independently of the SwiftUI body — same honesty rules as the
+        /// home chip: silent when no goal, silent when off-mode.
+        var shouldShowVoiceAlignment: Bool {
+            guard let styleGoal else { return false }
+            return styleGoal.aligns(with: mode)
+        }
     }
 
     let hint: Hint
@@ -495,13 +517,32 @@ struct LookingAheadCard: View {
                     .foregroundStyle(.secondary.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            VoiceAlignmentChip(
+                styleGoal: hint.styleGoal,
+                mode: hint.mode,
+                tint: AppColor.tint(for: hint.mode)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Looking ahead. For your next session, try \(hint.mode.displayLabel). \(hint.whyMode). \(hint.whyNow)")
+        .accessibilityLabel(accessibilityCopy)
+    }
+
+    private var accessibilityCopy: String {
+        var parts = [
+            "Looking ahead.",
+            "For your next session, try \(hint.mode.displayLabel).",
+            hint.whyMode,
+            hint.whyNow
+        ]
+        if hint.shouldShowVoiceAlignment, let goal = hint.styleGoal {
+            parts.append("Aligned with your \(goal.shortVoiceLabel).")
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: " ")
     }
 }
 

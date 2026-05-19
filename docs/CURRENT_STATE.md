@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend)_
+_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop)_
 
 ## Architecture overview
 
@@ -626,6 +626,24 @@ _Last updated: 2026-05-18 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   fire). Twelve unit tests cover the mode→skill mapping, six aligned /
   non-aligned voice×mode cases, the coverage invariants (no orphan modes,
   no always-on voices), and the brand-voice copy guards.
+  **Looking Ahead card now wears the same chip**: sixth surface in the
+  chain. `LookingAheadCard.Hint` gained an optional `styleGoal:
+  SpeakingStyleGoal?` field (defaulted nil so the legacy initializer
+  still compiles), and the card renders the existing `VoiceAlignmentChip`
+  underneath the body copy with `AppColor.tint(for:)` mirroring the
+  mode-color contract used by the home tile. `SummaryView.lookingAheadHint`
+  passes `coachingProfileStore.profile?.speakingStyleGoal` through. The
+  same three honest silent paths apply on the post-rep surface — no
+  profile, no voice goal, or off-mode alignment — so the post-session
+  surface respects the same restraint the home surface respects. Six
+  unit tests in `LookingAheadCardVoiceAlignmentTests` lock the
+  `Hint.shouldShowVoiceAlignment` predicate independently of SwiftUI:
+  aligned voice×mode shows the chip; warm→sudden-death stays silent;
+  nil voice stays silent; every voice has at least one firing and one
+  silent mode; the legacy initializer back-compat is locked. Closes the
+  goal-aware coaching loop end-to-end — every surface the app uses to
+  recommend, frame, or report on a user's next move now reads from the
+  same `SpeakingStyleGoal` source of truth.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
