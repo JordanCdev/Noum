@@ -30,59 +30,83 @@ struct HomeCoachCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        CardView {
-            VStack(spacing: Spacing.sm) {
-                // Tightened from size 96 + `.md` spacing to 72 + `.sm`.
-                // The earlier card felt airy — too much chrome around the
-                // character, not enough density on the coach line + CTA.
-                NoumCharacter(
-                    mood: characterMood,
-                    tint: accentTint,
-                    size: 72
-                )
-                .accessibilityHidden(true)
-                .padding(.top, Spacing.xs)
+        VStack(spacing: Spacing.sm) {
+            // 90pt — the hero of the entire app. Previous tightening to
+            // 72pt traded presence for density and the card read as
+            // generic. The character is the brand surface; it earns its
+            // size here.
+            NoumCharacter(
+                mood: characterMood,
+                tint: accentTint,
+                size: 90
+            )
+            .accessibilityHidden(true)
+            .padding(.top, Spacing.xs)
 
-                Text(coachLine)
-                    .font(Typography.headline)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Spacing.xs)
-                    .accessibilityIdentifier("home.coachCard.line")
+            Text(coachLine)
+                .font(Typography.headline)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Spacing.xs)
+                .accessibilityIdentifier("home.coachCard.line")
 
-                Text(microLabelText)
-                    .microLabel()
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("home.coachCard.microLabel")
+            Text(microLabelText)
+                .microLabel()
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("home.coachCard.microLabel")
 
-                // Goal-alignment chip — surfaces "Toward your <voice> voice"
-                // when the recommended mode trains a skill the user's chosen
-                // voice goal aligns with. Silent on no-goal / non-aligned
-                // recommendations (no fake personalization). Same component
-                // the cloud routines wired into the suggestion link; lives
-                // here too so the redesigned hero carries the same thread.
-                VoiceAlignmentChip(
-                    styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
-                    mode: recommendedMode,
-                    tint: accentTint
-                )
+            VoiceAlignmentChip(
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                mode: recommendedMode,
+                tint: accentTint
+            )
 
-                PrimaryCTA("Begin", tint: accentTint) {
-                    beginRecommendedRep()
-                }
-                .accessibilityIdentifier("home.coachCard.begin")
-
-                // Utility strip (streak + word-of-day) lives as a sibling
-                // `HomeUtilityStrip` below the Coach Card on the populated
-                // home stack, not inside this card. Keeps the Coach Card
-                // focused on hero + coach voice + single CTA.
+            PrimaryCTA("Begin", tint: accentTint) {
+                beginRecommendedRep()
             }
+            .accessibilityIdentifier("home.coachCard.begin")
         }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.lg)
+        .frame(maxWidth: .infinity)
+        .background(coachCardBackground)
+        .shadow(color: accentTint.opacity(0.10), radius: 18, x: 0, y: 8)
         .onAppear { syncMoodForFreshRecommendation() }
         .onChange(of: recommendationKey) { _, _ in syncMoodForFreshRecommendation() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.coachCard")
+    }
+
+    /// Hero card chrome — replaces the standard `CardView` so the Coach
+    /// Card carries visual depth + a brand-tinted presence. A flat white
+    /// rectangle was the right starting point for the redesign but read
+    /// as generic against the dream brief ("fancy designs, awesome cards").
+    ///
+    /// Layers, bottom to top:
+    ///   1. White card surface (the canvas).
+    ///   2. Mode-tinted radial gradient washing from the character anchor
+    ///      down — same hue as the recommended mode, very low alpha, so
+    ///      the card visibly belongs to the recommendation that drives it.
+    ///   3. A faint tinted hairline border (1pt) that reinforces the wash
+    ///      without competing.
+    /// Outer `.shadow` (applied by `body`) adds elevation in the same hue.
+    private var coachCardBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+
+            shape.fill(
+                RadialGradient(
+                    colors: [accentTint.opacity(0.16), accentTint.opacity(0.0)],
+                    center: UnitPoint(x: 0.5, y: 0.18),
+                    startRadius: 0,
+                    endRadius: 240
+                )
+            )
+
+            shape.strokeBorder(accentTint.opacity(0.18), lineWidth: 1)
+        }
     }
 
     // MARK: - Coach copy

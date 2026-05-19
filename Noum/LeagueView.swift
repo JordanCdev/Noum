@@ -103,11 +103,30 @@ struct LeagueView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
+        // Tier wash — Gold should feel golden, Silver silver, etc. The
+        // tier card was a flat white rectangle; the user is BY definition
+        // a tier-holder when this screen renders, so the card should
+        // carry that tier's identity. Radial wash from the badge anchor
+        // (top-left) blends into white; faint tinted border + soft
+        // tinted shadow add elevation in the same hue.
+        .background(tierCardBackground)
+        .shadow(color: tierTint.opacity(0.14), radius: 14, x: 0, y: 6)
+    }
+
+    private var tierCardBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [tierTint.opacity(0.20), tierTint.opacity(0.0)],
+                    center: UnitPoint(x: 0.15, y: 0.15),
+                    startRadius: 0,
+                    endRadius: 280
+                )
+            )
+            shape.strokeBorder(tierTint.opacity(0.22), lineWidth: 1)
+        }
     }
 
     private func metricColumn(label: String, value: String, icon: String) -> some View {
