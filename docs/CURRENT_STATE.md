@@ -684,9 +684,12 @@ _Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   a paraphrase pass.
 - **Daily challenge surface is a single tile** — no proper daily reset
   rhythm, no expiry warning before a streak breaks.
-- **`AISettingsManager` is referenced but lives inside
-  `PracticeSupport.swift`** — that file is 7,800+ lines and a
-  long-term refactor target.
+- **`PracticeSupport.swift` is 7,900+ lines** and remains a long-term
+  refactor target. `AISettingsManager` was extracted into its own file
+  (`Noum/AISettingsManager.swift`); the next clean extraction candidates
+  are `PracticeSettingsManager`, `CoachingProfileStore`, and the
+  `IMVoicePlaybackSettingsManager` / `IMMessageSpeaker` voice-playback
+  cluster.
 - **UI tests are flaky** — four UI tests
   (`testHomeScreenAndPrimaryNavigation`,
   `testPracticeModesOpenAvailableScreens`, `testOnboardingFlowSmoke`,
