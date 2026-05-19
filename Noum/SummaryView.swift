@@ -183,7 +183,8 @@ struct SummaryView: View {
             duration: effectiveDuration,
             wordCount: transcriptWordCount,
             score: scoreValue,
-            feedbackCategories: categoryTuples
+            feedbackCategories: categoryTuples,
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal
         )
     }
 

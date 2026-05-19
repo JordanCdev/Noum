@@ -122,6 +122,24 @@ extension SpeakingStyleGoal {
         alignedSkillAreas.contains(skill)
     }
 
+    /// The single most-direct lever for this voice — used by drill selection
+    /// when there's no trend or session signal to break a tie. Deterministic
+    /// (mirrors the first entry in each `alignedSkillAreas` definition) so an
+    /// early-tenure user with no history still gets a goal-grounded pick
+    /// instead of the generic `.structure` fallback. `alignedSkillAreas` is a
+    /// `Set` and can't carry order; this accessor encodes the canonical
+    /// "most direct" reading per voice.
+    var primaryAlignedSkillArea: SkillArea {
+        switch self {
+        case .authoritative: return .confidence
+        case .warm:          return .paceControl
+        case .concise:       return .conciseSpeaking
+        case .persuasive:    return .structure
+        case .executive:     return .confidence
+        case .storytelling:  return .answerDevelopment
+        }
+    }
+
     /// Short label used inline in coach copy — e.g. "warm voice", "concise voice".
     /// Lowercase, no article. Pair with a verb in the caller.
     var shortVoiceLabel: String {

@@ -353,14 +353,19 @@ enum NextActionEngine {
         )
     }
 
-    /// A standard drill recommendation using DrillEngineV2.
+    /// A standard drill recommendation using DrillEngineV2. Passes through the
+    /// resolved style goal so the focus picker can prefer goal-aligned skills
+    /// when otherwise-equivalent candidates are tied — the only path where
+    /// the engine picks the skill itself (priority 1–7 hand it a `targetArea`).
     private static func standardDrill(input: NextActionInput) -> ActionRecommendation? {
+        let style = SpeakingStyleGoal.resolve(input.styleGoal)
         let rec = DrillEngineV2.recommend(
             fillerCount: input.fillerCount,
             duration: input.duration,
             wordCount: input.wordCount,
             score: input.score,
-            feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) }
+            feedbackCategories: input.categoryRatings.map { (dimension: $0.key, rating: $0.value) },
+            styleGoal: style
         )
         return .drill(rec)
     }

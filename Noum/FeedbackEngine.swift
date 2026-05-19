@@ -677,6 +677,11 @@ enum DrillEngineV2 {
     /// Generate a drill recommendation using session data + cross-session trends.
     /// When `targetArea` is provided, the engine skips its own focus determination
     /// and drills into the requested skill area directly.
+    ///
+    /// `styleGoal` (optional) lets the focus picker prefer skills aligned with
+    /// the user's stated voice goal when candidates are otherwise tied — see
+    /// `TrendAnalyzer.primaryFocus` for the bias contract. Ignored when
+    /// `targetArea` is set (the caller already picked the skill).
     static func recommend(
         fillerCount: Int,
         duration: TimeInterval,
@@ -684,6 +689,7 @@ enum DrillEngineV2 {
         score: Int,
         feedbackCategories: [(dimension: String, rating: String)],
         targetArea: SkillArea? = nil,
+        styleGoal: SpeakingStyleGoal? = nil,
         trendStore: SkillTrendStore = .shared,
         drillHistory: DrillHistoryStore = .shared
     ) -> DrillRecommendationV2 {
@@ -723,7 +729,8 @@ enum DrillEngineV2 {
                 categoryRatings: categoryRatings,
                 trends: trends,
                 sessionSnapshot: sessionSnapshot,
-                drillHistory: drillHistory
+                drillHistory: drillHistory,
+                styleGoal: styleGoal
             )
         }
 
@@ -780,7 +787,8 @@ enum DrillEngineV2 {
         categoryRatings: [String: String],
         trends: [SkillTrend],
         sessionSnapshot: SkillSnapshot,
-        drillHistory: DrillHistoryStore
+        drillHistory: DrillHistoryStore,
+        styleGoal: SpeakingStyleGoal? = nil
     ) -> SkillArea {
         // First: check if current session has a clear, urgent weakness
         let urgentFocus = urgentSessionFocus(
@@ -795,7 +803,8 @@ enum DrillEngineV2 {
             let trendFocus = TrendAnalyzer.primaryFocus(
                 trends: trends,
                 currentSessionSnapshot: sessionSnapshot,
-                recentDrills: drillHistory.entries
+                recentDrills: drillHistory.entries,
+                styleGoal: styleGoal
             )
 
             // If session has an urgent weakness AND trend analysis agrees, use it
@@ -821,7 +830,8 @@ enum DrillEngineV2 {
             wpm: wpm,
             duration: duration,
             score: score,
-            categoryRatings: categoryRatings
+            categoryRatings: categoryRatings,
+            styleGoal: styleGoal
         )
     }
 
@@ -850,7 +860,8 @@ enum DrillEngineV2 {
         wpm: Double,
         duration: TimeInterval,
         score: Int,
-        categoryRatings: [String: String]
+        categoryRatings: [String: String],
+        styleGoal: SpeakingStyleGoal? = nil
     ) -> SkillArea {
         if fillerCount >= 5 { return .fillerReduction }
         if duration < 15 { return .answerDevelopment }
@@ -861,6 +872,10 @@ enum DrillEngineV2 {
         if categoryRatings["Close"] == "Could improve" { return .closingStrength }
         if wpm > 0 && wpm < 100 && duration >= 15 { return .paceControl }
         if categoryRatings["Depth"] == "Could improve" { return .answerDevelopment }
+        // No clear session signal. Prefer the user's stated voice goal over the
+        // generic .confidence / .structure defaults — keeps day-one users with
+        // a voice on a goal-grounded path from their first drill.
+        if let styleGoal { return styleGoal.primaryAlignedSkillArea }
         if score >= 7 { return .confidence }
         return .structure
     }

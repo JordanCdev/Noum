@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop)_
+_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip + goal-aware drill picker closes the inside of the loop)_
 
 ## Architecture overview
 
@@ -644,6 +644,43 @@ _Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   goal-aware coaching loop end-to-end — every surface the app uses to
   recommend, frame, or report on a user's next move now reads from the
   same `SpeakingStyleGoal` source of truth.
+  **The drill picker itself is now goal-aware too**: seventh surface,
+  closes the inside of the loop. Earlier work covered every *display*
+  of the next move (pre-rep banner, mid-rep HUD, post-rep momentum,
+  profile ring, home chip, looking-ahead chip) — but the actual choice
+  of *which* skill area to drill on still ignored the voice goal.
+  `TrendAnalyzer.primaryFocus(...)` now takes an optional
+  `styleGoal: SpeakingStyleGoal?` and applies a small `+10` priority
+  bonus to goal-aligned trends. The bias is intentionally small: it
+  breaks ties between equal-priority candidates and tips near-ties at
+  the developing/solid tiers, but the gaps between urgent tiers
+  (declining-high-confidence 100, weak-stable 90, new-issue 80) are
+  wide enough that an urgent off-goal trend always wins over a
+  goal-aligned developing one. Urgency-first, voice-second.
+  `DrillEngineV2.recommend(...)` threads `styleGoal:` through
+  `determineFocus(...)` → `primaryFocus(...)` (trend path) and
+  `sessionOnlyFocus(...)` (day-one path, no trends). The day-one
+  fallback no longer returns the generic `.structure` when a voice
+  is stated — it returns the voice's canonical
+  `primaryAlignedSkillArea` (a new deterministic accessor since
+  `alignedSkillAreas` is a `Set` without order). So a brand-new user
+  who picks "warm" gets a pace-control drill from their first
+  session, not a structure drill. `NextActionEngine.standardDrill`
+  resolves `SpeakingStyleGoal` from `NextActionInput.styleGoal` and
+  passes it through; `SessionFinalizer` also threads the voice into
+  the Coach Note `primaryFocus` lookup so the "leverage" line stays
+  aligned with the skill the drill is about to train (no more "your
+  biggest opportunity is structure" appearing next to a pace drill).
+  `SummaryView.drillRecommendationV2` reads
+  `coachingProfileStore.profile?.speakingStyleGoal` too, so the
+  view-tier preview matches the persisted recommendation. Ten unit
+  tests in `GoalAwareDrillSelectionTests` lock the contract: bias
+  breaks ties at the developing tier, bias never overrides
+  declining-high / weak-stable / new-issue (three separate tests),
+  bias is silent without a goal, day-one fallback maps every voice
+  to its canonical lever, and the `primaryAlignedSkillArea`
+  mapping itself is asserted against every voice in the catalog so
+  a future refactor can't quietly shuffle the order.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked

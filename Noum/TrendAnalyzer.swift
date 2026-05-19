@@ -355,10 +355,19 @@ enum TrendAnalyzer {
     }
 
     /// Find the single highest-leverage focus area for the next drill.
+    ///
+    /// `styleGoal` (optional) lets the picker prefer skills aligned with the
+    /// user's chosen voice when otherwise-equivalent candidates are tied. The
+    /// bonus is intentionally small (+10) so it can break ties between
+    /// equal-priority trends and tip near-ties between adjacent tiers, but
+    /// never overrides a declining-high-confidence (100), weak-stable (90),
+    /// or new-issue (80) trend on an off-goal skill. The picker stays
+    /// urgency-first.
     static func primaryFocus(
         trends: [SkillTrend],
         currentSessionSnapshot: SkillSnapshot?,
-        recentDrills: [DrillHistoryStore.Entry]
+        recentDrills: [DrillHistoryStore.Entry],
+        styleGoal: SpeakingStyleGoal? = nil
     ) -> SkillArea {
         // Count how many consecutive sessions the same skill was the focus
         let recentFocusAreas = recentDrills.prefix(4).map(\.skillArea)
@@ -417,6 +426,16 @@ enum TrendAnalyzer {
                 priority = max(priority - 50, 0)
             }
 
+            // Goal-alignment tiebreaker. Small (+10) by design: breaks ties
+            // between equal-priority candidates and tips near-ties at the
+            // bottom of the ladder (developing → developing+aligned). The
+            // gap between urgent tiers (declining 100, weak-stable 90,
+            // new-issue 80) and lower tiers is large enough that this bias
+            // never demotes an urgent off-goal trend.
+            if let styleGoal, styleGoal.aligns(with: trend.skillArea), priority > 0 {
+                priority += 10
+            }
+
             scored.append(ScoredArea(skillArea: trend.skillArea, priority: priority))
         }
 
@@ -430,6 +449,14 @@ enum TrendAnalyzer {
             if snapshot.fillerCount >= 3 { return .fillerReduction }
             if snapshot.wpm > 160 { return .paceControl }
             if snapshot.duration < 15 { return .answerDevelopment }
+        }
+
+        // No urgent signal anywhere. When the user has stated a voice goal,
+        // pick the canonical most-direct lever for that voice rather than the
+        // generic `.structure` default — keeps day-one users with a goal on
+        // a goal-grounded path from their first drill.
+        if let styleGoal {
+            return styleGoal.primaryAlignedSkillArea
         }
 
         return .structure

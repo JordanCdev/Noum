@@ -55,9 +55,13 @@ Where the product is now **underweight**:
 - **Speech metrics stop at fillers + pace.** Pause length and word-
   choice variety are the next-most-differentiating signals, and both
   are partially scaffolded but not yet first-class session metrics.
-- **Goal capture is still mostly a write-once event.** Goals don't
-  shape drill selection or evaluation weighting yet — they live in
-  reminder bodies and recommendation rationale.
+- **Goal capture used to be a write-once event** — now goals shape
+  every surface in the M14 coaching loop, including drill *selection*
+  (a small `+10` priority bonus on goal-aligned trends inside
+  `TrendAnalyzer.primaryFocus`, plus a day-one fallback to the
+  voice's canonical lever when there's no trend data). Evaluation
+  *weighting* (scoring + verdict copy beyond the momentum line) is
+  still goal-blind — that's the remaining edge.
 - **Daily-challenge tile is a single rolling status**, not a true
   daily reset rhythm with claim moments and expiry pressure.
 - **Real-device QA gaps:** Live Activity can't be exercised on

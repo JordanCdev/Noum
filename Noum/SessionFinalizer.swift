@@ -291,6 +291,10 @@ enum SessionFinalizer {
 
         // Enhanced coach note with baseline + style
         let coachNote: CoachNote? = {
+            // Same goal-aware bias the drill picker uses — keeps the Coach
+            // Note's "leverage" line aligned with the skill the drill is
+            // about to train, so the user never reads "structure is your
+            // biggest opportunity" while the drill works pace control.
             let primaryFocus = TrendAnalyzer.primaryFocus(
                 trends: skillTrends,
                 currentSessionSnapshot: SkillSnapshot(
@@ -302,7 +306,8 @@ enum SessionFinalizer {
                     score: scoreValue,
                     categoryRatings: categoryMap
                 ),
-                recentDrills: DrillHistoryStore.shared.entries
+                recentDrills: DrillHistoryStore.shared.entries,
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
             )
             return VerdictEngine.generate(
                 fillerCount: effectiveFillerCount,

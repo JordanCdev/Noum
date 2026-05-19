@@ -3975,3 +3975,219 @@ struct LookingAheadCardVoiceAlignmentTests {
         #expect(!h.shouldShowVoiceAlignment)
     }
 }
+
+// MARK: - Goal-aware drill selection (closes the M14 loop)
+
+/// Locks the contract that the user's `SpeakingStyleGoal` biases drill *selection*
+/// itself — not just post-session copy. The bias is a small (+10) tiebreaker
+/// inside `TrendAnalyzer.primaryFocus`, so urgent off-goal trends still win.
+/// This is the seventh and final surface of the goal-aware loop: every other
+/// surface (banner, HUD, momentum line, profile ring, home chip, looking-ahead
+/// chip) already reads from the goal; this test set verifies the *picker
+/// itself* does too.
+struct GoalAwareDrillSelectionTests {
+
+    private func warmTrend(level: SkillLevel, direction: TrendDirection = .stable) -> SkillTrend {
+        SkillTrend(skillArea: .paceControl,            // warm-aligned
+                   direction: direction, confidence: .medium,
+                   windowSize: 5, currentLevel: level)
+    }
+
+    private func offGoalTrend(_ area: SkillArea,
+                              level: SkillLevel,
+                              direction: TrendDirection = .stable,
+                              confidence: TrendConfidence = .medium) -> SkillTrend {
+        SkillTrend(skillArea: area, direction: direction, confidence: confidence,
+                   windowSize: 5, currentLevel: level)
+    }
+
+    @Test func goalBiasBreaksTieAtDevelopingTier() {
+        // Two developing trends, same priority (50). With a warm voice goal,
+        // the .paceControl trend (warm-aligned) should beat the .structure
+        // trend (off-goal for warm).
+        let trends = [
+            warmTrend(level: .developing),
+            offGoalTrend(.structure, level: .developing),
+        ]
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            styleGoal: .warm
+        )
+        #expect(pick == .paceControl,
+                "Goal-aligned developing skill should beat off-goal developing skill")
+    }
+
+    @Test func goalBiasDoesNotOverrideDecliningHighConfidence() {
+        // Declining-high-confidence on off-goal skill (priority 100) should
+        // still beat developing on goal-aligned (priority 60 with bonus).
+        // Urgency wins over goal alignment.
+        let trends = [
+            warmTrend(level: .developing),
+            offGoalTrend(.fillerReduction, level: .solid,
+                         direction: .declining, confidence: .high),
+        ]
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            styleGoal: .warm
+        )
+        #expect(pick == .fillerReduction,
+                "Declining-high-confidence on off-goal must still beat goal-aligned developing")
+    }
+
+    @Test func goalBiasDoesNotOverrideWeakStable() {
+        // Weak-stable on off-goal (priority 90) should still beat developing
+        // on goal-aligned (priority 60 with bonus). Persistent off-goal
+        // problems remain the highest-leverage move.
+        let trends = [
+            warmTrend(level: .developing),
+            offGoalTrend(.structure, level: .weak, direction: .stable),
+        ]
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            styleGoal: .warm
+        )
+        #expect(pick == .structure,
+                "Weak-stable off-goal must still beat goal-aligned developing")
+    }
+
+    @Test func goalBiasDoesNotOverrideNewIssue() {
+        // New-issue on off-goal (priority 80) should still beat developing on
+        // goal-aligned (priority 60 with bonus). Just-appeared issues get
+        // caught early regardless of voice.
+        let trends = [
+            warmTrend(level: .developing),
+            offGoalTrend(.openingStrength, level: .developing, direction: .newIssue),
+        ]
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            styleGoal: .warm
+        )
+        #expect(pick == .openingStrength,
+                "New-issue off-goal must still beat goal-aligned developing")
+    }
+
+    @Test func goalBiasTipsAdjacentTierNearTie() {
+        // Solid goal-aligned (priority 20+10=30) should NOT beat developing
+        // off-goal (priority 50). Confirms the +10 bonus stays a tiebreaker
+        // — it can't promote a solid skill over a developing one. Picker
+        // remains weakness-first.
+        let trends = [
+            warmTrend(level: .solid),
+            offGoalTrend(.structure, level: .developing),
+        ]
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: trends,
+            currentSessionSnapshot: nil,
+            recentDrills: [],
+            styleGoal: .warm
+        )
+        #expect(pick == .structure,
+                "Goal bias must not promote a solid aligned skill over a developing off-goal skill")
+    }
+
+    @Test func goalBiasIsSilentWhenNoGoalSet() {
+        // No styleGoal → behavior is exactly the pre-M14 contract: developing
+        // trends tie at 50 and `max` picks the first one found (here, .structure).
+        // Locks the no-regression promise.
+        let trends = [
+            warmTrend(level: .developing),
+            offGoalTrend(.structure, level: .developing),
+        ]
+        let pickWithGoal = TrendAnalyzer.primaryFocus(
+            trends: trends, currentSessionSnapshot: nil,
+            recentDrills: [], styleGoal: .warm
+        )
+        let pickWithout = TrendAnalyzer.primaryFocus(
+            trends: trends, currentSessionSnapshot: nil,
+            recentDrills: [], styleGoal: nil
+        )
+        #expect(pickWithGoal == .paceControl)
+        // Without the goal, the picker is allowed to land on either
+        // developing trend — the contract is "no goal-aware promotion",
+        // not "stable ordering". We assert it's _one of_ the candidates.
+        #expect(pickWithout == .structure || pickWithout == .paceControl)
+    }
+
+    @Test func goalDrivesDayOneFallbackWhenNoTrendsOrSignal() {
+        // No trends, no session snapshot at all — the function previously
+        // returned the generic `.structure`. With a stated voice goal it now
+        // returns that voice's canonical most-direct lever. Locks the
+        // "day-one user with a stated voice still gets a goal-grounded
+        // first drill" contract.
+        let cases: [(SpeakingStyleGoal, SkillArea)] = [
+            (.authoritative, .confidence),
+            (.warm,          .paceControl),
+            (.concise,       .conciseSpeaking),
+            (.persuasive,    .structure),
+            (.executive,     .confidence),
+            (.storytelling,  .answerDevelopment),
+        ]
+        for (voice, expected) in cases {
+            let pick = TrendAnalyzer.primaryFocus(
+                trends: [], currentSessionSnapshot: nil,
+                recentDrills: [], styleGoal: voice
+            )
+            #expect(pick == expected,
+                    "\(voice) should map to \(expected) for day-one users")
+        }
+    }
+
+    @Test func noGoalFallbackStaysStructureForBackCompat() {
+        // No styleGoal AND no trends AND no snapshot → unchanged from the
+        // pre-bias contract: `.structure`. Locks the back-compat path so
+        // older call sites that never pass `styleGoal` keep behaving exactly
+        // as before.
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: [], currentSessionSnapshot: nil,
+            recentDrills: [], styleGoal: nil
+        )
+        #expect(pick == .structure)
+    }
+
+    @Test func decliningWithoutHighConfidenceCanBeBeatenByAlignedWeakStable() {
+        // Declining-medium-confidence falls into the "default" 40 bucket
+        // (the priority tree only fires the 100 score for high-confidence
+        // declines). A weak-stable goal-aligned trend (90+10=100) should
+        // beat it. Confirms the picker's tier hierarchy is intact and goal
+        // alignment only stacks _within_ a tier or across small gaps.
+        let trends = [
+            warmTrend(level: .weak, direction: .stable),
+            offGoalTrend(.structure, level: .solid,
+                         direction: .declining, confidence: .medium),
+        ]
+        let pick = TrendAnalyzer.primaryFocus(
+            trends: trends, currentSessionSnapshot: nil,
+            recentDrills: [], styleGoal: .warm
+        )
+        #expect(pick == .paceControl)
+    }
+
+    @Test func primaryAlignedSkillAreaIsDeterministic() {
+        // `alignedSkillAreas` is a `Set` and can't carry order; the picker
+        // relies on `primaryAlignedSkillArea` for a deterministic
+        // day-one default. Lock the mapping so a refactor that drops it
+        // (or shuffles the switch order) fails this test rather than
+        // quietly randomising day-one drills.
+        #expect(SpeakingStyleGoal.authoritative.primaryAlignedSkillArea == .confidence)
+        #expect(SpeakingStyleGoal.warm.primaryAlignedSkillArea          == .paceControl)
+        #expect(SpeakingStyleGoal.concise.primaryAlignedSkillArea       == .conciseSpeaking)
+        #expect(SpeakingStyleGoal.persuasive.primaryAlignedSkillArea    == .structure)
+        #expect(SpeakingStyleGoal.executive.primaryAlignedSkillArea     == .confidence)
+        #expect(SpeakingStyleGoal.storytelling.primaryAlignedSkillArea  == .answerDevelopment)
+
+        // Every voice's primary lever must also be in its `alignedSkillAreas`
+        // — keeps the deterministic accessor consistent with the set-based one.
+        for voice in SpeakingStyleGoal.allCases {
+            #expect(voice.alignedSkillAreas.contains(voice.primaryAlignedSkillArea),
+                    "\(voice).primaryAlignedSkillArea must be in alignedSkillAreas")
+        }
+    }
+}
