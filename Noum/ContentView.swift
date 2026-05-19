@@ -227,7 +227,13 @@ struct ContentView: View {
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
-                    .padding(.top, 12)
+                    // Generous top padding so when the user scrolls up, the
+                    // utility strip / first card doesn't render UNDER the
+                    // dynamic island. The home hides its nav bar, so iOS
+                    // doesn't apply a scroll-edge blur — content sits flat
+                    // against the status bar by default. The extra padding
+                    // ensures scrolled content stays below the island.
+                    .padding(.top, Spacing.lg + Spacing.xs)
                     // Generous bottom inset so the last card never sits
                     // under the floating bottom-nav pill. The pill lives
                     // in `safeAreaInset(edge: .bottom)` further below; if

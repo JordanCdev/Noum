@@ -66,13 +66,20 @@ struct AIWeeklyInsightCard: View {
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
+            // Body trimmed to 2 lines + tail-truncation so the home
+            // card stays compact. Tap-to-expand lives on the card if
+            // the caller adds it; for the home surface we lean
+            // toward "headline + short body" and trust the AI debrief
+            // detail view for the long form. Evidence chips and the
+            // action chip are also gated behind ≥3 sessions of
+            // signal so we never show a triple-stack of supporting
+            // content when the headline alone is the story.
             Text(insight.body)
                 .font(Typography.body)
-                .foregroundStyle(.primary)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
-            if !insight.evidence.isEmpty {
-                evidencePills(insight: insight)
-            }
             if let action = insight.action {
                 actionChip(text: action)
             }

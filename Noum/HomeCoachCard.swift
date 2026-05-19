@@ -197,15 +197,17 @@ struct HomeCoachCard: View {
             .offset(y: dy * 0.6)
             .clipShape(shape)
 
-            // Frosted-glass overlay — the move that pushes the card
-            // from "tinted gradient" to "iOS-26 hero." The material
-            // desaturates the washes underneath without erasing them.
-            // `.regularMaterial` was the spec; if it ever reads too
-            // soft on darker tints, switch to `.thinMaterial` here.
+            // Frosted-glass overlay — dropped from 0.55 to 0.30 alpha
+            // so the underlying purple wash reads obviously at rest, not
+            // just in motion. The previous opacity was too soft against
+            // a richer wash and made the card read as a flat white card
+            // in still screenshots.
             shape.fill(.regularMaterial)
-                .opacity(0.55)
+                .opacity(0.30)
 
-            shape.strokeBorder(AppColor.pro.opacity(0.22), lineWidth: 1)
+            // Hairline border bumped from 0.22 to 0.40 so the card's
+            // silhouette has a defined edge against the home canvas.
+            shape.strokeBorder(AppColor.pro.opacity(0.40), lineWidth: 1)
         }
     }
 
@@ -220,7 +222,7 @@ struct HomeCoachCard: View {
         if reduceMotion {
             shape.fill(
                 RadialGradient(
-                    colors: [AppColor.pro.opacity(0.26), AppColor.pro.opacity(0.06), Color.clear],
+                    colors: [AppColor.pro.opacity(0.55), AppColor.proLight.opacity(0.25), AppColor.pro.opacity(0.04), Color.clear],
                     center: UnitPoint(x: 0.5, y: 0.0),
                     startRadius: 0,
                     endRadius: 340
@@ -238,7 +240,7 @@ struct HomeCoachCard: View {
                 let centerY = 0.0 + 0.15 * phase
                 shape.fill(
                     RadialGradient(
-                        colors: [AppColor.pro.opacity(0.26), AppColor.pro.opacity(0.06), Color.clear],
+                        colors: [AppColor.pro.opacity(0.55), AppColor.proLight.opacity(0.25), AppColor.pro.opacity(0.04), Color.clear],
                         center: UnitPoint(x: centerX, y: centerY),
                         startRadius: 0,
                         endRadius: 340
