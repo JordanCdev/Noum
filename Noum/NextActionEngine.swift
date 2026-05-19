@@ -261,9 +261,12 @@ enum NextActionEngine {
             "Hedging language": .confidence,
         ]
 
-        for blocker in blockers {
-            if let skillArea = blockerToSkill[blocker],
-               let drill = selectDrill(for: skillArea, input: input) {
+        let candidateSkills = blockers.compactMap { blockerToSkill[$0] }
+        let style = SpeakingStyleGoal.resolve(input.styleGoal)
+        let ordered = orderByGoalAlignment(candidateSkills, style: style)
+
+        for skillArea in ordered {
+            if let drill = selectDrill(for: skillArea, input: input) {
                 // For persistent blockers, suggest a deeper approach
                 return .confidenceRebuilding(drill)
             }
@@ -300,11 +303,16 @@ enum NextActionEngine {
             .confidence, .conciseSpeaking
         ]
 
-        for area in priorityOrder {
-            if declining.contains(where: { $0.skillArea == area }) {
-                if let drill = selectDrill(for: area, input: input) {
-                    return .drill(drill)
-                }
+        // Intersect the priority list with the actual declining set so the
+        // goal-aware tie-break can pick from real candidates only.
+        let decliningSkills = Set(declining.map(\.skillArea))
+        let eligible = priorityOrder.filter { decliningSkills.contains($0) }
+        let style = SpeakingStyleGoal.resolve(input.styleGoal)
+        let ordered = orderByGoalAlignment(eligible, style: style)
+
+        for area in ordered {
+            if let drill = selectDrill(for: area, input: input) {
+                return .drill(drill)
             }
         }
         return nil
@@ -315,8 +323,13 @@ enum NextActionEngine {
         let newIssues = input.trends.filter { $0.direction == .newIssue }
         guard !newIssues.isEmpty else { return nil }
 
-        if let first = newIssues.first, let drill = selectDrill(for: first.skillArea, input: input) {
-            return .drill(drill)
+        let style = SpeakingStyleGoal.resolve(input.styleGoal)
+        let ordered = orderByGoalAlignment(newIssues.map(\.skillArea), style: style)
+
+        for area in ordered {
+            if let drill = selectDrill(for: area, input: input) {
+                return .drill(drill)
+            }
         }
         return nil
     }
@@ -332,14 +345,39 @@ enum NextActionEngine {
             return .stabilizingRep(input.mode, reason: "Your \(recentDrillArea.displayName.lowercased()) is improving — another rep will solidify the gains.")
         }
 
-        // Otherwise suggest a drill for the improving area
-        if let first = improving.first, let drill = selectDrill(for: first.skillArea, input: input) {
-            return .drill(drill)
+        // Otherwise suggest a drill for the improving area, preferring one
+        // aligned with the user's voice goal when multiple options exist.
+        let style = SpeakingStyleGoal.resolve(input.styleGoal)
+        let ordered = orderByGoalAlignment(improving.map(\.skillArea), style: style)
+
+        for area in ordered {
+            if let drill = selectDrill(for: area, input: input) {
+                return .drill(drill)
+            }
         }
         return nil
     }
 
     // MARK: - Helpers
+
+    /// Reorder a list of candidate skill areas so the ones aligned with the
+    /// user's voice goal come first, preserving the original relative order
+    /// inside each group. Returns the original order untouched when no style
+    /// goal is set or no candidate is aligned — restraint over forced
+    /// personalization. De-duplicates while preserving first occurrence so
+    /// repeated entries in the input don't create double drill attempts.
+    private static func orderByGoalAlignment(
+        _ candidates: [SkillArea],
+        style: SpeakingStyleGoal?
+    ) -> [SkillArea] {
+        var seen: Set<SkillArea> = []
+        let deduped = candidates.filter { seen.insert($0).inserted }
+        guard let style else { return deduped }
+        let aligned = deduped.filter { style.aligns(with: $0) }
+        guard !aligned.isEmpty else { return deduped }
+        let rest = deduped.filter { !style.aligns(with: $0) }
+        return aligned + rest
+    }
 
     /// Select a drill from the catalog for a given skill area.
     private static func selectDrill(for area: SkillArea, input: NextActionInput) -> DrillRecommendationV2? {
