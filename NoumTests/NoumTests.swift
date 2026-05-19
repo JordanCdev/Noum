@@ -4532,3 +4532,181 @@ struct HomeCoachCardVariantTests {
         #expect(allows(diamondTier))
     }
 }
+
+// MARK: - VoiceMetricsCard (M14)
+//
+// `VoiceMetricsCard` promotes Pause + Word-choice from optional post-
+// session surfaces into a first-class Home read. The coach-voice copy is
+// produced by `VoiceMetricsRead.compute` so the contract can be asserted
+// without instantiating SwiftUI. Three properties matter:
+//
+//  1. When the baseline dimension is `.insufficient`, the row collapses
+//     (no "Awaiting data" placeholder per CLAUDE.md engineering bans).
+//  2. When pauses run clean (filledRatio low) AND the baseline is
+//     reliable, the row reads "Above your baseline." — the user-facing
+//     polarity of "better than usual" for filled-ratio (lower = cleaner).
+//  3. When pauses run filled, the row reads as a coach redirect, never
+//     punish-shame ("Re-anchor on the next rep.").
+struct VoiceMetricsCardReadTests {
+
+    private static func stat(
+        _ value: Double,
+        p25: Double? = nil,
+        p75: Double? = nil,
+        sampleCount: Int = 10,
+        confidence: BaselineConfidence = .moderate
+    ) -> BaselineStat {
+        BaselineStat(
+            value: value,
+            sampleCount: sampleCount,
+            confidence: confidence,
+            trend: .stable,
+            percentile25: p25 ?? value * 0.7,
+            percentile75: p75 ?? value * 1.3
+        )
+    }
+
+    private static func baseline(
+        pauseRate: BaselineStat? = nil,
+        pauseFilledRatio: BaselineStat? = nil,
+        vocabularyRange: BaselineStat? = nil
+    ) -> CommunicationBaseline {
+        var b = CommunicationBaseline.empty
+        if let pauseRate { b.pauseRate = pauseRate }
+        if let pauseFilledRatio { b.pauseFilledRatio = pauseFilledRatio }
+        if let vocabularyRange { b.vocabularyRange = vocabularyRange }
+        return b
+    }
+
+    private static func session(
+        daysAgo: Int,
+        transcript: String = "",
+        pauseMetrics: PauseMetrics? = nil
+    ) -> PracticeSession {
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 0,
+            duration: 60,
+            date: date,
+            pauseMetrics: pauseMetrics
+        )
+    }
+
+    // MARK: row collapse on insufficient data
+
+    @Test func bothRowsCollapseOnEmptyBaseline() {
+        let read = VoiceMetricsRead.compute(
+            baseline: .empty,
+            sessions: []
+        )
+        #expect(read.pause == nil)
+        #expect(read.wordChoice == nil)
+        #expect(read.isEmpty)
+    }
+
+    @Test func pauseRowCollapsesWhenBaselineInsufficient() {
+        let b = Self.baseline(
+            pauseRate: Self.stat(2.0, sampleCount: 1, confidence: .insufficient),
+            pauseFilledRatio: Self.stat(0.1)
+        )
+        let read = VoiceMetricsRead.compute(baseline: b, sessions: [])
+        #expect(read.pause == nil)
+    }
+
+    // MARK: clean pauses → "Above your baseline"
+
+    @Test func cleanPausesPlusLowFilledRatioReadsAboveBaseline() {
+        let b = Self.baseline(
+            pauseRate: Self.stat(2.5),
+            pauseFilledRatio: Self.stat(0.10, p25: 0.05, p75: 0.30)
+        )
+        let metrics = PauseMetrics(count: 3, meanSeconds: 1.2, longestSeconds: 1.8, filledRatio: 0.10)
+        let s = Self.session(daysAgo: 1, pauseMetrics: metrics)
+        let read = VoiceMetricsRead.compute(baseline: b, sessions: [s])
+        guard let pause = read.pause else {
+            Issue.record("Expected pause row to render with clean week + reliable baseline")
+            return
+        }
+        #expect(pause.copy.contains("Above your baseline."),
+                "Expected 'Above your baseline.' for clean pauses; got: \(pause.copy)")
+    }
+
+    // MARK: filled pauses → coach redirect, never shame
+
+    @Test func filledPausesReadsAsCoachRedirectNotShame() {
+        let b = Self.baseline(
+            pauseRate: Self.stat(2.5),
+            pauseFilledRatio: Self.stat(0.70, p25: 0.15, p75: 0.40)
+        )
+        let read = VoiceMetricsRead.compute(baseline: b, sessions: [])
+        guard let pause = read.pause else {
+            Issue.record("Expected pause row to render with reliable baseline")
+            return
+        }
+        // Never punish-shame; always carry a forward redirect.
+        #expect(pause.copy.contains("Re-anchor on the next rep.")
+                || pause.copy.contains("Below your baseline."),
+                "Filled-pause row must be a coach redirect, not shame; got: \(pause.copy)")
+        let shameWords = ["bad", "failed", "poor", "weak", "terrible"]
+        for word in shameWords {
+            #expect(!pause.copy.lowercased().contains(word),
+                    "Filled-pause row contained shame word '\(word)' in: \(pause.copy)")
+        }
+    }
+
+    // MARK: trend classifier — pinpoints the polarity contract
+
+    @Test func pauseTrendAboveWhenFilledRatioBelowQuartile() {
+        let stat = Self.stat(0.10, p25: 0.20, p75: 0.50)
+        #expect(VoiceMetricsRead.pauseTrend(filledRatioStat: stat) == .above)
+    }
+
+    @Test func pauseTrendBelowWhenFilledRatioAboveQuartile() {
+        let stat = Self.stat(0.65, p25: 0.10, p75: 0.40)
+        #expect(VoiceMetricsRead.pauseTrend(filledRatioStat: stat) == .below)
+    }
+
+    @Test func pauseTrendStableWhenFilledRatioInsufficient() {
+        let stat = Self.stat(0.20, sampleCount: 1, confidence: .insufficient)
+        #expect(VoiceMetricsRead.pauseTrend(filledRatioStat: stat) == .steady)
+    }
+
+    // MARK: word-choice row — week-over-week
+
+    @Test func wordChoiceRowReadsUpFromLastWeekWhenRatioRises() {
+        let b = Self.baseline(vocabularyRange: Self.stat(0.65))
+        // This week: a varied transcript with many unique words across two
+        // qualifying reps so we clear the ≥ 2-sessions-per-window floor.
+        let thisWeekA = Self.session(
+            daysAgo: 1,
+            transcript: "Yesterday I built a strong opening line that anchored the entire talk in clarity, drove momentum, and resolved with precision. Word choice mattered."
+        )
+        let thisWeekB = Self.session(
+            daysAgo: 2,
+            transcript: "Today the audience responded to vivid imagery, deliberate cadence, and a closing argument carrying weight beyond the immediate context of conversation."
+        )
+        // Last week: two qualifying reps with deliberate repetition so the
+        // unique-ratio falls below this week's mean.
+        let lastWeekA = Self.session(
+            daysAgo: 9,
+            transcript: String(repeating: "thing thing things and and the the the like like and ", count: 4)
+        )
+        let lastWeekB = Self.session(
+            daysAgo: 10,
+            transcript: String(repeating: "stuff stuff and so and so like like and the the ", count: 4)
+        )
+        let read = VoiceMetricsRead.compute(
+            baseline: b,
+            sessions: [thisWeekA, thisWeekB, lastWeekA, lastWeekB]
+        )
+        guard let word = read.wordChoice else {
+            Issue.record("Expected word-variety row with reliable baseline + qualifying transcripts")
+            return
+        }
+        #expect(word.copy.contains("Up from"),
+                "Expected 'Up from … last week.' read; got: \(word.copy)")
+        #expect(word.copy.contains("% unique words"),
+                "Expected unique-words headline; got: \(word.copy)")
+    }
+}

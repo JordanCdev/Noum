@@ -154,13 +154,13 @@ struct DailyChallengeTile: View {
         let target = anchor?.targetPhrase ?? "a clean rep"
         switch state {
         case .cold:
-            return "Today's challenge — \(target). One rep gets you started."
+            return "Today's mission — \(target). One rep gets you started."
         case .inProgress:
             let repFragment = repsToday == 1 ? "One rep in." : "\(repsToday) reps in."
-            return "Today's challenge — \(target). \(repFragment)"
+            return "Today's mission — \(target). \(repFragment)"
         case .readyToClaim:
             guard let kind = anchor else {
-                return "Today's challenge is logged. Tap to claim."
+                return "Today's mission is logged. Tap to claim."
             }
             return "\(kind.claimedNoun.capitalizedFirst) logged. Tap to claim — +\(kind.xpReward) XP."
         case .claimed:
@@ -172,9 +172,9 @@ struct DailyChallengeTile: View {
             if let kind = anchor {
                 return "\(kind.claimedNoun.capitalizedFirst) logged and claimed."
             }
-            return "Today's challenges are logged and claimed."
+            return "Today's missions are logged and claimed."
         case .softExpiry:
-            return "Today's challenge is still open — \(target)."
+            return "Today's mission is still open — \(target)."
         }
     }
 
@@ -316,7 +316,7 @@ struct DailyChallengeTile: View {
 // phrasing next to the tile that renders it makes both easier to revise.
 
 extension DailyChallengeKind {
-    /// Imperative target — drops into "Today's challenge — \(targetPhrase)."
+    /// Imperative target — drops into "Today's mission — \(targetPhrase)."
     /// Sentence-case, no trailing punctuation, no "you" (the wrapper line
     /// supplies the address).
     var targetPhrase: String {

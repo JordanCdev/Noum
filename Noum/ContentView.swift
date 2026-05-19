@@ -141,18 +141,20 @@ struct ContentView: View {
                             // Populated home — editorial pass (M14).
                             //
                             // Reduced from 11 cards to 6. Each remaining
-                            // card earns its place; nothing is duplicated:
+                            // card earns its place; nothing is duplicated.
+                            // Path promotion (M14 next-move pass) lifts the
+                            // journey card from slot 5 (bottom) to slot 3
+                            // — the Path is "next move," not "weekly recap."
                             //
-                            //  1. heroCard — greeting + character + streak chip.
-                            //  2. quickStartCard — primary CTA, promoted to
-                            //     second slot.
-                            //  3. DailyChallengeTile — daily-open mechanic
+                            //  1. HomeCoachCard — coach voice, primary CTA.
+                            //  2. HomeUtilityStrip — streak + word of day.
+                            //  3. journeyPreviewCard — second hero, mission
+                            //     framing toward the next path node.
+                            //  4. DailyChallengeTile — daily-open mechanic
                             //     with an inline "N of M reps today" header
                             //     so we don't need a separate DailyGoalCard.
-                            //  4. WordOfTheDayTile — small daily stretch.
                             //  5. AIWeeklyInsightCard — differentiator;
                             //     keeps the narrative-coaching feel.
-                            //  6. journeyPreviewCard — long-game path CTA.
                             //
                             // Removed and where the surface still lives:
                             //  • DailyGoalCard — rep counter folded into
@@ -215,15 +217,31 @@ struct ContentView: View {
                             // single low-emphasis pair, replacing what used
                             // to need its own WordOfTheDayTile card.
                             HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
-                            DailyChallengeTile().cardEntrance(2)
+                            // Path Journey — promoted to slot 3 as a second
+                            // hero. The Path is the gameplay loop; "next
+                            // move" framing belongs near the Coach Card, not
+                            // at the bottom of the stack under the weekly
+                            // digest. Rewritten with mission framing
+                            // (Chapter <tier> · Mission X of N · node title).
+                            journeyPreviewCard.cardEntrance(2)
+                            DailyChallengeTile().cardEntrance(3)
+                            // M14 — VoiceMetricsCard promotes Pause + Word-
+                            // choice from optional post-session surfaces to a
+                            // first-class Home read. VISION.md called these
+                            // the next-most-differentiating signals after
+                            // fillers and pace. The card collapses entirely
+                            // when neither dimension has enough qualifying
+                            // baseline data, so cold-start users see nothing
+                            // here — not a placeholder.
+                            VoiceMetricsCard(navigationPath: $navigationPath)
+                                .cardEntrance(4)
                             AIWeeklyInsightCard(
                                 sessionStore: sessionStore,
                                 ratingStore: ratingStore,
                                 clutchWordStore: ClutchWordStore.shared,
                                 coachingProfileStore: coachingProfileStore
                             )
-                            .cardEntrance(3)
-                            journeyPreviewCard.cardEntrance(4)
+                            .cardEntrance(5)
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -335,6 +353,12 @@ struct ContentView: View {
                     node: unlockedNode,
                     onDismiss: {
                         pathProgress.consumeCelebration()
+                    },
+                    // Secondary CTA pushes the path view so the user can
+                    // see the just-unlocked node in context.
+                    onOpenPath: {
+                        pathProgress.consumeCelebration()
+                        navigationPath.append(AppDestination.pathJourney)
                     }
                 )
                 .transition(.opacity)
@@ -1126,110 +1150,187 @@ struct ContentView: View {
         )
     }
 
-    /// "Your next node" home surface. The header area pushes the full path
-    /// on tap; the inline CTA capsule jumps straight to the action that
-    /// progresses *this* node, so the user never has to stop at the path
-    /// map. The two affordances live as sibling buttons (no nesting) so
-    /// hit-testing is unambiguous.
+    /// Path Journey card — M14 promotion. The Path is the gameplay loop;
+    /// the previous small tile at the bottom of Home buried it. This is the
+    /// second hero on populated home, sized between Coach Card and the
+    /// utility cards, framed as a mission with explicit chapter + position.
     ///
-    /// Voice: the secondary line names the next node title (large) plus
-    /// the *concrete* gating distance the coach would actually mention —
-    /// "Two clean pauses from unlocked", "+88 rating to Platinum",
-    /// "3/10 unlocks it". Never shames a regression: if a session knocked
-    /// the user back below the bar, the line still leads with the next
-    /// clean rep, sourced from `PathProgressManager.currentNodeGatingPhrase`.
+    /// Layout:
+    ///   • Header row — "YOUR JOURNEY" micro-label + Chapter <tier>.
+    ///   • Mission counter — "Mission X of N" in body weight.
+    ///   • Node title — 24pt rounded bold, the headline the user reads.
+    ///   • Gating line — 1-2 lines of coach copy, the *concrete* distance
+    ///     ("One rep from unlocked", "+88 rating to Platinum") sourced from
+    ///     `PathProgressManager.currentNodeGatingPhrase`. Never shames a
+    ///     regression — only renders forward distance.
+    ///   • Progress bar (if 0 < progress < 1) — brand-blue tinted.
+    ///   • CTA — "Open the Path →" capsule in brand-blue gradient.
+    ///
+    /// The whole card is a single button to the path destination; there's
+    /// no node-level deep link because the destination *is* the next move
+    /// surface. Brand-blue ambient wash + soft elevation give the card the
+    /// "second hero" register, distinct from the Coach Card's Pro-purple
+    /// without competing with it (blue = journey, purple = coach voice).
     private var journeyPreviewCard: some View {
         let status = pathProgress.currentNode
+        let cleared = status == nil
+        let chapterTitle = status?.node.tier.title ?? "Mastery"
+        let missionLine = journeyMissionLine(for: status)
+        let titleLine = status?.node.title ?? "Path cleared"
         let gatingLine = journeyGatingLine(for: status)
-        return VStack(alignment: .leading, spacing: 12) {
-            Button {
-                navigationPath.append(AppDestination.pathJourney)
-            } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: status?.node.symbolName ?? "checkmark.seal.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(AppColor.positive)
-                        .frame(width: 46, height: 46)
-                        .background(
-                            AppColor.positive.opacity(0.12),
-                            in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
-                        )
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(status == nil ? "Path cleared" : "Next")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(AppColor.positive)
-                            .textCase(.uppercase)
-                            .tracking(0.6)
-                        Text(status?.node.title ?? "Hold the path")
-                            .font(Typography.cardTitle)
-                            .foregroundStyle(.primary)
-                        Text(gatingLine)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("home.path.nextMilestone")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        return Button {
+            navigationPath.append(AppDestination.pathJourney)
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                // Header — micro-label on the left, chapter on the right.
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Your journey")
+                        .microLabel(AppColor.brandBlue)
+                    Spacer(minLength: Spacing.xs)
+                    Text("Chapter \u{00B7} \(chapterTitle)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home.path")
 
-            if let status, status.progress > 0 && !status.isComplete {
-                ProgressView(value: status.progress)
-                    .progressViewStyle(.linear)
-                    .tint(AppColor.positive)
-            }
+                // Mission position — small, body-weight, never headline.
+                Text(missionLine)
+                    .font(Typography.body)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("home.path.missionCounter")
 
-            HStack(spacing: 8) {
-                Spacer()
-                if let status {
-                    Button {
-                        navigationPath.append(status.node.actionDestination)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(status.node.actionLabel)
-                                .font(.caption.weight(.bold))
-                            Image(systemName: "arrow.right")
-                                .font(.caption2.weight(.bold))
-                        }
+                // Big rounded title — the node, but framed as a mission.
+                Text(titleLine)
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("home.path.missionTitle")
+
+                // Gating line — concrete distance, coach voice.
+                Text(gatingLine)
+                    .font(Typography.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("home.path.nextMilestone")
+
+                if let status, status.progress > 0 && !status.isComplete {
+                    ProgressView(value: status.progress)
+                        .progressViewStyle(.linear)
+                        .tint(AppColor.brandBlue)
+                        .padding(.top, Spacing.xxs)
+                }
+
+                // CTA row — single coach-voice action. The whole card
+                // routes to the same destination, but the explicit capsule
+                // anchors the user's eye and reads as a button.
+                HStack(spacing: 6) {
+                    Spacer()
+                    Text(cleared ? "Hold the path" : "Open the Path")
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(AppColor.positive, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("home.path.action")
-                } else {
-                    Button {
-                        navigationPath.append(AppDestination.pathJourney)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("Open path")
-                                .font(.caption.weight(.bold))
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                        }
-                        .foregroundStyle(AppColor.positive)
-                    }
-                    .buttonStyle(.plain)
+                    Image(systemName: "arrow.right")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity)
+                .background(
+                    AppColor.brandBlue.gradient,
+                    in: Capsule(style: .continuous)
+                )
+                .padding(.top, Spacing.xs)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.lg)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .background(journeyHeroBackground)
+        // Soft brand-blue elevation — mirrors the Coach Card's Pro-purple
+        // shadow at the same intensity so the two heroes carry consistent
+        // depth on the home canvas.
+        .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 20, x: 0, y: 9)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.path")
+        .accessibilityLabel(Text("\(titleLine). \(missionLine). \(gatingLine)"))
+    }
+
+    /// "Mission X of N" framing line. For the cleared state we celebrate
+    /// the achievement without inventing a fake counter.
+    private func journeyMissionLine(for status: PathNodeStatus?) -> String {
+        let total = PathNodeRegistry.all.count
+        guard let status else {
+            return "All \(total) missions cleared"
+        }
+        let position = status.node.order + 1
+        return "Mission \(position) of \(total)"
+    }
+
+    /// Hero card background — brand-blue ambient wash + frosted glass +
+    /// hairline border. Mirrors the layered pattern used by HomeCoachCard
+    /// (radial wash → material → border) in the blue register so the two
+    /// heroes read as a matched pair rather than two different chrome
+    /// languages. Reduce-motion users see a static wash; the motion-on
+    /// path drifts the radial center across a slow 8s sine for the same
+    /// "alive" feel the Coach Card carries, slightly slower so the two
+    /// don't pulse in lockstep on the same screen.
+    @ViewBuilder
+    private var journeyHeroBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        ZStack {
+            shape.fill(AppColor.cardBackground)
+
+            if reduceMotion {
+                shape.fill(
+                    RadialGradient(
+                        colors: [
+                            AppColor.brandBlue.opacity(0.45),
+                            AppColor.brandBlueLight.opacity(0.22),
+                            AppColor.brandBlue.opacity(0.04),
+                            Color.clear
+                        ],
+                        center: UnitPoint(x: 0.2, y: 0.0),
+                        startRadius: 0,
+                        endRadius: 320
+                    )
+                )
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    // 8s drift — slightly slower than the Coach Card's 7s
+                    // so the two heroes breathe on different cadences.
+                    let phase = (sin(t * (2 * .pi / 8.0)) + 1) / 2
+                    let centerX = 0.15 + 0.30 * phase
+                    let centerY = 0.0 + 0.12 * phase
+                    shape.fill(
+                        RadialGradient(
+                            colors: [
+                                AppColor.brandBlue.opacity(0.45),
+                                AppColor.brandBlueLight.opacity(0.22),
+                                AppColor.brandBlue.opacity(0.04),
+                                Color.clear
+                            ],
+                            center: UnitPoint(x: centerX, y: centerY),
+                            startRadius: 0,
+                            endRadius: 320
+                        )
+                    )
                 }
             }
+
+            // Frosted-glass overlay — same alpha as the Coach Card so the
+            // wash reads through but the surface still reads as a card.
+            shape.fill(.regularMaterial)
+                .opacity(0.30)
+
+            // Hairline border in brand-blue so the silhouette stays crisp
+            // against the home canvas.
+            shape.strokeBorder(AppColor.brandBlue.opacity(0.38), lineWidth: 1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 14)
-        .background(
-            AppColor.cardBackground,
-            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.75), lineWidth: 1)
-        )
     }
 
     /// Coach-voice secondary line for the journey preview card.

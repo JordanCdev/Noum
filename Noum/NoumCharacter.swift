@@ -32,6 +32,14 @@ struct NoumCharacter: View {
     var mood: Mood = .calm
     var tint: Color = AppColor.brandBlue
     var size: CGFloat = 96
+    /// The character's lifetime-arc register. Composes on top of `mood`:
+    /// mood is moment-to-moment, stage is "where this user is in their
+    /// long arc with Noum." The same `.listening` mood reads differently
+    /// at `.awakening` vs `.mastery` because the surrounding rings,
+    /// glow brightness, and (for mastery) rotating outer band are
+    /// layered in based on stage. Defaults to `.awakening` so existing
+    /// call sites compile unchanged.
+    var stage: Stage = .awakening
 
     /// Drives the 4-second breath cycle. We toggle this between 0 and 1
     /// with a `repeatForever(autoreverses:)` ease-in-out animation so the
@@ -49,12 +57,31 @@ struct NoumCharacter: View {
     /// because rotating by 360° matches the starting orientation.
     /// Reduce-motion freezes the angle at a fixed value.
     @State private var ringRotation: Double = 0
+    /// Mastery outer ring rotation. Runs ~24s/turn (twice as slow as the
+    /// listening ring so the two never read as the same motion) and is
+    /// always-on at low alpha once `.mastery` is reached. Reduce-motion
+    /// freezes the angle at a fixed value.
+    @State private var masteryRingRotation: Double = 0
+    /// Idle sparkle ribbon for `.mastery`: fires for ~1s every 60s while
+    /// the character is at rest. We toggle `masterySparkleVisible` from
+    /// the entrance task; the ribbon fades in/out via `.opacity` and
+    /// inherits the existing `SparkleRibbon` motion.
+    @State private var masterySparkleVisible: Bool = false
     @State private var excitedScale: CGFloat = 1.0
     @State private var hasAppeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
+            // Stage outer band — sits behind everything else so the inner
+            // composition layers on top. Renders nothing for the earliest
+            // stages; brings in the dotted ring at .composure, the solid
+            // ring at .command, and the rotating gradient at .mastery.
+            // Always-on (no mood gating) so the lifetime arc is visible
+            // in every state — the "the coach has presence beyond their
+            // own silhouette" reading the brief asked for.
+            stageOuterBand
+
             // Outer breathing halo. Two thin strokes at offset
             // opacities create a "depth" cue without illustration.
             Circle()
@@ -66,6 +93,18 @@ struct NoumCharacter: View {
                 .stroke(tint.opacity(0.10), lineWidth: 1)
                 .frame(width: size * 1.18, height: size * 1.18)
                 .scaleEffect(haloScale * 1.04)
+
+            // Third halo ring — only present from `.command` onward. The
+            // brief specifies "Dual halo rings get +1 (3 total)" at the
+            // .command stage; this is that third stroke, sitting between
+            // the inner pair at a faint alpha so the depth read is
+            // additive, not overpowering.
+            if stage >= .command {
+                Circle()
+                    .stroke(tint.opacity(0.07), lineWidth: 1)
+                    .frame(width: size * 1.30, height: size * 1.30)
+                    .scaleEffect(haloScale * 1.08)
+            }
 
             // Inner glow — two stacked fills. The outer one carries the
             // tint at its resting opacity; the inner one is a brighter
@@ -116,12 +155,100 @@ struct NoumCharacter: View {
                     .frame(width: size * 1.25)
                     .offset(y: size * 0.55)
             }
+
+            // Mastery idle sparkle — fires for ~1s every 60s while the
+            // character is at rest at `.mastery`. Visually distinct from
+            // the `.excited` sparkle (which orbits below the head): this
+            // one drifts above, reads as "carrying weight at rest." Gated
+            // on reduce-motion at the call site so it never animates for
+            // users who've opted out, and it's silent unless the
+            // character is actually at `.mastery`.
+            if stage == .mastery && masterySparkleVisible {
+                SparkleRibbon(tint: tint)
+                    .frame(width: size * 1.10)
+                    .offset(y: -size * 0.60)
+                    .opacity(0.85)
+                    .transition(.opacity)
+            }
         }
-        .frame(width: size * 1.4, height: size * 1.4)
+        .frame(width: size * 1.5, height: size * 1.5)
         .opacity(hasAppeared ? 1 : 0)
         .onAppear { runEntrance() }
         .onChange(of: mood) { _, _ in retriggerForMood() }
         .accessibilityLabel(accessibilityCopy)
+    }
+
+    // MARK: - Stage outer band
+    //
+    // The "lifetime arc" register. Each stage layers a new ring on top of
+    // what the previous stage drew:
+    //
+    //   • .awakening, .voice:  nothing (the inner halo carries the read).
+    //   • .composure:          dotted outer ring at ~1.45× character size,
+    //                          very low alpha, fixed angle.
+    //   • .command:            solid (non-dotted) outer ring at ~1.45×
+    //                          character size, low alpha.
+    //   • .mastery:            slow rotating gradient ring at ~1.45×
+    //                          character size, always-on at low alpha.
+    //                          Reduce-motion freezes the angle.
+    //
+    // All composed from `Circle` + `LinearGradient` per the brand rule.
+    // The "behind everything" placement means stage upgrades never fight
+    // with mood-specific accents in the inner composition.
+
+    @ViewBuilder
+    private var stageOuterBand: some View {
+        let bandSize = size * 1.45
+        switch stage {
+        case .awakening, .voice:
+            // No outer band — the lifetime arc is carried inside the
+            // halo + inner glow brightness shift at these stages.
+            EmptyView()
+
+        case .composure:
+            // Dotted ring suggests "the coach has presence beyond their
+            // own silhouette." Very low alpha so the ring reads as ambient
+            // rather than decorative.
+            Circle()
+                .stroke(
+                    tint.opacity(0.28),
+                    style: StrokeStyle(lineWidth: 1, dash: [2, 4])
+                )
+                .frame(width: bandSize, height: bandSize)
+
+        case .command:
+            // Solid, non-dotted band. Same size as `.composure`'s ring so
+            // the transition between stages is "the dashes filled in,"
+            // not "a new ring appeared."
+            Circle()
+                .stroke(tint.opacity(0.32), lineWidth: 1)
+                .frame(width: bandSize, height: bandSize)
+
+        case .mastery:
+            // Slow rotating gradient band — visually distinct from the
+            // listening ring (different rotation speed, lower alpha, no
+            // mood gating). Always-on once mastery is earned.
+            let rotation: Angle = reduceMotion
+                ? .degrees(45)
+                : .degrees(masteryRingRotation)
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            tint.opacity(0.45),
+                            tint.opacity(0.18),
+                            tint.opacity(0.04),
+                            tint.opacity(0.45)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+                .frame(width: bandSize, height: bandSize)
+                .rotationEffect(rotation)
+                .blendMode(.plusLighter)
+        }
     }
 
     // MARK: - Listening accent
@@ -172,24 +299,31 @@ struct NoumCharacter: View {
     /// Breathing-driven outer halo scale.
     ///
     /// Maps `breath01` (0 → 1, eased by SwiftUI's repeating animation)
-    /// into the 1.0–1.10 range. Reduce-motion users get a constant 1.0
-    /// so nothing animates — the visible "breath" amplitude was bumped
-    /// from the previous ±4% range to ±10% per the redesign brief, so
-    /// the halo now visibly swells.
+    /// into the 1.0–1.10 range at `.awakening` and the 1.0–1.13 range
+    /// from `.voice` onward (brief: "Soft breathing range widened" at
+    /// .voice). Reduce-motion users get a constant 1.0 so nothing
+    /// animates.
     private var haloScale: CGFloat {
         guard !reduceMotion else { return 1.0 }
-        return 1.0 + CGFloat(breath01) * 0.10
+        // Wider breath at .voice and beyond — the character is more
+        // "alive" once it has found its voice.
+        let amplitude: CGFloat = stage >= .voice ? 0.13 : 0.10
+        return 1.0 + CGFloat(breath01) * amplitude
     }
 
     /// Outer-ring (existing) inner-glow opacity. Pumps brighter while
-    /// listening. Backed by the tint passed in by the caller.
+    /// listening. Backed by the tint passed in by the caller. `.voice`
+    /// nudges the floor up so the inner glow reads brighter at rest —
+    /// the brief's "Brighter inner glow ring" at the .voice stage.
     private var coreGlowOpacity: Double {
+        let base: Double
         switch mood {
-        case .listening: return 0.32
-        case .excited:   return 0.28
-        case .coaching:  return 0.22
-        case .calm:      return 0.18
+        case .listening: base = 0.32
+        case .excited:   base = 0.28
+        case .coaching:  base = 0.22
+        case .calm:      base = 0.18
         }
+        return base + stageGlowBoost
     }
 
     /// Inner-glow alpha. Combined with `.plusLighter` blend on the
@@ -198,12 +332,35 @@ struct NoumCharacter: View {
     /// achieved at zero motion cost. iOS 17 doesn't have `Color.mix`
     /// (iOS 18+ only), so we lift luminance via blend mode instead of
     /// passing a second `Color` (which would require an API change).
+    ///
+    /// Stage bumps: `.command` "Inner glow color now reads brighter
+    /// (lean toward `proLight` / `brandBlueLight` even more)" per the
+    /// brief — implemented as a higher alpha on the `.plusLighter`-
+    /// blended fill so the tint resolves closer to the light variant
+    /// of whatever the caller passed in.
     private var innerGlowOpacity: Double {
+        let base: Double
         switch mood {
-        case .listening: return 0.55
-        case .excited:   return 0.48
-        case .coaching:  return 0.38
-        case .calm:      return 0.32
+        case .listening: base = 0.55
+        case .excited:   base = 0.48
+        case .coaching:  base = 0.38
+        case .calm:      base = 0.32
+        }
+        return base + stageGlowBoost * 1.4
+    }
+
+    /// Additive opacity bump applied to both the core glow and (more
+    /// strongly) the inner `.plusLighter` glow at each stage. The
+    /// numbers are small on purpose — calm + restrained progression is
+    /// the spec, so the user notices over weeks, not in a single
+    /// session.
+    private var stageGlowBoost: Double {
+        switch stage {
+        case .awakening: return 0.0
+        case .voice:     return 0.04
+        case .composure: return 0.06
+        case .command:   return 0.10
+        case .mastery:   return 0.12
         }
     }
 
@@ -239,12 +396,21 @@ struct NoumCharacter: View {
     }
 
     private var accessibilityCopy: String {
+        // Mood-specific base copy — the moment-to-moment state.
+        let base: String
         switch mood {
-        case .calm:      return "Noum coach, calm"
-        case .listening: return "Noum coach, listening to your rep"
-        case .excited:   return "Noum coach, celebrating your rep"
-        case .coaching:  return "Noum coach, reading your session"
+        case .calm:      base = "Noum coach, calm"
+        case .listening: base = "Noum coach, listening to your rep"
+        case .excited:   base = "Noum coach, celebrating your rep"
+        case .coaching:  base = "Noum coach, reading your session"
         }
+        // Append the stage suffix only when we have one — `.awakening`
+        // intentionally adds nothing so a brand-new user doesn't hear
+        // "just arriving" every time they meet the coach.
+        if let suffix = stage.accessibilitySuffix {
+            return "\(base), \(suffix)"
+        }
+        return base
     }
 
     // MARK: - Animation drivers
@@ -253,8 +419,11 @@ struct NoumCharacter: View {
         if reduceMotion {
             hasAppeared = true
             // Reduce-motion users keep the bumped *static* breath
-            // (constant 1.0) — they still get the brighter inner glow
-            // and the per-mood symbols, just no motion.
+            // (constant 1.0) — they still get the brighter inner glow,
+            // the per-mood symbols, and every stage's visual upgrades
+            // (extra rings, brighter glow, the *static* mastery band).
+            // What they don't get: the mastery ring rotation and the
+            // 60s idle sparkle ribbon — both gated below on `reduceMotion`.
             return
         }
         withAnimation(.standardSpring) { hasAppeared = true }
@@ -262,7 +431,8 @@ struct NoumCharacter: View {
         // Halo "breath": SwiftUI-driven 4-second ease-in-out autoreverse.
         // `breath01` ramps 0 → 1 over 2s, reverses back 1 → 0 over 2s,
         // repeats forever. The eased curve produces a slow inhale, slow
-        // exhale read at the halo, mapped to scale 1.0 → 1.10.
+        // exhale read at the halo, mapped to scale 1.0 → 1.10 (or
+        // 1.0 → 1.13 from .voice onward, per the brief).
         withAnimation(
             .easeInOut(duration: 2.0).repeatForever(autoreverses: true)
         ) {
@@ -282,6 +452,18 @@ struct NoumCharacter: View {
             ringRotation = 360
         }
 
+        // Mastery outer-band rotation. 24-second per full turn (twice as
+        // slow as the listening ring so the two motions never read as
+        // the same loop). Always-on once .mastery is reached — but the
+        // ring itself only renders for .mastery in `stageOuterBand`, so
+        // animating the value is harmless for earlier stages (the
+        // unused value just spins quietly in state).
+        withAnimation(
+            .linear(duration: 24.0).repeatForever(autoreverses: false)
+        ) {
+            masteryRingRotation = 360
+        }
+
         // Continuous low-rate phase for the core's subtle wobble and the
         // listening arc-pulse. Independent of the halo's SwiftUI-driven
         // breath so changes to mood-specific core scale stay snappy.
@@ -294,6 +476,28 @@ struct NoumCharacter: View {
                 if mood == .listening {
                     listenPhase += 2 * .pi / 24  // 0.8s loop
                     if listenPhase > 2 * .pi { listenPhase -= 2 * .pi }
+                }
+            }
+        }
+
+        // Mastery idle sparkle — fires for ~1s every 60s while the
+        // character is at .mastery. Restraint by design: 1 second of
+        // sparkle every minute is "carrying weight at idle," not a
+        // distraction. Loop only runs when stage starts at .mastery; if
+        // a user reaches mastery mid-view they'll see it on the next
+        // render (the view re-enters this task on appear).
+        if stage == .mastery {
+            Task { @MainActor in
+                while true {
+                    try? await Task.sleep(for: .seconds(60))
+                    guard stage == .mastery else { return }
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        masterySparkleVisible = true
+                    }
+                    try? await Task.sleep(for: .seconds(1.0))
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        masterySparkleVisible = false
+                    }
                 }
             }
         }
@@ -328,22 +532,45 @@ extension NoumCharacter {
         var size: CGFloat
         var mood: Mood
         var tint: Color
+        /// Lifetime-arc register. The inline variant only carries the
+        /// simplest 2-3 visual cues per the brief: a subtle outer ring
+        /// from `.composure` onward (filled in at `.command`+) and a
+        /// slightly brighter glow at `.mastery`. We deliberately don't
+        /// load the inline with every stage's detail — motion at 20pt
+        /// is busy and a five-stage progression would crowd a section
+        /// title beside it. Default `.awakening` keeps existing call
+        /// sites compiling unchanged.
+        var stage: Stage
 
         // No reduceMotion env — the Inline variant has no animations
         // by design (motion at 20pt is busy and doesn't read), so the
         // setting has no work to gate.
 
-        init(size: CGFloat = 20, mood: Mood = .calm, tint: Color = AppColor.brandBlue) {
+        init(
+            size: CGFloat = 20,
+            mood: Mood = .calm,
+            tint: Color = AppColor.brandBlue,
+            stage: Stage = .awakening
+        ) {
             self.size = size
             self.mood = mood
             self.tint = tint
+            self.stage = stage
         }
 
         var body: some View {
             ZStack {
+                // Stage outer ring at the inline scale. Static (no motion),
+                // dotted at `.composure`, solid from `.command` onward,
+                // nothing for the early stages.
+                inlineStageRing
+
                 // Faint glow — no stroke, just a low-opacity fill. Mood
                 // bumps the opacity so .listening reads brighter without
-                // adding motion.
+                // adding motion. `.mastery` adds a small additional
+                // boost so the inline glyph reads visibly "more present"
+                // for mastered users without overpowering the section
+                // title beside it.
                 Circle()
                     .fill(tint.opacity(glowOpacity))
                     .frame(width: size, height: size)
@@ -356,8 +583,41 @@ extension NoumCharacter {
                     .symbolRenderingMode(.hierarchical)
                     .rotationEffect(coreTilt)
             }
-            .frame(width: size, height: size)
+            .frame(width: stageFrameSize, height: stageFrameSize)
             .accessibilityLabel(accessibilityCopy)
+        }
+
+        /// Outer ring drawn at `~1.3×` size for the inline variant. The
+        /// inline reduces the brief's five visual cues to the two that
+        /// read at 20pt: a static dotted/solid ring (presence beyond
+        /// the silhouette) and a brighter glow at `.mastery` (presence
+        /// in the glyph itself).
+        @ViewBuilder
+        private var inlineStageRing: some View {
+            let ringSize = size * 1.3
+            switch stage {
+            case .awakening, .voice:
+                EmptyView()
+            case .composure:
+                Circle()
+                    .stroke(
+                        tint.opacity(0.30),
+                        style: StrokeStyle(lineWidth: 0.75, dash: [1.5, 2.5])
+                    )
+                    .frame(width: ringSize, height: ringSize)
+            case .command, .mastery:
+                Circle()
+                    .stroke(tint.opacity(0.34), lineWidth: 0.75)
+                    .frame(width: ringSize, height: ringSize)
+            }
+        }
+
+        /// Frame size accounts for the outer ring (1.3× size) at
+        /// `.composure` and beyond so the surrounding layout doesn't
+        /// clip the ring. Earlier stages keep the legacy 1× frame so
+        /// existing inline call sites don't reflow.
+        private var stageFrameSize: CGFloat {
+            stage >= .composure ? size * 1.3 : size
         }
 
         // MARK: - Mood resolution

@@ -30,6 +30,10 @@ struct HomeCoachCard: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    // Path progress drives the "Mission within reach" coach variant — when
+    // the current path node is one rep / one score-point / one day from
+    // unlocking, the coach voice points at it directly. Read-only.
+    @StateObject private var pathProgress = PathProgressManager.shared
 
     @State private var characterMood: NoumCharacter.Mood = .coaching
     @State private var lastSeenRecommendationKey: String = ""
@@ -304,6 +308,17 @@ struct HomeCoachCard: View {
             return "Start clean."
         }
 
+        // Mission within reach — wins over tier-holding because the path
+        // node is a concrete next action the user can complete this rep,
+        // while "Hold {tier}" is a steady-state nudge. When the user is
+        // one rep / one score-point / one day from unlocking their next
+        // node, surface that explicitly. See `missionWithinReach` for the
+        // predicate. Never fires for boolean-trigger criteria the user
+        // hasn't engaged with at all — restraint over coverage.
+        if missionWithinReach {
+            return "Mission within reach."
+        }
+
         let tier = LeagueTier.tier(for: ratingStore.rating.overall)
         let tierHolding = tier == .gold || tier == .platinum || tier == .diamond
         let reps = sessionStore.sessions.count
@@ -331,6 +346,15 @@ struct HomeCoachCard: View {
             return "Three reps and Noum starts finding your weakest line."
         }
 
+        // Mission within reach — subtitle is the gating line itself so the
+        // user reads the concrete bar ("One rep from unlocked.") right
+        // under the headline. The gating phrase is sourced from
+        // `PathProgressManager.currentNodeGatingPhrase`, which never
+        // punish-shames a regression.
+        if missionWithinReach, let phrase = pathProgress.currentNodeGatingPhrase {
+            return phrase
+        }
+
         let blueprint = recommendationBlueprint
         let focus = blueprint.focus.trimmingCharacters(in: .whitespacesAndNewlines)
         let why = blueprint.whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -346,6 +370,35 @@ struct HomeCoachCard: View {
             return why
         }
         return nil
+    }
+
+    /// True when the current path node is honestly one step from unlocked.
+    ///
+    /// Two-arm predicate — uses public state only:
+    ///   1. Gating phrase begins with "One " (covers "One rep / day / crown /
+    ///      ... from unlocked.") AND progress > 0 — the AND clause filters
+    ///      out boolean-trigger criteria like `.zeroFillerSession` whose
+    ///      copy *always* starts with "One" but where the user hasn't yet
+    ///      attempted the action.
+    ///   2. Live progress ≥ 0.80 — covers numeric thresholds whose "1 away"
+    ///      math doesn't render as "One " (e.g. score 7→8, rating +20).
+    ///
+    /// Silent in the cleared-path state. The variant is never invented when
+    /// the user is genuinely far from the next bar — restraint over
+    /// coverage. Re-reads on every recompute via the @StateObject binding.
+    private var missionWithinReach: Bool {
+        guard let status = pathProgress.currentNode, !status.isComplete else {
+            return false
+        }
+        if status.progress >= 0.80 {
+            return true
+        }
+        if status.progress > 0,
+           let phrase = pathProgress.currentNodeGatingPhrase,
+           phrase.hasPrefix("One ") {
+            return true
+        }
+        return false
     }
 
     private var microLabelText: String {
