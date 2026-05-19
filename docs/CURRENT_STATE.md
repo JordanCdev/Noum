@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop)_
+_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + WordOfTheDay catalog grown 30 → 130 + EloquenceEngineTests macro timeout repaired)_
 
 ## Architecture overview
 
@@ -376,7 +376,7 @@ _Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   than mislead. `PitchSummaryCard` shows a horizontal Varied↔Monotone
   meter alongside coach copy. Legacy `PracticeSession` JSON decodes
   cleanly with nil pitchMetrics.
-- **Word of the day (M9)** — `WordOfTheDayCatalog` ships 30 curated
+- **Word of the day (M9)** — `WordOfTheDayCatalog` ships 130 curated
   entries (word, part-of-speech, definition, 30s prompt suggestion, and
   inflected acceptedForms list). `entry(for:)` hashes the ISO day key
   to pick deterministically — same day, same word, no backend.
@@ -388,8 +388,13 @@ _Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   populated home shows the word + definition + suggested prompt;
   "Try it" seeds `timedPractice.suggestedPrompt` and pushes
   `AppDestination.timedPractice`. `SessionFinalizer` triggers
-  evaluation after each session. Catalog covers ~30 days; needs growth
-  to ~365 to satisfy the "no repeats inside a year" target.
+  evaluation after each session. Catalog now covers 130 entries across
+  ten thematic blocks (speaking craft, judgement, character, mind-state,
+  communication moves, ideas and argument, action, craft and refinement,
+  reflection, strength); a further pass toward 365 closes the
+  "no-repeats-in-a-year" target. Every new entry honours the existing
+  test invariants (definitions ≤ 90 chars, prompts end in `?`,
+  headword lowercased into `acceptedForms`).
 - **Daily challenges (M8)** — `DailyChallenge.swift` defines 8 strict
   challenge kinds keyed to real `PracticeSession` fields (held pause
   ≥ 3s unfilled, zero-filler rep ≥ 14 words, score ≥ 8/10, etc.).

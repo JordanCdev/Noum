@@ -102,8 +102,10 @@ struct FillerDetectionTests {
         let transcript = "I think the most important quality in a leader is the ability to listen. When you listen, you understand what your team needs, and you can make better decisions."
         let detections = FillerWordDetector.detections(in: transcript, prompt: "What is the most important quality in a leader?")
         let highConf = detections.filter { $0.confidence >= FillerDetection.suddenDeathThreshold }
-        // Clean transcript should have zero high-confidence fillers
-        #expect(highConf.count == 0, "Clean transcript should not trigger sudden death. Got: \(highConf.map { "'\($0.word)' c=\($0.confidence)" })")
+        // Clean transcript should have zero high-confidence fillers.
+        // Diagnostic computed outside the macro — see EloquenceEngineTests.devices(in:) note.
+        let diag: [String] = highConf.map { "'\($0.word)' c=\($0.confidence)" }
+        #expect(highConf.count == 0, "Clean transcript should not trigger sudden death. Got: \(diag)")
     }
 
     @Test func fillerHeavyTranscriptDetectsManyFillers() {
@@ -125,7 +127,8 @@ struct FillerDetectionTests {
         // "like" appears in the prompt, so occurrences should get prompt echo treatment
         let likeDetections = detections.filter { $0.word == "like" }
         let highConfLike = likeDetections.filter { $0.confidence >= FillerDetection.suddenDeathThreshold }
-        #expect(highConfLike.count == 0, "Prompt-echo 'like' should NOT trigger sudden death. Got high-conf: \(highConfLike.map { "c=\($0.confidence) ctx=\($0.context)" })")
+        let diag: [String] = highConfLike.map { "c=\($0.confidence) ctx=\($0.context)" }
+        #expect(highConfLike.count == 0, "Prompt-echo 'like' should NOT trigger sudden death. Got high-conf: \(diag)")
     }
 
     @Test func validLikeUsageNotFlagged() {
@@ -133,7 +136,8 @@ struct FillerDetectionTests {
         let detections = FillerWordDetector.detections(in: transcript, prompt: "How is the project going?")
         // "looks like", "would like", "feel like" — all valid, should return nil or very low
         let highConf = detections.filter { $0.confidence >= FillerDetection.suddenDeathThreshold }
-        #expect(highConf.count == 0, "Valid 'like' usage should not be flagged. Got: \(highConf.map { "'\($0.word)' c=\($0.confidence)" })")
+        let diag: [String] = highConf.map { "'\($0.word)' c=\($0.confidence)" }
+        #expect(highConf.count == 0, "Valid 'like' usage should not be flagged. Got: \(diag)")
     }
 
     @Test func likeAfterPronounIsFiller() {
@@ -141,7 +145,8 @@ struct FillerDetectionTests {
         let detections = FillerWordDetector.detections(in: transcript, prompt: "Tell me about your weekend.")
         let likeFills = detections.filter { $0.word == "like" && $0.confidence >= 0.8 }
         // "I was like", "she like", "I like" — filler preceders
-        #expect(likeFills.count >= 2, "Filler 'like' after pronouns should be detected. Got \(likeFills.count): \(likeFills.map { "c=\($0.confidence)" })")
+        let diag: [String] = likeFills.map { "c=\($0.confidence)" }
+        #expect(likeFills.count >= 2, "Filler 'like' after pronouns should be detected. Got \(likeFills.count): \(diag)")
     }
 
     @Test func youKnowDiscourseMarkerVsQuestion() {
@@ -1576,11 +1581,20 @@ struct PressureFollowUpTemplateTests {
 
 struct EloquenceEngineTests {
 
+    /// Extracts the device list as `[String]` raw values. Keeps the diagnostic
+    /// payload outside the `#expect` macro expansion so the Swift type-checker
+    /// doesn't have to infer a closure-returning-enum inside string
+    /// interpolation inside a macro (which times out — see HANDOFF 2026-05-18).
+    private static func devices(in findings: [EloquenceFinding]) -> [String] {
+        findings.map { $0.device.rawValue }
+    }
+
     @Test func tricolonInPreparedSentenceIsDetected() {
         let transcript = "We need clarity, courage, and conviction in everything we do."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        let hasMatch = findings.contains(where: { $0.device == .tricolon || $0.device == .ruleOfThree })
-        #expect(hasMatch, "Expected tricolon/ruleOfThree finding. Got: \(findings.map { $0.device })")
+        let hasMatch = findings.contains { $0.device == .tricolon || $0.device == .ruleOfThree }
+        let devices = Self.devices(in: findings)
+        #expect(hasMatch, "Expected tricolon/ruleOfThree finding. Got: \(devices)")
     }
 
     @Test func anaphoraAcrossSentencesIsDetected() {
@@ -1588,43 +1602,48 @@ struct EloquenceEngineTests {
         Again, we'll get the briefing right. Again, we'll arrive ready. Practice makes the difference.
         """
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        #expect(findings.contains(where: { $0.device == .anaphora }),
-                "Expected anaphora finding. Got: \(findings.map { $0.device })")
+        let hasMatch = findings.contains { $0.device == .anaphora }
+        let devices = Self.devices(in: findings)
+        #expect(hasMatch, "Expected anaphora finding. Got: \(devices)")
     }
 
     @Test func alliterationRunIsDetected() {
         let transcript = "Pride, prejudice, and proper preparation prevent panic."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        #expect(findings.contains(where: { $0.device == .alliteration }),
-                "Expected alliteration finding. Got: \(findings.map { $0.device })")
+        let hasMatch = findings.contains { $0.device == .alliteration }
+        let devices = Self.devices(in: findings)
+        #expect(hasMatch, "Expected alliteration finding. Got: \(devices)")
     }
 
     @Test func epizeuxisIsDetected() {
         let transcript = "Never, never give in. The work is hard, but worth it."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        #expect(findings.contains(where: { $0.device == .epizeuxis }),
-                "Expected epizeuxis finding. Got: \(findings.map { $0.device })")
+        let hasMatch = findings.contains { $0.device == .epizeuxis }
+        let devices = Self.devices(in: findings)
+        #expect(hasMatch, "Expected epizeuxis finding. Got: \(devices)")
     }
 
     @Test func diacopeIsDetected() {
         let transcript = "Bond, James Bond. The brand sells itself."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        let hasMatch = findings.contains(where: { $0.device == .diacope || $0.device == .epizeuxis })
-        #expect(hasMatch, "Expected diacope or epizeuxis. Got: \(findings.map { $0.device })")
+        let hasMatch = findings.contains { $0.device == .diacope || $0.device == .epizeuxis }
+        let devices = Self.devices(in: findings)
+        #expect(hasMatch, "Expected diacope or epizeuxis. Got: \(devices)")
     }
 
     @Test func rhetoricalQuestionIsDetected() {
         let transcript = "What does that look like in practice? Three crisp answers, on the clock, no fillers."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        #expect(findings.contains(where: { $0.device == .rhetoricalQuestion }),
-                "Expected rhetorical question finding. Got: \(findings.map { $0.device })")
+        let hasMatch = findings.contains { $0.device == .rhetoricalQuestion }
+        let devices = Self.devices(in: findings)
+        #expect(hasMatch, "Expected rhetorical question finding. Got: \(devices)")
     }
 
     @Test func plainTranscriptHasNoFindings() {
         let transcript = "Yeah I think that's basically how I'd handle it. We could probably move forward."
         let findings = EloquenceEngine.analyse(transcript: transcript)
-        // No tricolon / parallel / anaphora etc. expected here.
-        #expect(findings.count <= 1, "Plain transcript should produce at most 1 weak finding. Got: \(findings.map { $0.device })")
+        let devices = Self.devices(in: findings)
+        #expect(findings.count <= 1, "Plain transcript should produce at most 1 weak finding. Got: \(devices)")
     }
 
     @Test func veryShortTranscriptReturnsEmpty() {
