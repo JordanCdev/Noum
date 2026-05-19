@@ -70,9 +70,11 @@ struct DailyChallengeTile: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "target")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(headerAccent)
+                // Coach-narrator presence: the character lives on the hero
+                // (HomeCoachCard) AND inline on tiles that speak in coach
+                // voice. Same waveform glyph at smaller scale stitches the
+                // tile to the same speaker.
+                NoumCharacter.Inline(size: 14, mood: .calm, tint: headerAccent)
                 Text("Today")
                     .font(Typography.micro)
                     .foregroundStyle(.secondary)
