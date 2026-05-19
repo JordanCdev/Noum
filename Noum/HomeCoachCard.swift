@@ -31,10 +31,6 @@ struct HomeCoachCard: View {
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            // 90pt — the hero of the entire app. Previous tightening to
-            // 72pt traded presence for density and the card read as
-            // generic. The character is the brand surface; it earns its
-            // size here.
             NoumCharacter(
                 mood: characterMood,
                 tint: accentTint,
@@ -43,26 +39,40 @@ struct HomeCoachCard: View {
             .accessibilityHidden(true)
             .padding(.top, Spacing.xs)
 
-            Text(coachLine)
-                .font(Typography.headline)
+            // Title — punchy, 1-3 words usually. Drives the visual
+            // hierarchy. The earlier "one long coach sentence" pattern
+            // read as a paragraph; this reads as a coach speaking.
+            Text(coachTitle)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Spacing.xs)
-                .accessibilityIdentifier("home.coachCard.line")
+                .accessibilityIdentifier("home.coachCard.title")
 
-            Text(microLabelText)
-                .microLabel()
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("home.coachCard.microLabel")
+            // Subtitle — the why, in body weight, secondary. Conditional —
+            // hides cleanly when the variant only carries a title.
+            if let subtitle = coachSubtitle {
+                Text(subtitle)
+                    .font(Typography.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Spacing.sm)
+                    .accessibilityIdentifier("home.coachCard.subtitle")
+            }
 
             VoiceAlignmentChip(
                 styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
                 mode: recommendedMode,
                 tint: accentTint
             )
+            .padding(.top, Spacing.xs)
 
-            PrimaryCTA("Begin", tint: accentTint) {
+            // Begin button carries the mode name so the micro-label
+            // "SUDDEN DEATH · ONE BREATH · ONE COMPLETE REP" row can go
+            // away — three text rows became one button label.
+            PrimaryCTA(beginCTAText, tint: accentTint) {
                 beginRecommendedRep()
             }
             .accessibilityIdentifier("home.coachCard.begin")
@@ -71,11 +81,29 @@ struct HomeCoachCard: View {
         .padding(.vertical, Spacing.lg)
         .frame(maxWidth: .infinity)
         .background(coachCardBackground)
-        .shadow(color: accentTint.opacity(0.10), radius: 18, x: 0, y: 8)
+        // Soft Pro-purple elevation — the hero now carries the brand
+        // premium register as its ambient color, with mode tint reserved
+        // for the action (Begin button) + character. Two registers, not
+        // one, gives the hero presence without overloading the eye.
+        .shadow(color: AppColor.pro.opacity(0.18), radius: 22, x: 0, y: 10)
         .onAppear { syncMoodForFreshRecommendation() }
         .onChange(of: recommendationKey) { _, _ in syncMoodForFreshRecommendation() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.coachCard")
+    }
+
+    /// Label for the Begin CTA — "Begin · Sudden Death" pattern carries
+    /// the mode info that used to live in the micro-label row. One row
+    /// fewer on Home; user still knows exactly what they're starting.
+    private var beginCTAText: String {
+        let modeName: String
+        switch recommendedMode {
+        case .timed:          modeName = "Timed"
+        case .suddenDeath:    modeName = "Sudden Death"
+        case .ahCounter:      modeName = "Ah-Counter"
+        case .imConversation: modeName = "IM"
+        }
+        return "Begin \u{00B7} \(modeName)"
     }
 
     /// Hero card chrome — replaces the standard `CardView` so the Coach
@@ -91,6 +119,17 @@ struct HomeCoachCard: View {
     ///   3. A faint tinted hairline border (1pt) that reinforces the wash
     ///      without competing.
     /// Outer `.shadow` (applied by `body`) adds elevation in the same hue.
+    /// Hero card chrome — Pro-purple as the ambient brand register, with
+    /// a very faint mode-tint accent at the trailing edge so the card
+    /// still subtly belongs to the recommendation. Two colors, two
+    /// registers: purple = "this is your coach", mode tint = "this is
+    /// what to do."
+    ///
+    /// Layers, bottom to top:
+    ///   1. White card base.
+    ///   2. Top-anchored radial purple wash (the dream's "fancy purple").
+    ///   3. Trailing-anchored low-alpha mode tint (very subtle).
+    ///   4. Faint purple hairline border.
     private var coachCardBackground: some View {
         let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         return ZStack {
@@ -98,14 +137,23 @@ struct HomeCoachCard: View {
 
             shape.fill(
                 RadialGradient(
-                    colors: [accentTint.opacity(0.16), accentTint.opacity(0.0)],
-                    center: UnitPoint(x: 0.5, y: 0.18),
+                    colors: [AppColor.pro.opacity(0.22), AppColor.pro.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
                     startRadius: 0,
-                    endRadius: 240
+                    endRadius: 320
                 )
             )
 
-            shape.strokeBorder(accentTint.opacity(0.18), lineWidth: 1)
+            shape.fill(
+                RadialGradient(
+                    colors: [accentTint.opacity(0.10), Color.clear],
+                    center: UnitPoint(x: 1.0, y: 0.5),
+                    startRadius: 0,
+                    endRadius: 220
+                )
+            )
+
+            shape.strokeBorder(AppColor.pro.opacity(0.20), lineWidth: 1)
         }
     }
 
@@ -121,39 +169,61 @@ struct HomeCoachCard: View {
     // we never use "Let's" / "Great job!" / exclamations, and we keep the
     // line short enough to read on open.
 
-    private var coachLine: String {
+    /// Coach copy is now split into title + subtitle for visual
+    /// hierarchy. Title is the headline (the user reads this first);
+    /// subtitle is the why (read only if the title earned attention).
+
+    private var coachTitle: String {
         guard hasSignal else {
-            // True cold-start: no sessions yet.
-            return "Welcome. Tap Begin and Noum will start hearing you out."
+            return "Welcome."
         }
 
         if sessionStore.sessions.count < 3 {
-            // Early-signal: don't over-claim with weak evidence.
-            return "Start with a clean baseline rep \u{2014} Noum needs three reps to find your weakest line."
+            return "Start clean."
+        }
+
+        let tier = LeagueTier.tier(for: ratingStore.rating.overall)
+        let tierHolding = tier == .gold || tier == .platinum || tier == .diamond
+        let reps = sessionStore.sessions.count
+        if tierHolding && reps >= 8 {
+            return "Hold \(tier.title)."
+        }
+
+        let focus = recommendationBlueprint.focus.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !focus.isEmpty {
+            // Ensure punctuation closure — title reads as a complete
+            // imperative, not a fragment trailing into the subtitle.
+            let trimmed = focus.trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+            return "\(trimmed)."
+        }
+
+        return "Run a clean rep."
+    }
+
+    private var coachSubtitle: String? {
+        guard hasSignal else {
+            return "Tap Begin and Noum will start hearing you out."
+        }
+
+        if sessionStore.sessions.count < 3 {
+            return "Three reps and Noum starts finding your weakest line."
         }
 
         let blueprint = recommendationBlueprint
         let focus = blueprint.focus.trimmingCharacters(in: .whitespacesAndNewlines)
         let why = blueprint.whyNow.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Tier-holding read — Gold/Platinum/Diamond users get a ladder
-        // reference. Bronze/Silver get the plain coaching line so we
-        // never write "You're holding Bronze" (no false flattery).
         let tier = LeagueTier.tier(for: ratingStore.rating.overall)
         let tierHolding = tier == .gold || tier == .platinum || tier == .diamond
         let reps = sessionStore.sessions.count
         if tierHolding && reps >= 8 {
-            return "You're holding \(tier.title). One more clean rep keeps the ladder moving \u{2014} \(focus.lowercased())."
+            return "One clean rep keeps the ladder moving \u{2014} \(focus.lowercased())."
         }
 
-        // Default coach line: focus + whyNow stitched into one sentence.
-        if !focus.isEmpty && !why.isEmpty {
-            return "\(focus). \(why)"
+        if !why.isEmpty {
+            return why
         }
-        if !focus.isEmpty {
-            return focus
-        }
-        return why.isEmpty ? "Run a clean rep to keep the read sharp." : why
+        return nil
     }
 
     private var microLabelText: String {

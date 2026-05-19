@@ -217,18 +217,17 @@ struct DailyChallengeTile: View {
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(kind.title)
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(claimed ? .secondary : .primary)
-                        .strikethrough(claimed, color: .secondary)
-                    Text(kind.subtitle)
-                        .font(Typography.micro)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Subtitle dropped — was 2 lines per row × 3 rows = 6 lines
+                // of supporting text. The title carries the move; the
+                // subtitle restated the same thing in slightly more
+                // words. The full subtitle is read aloud in the
+                // accessibility label below for VoiceOver users.
+                Text(kind.title)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(claimed ? .secondary : .primary)
+                    .strikethrough(claimed, color: .secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 trailing(claimed: claimed, ready: ready, kind: kind)
             }
