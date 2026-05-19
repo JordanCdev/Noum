@@ -19,6 +19,43 @@ private struct HomeScrollOffsetKey: PreferenceKey {
     }
 }
 
+// Home-only time-of-day ambient. The four buckets shift the canvas
+// gradient softly through the day: warm-light mornings → cool airy
+// middays → richer purple-pink evenings → deeper-saturated nights.
+// Other screens keep `LightGradientBackground` from DesignSystem —
+// this is home-only.
+private enum HourBucket: Int {
+    case morning, midday, evening, night
+
+    static func current(date: Date = Date()) -> HourBucket {
+        let hour = Calendar.current.component(.hour, from: date)
+        switch hour {
+        case 5..<11:  return .morning
+        case 11..<17: return .midday
+        case 17..<22: return .evening
+        default:      return .night
+        }
+    }
+
+    var start: Color {
+        switch self {
+        case .morning: return Color(red: 0.961, green: 0.949, blue: 1.000)
+        case .midday:  return Color(red: 0.969, green: 0.969, blue: 1.000)
+        case .evening: return Color(red: 0.941, green: 0.929, blue: 0.980)
+        case .night:   return Color(red: 0.914, green: 0.898, blue: 0.961)
+        }
+    }
+
+    var end: Color {
+        switch self {
+        case .morning: return Color(red: 0.980, green: 0.980, blue: 0.988)
+        case .midday:  return Color(red: 0.929, green: 0.949, blue: 1.000)
+        case .evening: return Color(red: 0.980, green: 0.941, blue: 0.980)
+        case .night:   return Color(red: 0.949, green: 0.929, blue: 0.980)
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct ContentView: View {
     @StateObject private var authManager = AuthManager.shared
@@ -45,6 +82,7 @@ struct ContentView: View {
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
     @State private var navigationPath = NavigationPath()
+    @State private var hourBucket: HourBucket = HourBucket.current()
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
@@ -75,8 +113,11 @@ struct ContentView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
-                AppColor.screenBackground
-                .ignoresSafeArea()
+                // Time-of-day ambient — morning lavender / midday airy /
+                // evening soft purple-pink / night deeper saturation.
+                // Home-only; other screens keep LightGradientBackground.
+                homeBackground
+                    .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
                     GeometryReader { proxy in
@@ -165,7 +206,10 @@ struct ContentView: View {
                             // Begin CTA. The recommendation pipeline
                             // (RecommendationBiasEngine + CoachingPlanner)
                             // feeds it directly — no new coaching logic.
-                            HomeCoachCard(navigationPath: $navigationPath).cardEntrance(0)
+                            HomeCoachCard(
+                                navigationPath: $navigationPath,
+                                scrollOffset: homeScrollOffset
+                            ).cardEntrance(0)
                             // HomeUtilityStrip is the thin status row beneath
                             // the Coach Card: streak + word of the day as a
                             // single low-emphasis pair, replacing what used
@@ -324,6 +368,7 @@ struct ContentView: View {
             DailyChallengesManager.shared.ensureForToday()
             DailyChallengesManager.shared.recomputeReady()
             WordOfTheDayManager.shared.ensureForToday()
+            refreshHourBucket()
             // Consume any deep link that was set before this view mounted
             // (e.g. `-DeepLink` launch arg handled in `NoumApp.init`).
             // `.onChange` only fires on subsequent mutations, so cold-start
@@ -331,6 +376,14 @@ struct ContentView: View {
             if let url = deepLinkRouter.pending {
                 consumeDeepLink(url)
             }
+        }
+        // Cheap 5-min poll so a long-lived session crosses a bucket
+        // boundary smoothly. The fade between bucket gradients is the
+        // .animation(_, value: hourBucket) on `homeBackground`.
+        .onReceive(
+            Timer.publish(every: 300, on: .main, in: .common).autoconnect()
+        ) { _ in
+            refreshHourBucket()
         }
         .task {
             guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }
@@ -348,6 +401,32 @@ struct ContentView: View {
                 mode: effectiveSuggestion.mode,
                 isAIBacked: aiRecommendation != nil
             )
+        }
+    }
+
+    /// Home-only ambient background. Other screens keep using
+    /// `LightGradientBackground` from DesignSystem — this is a thin
+    /// time-of-day-aware sibling that gives the home canvas its own
+    /// quiet personality without pulling the rest of the app along.
+    /// 1.2s ease-in-out fade between bucket boundaries keeps the
+    /// transition soft. Reduce-motion: no fade, the new gradient
+    /// snaps in but is still subtle enough to be invisible at-a-glance.
+    private var homeBackground: some View {
+        LinearGradient(
+            colors: [hourBucket.start, hourBucket.end],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.2), value: hourBucket)
+    }
+
+    /// Re-evaluates the bucket from the wall clock. Setting the same
+    /// value is a no-op (SwiftUI dedupes Equatable @State writes), so
+    /// it's cheap to call from the 5-minute timer + onAppear.
+    private func refreshHourBucket() {
+        let next = HourBucket.current()
+        if hourBucket != next {
+            hourBucket = next
         }
     }
 

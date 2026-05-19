@@ -18,6 +18,13 @@ struct HomeCoachCard: View {
 
     @Binding var navigationPath: NavigationPath
 
+    /// Live scroll offset from the parent ScrollView, passed in from
+    /// ContentView's `homeScrollOffset`. Drives a barely-there interior
+    /// parallax on the radial-wash anchors — the card itself never
+    /// moves. Default `0` keeps preview + non-scroll call sites
+    /// compiling unchanged. Pinned to zero under reduce-motion.
+    var scrollOffset: CGFloat = 0
+
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var ratingStore = RatingStore.shared
@@ -27,16 +34,30 @@ struct HomeCoachCard: View {
     @State private var characterMood: NoumCharacter.Mood = .coaching
     @State private var lastSeenRecommendationKey: String = ""
 
+    // Emanation ray — a brief tinted pulse that fires from behind the
+    // character when a fresh recommendation arrives.
+    //
+    // `emanationProgress` runs 0.0 → 1.0 across the 700ms pulse:
+    //   • 0.0 (just fired):  opacity 0.5, scale 1.0  → ring visible at the character's size
+    //   • 1.0 (resting):     opacity 0.0, scale 1.6  → fully faded out, expanded
+    // At rest the value sits at 1.0 so the ray is invisible. Each
+    // trigger snaps it back to 0.0 (no animation) then animates to 1.0
+    // with ease-out — the classic radial-pulse shape.
+    @State private var emanationProgress: Double = 1.0
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            NoumCharacter(
-                mood: characterMood,
-                tint: accentTint,
-                size: 90
-            )
-            .accessibilityHidden(true)
+            ZStack {
+                emanationRay
+                NoumCharacter(
+                    mood: characterMood,
+                    tint: accentTint,
+                    size: 90
+                )
+                .accessibilityHidden(true)
+            }
             .padding(.top, Spacing.xs)
 
             // Title — punchy, 1-3 words usually. Drives the visual
@@ -95,6 +116,15 @@ struct HomeCoachCard: View {
     /// Label for the Begin CTA — "Begin · Sudden Death" pattern carries
     /// the mode info that used to live in the micro-label row. One row
     /// fewer on Home; user still knows exactly what they're starting.
+    /// Maps live scroll offset (±120pt) to a ±5pt opposite-direction
+    /// gradient shift. Capped + zeroed under reduce-motion. The card
+    /// itself doesn't move — only the interior wash anchors do.
+    private var parallaxAmount: CGFloat {
+        guard !reduceMotion else { return 0 }
+        let normalized = max(-1, min(1, scrollOffset / 120))
+        return -normalized * 5
+    }
+
     private var beginCTAText: String {
         let modeName: String
         switch recommendedMode {
@@ -107,53 +137,143 @@ struct HomeCoachCard: View {
     }
 
     /// Hero card chrome — replaces the standard `CardView` so the Coach
-    /// Card carries visual depth + a brand-tinted presence. A flat white
-    /// rectangle was the right starting point for the redesign but read
-    /// as generic against the dream brief ("fancy designs, awesome cards").
+    /// Card carries visual depth + a brand-tinted presence. The card now
+    /// reads as an "alive" iOS-26 hero rather than a tinted gradient:
+    /// the radial Pro-purple wash drifts slowly across the top, and a
+    /// `.regularMaterial` layer sits between the wash and the content so
+    /// the tint reads through frosted glass (the Apple Music / Fitness /
+    /// Sleep app pattern).
     ///
     /// Layers, bottom to top:
     ///   1. White card surface (the canvas).
-    ///   2. Mode-tinted radial gradient washing from the character anchor
-    ///      down — same hue as the recommended mode, very low alpha, so
-    ///      the card visibly belongs to the recommendation that drives it.
-    ///   3. A faint tinted hairline border (1pt) that reinforces the wash
-    ///      without competing.
-    /// Outer `.shadow` (applied by `body`) adds elevation in the same hue.
-    /// Hero card chrome — Pro-purple as the ambient brand register, with
-    /// a very faint mode-tint accent at the trailing edge so the card
-    /// still subtly belongs to the recommendation. Two colors, two
-    /// registers: purple = "this is your coach", mode tint = "this is
-    /// what to do."
-    ///
-    /// Layers, bottom to top:
-    ///   1. White card base.
-    ///   2. Top-anchored radial purple wash (the dream's "fancy purple").
-    ///   3. Trailing-anchored low-alpha mode tint (very subtle).
-    ///   4. Faint purple hairline border.
+    ///   2. Top-anchored radial purple wash with a slow drifting center
+    ///      — `(0.35, 0.0)` ↔ `(0.65, 0.15)` on a ~7s ease-in-out loop.
+    ///      Reduce-motion collapses this to a static center at `(0.5, 0.0)`
+    ///      so nothing animates.
+    ///   3. Trailing-anchored low-alpha mode-tint accent — keeps the
+    ///      "this is your recommendation" register.
+    ///   4. `.regularMaterial` frosted-glass overlay — desaturates the
+    ///      washes underneath without erasing them, giving the card the
+    ///      iOS-26 depth feel. Clipped to the card shape.
+    ///   5. Faint purple hairline border on top of the glass so the
+    ///      silhouette stays crisp.
+    /// Outer `.shadow` (applied by `body`) adds elevation in Pro-purple.
+    @ViewBuilder
     private var coachCardBackground: some View {
         let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        return ZStack {
+        let dy = parallaxAmount
+        ZStack {
             shape.fill(AppColor.cardBackground)
 
-            shape.fill(
-                RadialGradient(
-                    colors: [AppColor.pro.opacity(0.22), AppColor.pro.opacity(0.04), Color.clear],
-                    center: UnitPoint(x: 0.5, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
+            // The drifting Pro-purple radial. When reduce-motion is on
+            // we render a single static gradient; otherwise a
+            // TimelineView samples a sine-driven UnitPoint so the
+            // center sweeps smoothly without invalidating SwiftUI
+            // state every frame.
+            //
+            // The whole wash shifts by `dy` opposite the scroll
+            // direction — a barely-there interior parallax that
+            // gives the card a sense of depth under scroll without
+            // moving the card itself. Clipped to the shape so the
+            // offset gradient never escapes the silhouette.
+            purpleWash(in: shape)
+                .offset(y: dy)
+                .clipShape(shape)
 
+            // Trailing mode-tint — kept under the material so the
+            // glass also frosts this register. The mode tint stays
+            // legible through the material because the radius is
+            // wider and the color anchors to the trailing edge.
+            // Drifts at 0.6x the purple wash so the two layers don't
+            // slide as one sheet.
             shape.fill(
                 RadialGradient(
-                    colors: [accentTint.opacity(0.10), Color.clear],
+                    colors: [accentTint.opacity(0.12), Color.clear],
                     center: UnitPoint(x: 1.0, y: 0.5),
                     startRadius: 0,
-                    endRadius: 220
+                    endRadius: 240
                 )
             )
+            .offset(y: dy * 0.6)
+            .clipShape(shape)
 
-            shape.strokeBorder(AppColor.pro.opacity(0.20), lineWidth: 1)
+            // Frosted-glass overlay — the move that pushes the card
+            // from "tinted gradient" to "iOS-26 hero." The material
+            // desaturates the washes underneath without erasing them.
+            // `.regularMaterial` was the spec; if it ever reads too
+            // soft on darker tints, switch to `.thinMaterial` here.
+            shape.fill(.regularMaterial)
+                .opacity(0.55)
+
+            shape.strokeBorder(AppColor.pro.opacity(0.22), lineWidth: 1)
+        }
+    }
+
+    /// Pro-purple radial wash with optional slow drift across the top
+    /// of the card. The TimelineView path samples the system animation
+    /// clock so the gradient itself redraws smoothly rather than relying
+    /// on `withAnimation` interpolating a state-bound `UnitPoint` (which
+    /// SwiftUI doesn't animate continuously across `RadialGradient`
+    /// re-creations).
+    @ViewBuilder
+    private func purpleWash<S: Shape>(in shape: S) -> some View {
+        if reduceMotion {
+            shape.fill(
+                RadialGradient(
+                    colors: [AppColor.pro.opacity(0.26), AppColor.pro.opacity(0.06), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 340
+                )
+            )
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                // 7s ease-in-out loop. Mapping a sine to [0, 1] gives
+                // a symmetric drift that lingers softly at each end —
+                // the user reads "this card breathes," not "this card
+                // animates."
+                let phase = (sin(t * (2 * .pi / 7.0)) + 1) / 2
+                let centerX = 0.35 + 0.30 * phase
+                let centerY = 0.0 + 0.15 * phase
+                shape.fill(
+                    RadialGradient(
+                        colors: [AppColor.pro.opacity(0.26), AppColor.pro.opacity(0.06), Color.clear],
+                        center: UnitPoint(x: centerX, y: centerY),
+                        startRadius: 0,
+                        endRadius: 340
+                    )
+                )
+            }
+        }
+    }
+
+    /// Soft mode-tinted radial pulse that emanates from behind the
+    /// character when a fresh recommendation arrives. The pulse
+    /// progresses from `progress=0.0` (just fired: opacity 0.5,
+    /// scale 1.0) to `progress=1.0` (resting: opacity 0.0, scale 1.6)
+    /// over ~700ms via `withAnimation`. Reduce-motion users see no ray.
+    @ViewBuilder
+    private var emanationRay: some View {
+        if reduceMotion {
+            Color.clear
+                .frame(width: 1, height: 1)
+        } else {
+            let scale = 1.0 + 0.6 * emanationProgress
+            let opacity = 0.5 * (1.0 - emanationProgress)
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [accentTint.opacity(0.45), accentTint.opacity(0.0)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 80
+                    )
+                )
+                .frame(width: 120, height: 120)
+                .scaleEffect(scale)
+                .opacity(opacity)
+                .allowsHitTesting(false)
         }
     }
 
@@ -330,6 +450,29 @@ struct HomeCoachCard: View {
         characterMood = .excited
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             characterMood = .coaching
+        }
+        // Fire the emanation ray in lockstep with the mood burst — the
+        // pulse paints the character's halo as a soft mode-tinted ring
+        // that fades outward over ~700ms.
+        triggerEmanation()
+    }
+
+    /// Snap the emanation back to its "just fired" state (progress 0)
+    /// without animation, then animate to resting (progress 1) over
+    /// 700ms with ease-out. Reduce-motion is checked at the call site
+    /// (the ray view itself also returns Color.clear under reduce-motion),
+    /// but we early-return here too so we never schedule a no-op animation.
+    private func triggerEmanation() {
+        guard !reduceMotion else { return }
+        // Reset instantly so a back-to-back trigger doesn't get
+        // interpolated from a partial-state mid-pulse.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            emanationProgress = 0.0
+        }
+        withAnimation(.easeOut(duration: 0.7)) {
+            emanationProgress = 1.0
         }
     }
 
