@@ -247,7 +247,7 @@ struct ContentView: View {
                 case .speakingRank:
                     ProfileView()
                 case .pathJourney:
-                    PathJourneyView(navigationPath: $navigationPath)
+                    PathJourneyView()
                 }
             }
         }
@@ -1203,31 +1203,61 @@ struct ContentView: View {
                 Button { navigationPath.append(AppDestination.practiceSelection) } label: {
                     navItem(title: "Train", systemImage: "dumbbell.fill", accent: .blue)
                 }
+                .buttonStyle(NavTabButtonStyle(accent: .blue, reduceMotion: reduceMotion))
                 .accessibilityIdentifier("nav.practice")
 
                 Button { navigationPath.append(AppDestination.sessionHistory) } label: {
                     navItem(title: "Review", systemImage: "book.fill", accent: .orange)
                 }
+                .buttonStyle(NavTabButtonStyle(accent: .orange, reduceMotion: reduceMotion))
                 .accessibilityIdentifier("nav.history")
 
                 Button { navigationPath.append(AppDestination.socialProfile) } label: {
                     navItem(title: "Profile", systemImage: "person.fill", accent: .purple)
                 }
+                .buttonStyle(NavTabButtonStyle(accent: .purple, reduceMotion: reduceMotion))
                 .accessibilityIdentifier("nav.social")
 
                 Button { navigationPath.append(AppDestination.settings) } label: {
                     navItem(title: "Settings", systemImage: "slider.horizontal.3", accent: .green)
                 }
+                .buttonStyle(NavTabButtonStyle(accent: .green, reduceMotion: reduceMotion))
                 .accessibilityIdentifier("nav.settings")
             }
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: Capsule())
+        // Pro-purple ambient register sits BEHIND the material so the
+        // floating-glass feel is preserved but the pill carries the
+        // brand. Tinted shadow underneath puts the elevation in the
+        // same hue.
+        .background(
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        AppColor.pro.opacity(0.16),
+                        AppColor.proLight.opacity(0.06),
+                        Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                Rectangle().fill(.regularMaterial)
+            }
+            .clipShape(Capsule())
+        )
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.55), lineWidth: 1)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.70), AppColor.pro.opacity(0.18)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
         )
+        .shadow(color: AppColor.pro.opacity(0.12), radius: 16, x: 0, y: 8)
         .padding(.horizontal, 18)
         .padding(.top, 8)
         .padding(.bottom, 10)
@@ -1335,9 +1365,9 @@ struct ContentView: View {
                     .symbolEffect(.pulse, options: .repeating.speed(0.6))
             }
             Text(title)
-                .font(Typography.nav)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .textCase(.uppercase)
-                .tracking(0.4)
+                .tracking(0.9)
                 .foregroundStyle(accent.opacity(0.85))
         }
         .frame(maxWidth: .infinity)
@@ -1891,6 +1921,25 @@ struct ContentView: View {
     private var rankTitle: String { profile.rankTitle }
     private var nextRankTitle: String { profile.nextRankTitle }
 
+}
+
+/// Press-feedback style for bottom-nav tabs — tint pulse behind the
+/// label + 0.97 scale + slight opacity on press. Reduced-motion users
+/// keep the tint+opacity but skip the scale.
+private struct NavTabButtonStyle: ButtonStyle {
+    let accent: Color
+    let reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Capsule()
+                    .fill(accent.opacity(configuration.isPressed ? 0.14 : 0))
+            )
+            .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? 0.97 : 1.0))
+            .opacity(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.snappySpring, value: configuration.isPressed)
+    }
 }
 #endif
 

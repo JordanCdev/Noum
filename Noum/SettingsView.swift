@@ -223,19 +223,20 @@ struct SettingsView: View {
         }
     }
 
-    /// Cluster eyebrow used to group related Settings sections into named
-    /// zones (Practice / Coaching / Account / Developer). Same micro-eyebrow
-    /// treatment as `SettingsSectionLabel` so it reads as part of the same
-    /// type system, with extra top padding so the zone break lands as
-    /// breathing room rather than as a second-tier title competing with
-    /// the per-section labels below it. Mirrors `ProfileView.clusterHeader`.
+    /// Cluster header used to group related Settings sections into named
+    /// zones (Practice / Coaching / Account / Developer). M14 dream pass:
+    /// bumped from the uppercase micro-eyebrow to the 18pt SF Pro Rounded
+    /// bold display face that the Coach Card title uses so Settings reads
+    /// as part of the same premium typographic system. The per-section
+    /// labels below still carry the uppercase + tracking-0.8 micro-label
+    /// treatment via `SettingsSectionLabel`, so the visual hierarchy is
+    /// cluster (Title Case display) → label (micro uppercase) → card. The
+    /// extra top padding keeps each zone break as breathing room.
     private func clusterHeader(_ title: LocalizedStringKey) -> some View {
         HStack {
             Text(title)
-                .font(Typography.micro.weight(.bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(1.0)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
         }
@@ -250,37 +251,28 @@ struct SettingsView: View {
         return name.isEmpty ? "Speaker" : name
     }
 
+    /// Premium-tier presence tint for the hero avatar + ambient register.
+    /// Pro users get the brand purple; everyone else gets brand blue.
+    private var profileHeroTint: Color {
+        premium.isPremium ? AppColor.pro : AppColor.brandBlue
+    }
+
     private var profileHero: some View {
         Button {
             showCoachingProfile = true
         } label: {
             HStack(spacing: Spacing.md) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [AppColor.brandBlue, AppColor.brandBlueLight],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 2
-                        )
-                        .frame(width: 64, height: 64)
-
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppColor.brandBlue.opacity(0.18), AppColor.brandBlueLight.opacity(0.10)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 56, height: 56)
-
-                    Text(String(displayName.prefix(1)).uppercased())
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(AppColor.brandBlue)
-                }
+                // M14 dream pass: replaces the letter avatar with the
+                // shared NoumCharacter (same component Profile uses) so the
+                // hero carries brand presence instead of a generic monogram.
+                // Compact 56pt size since Settings' hero is a row, not a
+                // full hero card. Pro users render against the purple tint
+                // so the character + ambient background read as one register.
+                NoumCharacter(
+                    mood: .calm,
+                    tint: profileHeroTint,
+                    size: 56
+                )
                 .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -322,16 +314,50 @@ struct SettingsView: View {
             }
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
-            )
+            .background(profileHeroBackground)
+            // Soft Pro-purple elevation — mirrors the HomeCoachCard hero
+            // pattern but at a lower intensity since the Settings hero is
+            // a compact row, not a full card. ~14pt radius + 6pt y-offset,
+            // tinted in the same purple as the radial wash so the hero
+            // reads as ambiently premium without a hard shadow rectangle.
+            .shadow(color: AppColor.pro.opacity(0.10), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("\(displayName), \(profileManager.rankTitle)")
         .accessibilityHint("Open coaching profile to edit")
         .accessibilityIdentifier("settings.profileHero")
+    }
+
+    /// Hero card chrome — applies the M14 Pro-purple ambient register so
+    /// the Settings hero reads as a premium account surface instead of a
+    /// list-view top row. Mirrors `HomeCoachCard.coachCardBackground` and
+    /// `LeagueView.tierCardBackground`, with lower-intensity values
+    /// because this card is compact (a single row) rather than a full
+    /// hero. Two registers, same as the Coach Card: purple ambience for
+    /// "this is your account" + the rank pill keeps the per-user accent.
+    ///
+    /// Layers, bottom to top:
+    ///   1. White card surface (the canvas).
+    ///   2. Top-anchored Pro-purple radial wash (0.16 → 0). Smaller
+    ///      end-radius than the Coach Card since this card is shorter.
+    ///   3. Faint Pro hairline border (1pt) at low opacity so the wash
+    ///      reads as belonging to the card edge.
+    private var profileHeroBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+
+            shape.fill(
+                RadialGradient(
+                    colors: [AppColor.pro.opacity(0.16), AppColor.pro.opacity(0.0)],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 220
+                )
+            )
+
+            shape.strokeBorder(AppColor.pro.opacity(0.18), lineWidth: 1)
+        }
     }
 
     // MARK: - Practice Card

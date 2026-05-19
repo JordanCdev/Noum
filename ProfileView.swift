@@ -142,7 +142,18 @@ struct ProfileView: View {
                 // (Typography.micro, uppercase, tracking 0.8) so they
                 // disappear into the rhythm without dominating.
 
-                identityHeader
+                // Identity + adjacent upgrade ask. The upgrade button used
+                // to live inside the identity card, conflating "who you
+                // are" with "buy". It now sits as its own slim surface
+                // immediately below, separated by `Spacing.cardGap` so it
+                // reads as a companion CTA rather than a screen-stack peer.
+                VStack(spacing: Spacing.cardGap) {
+                    identityHeader
+                    if !premium.isPremium {
+                        upgradeCTA
+                    }
+                }
+
                 speakingRatingCard
 
                 clusterHeader("Progression")
@@ -260,31 +271,70 @@ struct ProfileView: View {
                 }
             }
             .padding(.horizontal, 20)
-
-            if !premium.isPremium {
-                Button {
-                    showPaywall = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "crown.fill")
-                            .font(.caption)
-                        Text("Upgrade to Pro")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(AppColor.pro, in: Capsule())
-                }
-            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
-        )
+        // Identity hero — Pro-purple as the ambient brand register, matching
+        // the HomeCoachCard treatment. Profile's hero now carries the same
+        // brand presence as Home's hero: character + name + level live on
+        // a card that visibly belongs to the product, not a generic surface.
+        .background(identityHeroBackground)
+        .shadow(color: AppColor.pro.opacity(0.18), radius: 22, x: 0, y: 10)
+    }
+
+    /// Identity hero chrome — purple ambient wash + faint purple border.
+    /// Layers, bottom to top:
+    ///   1. White card base.
+    ///   2. Top-anchored radial purple wash (the dream's "fancy purple").
+    ///   3. Faint purple hairline border.
+    /// Outer `.shadow` adds elevation in the same hue.
+    private var identityHeroBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [AppColor.pro.opacity(0.22), AppColor.pro.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            shape.strokeBorder(AppColor.pro.opacity(0.20), lineWidth: 1)
+        }
+    }
+
+    /// Slim purple upgrade pill — lives below the identity card so the
+    /// hero stays about WHO you are. Only rendered when `!premium.isPremium`.
+    private var upgradeCTA: some View {
+        Button {
+            showPaywall = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "crown.fill")
+                    .font(.caption.weight(.bold))
+                Text("Upgrade to Pro")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .opacity(0.8)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, 12)
+            .background(
+                LinearGradient(
+                    colors: [AppColor.pro, AppColor.proLight],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: Capsule()
+            )
+            .shadow(color: AppColor.pro.opacity(0.22), radius: 14, x: 0, y: 6)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("profile.upgradeCTA")
     }
 
     // MARK: - Rank & XP Progress
@@ -457,11 +507,31 @@ struct ProfileView: View {
                 }
             }
             .padding(20)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(Color.blue.opacity(0.08), lineWidth: 1)
+            // Rating hero — brand-blue ambient register. Identity hero
+            // carries the purple "premium" register; the rating card
+            // carries the blue "metric" register. Two heroes, two
+            // registers, one product.
+            .background(speakingRatingHeroBackground)
+            .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
+        }
+    }
+
+    /// Rating hero chrome — mirrors `identityHeroBackground` with the
+    /// brand-blue tint substituted for Pro-purple. Same radial-from-top
+    /// pattern so the two hero cards read as one visual family.
+    private var speakingRatingHeroBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [AppColor.brandBlue.opacity(0.20), AppColor.brandBlue.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
             )
+            shape.strokeBorder(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
         }
     }
 
@@ -990,15 +1060,15 @@ struct ProfileView: View {
     // MARK: - Stats Row
 
     private var statsRow: some View {
-        HStack(spacing: 12) {
-            statCard(title: "Sessions", value: "\(totalSessions)", icon: "mic.fill", tint: .blue)
+        HStack(spacing: Spacing.sm) {
+            statCard(title: "Sessions", value: "\(totalSessions)", icon: "mic.fill", tint: AppColor.brandBlue)
             statCard(title: "Streak", value: "\(currentStreak)d", icon: "flame.fill", tint: .orange)
-            statCard(title: "Friends", value: "\(friends.friendCount)", icon: "person.2.fill", tint: .green)
+            statCard(title: "Friends", value: "\(friends.friendCount)", icon: "person.2.fill", tint: AppColor.positive)
         }
     }
 
     private func statCard(title: String, value: String, icon: String, tint: Color) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Spacing.xs) {
             Image(systemName: icon)
                 .font(.headline)
                 .foregroundStyle(tint)
@@ -1011,7 +1081,7 @@ struct ProfileView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)

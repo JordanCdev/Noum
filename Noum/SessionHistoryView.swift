@@ -72,6 +72,31 @@ struct SessionHistoryView: View {
         }
     }
 
+    /// Representative tint for the MistakeReplay hero halo. Mirrors the
+    /// MistakeReplayCard's own sourcing priority (low-score ≤5 in 14d,
+    /// then high-filler ≥6 in 14d) so the halo color matches the mode
+    /// the user is most likely about to replay. Falls back to brandBlue
+    /// when nothing qualifies (the card itself renders EmptyView in that
+    /// case, so the halo is invisible anyway).
+    private var mistakeReplayHaloTint: Color {
+        let now = Date()
+        let cutoff14 = now.addingTimeInterval(-14 * 24 * 3600)
+        let recent = sessions
+        if let lowScore = recent.first(where: { session in
+            guard session.date >= cutoff14 else { return false }
+            guard let score = session.score else { return false }
+            return score <= 5
+        }) {
+            return AppColor.tint(for: lowScore.mode)
+        }
+        if let highFiller = recent.first(where: { session in
+            session.date >= cutoff14 && session.fillerWordCount >= 6
+        }) {
+            return AppColor.tint(for: highFiller.mode)
+        }
+        return AppColor.brandBlue
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -96,16 +121,27 @@ struct SessionHistoryView: View {
                             .padding(.bottom, 20)
 
                         // --- Replay misses (specific past sessions) ---
+                        // Hero halo + tinted shadow draw the eye; the tint
+                        // is the mode of the next session likely to be
+                        // replayed (matches `MistakeReplayCard`'s own
+                        // sourcing priority).
                         MistakeReplayCard(sessionStore: sessionStore) { destination in
                             navigationPath.append(destination)
                         }
+                        .background(heroHalo(tint: mistakeReplayHaloTint))
+                        .shadow(color: mistakeReplayHaloTint.opacity(0.16), radius: 16, x: 0, y: 8)
                         .padding(.horizontal, Spacing.screenH)
                         .padding(.bottom, 20)
 
                         // --- Mistakes to fix (Duolingo-style review surface) ---
+                        // Brand-blue halo: this card surfaces durable
+                        // analytics-level weaknesses, so it lives in the
+                        // analytics/rating register.
                         WeakAreasCard(sessionStore: sessionStore) { target in
                             navigationPath.append(target.destination)
                         }
+                        .background(heroHalo(tint: AppColor.brandBlue))
+                        .shadow(color: AppColor.brandBlue.opacity(0.14), radius: 16, x: 0, y: 8)
                         .padding(.horizontal, Spacing.screenH)
                         .padding(.bottom, 20)
 
@@ -114,12 +150,18 @@ struct SessionHistoryView: View {
                             .padding(.bottom, 12)
 
                         // --- Section Header ---
-                        Text(sectionTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, Spacing.screenH)
-                            .padding(.bottom, 8)
+                        // Sentence-case cardTitle + hairline divider. Reads as
+                        // a premium app sentence, not a wireframe label.
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(sectionTitle)
+                                .font(Typography.cardTitle)
+                                .foregroundStyle(.primary)
+                            Rectangle()
+                                .fill(AppColor.subtleBorder)
+                                .frame(height: 1)
+                        }
+                        .padding(.horizontal, Spacing.screenH)
+                        .padding(.bottom, 12)
 
                         // --- Session List ---
                         if filteredSessions.isEmpty {
@@ -192,7 +234,48 @@ struct SessionHistoryView: View {
             statPill(value: strongestModeText, label: "Strongest", tint: .purple)
         }
         .padding(14)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .background(heroBackground(tint: AppColor.brandBlue, cornerRadius: CornerRadius.large))
+        .shadow(color: AppColor.brandBlue.opacity(0.14), radius: 14, x: 0, y: 6)
+    }
+
+    // MARK: - Hero Background
+    //
+    // Mirrors the `HomeCoachCard.coachCardBackground` / `LeagueView.tierCardBackground`
+    // pattern: opaque card base + radial tinted wash (0.12 → 0) anchored to the
+    // top edge + faint tinted border. Used to lift the summary strip into
+    // "hero surface" treatment.
+    private func heroBackground(tint: Color, cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [tint.opacity(0.12), tint.opacity(0.03), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            shape.strokeBorder(tint.opacity(0.18), lineWidth: 1)
+        }
+    }
+
+    /// Tinted ambient halo + soft shadow used to lift the Replay / Mistakes
+    /// cards into hero treatment without modifying their internals. The
+    /// halo bleeds beyond the card edges via negative padding so the
+    /// glow reads outside the card's own opaque cardBackground.
+    private func heroHalo(tint: Color) -> some View {
+        RoundedRectangle(cornerRadius: CornerRadius.large + 4, style: .continuous)
+            .fill(
+                RadialGradient(
+                    colors: [tint.opacity(0.18), tint.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            .blur(radius: 10)
+            .padding(-10)
     }
 
     private func statPill(value: String, label: String, tint: Color) -> some View {
@@ -300,55 +383,62 @@ struct SessionHistoryView: View {
     // MARK: - Session Row (Compact, Premium Feel)
 
     private func sessionRow(_ session: PracticeSession) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Mode accent bar
+        // Leading mode-tint stripe spans full row height so each row reads
+        // visually distinct by mode at a glance — Timed (blue), Sudden
+        // Death (orange), Ah-Counter (green), IM (indigo). Tokens via
+        // `AppColor.tint(for:)`.
+        HStack(alignment: .top, spacing: 0) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(modeColor(for: session.mode))
-                .frame(width: 4, height: 48)
-                .padding(.top, 4)
+                .fill(AppColor.tint(for: session.mode))
+                .frame(width: 4)
+                .frame(maxHeight: .infinity)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(session.headline ?? modeLabel(for: session.mode))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    if let score = session.score {
-                        Text("\(score)/10")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(scoreColor(score))
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(session.headline ?? modeLabel(for: session.mode))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let score = session.score {
+                            Text("\(score)/10")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(scoreColor(score))
+                        }
                     }
-                }
 
-                HStack(spacing: 6) {
-                    Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                    Text("·")
-                    Text("\(Int(session.duration))s")
-                    if session.fillerWordCount > 0 {
+                    HStack(spacing: 6) {
+                        Text(session.date.formatted(date: .abbreviated, time: .shortened))
                         Text("·")
-                        Text("\(session.fillerWordCount) fillers")
+                        Text("\(Int(session.duration))s")
+                        if session.fillerWordCount > 0 {
+                            Text("·")
+                            Text("\(session.fillerWordCount) fillers")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                    if let summary = sessionOneLiner(for: session) {
+                        Text(summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(.tertiary)
 
-                if let summary = sessionOneLiner(for: session) {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.quaternary)
+                    .padding(.top, 6)
             }
-
-            Image(systemName: "chevron.right")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.quaternary)
-                .padding(.top, 6)
+            .padding(.vertical, 12)
+            .padding(.leading, 12)
+            .padding(.trailing, 14)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .padding(.bottom, 8)
     }
 
@@ -380,9 +470,9 @@ struct SessionHistoryView: View {
 
     private var sectionTitle: String {
         if let mode = selectedModeFilter {
-            return "\(modeLabel(for: mode)) Sessions"
+            return "\(modeLabel(for: mode)) sessions"
         }
-        return "All Sessions"
+        return "All sessions"
     }
 
     // MARK: - Helpers
@@ -392,15 +482,6 @@ struct SessionHistoryView: View {
         if let outcome = session.imConversationDetails?.outcome?.summary, !outcome.isEmpty { return outcome }
         let trimmed = session.transcript.prefix(80)
         return trimmed.isEmpty ? nil : String(trimmed)
-    }
-
-    private func modeColor(for mode: PracticeMode) -> Color {
-        switch mode {
-        case .timed: return .blue
-        case .suddenDeath: return .orange
-        case .ahCounter: return .green
-        case .imConversation: return .purple
-        }
     }
 
     private func modeLabel(for mode: PracticeMode) -> String {

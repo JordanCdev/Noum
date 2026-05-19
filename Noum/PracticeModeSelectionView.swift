@@ -154,8 +154,13 @@ struct PracticeModeSelectionView: View {
 
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Display treatment — the picker reads as an iOS premium
+            // screen header ("pick your next rep" is a curated menu
+            // moment), not a settings-list title. The richer 32pt
+            // rounded weight is the single biggest signal that the
+            // surface below is a curation, not a list.
             Text("Pick your next rep")
-                .font(Typography.screenTitle)
+                .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
             Text("Each mode trains a different kind of pressure.")
@@ -224,13 +229,15 @@ struct PracticeModeSelectionView: View {
             }
             .padding(Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(
-                        isSelected ? option.tint.opacity(0.32) : Color.white.opacity(0.72),
-                        lineWidth: isSelected ? 1.5 : 1
-                    )
+            .background(modeCardBackground(option, isRecommended: isRecommended, isSelected: isSelected))
+            // Recommended carries a soft tint-ambient shadow even at
+            // rest — that's the "this is tonight's pick" signal. The
+            // selected sharp shadow stacks on top so the chosen card
+            // still earns a touch more elevation than the others.
+            .shadow(
+                color: isRecommended ? option.tint.opacity(0.16) : .clear,
+                radius: 20,
+                y: 10
             )
             .shadow(
                 color: isSelected ? option.tint.opacity(0.10) : .clear,
@@ -244,6 +251,60 @@ struct PracticeModeSelectionView: View {
         .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
         .accessibilityHint(option.subtitle)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Mode-card chrome. Two registers:
+    ///
+    ///  - **Recommended row** mirrors the Home Coach Card hero pattern:
+    ///    a white base with a top-anchored radial mode-tint wash at
+    ///    0.16 alpha, plus a faint tint hairline border. This is the
+    ///    "here's what's special tonight" signal — the visual contrast
+    ///    against the other rows IS the design.
+    ///  - **Plain row** stays a calm white card with the standard
+    ///    inner edge stroke. Non-recommended modes should never look
+    ///    like they're competing for attention with the curated pick.
+    ///
+    /// Selected state always trumps the rest hairline with a brighter
+    /// tinted stroke so the user can still see which card their tap
+    /// lands on, recommended or not.
+    private func modeCardBackground(
+        _ option: ModeOption,
+        isRecommended: Bool,
+        isSelected: Bool
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        let restStrokeColor: Color = isRecommended
+            ? option.tint.opacity(0.22)
+            : Color.white.opacity(0.72)
+        let strokeColor: Color = isSelected
+            ? option.tint.opacity(0.32)
+            : restStrokeColor
+        let strokeWidth: CGFloat = isSelected ? 1.5 : 1
+
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+
+            if isRecommended {
+                // Top-anchored radial wash — same construction as the
+                // Coach Card's `coachCardBackground`. Mode tint, low
+                // alpha, fades into the card body so text on top stays
+                // readable at the standard secondary contrast.
+                shape.fill(
+                    RadialGradient(
+                        colors: [
+                            option.tint.opacity(0.16),
+                            option.tint.opacity(0.04),
+                            Color.clear
+                        ],
+                        center: UnitPoint(x: 0.5, y: 0.0),
+                        startRadius: 0,
+                        endRadius: 320
+                    )
+                )
+            }
+
+            shape.strokeBorder(strokeColor, lineWidth: strokeWidth)
+        }
     }
 
     private func modeIcon(_ option: ModeOption) -> some View {
@@ -476,6 +537,11 @@ struct PracticeModeSelectionView: View {
     private var startCTA: some View {
         let title = activeStartTitle
         let tint = activeStartTint
+        // Match the Coach Card's Begin pattern — "Begin · Sudden Death"
+        // reads as a calm, premium action and keeps the mode name in
+        // Title Case rather than mashing it into a lowercase sentence.
+        // U+00B7 (middle dot) is the same separator the Coach Card uses.
+        let ctaLabel = "Begin \u{00B7} \(title)"
         return Button {
             if crutchSelected {
                 navigationPath.append(AppDestination.cutTheCrutchPractice)
@@ -483,7 +549,7 @@ struct PracticeModeSelectionView: View {
                 navigationPath.append(appDestination(for: selectedMode))
             }
         } label: {
-            Text("Start \(title.lowercased())")
+            Text(ctaLabel)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -494,7 +560,7 @@ struct PracticeModeSelectionView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityIdentifier("practiceModes.start")
-        .accessibilityLabel("Start \(title)")
+        .accessibilityLabel(ctaLabel)
         .accessibilityHint("Begins a \(title) rep.")
         // Background tightened from a 0.02 → 0.72 white gradient to a
         // solid screen-bg fade — the earlier opacity stop left content
