@@ -349,14 +349,14 @@ struct SettingsView: View {
 
             shape.fill(
                 RadialGradient(
-                    colors: [AppColor.pro.opacity(0.16), AppColor.pro.opacity(0.0)],
+                    colors: [AppColor.pro.opacity(0.44), AppColor.proLight.opacity(0.18), AppColor.pro.opacity(0.0)],
                     center: UnitPoint(x: 0.5, y: 0.0),
                     startRadius: 0,
                     endRadius: 220
                 )
             )
 
-            shape.strokeBorder(AppColor.pro.opacity(0.18), lineWidth: 1)
+            shape.strokeBorder(AppColor.pro.opacity(0.38), lineWidth: 1)
         }
     }
 

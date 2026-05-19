@@ -32,6 +32,8 @@ struct HomeUtilityStrip: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var streak = StreakFreezeManager.shared
     @StateObject private var word = WordOfTheDayManager.shared
+    @State private var showSoundscape = false
+    @State private var soundscapeMode: SoundscapeMode = SoundscapeSettings.savedMode
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
@@ -39,10 +41,64 @@ struct HomeUtilityStrip: View {
             streakButton
             Spacer(minLength: Spacing.xs)
             wordButton
+            Spacer(minLength: Spacing.xs)
+            soundscapeButton
         }
         .frame(minHeight: 36)
         .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
+        .sheet(isPresented: $showSoundscape) {
+            SoundscapePickerView()
+        }
+        .onChange(of: showSoundscape) { _, isOpen in
+            // Re-read the user's preference each time the picker closes so
+            // the strip's icon + dot reflect the current mode.
+            if !isOpen {
+                soundscapeMode = SoundscapeSettings.savedMode
+            }
+        }
+    }
+
+    // MARK: - Soundscape
+
+    /// Compact soundscape entry on the home utility strip. Surfaces the
+    /// user's chosen ambient (Off / Focus / Calm / Steady) so the dream's
+    /// "creative theme you can pick" is reachable in one tap from Home,
+    /// not buried two screens deep in Settings. Mode-symbol drives the
+    /// glyph; a small active dot indicates a non-Off mode is set.
+    private var soundscapeButton: some View {
+        Button {
+            showSoundscape = true
+        } label: {
+            HStack(spacing: 4) {
+                // Soundscape entry stays icon-led so the three-item
+                // strip (streak + word + soundscape) fits comfortably
+                // on a single line at every device width. Label only
+                // appears when a non-Off mode is active; the active dot
+                // signals the rest of the time.
+                Image(systemName: soundscapeMode.symbolName)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(soundscapeMode == .off ? .secondary : AppColor.pro)
+                    .accessibilityHidden(true)
+
+                if soundscapeMode != .off {
+                    Text(soundscapeMode.title)
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .lineLimit(1)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Soundscape \(soundscapeMode.title).")
+        .accessibilityHint("Opens the soundscape picker.")
     }
 
     // MARK: - Streak

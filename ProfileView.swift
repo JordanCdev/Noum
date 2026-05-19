@@ -294,13 +294,13 @@ struct ProfileView: View {
             shape.fill(AppColor.cardBackground)
             shape.fill(
                 RadialGradient(
-                    colors: [AppColor.pro.opacity(0.22), AppColor.pro.opacity(0.04), Color.clear],
+                    colors: [AppColor.pro.opacity(0.48), AppColor.proLight.opacity(0.22), AppColor.pro.opacity(0.04), Color.clear],
                     center: UnitPoint(x: 0.5, y: 0.0),
                     startRadius: 0,
                     endRadius: 320
                 )
             )
-            shape.strokeBorder(AppColor.pro.opacity(0.20), lineWidth: 1)
+            shape.strokeBorder(AppColor.pro.opacity(0.40), lineWidth: 1)
         }
     }
 
@@ -525,13 +525,13 @@ struct ProfileView: View {
             shape.fill(AppColor.cardBackground)
             shape.fill(
                 RadialGradient(
-                    colors: [AppColor.brandBlue.opacity(0.20), AppColor.brandBlue.opacity(0.04), Color.clear],
+                    colors: [AppColor.brandBlue.opacity(0.42), AppColor.brandBlueLight.opacity(0.20), AppColor.brandBlue.opacity(0.04), Color.clear],
                     center: UnitPoint(x: 0.5, y: 0.0),
                     startRadius: 0,
                     endRadius: 320
                 )
             )
-            shape.strokeBorder(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+            shape.strokeBorder(AppColor.brandBlue.opacity(0.38), lineWidth: 1)
         }
     }
 
