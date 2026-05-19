@@ -40,7 +40,13 @@ struct RatingHistoryChart: View {
     private var chart: some View {
         let series = recentSeries
         if series.isEmpty {
-            emptyState
+            // No history yet — collapse the chart slot entirely instead
+            // of rendering a placeholder. The card's header (rating
+            // number + peak + session count) stays visible above this;
+            // the trend strip below still surfaces "Holding steady" /
+            // "Trending up" / etc. from the live trend computation.
+            // Per CLAUDE.md: no placeholder logic presented as complete.
+            EmptyView()
         } else {
             Chart {
                 ForEach(series) { point in
@@ -120,17 +126,10 @@ struct RatingHistoryChart: View {
             .foregroundStyle(.secondary)
     }
 
-    private var emptyState: some View {
-        HStack {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
-            Text("Rated reps will plot here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
+    // emptyState removed — when history is empty the chart slot now
+    // collapses via `EmptyView()` rather than rendering a placeholder
+    // line ("Rated reps will plot here."). Per CLAUDE.md engineering
+    // bans: no placeholder logic presented as complete.
 
     // MARK: - Trend Strip
 

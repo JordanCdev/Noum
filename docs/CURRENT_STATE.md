@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end)_
+_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero**)_
 
 ## Architecture overview
 
@@ -45,7 +45,37 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   with OpenAI fallback.
 - **URL scheme:** `noum://` registered in `Info.plist`. `DeepLinkRouter`
   buffers incoming URLs until `ContentView` owns the navigation stack.
-  Routes: `noum://lesson/<id>`, `noum://practice`, `noum://friend/<id>`.
+  Routes: `noum://lesson/<id>`, `noum://practice`/`train`,
+  `noum://review`/`history`, `noum://profile`/`social`, `noum://settings`,
+  `noum://home`, `noum://league`, `noum://path`, `noum://lessons`,
+  `noum://friend/<id>`. Tab-level routes were added M14 for the
+  `noum-screenshots` skill — each resets `navigationPath` and pushes
+  the corresponding `AppDestination` for atomic tab jumps. Cold-start
+  routing via `-DeepLink <noum://...>` launch arg lets `simctl launch
+  --terminate-running-process` drive nav without iOS's "Open in Noum?"
+  confirmation blocking headless capture.
+- **Screenshot + handoff workflow:** `noum-screenshots` skill at
+  `.claude/skills/noum-screenshots/` with three modes (off/light/
+  detailed) stored in a `.mode` file. Light = 5 tab tops via
+  `-DeepLink` (~30s); detailed = 27-shot tour via
+  `xcodebuild test -only-testing:NoumUITests/ScreenshotTour/...` (~3min).
+  `SessionEnd` hook in `.claude/settings.json` auto-runs light at
+  session end. HANDOFF.md files commit to git (cross-machine
+  protocol); PNGs are gitignored (local artifact).
+- **Cloud routine prompts:** six markdown briefs in `.routines/`
+  (vision drift audit, refactor backlog grinder, coach voice copy
+  audit, localization migration, test coverage scan, M5 goal-aware
+  HUD step). Each prompt is self-contained for scheduled cloud
+  agents to run cold.
+- **Test-mode launch args:** `UI_TESTING` (skip onboarding hero),
+  `UI_TESTING_SEED` (seed if empty), `UI_TESTING_SEED_FORCE` (always
+  reseed — used by the tour for deterministic state),
+  `FORCE_GOAL_REFRESH` / `FORCE_NOTIFICATION_PROMPT` (force-fire
+  conditional sheets for capture). Celebration suppression
+  (`LeagueManager.suppressCelebrationsForTesting()` +
+  `DailyGoalManager.consumeGoalCelebration()` + `PathProgressManager.
+  consumeCelebration()` + `LessonStore.consumeCelebration()`) fires
+  after seed inject so overlay celebrations don't block tour taps.
 - **Design tokens location:** `Noum/DesignSystem.swift` — single source
   of truth for `Spacing`, `CornerRadius`, `AppColor`, springs, shared
   components (`CardView`, `StatCard`, `PrimaryCTA`, `PressableButtonStyle`,
@@ -60,6 +90,24 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   `Typography.swift` win on conflict.
 
 ## Key files / modules
+
+### Home (M14 redesign)
+- `Noum/HomeCoachCard.swift` — populated-home hero. Single composed
+  card carrying `NoumCharacter` (90pt, mode-tinted) + `coachTitle`
+  + `coachSubtitle` + `VoiceAlignmentChip` + "Begin · <Mode>" CTA.
+  Replaces the legacy heroCard + quickStartCard pair. Background:
+  Pro-purple radial wash + faint mode-tinted trailing accent +
+  purple hairline border + soft purple elevation shadow. Two
+  registers: purple = "your coach speaking", mode tint = "this is
+  what to do."
+- `Noum/HomeUtilityStrip.swift` — slim 36pt row beneath the Coach
+  Card. Streak chip on left (taps → Profile), word-of-day on
+  right (taps → seeds a Timed rep). No card chrome, low-emphasis
+  by design.
+- `Noum/Noum/DailyChallengeTile.swift` — coach-voice rewrite
+  (5 states). Row subtitles dropped (title + XP only); subtitle
+  moves to accessibility label. Inline `NoumCharacter.Inline`
+  glyph in the TODAY header.
 
 ### Core practice loop
 - `Noum/Noum/PracticeModeSelectionView.swift` — mode picker, drives
@@ -693,9 +741,20 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   remain home-screen only.
 - **Hosted privacy policy URL** — the bundled `PrivacyPolicy.md` is
   now rendered in-app via `PrivacyPolicyView`, reachable from
-  Settings → Privacy & Data → Privacy policy. App Store submission
-  also requires a hosted public URL — that side is still open
-  (see `PRIVACY_REMEDIATION.md` §1.2).
+  Settings → Privacy & Data → Privacy policy. `public/privacy.html`
+  + `public/index.html` are staged and `firebase.json` has the
+  hosting + `/privacy` rewrite. `firestore.rules` file is committed
+  alongside `FIRESTORE_RULES.md`. Deploy still pending explicit
+  greenlight — `firebase.json` needs the `"firestore": {"rules":
+  "firestore.rules"}` block added, then
+  `firebase deploy --only firestore:rules,hosting --project noum-d0b6f`.
+- **SpeakingRatingCard placeholder** — when `rating.ratingHistory`
+  is empty the card renders the literal copy "Rated reps will plot
+  here." This is a placeholder per the CLAUDE.md engineering bans
+  ("placeholder logic presented as complete"). The card should
+  either render the trend chart properly when data exists, or hide
+  the entire chart slot when it doesn't (header + 612 rating stay
+  visible because those don't need history). Tracked for fix.
 
 ### Not started
 
