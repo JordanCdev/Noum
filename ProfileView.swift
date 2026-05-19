@@ -143,7 +143,6 @@ struct ProfileView: View {
                 // disappear into the rhythm without dominating.
 
                 identityHeader
-                rankPanel
                 speakingRatingCard
 
                 clusterHeader("Progression")
@@ -230,13 +229,37 @@ struct ProfileView: View {
                 Text(profile.levelTitle)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-
-                Text("\(profile.xp) XP")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppColor.brandBlue)
-                    .contentTransition(.numericText())
-                    .animation(.standardSpring, value: profile.xp)
             }
+
+            // Progress to next level — merged in from the old `rankPanel`
+            // so identity + progression read as one surface, not two
+            // adjacent cards saying nearly the same thing.
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(profile.nextRankTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(profile.levelProgressLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+
+                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text("\(profile.xp) XP")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .contentTransition(.numericText())
+                        .animation(.standardSpring, value: profile.xp)
+                    Spacer()
+                    Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) to level up")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
 
             if !premium.isPremium {
                 Button {
@@ -256,7 +279,7 @@ struct ProfileView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, 22)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)

@@ -129,7 +129,11 @@ struct PracticeModeSelectionView: View {
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.sm)
-                .padding(.bottom, Spacing.lg)
+                // Bottom inset clears the floating Start CTA so the last
+                // mode tile (Speech Projects) doesn't bleed under it. The
+                // CTA is ~64pt tall with its own internal padding; leaving
+                // 96pt here gives a clean visual gap at rest.
+                .padding(.bottom, 96)
             }
         }
         .navigationTitle("")
@@ -492,9 +496,15 @@ struct PracticeModeSelectionView: View {
         .accessibilityIdentifier("practiceModes.start")
         .accessibilityLabel("Start \(title)")
         .accessibilityHint("Begins a \(title) rep.")
+        // Background tightened from a 0.02 → 0.72 white gradient to a
+        // solid screen-bg fade — the earlier opacity stop left content
+        // bleeding through (Cut the Crutch's "60 seconds. 3 hearts, no
+        // second chances." was visible under the CTA at rest scroll).
+        // Gradient still fades in softly at the top edge so the CTA
+        // doesn't read as a hard cut-line.
         .background(
             LinearGradient(
-                colors: [Color.white.opacity(0.02), Color.white.opacity(0.72)],
+                colors: [AppColor.screenBackground.opacity(0), AppColor.screenBackground],
                 startPoint: .top,
                 endPoint: .bottom
             )

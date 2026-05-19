@@ -31,13 +31,17 @@ struct HomeCoachCard: View {
 
     var body: some View {
         CardView {
-            VStack(spacing: Spacing.md) {
+            VStack(spacing: Spacing.sm) {
+                // Tightened from size 96 + `.md` spacing to 72 + `.sm`.
+                // The earlier card felt airy — too much chrome around the
+                // character, not enough density on the coach line + CTA.
                 NoumCharacter(
                     mood: characterMood,
                     tint: accentTint,
-                    size: 96
+                    size: 72
                 )
                 .accessibilityHidden(true)
+                .padding(.top, Spacing.xs)
 
                 Text(coachLine)
                     .font(Typography.headline)

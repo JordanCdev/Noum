@@ -84,6 +84,29 @@ enum DevSeedData {
         // a few points above the live overall so the "you held N earlier
         // this week" line reads truthfully against the seed history.
         RatingStore.shared.replaceForDebug(seedRating(for: profile))
+
+        // Seed XP so the level + progress + identity surfaces aren't stuck
+        // on "Beginner I / 0 XP" for a profile that's logged 12+ sessions.
+        // Without this, Profile and Settings show a brand-new user identity
+        // on top of a seasoned session history — visually contradictory.
+        ProfileManager.shared.replaceFromRemote(seedXP(for: profile))
+    }
+
+    /// XP that matches the seed profile's narrative. 1000 XP = one level
+    /// (Beginner → Novice → Average → Professional → World Class). The
+    /// values are tuned so the seeded user lands somewhere honest for
+    /// their session count: improvingIntermediate (12 sessions, scores
+    /// 4→7) lands mid-Novice; plateauedAdvanced (20 sessions, stable
+    /// strong) lands deep-Average; fillerFree (18 near-zero sessions)
+    /// approaches Professional.
+    private static func seedXP(for profile: SeedProfile) -> Int {
+        switch profile {
+        case .beginner:               return 220   // Beginner Speaker I
+        case .improvingIntermediate:  return 1_280 // Novice Speaker II
+        case .plateauedAdvanced:      return 3_450 // Average Speaker IV
+        case .pressureVulnerable:     return 2_150 // Average Speaker I
+        case .fillerFree:             return 4_600 // Average → Professional
+        }
     }
 
     /// Build a `SpeakingRating` aligned with the seed profile's narrative.

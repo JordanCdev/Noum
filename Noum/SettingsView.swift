@@ -82,18 +82,23 @@ struct SettingsView: View {
                     profileHero
 
                     clusterHeader("Practice")
-                    section(label: "Practice") { practiceCard }
-                    section(label: "Practice language") { localeCard }
-                    section(label: "Pre-rep prep") { soundscapeCard }
+                    // Section labels under each cluster are tightened to
+                    // avoid duplicating the cluster header (was rendering
+                    // "PRACTICE" / "PRACTICE" / "PRACTICE LANGUAGE" — three
+                    // P-words in a row). Labels now describe the card's
+                    // content, not the cluster.
+                    section(label: "Defaults") { practiceCard }
+                    section(label: "Language") { localeCard }
+                    section(label: "Pre-rep ambience") { soundscapeCard }
 
                     clusterHeader("Coaching")
-                    section(label: "Coaching") { coachingProfileCard }
-                    section(label: "Feedback") { feedbackCard }
+                    section(label: "Profile") { coachingProfileCard }
+                    section(label: "Reminders") { feedbackCard }
 
                     clusterHeader("Account")
                     section(label: "Subscription") { subscriptionCard }
-                    section(label: "Privacy & Data") { privacyCard }
-                    section(label: "Account") { accountCard }
+                    section(label: "Privacy & data") { privacyCard }
+                    section(label: "Sign-in") { accountCard }
 
                     section(label: "About") { aboutCard }
 
