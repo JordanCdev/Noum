@@ -491,6 +491,163 @@ struct NextActionEngineTests {
         #expect(!result.reasoning.lowercased().contains("voice."),
             "No style goal should produce no voice suffix. Got: \(result.reasoning)")
     }
+
+    // MARK: Goal-aware drill selection (tie-break, not priority override)
+
+    @Test func decliningTrendTieBreaksOnAlignedVoiceGoal() {
+        // Two equally-declining skills exist. The user's voice goal is
+        // .warm — which aligns with .paceControl, not .fillerReduction.
+        // Without bias the engine would pick .fillerReduction (top of the
+        // hardcoded priority order). With bias it should pick .paceControl
+        // because that's the goal-aligned candidate among the eligible set.
+        let input = NextActionInput(
+            fillerCount: 3, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [
+                SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing),
+                SkillTrend(skillArea: .paceControl, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing),
+            ],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "warm"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        guard case .drill(let rec) = result.primary else {
+            #expect(Bool(false), "Expected a drill recommendation, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(rec.skillArea == .paceControl,
+            "Goal-aligned candidate (.paceControl for .warm) should be preferred over .fillerReduction. Got: \(rec.skillArea)")
+    }
+
+    @Test func decliningTrendKeepsPriorityOrderWhenNoAlignment() {
+        // Same two declining skills, but no voice goal set. Engine should
+        // fall back to the existing hardcoded priority order
+        // (.fillerReduction wins).
+        let input = NextActionInput(
+            fillerCount: 3, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [
+                SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing),
+                SkillTrend(skillArea: .paceControl, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing),
+            ],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: nil
+        )
+        let result = NextActionEngine.recommend(input: input)
+        guard case .drill(let rec) = result.primary else {
+            #expect(Bool(false), "Expected a drill recommendation, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(rec.skillArea == .fillerReduction,
+            "Without a goal, priority order should win. Got: \(rec.skillArea)")
+    }
+
+    @Test func decliningTrendKeepsPriorityOrderWhenNoCandidateAligns() {
+        // Two declining skills, but neither aligns with the voice goal —
+        // engine must not invent a forced pick. Falls back to priority order.
+        // .storytelling aligns with [.answerDevelopment, .vocalEmphasis,
+        // .pauseUsage] — neither of the candidates below.
+        let input = NextActionInput(
+            fillerCount: 3, duration: 35, wordCount: 100, wpm: 140, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [
+                SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing),
+                SkillTrend(skillArea: .paceControl, direction: .declining, confidence: .medium, windowSize: 8, currentLevel: .developing),
+            ],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "storytelling"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        guard case .drill(let rec) = result.primary else {
+            #expect(Bool(false), "Expected a drill recommendation, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(rec.skillArea == .fillerReduction,
+            "No aligned candidate → fall back to priority order. Got: \(rec.skillArea)")
+    }
+
+    @Test func newIssueTieBreaksOnAlignedVoiceGoal() {
+        // Two new issues this session. With .concise goal, .conciseSpeaking
+        // is aligned and .openingStrength is not — engine should pick the
+        // aligned one even though .openingStrength came first.
+        let input = NextActionInput(
+            fillerCount: 2, duration: 40, wordCount: 110, wpm: 135, score: 6,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [
+                SkillTrend(skillArea: .openingStrength, direction: .newIssue, confidence: .medium, windowSize: 8, currentLevel: .developing),
+                SkillTrend(skillArea: .conciseSpeaking, direction: .newIssue, confidence: .medium, windowSize: 8, currentLevel: .developing),
+            ],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "concise"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        guard case .drill(let rec) = result.primary else {
+            #expect(Bool(false), "Expected a drill recommendation, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(rec.skillArea == .conciseSpeaking,
+            "Aligned candidate (.conciseSpeaking for .concise) should win over .openingStrength. Got: \(rec.skillArea)")
+    }
+
+    @Test func improvingTrendTieBreaksOnAlignedVoiceGoal() {
+        // Two improving skills, no matching recent drill. With .executive
+        // goal (.confidence aligned, .paceControl not), the engine should
+        // pick the aligned one to reinforce a goal-relevant gain.
+        let input = NextActionInput(
+            fillerCount: 1, duration: 50, wordCount: 130, wpm: 132, score: 8,
+            categoryRatings: ["Opening": "Good"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [
+                SkillTrend(skillArea: .paceControl, direction: .improving, confidence: .medium, windowSize: 8, currentLevel: .solid, recentDelta: "Pace settled"),
+                SkillTrend(skillArea: .confidence, direction: .improving, confidence: .medium, windowSize: 8, currentLevel: .solid, recentDelta: "Less hedging"),
+            ],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 4, styleGoal: "executive"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        guard case .drill(let rec) = result.primary else {
+            #expect(Bool(false), "Expected a drill recommendation, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(rec.skillArea == .confidence,
+            "Aligned candidate (.confidence for .executive) should win. Got: \(rec.skillArea)")
+    }
+
+    @Test func persistentBlockerTieBreaksOnAlignedVoiceGoal() {
+        // Two persistent blockers. With .authoritative goal, .confidence
+        // (Hedging language) is aligned but .fillerReduction (Filler words)
+        // is not. Engine should pick the aligned blocker.
+        let input = NextActionInput(
+            fillerCount: 4, duration: 40, wordCount: 110, wpm: 145, score: 5,
+            categoryRatings: ["Opening": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 15, blockers: ["Filler words", "Hedging language"]),
+            pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 15, streakDays: 5, styleGoal: "authoritative"
+        )
+        let result = NextActionEngine.recommend(input: input)
+        guard case .confidenceRebuilding(let rec) = result.primary else {
+            #expect(Bool(false), "Expected confidenceRebuilding, got \(result.primary.displayTitle)")
+            return
+        }
+        #expect(rec.skillArea == .confidence,
+            "Aligned blocker (.confidence for .authoritative) should win over .fillerReduction. Got: \(rec.skillArea)")
+    }
 }
 
 // MARK: - SpeakingStyleGoal Tests

@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop)_
+_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + voice-goal tie-break on NextActionEngine drill selection)_
 
 ## Architecture overview
 
@@ -644,6 +644,34 @@ _Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   goal-aware coaching loop end-to-end — every surface the app uses to
   recommend, frame, or report on a user's next move now reads from the
   same `SpeakingStyleGoal` source of truth.
+  **The drill *selection* itself is now goal-aware too**: the Vision
+  doc previously flagged that goals "don't shape drill selection or
+  evaluation weighting yet — they live in reminder bodies and
+  recommendation rationale." That gap is now closed on the selection
+  side. `NextActionEngine.orderByGoalAlignment(_:style:)` is the
+  single tie-break helper: given a list of candidate `SkillArea`s
+  inside one priority lane, it reorders so goal-aligned candidates
+  come first, preserving the original relative order inside each
+  group. The four lanes that produce a drill from multiple eligible
+  skills — `checkPersistentBlocker` (multiple persistent blockers),
+  `checkDecliningTrend` (multiple declining trends),
+  `checkNewIssue` (multiple new issues), and `checkImprovingTrend`
+  (multiple improving trends with no recent-drill match) — all call
+  it before iterating. Restraint is built in three ways: it never
+  fires when no `styleGoal` is set, never fires when no candidate
+  aligns (so a `.storytelling` user staring at two declining
+  filler/pace skills still gets the priority-order pick, not a
+  forced detour), and never reorders the priority lanes themselves —
+  severity still beats persistence still beats decline still beats
+  new still beats improving. Six unit tests cover the four lanes:
+  declining ties with `.warm`, declining without a goal, declining
+  with no aligned candidate, new issue ties with `.concise`,
+  improving ties with `.executive`, and persistent blocker ties with
+  `.authoritative`. The earlier `groundInGoal` reasoning suffix
+  still runs on top, so the user now reads the *same* voice-aligned
+  rationale on a recommendation that was also *picked* through that
+  same voice lens — selection and framing finally reinforce each
+  other instead of the framing chasing the selection.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked
