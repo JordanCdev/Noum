@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop)_
+_Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + voice-aware notifications take the loop out of the app)_
 
 ## Architecture overview
 
@@ -644,6 +644,29 @@ _Last updated: 2026-05-19 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   goal-aware coaching loop end-to-end — every surface the app uses to
   recommend, frame, or report on a user's next move now reads from the
   same `SpeakingStyleGoal` source of truth.
+  **Voice-aware notifications take the loop out of the app**: the seventh
+  surface. `NotificationCopy.dailyReminder` and `weeklyDigest` learned to
+  accept an optional `voice: SpeakingStyleGoal?` (defaulted nil so legacy
+  call sites compile unchanged) and append a short voice-alignment clause
+  built from `shortVoiceLabel` — never user-typed goal text, so the
+  lock-screen-safety rule still holds. Mid-streak daily reminders (1–6 days)
+  pick up "Closer to your <voice>." mirroring the profile's
+  `GoalProgressTrend` "Closer this week" chip so the same grounding word
+  shows up on every loop surface. Strong-week weekly digests (≥ 5 reps)
+  pick up "This is what working toward your <voice> looks like." Cold-start
+  reminders (streak 0), high-streak reminders (≥ 7 days), today-done
+  variants, and the streak-warning surface stay byte-identical to the
+  legacy copy — the streak warning is sacred loss-aversion territory and
+  the other tiers either lack signal or lack lock-screen room. The
+  `NotificationManager` schedulers read `CoachingProfileStore.shared.profile?
+  .speakingStyleGoal` and pass it through. Twelve unit tests in
+  `NotificationCopyVoiceAlignmentTests` lock the restraint: cold-start /
+  high-streak / today-done / nil-voice / quiet-week all stay silent; mid-
+  tiers pick up the right `shortVoiceLabel`; the streak warning never
+  picks up voice for any streak length; every voice on every voice-aware
+  tier stays under a 180-char lock-screen-defensive ceiling; the legacy
+  2-arg call shape still compiles. The loop now reaches the user even when
+  they aren't in the app.
 - **AI-generated recommendation reasons** — `RecommendationBiasEngine`
   now feeds dynamic per-user `whyNow` / `whyMode` text into the
   practice mode picker's recommended row. Falls back to the pre-baked

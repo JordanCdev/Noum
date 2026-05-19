@@ -3975,3 +3975,153 @@ struct LookingAheadCardVoiceAlignmentTests {
         #expect(!h.shouldShowVoiceAlignment)
     }
 }
+
+// MARK: - Notification Copy (M14 — 7th surface of the goal-aware loop)
+//
+// `NotificationCopy.dailyReminder` and `weeklyDigest` learned to pick up
+// the user's `SpeakingStyleGoal` and surface a "toward your <voice> voice"
+// clause that mirrors VoiceAlignmentChip / VoiceAnchorBanner / Coach Note
+// momentum on every in-app coaching surface. These tests lock the restraint
+// contract — silent when there's no signal, no goal, or no room on the
+// lock screen.
+
+struct NotificationCopyVoiceAlignmentTests {
+
+    // MARK: Daily reminder
+
+    @Test func dailyReminderColdStartStaysSilentEvenWithVoice() {
+        // Streak 0 = no signal. Even with a voice set, we don't over-claim
+        // "moves you toward your warm voice" on a user who hasn't done a
+        // single rep. Cold-start copy stays untouched.
+        let withVoice = NotificationCopy.dailyReminder(streakDays: 0, todayDone: false, voice: .warm)
+        let withoutVoice = NotificationCopy.dailyReminder(streakDays: 0, todayDone: false, voice: nil)
+        #expect(withVoice.body == withoutVoice.body, "Cold-start must stay byte-identical regardless of voice.")
+        #expect(!withVoice.body.contains("voice"), "Cold-start body must not mention voice — no signal.")
+    }
+
+    @Test func dailyReminderHighStreakStaysSilentEvenWithVoice() {
+        // Streak ≥ 7 — copy is already at lock-screen length. Adding the
+        // voice clause would push past the preview. The streak frame is
+        // earning enough; voice clause would crowd.
+        let withVoice = NotificationCopy.dailyReminder(streakDays: 12, todayDone: false, voice: .executive)
+        let withoutVoice = NotificationCopy.dailyReminder(streakDays: 12, todayDone: false, voice: nil)
+        #expect(withVoice.body == withoutVoice.body, "High-streak must stay byte-identical regardless of voice.")
+        #expect(!withVoice.body.contains("voice"), "High-streak body must not mention voice — no room.")
+    }
+
+    @Test func dailyReminderTodayDoneStaysSilentEvenWithVoice() {
+        // Already practiced today — the "stack a second rep" copy is its
+        // own frame. No voice clause here either; it would change the
+        // surface from "double down" to "voice journey" and dilute both.
+        let withVoice = NotificationCopy.dailyReminder(streakDays: 4, todayDone: true, voice: .warm)
+        let withoutVoice = NotificationCopy.dailyReminder(streakDays: 4, todayDone: true, voice: nil)
+        #expect(withVoice.body == withoutVoice.body, "todayDone must stay byte-identical regardless of voice.")
+    }
+
+    @Test func dailyReminderMidStreakWithVoicePicksUpClause() {
+        // Streaks 1–6 = the sweet spot. The base body has room and meaning.
+        // The clause uses `shortVoiceLabel` ("warm voice", "executive presence", …)
+        // — the enum, never user-typed goal text.
+        let day1 = NotificationCopy.dailyReminder(streakDays: 1, todayDone: false, voice: .warm)
+        #expect(day1.body.contains("warm voice"), "Day-1 reminder must surface 'warm voice'. Got: \(day1.body)")
+
+        let day4 = NotificationCopy.dailyReminder(streakDays: 4, todayDone: false, voice: .executive)
+        #expect(day4.body.contains("executive presence"), "Day-4 reminder must surface 'executive presence'. Got: \(day4.body)")
+
+        let day4Concise = NotificationCopy.dailyReminder(streakDays: 4, todayDone: false, voice: .concise)
+        #expect(day4Concise.body.contains("concise voice"), "Day-4 reminder must surface 'concise voice'. Got: \(day4Concise.body)")
+    }
+
+    @Test func dailyReminderMidStreakSilentWhenNoVoice() {
+        // The default — nil voice — must produce the legacy body unchanged.
+        // Locks the no-fake-personalization contract.
+        let day3 = NotificationCopy.dailyReminder(streakDays: 3, todayDone: false, voice: nil)
+        #expect(!day3.body.contains("voice"), "nil voice must produce no voice clause. Got: \(day3.body)")
+        #expect(!day3.body.contains("presence"), "nil voice must not surface 'presence' either. Got: \(day3.body)")
+    }
+
+    @Test func dailyReminderLockScreenLengthStaysReasonable() {
+        // Lock-screen previews truncate around ~140 chars. Every voice on
+        // every mid-streak tier must stay under a defensive 180-char ceiling.
+        for voice in SpeakingStyleGoal.allCases {
+            for streak in 1...6 {
+                let line = NotificationCopy.dailyReminder(streakDays: streak, todayDone: false, voice: voice)
+                #expect(line.body.count <= 180, "Day-\(streak) \(voice) body is \(line.body.count) chars — risks lock-screen truncation. Got: \(line.body)")
+            }
+        }
+    }
+
+    @Test func dailyReminderLegacyCallSiteCompiles() {
+        // The legacy 2-arg call shape (no voice) must keep working —
+        // `voice:` is optional with a nil default. Locks back-compat.
+        let line = NotificationCopy.dailyReminder(streakDays: 3, todayDone: false)
+        #expect(!line.title.isEmpty)
+        #expect(!line.body.isEmpty)
+        #expect(!line.body.contains("voice"))
+    }
+
+    // MARK: Weekly digest
+
+    @Test func weeklyDigestQuietWeekStaysSilentEvenWithVoice() {
+        // 0–4 reps = quiet/light/steady tier. No voice clause — claiming
+        // "moving toward your warm voice" on a 1-rep week is over-claim.
+        for reps in [0, 1, 2, 3, 4] {
+            let withVoice = NotificationCopy.weeklyDigest(weeklyReps: reps, voice: .warm)
+            let withoutVoice = NotificationCopy.weeklyDigest(weeklyReps: reps, voice: nil)
+            #expect(withVoice.body == withoutVoice.body, "\(reps)-rep week must stay byte-identical regardless of voice.")
+            #expect(!withVoice.body.contains("voice"), "\(reps)-rep week must not surface 'voice'.")
+        }
+    }
+
+    @Test func weeklyDigestStrongWeekWithVoicePicksUpClause() {
+        // 5+ reps = earned tier. Voice clause grounds the rep-stack frame
+        // in the user's chosen direction.
+        let warm5 = NotificationCopy.weeklyDigest(weeklyReps: 5, voice: .warm)
+        #expect(warm5.body.contains("warm voice"), "5-rep week + warm voice must surface 'warm voice'. Got: \(warm5.body)")
+
+        let storytelling7 = NotificationCopy.weeklyDigest(weeklyReps: 7, voice: .storytelling)
+        #expect(storytelling7.body.contains("storytelling voice"), "Top-week + storytelling voice must surface 'storytelling voice'. Got: \(storytelling7.body)")
+
+        let executive6 = NotificationCopy.weeklyDigest(weeklyReps: 6, voice: .executive)
+        #expect(executive6.body.contains("executive presence"), "Strong week + executive voice must surface 'executive presence'. Got: \(executive6.body)")
+    }
+
+    @Test func weeklyDigestStrongWeekSilentWhenNoVoice() {
+        // The default — nil voice — keeps the legacy body unchanged.
+        let line = NotificationCopy.weeklyDigest(weeklyReps: 6, voice: nil)
+        #expect(!line.body.contains("voice"), "nil voice on strong week must produce no voice clause. Got: \(line.body)")
+    }
+
+    @Test func weeklyDigestLegacyCallSiteCompiles() {
+        let line = NotificationCopy.weeklyDigest(weeklyReps: 4)
+        #expect(!line.title.isEmpty)
+        #expect(!line.body.isEmpty)
+        #expect(!line.body.contains("voice"))
+    }
+
+    @Test func weeklyDigestLockScreenLengthStaysReasonable() {
+        // Strong / top tiers carry the voice clause. Every voice on every
+        // earned-tier rep count must stay under a defensive 180-char ceiling
+        // so the lock-screen preview doesn't truncate mid-sentence.
+        for voice in SpeakingStyleGoal.allCases {
+            for reps in [5, 6, 7, 10, 14] {
+                let line = NotificationCopy.weeklyDigest(weeklyReps: reps, voice: voice)
+                #expect(line.body.count <= 180, "\(reps)-rep week + \(voice) body is \(line.body.count) chars — risks lock-screen truncation. Got: \(line.body)")
+            }
+        }
+    }
+
+    // MARK: Streak warning (must stay loss-aversion only)
+
+    @Test func streakWarningHasNoVoiceParameter() {
+        // The streak warning is sacred loss-aversion territory — adding a
+        // voice clause would dilute the "you're about to lose this" punch.
+        // This test pins the contract by exercising the 2-arg call shape
+        // and ensuring the body never mentions voice for any streak length.
+        for streak in [1, 5, 10, 30, 100] {
+            let line = NotificationCopy.streakWarning(streakDays: streak, freezesAvailable: 0)
+            #expect(!line.body.contains("voice"), "Streak warning must never surface 'voice' (streak \(streak)). Got: \(line.body)")
+            #expect(!line.body.contains("presence"), "Streak warning must never surface 'presence' (streak \(streak)). Got: \(line.body)")
+        }
+    }
+}
