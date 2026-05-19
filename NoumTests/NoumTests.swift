@@ -3887,3 +3887,91 @@ struct VoiceAlignmentTests {
         }
     }
 }
+
+// MARK: - LookingAheadCard voice alignment (M14: sixth surface in the goal-aware loop)
+//
+// The post-session "Looking ahead" card mirrors the home recommendation
+// tile by surfacing the same `VoiceAlignmentChip` when the user has a
+// voice goal AND the recommended next-session mode aligns with it.
+//
+// Tests below lock the Hint's gating predicate independently of the
+// SwiftUI body. The chip's own visual gating (`shouldShow`) is already
+// covered by `VoiceAlignmentTests`; these tests pin the contract that
+// `LookingAheadCard.Hint` exposes the same gate to its caller — so the
+// post-rep surface stays honest in the same three silent paths the home
+// surface respects (no profile, no voice goal, off-mode alignment).
+//
+// Adding the chip to the post-rep card is the closing move on a chain of
+// six goal-aware surfaces. The home, banner, HUD, Coach Note momentum,
+// profile ring, and Looking Ahead card now all read from the single
+// `SpeakingStyleGoal` source of truth.
+
+struct LookingAheadCardVoiceAlignmentTests {
+
+    private func hint(mode: PracticeMode, styleGoal: SpeakingStyleGoal?) -> LookingAheadCard.Hint {
+        LookingAheadCard.Hint(
+            mode: mode,
+            whyMode: "Test mode benefit.",
+            whyNow: "Test why now.",
+            styleGoal: styleGoal
+        )
+    }
+
+    @Test func alignedVoiceAndModeShowsChip() {
+        // .concise aligns with .timed (concise → structure ∩ timed.primary).
+        // The Looking Ahead chip should fire here, same as the home chip.
+        let h = hint(mode: .timed, styleGoal: .concise)
+        #expect(h.shouldShowVoiceAlignment, "Concise → timed should surface the chip on the post-rep card.")
+    }
+
+    @Test func warmVoiceWithImConversationShowsChip() {
+        // The warm-voice user is most likely to end up here: finish a Timed
+        // rep, see "try IM Conversation next" — the chip should ground that
+        // suggestion in the user's chosen voice.
+        let h = hint(mode: .imConversation, styleGoal: .warm)
+        #expect(h.shouldShowVoiceAlignment)
+    }
+
+    @Test func unalignedVoiceAndModeHidesChip() {
+        // Warm voice + sudden death is an honest silent case — pressure
+        // mode cuts the rhythm warm voice needs. The post-rep card must
+        // mirror the home card's restraint here.
+        let h = hint(mode: .suddenDeath, styleGoal: .warm)
+        #expect(!h.shouldShowVoiceAlignment, "Warm → sudden death must stay silent on the post-rep card too.")
+    }
+
+    @Test func nilStyleGoalHidesChip() {
+        // Pre-onboarding users (and users who skipped the voice step) pass
+        // nil. No personalization should be invented on either surface.
+        let h = hint(mode: .timed, styleGoal: nil)
+        #expect(!h.shouldShowVoiceAlignment)
+    }
+
+    @Test func everyVoiceHasAtLeastOneShowingAndOneSilentPair() {
+        // Restraint contract — the chip must fire some of the time and stay
+        // silent some of the time for every voice. Same coverage invariant
+        // as the home chip; lifted here so a future refactor that breaks
+        // this on the post-rep surface fails the test suite independently.
+        let allModes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
+        for voice in SpeakingStyleGoal.allCases {
+            let firing = allModes.filter { hint(mode: $0, styleGoal: voice).shouldShowVoiceAlignment }
+            let silent = allModes.filter { !hint(mode: $0, styleGoal: voice).shouldShowVoiceAlignment }
+            #expect(!firing.isEmpty, "\(voice) never fires the post-rep chip — surface would orphan.")
+            #expect(!silent.isEmpty, "\(voice) fires the post-rep chip on every mode — would lose meaning.")
+        }
+    }
+
+    @Test func hintDefaultsToNilStyleGoalForCallSiteBackCompat() {
+        // The legacy initializer (mode/whyMode/whyNow only) must keep
+        // working — `styleGoal:` is optional with a nil default. Locks the
+        // back-compat contract so older call sites still compile and stay
+        // silent on the chip.
+        let h = LookingAheadCard.Hint(
+            mode: .timed,
+            whyMode: "Legacy why mode.",
+            whyNow: "Legacy why now."
+        )
+        #expect(h.styleGoal == nil)
+        #expect(!h.shouldShowVoiceAlignment)
+    }
+}

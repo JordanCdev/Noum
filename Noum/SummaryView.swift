@@ -813,7 +813,8 @@ struct SummaryView: View {
         return LookingAheadCard.Hint(
             mode: blueprint.recommendedMode,
             whyMode: blueprint.modeBenefit,
-            whyNow: blueprint.whyNow
+            whyNow: blueprint.whyNow,
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal
         )
     }
 
