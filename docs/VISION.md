@@ -59,9 +59,13 @@ Where the product is now **underweight**:
   every surface in the M14 coaching loop, including drill *selection*
   (a small `+10` priority bonus on goal-aligned trends inside
   `TrendAnalyzer.primaryFocus`, plus a day-one fallback to the
-  voice's canonical lever when there's no trend data). Evaluation
-  *weighting* (scoring + verdict copy beyond the momentum line) is
-  still goal-blind — that's the remaining edge.
+  voice's canonical lever when there's no trend data) and verdict
+  *copy* (momentum, leverage, next step, and drill rationale all
+  carry a voice-alignment clause when the focus skill is in the
+  goal's `alignedSkillAreas`; off-goal sessions stay neutral so
+  there's no fake personalization). Evaluation *scoring* (weighting
+  goal-aligned dimensions inside `BaselineEngine`) is the remaining
+  edge — copy is closed end-to-end.
 - **Daily-challenge tile is a single rolling status**, not a true
   daily reset rhythm with claim moments and expiry pressure.
 - **Real-device QA gaps:** Live Activity can't be exercised on

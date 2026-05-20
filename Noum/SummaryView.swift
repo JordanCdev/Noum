@@ -195,7 +195,9 @@ struct SummaryView: View {
 
     /// Three-part coach note: momentum, leverage, next step.
     /// Prefers the enhanced version from SessionFinalizer (baseline + pressure + style aware),
-    /// falls back to simple computation before setup() has run.
+    /// falls back to simple computation before setup() has run. The fallback still
+    /// passes `styleGoal` so the goal-aware enrichments (momentum / leverage /
+    /// nextStep) fire even before SessionFinalizer's richer pass lands.
     private var coachNote: CoachNote {
         if let enhancedCoachNote { return enhancedCoachNote }
         let wpm = effectiveDuration > 0 ? Double(transcriptWordCount) / effectiveDuration * 60 : 0
@@ -209,7 +211,8 @@ struct SummaryView: View {
             categoryRatings: categoryRatings,
             trends: skillTrends,
             primaryFocus: drillRecommendationV2.skillArea,
-            drillHistory: DrillHistoryStore.shared.entries
+            drillHistory: DrillHistoryStore.shared.entries,
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
         )
     }
 

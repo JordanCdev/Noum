@@ -185,12 +185,16 @@ enum VerdictEngine {
         }
 
         // --- Layer 3: Style lens ---
-        // Two-sided: celebrate gains that move the user toward their chosen
-        // voice (momentum), and surface the one trait-mismatch worth fixing
-        // (nextStep). Both fire independently — a session can both win on
-        // an aligned skill and miss on a different trait.
+        // Three-sided: celebrate gains that move the user toward their chosen
+        // voice (momentum), connect the leverage and next-step to the voice
+        // when the primary focus is goal-aligned, and surface the one
+        // trait-mismatch worth fixing (style note → nextStep). All fire
+        // independently — a session can win on an aligned skill, have a
+        // separate aligned leverage area, and miss on a different trait.
         if let goal = styleGoal, !goal.isEmpty {
             momentum = enrichMomentumWithStyleAlignment(momentum, trends: trends, styleGoal: goal)
+            leverage = enrichLeverageWithStyleAlignment(leverage, primaryFocus: primaryFocus, styleGoal: goal)
+            nextStep = enrichNextStepWithStyleAlignment(nextStep, primaryFocus: primaryFocus, styleGoal: goal)
             let styleNote = buildStyleNote(goal: goal, fillerCount: fillerCount, wpm: wpm, duration: duration, categoryRatings: categoryRatings)
             if !styleNote.isEmpty {
                 nextStep = nextStep + " " + styleNote
@@ -593,11 +597,90 @@ enum VerdictEngine {
         return momentum + " " + clause
     }
 
+    /// Appends a positive voice-alignment frame to the leverage line when
+    /// the session's `primaryFocus` skill is one of the user's voice-aligned
+    /// levers. Pairs with `enrichMomentumWithStyleAlignment` and
+    /// `enrichNextStepWithStyleAlignment` to close the goal-aware loop on
+    /// every Coach Note line (M14).
+    ///
+    /// Restraint: only fires when the focus is in `alignedSkillAreas`.
+    /// Off-goal weaknesses don't get a voice clause — the brand rule is
+    /// "no fake personalization." Reframing an off-goal leverage as
+    /// voice-relevant would invent meaning the data doesn't support and
+    /// risks reading as shaming ("your authoritative voice is being
+    /// undercut by paceControl"). When the focus aligns, the clause names
+    /// the voice as the *upside* of working that lever — not the cost of
+    /// missing it.
+    private static func enrichLeverageWithStyleAlignment(
+        _ leverage: String,
+        primaryFocus: SkillArea,
+        styleGoal: String
+    ) -> String {
+        guard let resolved = SpeakingStyleGoal.resolve(styleGoal) else { return leverage }
+        guard resolved.aligns(with: primaryFocus) else { return leverage }
+        let voiceLabel = resolved.shortVoiceLabel
+        let clause = "These are the moves that build your \(voiceLabel)."
+        return leverage + " " + clause
+    }
+
+    /// Appends a positive voice-alignment frame to the next-step line when
+    /// the recommended drill targets a voice-aligned skill. Frames the
+    /// suggested action as direct work toward the user's chosen voice, so
+    /// the post-rep "what to do next" line reinforces the same voice the
+    /// home recommendation chip, the looking-ahead card, and the drill
+    /// picker all reference.
+    ///
+    /// Same restraint contract as the leverage and momentum helpers — no
+    /// voice clause on off-goal next steps. Drills on non-aligned skills
+    /// are still valid coaching, they just don't get personalized framing.
+    private static func enrichNextStepWithStyleAlignment(
+        _ nextStep: String,
+        primaryFocus: SkillArea,
+        styleGoal: String
+    ) -> String {
+        guard let resolved = SpeakingStyleGoal.resolve(styleGoal) else { return nextStep }
+        guard resolved.aligns(with: primaryFocus) else { return nextStep }
+        let voiceLabel = resolved.shortVoiceLabel
+        let clause = "This is direct work on your \(voiceLabel)."
+        return nextStep + " " + clause
+    }
+
     // MARK: - Dynamic Drill Rationale
 
     /// Generate a session-specific rationale for why this drill was selected.
     /// This is NOT a static template — it uses the session's actual data.
+    ///
+    /// `styleGoal` (optional) lets the rationale close on a voice-alignment
+    /// clause when the drill's skill is one of the goal's aligned levers —
+    /// keeping the drill's "why this" line in sync with the voice the rest
+    /// of the M14 surfaces speak. Restraint: only fires on alignment, never
+    /// invents a voice tie-in for off-goal drills.
     static func drillRationale(
+        for skillArea: SkillArea,
+        fillerCount: Int,
+        wpm: Double,
+        duration: TimeInterval,
+        wordCount: Int,
+        categoryRatings: [String: String],
+        styleGoal: SpeakingStyleGoal? = nil
+    ) -> String {
+        let base = baseDrillRationale(
+            for: skillArea,
+            fillerCount: fillerCount,
+            wpm: wpm,
+            duration: duration,
+            wordCount: wordCount,
+            categoryRatings: categoryRatings
+        )
+
+        guard let styleGoal, styleGoal.aligns(with: skillArea) else { return base }
+        return base + " This drill targets the foundation of your \(styleGoal.shortVoiceLabel)."
+    }
+
+    /// Pure switch over the session metrics — the goal-agnostic copy. Split
+    /// out from `drillRationale` so the voice-alignment suffix is the only
+    /// goal-aware branch and the cases stay easy to read.
+    private static func baseDrillRationale(
         for skillArea: SkillArea,
         fillerCount: Int,
         wpm: Double,
@@ -746,14 +829,16 @@ enum DrillEngineV2 {
             )
         }
 
-        // Generate dynamic rationale
+        // Generate dynamic rationale — goal-aware when the focus aligns
+        // with the user's voice goal (silent otherwise).
         let reason = VerdictEngine.drillRationale(
             for: focusArea,
             fillerCount: fillerCount,
             wpm: wpm,
             duration: duration,
             wordCount: wordCount,
-            categoryRatings: categoryRatings
+            categoryRatings: categoryRatings,
+            styleGoal: styleGoal
         )
 
         // Get trend context

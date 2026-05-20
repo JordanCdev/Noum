@@ -735,6 +735,122 @@ struct VerdictEngineTests {
         #expect(!note.momentum.lowercased().contains("voice"),
             "Without a styleGoal, momentum must not reference a voice. Got: \(note.momentum)")
     }
+
+    // MARK: - Goal-aware leverage + next-step + drill rationale (M14 close-out)
+    //
+    // These tests lock the same restraint contract as the momentum enrichment:
+    // voice clauses appear only when the session's primary focus is in the
+    // goal's `alignedSkillAreas`. No fake personalization on off-goal focus,
+    // no voice references when no goal is set.
+
+    @Test func leverageOnGoalAlignedFocusMentionsVoice() {
+        // Authoritative voice aligns with confidence, closingStrength, openingStrength.
+        // A session whose primary focus IS openingStrength should produce a
+        // leverage line that names the authoritative voice.
+        let note = VerdictEngine.generate(
+            fillerCount: 2, duration: 40, wordCount: 100, wpm: 130, score: 5,
+            categoryRatings: ["Opening": "Could improve"],
+            trends: [], primaryFocus: .openingStrength, drillHistory: [],
+            styleGoal: "authoritative"
+        )
+        #expect(note.leverage.lowercased().contains("authoritative voice"),
+            "Goal-aligned leverage should name the authoritative voice. Got: \(note.leverage)")
+    }
+
+    @Test func leverageOnOffGoalFocusDoesNotMentionVoice() {
+        // Concise voice aligns with conciseSpeaking, structure, fillerReduction.
+        // primaryFocus .closingStrength is NOT in that set — leverage stays neutral.
+        let note = VerdictEngine.generate(
+            fillerCount: 3, duration: 60, wordCount: 140, wpm: 140, score: 6,
+            categoryRatings: ["Close": "Could improve"],
+            trends: [], primaryFocus: .closingStrength, drillHistory: [],
+            styleGoal: "concise"
+        )
+        #expect(!note.leverage.lowercased().contains("concise voice"),
+            "Off-goal leverage must not invent voice-alignment language. Got: \(note.leverage)")
+    }
+
+    @Test func leverageWithoutGoalDoesNotMentionVoice() {
+        let note = VerdictEngine.generate(
+            fillerCount: 2, duration: 40, wordCount: 100, wpm: 130, score: 5,
+            categoryRatings: ["Opening": "Could improve"],
+            trends: [], primaryFocus: .openingStrength, drillHistory: []
+        )
+        #expect(!note.leverage.lowercased().contains("voice"),
+            "Without a styleGoal, leverage must not reference a voice. Got: \(note.leverage)")
+    }
+
+    @Test func nextStepOnGoalAlignedFocusMentionsVoice() {
+        // Concise voice aligns with conciseSpeaking — next step on this focus
+        // should connect the drill to the concise voice.
+        let note = VerdictEngine.generate(
+            fillerCount: 2, duration: 90, wordCount: 220, wpm: 145, score: 6,
+            categoryRatings: ["Structure": "OK"],
+            trends: [], primaryFocus: .conciseSpeaking, drillHistory: [],
+            styleGoal: "concise"
+        )
+        #expect(note.nextStep.lowercased().contains("concise voice"),
+            "Goal-aligned next step should name the concise voice. Got: \(note.nextStep)")
+    }
+
+    @Test func nextStepOnOffGoalFocusDoesNotMentionVoice() {
+        // Warm voice aligns with paceControl, vocalEmphasis, answerDevelopment.
+        // primaryFocus .confidence is NOT in that set — next step stays neutral.
+        let note = VerdictEngine.generate(
+            fillerCount: 3, duration: 50, wordCount: 110, wpm: 130, score: 6,
+            categoryRatings: ["Opening": "Could improve"],
+            trends: [], primaryFocus: .confidence, drillHistory: [],
+            styleGoal: "warm"
+        )
+        #expect(!note.nextStep.lowercased().contains("warm voice"),
+            "Off-goal next step must not invent voice-alignment language. Got: \(note.nextStep)")
+    }
+
+    @Test func nextStepWithoutGoalDoesNotMentionVoice() {
+        let note = VerdictEngine.generate(
+            fillerCount: 2, duration: 90, wordCount: 220, wpm: 145, score: 6,
+            categoryRatings: ["Structure": "OK"],
+            trends: [], primaryFocus: .conciseSpeaking, drillHistory: []
+        )
+        #expect(!note.nextStep.lowercased().contains("voice"),
+            "Without a styleGoal, next step must not reference a voice. Got: \(note.nextStep)")
+    }
+
+    @Test func drillRationaleOnGoalAlignedSkillMentionsVoice() {
+        // Authoritative voice aligns with openingStrength — rationale for an
+        // opening drill should end with a voice-alignment clause.
+        let rationale = VerdictEngine.drillRationale(
+            for: .openingStrength,
+            fillerCount: 1, wpm: 130, duration: 40, wordCount: 100,
+            categoryRatings: ["Opening": "Could improve"],
+            styleGoal: .authoritative
+        )
+        #expect(rationale.lowercased().contains("authoritative voice"),
+            "Goal-aligned drill rationale should name the authoritative voice. Got: \(rationale)")
+    }
+
+    @Test func drillRationaleOnOffGoalSkillDoesNotMentionVoice() {
+        // Authoritative voice does NOT align with paceControl — pace rationale
+        // stays neutral.
+        let rationale = VerdictEngine.drillRationale(
+            for: .paceControl,
+            fillerCount: 1, wpm: 170, duration: 40, wordCount: 130,
+            categoryRatings: [:],
+            styleGoal: .authoritative
+        )
+        #expect(!rationale.lowercased().contains("voice"),
+            "Off-goal drill rationale must not invent voice-alignment language. Got: \(rationale)")
+    }
+
+    @Test func drillRationaleWithoutGoalDoesNotMentionVoice() {
+        let rationale = VerdictEngine.drillRationale(
+            for: .openingStrength,
+            fillerCount: 1, wpm: 130, duration: 40, wordCount: 100,
+            categoryRatings: ["Opening": "Could improve"]
+        )
+        #expect(!rationale.lowercased().contains("voice"),
+            "Without a styleGoal, drill rationale must not reference a voice. Got: \(rationale)")
+    }
 }
 
 // MARK: - Baseline Prompt Context Tests
