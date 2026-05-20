@@ -35,7 +35,12 @@ struct HomeCoachCard: View {
     // unlocking, the coach voice points at it directly. Read-only.
     @StateObject private var pathProgress = PathProgressManager.shared
 
-    @State private var characterMood: NoumCharacter.Mood = .coaching
+    /// True while a fresh-recommendation burst is showing the `.excited`
+    /// mood. The displayed mood otherwise reads from `restingMood` so the
+    /// computed `hasSignal` value drives the empty/populated mood
+    /// directly — no first-paint flash where a stale `@State` default
+    /// disagrees with the actual state for a frame.
+    @State private var isBursting: Bool = false
     @State private var lastSeenRecommendationKey: String = ""
 
     // Emanation ray — a brief tinted pulse that fires from behind the
@@ -56,7 +61,7 @@ struct HomeCoachCard: View {
             ZStack {
                 emanationRay
                 NoumCharacter(
-                    mood: characterMood,
+                    mood: displayedMood,
                     tint: accentTint,
                     size: 90
                 )
@@ -130,6 +135,12 @@ struct HomeCoachCard: View {
     }
 
     private var beginCTAText: String {
+        // No-signal (empty-state, brand-new user): name the moment, not
+        // the mode. "Begin · Timed" is a stranger's instruction; "Begin ·
+        // First rep" is the door the user just walked up to.
+        guard hasSignal else {
+            return "Begin \u{00B7} First rep"
+        }
         let modeName: String
         switch recommendedMode {
         case .timed:          modeName = "Timed"
@@ -339,7 +350,26 @@ struct HomeCoachCard: View {
 
     private var coachSubtitle: String? {
         guard hasSignal else {
-            return "Tap Begin and Noum will start hearing you out."
+            // Empty-state — adapt to the user's stated challenge if the
+            // CoachingProfile already exists (they finished onboarding
+            // but haven't done a rep yet). Mirrors the copy the legacy
+            // `firstSessionWelcomeMessage` carried so the first-impression
+            // line names the user's own goal, not a generic banner.
+            if let profile = coachingProfileStore.profile {
+                let challenge: String
+                switch profile.biggestChallenge {
+                case .fillerWords:
+                    challenge = "cleaning up filler words"
+                case .rambling:
+                    challenge = "tightening your structure"
+                case .freezing:
+                    challenge = "thinking faster on the spot"
+                case .rushing:
+                    challenge = "slowing down under pressure"
+                }
+                return "You want to work on \(challenge). One short rep sets your starting line."
+            }
+            return "One short rep sets your starting line."
         }
 
         if sessionStore.sessions.count < 3 {
@@ -478,33 +508,49 @@ struct HomeCoachCard: View {
 
     // MARK: - Mood lifecycle
     //
-    // The character defaults to .coaching (the brief's spec). When the
-    // active recommendation changes (e.g. after a finalize that produces
-    // a new suggested mode), brief .excited for ~1s then settle back.
-    // Reduce-motion users stay on .coaching the entire time so nothing
-    // animates.
+    // The character defaults to `restingMood` — `.coaching` (slight tilt,
+    // "the coach has something to say") for the populated state, or
+    // `.listening` (symmetric arc-pulses, "the coach is hearing you for
+    // the first time") for the empty state. When the active recommendation
+    // changes (e.g. after a finalize that produces a new suggested mode),
+    // brief `.excited` for ~1s then settle back to the resting mood.
+    // Reduce-motion users skip the burst entirely.
 
     private var recommendationKey: String {
         let blueprint = recommendationBlueprint
         return "\(blueprint.recommendedMode.rawValue)|\(blueprint.focus)|\(blueprint.target)"
     }
 
+    /// Base mood the card rests in when no fresh-recommendation burst is
+    /// firing. Empty-state (no signal) reads `.listening` — symmetric arc-
+    /// pulses around the character, framing "the coach is hearing you for
+    /// the first time". Once the user has reps, the mood settles into
+    /// `.coaching` — the slight tilt that frames "the coach has something
+    /// to say." Two registers, honest to the moment.
+    private var restingMood: NoumCharacter.Mood {
+        hasSignal ? .coaching : .listening
+    }
+
+    /// Mood actually rendered on the character. Derives live from
+    /// `restingMood` unless an `.excited` burst is active — so a cold-
+    /// start empty-state user sees `.listening` from frame zero, no
+    /// `@State` default ever flashing through.
+    private var displayedMood: NoumCharacter.Mood {
+        isBursting ? .excited : restingMood
+    }
+
     private func syncMoodForFreshRecommendation() {
         let key = recommendationKey
         defer { lastSeenRecommendationKey = key }
-        guard !reduceMotion else {
-            characterMood = .coaching
-            return
-        }
+        guard !reduceMotion else { return }
         // Only burst on a real change, not on first appear (first appear
         // already has the character's onAppear entrance animation).
         guard !lastSeenRecommendationKey.isEmpty, lastSeenRecommendationKey != key else {
-            characterMood = .coaching
             return
         }
-        characterMood = .excited
+        isBursting = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            characterMood = .coaching
+            isBursting = false
         }
         // Fire the emanation ray in lockstep with the mood burst — the
         // pulse paints the character's halo as a soft mode-tinted ring

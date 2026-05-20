@@ -128,15 +128,22 @@ struct ContentView: View {
 
                     VStack(spacing: Spacing.cardGap) {
                         if sessionStore.sessions.isEmpty {
-                            // Empty-state: a single, clear primary action.
-                            // Lessons + Path are surfaced below the fold so
-                            // the user sees the curriculum exists, but
-                            // they're never asked to choose between four
-                            // CTAs before they've done anything.
-                            heroCard.cardEntrance(0)
-                            firstSessionCard.cardEntrance(1)
-                            DailyGoalCard(manager: dailyGoal).cardEntrance(2)
-                            secondaryDiscoveryCard.cardEntrance(3)
+                            // Empty-state — unified with the populated home.
+                            // `HomeCoachCard` is now the brand-new user's
+                            // first impression, carrying the same Pro-purple
+                            // alive treatment (drifting wash, glass material,
+                            // emanation ray) the returning user sees. The
+                            // card's no-signal branch reads `.listening`
+                            // mood + profile-aware copy + "Begin · First rep"
+                            // CTA, so the first impression matches the
+                            // returning impression instead of being a
+                            // simpler flat header.
+                            HomeCoachCard(
+                                navigationPath: $navigationPath,
+                                scrollOffset: homeScrollOffset
+                            ).cardEntrance(0)
+                            DailyGoalCard(manager: dailyGoal).cardEntrance(1)
+                            secondaryDiscoveryCard.cardEntrance(2)
                         } else {
                             // Populated home — editorial pass (M14).
                             //
@@ -460,114 +467,6 @@ struct ContentView: View {
         }
     }
 
-    private var displayName: String {
-        authManager.currentAccountName ?? "Speaker"
-    }
-
-    private var heroTitle: String {
-        displayName == "Guest Speaker" ? "Guest" : displayName
-    }
-
-    private var heroSubtitle: String {
-        let sessions = sessionStore.sessions
-
-        // 1. No sessions at all
-        if sessions.isEmpty {
-            return "One rep sets your baseline"
-        }
-
-        // 2. Seven-day streak or higher
-        if sessionStreak >= 7 {
-            return "\(sessionStreak)-day streak — that's a habit"
-        }
-
-        // 3. Three-day streak or higher
-        if sessionStreak >= 3 {
-            return "\(sessionStreak) days in a row — building a habit"
-        }
-
-        // 4. Filler trend (need at least 10 sessions for two groups of 5)
-        if sessions.count >= 10 {
-            let recentFillers = sessions.prefix(5).map { Double($0.fillerWordCount) }
-            let previousFillers = sessions.dropFirst(5).prefix(5).map { Double($0.fillerWordCount) }
-            let recentAvg = recentFillers.reduce(0, +) / Double(recentFillers.count)
-            let previousAvg = previousFillers.reduce(0, +) / Double(previousFillers.count)
-            if recentAvg < previousAvg {
-                return "Your filler count is trending down"
-            }
-        }
-
-        // 5. Score trend (need at least 6 scored sessions for two groups of 3)
-        let scored = sessions.filter { $0.score != nil }
-        if scored.count >= 6 {
-            let recentScores = scored.prefix(3).compactMap(\.score).map(Double.init)
-            let previousScores = scored.dropFirst(3).prefix(3).compactMap(\.score).map(Double.init)
-            if !recentScores.isEmpty && !previousScores.isEmpty {
-                let recentAvg = recentScores.reduce(0, +) / Double(recentScores.count)
-                let previousAvg = previousScores.reduce(0, +) / Double(previousScores.count)
-                if recentAvg > previousAvg {
-                    return "Your scores are climbing"
-                }
-            }
-        }
-
-        // 6. Practiced today
-        if sessionStreak == 1 {
-            return "Already practiced today — stack a second rep"
-        }
-
-        // 7. Last session was yesterday
-        if daysSinceLastSession == 1 {
-            return "Welcome back — keep the momentum"
-        }
-
-        // 8. Been a few days
-        if daysSinceLastSession >= 3 {
-            return "Ready to pick up where you left off?"
-        }
-
-        // 9. Default
-        return "Every rep makes you sharper"
-    }
-
-    /// Time-of-day-aware greeting that feels like the coach is reading
-    /// the user's day, not just dropping a generic "Hello". Streak +
-    /// recency shape the variant chosen.
-    private var heroGreeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let streak = sessionStreak
-        // Lapsed user: name the absence first, before the time of day.
-        if daysSinceLastSession >= 3, !sessionStore.sessions.isEmpty {
-            return "Welcome back"
-        }
-        // Late-night reps: read the discipline.
-        if hour >= 22 || hour < 5 { return "Late rep" }
-        // Streak-aware morning frame.
-        if hour < 12 {
-            return streak >= 3 ? "Morning, day \(streak)" : "Good morning"
-        }
-        if hour < 17 { return "Good afternoon" }
-        return streak >= 3 ? "Evening, day \(streak)" : "Good evening"
-    }
-
-    /// Mood for the hero's coach character. Excited only on long
-    /// streaks (≥7 days) so the moment lands; everything else stays
-    /// calm to keep the home grounded.
-    private var heroCharacterMood: NoumCharacter.Mood {
-        sessionStreak >= 7 ? .excited : .calm
-    }
-
-    /// Tint for the hero's gradient. Alive streak pulls toward brand
-    /// blue; lapsed users get a softer tint so the surface doesn't
-    /// shame them on a return rep.
-    private var heroGradientTint: Color {
-        let streak = sessionStreak
-        if daysSinceLastSession >= 3 { return AppColor.brandBlue.opacity(0.6) }
-        if streak >= 7 { return AppColor.brandBlue }
-        if streak >= 3 { return AppColor.brandBlue.opacity(0.85) }
-        return AppColor.brandBlue.opacity(0.7)
-    }
-
     // MARK: - Personal-best anchor (Figma "Premium Hero")
     //
     // M14: gated on `ratingStore.pendingPeakGlow`, which the store sets
@@ -613,162 +512,12 @@ struct ContentView: View {
         )
     }
 
-    private var heroCard: some View {
-        let collapseFactor = max(0, 1 + (homeScrollOffset / 42))
-        return ZStack(alignment: .topLeading) {
-            // Soft tinted gradient. Subtler than a full card so the
-            // hero feels like a header, not a banner ad.
-            LinearGradient(
-                colors: [
-                    heroGradientTint.opacity(0.10),
-                    heroGradientTint.opacity(0.02)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-
-            // Coach character. Composes SF Symbols (waveform + halo +
-            // glow) into a presence that breathes. Mood adapts to streak
-            // state — excited when on a streak, calm otherwise. Per the
-            // design rules: motion + color + shape, no illustration.
-            NoumCharacter(
-                mood: heroCharacterMood,
-                tint: heroGradientTint,
-                size: 76
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(.trailing, Spacing.sm)
-            .padding(.top, -10)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                    Text("\(heroGreeting), \(heroTitle)")
-                        .font(Typography.sectionHero)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if sessionStreak > 0 {
-                        streakChip(streak: sessionStreak)
-                    }
-                }
-                Text(heroSubtitle)
-                    .font(Typography.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: max(0, 104 + min(0, homeScrollOffset)))
-        .opacity(collapseFactor)
-        .clipped()
-    }
-
-    private func streakChip(streak: Int) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "flame.fill")
-                .font(.caption2.weight(.bold))
-            Text("\(streak)")
-                .font(.caption.weight(.bold))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .animation(.standardSpring, value: streak)
-        }
-        .foregroundStyle(.orange)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Color.orange.opacity(0.12), in: Capsule(style: .continuous))
-        .accessibilityLabel("\(streak)-day streak")
-    }
-
-    // MARK: - First Session
-
-    private var firstSessionWelcomeMessage: String {
-        if let profile = coachingProfileStore.profile {
-            let challenge: String
-            switch profile.biggestChallenge {
-            case .fillerWords:
-                challenge = "cleaning up filler words"
-            case .rambling:
-                challenge = "tightening your structure"
-            case .freezing:
-                challenge = "thinking faster on the spot"
-            case .rushing:
-                challenge = "slowing down under pressure"
-            }
-            return "You want to work on \(challenge). One short rep sets your starting line."
-        }
-        return "One short rep is all it takes to set your starting line."
-    }
-
-    private var firstSessionCard: some View {
-        Button { navigationPath.append(AppDestination.timedPractice) } label: {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Find your starting point")
-                        .font(Typography.cardTitle)
-                        .foregroundStyle(.primary)
-
-                    Text(firstSessionWelcomeMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 12) {
-                    Text("Start your first rep")
-                        .font(.headline.weight(.semibold))
-
-                    Spacer()
-
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.16))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "arrow.right")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, Spacing.md)
-                .background(
-                    LinearGradient(
-                        colors: [AppColor.brandBlue, AppColor.brandBlue.opacity(0.8)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: Capsule(style: .continuous)
-                )
-
-                Text("Your first rep sets your baseline \u{2014} no pressure")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.lg)
-            .background(
-                AppColor.cardBackground,
-                in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(AppColor.brandBlue.opacity(0.15), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.pressable)
-        .accessibilityIdentifier("home.firstSession")
-    }
-
     // MARK: - Secondary discovery (empty state)
 
     /// Compact two-row card used only in the empty state. Surfaces lessons
     /// + path as a *discovery* surface so the new user sees the curriculum
-    /// exists, but neither row competes with the primary "Start your first
-    /// rep" CTA. Intentionally lower visual weight than the firstSessionCard.
+    /// exists, but neither row competes with the primary "Begin · First
+    /// rep" CTA on the Coach Card above. Lower visual weight by design.
     private var secondaryDiscoveryCard: some View {
         VStack(spacing: 0) {
             discoveryRow(

@@ -147,8 +147,9 @@ final class NoumUITests: XCTestCase {
         // UI_TESTING suppresses the splash / onboarding hero.
         // UI_TESTING_SEED injects the improving-intermediate dev profile so
         // the home renders its populated layout (which is where home.path /
-        // home.rank etc. live — the empty-state home swaps in firstSessionCard
-        // + secondaryDiscoveryCard and the journey card is hidden).
+        // home.rank etc. live — the empty-state home swaps in HomeCoachCard's
+        // no-signal branch + secondaryDiscoveryCard, with the journey
+        // card hidden).
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED"]
         app.launch()
         return app

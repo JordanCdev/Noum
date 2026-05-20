@@ -1,3 +1,204 @@
+# HANDOFF — Empty-state unification pass
+
+## Scope
+
+`Noum/HomeCoachCard.swift` (additive, ~30 LOC) + `Noum/ContentView.swift`
+(net ~155 LOC removed) + `NoumUITests/NoumUITests.swift` (comment fix)
++ `docs/CURRENT_STATE.md` (timestamp + Home section + resolved-issue mark).
+
+The brand-new user's first impression is now the same dream-tier hero the
+returning user sees. The empty-state previously had a flat 104pt
+greeting-header (`heroCard`) plus a brandBlue-capsule CTA card
+(`firstSessionCard`) — neither carried the Pro-purple drift, glass material,
+or emanation pulse that `HomeCoachCard` ships with on the populated home.
+Now `HomeCoachCard` covers both states.
+
+## What changed
+
+### Move 1 — `HomeCoachCard` no-signal copy
+
+- **`beginCTAText`** (`Noum/HomeCoachCard.swift` lines 132–147). Added an
+  early-return for `!hasSignal` returning `"Begin · First rep"`. "Begin ·
+  Timed" is a stranger's instruction at zero-rep; "Begin · First rep" is
+  the door the user just walked up to.
+- **`coachSubtitle`** (~`Noum/HomeCoachCard.swift` lines 348–367). The
+  no-signal branch is now profile-aware. If `CoachingProfile` exists
+  (user finished onboarding but hasn't done a rep yet), the subtitle
+  reads "You want to work on [filler words / structure / thinking on
+  the spot / pace]. One short rep sets your starting line." Falls
+  through to "One short rep sets your starting line." otherwise. The
+  copy mirrors what the legacy `firstSessionWelcomeMessage` in
+  `ContentView` carried, lifted into the card itself so the
+  composition is single-source.
+
+### Move 2 — `restingMood` + `syncMoodForFreshRecommendation`
+
+- New `restingMood` computed var (`Noum/HomeCoachCard.swift`). Reads
+  `hasSignal ? .coaching : .listening`. Empty-state users see the
+  `NoumCharacter` in `.listening` mood (symmetric arc-pulses around
+  the character — "the coach is hearing you for the first time") so
+  the moment feels like an invitation, not a lecture. Returning users
+  see `.coaching` (slight tilt) as before.
+- `syncMoodForFreshRecommendation` now sets the character to
+  `restingMood` instead of hardcoding `.coaching`. Both onAppear and
+  onChange paths route through this so the empty-state stays
+  `.listening` until the user has reps.
+
+### Move 3 — `ContentView` empty-state branch
+
+- `Noum/ContentView.swift` lines 130–146. The empty-state branch in
+  the populated/empty conditional now renders three cards:
+  `HomeCoachCard` + `DailyGoalCard` + `secondaryDiscoveryCard`.
+  Down from four (was `heroCard + firstSessionCard + DailyGoalCard +
+  secondaryDiscoveryCard`). The `HomeCoachCard` instantiation passes
+  `scrollOffset: homeScrollOffset` so the same interior parallax
+  the populated home gets is active on empty state too.
+
+### Move 4 — Dead-code removal
+
+Deleted from `Noum/ContentView.swift`:
+
+- `heroCard` (~50 LOC) — the legacy 104pt greeting-header with
+  `NoumCharacter` at 76pt + time-of-day greeting + streak chip.
+- `firstSessionCard` (~65 LOC) — the brandBlue-capsule CTA card with
+  "Find your starting point" + "Start your first rep" button.
+- `firstSessionWelcomeMessage` (~17 LOC) — copy generator now lifted
+  into `HomeCoachCard.coachSubtitle`.
+- `streakChip` (~17 LOC) — helper view used only by `heroCard`.
+- `heroGreeting`, `heroSubtitle`, `heroTitle`, `heroCharacterMood`,
+  `heroGradientTint`, `displayName` — all empty-state-only helpers
+  whose call sites were the deleted cards.
+
+Net `ContentView.swift`: 2136 → 1885 LOC (−251 LOC).
+
+### Move 5 — Doc updates
+
+- `docs/CURRENT_STATE.md` — Home section updated to note `HomeCoachCard`
+  now serves both states; `SpeakingRatingCard placeholder` entry moved
+  from "Known issues / debt" to a resolved note (it's actually fixed
+  in `RatingHistoryChart.swift:38–49` — empty history returns
+  `EmptyView()` from the chart slot rather than a placeholder string).
+- `NoumUITests/NoumUITests.swift` — fixed an outdated comment in
+  `launchApp()` that referenced `firstSessionCard`.
+
+## What did NOT change
+
+- **HomeCoachCard's chrome** — Pro-purple drift wash, `.regularMaterial`
+  glass overlay, emanation ray, hairline border, accent tint, shadow.
+  All untouched. The empty-state inherits the same alive treatment
+  the populated state already had.
+- **Accessibility identifiers** — `home.coachCard`,
+  `home.coachCard.title`, `home.coachCard.subtitle`,
+  `home.coachCard.begin` all preserved.
+- **`home.firstSession`** (the deleted card's identifier) was not
+  referenced from any UI test or production code path (verified via
+  grep). Safe deletion.
+- **Recommendation pipeline** — `RecommendationBiasEngine.blueprint`
+  already handles `profile == nil` / empty sessions sensibly
+  (defaults to `.timed` with focus "Baseline control"). The card's
+  guards on `hasSignal` ensure the no-signal branch never reads
+  blueprint copy that would surface awkwardly ("Your recent sessions
+  still need a steadier baseline." on a user with no sessions).
+- **`secondaryDiscoveryCard`** — Lessons + Path discovery rows below
+  the Coach Card. Untouched. Visually subordinate by design so the
+  Coach Card's "Begin · First rep" stays the primary CTA on first
+  open.
+- **Empty-state `DailyGoalCard`** — kept. Default goal is 1 rep
+  with friendly copy "One rep is enough to count today." Reads as
+  an invitation, not a counter at zero.
+
+## Risks
+
+1. **No-signal subtitle pluralization** — copy is English-only. Per
+   the M13 honest gap, ~30 keys are in the Localizable.xcstrings;
+   this new subtitle is not yet in it. Spanish + French users see
+   English here. Consistent with the rest of the home copy.
+2. **Profile-set-but-no-reps path** — the most common path is users
+   complete `CoachingOnboardingView` (which sets profile) THEN see
+   the home for the first time. They'll see "You want to work on
+   cleaning up filler words. One short rep sets your starting line."
+   on the no-signal subtitle. This is the right call: the coach
+   reads their goal back at them on first open.
+3. **`.listening` mood vs `.coaching` switch on first finalize** —
+   after the user finishes their first rep, `hasSignal` flips true,
+   and `restingMood` switches `.listening → .coaching`. SwiftUI
+   re-renders the character mood; the NoumCharacter mood-change
+   animation is internal (no flicker).
+4. **UI tests** — no test referenced `home.firstSession`. The
+   existing screenshot tour seeds via `UI_TESTING_SEED` which
+   produces a populated home, so the empty state was never tested
+   visually. This change to the empty state therefore can't
+   regress any currently-passing test.
+
+## Verification
+
+### Implemented
+
+- `HomeCoachCard.beginCTAText` returns "Begin · First rep" when
+  `hasSignal == false`.
+- `HomeCoachCard.coachSubtitle` no-signal branch reads
+  `CoachingProfileStore.shared.profile?.biggestChallenge` and
+  renders the matching variant. Falls through to the generic
+  variant when no profile.
+- `HomeCoachCard.restingMood` returns `.listening` for empty state,
+  `.coaching` otherwise. `syncMoodForFreshRecommendation` and the
+  reduce-motion early return both honour it.
+- `ContentView` empty-state renders `HomeCoachCard` instead of
+  `heroCard + firstSessionCard`. Card count: 4 → 3.
+- All five empty-state-only helpers in `ContentView` deleted along
+  with `displayName` (only consumer was deleted helpers).
+- `docs/CURRENT_STATE.md` updated for both the Home section and
+  the resolved SpeakingRatingCard placeholder.
+
+### Partially implemented
+
+None.
+
+### Blocked
+
+None.
+
+### Assumptions
+
+- The empty-state Coach Card sits between Pro-purple chrome and the
+  `.listening` mood without reading as "marketing" — the brand
+  purple is the coaching register, the mood is honest to the moment
+  (coach hasn't heard the user yet). Verified against the brand
+  rules in `Noum/.claude/skills/noum-design/`.
+- "Begin · First rep" is the right CTA copy for the empty state.
+  Other candidates ("Start your first rep", "Take your first rep")
+  break the "Begin · <noun>" pattern the populated state uses.
+  Consistency wins here.
+- `coachingProfileStore.profile?.biggestChallenge` is the right
+  field to drive the no-signal subtitle. The other enum fields
+  (`primaryGoal`, `speakingStyleGoal`) are also captured during
+  onboarding, but `biggestChallenge` is the one the existing
+  `firstSessionWelcomeMessage` already used — keeping the same
+  source of truth means no copy is invented.
+
+### Verification
+
+- Edits applied via Edit tool; no Bash builds run (sandboxed Linux
+  environment, no Xcode toolchain). File reads cleanly end-to-end.
+- All four `home.coachCard*` accessibility identifiers preserved.
+- All reduce-motion gates preserved through `syncMoodForFreshRecommendation`
+  and `triggerEmanation` (both already guarded by
+  `accessibilityReduceMotion`).
+- Grep confirmed no remaining references to the deleted helpers
+  inside `Noum/`, `NoumUITests/`, or `NoumTests/`.
+- `home.firstSession` identifier (deleted) had zero references in
+  the test suite — safe deletion.
+
+### Risks
+
+- See "Risks" section above.
+
+## Branch
+
+`Redesign` — committed and pushed.
+
+---
+
 # HANDOFF — Home Coach Card "alive premium iOS hero" pass
 
 ## Scope

@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter**)_
+_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression**)_
 
 ## Architecture overview
 
@@ -92,14 +92,20 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
 ## Key files / modules
 
 ### Home (M14 redesign)
-- `Noum/HomeCoachCard.swift` — populated-home hero. Single composed
+- `Noum/HomeCoachCard.swift` — unified home hero. Single composed
   card carrying `NoumCharacter` (90pt, mode-tinted) + `coachTitle`
   + `coachSubtitle` + `VoiceAlignmentChip` + "Begin · <Mode>" CTA.
-  Replaces the legacy heroCard + quickStartCard pair. Background:
-  Pro-purple radial wash + faint mode-tinted trailing accent +
-  purple hairline border + soft purple elevation shadow. Two
-  registers: purple = "your coach speaking", mode tint = "this is
-  what to do."
+  Background: Pro-purple radial wash + faint mode-tinted trailing
+  accent + purple hairline border + soft purple elevation shadow.
+  Two registers: purple = "your coach speaking", mode tint = "this
+  is what to do." **Now serves both the empty-state (brand-new
+  user) and populated-state (returning user)** — replaces the
+  legacy `heroCard + firstSessionCard` pair on empty state. The
+  no-signal branch reads `.listening` mood (the coach is hearing
+  you for the first time, not advising you yet) + profile-aware
+  subtitle (picks up `CoachingProfile.biggestChallenge` if the
+  user finished onboarding) + "Begin · First rep" CTA. ~155 LOC
+  of duplicated empty-state UI deleted from `ContentView`.
 - `Noum/HomeUtilityStrip.swift` — slim 36pt row beneath the Coach
   Card. Streak chip on left (taps → Profile), word-of-day on
   right (taps → seeds a Timed rep). No card chrome, low-emphasis
@@ -796,13 +802,14 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   greenlight — `firebase.json` needs the `"firestore": {"rules":
   "firestore.rules"}` block added, then
   `firebase deploy --only firestore:rules,hosting --project noum-d0b6f`.
-- **SpeakingRatingCard placeholder** — when `rating.ratingHistory`
-  is empty the card renders the literal copy "Rated reps will plot
-  here." This is a placeholder per the CLAUDE.md engineering bans
-  ("placeholder logic presented as complete"). The card should
-  either render the trend chart properly when data exists, or hide
-  the entire chart slot when it doesn't (header + 612 rating stay
-  visible because those don't need history). Tracked for fix.
+- **SpeakingRatingCard placeholder — resolved.** When
+  `rating.ratingHistory` is empty `RatingHistoryChart` returns
+  `EmptyView()` from the chart slot, collapsing it entirely. The
+  card header (rating number + peak + session count) stays visible
+  above, and the trend strip ("Holding steady" / "Trending up" /
+  etc.) still surfaces from the live trend computation. No
+  placeholder copy is rendered. See `Noum/RatingHistoryChart.swift`
+  lines 38–49.
 
 ### Not started
 
