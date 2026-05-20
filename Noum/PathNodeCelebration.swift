@@ -54,6 +54,11 @@ struct PathNodeCelebration: View {
     /// can opt out (e.g. when the celebration fires *from* the path view
     /// itself, where the secondary would be a no-op).
     var onOpenPath: (() -> Void)? = nil
+    /// Optional transcript-anchored proof of growth tied to the user's
+    /// voice goal. Renders as a small italicized quote below the stat
+    /// line. When nil the row is hidden entirely — the celebration
+    /// doesn't manufacture a quote it doesn't have.
+    var proof: ProofMoment? = nil
 
     @State private var phase: Phase = .preReveal
     @State private var confettiActive = false
@@ -109,6 +114,12 @@ struct PathNodeCelebration: View {
 
                 statLine
                     .padding(.horizontal, Spacing.lg)
+
+                if let proof = proof {
+                    proofLine(proof: proof)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.top, Spacing.xs)
+                }
 
                 Spacer(minLength: 0)
 
@@ -242,6 +253,30 @@ struct PathNodeCelebration: View {
             .opacity(phase >= .statIn ? 1 : 0)
             .contentTransition(.numericText())
             .accessibilityElement(children: .combine)
+    }
+
+    /// Transcript-anchored proof line. Italicized quote + technique
+    /// chip, sitting just under the stat line. Visual restraint: this
+    /// is the celebration register, the proof is supportive (not
+    /// shouting). Same fade-in beat as the stat line so the moment
+    /// reads as one composed reveal, not a stacked list of cards.
+    @ViewBuilder
+    private func proofLine(proof: ProofMoment) -> some View {
+        VStack(spacing: 4) {
+            Text("\u{201C}\(proof.quote)\u{201D}")
+                .font(Typography.body.italic())
+                .foregroundStyle(.white.opacity(0.78))
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(proof.technique.uppercased())
+                .font(Typography.micro.weight(.bold))
+                .foregroundStyle(.white.opacity(0.55))
+                .tracking(0.8)
+        }
+        .opacity(phase >= .statIn ? 1 : 0)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Proof: \(proof.quote). \(proof.technique).")
     }
 
     // MARK: - CTAs

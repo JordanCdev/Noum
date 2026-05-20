@@ -1,0 +1,219 @@
+#if canImport(SwiftUI)
+import Foundation
+import Combine
+#if canImport(Security)
+import Security
+#endif
+
+// MARK: - Ask Noum chat message + store
+//
+// The user's persistent thread with their AI coach. Distinct from the
+// IM mode's conversation partner: this is the user *talking to Noum
+// about their speaking practice*, not an NPC conversation rep. The
+// thread persists per-account and survives app restarts so the user
+// can come back to an ongoing coaching dialogue.
+//
+// Design rules:
+//   • Per-account persistence — same convention as every other
+//     UserDefaults-backed store (`<key>.<accountID>`). Switching
+//     accounts shows that account's thread; a fresh sign-in is a
+//     fresh blank thread.
+//   • Bounded history — cap at 40 messages on disk. Older messages
+//     drop off the top. Keeps the persisted blob small and protects
+//     the model's context window from runaway growth.
+//   • Idempotent send tracking — every user-authored message gets a
+//     UUID at send-time so retries can dedupe and the UI can render
+//     a "pending" state without flickering identity.
+//   • No backend sync — chat lives on-device. Adding Firestore sync
+//     would be a future move; today the priority is "feel intimate"
+//     and on-device-only achieves that with zero infra.
+
+/// Direction / authorship of a chat message.
+enum CoachMessageRole: String, Codable, Equatable {
+    case user
+    case coach
+    /// A "system" notice rendered in-thread (e.g. "Coach paused — \
+    /// configure an AI provider to continue"). Not sent to the model.
+    case systemNotice
+}
+
+/// One message in the Ask-Noum thread.
+struct CoachMessage: Identifiable, Codable, Equatable {
+    let id: UUID
+    let role: CoachMessageRole
+    let text: String
+    let createdAt: Date
+    /// True while the model is generating the reply. Only ever true for
+    /// `.coach` rows; the UI renders a typing-style placeholder for these.
+    var isPending: Bool
+
+    init(
+        id: UUID = UUID(),
+        role: CoachMessageRole,
+        text: String,
+        createdAt: Date = Date(),
+        isPending: Bool = false
+    ) {
+        self.id = id
+        self.role = role
+        self.text = text
+        self.createdAt = createdAt
+        self.isPending = isPending
+    }
+}
+
+/// Persisted thread + send / replay surface for the Ask-Noum chat.
+@available(iOS 17.0, macOS 12.0, *)
+@MainActor
+final class AskNoumStore: ObservableObject {
+
+    static let shared = AskNoumStore()
+
+    /// Cap on the number of messages held on disk. Older messages drop
+    /// off the front when the cap is exceeded. 40 covers ~20 turns of
+    /// conversation, which is plenty for coaching continuity without
+    /// blowing the model's context window on replay.
+    private static let maxStoredMessages = 40
+
+    /// Storage key prefix. Joined with the account ID the same way
+    /// every other per-account value is keyed.
+    private static let storagePrefix = "askNoum.thread"
+
+    @Published private(set) var messages: [CoachMessage] = []
+
+    /// True while a `coach` reply is mid-flight. UI uses this to
+    /// disable the input bar and show the pending message row.
+    @Published private(set) var isAwaitingReply: Bool = false
+
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
+
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: (() -> String?)? = nil
+    ) {
+        self.defaults = defaults
+        if let provider = accountIDProvider {
+            self.accountIDProvider = provider
+        } else {
+            self.accountIDProvider = { Self.defaultAccountIDProvider() }
+        }
+        loadFromDisk()
+    }
+
+    /// Append a user-authored message + a pending coach row. Returns
+    /// the IDs of both so the caller can hydrate the coach row once
+    /// the service returns.
+    @discardableResult
+    func appendUserTurn(_ text: String) -> (userID: UUID, coachID: UUID) {
+        let userMsg = CoachMessage(role: .user, text: text)
+        let coachMsg = CoachMessage(role: .coach, text: "", isPending: true)
+        messages.append(userMsg)
+        messages.append(coachMsg)
+        isAwaitingReply = true
+        trimAndPersist()
+        return (userMsg.id, coachMsg.id)
+    }
+
+    /// Hydrate the pending coach row once the service returns. Marks
+    /// `isAwaitingReply` false. If `text` is empty (model failure /
+    /// no provider), the placeholder gets replaced with a system
+    /// notice instead of an empty bubble.
+    func completeCoachTurn(id: UUID, text: String) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            messages[idx] = CoachMessage(
+                id: id,
+                role: .systemNotice,
+                text: "I couldn't reach my model just now. Try again, or check that an AI provider is configured in Settings.",
+                createdAt: messages[idx].createdAt,
+                isPending: false
+            )
+        } else {
+            messages[idx] = CoachMessage(
+                id: id,
+                role: .coach,
+                text: trimmed,
+                createdAt: messages[idx].createdAt,
+                isPending: false
+            )
+        }
+        isAwaitingReply = false
+        trimAndPersist()
+    }
+
+    /// Cancel an in-flight coach reply (user navigated away, etc.).
+    /// Drops the pending row entirely so the thread doesn't show a
+    /// stuck typing indicator.
+    func cancelPendingCoachTurn(id: UUID) {
+        messages.removeAll { $0.id == id }
+        isAwaitingReply = false
+        trimAndPersist()
+    }
+
+    /// Clear the entire thread. Used by Settings → "Reset Ask Noum
+    /// thread" + by account sign-out paths. UI confirms first; this
+    /// is a one-button wipe.
+    func clearThread() {
+        messages.removeAll()
+        persist()
+    }
+
+    /// All non-system messages, oldest-first, suitable for the model
+    /// replay. System notices are dropped — they're UI-only.
+    var replayForModel: [CoachMessage] {
+        messages.filter { $0.role != .systemNotice && !$0.isPending }
+    }
+
+    // MARK: - Persistence
+
+    private var currentKey: String {
+        let id = accountIDProvider() ?? "guest"
+        return "\(Self.storagePrefix).\(id)"
+    }
+
+    private func loadFromDisk() {
+        guard let data = defaults.data(forKey: currentKey),
+              let decoded = try? JSONDecoder().decode([CoachMessage].self, from: data) else {
+            return
+        }
+        // Defensive: don't restore a row that was pending when the app
+        // exited — the model never returned, so this is effectively
+        // dead. Drop it.
+        messages = decoded.filter { !$0.isPending }
+    }
+
+    private func trimAndPersist() {
+        if messages.count > Self.maxStoredMessages {
+            messages.removeFirst(messages.count - Self.maxStoredMessages)
+        }
+        persist()
+    }
+
+    private func persist() {
+        // Don't persist the pending placeholder rows — they're
+        // transient. If the user backgrounds the app mid-reply the
+        // pending row will reappear from memory but won't be written
+        // to disk, so a relaunch starts clean.
+        let persistable = messages.filter { !$0.isPending }
+        guard let data = try? JSONEncoder().encode(persistable) else { return }
+        defaults.set(data, forKey: currentKey)
+    }
+
+    // MARK: - Account ID
+
+    /// Default account-ID resolver. Mirrors the convention every other
+    /// per-account store uses (`AuthManager` → keychain `NoumAccountID`).
+    /// Returns nil when signed-out / anonymous; the storage key falls
+    /// back to `"guest"` so pre-sign-in chat survives.
+    private static func defaultAccountIDProvider() -> String? {
+        #if canImport(Security)
+        return KeychainHelper.load(key: "NoumAccountID")
+        #else
+        return nil
+        #endif
+    }
+}
+
+#endif

@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage**)_
+_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best**)_
 
 ## Architecture overview
 
@@ -127,6 +127,74 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   `noumCharacter.peakStage.<accountID>`) — never visible
   regression on XP drops. Applied to NoumCharacter atop mood;
   stage = lifetime arc, mood = moment-to-moment state.
+
+### AI Coach Chat ("Ask Noum") — persistent coaching companion
+- `Noum/AskNoumView.swift` — chat surface with embodied NoumCharacter
+  header (60pt, brand-purple, listening mood while a reply is in
+  flight). Empty state renders a voice-specific headline + body +
+  4 starter prompts so first-message friction is zero. Threads
+  alternate brand-blue user bubbles (right-aligned) with white
+  coach cards (left-aligned, NoumCharacter.Inline glyph for
+  continuity). Reduce-motion-aware typing indicator. Tap-to-
+  clear via menu.
+- `Noum/AskNoumStore.swift` — per-account ObservableObject thread
+  store. Capped at 40 messages on disk; pending coach rows never
+  persist (mid-reply crash → clean relaunch). User-authored
+  messages get a UUID at send for dedupe. Replay-for-model
+  excludes system notices + pending rows.
+- `Noum/AICoachChatService.swift` — actor wrapping the same
+  OpenAI / DeepSeek / Gemini providers as `AIInsightsService`.
+  Multi-turn replay capped at 24 messages per request; temp 0.6,
+  max_tokens 380. Failure-soft: nil return on any error → store
+  renders a system notice instead of an empty bubble.
+- `Noum/CoachContextBuilder.swift` — pure-function context layer.
+  `systemPrompt(for:)` composes a brand-voice frame + per-voice
+  personality block (authoritative = "senior advisor giving a
+  verdict", warm = "trusted mentor genuinely curious", concise =
+  "clipped, one idea per turn", persuasive = "structured,
+  premise→evidence→recommendation", executive = "chief-of-staff
+  briefing", storytelling = "narrative arcs"). `userContext(...)`
+  produces a structured snapshot the model gets every turn: goal,
+  rating + tier + delta, baseline numbers (only when confidence
+  ≥ initial — never quotes a fake-zero stat), recent 3 sessions,
+  path chapter + mission, trends. Insufficient-confidence
+  dimensions are omitted entirely so the model cannot fabricate.
+- Home entry: `ContentView.askNoumPromoCard` — brand-purple
+  ambient card between journey card and DailyChallengeTile.
+  Voice-specific headline + body + "Open the thread →" CTA.
+  Tap pushes `AppDestination.askNoum`. Also reachable via
+  `noum://ask` deep link.
+
+### Proof Moments — transcript-anchored evidence of growth
+- `Noum/ProofMomentService.swift` — actor that extracts ONE
+  short (5–14 word) verbatim quote from a session's transcript
+  + a voice-specific technique label + a one-sentence coach claim.
+  AI path uses the same provider plumbing as `AIInsightsService`
+  with a JSON-strict response shape (`quote`, `technique`,
+  `claim`). Verifies the quote actually appears in the transcript
+  (case-insensitive, smart-quote-normalised) before caching — any
+  fabrication falls through to the deterministic template path.
+  Deterministic fallback picks the longest 4–14-word clause from
+  the transcript and stamps it with a voice-specific
+  (technique, claim) shape — e.g. authoritative + clean rep =
+  "Declarative Close", concise + clean rep = "BLUF",
+  storytelling + long rep = "Scene Set". Per-session cache
+  (`UUID → ProofMoment`); invalidation via `invalidate(sessionID:)`.
+- `Noum/AIWeeklyInsightCard.swift` — "Proof of the week" section
+  appended below the AI narrative body. Picks the highest-scoring
+  rated session from the 7-day window so the proof reads as a
+  victory lap, not a random sample. Collapses entirely if no
+  qualifying session exists.
+- `Noum/PathNodeCelebration.swift` — accepts optional `proof:`
+  param. When non-nil, renders an italicized quote + technique
+  chip below the stat line, fading in alongside the stat. Loaded
+  on appear via `ContentView.loadPathCelebrationProof()`. Visual
+  restraint: this is the celebration register, the proof is
+  supportive (not shouting).
+- `Noum/CelebrationViews.swift` `PersonalBestCelebrationScreen` —
+  accepts optional `proof:` param. Loaded on appear via
+  `SummaryView.loadPersonalBestProof()` from the just-finished
+  session so the quote is fresh in the user's ear.
 
 ### Path / mission gameplay loop
 - `Noum/Noum/PathProgressManager.swift` + `Noum/Noum/PathNode.swift`

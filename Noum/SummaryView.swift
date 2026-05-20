@@ -90,6 +90,10 @@ struct SummaryView: View {
     @State private var eloquenceFindings: [EloquenceFinding] = []
     @State private var showAIDisclosure = false
     @State private var showProgressionScreen = false
+    /// Proof moment loaded for the personal-best celebration. Hydrated
+    /// async after the milestone fires; if it doesn't resolve in time
+    /// the celebration renders without the proof line.
+    @State private var personalBestProof: ProofMoment? = nil
     @State private var progressionDeltas: [AchievementProgressDelta] = []
     @State private var progressionNewUnlocks: [AchievementTier] = []
     @State private var progressionPreviousXP: Int = 0
@@ -2206,8 +2210,49 @@ struct SummaryView: View {
                 withAnimation(.easeInOut(duration: 0.4)) {
                     showPersonalBestScreen = false
                 }
-            }
+            },
+            proof: personalBestProof
         )
+        .onAppear {
+            Task { await loadPersonalBestProof() }
+        }
+    }
+
+    /// Load the proof moment for the personal-best celebration. Uses
+    /// the session we just finished (the one that set the new peak)
+    /// so the quote is fresh in the user's ear. Falls through to nil
+    /// on miss; the celebration renders without the proof line in
+    /// that case (a cold-start safety the AI-flow already builds in).
+    private func loadPersonalBestProof() async {
+        // Most recent session in the store is the one we just finished
+        // and finalized. If for some reason it's missing or has no
+        // transcript, skip the proof load.
+        let recent = PracticeSessionStore.shared.sessions
+            .sorted { $0.date > $1.date }
+            .first
+        guard let session = recent,
+              !session.transcript.isEmpty,
+              session.duration > 8 else {
+            personalBestProof = nil
+            return
+        }
+        let baseline = BaselineStore.shared.baseline
+        let profile = CoachingProfileStore.shared.profile
+        let input = ProofMomentInput(
+            session: session,
+            voice: profile?.speakingStyleGoal,
+            goalParaphrase: profile?.displayableGoal,
+            baselineFillerRate: baseline.fillerRate.confidence != .insufficient
+                ? baseline.fillerRate.value : nil,
+            baselinePace: baseline.pace.confidence != .insufficient
+                ? baseline.pace.value : nil
+        )
+        let proof = await ProofMomentService.shared.proof(for: input)
+        await MainActor.run {
+            withAnimation(.standardSpring) {
+                personalBestProof = proof
+            }
+        }
     }
 
     // MARK: - Celebration Overlay

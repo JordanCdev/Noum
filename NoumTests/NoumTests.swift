@@ -4956,3 +4956,480 @@ struct NoumCharacterStageTests {
                 "Stored peak must not be overwritten by a regression")
     }
 }
+
+// MARK: - Coach context builder (Ask Noum)
+//
+// Pure-function helpers in `CoachContextBuilder` produce the structured
+// context the AI coach gets every chat turn. These tests pin the
+// contract on three axes:
+//   1. Voice-specific personalities differ per `SpeakingStyleGoal` —
+//      the authoritative coach reads differently than the warm coach.
+//   2. The user context block surfaces the right numbers (rating,
+//      baseline, recent sessions) and omits sections that have no
+//      data (never invent / fabricate).
+//   3. Starter prompts differ per voice — the chat's empty state is
+//      always voice-tuned.
+
+struct CoachContextBuilderTests {
+
+    // MARK: - Voice-specific personalities
+
+    @Test func voicePersonalitiesAreDistinct() {
+        // Every voice should produce a clearly different personality
+        // string. A refactor that quietly unifies them under one
+        // "calm coach" register fails this test — the voice-specific
+        // promise is the whole point.
+        let voices = SpeakingStyleGoal.allCases
+        let personalities = voices.map { CoachContextBuilder.coachPersonality(for: $0) }
+        let unique = Set(personalities)
+        #expect(unique.count == voices.count,
+                "Each voice should produce a unique coach personality string")
+    }
+
+    @Test func authoritativePersonalityIsVerdictShaped() {
+        // The authoritative voice should read like a verdict — direct,
+        // declarative, no hedging. Lock the key phrases so a future
+        // copy edit can't quietly soften it.
+        let p = CoachContextBuilder.coachPersonality(for: .authoritative)
+        #expect(p.lowercased().contains("senior advisor"),
+                "Authoritative voice should frame the coach as a senior advisor")
+        #expect(p.contains("declarative"),
+                "Authoritative voice should mention declarative sentence shape")
+    }
+
+    @Test func warmPersonalityIsCurious() {
+        let p = CoachContextBuilder.coachPersonality(for: .warm)
+        #expect(p.lowercased().contains("curious"),
+                "Warm voice should frame the coach as curious")
+        #expect(p.lowercased().contains("not saccharine") || p.lowercased().contains("not sweet"),
+                "Warm voice should explicitly guard against saccharine")
+    }
+
+    @Test func concisePersonalityMentionsBrevity() {
+        // The concise voice's personality should explicitly tell the
+        // coach to keep replies clipped — that's the user-visible
+        // contract. The marker phrases below come straight from the
+        // brand brief for this voice.
+        let p = CoachContextBuilder.coachPersonality(for: .concise)
+        #expect(p.lowercased().contains("one idea per turn"),
+                "Concise voice should mention 'one idea per turn'")
+        #expect(p.lowercased().contains("skip preamble"),
+                "Concise voice should mention skipping preamble")
+    }
+
+    // MARK: - System prompt composition
+
+    @Test func systemPromptIncludesBrandRules() {
+        // The brand non-negotiables — second person, no chirpy filler,
+        // no exclamation marks, no overclaiming — must be in every
+        // system prompt regardless of voice. These are the rules that
+        // protect coaching trust.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("Second person"))
+        #expect(prompt.contains("never use chirpy filler"))
+        #expect(prompt.contains("never use exclamation marks"))
+        #expect(prompt.contains("never overclaim"))
+        #expect(prompt.contains("never punish-shame"))
+    }
+
+    @Test func systemPromptIncludesVoicePersonalityWhenProfileSet() {
+        // When the user has set a voice, the system prompt must
+        // include that voice's personality block. The authoritative
+        // marker phrase ("senior advisor") is the signal.
+        let profile = sampleProfile(voice: .authoritative)
+        let prompt = CoachContextBuilder.systemPrompt(for: profile)
+        #expect(prompt.lowercased().contains("senior advisor"),
+                "System prompt with authoritative profile should bake in the authoritative personality")
+    }
+
+    @Test func systemPromptUsesDefaultPersonalityWhenNoProfile() {
+        // No profile yet (very early onboarding) → falls back to the
+        // default coach personality. Locks against a future change
+        // that crashes or returns an empty system prompt on cold start.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("calm, direct speaking coach"),
+                "Nil profile should use the default personality string")
+    }
+
+    // MARK: - User context block
+
+    @Test func userContextHandlesColdStart() {
+        // Brand-new user — no profile, no rating, no baseline, no
+        // sessions. The context should acknowledge this honestly
+        // ("No rated sessions yet.") and instruct the model not to
+        // fabricate stats.
+        let baseline = CommunicationBaseline.empty
+        let rating = SpeakingRating.initial
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: baseline,
+            rating: rating,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("No voice set yet"),
+                "Cold-start context should flag missing voice")
+        #expect(ctx.contains("No rated sessions yet"),
+                "Cold-start context should flag missing rating")
+        #expect(ctx.contains("Not enough data for a stable baseline yet"),
+                "Cold-start context should flag missing baseline")
+    }
+
+    @Test func userContextSurfacesGoal() {
+        // With a profile, the context's GOAL section should include
+        // the voice title and the coaching description — those are
+        // the lines the model uses to anchor every reply.
+        let profile = sampleProfile(voice: .warm)
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("GOAL"))
+        #expect(ctx.contains("Warm and welcoming"),
+                "Warm voice title should be in the GOAL section")
+        #expect(ctx.contains("encouraging, natural, and easy to trust"),
+                "Warm voice coaching description should be in the GOAL section")
+    }
+
+    @Test func userContextOmitsBaselineDimensionsWithoutData() {
+        // Specific baseline dimensions with `.insufficient` confidence
+        // should NOT appear in the context — quoting them would
+        // surface fake "0.0 fillers/min" numbers. The contract is:
+        // only quote what's confident.
+        let baseline = CommunicationBaseline.empty // all dimensions insufficient
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: baseline,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!ctx.contains("Fillers per minute:"),
+                "Insufficient filler rate must not surface a value line")
+        #expect(!ctx.contains("Pace:"),
+                "Insufficient pace must not surface a value line")
+    }
+
+    // MARK: - Starter prompts
+
+    @Test func starterPromptsAreVoiceSpecific() {
+        // Each voice should produce starter prompts that mention
+        // moves relevant to *that* voice — not generic ones.
+        let auth = CoachContextBuilder.starterPrompts(for: .authoritative).joined()
+        let warm = CoachContextBuilder.starterPrompts(for: .warm).joined()
+        let storytell = CoachContextBuilder.starterPrompts(for: .storytelling).joined()
+        #expect(auth.lowercased().contains("authority") || auth.lowercased().contains("pitch"))
+        #expect(warm.lowercased().contains("warm") || warm.lowercased().contains("trust"))
+        #expect(storytell.lowercased().contains("story") || storytell.lowercased().contains("vivid"))
+    }
+
+    @Test func starterPromptsAlwaysIncludeCommonOnes() {
+        // Two common starters ("Why did my score change", "Plan my
+        // next 7 days") should appear for every voice — they're
+        // useful regardless of which voice the user picked. This
+        // catches a refactor that accidentally drops them.
+        for voice in SpeakingStyleGoal.allCases {
+            let prompts = CoachContextBuilder.starterPrompts(for: voice)
+            #expect(prompts.contains(where: { $0.lowercased().contains("score change") }),
+                    "Voice \(voice) should include the 'score change' common starter")
+            #expect(prompts.contains(where: { $0.lowercased().contains("7 days") }),
+                    "Voice \(voice) should include the '7-day plan' common starter")
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func sampleProfile(voice: SpeakingStyleGoal) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: voice,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+}
+
+// MARK: - Ask Noum store (per-account, bounded, pending-aware)
+//
+// Pins the contract behind the chat thread store:
+//   1. `appendUserTurn` adds a user row plus a pending coach
+//      placeholder, setting `isAwaitingReply = true`.
+//   2. `completeCoachTurn` hydrates the placeholder with the model's
+//      reply text and clears `isAwaitingReply`.
+//   3. An empty reply text becomes a `.systemNotice` row instead of
+//      an empty coach bubble — never leave a blank bubble.
+//   4. `cancelPendingCoachTurn` removes the pending row entirely.
+//   5. The thread caps at the configured max — older messages drop
+//      off the front.
+//   6. Pending rows do NOT persist to disk — a relaunch must start
+//      with a clean thread (no orphaned typing indicators).
+
+@MainActor
+struct AskNoumStoreTests {
+
+    private func freshStore() -> AskNoumStore {
+        // Each test gets its own UserDefaults suite + a deterministic
+        // account ID so persistence is isolated and reproducible.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+    }
+
+    @Test func appendUserTurnAddsUserAndPendingCoach() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Plan my week.")
+        #expect(store.messages.count == 2)
+        #expect(store.messages[0].role == .user)
+        #expect(store.messages[0].text == "Plan my week.")
+        #expect(store.messages[0].id == ids.userID)
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].isPending == true)
+        #expect(store.messages[1].id == ids.coachID)
+        #expect(store.isAwaitingReply)
+    }
+
+    @Test func completeCoachTurnHydratesPlaceholder() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Plan my week.")
+        store.completeCoachTurn(id: ids.coachID, text: "Do 3 reps of Sudden Death.")
+        #expect(store.messages.count == 2)
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].isPending == false)
+        #expect(store.messages[1].text == "Do 3 reps of Sudden Death.")
+        #expect(!store.isAwaitingReply)
+    }
+
+    @Test func completeCoachTurnWithEmptyTextBecomesSystemNotice() {
+        // Empty reply (model failure / no provider) MUST not leave a
+        // blank coach bubble — it converts to a system notice so the
+        // user understands what happened.
+        let store = freshStore()
+        let ids = store.appendUserTurn("Plan my week.")
+        store.completeCoachTurn(id: ids.coachID, text: "")
+        #expect(store.messages.count == 2)
+        #expect(store.messages[1].role == .systemNotice)
+        #expect(store.messages[1].text.contains("couldn't reach"))
+        #expect(!store.isAwaitingReply)
+    }
+
+    @Test func cancelPendingCoachTurnRemovesPlaceholder() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Plan my week.")
+        store.cancelPendingCoachTurn(id: ids.coachID)
+        // Only the user row remains; the pending row is gone.
+        #expect(store.messages.count == 1)
+        #expect(store.messages[0].id == ids.userID)
+        #expect(!store.isAwaitingReply)
+    }
+
+    @Test func replayForModelOmitsSystemNoticesAndPendingRows() {
+        let store = freshStore()
+        let ids1 = store.appendUserTurn("First.")
+        store.completeCoachTurn(id: ids1.coachID, text: "First reply.")
+        let ids2 = store.appendUserTurn("Second.")
+        store.completeCoachTurn(id: ids2.coachID, text: "") // → system notice
+        let ids3 = store.appendUserTurn("Third.")
+        // ids3.coachID is still pending — should NOT be in replay.
+
+        let replay = store.replayForModel
+        // 3 user turns + 1 coach reply = 4. The system notice + the
+        // pending third coach turn are both excluded.
+        #expect(replay.count == 4)
+        #expect(replay.contains(where: { $0.text == "First." }))
+        #expect(replay.contains(where: { $0.text == "First reply." }))
+        #expect(replay.contains(where: { $0.text == "Second." }))
+        #expect(replay.contains(where: { $0.text == "Third." }))
+        #expect(!replay.contains(where: { $0.role == .systemNotice }))
+        #expect(!replay.contains(where: { $0.isPending }))
+    }
+
+    @Test func clearThreadRemovesAllMessages() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("Hello.")
+        store.completeCoachTurn(id: ids.coachID, text: "Hi.")
+        store.clearThread()
+        #expect(store.messages.isEmpty)
+    }
+
+    @Test func relaunchDoesNotResurrectPendingRows() {
+        // Simulate a mid-reply crash / background → relaunch by
+        // creating a fresh store on the same defaults suite. The
+        // pending row must NOT come back.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store1 = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        let ids = store1.appendUserTurn("Plan my week.")
+        _ = ids
+        // Note: do NOT call completeCoachTurn — the pending row
+        // never resolves. Now simulate relaunch:
+        let store2 = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+        #expect(store2.messages.count == 1,
+                "Relaunch should restore only the user row, not the pending coach placeholder")
+        #expect(store2.messages.first?.role == .user)
+        #expect(!store2.isAwaitingReply)
+    }
+}
+
+// MARK: - Proof Moment Service (transcript-anchored evidence)
+//
+// Pins the contract behind the proof extractor:
+//   1. `transcriptContains` is the fabrication guard — it must accept
+//      verbatim quotes, smart-quote variants, and case differences,
+//      while rejecting quotes that don't actually appear.
+//   2. `deterministicProof` returns voice-specific (technique, claim)
+//      shapes — never the same string regardless of voice.
+//   3. The fallback never invents a quote; if the transcript is too
+//      short to yield a clause, it returns nil.
+
+struct ProofMomentServiceTests {
+
+    // MARK: - Fabrication guard
+
+    @Test func transcriptContainsVerbatimSliceTrue() {
+        let transcript = "We're going to focus on three things this quarter: revenue, retention, and reach."
+        #expect(ProofMomentService.transcriptContains("three things this quarter", in: transcript))
+    }
+
+    @Test func transcriptContainsIsCaseInsensitive() {
+        let transcript = "Hold the pause. Let the silence work for you."
+        #expect(ProofMomentService.transcriptContains("LET THE SILENCE WORK", in: transcript))
+        #expect(ProofMomentService.transcriptContains("hold the pause", in: transcript))
+    }
+
+    @Test func transcriptContainsNormalisesSmartQuotes() {
+        // Smart quotes (’, “, ”) come back from some
+        // transcription providers; the model may also generate them.
+        // We normalise both sides to plain ASCII so a smart-quoted
+        // candidate still matches a plain-quoted transcript.
+        let transcript = "It's our best quarter yet"
+        let candidate = "It\u{2019}s our best quarter yet"
+        #expect(ProofMomentService.transcriptContains(candidate, in: transcript))
+    }
+
+    @Test func transcriptContainsRejectsFabrication() {
+        // The model invents a quote that *sounds* like the transcript
+        // but doesn't appear in it. The guard must catch this.
+        let transcript = "Revenue is up fourteen percent. Retention held steady."
+        #expect(!ProofMomentService.transcriptContains("Revenue is up twenty percent", in: transcript))
+        #expect(!ProofMomentService.transcriptContains("Customer happiness improved", in: transcript))
+    }
+
+    @Test func transcriptContainsRejectsEmptyCandidate() {
+        // Empty candidate is treated as "no quote", not "matches
+        // everything". Avoids false positives on malformed model
+        // output.
+        let transcript = "Anything at all."
+        #expect(!ProofMomentService.transcriptContains("", in: transcript))
+        #expect(!ProofMomentService.transcriptContains("   ", in: transcript))
+    }
+
+    // MARK: - Deterministic fallback
+
+    @Test func deterministicProofReturnsNilForShortTranscript() {
+        // A transcript with no clause of >= 4 words has nothing
+        // useful to surface. Service returns nil rather than
+        // fabricate a one-word "quote".
+        let session = sampleSession(transcript: "Yes.", score: 5, duration: 30)
+        let input = ProofMomentInput(
+            session: session, voice: .authoritative,
+            goalParaphrase: nil, baselineFillerRate: nil, baselinePace: nil
+        )
+        #expect(ProofMomentService.deterministicProof(for: input) == nil)
+    }
+
+    @Test func deterministicProofProducesValidQuote() {
+        // Given a realistic transcript, the deterministic path should
+        // pick a clause from it and stamp it with a voice-specific
+        // technique. The quote must come from the transcript (the
+        // fabrication guard applies here too).
+        let transcript = "We focused on three priorities this quarter. Revenue grew steadily. Retention held strong."
+        let session = sampleSession(transcript: transcript, score: 8, duration: 40)
+        let input = ProofMomentInput(
+            session: session, voice: .authoritative,
+            goalParaphrase: nil, baselineFillerRate: nil, baselinePace: nil
+        )
+        let proof = ProofMomentService.deterministicProof(for: input)
+        #expect(proof != nil)
+        if let proof = proof {
+            #expect(!proof.quote.isEmpty)
+            #expect(!proof.technique.isEmpty)
+            #expect(!proof.claim.isEmpty)
+            #expect(proof.isAIBacked == false,
+                    "Deterministic path must report isAIBacked = false")
+            #expect(ProofMomentService.transcriptContains(proof.quote, in: transcript),
+                    "Deterministic quote must come from the transcript verbatim")
+        }
+    }
+
+    @Test func deterministicProofVoiceSpecificMapping() {
+        // Same transcript + same session shape, different voice goal
+        // → different (technique, claim). Locks the promise that
+        // proof is voice-tied, not generic.
+        let transcript = "We focused on three priorities this quarter. Revenue grew steadily."
+        let session = sampleSession(transcript: transcript, score: 8, duration: 40)
+
+        let authInput = ProofMomentInput(
+            session: session, voice: .authoritative,
+            goalParaphrase: nil, baselineFillerRate: nil, baselinePace: nil
+        )
+        let warmInput = ProofMomentInput(
+            session: session, voice: .warm,
+            goalParaphrase: nil, baselineFillerRate: nil, baselinePace: nil
+        )
+        let auth = ProofMomentService.deterministicProof(for: authInput)
+        let warm = ProofMomentService.deterministicProof(for: warmInput)
+        #expect(auth?.technique != warm?.technique,
+                "Authoritative + warm voices should produce different techniques on the same rep")
+        #expect(auth?.claim != warm?.claim,
+                "Authoritative + warm voices should produce different claims on the same rep")
+    }
+
+    @Test func deterministicCleanRepFavoursCleanTechniqueLabel() {
+        // A clean rep (no fillers, sustained duration) under the
+        // .concise voice should land on a "BLUF"-shaped technique
+        // (Bottom Line Up Front). This locks the cleanRep branch in
+        // the template mapping so a refactor can't silently route
+        // clean reps into a "Trim Move" generic label.
+        let transcript = "Revenue grew fourteen percent. Retention held steady."
+        let cleanSession = sampleSession(transcript: transcript, score: 9, duration: 40, fillerCount: 0)
+        let input = ProofMomentInput(
+            session: cleanSession, voice: .concise,
+            goalParaphrase: nil, baselineFillerRate: nil, baselinePace: nil
+        )
+        let proof = ProofMomentService.deterministicProof(for: input)
+        #expect(proof?.technique == "BLUF",
+                "Clean concise rep should map to BLUF technique label")
+    }
+
+    // MARK: - Helpers
+
+    private func sampleSession(
+        transcript: String,
+        score: Int,
+        duration: TimeInterval,
+        fillerCount: Int = 0
+    ) -> PracticeSession {
+        PracticeSession(
+            id: UUID(),
+            transcript: transcript,
+            fillerWordCount: fillerCount,
+            duration: duration,
+            date: Date(),
+            mode: .timed,
+            score: score
+        )
+    }
+}

@@ -12,6 +12,11 @@ struct PersonalBestCelebrationScreen: View {
     let modeName: String
     let previousBest: String?
     let onContinue: () -> Void
+    /// Optional transcript-anchored proof of growth. When present,
+    /// renders below the previousBest line as a small italicized
+    /// quote + technique chip. When nil the row is hidden — the
+    /// celebration never invents a quote it doesn't have.
+    var proof: ProofMoment? = nil
 
     @State private var phase1 = false  // score ring
     @State private var phase2 = false  // text
@@ -99,6 +104,25 @@ struct PersonalBestCelebrationScreen: View {
                             .foregroundStyle(.white.opacity(0.4))
                             .opacity(phase2 ? 1 : 0)
                             .padding(.top, 4)
+                    }
+
+                    if let proof = proof {
+                        VStack(spacing: 6) {
+                            Text("\u{201C}\(proof.quote)\u{201D}")
+                                .font(.system(size: 16, weight: .regular, design: .default))
+                                .italic()
+                                .foregroundStyle(.white.opacity(0.78))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 24)
+                            Text(proof.technique.uppercased())
+                                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                                .tracking(1.2)
+                                .foregroundStyle(.white.opacity(0.55))
+                        }
+                        .opacity(phase2 ? 1 : 0)
+                        .padding(.top, 20)
                     }
                 }
 

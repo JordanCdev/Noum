@@ -28,6 +28,7 @@ struct AIWeeklyInsightCard: View {
     @StateObject private var pathProgress = PathProgressManager.shared
 
     @State private var insight: AIInsight?
+    @State private var proof: ProofMoment?
     @State private var isRefreshing = false
     @State private var hasAppeared = false
 
@@ -112,6 +113,51 @@ struct AIWeeklyInsightCard: View {
             if let action = insight.action {
                 actionChip(text: action)
             }
+            // Proof of the week — transcript-anchored evidence that
+            // the user actually demonstrated a goal-aligned move this
+            // week. Goes BELOW the AI body so the narrative reads
+            // first; the proof line is the receipt the narrative
+            // hangs on. Collapses entirely if no proof could be
+            // extracted (cold start, no qualifying session, no
+            // baseline yet).
+            if let proof = proof {
+                Divider().padding(.vertical, 4)
+                proofSection(proof: proof)
+            }
+        }
+    }
+
+    /// Compact proof block: tiny eyebrow + technique chip + quote +
+    /// claim line. Mirrors the brand-purple coach register from the
+    /// Ask Noum surface so the user reads "this is the coach
+    /// speaking, not metrics."
+    private func proofSection(proof: ProofMoment) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "quote.opening")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                Text("Proof of the week")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(AppColor.pro.opacity(0.85))
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer(minLength: 0)
+                Text(proof.technique)
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(AppColor.pro.opacity(0.10), in: Capsule())
+            }
+            Text("\u{201C}\(proof.quote)\u{201D}")
+                .font(Typography.body.italic())
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(proof.claim)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -222,9 +268,38 @@ struct AIWeeklyInsightCard: View {
             await AIInsightsService.shared.invalidate(for: input)
         }
         let next = await AIInsightsService.shared.insight(for: input)
+
+        // Proof of the week — pick the highest-scoring rated session
+        // from the weekly window and extract a transcript-anchored
+        // moment. Falls back to the deterministic template when no AI
+        // provider is configured. Picking the best session (rather
+        // than the most recent) makes the proof feel like a victory
+        // lap, not a random sample. Skips entirely if no session has
+        // a score (cold start or all-skipped reps).
+        var nextProof: ProofMoment? = nil
+        let bestSession = weekly
+            .filter { $0.score != nil && !$0.transcript.isEmpty }
+            .max(by: { ($0.score ?? 0) < ($1.score ?? 0) })
+        if let session = bestSession {
+            let proofInput = ProofMomentInput(
+                session: session,
+                voice: profile?.speakingStyleGoal,
+                goalParaphrase: goalParaphrase,
+                baselineFillerRate: baselineStore.baseline.fillerRate.confidence != .insufficient
+                    ? baselineStore.baseline.fillerRate.value : nil,
+                baselinePace: baselineStore.baseline.pace.confidence != .insufficient
+                    ? baselineStore.baseline.pace.value : nil
+            )
+            if force {
+                await ProofMomentService.shared.invalidate(sessionID: session.id)
+            }
+            nextProof = await ProofMomentService.shared.proof(for: proofInput)
+        }
+
         await MainActor.run {
             withAnimation(.standardSpring) {
                 self.insight = next
+                self.proof = nextProof
             }
             self.isRefreshing = false
         }

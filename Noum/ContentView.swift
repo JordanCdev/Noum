@@ -83,6 +83,11 @@ struct ContentView: View {
     @State private var homeScrollOffset: CGFloat = 0
     @State private var navigationPath = NavigationPath()
     @State private var hourBucket: HourBucket = HourBucket.current()
+    /// Proof moment loaded for the active path celebration. Stays nil
+    /// until the async extraction resolves, at which point the
+    /// celebration's `proofLine` row fades in. Cleared when the
+    /// celebration is dismissed.
+    @State private var pathCelebrationProof: ProofMoment? = nil
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
@@ -231,7 +236,8 @@ struct ContentView: View {
                             // digest. Rewritten with mission framing
                             // (Chapter <tier> · Mission X of N · node title).
                             journeyPreviewCard.cardEntrance(2)
-                            DailyChallengeTile().cardEntrance(3)
+                            askNoumPromoCard.cardEntrance(3)
+                            DailyChallengeTile().cardEntrance(4)
                             // M14 — VoiceMetricsCard promotes Pause + Word-
                             // choice from optional post-session surfaces to a
                             // first-class Home read. VISION.md called these
@@ -241,14 +247,14 @@ struct ContentView: View {
                             // baseline data, so cold-start users see nothing
                             // here — not a placeholder.
                             VoiceMetricsCard(navigationPath: $navigationPath)
-                                .cardEntrance(4)
+                                .cardEntrance(5)
                             AIWeeklyInsightCard(
                                 sessionStore: sessionStore,
                                 ratingStore: ratingStore,
                                 clutchWordStore: ClutchWordStore.shared,
                                 coachingProfileStore: coachingProfileStore
                             )
-                            .cardEntrance(5)
+                            .cardEntrance(6)
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -323,6 +329,12 @@ struct ContentView: View {
                     ProfileView()
                 case .pathJourney:
                     PathJourneyView()
+                case .askNoum:
+                    AskNoumView(
+                        sessionStore: sessionStore,
+                        ratingStore: ratingStore,
+                        coachingProfileStore: coachingProfileStore
+                    )
                 }
             }
         }
@@ -366,10 +378,21 @@ struct ContentView: View {
                     onOpenPath: {
                         pathProgress.consumeCelebration()
                         navigationPath.append(AppDestination.pathJourney)
-                    }
+                    },
+                    // Proof moment — the rep that triggered the unlock
+                    // is the most recent session. Pulls a transcript-
+                    // anchored quote + technique label tied to the
+                    // user's voice goal. Loaded on appear and hydrates
+                    // mid-celebration; if it doesn't resolve in time,
+                    // the proof line stays hidden (celebration renders
+                    // without it). See `pathCelebrationProof`.
+                    proof: pathCelebrationProof
                 )
                 .transition(.opacity)
                 .zIndex(99)
+                .onAppear {
+                    Task { await loadPathCelebrationProof() }
+                }
             }
         }
         // Deferred profile capture — M14 UX rework.
@@ -1008,6 +1031,126 @@ struct ContentView: View {
         .accessibilityLabel(Text("\(titleLine). \(missionLine). \(gatingLine)"))
     }
 
+    /// Ask Noum promo card — Home entry into the persistent coaching
+    /// chat. Brand-purple ambient (matches the Ask Noum surface's
+    /// register, distinct from the brand-blue journey card) + an
+    /// inline NoumCharacter so the entry signals "the coach is here,
+    /// tap to talk." Reads:
+    ///   • Eyebrow: ASK NOUM · <Voice>
+    ///   • Headline: a voice-specific one-liner
+    ///   • CTA: "Open the thread →"
+    /// Tap opens `AppDestination.askNoum`. No CTA copy lives in this
+    /// card itself — the chat view's empty state carries the starter
+    /// prompts, so this card just establishes "your coach is here."
+    private var askNoumPromoCard: some View {
+        let voice = coachingProfileStore.profile?.speakingStyleGoal
+        let voiceTitle = voice?.title ?? "your coach"
+        let stage = ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+        let headline = askNoumPromoHeadline(for: voice)
+        let body = askNoumPromoBody(for: voice)
+        return Button {
+            navigationPath.append(AppDestination.askNoum)
+        } label: {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                NoumCharacter(
+                    mood: .calm,
+                    tint: AppColor.pro,
+                    size: 64,
+                    stage: stage
+                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Ask Noum \u{00B7} \(voiceTitle)")
+                        .font(Typography.micro.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                    Text(headline)
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(body)
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text("Open the thread")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.pro)
+                        Image(systemName: "arrow.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(AppColor.pro)
+                    }
+                    .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Spacing.lg)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .background(askNoumPromoBackground)
+        .shadow(color: AppColor.pro.opacity(0.14), radius: 18, x: 0, y: 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Ask Noum. \(headline). \(body). Open the thread."))
+        .accessibilityIdentifier("home.askNoum")
+    }
+
+    private func askNoumPromoHeadline(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative: return "What's your move this week?"
+        case .warm: return "How did your reps feel this week?"
+        case .concise: return "Sharpen something — fast."
+        case .persuasive: return "Got an argument to land?"
+        case .executive: return "Brief me. Or ask for one."
+        case .storytelling: return "Where's your next chapter?"
+        case .none: return "Talk to your coach."
+        }
+    }
+
+    private func askNoumPromoBody(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative:
+            return "Plan a pitch, get a verdict on this week, or ask why a number moved. I read your last 30 days first."
+        case .warm:
+            return "Bring me a real conversation you're prepping. I'll help you find the moves that read as warmer."
+        case .concise:
+            return "Short questions, short answers. I have your baseline."
+        case .persuasive:
+            return "Tell me what you're trying to convince someone of. I'll work backward to the move."
+        case .executive:
+            return "Top-line first. Got a read-out on the calendar? I'll prep you."
+        case .storytelling:
+            return "Three reps ago you couldn't hold a pause. Tell me what's next."
+        case .none:
+            return "Ask me anything about your speaking practice. I read your last 30 days before every reply."
+        }
+    }
+
+    /// Hero card background for the Ask Noum promo. Brand-purple
+    /// ambient with a soft radial highlight from top-leading so the
+    /// card has the same "alive" depth as the Coach Card + journey
+    /// card without competing with their blue/orange palette.
+    @ViewBuilder
+    private var askNoumPromoBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(AppColor.cardBackground)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [AppColor.pro.opacity(0.18), AppColor.pro.opacity(0.04), .clear],
+                        center: .topLeading,
+                        startRadius: 8,
+                        endRadius: 260
+                    )
+                )
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
+        }
+    }
+
     /// "Mission X of N" framing line. For the cleared state we celebrate
     /// the achievement without inventing a fake counter.
     private func journeyMissionLine(for status: PathNodeStatus?) -> String {
@@ -1572,6 +1715,9 @@ struct ContentView: View {
             navigationPath.append(AppDestination.league)
         case "path":
             navigationPath.append(AppDestination.pathJourney)
+        case "ask", "asknoum":
+            navigationPath = NavigationPath()
+            navigationPath.append(AppDestination.askNoum)
         case "lessons":
             navigationPath.append(AppDestination.lessons)
         case "friend":
@@ -1648,6 +1794,40 @@ struct ContentView: View {
             "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.speakingStyleGoal.rawValue)"
         } ?? "no-profile"
         return "homeRecommendation.\(profileKey).\(recent)"
+    }
+
+    /// Load the proof moment for the active path celebration. Picks
+    /// the most recent session (the one that triggered the unlock)
+    /// and asks `ProofMomentService` for a transcript-anchored quote
+    /// + technique label tied to the user's voice. Hydrates
+    /// `pathCelebrationProof` on success; leaves it nil on miss so
+    /// the celebration renders without a proof line.
+    private func loadPathCelebrationProof() async {
+        let recent = sessionStore.sessions
+            .sorted { $0.date > $1.date }
+            .first
+        guard let session = recent,
+              !session.transcript.isEmpty,
+              session.duration > 8 else {
+            pathCelebrationProof = nil
+            return
+        }
+        let baseline = BaselineStore.shared.baseline
+        let input = ProofMomentInput(
+            session: session,
+            voice: coachingProfileStore.profile?.speakingStyleGoal,
+            goalParaphrase: coachingProfileStore.profile?.displayableGoal,
+            baselineFillerRate: baseline.fillerRate.confidence != .insufficient
+                ? baseline.fillerRate.value : nil,
+            baselinePace: baseline.pace.confidence != .insufficient
+                ? baseline.pace.value : nil
+        )
+        let proof = await ProofMomentService.shared.proof(for: input)
+        await MainActor.run {
+            withAnimation(.standardSpring) {
+                pathCelebrationProof = proof
+            }
+        }
     }
 
     private func refreshHomeRecommendation() async {
