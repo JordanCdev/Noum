@@ -107,7 +107,7 @@ struct LessonView: View {
         HStack(spacing: 6) {
             ForEach(0..<lesson.steps.count, id: \.self) { index in
                 Capsule()
-                    .fill(index <= currentStep ? AppColor.brandBlue : Color.secondary.opacity(0.2))
+                    .fill(index <= currentStep ? lessonHeroTint : Color.secondary.opacity(0.2))
                     .frame(height: 4)
             }
         }
@@ -115,30 +115,88 @@ struct LessonView: View {
 
     // MARK: - Header
 
+    /// Lesson hero — promoted from a plain HStack to a tinted hero card so
+    /// it matches the M14 hero treatment used on Profile / Settings /
+    /// League / Coach Card. Tint is derived from the lesson's category so
+    /// Delivery / Structure / Rhetoric each carry a distinct register. The
+    /// lesson's persistent tagline is inlined as the hero body — the hero
+    /// is "what is this lesson about", the step cards below are the
+    /// interactive surface.
     private var lessonHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                    .fill(AppColor.brandBlue.opacity(0.14))
-                    .frame(width: 44, height: 44)
-                Image(systemName: lesson.symbolName)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(AppColor.brandBlue)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .fill(lessonHeroTint.opacity(0.18))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: lesson.symbolName)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(lessonHeroTint)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lesson.category.label)
+                        .font(Typography.micro)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                    Text(lesson.title)
+                        .font(Typography.cardTitle)
+                        .foregroundStyle(.primary)
+                }
+                Spacer(minLength: 0)
+                Text("Step \(currentStep + 1) of \(lesson.steps.count)")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(lessonHeroTint)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(lesson.category.label)
-                    .font(Typography.micro)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.8)
-                Text(lesson.title)
-                    .font(Typography.cardTitle)
-                    .foregroundStyle(.primary)
-            }
-            Spacer(minLength: 0)
-            Text("Step \(currentStep + 1) of \(lesson.steps.count)")
-                .font(Typography.caption)
+            Text(lesson.tagline)
+                .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(lessonHeaderBackground)
+        .shadow(color: lessonHeroTint.opacity(0.16), radius: 22, x: 0, y: 10)
+    }
+
+    /// Tint per lesson category. Delivery reads as the Ah-Counter green
+    /// (pacing + filler control share that register), Structure reads as
+    /// brand-blue (Timed mode — structured thinking), Rhetoric reads as Pro
+    /// purple (the eloquence layer).
+    private var lessonHeroTint: Color {
+        switch lesson.category {
+        case .delivery:  return AppColor.modeAhCounter
+        case .structure: return AppColor.brandBlue
+        case .rhetoric:  return AppColor.pro
+        }
+    }
+
+    /// Hero chrome for the lesson header — same radial wash + tint border
+    /// shape used on Profile / Settings / League. Picks the canonical
+    /// `*Light` sibling for the mid gradient stop when one exists (pro,
+    /// brandBlue) and falls back to the same tint at 0.22 alpha for the
+    /// delivery register (no `modeAhCounterLight` is defined).
+    private var lessonHeaderBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        let tint = lessonHeroTint
+        let midColor: Color = {
+            switch lesson.category {
+            case .delivery:  return AppColor.modeAhCounter
+            case .structure: return AppColor.brandBlueLight
+            case .rhetoric:  return AppColor.proLight
+            }
+        }()
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [tint.opacity(0.42), midColor.opacity(0.22), tint.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            shape.strokeBorder(tint.opacity(0.40), lineWidth: 1)
         }
     }
 

@@ -12,6 +12,20 @@ import SwiftUI
 //
 // Visual rhythm: brand-blue ready state, brand-gray locked, soft-fade past
 // 9pm to communicate "today is winding down" without scolding the user.
+//
+// Daily-reset rhythm v2 (M14):
+//   • Header eyebrow shows TODAY most of the day, flips to RESETS IN Nm in
+//     the last 15 minutes, brief NEW MISSIONS for the first 10 minutes after
+//     midnight — so the user feels the rotation happen.
+//   • Right-aligned in the header: "Xh Ym before midnight" — a real-time
+//     coach-voice signal of expiry pressure.
+//   • Bottom-edge 4pt progress bar: tracks day-fraction remaining, color-
+//     shifts brandBlue → orange → deeper-orange as midnight approaches.
+//   • Claim pill pulses (scale 1.0→1.04, 1.2s autoreverse) while ready;
+//     on claim, fades into the checkmark.
+//
+// Driven by a 60s `Timer.publish` so the bar + countdown stay live without
+// hammering the system clock.
 
 @available(iOS 17.0, macOS 12.0, *)
 struct DailyChallengeTile: View {
@@ -20,6 +34,12 @@ struct DailyChallengeTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showClaimToast = false
     @State private var lastClaim: DailyChallengeKind?
+
+    // Drives the countdown bar + expiry header. 60s is the right cadence:
+    // minute-precise display, no CPU churn, and the reset-window flips
+    // (TODAY ↔ RESETS IN Nm ↔ NEW MISSIONS) all land on minute boundaries
+    // by construction.
+    @State private var nowTick: Date = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -37,6 +57,10 @@ struct DailyChallengeTile: View {
             tileBackground,
             in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
         )
+        .overlay(alignment: .bottom) {
+            expiryBar
+        }
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .overlay(alignment: .top) {
             if showClaimToast, let last = lastClaim {
                 claimToast(kind: last)
@@ -60,8 +84,11 @@ struct DailyChallengeTile: View {
                 }
             }
         }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { stamp in
+            nowTick = stamp
+        }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Daily challenges. \(manager.unclaimedCount) of \(manager.todays.count) remaining.")
+        .accessibilityLabel("Daily challenges. \(manager.unclaimedCount) of \(manager.todays.count) remaining. \(expiryAccessibilityFragment)")
     }
 
     // MARK: - Header
@@ -75,15 +102,24 @@ struct DailyChallengeTile: View {
                 // voice. Same waveform glyph at smaller scale stitches the
                 // tile to the same speaker.
                 NoumCharacter.Inline(size: 14, mood: .calm, tint: headerAccent)
-                Text("Today")
+                Text(eyebrowLabel)
                     .font(Typography.micro)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(eyebrowTint)
                     .textCase(.uppercase)
                     .tracking(0.8)
+                    .accessibilityIdentifier("home.daily.eyebrow")
                 Spacer()
-                Text(headerStatusChip)
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(headerAccent)
+                // Right-aligned countdown coach line. Only renders when the
+                // tile still has actionable state — once everything is
+                // claimed there's nothing to chase, so the "before midnight"
+                // signal would be noise.
+                if shouldShowExpiryCountdown {
+                    Text(expiryCountdownText)
+                        .font(Typography.captionSmall)
+                        .foregroundStyle(expiryBarColor)
+                        .monospacedDigit()
+                        .accessibilityIdentifier("home.daily.expiry")
+                }
             }
             // Single coach-voice line that names today's challenge concretely
             // and folds the rep count in as a fragment. Replaces the older
@@ -184,15 +220,161 @@ struct DailyChallengeTile: View {
         return AppColor.brandBlue
     }
 
-    /// Right-edge status chip. Stays a small at-a-glance count so the
-    /// coach voice headline can run long without losing the "N to go"
-    /// scannable signal.
-    private var headerStatusChip: String {
-        if manager.allClaimedToday { return "All claimed" }
-        if manager.isPastSoftExpiry {
-            return "\(manager.unclaimedCount) before midnight"
+    // MARK: - Reset rhythm header
+
+    /// Window state for the eyebrow label. Three real-clock signals:
+    ///   • `newMissions` — first 10 minutes after midnight; says the
+    ///     rotation just happened.
+    ///   • `resetsIn(Int)` — last 15 minutes of the day; counts down to
+    ///     the rollover the user is about to see.
+    ///   • `today` — every other moment.
+    ///
+    /// Derived purely from `nowTick` and `Calendar.current`. No state
+    /// stored, no flags to clear — when the clock ticks past 12:10am the
+    /// label naturally falls back to TODAY. Internal access so unit
+    /// tests can assert against the helper directly.
+    enum EyebrowWindow: Equatable {
+        case today
+        case resetsIn(minutes: Int)
+        case newMissions
+    }
+
+    private var eyebrowWindow: EyebrowWindow {
+        Self.eyebrowWindow(at: nowTick, calendar: .current)
+    }
+
+    /// Pure helper, exposed for unit tests. Uses `startOfDay` semantics so
+    /// "midnight" is the canonical day boundary, not 23:59:59. Handles DST
+    /// rollovers via Calendar arithmetic — no manual hour math.
+    static func eyebrowWindow(at now: Date, calendar: Calendar) -> EyebrowWindow {
+        let startOfDay = calendar.startOfDay(for: now)
+        let secondsSinceMidnight = now.timeIntervalSince(startOfDay)
+        // First 10 minutes after midnight — "NEW MISSIONS" rotation moment.
+        if secondsSinceMidnight < 10 * 60 {
+            return .newMissions
         }
-        return "\(manager.unclaimedCount) to go"
+        // Last 15 minutes before midnight — "RESETS IN Nm".
+        let mins = minutesUntilMidnight(from: now, in: calendar)
+        if mins <= 15 {
+            // Floor of remaining minutes — once we're under one minute,
+            // show 1m rather than 0m so it never reads "RESETS IN 0m" while
+            // claims are still live.
+            return .resetsIn(minutes: max(1, mins))
+        }
+        return .today
+    }
+
+    private var eyebrowLabel: String {
+        switch eyebrowWindow {
+        case .today:                      return "Today"
+        case .resetsIn(let m):            return "Resets in \(m)m"
+        case .newMissions:                return "New missions"
+        }
+    }
+
+    /// Eyebrow tint shifts to the expiry color in the resets-in window so
+    /// the visual pressure register matches the bottom bar and countdown.
+    /// NEW MISSIONS rides the brandBlue register — same color the
+    /// claim-ready state already uses, signalling "fresh, ready, go."
+    private var eyebrowTint: Color {
+        switch eyebrowWindow {
+        case .today:        return .secondary
+        case .resetsIn:     return expiryBarColor
+        case .newMissions:  return AppColor.brandBlue
+        }
+    }
+
+    // MARK: - Expiry countdown + bar
+
+    /// True for every state except `allClaimed` — once nothing is claimable
+    /// there's no useful signal in displaying "Xh Ym before midnight."
+    private var shouldShowExpiryCountdown: Bool {
+        !manager.allClaimedToday
+    }
+
+    /// "3h 47m before midnight" / "47m before midnight" / "Under a minute".
+    /// Coach voice — restrained, no exclamation, no "Hurry!".
+    private var expiryCountdownText: String {
+        Self.expiryCountdownText(minutesRemaining: Self.minutesUntilMidnight(from: nowTick, in: .current))
+    }
+
+    static func expiryCountdownText(minutesRemaining mins: Int) -> String {
+        if mins <= 1 { return "Under a minute" }
+        if mins < 60 { return "\(mins)m before midnight" }
+        let h = mins / 60
+        let m = mins % 60
+        if m == 0 { return "\(h)h before midnight" }
+        return "\(h)h \(m)m before midnight"
+    }
+
+    /// Compute minutes until the next local midnight. Stable to DST via
+    /// `Calendar.startOfDay(for:) + .day = 1` — DON'T use 23:59:59 math.
+    /// Returned value is clamped to [0, 1440] so callers don't have to
+    /// guard against edge cases when the timer fires within a few ms of
+    /// midnight.
+    static func minutesUntilMidnight(from now: Date, in calendar: Calendar) -> Int {
+        let startOfDay = calendar.startOfDay(for: now)
+        guard let nextMidnight = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+            return 0
+        }
+        let seconds = nextMidnight.timeIntervalSince(now)
+        let mins = Int(floor(seconds / 60.0))
+        return max(0, min(1440, mins))
+    }
+
+    /// Fraction of the day remaining, 0.0 (midnight) → 1.0 (just after the
+    /// previous midnight). Drives the bottom bar width.
+    private var dayFractionRemaining: Double {
+        Double(Self.minutesUntilMidnight(from: nowTick, in: .current)) / 1440.0
+    }
+
+    /// Bar + countdown color. Three bands:
+    ///   • > 6h left  → softened brand-blue (calm, plenty of time).
+    ///   • 2–6h left  → modeSuddenDeath orange at 70% (warming up).
+    ///   • < 2h left  → modeSuddenDeath orange at full (real pressure).
+    /// After softExpiry (past 9pm) the bar drops to the orange register
+    /// regardless of exact hours-remaining — matches the existing 9pm
+    /// "winding down" tone the rest of the tile already wears.
+    private var expiryBarColor: Color {
+        let mins = Self.minutesUntilMidnight(from: nowTick, in: .current)
+        let hoursLeft = Double(mins) / 60.0
+        if hoursLeft < 2 {
+            return AppColor.modeSuddenDeath
+        }
+        if hoursLeft < 6 || manager.isPastSoftExpiry {
+            return AppColor.modeSuddenDeath.opacity(0.7)
+        }
+        return AppColor.brandBlue.opacity(0.7)
+    }
+
+    /// Bottom-edge progress strip — 4pt tall, fills as the day burns down.
+    /// Hidden while everything is claimed (the celebration register owns
+    /// the tile then, and there's nothing to chase).
+    @ViewBuilder
+    private var expiryBar: some View {
+        if !manager.allClaimedToday {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    // Track — barely visible so the bar reads as "real
+                    // surface fills" not "color on background."
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.10))
+                    Rectangle()
+                        .fill(expiryBarColor)
+                        .frame(width: proxy.size.width * CGFloat(dayFractionRemaining))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: dayFractionRemaining)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: expiryBarColor)
+                }
+            }
+            .frame(height: 4)
+            .accessibilityHidden(true)  // The countdown text + accessibilityLabel already carry the signal.
+        }
+    }
+
+    private var expiryAccessibilityFragment: String {
+        if manager.allClaimedToday { return "All claimed for today." }
+        let mins = Self.minutesUntilMidnight(from: nowTick, in: .current)
+        return Self.expiryCountdownText(minutesRemaining: mins) + "."
     }
 
     // MARK: - Row
@@ -241,26 +423,24 @@ struct DailyChallengeTile: View {
 
     @ViewBuilder
     private func trailing(claimed: Bool, ready: Bool, kind: DailyChallengeKind) -> some View {
-        if claimed {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(AppColor.brandBlue)
-        } else if ready {
-            HStack(spacing: 4) {
-                Text("Claim +\(kind.xpReward)")
-                    .font(Typography.micro.weight(.bold))
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 10, weight: .heavy))
+        ZStack {
+            if claimed {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            } else if ready {
+                ClaimReadyPill(kind: kind, reduceMotion: reduceMotion)
+                    .transition(.opacity)
+            } else {
+                Text("+\(kind.xpReward) XP")
+                    .font(Typography.micro.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .transition(.opacity)
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(AppColor.brandBlue, in: Capsule())
-        } else {
-            Text("+\(kind.xpReward) XP")
-                .font(Typography.micro.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
+        .animation(reduceMotion ? nil : .standardSpring, value: claimed)
+        .animation(reduceMotion ? nil : .standardSpring, value: ready)
     }
 
     private func rowAccent(claimed: Bool, ready: Bool, muted: Bool) -> Color {
@@ -306,6 +486,52 @@ struct DailyChallengeTile: View {
         .background(AppColor.brandBlue, in: Capsule())
         .shadow(color: AppColor.brandBlue.opacity(0.30), radius: 12, x: 0, y: 4)
         .padding(.top, -16)
+    }
+}
+
+// MARK: - Claim-ready pill (subtle scale pulse)
+//
+// Factored out so the pulse driver (`scaleEffect` + `withAnimation(autoreverses:)`)
+// only re-runs when this view appears — not on every parent re-render. The
+// pulse fires exactly when a challenge becomes claimable; once the user
+// claims it (or never does, until midnight rolls the day over), the row
+// transitions away from this view and the animation tears down with it.
+
+@available(iOS 17.0, macOS 12.0, *)
+private struct ClaimReadyPill: View {
+    let kind: DailyChallengeKind
+    let reduceMotion: Bool
+
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("Claim +\(kind.xpReward)")
+                .font(Typography.micro.weight(.bold))
+            Image(systemName: "arrow.right")
+                .font(.system(size: 10, weight: .heavy))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(AppColor.brandBlue, in: Capsule())
+        .scaleEffect(pulsing ? 1.04 : 1.0)
+        .shadow(color: AppColor.brandBlue.opacity(pulsing ? 0.30 : 0.0), radius: 6, x: 0, y: 2)
+        // Restraint: a 1.2s loop, 0.04 scale, 0.30 shadow alpha. The
+        // pulse must read as "earn it" not as a fidget — too tight
+        // and it feels needy, too loose and the user never notices.
+        // .animation(value:) is the right primitive here over
+        // `withAnimation` inside `.onAppear`, because it scopes the
+        // implicit transaction to this view and tears down cleanly
+        // when the row transitions to claimed.
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+            value: pulsing
+        )
+        .onAppear {
+            guard !reduceMotion else { return }
+            pulsing = true
+        }
     }
 }
 

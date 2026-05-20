@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero**)_
+_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter**)_
 
 ## Architecture overview
 
@@ -107,7 +107,55 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
 - `Noum/Noum/DailyChallengeTile.swift` — coach-voice rewrite
   (5 states). Row subtitles dropped (title + XP only); subtitle
   moves to accessibility label. Inline `NoumCharacter.Inline`
-  glyph in the TODAY header.
+  glyph in the TODAY header. Copy register: "Today's mission" not
+  "Today's challenge" — uniform with journey card + path nodes.
+- `Noum/VoiceMetricsCard.swift` — first-class Home card surfacing
+  Pause + Word Choice metrics (the underweight VISION items).
+  Brand-blue ambient. Coach voice: "77% unique words. Up from
+  65% last week." Collapses entirely when no qualifying data —
+  no placeholder.
+- `Noum/NoumCharacterStage.swift` — five-stage character story
+  arc (`awakening` 0–500 XP → `voice` 500–1500 → `composure`
+  1500–3500 → `command` 3500–8000 → `mastery` 8000+). Pure-
+  function `current(xp:)`. Per-account ratchet (UserDefaults key
+  `noumCharacter.peakStage.<accountID>`) — never visible
+  regression on XP drops. Applied to NoumCharacter atop mood;
+  stage = lifetime arc, mood = moment-to-moment state.
+
+### Path / mission gameplay loop
+- `Noum/Noum/PathProgressManager.swift` + `Noum/Noum/PathNode.swift`
+  — node-by-node unlocks (unchanged this push; consumed widely).
+- `Noum/Noum/ContentView.swift` `journeyPreviewCard` — promoted to
+  slot 3 (Home position 2 after Coach Card + utility strip). Reads
+  as a SECOND HERO: brand-blue ambient + "YOUR JOURNEY · Chapter ·
+  <Tier>" eyebrow + "Mission X of N" + node title + gating line +
+  "Open the Path" CTA.
+- `Noum/HomeCoachCard.swift` — new `mission-within-reach` coach
+  title variant when `PathProgressManager.currentNode` is one rep
+  / score-point from unlocking. Drives users at the path naturally.
+- `Noum/Noum/PathNodeCelebration.swift` — full-screen cinematic
+  on path unlock: brand-blue radial backdrop, 140pt stage-aware
+  NoumCharacter (`.excited`), "Mission Complete." headline,
+  chapter eyebrow, specific stat line ("X reps. Y clean pauses.
+  You earned this."), five-beat motion sequence (reduce-motion-
+  aware).
+- `Noum/Noum/SummaryView.swift` — headline variant: when
+  `PathProgressManager.shared.pendingCelebrationNodeID` is set,
+  the summary reads "Mission cleared" instead of the score-based
+  generic ("Strong delivery" / "Building momentum" / etc.).
+- `Noum/Noum/AIWeeklyInsightCard.swift` — chapter eyebrow above
+  the headline tied to `PathProgressManager.currentNode.node.tier`
+  (the *path-chapter the user is travelling through*), not the
+  rating tier — so the eyebrow always matches what the journey
+  card on the same screen reads. Falls back to LeagueTier only
+  when the path is cleared. Reads "CHAPTER · BRONZE" while still
+  in the Bronze section of the path, even if the user's overall
+  rating has reached Gold.
+- `Noum/Noum/ProgressionCharts.swift` — pillar picker (Score /
+  Fillers / Pace / Pauses / Pitch) now scrolls horizontally with
+  `.fixedSize` on each pill so the labels never wrap mid-word
+  ("Fill / ers", "Pa / ce") when the row exceeds the rating
+  card's inner width.
 
 ### Core practice loop
 - `Noum/Noum/PracticeModeSelectionView.swift` — mode picker, drives

@@ -606,16 +606,7 @@ private struct SessionHistoryDetailView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.97, green: 0.95, blue: 0.91),
-                    Color.white,
-                    Color(red: 0.93, green: 0.96, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AppColor.screenBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -651,7 +642,7 @@ private struct SessionHistoryDetailView: View {
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(session.headline ?? "Session Detail")
+            Text(session.headline ?? "Session detail")
                 .font(.title2.weight(.bold))
 
             Text(primarySummary)
@@ -661,16 +652,42 @@ private struct SessionHistoryDetailView: View {
             HStack(spacing: 10) {
                 detailMetric(title: "Score", value: session.score.map { "\($0)/10" } ?? "Pending", tint: .green)
                 detailMetric(title: "Focus", value: focusLabel, tint: .blue)
-                detailMetric(title: "Mode", value: modeLabel, tint: .purple)
+                detailMetric(title: "Mode", value: modeLabel, tint: AppColor.tint(for: session.mode))
             }
         }
         .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(heroCardBackground)
+        .shadow(color: AppColor.tint(for: session.mode).opacity(0.16), radius: 22, x: 0, y: 10)
+    }
+
+    /// Hero chrome for the session-detail hero — mode-tinted radial wash +
+    /// tint border. Matches the M14 hero treatment on Coach Card / Profile /
+    /// Settings / League so the Review detail surface stops reading
+    /// iOS-stock. The mid gradient stop holds the same mode tint at a
+    /// lower alpha rather than a dedicated `*Light` sibling — keeps the
+    /// hue identity tight for modes without a Light variant (Sudden Death,
+    /// Ah-Counter, IM).
+    private var heroCardBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        let tint = AppColor.tint(for: session.mode)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [tint.opacity(0.42), tint.opacity(0.22), tint.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            shape.strokeBorder(tint.opacity(0.40), lineWidth: 1)
+        }
     }
 
     private var focusCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Focus Next")
+            Text("Focus next")
                 .font(.headline)
 
             Text(nextFocusText)
@@ -680,7 +697,7 @@ private struct SessionHistoryDetailView: View {
 
             if let imDetails = session.imConversationDetails {
                 HStack(spacing: 10) {
-                    detailMetric(title: "Target Tone", value: imDetails.setup.targetTone.title, tint: .blue)
+                    detailMetric(title: "Target tone", value: imDetails.setup.targetTone.title, tint: .blue)
                     if let finalState = imDetails.finalState {
                         detailMetric(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .teal)
                         detailMetric(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
@@ -716,7 +733,7 @@ private struct SessionHistoryDetailView: View {
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(showsFullReview ? "Hide Full Review" : "See Full Review")
+                    Text(showsFullReview ? "Hide full review" : "See full review")
                         .font(.headline)
                         .foregroundStyle(.primary)
                     Text("Open the deeper breakdown only when you want more detail.")
@@ -738,7 +755,7 @@ private struct SessionHistoryDetailView: View {
 
     private var sessionMetricsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Session Metrics")
+            Text("Session metrics")
                 .font(.headline)
 
             HStack(spacing: 10) {
@@ -753,7 +770,7 @@ private struct SessionHistoryDetailView: View {
 
     private func conversationReadCard(_ imDetails: IMConversationDetails) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Full IM Review")
+            Text("Full IM review")
                 .font(.headline)
 
             if let outcome = imDetails.outcome {

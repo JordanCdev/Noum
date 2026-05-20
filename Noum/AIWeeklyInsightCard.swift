@@ -25,10 +25,27 @@ struct AIWeeklyInsightCard: View {
 
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
+    @StateObject private var pathProgress = PathProgressManager.shared
 
     @State private var insight: AIInsight?
     @State private var isRefreshing = false
     @State private var hasAppeared = false
+
+    /// Chapter eyebrow for the headline. Mirrors the Home journey
+    /// card's "Chapter · <tier>" — the chapter the user is *currently
+    /// traveling through on the path*, not their rating tier. These
+    /// can disagree (rating may be Gold while the path-node is still
+    /// in the Bronze section), and the journey is the canonical story
+    /// register. Falls back to the rating tier only if no current
+    /// path node (cleared or pre-rating cold start).
+    private var chapterEyebrow: String? {
+        if let nodeTier = pathProgress.currentNode?.node.tier.title {
+            return "Chapter \u{00B7} \(nodeTier)"
+        }
+        guard ratingStore.rating.totalRatedSessions > 0 else { return nil }
+        let tier = LeagueTier.tier(for: ratingStore.rating.overall)
+        return "Chapter \u{00B7} \(tier.title)"
+    }
 
     private var weeklyReps: Int {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
@@ -62,6 +79,18 @@ struct AIWeeklyInsightCard: View {
         let insight = insight ?? AIInsight.placeholder
         VStack(alignment: .leading, spacing: 12) {
             header(insight: insight)
+            // Chapter eyebrow — when there's a current path mission, the
+            // weekly insight reads "Chapter · <Tier>" above the headline,
+            // tying the AI read into the story register the rest of the
+            // app uses ("YOUR JOURNEY · Chapter · Bronze" on the journey
+            // card, "Chapter X — Mission Complete." on the celebration).
+            if let chapter = chapterEyebrow {
+                Text(chapter)
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(AppColor.pro.opacity(0.85))
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+            }
             Text(insight.headline)
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)

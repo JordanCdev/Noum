@@ -80,34 +80,42 @@ struct ProgressionChartsCard: View {
     // MARK: - Series picker
 
     private var seriesPicker: some View {
-        HStack(spacing: 6) {
-            ForEach(ChartSeries.allCases, id: \.self) { series in
-                Button {
-                    withAnimation(.snappySpring) {
-                        selectedSeries = series
+        // Five pillar pills (Score/Fillers/Pace/Pauses/Pitch) don't fit
+        // on one row at iPhone-mini widths, so the picker scrolls
+        // horizontally. fixedSize on the Text prevents the mid-word
+        // wrap we saw before ("Fill / ers", "Pa / ce") when the row
+        // tried to compress to fit.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(ChartSeries.allCases, id: \.self) { series in
+                    Button {
+                        withAnimation(.snappySpring) {
+                            selectedSeries = series
+                        }
+                        CoachHaptic.selectionTap()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: series.symbolName)
+                                .font(.caption2.weight(.bold))
+                            Text(series.shortLabel)
+                                .font(Typography.caption.weight(.semibold))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .foregroundStyle(selectedSeries == series ? .white : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            selectedSeries == series
+                                ? AnyShapeStyle(series.tint)
+                                : AnyShapeStyle(AppColor.tagBackground),
+                            in: Capsule()
+                        )
                     }
-                    CoachHaptic.selectionTap()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: series.symbolName)
-                            .font(.caption2.weight(.bold))
-                        Text(series.shortLabel)
-                            .font(Typography.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(selectedSeries == series ? .white : .secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        selectedSeries == series
-                            ? AnyShapeStyle(series.tint)
-                            : AnyShapeStyle(AppColor.tagBackground),
-                        in: Capsule()
-                    )
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(series.shortLabel)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(series.shortLabel)
             }
-            Spacer()
         }
     }
 

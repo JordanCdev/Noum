@@ -4710,3 +4710,111 @@ struct VoiceMetricsCardReadTests {
                 "Expected unique-words headline; got: \(word.copy)")
     }
 }
+
+// MARK: - DailyChallengeTile countdown math (M14 daily-rhythm v2)
+//
+// Locks the wall-clock math that drives the bottom expiry bar and the
+// header reset-window flips. We pin a fixed gregorian calendar in
+// UTC-equivalent terms (TimeZone(secondsFromGMT: 0)) so the test is
+// stable across whoever's machine runs it — the production code reads
+// `Calendar.current`, but the helper takes a calendar in so it's
+// testable independent of locale.
+
+struct DailyChallengeTileCountdownTests {
+
+    /// Build a Date for "today at H:M" in the test calendar.
+    private static func at(_ hour: Int, _ minute: Int, calendar: Calendar) -> Date {
+        var comps = DateComponents()
+        comps.year = 2026
+        comps.month = 5
+        comps.day = 17
+        comps.hour = hour
+        comps.minute = minute
+        comps.second = 0
+        return calendar.date(from: comps)!
+    }
+
+    private static var testCalendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        return cal
+    }
+
+    @Test func minutesUntilMidnightAt2345Is15() {
+        let cal = Self.testCalendar
+        let now = Self.at(23, 45, calendar: cal)
+        let mins = DailyChallengeTile.minutesUntilMidnight(from: now, in: cal)
+        #expect(mins == 15, "23:45 should report 15 minutes until midnight, got \(mins)")
+    }
+
+    @Test func minutesUntilMidnightAt2200Is120() {
+        let cal = Self.testCalendar
+        let now = Self.at(22, 0, calendar: cal)
+        let mins = DailyChallengeTile.minutesUntilMidnight(from: now, in: cal)
+        #expect(mins == 120, "22:00 should report 120 minutes until midnight, got \(mins)")
+    }
+
+    @Test func minutesUntilMidnightAt0001Is1439() {
+        let cal = Self.testCalendar
+        let now = Self.at(0, 1, calendar: cal)
+        let mins = DailyChallengeTile.minutesUntilMidnight(from: now, in: cal)
+        #expect(mins == 1439, "00:01 should report 1439 minutes until midnight, got \(mins)")
+    }
+
+    @Test func minutesUntilMidnightAtMidnightIs1440() {
+        let cal = Self.testCalendar
+        let now = Self.at(0, 0, calendar: cal)
+        let mins = DailyChallengeTile.minutesUntilMidnight(from: now, in: cal)
+        // Right at 00:00:00 we expect the full 1440 — startOfDay(now) == now
+        // means nextMidnight is 24h later, so this is the canonical "fresh
+        // day" value.
+        #expect(mins == 1440, "00:00 should report 1440 minutes until midnight, got \(mins)")
+    }
+
+    @Test func eyebrowWindowMostOfDayIsToday() {
+        let cal = Self.testCalendar
+        let mid = Self.at(14, 0, calendar: cal)
+        #expect(DailyChallengeTile.eyebrowWindow(at: mid, calendar: cal) == .today)
+    }
+
+    @Test func eyebrowWindowAt2345IsResetsIn15() {
+        let cal = Self.testCalendar
+        let edge = Self.at(23, 45, calendar: cal)
+        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .resetsIn(minutes: 15))
+    }
+
+    @Test func eyebrowWindowAt2350IsResetsIn10() {
+        let cal = Self.testCalendar
+        let edge = Self.at(23, 50, calendar: cal)
+        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .resetsIn(minutes: 10))
+    }
+
+    @Test func eyebrowWindowAt2358IsResetsIn2() {
+        let cal = Self.testCalendar
+        let edge = Self.at(23, 58, calendar: cal)
+        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .resetsIn(minutes: 2))
+    }
+
+    @Test func eyebrowWindowAt0005IsNewMissions() {
+        let cal = Self.testCalendar
+        let edge = Self.at(0, 5, calendar: cal)
+        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .newMissions)
+    }
+
+    @Test func eyebrowWindowAt0010IsTodayAgain() {
+        // 00:10 is the inclusive boundary — the spec says first ~10 minutes
+        // get NEW MISSIONS. The strict-less-than gate in the helper means
+        // 00:10:00.000 already reads as TODAY. Locks the contract.
+        let cal = Self.testCalendar
+        let edge = Self.at(0, 10, calendar: cal)
+        #expect(DailyChallengeTile.eyebrowWindow(at: edge, calendar: cal) == .today)
+    }
+
+    @Test func expiryCountdownTextRenderHours() {
+        #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 227) == "3h 47m before midnight")
+        #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 120) == "2h before midnight")
+        #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 47)  == "47m before midnight")
+        #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 1)   == "Under a minute")
+        #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 0)   == "Under a minute")
+    }
+}

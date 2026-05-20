@@ -156,6 +156,14 @@ struct ProfileView: View {
 
                 speakingRatingCard
 
+                // M14: "Your Arc" — horizontal timeline that makes the
+                // user's progression LEGIBLE (Day 1 → Today → Next mission
+                // → Next chapter). Sits between the rating card and the
+                // Progression cluster so the reader's eye walks from
+                // "current standing" → "where this is going" before the
+                // analytics surfaces below explain how.
+                YourArcCard()
+
                 clusterHeader("Progression")
                 PeakRatingWallCard()
                 ProgressionChartsCard(sessionStore: sessionStore)

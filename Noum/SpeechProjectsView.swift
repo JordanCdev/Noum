@@ -53,16 +53,55 @@ struct SpeechProjectsView: View {
     }
 
     private var headerCopy: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Speech projects")
-                .font(Typography.screenTitle)
-                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .fill(AppColor.brandBlue.opacity(0.18))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "rectangle.stack.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Speech projects")
+                        .font(Typography.screenTitle)
+                        .foregroundStyle(.primary)
+                    Text("\(SpeechProjects.all.count) projects")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                }
+                Spacer(minLength: 0)
+            }
             Text("Structured prepared speeches with concrete objectives. Inspired by Toastmasters Pathways.")
                 .font(Typography.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(headerHeroBackground)
+        .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
+    }
+
+    /// Hero chrome for the Speech Projects header — radial brand-blue wash
+    /// (learning register) + tint border. Matches the M14 hero treatment
+    /// used on Profile / Settings / League / Coach Card so the picker
+    /// surface stops reading iOS-stock.
+    private var headerHeroBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [AppColor.brandBlue.opacity(0.42), AppColor.brandBlueLight.opacity(0.22), AppColor.brandBlue.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            shape.strokeBorder(AppColor.brandBlue.opacity(0.40), lineWidth: 1)
+        }
     }
 
     // MARK: - First-time empty state

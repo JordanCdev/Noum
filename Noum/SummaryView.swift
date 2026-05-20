@@ -221,6 +221,16 @@ struct SummaryView: View {
         if let headlineOverride { return headlineOverride }
         if transcriptWordCount == 0 { return "No response detected" }
         if isMinimalEffort { return "Just getting started" }
+        // If a Path mission just unlocked on this rep, the headline
+        // reads "Mission cleared." to anchor the story/progression
+        // register the rest of the app uses. PathProgressManager queues
+        // an unlocked node celebration via `pendingCelebrationNodeID`
+        // when a session causes a node to satisfy its criteria. We read
+        // it here without consuming — the PathNodeCelebration overlay
+        // still consumes on its own fullScreenCover dismissal.
+        if PathProgressManager.shared.pendingCelebrationNodeID != nil {
+            return "Mission cleared"
+        }
         switch scoreValue {
         case 9...10: return "Strong delivery"
         case 7...8: return "Good control"

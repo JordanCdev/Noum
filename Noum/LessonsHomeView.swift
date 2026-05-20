@@ -95,12 +95,29 @@ struct LessonsHomeView: View {
                 }
             }
         )
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
+        .background(firstTimeEmptyStateBackground)
+        .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
         .accessibilityIdentifier("emptyState.lessons")
+    }
+
+    /// Hero chrome for the first-time empty state — radial brand-blue wash
+    /// (learning register) + tint border. Mirrors the same hero pattern used
+    /// on Profile / Settings / League so the empty state reads as a premium
+    /// moment, not iOS-stock.
+    private var firstTimeEmptyStateBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        return ZStack {
+            shape.fill(AppColor.cardBackground)
+            shape.fill(
+                RadialGradient(
+                    colors: [AppColor.brandBlue.opacity(0.42), AppColor.brandBlueLight.opacity(0.22), AppColor.brandBlue.opacity(0.04), Color.clear],
+                    center: UnitPoint(x: 0.5, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            shape.strokeBorder(AppColor.brandBlue.opacity(0.40), lineWidth: 1)
+        }
     }
 
     // MARK: - Summary strip
