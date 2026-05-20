@@ -4686,6 +4686,13 @@ enum PracticeEvaluator {
             //   • pace and duration carry more (they're the honest signal)
             //   • style alignment carries less (it's a soft signal that
             //     shouldn't lift a poor delivery)
+            let voiceBonus = voiceDeliveryBonus(
+                profile: profile,
+                wordCount: wordCount,
+                duration: duration,
+                fillerCount: fillerCount,
+                wordsPerMinute: wordsPerMinute
+            )
             let rawScore = 0.5
                 + (durationProgress * 3.4)
                 + (contentProgress * 2.4)
@@ -4693,6 +4700,7 @@ enum PracticeEvaluator {
                 + (styleAlignment * 1.0)
                 - fillerPenalty
                 + difficultyBonus
+                + voiceBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -4881,7 +4889,14 @@ enum PracticeEvaluator {
         } else {
             let pressureBonus = min(Double(level - 1) * 0.8, 3.2)
             let eventBonus = min(Double(pressureEventsHandled) * 0.35, 1.4)
-            let rawScore = 2.0 + (durationProgress * 2.4) + (contentProgress * 2.5) + (paceProgress * 1.2) + (styleAlignment * 1.4) - fillerPenalty + (fillerCount == 0 ? 2.0 : 0.0) + pressureBonus + eventBonus
+            let voiceBonus = voiceDeliveryBonus(
+                profile: profile,
+                wordCount: wordCount,
+                duration: duration,
+                fillerCount: fillerCount,
+                wordsPerMinute: wordsPerMinute
+            )
+            let rawScore = 2.0 + (durationProgress * 2.4) + (contentProgress * 2.5) + (paceProgress * 1.2) + (styleAlignment * 1.4) - fillerPenalty + (fillerCount == 0 ? 2.0 : 0.0) + pressureBonus + eventBonus + voiceBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -4978,7 +4993,14 @@ enum PracticeEvaluator {
         if wordCount < 4 || duration < 4 {
             score = 1
         } else {
-            let rawScore = 2.0 + (durationProgress * 2.5) + (contentProgress * 2.0) + (paceProgress * 1.5) + (styleAlignment * 1.6) + max(0, 3.0 - fillerPenalty)
+            let voiceBonus = voiceDeliveryBonus(
+                profile: profile,
+                wordCount: wordCount,
+                duration: duration,
+                fillerCount: fillerCount,
+                wordsPerMinute: wordsPerMinute
+            )
+            let rawScore = 2.0 + (durationProgress * 2.5) + (contentProgress * 2.0) + (paceProgress * 1.5) + (styleAlignment * 1.6) + max(0, 3.0 - fillerPenalty) + voiceBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -5260,6 +5282,85 @@ enum PracticeEvaluator {
         case 0.9...: return "Aligned"
         case 0.55..<0.9: return "Building"
         default: return "Off target"
+        }
+    }
+
+    // MARK: - Goal-aware delivery bonus
+    //
+    // Closes the last M14 verdict-loop edge documented in `docs/VISION.md`:
+    // every line of coaching copy already speaks the user's chosen voice
+    // (`enrichMomentumWithStyleAlignment`, `enrichLeverageWithStyleAlignment`,
+    // `enrichNextStepWithStyleAlignment`, `drillRationale`), but the 0–10
+    // score itself was voice-blind. This helper adds a small bonus to the
+    // raw score when the *delivery profile* — fillers, pace, duration,
+    // word count — matches what the user's chosen voice asks for. The
+    // existing `styleAlignment * 1.0` slot reads *word choice*; this
+    // reads *delivery*. They're orthogonal signals.
+    //
+    // Restraint contract (matches the copy enrichments):
+    //   • Returns 0 when there's no profile / no goal.
+    //   • Returns 0 when the delivery does not fit the voice — no penalty,
+    //     because the existing dimension weights already penalise misses
+    //     and a second penalty would double-hit the user.
+    //   • Caps at 0.6 raw, so the bonus rounds the final 0/10 up by at most
+    //     1 point on a borderline case. No mid-stream shock.
+    //   • Mirrors `SpeakingStyleGoal.alignedSkillAreas` so the score uplift
+    //     lands on the same dimensions the drill picker / verdict copy
+    //     already lean on — score, copy, and drill stay in agreement.
+    //
+    // Voice deltas (each measured against the criteria the corresponding
+    // `alignedSkillAreas` set already names):
+    //   .concise        → tight delivery: few fillers, restrained pace, short answer with real content
+    //   .warm           → natural pace, content depth (conversational lift, not breakneck)
+    //   .authoritative  → composed delivery: zero fillers, room to land the message
+    //   .persuasive     → developed content + sustained duration (reason-stack room)
+    //   .executive      → composed clarity: zero fillers + controlled pace
+    //   .storytelling   → long-form: room for arc + scene
+    //
+    // Each delta uses a 0.3 / 0.2 split (cap 0.5–0.6). The two halves are
+    // independent — a partial match (one condition out of two) still earns
+    // half the bonus, so the signal degrades gracefully instead of going
+    // binary.
+    static func voiceDeliveryBonus(
+        profile: CoachingProfile?,
+        wordCount: Int,
+        duration: TimeInterval,
+        fillerCount: Int,
+        wordsPerMinute: Double
+    ) -> Double {
+        guard let profile, wordCount >= 8, duration >= 8 else { return 0 }
+        switch profile.speakingStyleGoal {
+        case .concise:
+            var bonus = 0.0
+            if fillerCount <= 1 { bonus += 0.2 }
+            if duration <= 35 && wordCount >= 15 { bonus += 0.2 }
+            if wordsPerMinute >= 110 && wordsPerMinute <= 145 { bonus += 0.2 }
+            return min(bonus, 0.6)
+        case .warm:
+            var bonus = 0.0
+            if wordsPerMinute >= 125 && wordsPerMinute <= 155 { bonus += 0.3 }
+            if wordCount >= 30 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .authoritative:
+            var bonus = 0.0
+            if fillerCount == 0 { bonus += 0.3 }
+            if duration >= 25 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .persuasive:
+            var bonus = 0.0
+            if wordCount >= 40 { bonus += 0.3 }
+            if duration >= 30 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .executive:
+            var bonus = 0.0
+            if fillerCount == 0 { bonus += 0.3 }
+            if wordsPerMinute >= 115 && wordsPerMinute <= 150 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .storytelling:
+            var bonus = 0.0
+            if duration >= 35 { bonus += 0.3 }
+            if wordCount >= 50 { bonus += 0.2 }
+            return min(bonus, 0.5)
         }
     }
 

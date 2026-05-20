@@ -853,6 +853,128 @@ struct VerdictEngineTests {
     }
 }
 
+// MARK: - Voice-aware Delivery Bonus Tests
+//
+// Locks the restraint contract on `PracticeEvaluator.voiceDeliveryBonus`:
+// the small uplift fires only when the *delivery profile* actually fits
+// the user's chosen voice. No profile / no fit → zero (no fake
+// personalization, no double-penalty when the delivery missed).
+struct VoiceDeliveryBonusTests {
+
+    private func makeProfile(_ goal: SpeakingStyleGoal) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .interviews,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: goal,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    @Test func bonusIsZeroWithoutProfile() {
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: nil, wordCount: 60, duration: 30, fillerCount: 0, wordsPerMinute: 130
+        )
+        #expect(bonus == 0, "No profile must not earn a voice bonus. Got: \(bonus)")
+    }
+
+    @Test func bonusIsZeroOnTrivialDelivery() {
+        // Guard rails: too short / too few words → silent, even if the
+        // profile is set. Same restraint as the existing styleAlignment
+        // path — a 5-word stub shouldn't move the score.
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.authoritative),
+            wordCount: 5, duration: 3, fillerCount: 0, wordsPerMinute: 130
+        )
+        #expect(bonus == 0, "Trivial delivery must not earn a voice bonus. Got: \(bonus)")
+    }
+
+    @Test func conciseVoiceRewardsTightDelivery() {
+        // Concise voice: lean (≤45 words / ≤35s), few fillers (≤1),
+        // controlled pace (110–145 WPM). All three conditions met.
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.concise),
+            wordCount: 40, duration: 25, fillerCount: 0, wordsPerMinute: 125
+        )
+        #expect(bonus >= 0.6, "Concise voice with tight delivery should earn the full bonus. Got: \(bonus)")
+    }
+
+    @Test func conciseVoiceWithRamblingDeliveryEarnsLessOrNothing() {
+        // Long, rushed, filler-heavy → none of the concise conditions
+        // fire. Restraint: zero, not a penalty.
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.concise),
+            wordCount: 180, duration: 70, fillerCount: 6, wordsPerMinute: 175
+        )
+        #expect(bonus == 0, "Rambling delivery on a concise voice must not earn the bonus. Got: \(bonus)")
+    }
+
+    @Test func authoritativeVoiceRewardsCleanSustainedDelivery() {
+        // Zero fillers + sustained answer → both conditions fire.
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.authoritative),
+            wordCount: 80, duration: 40, fillerCount: 0, wordsPerMinute: 135
+        )
+        #expect(bonus >= 0.5, "Authoritative voice with clean sustained delivery should earn the full bonus. Got: \(bonus)")
+    }
+
+    @Test func authoritativeVoiceWithFillersEarnsPartialOrNothing() {
+        // Sustained but with fillers → only the duration half fires.
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.authoritative),
+            wordCount: 80, duration: 40, fillerCount: 3, wordsPerMinute: 135
+        )
+        #expect(abs(bonus - 0.2) < 0.001, "Authoritative voice with fillers should only earn the duration half (0.2). Got: \(bonus)")
+    }
+
+    @Test func warmVoiceRewardsNaturalPaceAndContent() {
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.warm),
+            wordCount: 50, duration: 25, fillerCount: 2, wordsPerMinute: 140
+        )
+        #expect(bonus >= 0.5, "Warm voice with natural pace + content depth should earn the full bonus. Got: \(bonus)")
+    }
+
+    @Test func executiveVoiceRewardsCleanControlledPace() {
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.executive),
+            wordCount: 60, duration: 30, fillerCount: 0, wordsPerMinute: 130
+        )
+        #expect(bonus >= 0.5, "Executive voice with clean controlled delivery should earn the full bonus. Got: \(bonus)")
+    }
+
+    @Test func storytellingVoiceRewardsLongFormDelivery() {
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.storytelling),
+            wordCount: 90, duration: 50, fillerCount: 2, wordsPerMinute: 130
+        )
+        #expect(bonus >= 0.5, "Storytelling voice with sustained long-form delivery should earn the full bonus. Got: \(bonus)")
+    }
+
+    @Test func persuasiveVoiceRewardsDevelopedReasonStack() {
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.persuasive),
+            wordCount: 70, duration: 35, fillerCount: 2, wordsPerMinute: 140
+        )
+        #expect(bonus >= 0.5, "Persuasive voice with developed content should earn the full bonus. Got: \(bonus)")
+    }
+
+    @Test func bonusCapsAt0_6() {
+        // Even with every concise condition maxed out, bonus must not
+        // exceed 0.6 raw — bounded so a borderline score lifts by ≤1 point.
+        let bonus = PracticeEvaluator.voiceDeliveryBonus(
+            profile: makeProfile(.concise),
+            wordCount: 30, duration: 20, fillerCount: 0, wordsPerMinute: 125
+        )
+        #expect(bonus <= 0.6, "Voice bonus must cap at 0.6 raw. Got: \(bonus)")
+    }
+}
+
 // MARK: - Baseline Prompt Context Tests
 
 struct BaselinePromptContextTests {

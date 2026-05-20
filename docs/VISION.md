@@ -63,9 +63,15 @@ Where the product is now **underweight**:
   *copy* (momentum, leverage, next step, and drill rationale all
   carry a voice-alignment clause when the focus skill is in the
   goal's `alignedSkillAreas`; off-goal sessions stay neutral so
-  there's no fake personalization). Evaluation *scoring* (weighting
-  goal-aligned dimensions inside `BaselineEngine`) is the remaining
-  edge — copy is closed end-to-end.
+  there's no fake personalization). Evaluation *scoring* now reads
+  the voice too: `PracticeEvaluator.voiceDeliveryBonus` adds a small
+  (≤0.6 raw / ≤1 of 10) lift when the delivery profile fits the
+  chosen voice — `.concise` rewards lean tight delivery, `.warm`
+  rewards natural pace + content, `.authoritative` rewards zero
+  fillers + sustained duration, etc. Restraint matches the copy
+  enrichments: 0 when no goal, 0 when delivery doesn't fit (no
+  double-penalty layered on top of the existing dimension weights).
+  Score, copy, and drill are all goal-aware end-to-end.
 - **Daily-challenge tile is a single rolling status**, not a true
   daily reset rhythm with claim moments and expiry pressure.
 - **Real-device QA gaps:** Live Activity can't be exercised on
