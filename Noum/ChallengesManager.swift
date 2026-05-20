@@ -181,9 +181,9 @@ struct AsyncChallenge: Codable, Identifiable, Equatable {
 
         var label: String {
             switch self {
-            case .won: return "You won!"
-            case .lost: return "They won"
-            case .tied: return "It's a tie"
+            case .won: return "You won."
+            case .lost: return "They won."
+            case .tied: return "It's a tie."
             }
         }
 

@@ -859,7 +859,7 @@ struct SocialProfileView: View {
     private func shareQRCode() {
         guard let image = QRCodeGenerator.generate(from: userQRString, size: 400) else { return }
         let activityVC = UIActivityViewController(
-            activityItems: [image, "Scan this QR code in Noum to add me as a speaking friend!"],
+            activityItems: [image, "Scan this QR code in Noum to add me as a speaking friend."],
             applicationActivities: nil
         )
         presentActivity(activityVC)
@@ -1068,7 +1068,7 @@ struct ChallengePickFriendSheet: View {
                             Image(systemName: "bolt.circle.fill")
                                 .font(.system(size: 48))
                                 .foregroundStyle(.teal)
-                            Text("Practice Speak-off Created!")
+                            Text("Practice Speak-off created.")
                                 .font(.title2.weight(.bold))
                         }
 
@@ -1252,7 +1252,7 @@ struct AddFriendSheet: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        Text("Added!")
+                        Text("Added.")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.green)
                     }

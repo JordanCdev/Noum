@@ -245,7 +245,7 @@ enum SessionFinalizer {
             skillTrends: skillTrends
         )
 
-        let isPersonalBest = milestone?.title == "New Personal Best!"
+        let isPersonalBest = milestone?.title == "New personal best."
         let isLevelUp = levelBefore != levelAfter
 
         // --- New systems: baseline, next action, enhanced coach note ---
@@ -385,7 +385,7 @@ enum SessionFinalizer {
             return MilestoneEvent(
                 icon: "arrow.up.circle.fill",
                 tint: .blue,
-                title: "Level Up!",
+                title: "Level up.",
                 subtitle: levelAfter,
                 detail: "Keep practicing to reach the next rank."
             )
@@ -401,7 +401,7 @@ enum SessionFinalizer {
             return MilestoneEvent(
                 icon: "star.fill",
                 tint: .orange,
-                title: "New Personal Best!",
+                title: "New personal best.",
                 subtitle: "\(scoreValue)/10 in \(currentMode.displayLabel)",
                 detail: previousBest > 0 ? "Previous best: \(previousBest)/10" : nil
             )
@@ -449,8 +449,8 @@ enum SessionFinalizer {
             return MilestoneEvent(
                 icon: "sparkles",
                 tint: .blue,
-                title: "First Rep Complete!",
-                subtitle: "Your speaking journey starts now",
+                title: "First rep on the books.",
+                subtitle: "Your speaking journey starts here.",
                 detail: "The app learns your patterns over time — it gets smarter the more you use it."
             )
         }

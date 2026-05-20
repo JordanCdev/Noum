@@ -120,21 +120,27 @@ struct AhCounterView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Spacing.lg) {
-                    // MARK: Header Card
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Live Monitor")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                        Text("Track filler words as you speak")
-                            .font(Typography.bigStat)
-                        Text("Use this mode for open-ended reps without a fixed countdown.")
+                    // MARK: Header Card — mode hero treatment matching
+                    // Cut the Crutch / Sudden Death / Timed setup. Mode-
+                    // tinted waveform icon + rounded display headline so
+                    // every mode pre-rep screen shares one visual rhythm.
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "waveform")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(AppColor.modeAhCounter)
+                            Text("Ah-Counter")
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                        }
+                        Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely while Noum listens.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(Spacing.lg)
                     .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+                    .accessibilityElement(children: .combine)
 
                     // MARK: Prompt Suggestion (pre-recording only)
                     if !speechVM.isRecording && elapsedSeconds == 0 && speechVM.fillerWordCount == 0 {

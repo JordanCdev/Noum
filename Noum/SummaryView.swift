@@ -2356,12 +2356,12 @@ struct SummaryView: View {
         // Milestone routing — personal bests and level-ups get full intermediary screens,
         // other milestones (streak, first session) use the compact overlay.
         if let milestone = result.milestone {
-            if milestone.title == "New Personal Best!" {
+            if milestone.title == "New personal best." {
                 personalBestMilestone = milestone
                 if !showProgressionScreen {
                     showPersonalBestScreen = true
                 }
-            } else if milestone.title == "Level Up!" {
+            } else if milestone.title == "Level up." {
                 levelUpPreviousLevel = result.previousLevel
                 levelUpNewLevel = result.newLevel
                 if !showProgressionScreen {

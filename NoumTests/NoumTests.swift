@@ -4818,3 +4818,141 @@ struct DailyChallengeTileCountdownTests {
         #expect(DailyChallengeTile.expiryCountdownText(minutesRemaining: 0)   == "Under a minute")
     }
 }
+
+// MARK: - NoumCharacter.Stage XP gates + ratchet (M14)
+//
+// Pins the contract behind the character's lifetime arc:
+//   1. `Stage.current(xp:)` is a pure step-function of XP. Each gate's
+//      lower bound is inclusive; one XP below stays on the previous stage.
+//   2. `Stage` is `Comparable` by rank (awakening < ... < mastery) so the
+//      ratchet's `max` operation works.
+//   3. `ProgressionRatchet` is a one-way ratchet — a lower candidate
+//      never overwrites a higher stored peak. Mirrors the
+//      "never punish-shame regression — only celebrate upward" invariant
+//      that league + skill-levels already implement.
+//   4. `resolvedStage(forXP:)` returns max(derived, stored) and bumps
+//      the stored peak when the derived stage is higher.
+//
+// We use a `UserDefaults(suiteName:)` to avoid polluting the real defaults
+// — each test gets a clean store via `suiteName: UUID().uuidString`.
+
+struct NoumCharacterStageTests {
+
+    private func freshDefaults() -> UserDefaults {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return suite
+    }
+
+    // MARK: Pure-function gates
+
+    @Test func awakeningCoversZeroAndJustBelowFirstGate() {
+        #expect(NoumCharacter.Stage.current(xp: 0)   == .awakening)
+        #expect(NoumCharacter.Stage.current(xp: 1)   == .awakening)
+        #expect(NoumCharacter.Stage.current(xp: 499) == .awakening)
+    }
+
+    @Test func voiceCoversItsRange() {
+        #expect(NoumCharacter.Stage.current(xp: 500)  == .voice)
+        #expect(NoumCharacter.Stage.current(xp: 1000) == .voice)
+        #expect(NoumCharacter.Stage.current(xp: 1499) == .voice)
+    }
+
+    @Test func composureCoversItsRange() {
+        #expect(NoumCharacter.Stage.current(xp: 1500) == .composure)
+        #expect(NoumCharacter.Stage.current(xp: 2500) == .composure)
+        #expect(NoumCharacter.Stage.current(xp: 3499) == .composure)
+    }
+
+    @Test func commandCoversItsRange() {
+        #expect(NoumCharacter.Stage.current(xp: 3500) == .command)
+        #expect(NoumCharacter.Stage.current(xp: 6000) == .command)
+        #expect(NoumCharacter.Stage.current(xp: 7999) == .command)
+    }
+
+    @Test func masteryCoversItsRangeAndExtendsUnbounded() {
+        #expect(NoumCharacter.Stage.current(xp: 8000)    == .mastery)
+        #expect(NoumCharacter.Stage.current(xp: 25_000)  == .mastery)
+        #expect(NoumCharacter.Stage.current(xp: 999_999) == .mastery)
+    }
+
+    @Test func negativeXPClampsToAwakening() {
+        // Defensive: XP should never be negative in production, but if a
+        // migration bug pushes it into negatives the character must not
+        // crash or jump to an arbitrary stage.
+        #expect(NoumCharacter.Stage.current(xp: -1)    == .awakening)
+        #expect(NoumCharacter.Stage.current(xp: -1000) == .awakening)
+    }
+
+    // MARK: Comparable ordering (used by ratchet's `max`)
+
+    @Test func stageOrderingIsAwakeningThroughMastery() {
+        let ordered: [NoumCharacter.Stage] = [
+            .awakening, .voice, .composure, .command, .mastery
+        ]
+        for i in 0..<(ordered.count - 1) {
+            #expect(ordered[i] < ordered[i + 1],
+                    "\(ordered[i]) should sort before \(ordered[i + 1])")
+        }
+        // max should pick the highest
+        #expect(ordered.max() == .mastery)
+        #expect(ordered.min() == .awakening)
+    }
+
+    // MARK: Ratchet — one-way upward
+
+    @Test func ratchetPersistsHigherCandidate() {
+        let defaults = freshDefaults()
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .awakening)
+
+        let result = ProgressionRatchet.recordIfHigher(.voice, defaults: defaults)
+        #expect(result == .voice)
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .voice)
+    }
+
+    @Test func ratchetIgnoresLowerCandidate() {
+        let defaults = freshDefaults()
+        ProgressionRatchet.recordIfHigher(.command, defaults: defaults)
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .command)
+
+        // A lower candidate must NOT regress the stored peak.
+        let result = ProgressionRatchet.recordIfHigher(.voice, defaults: defaults)
+        #expect(result == .command,
+                "recordIfHigher must return the stored peak when candidate is lower")
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .command,
+                "Lower candidate must never overwrite a higher stored peak")
+    }
+
+    @Test func ratchetIgnoresEqualCandidate() {
+        // Equal candidate is a no-op — the `>` gate in recordIfHigher
+        // means strictly-greater wins. Locks against an off-by-one
+        // refactor turning it into `>=`.
+        let defaults = freshDefaults()
+        ProgressionRatchet.recordIfHigher(.voice, defaults: defaults)
+        let result = ProgressionRatchet.recordIfHigher(.voice, defaults: defaults)
+        #expect(result == .voice)
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .voice)
+    }
+
+    // MARK: resolvedStage — derived vs stored
+
+    @Test func resolvedStagePicksDerivedWhenHigher() {
+        let defaults = freshDefaults()
+        // Stored is awakening; derived from 1500 XP is composure — wins.
+        let resolved = ProgressionRatchet.resolvedStage(forXP: 1500, defaults: defaults)
+        #expect(resolved == .composure)
+        // Side-effect: the ratchet should have been bumped to composure too.
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .composure)
+    }
+
+    @Test func resolvedStagePicksStoredWhenDerivedRegressed() {
+        let defaults = freshDefaults()
+        // Pre-seed the ratchet at command (user reached level 3+ historically).
+        ProgressionRatchet.recordIfHigher(.command, defaults: defaults)
+        // Now XP somehow dropped to 600 (would derive to .voice).
+        let resolved = ProgressionRatchet.resolvedStage(forXP: 600, defaults: defaults)
+        #expect(resolved == .command,
+                "Resolved stage must hold to the historical peak — never regress visually")
+        #expect(ProgressionRatchet.peakStage(defaults: defaults) == .command,
+                "Stored peak must not be overwritten by a regression")
+    }
+}

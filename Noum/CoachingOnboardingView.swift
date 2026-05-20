@@ -441,7 +441,7 @@ struct CoachingOnboardingView: View {
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
 
                         VStack(spacing: 8) {
-                            Text(isEditingExistingProfile ? "Profile updated!" : "Welcome to Noum!")
+                            Text(isEditingExistingProfile ? "Profile updated." : "Welcome to Noum.")
                                 .font(Typography.screenTitle)
                                 .foregroundStyle(AppColor.textPrimary)
 
