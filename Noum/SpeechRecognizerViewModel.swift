@@ -39,6 +39,17 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// UI can show a "?" indicator for these.
     @Published var uncertainFillerCount: Int = 0
 
+    /// Smoothed live audio amplitude envelope, 0.0–1.0, updated on the main
+    /// actor at ~30Hz while recording. Driven by the input-tap RMS of the
+    /// mic buffer. Consumers (e.g. `NoumCharacter(audioLevel:)`) read this
+    /// to render real-time presence — the orb visibly tracking the user's
+    /// voice. Resets to 0 between sessions so a teardown doesn't leave the
+    /// orb stuck at the last live value.
+    @Published var audioLevel: Double = 0.0
+    /// RMS smoothing coefficient — higher = snappier, lower = calmer. 0.30
+    /// reads as "alive" without jittering on consonants.
+    private static let audioLevelSmoothing: Double = 0.30
+
     /// Confidence threshold for the general filler count (non-pressure modes).
     /// Detections at or above this level are counted. Default: 0.65 (catches clear
     /// fillers like "um", "uh", "you know" and high-confidence "like"/"so" but
@@ -343,6 +354,16 @@ class SpeechRecognizerViewModel: ObservableObject {
             // Capture samples for pitch analysis (cheap append, no DSP here).
             analyzer.appendBuffer(buffer, sampleRate: captureSampleRate)
             guard let self else { return }
+            // Compute RMS amplitude on the audio thread, then hop to main
+            // to smooth + publish. Cheap: one pass over the buffer with a
+            // running sum-of-squares. The published envelope drives any
+            // surface that wants the orb to track the user's voice.
+            let level = Self.normalizedRMSLevel(buffer: buffer)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let blended = self.audioLevel * (1 - Self.audioLevelSmoothing) + level * Self.audioLevelSmoothing
+                self.audioLevel = min(max(blended, 0), 1)
+            }
             let data = self.convertBufferToPCMData(buffer: buffer)
             Task { try? await session.sendAudio(data) }
         }
@@ -356,6 +377,29 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         self.audioEngine = nil
+        // Drop the live envelope to silence so any orb bound to it
+        // visibly settles instead of holding the last spoken level.
+        audioLevel = 0.0
+    }
+
+    /// Convert a mic input buffer into a 0.0–1.0 amplitude envelope.
+    /// Uses RMS over the channel-0 float samples + a dB-scaled mapping
+    /// so quiet speech reads visibly above silence without the orb
+    /// pinning to 1.0 on every consonant. Tuned by ear: -50dB → 0, -10dB → 1.
+    nonisolated static func normalizedRMSLevel(buffer: AVAudioPCMBuffer) -> Double {
+        guard let channelData = buffer.floatChannelData?[0] else { return 0 }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return 0 }
+        var sumSquares: Double = 0
+        for i in 0..<frameLength {
+            let s = Double(channelData[i])
+            sumSquares += s * s
+        }
+        let rms = (sumSquares / Double(frameLength)).squareRoot()
+        // dB conversion + clamp to a usable visual range.
+        let db = 20.0 * log10(max(rms, 1e-7))
+        let normalized = (db + 50.0) / 40.0  // -50dB → 0, -10dB → 1
+        return min(max(normalized, 0), 1)
     }
 
     private func failStartRecording(with error: Error) {

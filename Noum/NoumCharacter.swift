@@ -27,11 +27,18 @@ struct NoumCharacter: View {
         case listening   // During a rep: symmetric pulses, brighter core
         case excited     // After a clean rep: bouncy + sparkle ring
         case coaching    // Summary view: tilted, warmer
+        case thinking    // Reply in flight: slow internal rhythm, no outward pulse
+        case noticing    // Brief transient — the coach just spotted something worth quoting back
     }
 
     var mood: Mood = .calm
     var tint: Color = AppColor.brandBlue
     var size: CGFloat = 96
+    /// Live audio amplitude envelope (0.0–1.0, smoothed). When provided and
+    /// `mood == .listening`, the core scale picks up an additive boost so
+    /// the orb visibly tracks the user's voice in real time. Nil keeps the
+    /// legacy breath-only behavior for every existing call site.
+    var audioLevel: Double? = nil
     /// The character's lifetime-arc register. Composes on top of `mood`:
     /// mood is moment-to-moment, stage is "where this user is in their
     /// long arc with Noum." The same `.listening` mood reads differently
@@ -68,6 +75,10 @@ struct NoumCharacter: View {
     /// inherits the existing `SparkleRibbon` motion.
     @State private var masterySparkleVisible: Bool = false
     @State private var excitedScale: CGFloat = 1.0
+    /// Brief scale flare for the `.noticing` mood — the orb inhales when
+    /// the coach spots something worth quoting back. Animated up on mood
+    /// entry, back to rest 0.4s later.
+    @State private var noticingScale: CGFloat = 1.0
     @State private var hasAppeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -322,6 +333,8 @@ struct NoumCharacter: View {
         case .excited:   base = 0.28
         case .coaching:  base = 0.22
         case .calm:      base = 0.18
+        case .thinking:  base = 0.20  // dimmer than listening — orb is inward-focused
+        case .noticing:  base = 0.38  // brightest of all — the moment the coach catches it
         }
         return base + stageGlowBoost
     }
@@ -345,6 +358,8 @@ struct NoumCharacter: View {
         case .excited:   base = 0.48
         case .coaching:  base = 0.38
         case .calm:      base = 0.32
+        case .thinking:  base = 0.34  // close to calm — the swirl carries the read
+        case .noticing:  base = 0.62  // peak brightness, falls off as scale settles
         }
         return base + stageGlowBoost * 1.4
     }
@@ -372,18 +387,36 @@ struct NoumCharacter: View {
         case .listening: return "waveform.and.mic"
         case .excited:   return "waveform.path.ecg"
         case .coaching:  return "waveform.badge.magnifyingglass"
+        case .thinking:  return "waveform.circle"   // self-contained — the orb is processing internally
+        case .noticing:  return "waveform.path.badge.plus" // a moment caught; pairs with the brief flare
         }
     }
 
-    /// Core scale — bigger when excited, otherwise tied to breathing.
+    /// Core scale — bigger when excited, audio-bound while listening,
+    /// flared while noticing, gently wobbling otherwise.
     private var coreScale: CGFloat {
         switch mood {
         case .excited:
             return excitedScale
+        case .noticing:
+            return noticingScale
         case .listening:
             guard !reduceMotion else { return 1.0 }
-            return 1.0 + sin(breathePhase * 1.4) * 0.05
-        default:
+            let breath = 1.0 + sin(breathePhase * 1.4) * 0.05
+            // When a caller pipes live audio in, the core picks up a
+            // capped additive boost on top of the breath — the orb
+            // visibly tracks the user's voice. Without audio the core
+            // keeps the legacy breath-only feel.
+            guard let level = audioLevel else { return breath }
+            let clamped = min(max(level, 0), 1)
+            let boost = 1.0 + CGFloat(clamped) * 0.18
+            return breath * boost
+        case .thinking:
+            guard !reduceMotion else { return 1.0 }
+            // Slow, smaller wobble than calm — the orb is busy
+            // internally, not outwardly engaging.
+            return 1.0 + sin(breathePhase * 0.5) * 0.03
+        case .calm, .coaching:
             guard !reduceMotion else { return 1.0 }
             return 1.0 + sin(breathePhase) * 0.025
         }
@@ -403,6 +436,8 @@ struct NoumCharacter: View {
         case .listening: base = "Noum coach, listening to your rep"
         case .excited:   base = "Noum coach, celebrating your rep"
         case .coaching:  base = "Noum coach, reading your session"
+        case .thinking:  base = "Noum coach, thinking"
+        case .noticing:  base = "Noum coach, just noticed something"
         }
         // Append the stage suffix only when we have one — `.awakening`
         // intentionally adds nothing so a brand-new user doesn't hear
@@ -503,14 +538,31 @@ struct NoumCharacter: View {
         }
     }
 
-    /// When mood swaps to .excited, kick a brief scale burst.
+    /// When mood swaps to a transient state, kick the appropriate
+    /// scale burst. Reduce-motion users skip the animation but the
+    /// glow/symbol changes still apply.
     private func retriggerForMood() {
         guard !reduceMotion else { return }
-        if mood == .excited {
+        switch mood {
+        case .excited:
             withAnimation(.bouncySpring) { excitedScale = 1.18 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 withAnimation(.standardSpring) { excitedScale = 1.0 }
             }
+        case .noticing:
+            // Inhale — quick rise, gentle fall. Shorter than .excited
+            // because the moment it marks is a quiet catch, not a
+            // celebration. The brighter glow does most of the work.
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.65)) {
+                noticingScale = 1.10
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                withAnimation(.easeOut(duration: 0.6)) {
+                    noticingScale = 1.0
+                }
+            }
+        case .calm, .listening, .coaching, .thinking:
+            break
         }
     }
 }
@@ -633,6 +685,8 @@ extension NoumCharacter {
             case .calm, .excited:   return "waveform"
             case .listening:        return "waveform.and.mic"
             case .coaching:         return "waveform.badge.magnifyingglass"
+            case .thinking:         return "waveform.circle"
+            case .noticing:         return "waveform.path.badge.plus"
             }
         }
 
@@ -649,6 +703,8 @@ extension NoumCharacter {
             case .coaching:  return 0.20
             case .calm,
                  .excited:   return 0.16
+            case .thinking:  return 0.20
+            case .noticing:  return 0.32
             }
         }
 
@@ -665,6 +721,8 @@ extension NoumCharacter {
                  .excited:    return "Noum coach"
             case .listening:  return "Noum coach, listening"
             case .coaching:   return "Noum coach, reading your session"
+            case .thinking:   return "Noum coach, thinking"
+            case .noticing:   return "Noum coach"
             }
         }
     }

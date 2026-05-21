@@ -5799,6 +5799,7 @@ struct ProofMomentServiceTests {
 // scoped log of the user's actual past words — never quoting another
 // account's proof, never returning stale duplicates after refresh.
 
+@MainActor
 struct ProofMomentArchiveTests {
 
     private func freshStore(account: String = "tester") -> ProofMomentStore {

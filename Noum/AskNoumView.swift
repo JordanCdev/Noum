@@ -147,7 +147,12 @@ struct AskNoumView: View {
             }
             HStack(spacing: Spacing.md) {
                 NoumCharacter(
-                    mood: store.isAwaitingReply ? .listening : .calm,
+                    // `.thinking` reads more accurately than `.listening`
+                    // here — the user just sent a message; the orb is
+                    // composing a reply, not actively hearing audio.
+                    // Distinct visuals separate "Noum is reading what
+                    // you said" from "Noum is hearing you in a rep."
+                    mood: store.isAwaitingReply ? .thinking : .calm,
                     tint: AppColor.pro,
                     size: 60,
                     stage: characterStage
@@ -449,15 +454,23 @@ struct AskNoumView: View {
     }
 
     // MARK: - Pending typing indicator
+    //
+    // Replaces the legacy three-dot pulse with a small `.thinking` orb —
+    // same coach character that lives in the header, sized down to
+    // bubble-glyph register. Reads as "Noum is thinking about what you
+    // said" with continuity to the rest of the surface. Reduce-motion
+    // is handled inside `NoumCharacter` itself (the orb collapses to a
+    // static glow at small sizes), so no extra gate here.
 
     private var pendingDots: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3) { i in
-                Circle()
-                    .fill(AppColor.pro.opacity(0.55))
-                    .frame(width: 6, height: 6)
-                    .modifier(PendingPulse(delay: Double(i) * 0.18, reduceMotion: reduceMotion))
-            }
+        HStack {
+            NoumCharacter(
+                mood: .thinking,
+                tint: AppColor.pro,
+                size: 24,
+                stage: characterStage
+            )
+            Spacer(minLength: 0)
         }
         .accessibilityLabel("Noum is thinking")
     }

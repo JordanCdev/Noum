@@ -130,7 +130,7 @@ final class ScreenshotTour: XCTestCase {
         }
         lessonsApp.terminate()
 
-        // ----- SPEECH PROJECTS -----
+        // ----- SPEECH PROJECTS + DETAIL -----
         let projectsApp = launchSeededAt("noum://train")
         Thread.sleep(forTimeInterval: 1.0)
         let projectsCard = projectsApp.buttons["practiceMode.speechProjects"]
@@ -138,6 +138,17 @@ final class ScreenshotTour: XCTestCase {
             projectsCard.tap()
             Thread.sleep(forTimeInterval: 1.2)
             attach(projectsApp, name: "21-speech-projects")
+
+            // First project row, if the seed populated any — falls back to
+            // the empty-state capture above when no projects exist.
+            let firstProject = projectsApp.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier BEGINSWITH 'speechProjects.row.'"))
+                .element(boundBy: 0)
+            if firstProject.waitForExistence(timeout: 3) {
+                firstProject.tap()
+                Thread.sleep(forTimeInterval: 1.2)
+                attach(projectsApp, name: "21b-speech-project-detail")
+            }
         }
         projectsApp.terminate()
 
@@ -160,6 +171,25 @@ final class ScreenshotTour: XCTestCase {
         pathApp.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
         attach(pathApp, name: "25-path-journey-bottom")
         pathApp.terminate()
+
+        // ----- ASK NOUM (M14 coach chat) -----
+        let askApp = launchSeededAt("noum://ask")
+        Thread.sleep(forTimeInterval: 2.0) // chat seeds opener line on appear
+        attach(askApp, name: "25b-ask-noum")
+        askApp.terminate()
+
+        // ----- FRIEND LEADERBOARD (via Profile → leaderboard NavigationLink) -----
+        let leaderboardApp = launchSeededAt("noum://profile")
+        Thread.sleep(forTimeInterval: 1.2)
+        let leaderboardLink = leaderboardApp.descendants(matching: .any)
+            .matching(identifier: "profile.friendLeaderboard")
+            .element(boundBy: 0)
+        if leaderboardLink.waitForExistence(timeout: 4) {
+            leaderboardLink.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            attach(leaderboardApp, name: "25c-friend-leaderboard")
+        }
+        leaderboardApp.terminate()
 
         // ============================================================
         // SECTION D — Conditional sheets (forced via launch args)
