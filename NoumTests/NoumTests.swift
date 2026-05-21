@@ -5146,6 +5146,109 @@ struct CoachContextBuilderTests {
         }
     }
 
+    // MARK: - Session-anchored opener (Summary → Ask Noum bridge)
+
+    @Test func sessionOpenerIncludesConcreteMetrics() {
+        // Opener must quote the rep's actual numbers so the model has
+        // an anchor before reading the user-context block. Filler count,
+        // duration (rounded to whole seconds), and score (when present)
+        // all need to be in the seed message.
+        let opener = CoachContextBuilder.sessionOpener(
+            mode: .timed,
+            score: 8,
+            fillerCount: 2,
+            duration: 28.4,
+            voice: .authoritative
+        )
+        #expect(opener.contains("Timed"), "Mode label is in the opener: \(opener)")
+        #expect(opener.contains("28s"), "Duration is in the opener: \(opener)")
+        #expect(opener.contains("2 fillers"), "Filler count is in the opener: \(opener)")
+        #expect(opener.contains("8/10"), "Score is in the opener: \(opener)")
+    }
+
+    @Test func sessionOpenerPluralisesFillers() {
+        // Single filler should read "1 filler", multiple should read "N
+        // fillers". Pluralisation matters — the model reads this as a
+        // user message and copies the register back in its reply.
+        let one = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: nil, fillerCount: 1, duration: 30, voice: nil
+        )
+        let many = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: nil, fillerCount: 4, duration: 30, voice: nil
+        )
+        #expect(one.contains("1 filler") && !one.contains("1 fillers"),
+                "Single filler reads 'filler' not 'fillers': \(one)")
+        #expect(many.contains("4 fillers"),
+                "Multiple fillers read plural: \(many)")
+    }
+
+    @Test func sessionOpenerDropsScoreWhenAbsent() {
+        // Ah-Counter sessions have no score; the opener must degrade
+        // gracefully (no "nil/10" or "0/10" leakage).
+        let opener = CoachContextBuilder.sessionOpener(
+            mode: .ahCounter, score: nil, fillerCount: 3, duration: 45, voice: .concise
+        )
+        #expect(!opener.contains("/10"), "Score is omitted when absent: \(opener)")
+        #expect(!opener.contains("nil"), "Never leaks nil: \(opener)")
+        #expect(opener.contains("Ah-Counter"), "Mode label is present: \(opener)")
+        #expect(opener.contains("45s"), "Duration is present: \(opener)")
+        #expect(opener.contains("3 fillers"), "Filler count is present: \(opener)")
+    }
+
+    @Test func sessionOpenerEndingIsVoiceShaped() {
+        // The closing ask differs per voice. The mapping mirrors
+        // `starterPrompts` and `coachPersonality` — same per-voice
+        // registers the rest of the AskNoum surface uses, so the
+        // injected opener doesn't read like a different speaker.
+        let auth = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: .authoritative
+        )
+        let warm = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: .warm
+        )
+        let concise = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: .concise
+        )
+        let exec = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: .executive
+        )
+        let story = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: .storytelling
+        )
+        let none = CoachContextBuilder.sessionOpener(
+            mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: nil
+        )
+        #expect(auth.lowercased().contains("verdict") || auth.lowercased().contains("read"),
+                "Authoritative ending asks for a verdict/read: \(auth)")
+        #expect(warm.lowercased().contains("feel"),
+                "Warm ending asks how it felt: \(warm)")
+        #expect(concise.lowercased().contains("one move") || concise.lowercased().contains("move"),
+                "Concise ending asks for the single move: \(concise)")
+        #expect(exec.lowercased().contains("brief"),
+                "Executive ending is a brief: \(exec)")
+        #expect(story.lowercased().contains("arc"),
+                "Storytelling ending references the arc: \(story)")
+        #expect(none.lowercased().contains("stood out") || none.lowercased().contains("what"),
+                "No-voice fallback asks what stood out: \(none)")
+    }
+
+    @Test func sessionOpenerHandlesEveryVoiceWithoutCrashing() {
+        // Coverage invariant — adding a voice in the future without
+        // wiring it here will surface as a missing closing ask and
+        // this test will catch it.
+        for voice in SpeakingStyleGoal.allCases {
+            let opener = CoachContextBuilder.sessionOpener(
+                mode: .timed, score: 7, fillerCount: 2, duration: 30, voice: voice
+            )
+            #expect(opener.contains("Timed"))
+            // Two sentences — fact + ask. Should always end with a period
+            // or question mark (the ask). Catches an accidental nil-ask.
+            let last = opener.trimmingCharacters(in: .whitespacesAndNewlines).last
+            #expect(last == "?" || last == ".",
+                    "Voice \(voice) opener should end with ? or .: \(opener)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func sampleProfile(voice: SpeakingStyleGoal) -> CoachingProfile {
@@ -5280,6 +5383,86 @@ struct AskNoumStoreTests {
                 "Relaunch should restore only the user row, not the pending coach placeholder")
         #expect(store2.messages.first?.role == .user)
         #expect(!store2.isAwaitingReply)
+    }
+
+    // MARK: - Cross-surface inject (Summary → Ask Noum bridge)
+
+    @Test func injectUserTurnAddsTurnAndExposesPendingCoachID() {
+        // Same shape as appendUserTurn but the store also publishes
+        // `pendingInjectedCoachID` so AskNoumView can pick the
+        // reply up on appear.
+        let store = freshStore()
+        let coachID = store.injectUserTurn("Just finished a Timed rep — 28s, 2 fillers, 8/10. Give me your read.")
+        #expect(coachID != nil)
+        #expect(store.messages.count == 2)
+        #expect(store.messages[0].role == .user)
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].isPending)
+        #expect(store.pendingInjectedCoachID == coachID)
+        #expect(store.isAwaitingReply)
+    }
+
+    @Test func consumePendingInjectedClearsTheSignal() {
+        // The store hands the ID back exactly once. A second
+        // consume returns nil — re-mounts of AskNoumView won't
+        // trigger a duplicate reply for the same opener.
+        let store = freshStore()
+        let coachID = store.injectUserTurn("Opener A.")
+        let first = store.consumePendingInjectedCoachID()
+        let second = store.consumePendingInjectedCoachID()
+        #expect(first == coachID)
+        #expect(second == nil)
+        #expect(store.pendingInjectedCoachID == nil)
+    }
+
+    @Test func injectUserTurnIsIdempotentWhilePending() {
+        // A double-tap on the Summary bridge must NOT queue two
+        // copies of the same opener back-to-back. While the prior
+        // reply is still pending, re-injecting the same text returns
+        // the existing coachID and leaves the thread shape unchanged.
+        let store = freshStore()
+        let first = store.injectUserTurn("Same opener.")
+        let second = store.injectUserTurn("Same opener.")
+        #expect(first == second, "Repeated inject returns the existing pending coachID")
+        #expect(store.messages.count == 2, "Thread shape unchanged after the second inject")
+    }
+
+    @Test func injectUserTurnRejectsEmptyText() {
+        // Whitespace-only seeds would produce a useless coach reply
+        // and a confusing blank user bubble. Reject at the boundary.
+        let store = freshStore()
+        let coachID = store.injectUserTurn("   ")
+        #expect(coachID == nil)
+        #expect(store.messages.isEmpty)
+        #expect(store.pendingInjectedCoachID == nil)
+    }
+
+    @Test func injectUserTurnAfterCompletedReplyAppendsFreshTurn() {
+        // Idempotency only suppresses the duplicate WHILE the prior
+        // reply is pending. Once the coach has actually answered,
+        // re-injecting the same opener legitimately appends a new
+        // pair — the user is asking the same question again, which is
+        // a real action the bridge supports (e.g. the user navigated
+        // back to summary, scrolled, tapped the bridge again later).
+        let store = freshStore()
+        let firstCoachID = store.injectUserTurn("Same opener.")
+        // Reply lands.
+        store.completeCoachTurn(id: firstCoachID!, text: "Here's the read.")
+        // Second inject of the same text now appends a fresh pair.
+        let secondCoachID = store.injectUserTurn("Same opener.")
+        #expect(secondCoachID != nil)
+        #expect(secondCoachID != firstCoachID)
+        #expect(store.messages.count == 4,
+                "After-reply re-inject appends a fresh user + pending coach pair")
+    }
+
+    @Test func clearThreadAlsoClearsPendingInjectedSignal() {
+        let store = freshStore()
+        _ = store.injectUserTurn("Drop this on me.")
+        store.clearThread()
+        #expect(store.pendingInjectedCoachID == nil,
+                "clearThread wipes the cross-surface signal too")
+        #expect(store.messages.isEmpty)
     }
 }
 

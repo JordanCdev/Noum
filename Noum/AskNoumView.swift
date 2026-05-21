@@ -98,6 +98,17 @@ struct AskNoumView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Pick up any cross-surface inject (e.g. Summary's "Talk to
+            // your coach about this rep" bridge dropped a seed message
+            // into the store right before pushing us onto the nav
+            // stack). The store hands back the matching coachID once
+            // and clears its own signal — so re-mounts of this view
+            // won't fire a second reply for the same opener.
+            if let coachID = store.consumePendingInjectedCoachID() {
+                Task { await runReply(coachID: coachID) }
+            }
+        }
     }
 
     // MARK: - Header

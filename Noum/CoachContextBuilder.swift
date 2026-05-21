@@ -276,6 +276,63 @@ enum CoachContextBuilder {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Session-anchored opener
+    //
+    // Produces the seed message the Summary surface drops into the Ask Noum
+    // thread when the user taps "Talk to your coach about this rep." The
+    // opener is written *as the user* (it lands in their thread as a user
+    // turn) so the model reads it the same way it would read a typed
+    // question. The shape names the rep by its concrete metrics + ends
+    // with a voice-shaped invitation so the coach has a clear hook.
+    //
+    // Restraint rules:
+    //   • One sentence summarising the rep numerically, one sentence asking
+    //     for the coach's read. No fluff.
+    //   • No "great rep" / "bad rep" framing — the opener is just data.
+    //     The model decides the verdict from the data + context block.
+    //   • Voice-shaped ending — authoritative gets a verdict ask, warm
+    //     gets a felt-experience ask, executive gets a "brief me" framing.
+    //     Same voice mapping pattern as `coachPersonality(for:)` and
+    //     `starterPrompts(for:)`.
+    //   • Score is optional — Ah-Counter sessions have no score; the
+    //     opener degrades to a mode + duration + filler shape without it.
+    static func sessionOpener(
+        mode: PracticeMode,
+        score: Int?,
+        fillerCount: Int,
+        duration: TimeInterval,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        let modeLabel = mode.displayLabel
+        let seconds = max(0, Int(duration.rounded()))
+        let fillerFragment = "\(fillerCount) filler\(fillerCount == 1 ? "" : "s")"
+        let stats: String
+        if let score = score {
+            stats = "\(seconds)s, \(fillerFragment), \(score)/10"
+        } else {
+            stats = "\(seconds)s, \(fillerFragment)"
+        }
+        let lead = "Just finished a \(modeLabel) rep — \(stats)."
+        let ask: String
+        switch voice {
+        case .authoritative:
+            ask = "Give me your read."
+        case .warm:
+            ask = "How did that one feel from your seat?"
+        case .concise:
+            ask = "One move?"
+        case .persuasive:
+            ask = "Walk me through what the data says."
+        case .executive:
+            ask = "Brief me — top line first."
+        case .storytelling:
+            ask = "Where does this one sit in my arc?"
+        case .none:
+            ask = "What stood out?"
+        }
+        return "\(lead) \(ask)"
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the

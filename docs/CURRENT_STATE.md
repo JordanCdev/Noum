@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best**)_
+_Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best** + **Summary → Ask Noum bridge — session-anchored, voice-shaped opener seeds the chat so users can ask their coach about THIS rep with one tap**)_
 
 ## Architecture overview
 
@@ -164,6 +164,38 @@ _Last updated: 2026-05-20 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   Voice-specific headline + body + "Open the thread →" CTA.
   Tap pushes `AppDestination.askNoum`. Also reachable via
   `noum://ask` deep link.
+- Post-session entry: `SummaryView.askCoachBridgeCard` — small
+  brand-purple bridge card inside the secondary stack (above
+  `xpProgressCard`, below the drill CTA) that opens Ask Noum
+  with a session-anchored opener already seeded in the thread.
+  Voice-shaped headline ("Want a verdict on this rep?" /
+  "Want the one move from this rep?" / etc.) + NoumCharacter
+  inline glyph for register continuity. Tap fires
+  `onAskNoumAboutRep(opener)` — the path-based init wires the
+  callback to inject the opener into `AskNoumStore` then push
+  `AppDestination.askNoum`. `AskNoumView.onAppear` consumes
+  `AskNoumStore.pendingInjectedCoachID` and runs the model so
+  the user lands inside a reply already in flight. Hidden when
+  the callback isn't wired (previews / share-card render
+  paths). `CoachContextBuilder.sessionOpener(mode:score:
+  fillerCount:duration:voice:)` is the pure-function copy
+  generator — produces a two-sentence opener with concrete
+  metrics + a voice-shaped ask (authoritative gets a verdict
+  ask, warm gets a felt-experience ask, executive gets a
+  brief, storytelling references the arc, etc.). Single-filler
+  / no-score paths degrade cleanly (no "0/10" leakage,
+  pluralisation handled). `AskNoumStore.injectUserTurn(_:)`
+  is idempotent while a reply is pending — double-tapping the
+  bridge returns the existing pending coachID instead of
+  queuing duplicates. After the prior reply lands, re-inject
+  legitimately appends a fresh pair (the user is asking
+  again). Twelve unit tests in `CoachContextBuilderTests`
+  (sessionOpener block) + `AskNoumStoreTests` (cross-surface
+  inject block) lock the metric-presence, pluralisation,
+  score-absence, voice-shape, every-voice-handled,
+  pending-id-publish, consume-once, idempotency-while-pending,
+  empty-text-rejected, re-inject-after-reply, and clear-
+  thread-wipes-signal contracts.
 
 ### Proof Moments — transcript-anchored evidence of growth
 - `Noum/ProofMomentService.swift` — actor that extracts ONE

@@ -36,6 +36,11 @@ struct SummaryView: View {
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
     var onStartDrill: ((DrillRecommendation) -> Void)?
+    /// Bridge into Ask Noum with a session-anchored opener already in
+    /// the thread. The owning ContentView wires this to inject the
+    /// opener into `AskNoumStore` then push `AppDestination.askNoum`,
+    /// so the user lands inside a coach reply already in flight.
+    var onAskNoumAboutRep: ((String) -> Void)?
 
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
@@ -802,6 +807,15 @@ struct SummaryView: View {
                     trends: skillTrends,
                     drillHistory: DrillHistoryStore.shared.entries
                 )
+            }
+
+            // Ask Noum bridge — sits in the secondary stack so the drill
+            // CTA above stays the hero, but discoverable for the moment
+            // a user finishes a rep and wants a coach's read on THIS rep
+            // (not just the templated Coach Note). Hidden when the host
+            // doesn't wire the callback (e.g. previews / share renders).
+            if onAskNoumAboutRep != nil {
+                askCoachBridgeCard
             }
 
             // XP Progress
@@ -1723,6 +1737,108 @@ struct SummaryView: View {
         }
     }
 
+    // MARK: - Ask Noum bridge
+    //
+    // Restrained brand-purple card that opens Ask Noum with a session-
+    // anchored opener already seeded. Lives in the secondary stack
+    // (below the drill CTA) so it never competes for the in-the-moment
+    // action — but reads as the natural "I want a coach's take on this
+    // specific rep" doorway, which the templated Coach Note + Looking
+    // Ahead hint can't satisfy on their own.
+    //
+    // Voice-aware copy via `CoachContextBuilder.sessionOpener(...)`
+    // and the same brand-purple register the home Ask Noum promo card
+    // already uses (single source of truth for "this is the coach
+    // speaking" color). NoumCharacter.Inline glyph stitches the
+    // surface back to the same speaker the rest of the app uses for
+    // coach-voice tiles.
+
+    private var sessionAnchoredOpener: String {
+        CoachContextBuilder.sessionOpener(
+            mode: currentMode,
+            score: score,
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            voice: coachingProfileStore.profile?.speakingStyleGoal
+        )
+    }
+
+    private var askCoachBridgeCard: some View {
+        let voice = coachingProfileStore.profile?.speakingStyleGoal
+        let headline = askCoachBridgeHeadline(for: voice)
+        return Button {
+            onAskNoumAboutRep?(sessionAnchoredOpener)
+        } label: {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                NoumCharacter.Inline(size: 22, mood: .calm, tint: AppColor.pro)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ask Noum")
+                        .font(Typography.micro.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                    Text(headline)
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text("Open the thread")
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.pro)
+                        Image(systemName: "arrow.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(AppColor.pro)
+                    }
+                    .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .background(askCoachBridgeBackground)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Ask Noum. \(headline). Opens the coach thread with this rep already in hand."))
+        .accessibilityIdentifier("summary.askNoumBridge")
+    }
+
+    /// Voice-shaped headline so the bridge reads in the same register the
+    /// thread it's about to open will read in. Same mapping pattern as
+    /// `CoachContextBuilder.sessionOpener` and `starterPrompts`.
+    private func askCoachBridgeHeadline(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative: return "Want a verdict on this rep?"
+        case .warm: return "Want to talk through how this rep felt?"
+        case .concise: return "Want the one move from this rep?"
+        case .persuasive: return "Want the argument this rep makes?"
+        case .executive: return "Want a top-line read on this rep?"
+        case .storytelling: return "Want to place this rep in your arc?"
+        case .none: return "Want a coach's read on this rep?"
+        }
+    }
+
+    @ViewBuilder
+    private var askCoachBridgeBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .fill(AppColor.cardBackground)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [AppColor.pro.opacity(0.08), AppColor.pro.opacity(0.02)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.20), lineWidth: 1)
+        }
+    }
+
     // MARK: - XP Progress Card
 
     private var xpProgressCard: some View {
@@ -2634,6 +2750,19 @@ extension SummaryView {
             }
         }
         self.onStartDrill = entry?.onStartDrill
+
+        // Ask-Noum bridge — drops the session-anchored opener into the
+        // store, then pushes the AskNoum destination. A small async
+        // hop separates the store mutation from the nav push so the
+        // store's @Published flush settles before AskNoumView's
+        // onAppear consumes the pending coachID. Same pattern the
+        // onPracticeAgain wiring uses for its push.
+        self.onAskNoumAboutRep = { opener in
+            _ = AskNoumStore.shared.injectUserTurn(opener)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(AppDestination.askNoum)
+            }
+        }
     }
 }
 #endif

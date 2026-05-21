@@ -85,6 +85,20 @@ final class AskNoumStore: ObservableObject {
     /// disable the input bar and show the pending message row.
     @Published private(set) var isAwaitingReply: Bool = false
 
+    /// Set by `injectUserTurn(_:)` when a different surface (e.g. the
+    /// post-session Summary's "Talk to your coach about this rep" CTA)
+    /// drops a seed message into the thread *before* AskNoumView has
+    /// mounted. AskNoumView consumes this on appear and triggers the
+    /// coach reply for the matching pending row. Nil at rest.
+    ///
+    /// Why this lives on the store rather than as a parameter on
+    /// AskNoumView's init: the inject + the navigation push are two
+    /// independent events that must survive the gap between them
+    /// (the user tapping the bridge → SwiftUI mounting AskNoumView).
+    /// A published store property bridges that gap without forcing the
+    /// caller to know about AskNoumView's lifecycle.
+    @Published private(set) var pendingInjectedCoachID: UUID? = nil
+
     private let defaults: UserDefaults
     private let accountIDProvider: () -> String?
 
@@ -157,7 +171,59 @@ final class AskNoumStore: ObservableObject {
     /// is a one-button wipe.
     func clearThread() {
         messages.removeAll()
+        pendingInjectedCoachID = nil
         persist()
+    }
+
+    /// Cross-surface seed-message inject. Used by post-session bridges
+    /// (Summary's "Talk to your coach about this rep") to drop a
+    /// session-anchored opener into the thread before AskNoumView
+    /// mounts. The returned coachID is the row AskNoumView should
+    /// hydrate via the model.
+    ///
+    /// Idempotency: if the most-recent non-system user turn carries
+    /// the same text AND a coach reply for it is either pending or
+    /// already in flight, this is a no-op (returns the existing
+    /// coachID if pending, nil otherwise). Stops a double-tap on the
+    /// bridge from queuing two identical seed prompts back-to-back.
+    @discardableResult
+    func injectUserTurn(_ text: String) -> UUID? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Idempotency guard — if the last user turn IS this opener AND
+        // its coach reply is still pending, return that same coachID
+        // instead of queuing a duplicate. A double-tap on the Summary
+        // bridge mid-reply must not produce a second seed pair.
+        //
+        // Once the prior reply has hydrated, re-inject is a legitimate
+        // fresh ask (the user is asking again on a later visit) and
+        // falls through to append a new pair.
+        if let lastUserIdx = messages.lastIndex(where: { $0.role == .user }),
+           messages[lastUserIdx].text == trimmed {
+            let after = messages.suffix(from: messages.index(after: lastUserIdx))
+            if let coachRow = after.first(where: { $0.role == .coach }),
+               coachRow.isPending {
+                return coachRow.id
+            }
+            // Hydrated coach row (or none yet for some odd state) →
+            // fall through, append a fresh pair.
+        }
+
+        let ids = appendUserTurn(trimmed)
+        pendingInjectedCoachID = ids.coachID
+        return ids.coachID
+    }
+
+    /// One-shot consumer. AskNoumView calls this on appear; if the
+    /// returned ID is non-nil it runs the model for that coachID and
+    /// the store atomically clears the pending signal so a second
+    /// AskNoumView mount (same nav stack lifecycle) doesn't fire a
+    /// duplicate reply task.
+    func consumePendingInjectedCoachID() -> UUID? {
+        let id = pendingInjectedCoachID
+        pendingInjectedCoachID = nil
+        return id
     }
 
     /// All non-system messages, oldest-first, suitable for the model
