@@ -68,6 +68,10 @@ struct AskNoumView: View {
                                     messageRow(message: message)
                                         .id(message.id)
                                 }
+                                if let chips = followUpChips, !chips.isEmpty {
+                                    followUpRow(chips: chips)
+                                        .id("followups")
+                                }
                             }
                             // Bottom spacer keeps the last message off
                             // the input bar so it's never visually cramped.
@@ -275,6 +279,89 @@ struct AskNoumView: View {
         case .none:
             return "Ask me anything about your speaking practice. I read your goal, baseline, and last 30 days before every reply."
         }
+    }
+
+    // MARK: - Follow-up chips
+    //
+    // Quiet "keep the thread alive" suggestions surfaced beneath the
+    // most-recent coach reply. Sourced from
+    // `CoachContextBuilder.followUpSuggestions(...)` — voice-shaped and
+    // anchored on a topic detected in the latest reply (drill / pause /
+    // pace / filler / weekly / generic). Tapping fires the same `send`
+    // path as the starter prompts, so the chip text lands as the user's
+    // next turn and the coach replies normally.
+    //
+    // Visibility contract:
+    //   • Latest message must be a coach reply.
+    //   • Reply must NOT be pending (no chips for an in-flight bubble).
+    //   • Reply must NOT be a system notice (no chips when the model
+    //     failed — there's nothing useful to follow up on).
+    //   • No reply in flight at all (`!isAwaitingReply`) — keeps the
+    //     row from flickering as the user is mid-send.
+    //
+    // Returns `nil` when the chip row should collapse entirely. Returns
+    // a `[String]` (possibly empty after detection) otherwise — the
+    // view bails on empty arrays too via the `chips.isEmpty` guard at
+    // the call site.
+    private var followUpChips: [String]? {
+        guard !store.isAwaitingReply,
+              let last = store.messages.last,
+              last.role == .coach,
+              !last.isPending,
+              !last.text.isEmpty
+        else { return nil }
+        return CoachContextBuilder.followUpSuggestions(
+            forCoachReply: last.text,
+            voice: voice
+        )
+    }
+
+    private func followUpRow(chips: [String]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("Keep going")
+                .font(Typography.micro.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+                .padding(.leading, 34) // align with coach card body, past inline glyph
+                .accessibilityHidden(true)
+
+            // Wrapping flow — chips lay out horizontally and wrap onto
+            // a second row when the screen can't hold them all. Three
+            // chips on a regular-width iPhone usually fit on one row;
+            // smaller widths break naturally without truncating the
+            // copy. Reuses the `FlowLayout` already defined for the
+            // AIWeeklyInsightCard evidence pills so the chip rhythm
+            // matches that surface visually.
+            FlowLayout(spacing: 8, runSpacing: 6) {
+                ForEach(chips, id: \.self) { chip in
+                    Button {
+                        send(chip)
+                    } label: {
+                        Text(chip)
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(AppColor.pro)
+                            .multilineTextAlignment(.leading)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, 6)
+                            .background(
+                                AppColor.cardBackground,
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Follow up: \(chip)")
+                }
+            }
+            .padding(.leading, 34)
+        }
+        .padding(.top, 2)
+        .padding(.bottom, Spacing.xs)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     // MARK: - Message rows

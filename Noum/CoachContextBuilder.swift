@@ -386,6 +386,224 @@ enum CoachContextBuilder {
         return voice + common
     }
 
+    // MARK: - Follow-up suggestions (post-reply)
+    //
+    // Shown as quiet chips beneath the most-recent coach reply inside
+    // `AskNoumView`. Different register from `starterPrompts`: starters
+    // are first-message friction-removers shown above an empty input
+    // bar; follow-ups are "keep the thread alive" nudges shown after
+    // a real reply lands. Three short voice-shaped options is the
+    // sweet spot — fewer than that reads as random; more crowds the
+    // thread and starts to feel like a quiz.
+    //
+    // Topic detection rules:
+    //   • Lightweight, deterministic, case-insensitive substring match
+    //     on the coach's last reply. No NLP, no per-token analysis —
+    //     the chips are nudges, not a parsed response.
+    //   • Order of detection is intentional. We pick at most ONE topic
+    //     to anchor the chips; the rest fall back to voice-default
+    //     evergreen prompts. Anchoring on the first detected topic
+    //     keeps the chips coherent (three chips about three different
+    //     things would read as scattershot).
+    //   • Topics intentionally narrow to surfaces the coach actually
+    //     talks about: drills, pauses, pace, fillers, weekly cadence,
+    //     and a generic "next move" fallback. Adding a topic means
+    //     adding chips that read in every voice — we keep the catalog
+    //     tight on purpose.
+    //
+    // Restraint contract:
+    //   • If the reply is empty (e.g. mid-pending state, never
+    //     happens in practice but defensively safe), return an empty
+    //     array — `AskNoumView` collapses the chip row entirely.
+    //   • Voice-shaped — six voices + nil fallback. Every voice
+    //     handled; the test suite asserts this.
+    //   • No exclamations, no "Let's", no emoji — same brand rules
+    //     as everywhere else on the surface.
+    static func followUpSuggestions(
+        forCoachReply reply: String,
+        voice: SpeakingStyleGoal?
+    ) -> [String] {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let topic = detectFollowUpTopic(in: trimmed)
+        return followUpChips(for: topic, voice: voice)
+    }
+
+    /// Detected anchor for follow-up shaping. Internal — only
+    /// `followUpSuggestions` and its tests need this.
+    enum FollowUpTopic: Equatable {
+        /// Coach recommended a specific drill / move / exercise.
+        case drillMentioned
+        /// Coach quoted a pause or "pause" mechanic.
+        case pauseMentioned
+        /// Coach talked about pace / WPM / speed / rushing / slowing.
+        case paceMentioned
+        /// Coach quoted fillers / "um" / "uh" / hedging.
+        case fillerMentioned
+        /// Coach framed in terms of the week or a 7-day plan.
+        case weeklyMentioned
+        /// Generic — no specific anchor; voice-default evergreen chips.
+        case generic
+    }
+
+    static func detectFollowUpTopic(in reply: String) -> FollowUpTopic {
+        let lower = reply.lowercased()
+        // Order matters — we anchor on the FIRST detected topic. Drills
+        // and pauses are the most concrete coach recommendations, so
+        // they take priority over more general framings.
+        if lower.contains("drill") || lower.contains("exercise") || lower.contains("try this") {
+            return .drillMentioned
+        }
+        if lower.contains("pause") || lower.contains("silence") || lower.contains("breath") {
+            return .pauseMentioned
+        }
+        if lower.contains("pace") || lower.contains("wpm") || lower.contains("slow") || lower.contains("rush") {
+            return .paceMentioned
+        }
+        if lower.contains("filler") || lower.contains("\"um") || lower.contains("\"uh") || lower.contains(" um ") || lower.contains(" uh ") {
+            return .fillerMentioned
+        }
+        if lower.contains("this week") || lower.contains("next week") || lower.contains("7 days") || lower.contains("seven days") {
+            return .weeklyMentioned
+        }
+        return .generic
+    }
+
+    private static func followUpChips(for topic: FollowUpTopic, voice: SpeakingStyleGoal?) -> [String] {
+        // Each voice gets a register that matches its `coachPersonality`
+        // and `starterPrompts` shape. Three chips per (topic, voice)
+        // cell — kept short (<= ~10 words) so they read as quick
+        // nudges, not paragraphs the user has to parse.
+        switch topic {
+        case .drillMentioned:
+            return drillFollowUps(voice: voice)
+        case .pauseMentioned:
+            return pauseFollowUps(voice: voice)
+        case .paceMentioned:
+            return paceFollowUps(voice: voice)
+        case .fillerMentioned:
+            return fillerFollowUps(voice: voice)
+        case .weeklyMentioned:
+            return weeklyFollowUps(voice: voice)
+        case .generic:
+            return genericFollowUps(voice: voice)
+        }
+    }
+
+    private static func drillFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["Show me an example.", "How will I know I nailed it?", "What's the failure mode?"]
+        case .warm:
+            return ["Can you walk me through it?", "What does it feel like when it lands?", "Why this drill for me?"]
+        case .concise:
+            return ["Show me one example.", "Success looks like what?", "Any common pitfall?"]
+        case .persuasive:
+            return ["Walk me through the reasoning.", "What does success look like?", "What's the risk if I skip it?"]
+        case .executive:
+            return ["Top line: what does success look like?", "Brief me on the failure mode.", "Time to noticeable result?"]
+        case .storytelling:
+            return ["Tell me a rep that nailed this.", "What does the moment feel like?", "Where does this fit in my arc?"]
+        case .none:
+            return ["Show me an example.", "How will I know it worked?", "Why this one?"]
+        }
+    }
+
+    private static func pauseFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["What's the right length?", "When should I deploy it?", "What kills a pause?"]
+        case .warm:
+            return ["How long should it feel?", "When do pauses help me trust myself?", "What makes a pause land?"]
+        case .concise:
+            return ["How long?", "Where to drop one?", "What makes it work?"]
+        case .persuasive:
+            return ["What makes a pause persuasive?", "When does it lose power?", "How long is right?"]
+        case .executive:
+            return ["Recommend: how long, where, why?", "When does a pause backfire?", "One pause technique to drill?"]
+        case .storytelling:
+            return ["When does a pause carry the scene?", "How long should it feel?", "A rep where my pause worked?"]
+        case .none:
+            return ["How long should a pause be?", "When should I use one?", "What kills a pause?"]
+        }
+    }
+
+    private static func paceFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["What's my target pace?", "How do I lock it in?", "When am I rushing?"]
+        case .warm:
+            return ["What pace sounds warmest?", "How do I notice when I drift?", "What slows me down naturally?"]
+        case .concise:
+            return ["Target WPM?", "How to lock it?", "What drift to watch?"]
+        case .persuasive:
+            return ["What pace persuades?", "How does pace shift the listener?", "What's my drift pattern?"]
+        case .executive:
+            return ["Target pace for an exec read-out?", "What drift signals do I have?", "Tactic to lock it?"]
+        case .storytelling:
+            return ["What pace carries a story?", "When does my pace flatten the scene?", "How do I gear-shift mid-rep?"]
+        case .none:
+            return ["What pace should I target?", "How do I notice when I'm rushing?", "What's the fix?"]
+        }
+    }
+
+    private static func fillerFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["What replaces a filler?", "When do mine cluster?", "Drill that cuts them fastest?"]
+        case .warm:
+            return ["Why do I reach for fillers?", "How do I forgive myself when one slips?", "A drill that makes pauses feel natural?"]
+        case .concise:
+            return ["Best filler-cut drill?", "When do mine cluster?", "Replacement move?"]
+        case .persuasive:
+            return ["How do fillers weaken the case?", "Replacement moves that strengthen it?", "When do mine cluster?"]
+        case .executive:
+            return ["Recommend: top filler-cut move.", "When do mine cluster?", "Acceptable filler rate for exec?"]
+        case .storytelling:
+            return ["Do fillers break the scene?", "A rep where my fillers vanished?", "Move that replaces them?"]
+        case .none:
+            return ["What replaces a filler?", "When do mine cluster?", "Best drill to cut them?"]
+        }
+    }
+
+    private static func weeklyFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["Lock in the plan.", "What's the must-hit rep?", "How do I measure success?"]
+        case .warm:
+            return ["Which rep matters most this week?", "How do I make this stick?", "What if I miss a day?"]
+        case .concise:
+            return ["Must-hit rep?", "How to measure?", "If I miss a day?"]
+        case .persuasive:
+            return ["Why this sequence?", "Which rep moves the needle most?", "How do I measure week-over-week?"]
+        case .executive:
+            return ["Top priority rep?", "Success metric for the week?", "Risk if a day slips?"]
+        case .storytelling:
+            return ["What chapter is this week?", "Which rep is the turning point?", "What does the end of the week look like?"]
+        case .none:
+            return ["Which rep matters most?", "How do I measure progress?", "What if I miss a day?"]
+        }
+    }
+
+    private static func genericFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["Give me the next move.", "What am I missing?", "What's the leverage point?"]
+        case .warm:
+            return ["Tell me more.", "What should I notice next?", "Where am I growing right now?"]
+        case .concise:
+            return ["Next move?", "What am I missing?", "Where's the leverage?"]
+        case .persuasive:
+            return ["Walk me through the reasoning.", "What's the strongest signal in my data?", "Where am I underweighting?"]
+        case .executive:
+            return ["Top line: next move?", "Brief me on the leverage point.", "What am I underweighting?"]
+        case .storytelling:
+            return ["Where am I in the arc?", "What's the next chapter?", "Which rep was the turning point?"]
+        case .none:
+            return ["What's the next move?", "Tell me more.", "Where should I focus?"]
+        }
+    }
+
     // MARK: - Helpers
 
     /// "Today" / "Yesterday" / "Mon" / "Apr 14" — compact day label

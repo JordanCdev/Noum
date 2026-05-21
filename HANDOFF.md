@@ -1,183 +1,259 @@
-# HANDOFF — Ask Noum third entry point + Firestore deploy unblock
+# HANDOFF — Ask Noum "Keep going" follow-up chips
 
 ## Scope
 
-Three files touched: `ProfileView.swift` (+58 LOC, new
-`askNoumProfileLink` view + `askNoumProfileLabel(for:)` voice-shaped
-copy catalogue), `firebase.json` (+3 LOC, the missing `firestore`
-block), and `docs/CURRENT_STATE.md` (trail-of-breadcrumbs entry, new
-Profile entry bullet under the Ask Noum section, privacy-policy
-block rewritten to reflect the firebase.json fix).
+Three files touched: `Noum/CoachContextBuilder.swift` (+~150 LOC,
+new `followUpSuggestions(forCoachReply:voice:)` API + nested
+`FollowUpTopic` enum + six voice × topic chip catalogues),
+`Noum/AskNoumView.swift` (+~70 LOC, new `followUpChips` computed
+view, `followUpRow(chips:)` view-builder, FlowLayout-based capsule
+chip row mounted under the most-recent coach reply), and
+`NoumTests/NoumTests.swift` (+~140 LOC, nine new follow-up tests
+inside the existing `CoachContextBuilderTests` struct). Two doc
+updates: `docs/CURRENT_STATE.md` trail-of-breadcrumbs + a new
+sub-bullet under the Ask Noum section.
 
-The brief: continue from the existing TO-DO, push toward A+ on the
-M14 "open the loop" milestone, and stay on the `Redesign` branch.
-Previously, Ask Noum had two entry points — the ambient home promo
-(`ContentView.askNoumPromoCard`) and the post-session bridge
-(`SummaryView.askCoachBridgeCard`). The third surface where users
-sit with their coaching context — the Profile's Coaching Direction
-card with its goal text, goal-progress ring, and captured
-reflections — had no handoff into the persistent coach thread.
-Closing that gap is the engineering content of this push. The
-operational side closes a parallel gap: `firebase.json` was missing
-the `firestore` pointer block, so the M14 deploy command always
-required a config edit step in between.
+The brief: continue from the existing TO-DO, push toward A+ on
+the M14 "open the loop" milestone, stay on the `Redesign` branch,
+and "make the dream come true." Up to this push, Ask Noum had
+three entry points (Home ambient promo, Profile goal-anchored
+link, Summary session-anchored bridge) — but once a user was
+*inside* the chat, the surface was a respond-and-wait loop. Every
+reply landed; the thread sat dead until the user typed. The
+empty-state starter prompts existed to remove the friction of
+the *first* message — there was no equivalent surface for the
+*continuing* conversation. That gap is the engineering content
+of this push: surface 2–3 voice-shaped, topic-anchored follow-up
+chips beneath the most-recent coach reply so the conversation
+keeps moving without forcing the user to author their own
+follow-up from scratch.
 
 ## What changed
 
-### Move 1 — `ProfileView.askNoumProfileLink`
+### Move 1 — `CoachContextBuilder.followUpSuggestions(forCoachReply:voice:)`
 
-- `ProfileView.swift` lines 702–706 (the existing `coachingInsight`
-  text inside `coachingDirectionCard`) now have a sibling `if
-  coachingProfileStore.profile != nil { askNoumProfileLink }` block
-  immediately after. The gate matches the rest of the goal-aware
-  surfaces: silent for pre-onboarding sessions where there's no
-  coaching profile to anchor a conversation to, surfaced once the
-  user has captured a goal.
-- The new private view `askNoumProfileLink` (~25 LOC) renders a
-  small brand-purple "Ask Noum <voice-shape> →" link. No card
-  chrome, no NoumCharacter glyph — restrained on purpose so it
-  reads as a quiet handoff at the foot of the existing Coaching
-  Direction card, not a second hero competing with the
-  `GoalProgressView` ring above it. Tap fires `openURL("noum://ask")`
-  via the existing `@Environment(\.openURL)` already declared at
-  `ProfileView.swift:41`.
-- The new private helper `askNoumProfileLabel(for: SpeakingStyleGoal?)`
-  is the voice-shaped copy catalogue. Mirrors the catalogue pattern
-  used by `ContentView.askNoumPromoHeadline` and
-  `SummaryView.askCoachBridgeHeadline` so all three coach entry
-  points sound like the same coach. Phrasing is ambient (goal-
-  anchored, not rep-anchored) because Profile isn't tied to a
-  specific session.
+A new pure-function API on the existing context builder. Takes
+the most-recent coach reply text + the user's `SpeakingStyleGoal?`
+and returns up to three chip strings. Empty / whitespace-only
+reply returns `[]` (defensive — should never happen in practice
+because the call site already gates on `!isPending && !text.isEmpty`,
+but the function contract is robust).
 
-Voice catalogue:
+Architecture:
 
-- `.authoritative` → "Ask Noum what to drill next"
-- `.warm` → "Talk to Noum about your goal"
-- `.concise` → "Ask Noum — one move"
-- `.persuasive` → "Ask Noum where to leverage"
-- `.executive` → "Brief Noum on what's next"
-- `.storytelling` → "Tell Noum what's next"
-- `.none` → "Ask Noum about your goal"
+- **Topic detection** is a deterministic, case-insensitive substring
+  walk over the reply text. The first match wins. Order is intentional:
+  drill > pause > pace > filler > weekly > generic. The reasoning:
+  drills are the most concrete coach recommendation (the user needs
+  to know *how to do it*), so they take priority over more general
+  framings. Pauses are second-most-concrete. Generic is the floor —
+  every reply yields three chips, never zero (unless the reply is
+  empty).
+- **Detection lexicon** is intentionally narrow:
+  - `.drillMentioned` — "drill", "exercise", "try this"
+  - `.pauseMentioned` — "pause", "silence", "breath"
+  - `.paceMentioned` — "pace", "wpm", "slow", "rush"
+  - `.fillerMentioned` — "filler", quoted "um" / "uh"
+  - `.weeklyMentioned` — "this week", "next week", "7 days", "seven days"
+  - `.generic` — fallback
+- **Chip catalogue** is voice × topic. Six voices + nil fallback ×
+  six topics = 42 cells, each carrying exactly three chips. Every
+  chip is < 60 characters (the test asserts this), brand-voice
+  compliant (no exclamations, no "Let's", no emoji — the test asserts
+  this too), and matches the register of its sister catalogue
+  entries (`coachPersonality`, `starterPrompts`, `sessionOpener`,
+  `askNoumProfileLabel`). Authoritative reaches for verdict-shaped
+  questions ("How will I know I nailed it?"); warm reaches for
+  felt-experience ("What does it feel like when it lands?"); concise
+  is clipped ("Show me one example."); storytelling references the
+  arc ("Where does this fit in my arc?"); executive uses chief-of-
+  staff framings ("Top line: what does success look like?");
+  persuasive shows reasoning ("Walk me through the reasoning.");
+  the nil fallback is calm, direct, voice-neutral.
 
-### Move 2 — `firebase.json` carries `firestore.rules` pointer
+The new `FollowUpTopic` enum is `internal` (visible to the test
+suite via the same module) but not `public` — there's no other
+external consumer.
 
-- `firebase.json` gained a top-level `"firestore": {"rules":
-  "firestore.rules"}` block between the existing `functions` array
-  and `hosting` block. Three lines, no other changes.
-- Why this matters: the M14 milestone's definition of done in
-  `docs/VISION.md` requires `firebase deploy --only firestore:rules`
-  to land. Before this push, that command would have failed
-  immediately ("no rules configured") and required a config edit
-  in between. Now `firebase deploy --only firestore:rules,hosting
-  --project noum-d0b6f` is a literal one-shot command. The deploy
-  itself remains pending Jordan's explicit greenlight — that's
-  operational, not engineering.
+### Move 2 — `AskNoumView` chip row
 
-### Move 3 — `docs/CURRENT_STATE.md` updated
+The view picks up `followUpChips` (computed `[String]?`) which
+returns nil to collapse the row entirely under any of these
+conditions:
+- a coach reply is in flight (`store.isAwaitingReply`),
+- the latest message is not a coach reply (`last.role != .coach`),
+- the latest message is pending (`last.isPending`),
+- the reply text is empty.
 
-- Header trail-of-breadcrumbs (line 3) gets two new bullets so a
-  cold-read of the doc tells you what's new since the last push:
-  the Profile Ask Noum entry, and the `firebase.json` fix.
-- The Ask Noum section (lines 162–198 previously) gets a new
-  Profile entry bullet positioned BEFORE the Post-session entry —
-  the entry order now reads Home → Profile → Summary, matching the
-  visual hierarchy a user would discover them in (Home tab,
-  Profile tab, then post-rep flow).
-- The Hosted privacy policy URL block under "Stubbed /
-  placeholder" is rewritten to reflect the resolved config gap —
-  no longer says "firebase.json needs the block added", now says
-  it carries it. Deploy itself still flagged as pending.
+When the conditions are satisfied, it delegates to
+`CoachContextBuilder.followUpSuggestions(...)` and renders the
+returned strings as capsule chips inside a `FlowLayout` (reused
+from `AIWeeklyInsightCard.swift:344` so the chip rhythm matches
+the evidence-pills surface visually).
+
+Visual register:
+- `Typography.caption.weight(.semibold)` for chip text (quieter
+  than the starter prompts which use `Typography.body`).
+- `AppColor.pro` text on `AppColor.cardBackground` capsules.
+- `AppColor.pro.opacity(0.22)` 1pt stroke — same brand-purple-but-
+  whispered register as the existing coach card border.
+- `Spacing.sm` horizontal / 6pt vertical padding — capsule reads
+  as a tap target without dominating.
+- 34pt leading inset on the row + the eyebrow label — aligns with
+  the coach card body content past the inline NoumCharacter glyph.
+- "KEEP GOING" eyebrow above the chips (`Typography.micro.weight(.bold)`
+  uppercased w/ 0.8 tracking) — matches the eyebrow register used
+  elsewhere on the surface ("ASK NOUM · <voice>", "STARTERS").
+  `.accessibilityHidden(true)` because the per-chip
+  `accessibilityLabel: "Follow up: <chip>"` already carries the
+  intent for VoiceOver users.
+- `.transition(.opacity.combined(with: .move(edge: .top)))` so the
+  row fades + drops in when a fresh reply hydrates — reduce-motion
+  honored because the surrounding `withAnimation` calls in
+  `scrollToBottom` already gate on the env value.
+
+Tap path: each chip is a Button that fires `send(chip)` — the same
+path the starter prompts use. The chip text becomes the user's
+next turn (appears as a user bubble), and the coach replies
+normally. The chip row then re-evaluates on the new reply.
+
+### Move 3 — Nine new tests in `CoachContextBuilderTests`
+
+All inside the existing struct (no new test target, no new file).
+The block matches the rhythm of the existing `starterPrompts` +
+`sessionOpener` blocks:
+
+1. `followUpSuggestionsEmptyReplyReturnsEmpty` — empty + whitespace-
+   only inputs collapse the row.
+2. `followUpTopicDetectionFindsDrillFirst` — drill / exercise / "try
+   this" all map to drillMentioned; drill wins when both drill and
+   pause appear (priority order locked).
+3. `followUpTopicDetectionFindsPause` — pause / silence / breath.
+4. `followUpTopicDetectionFindsPace` — pace / WPM / rush / slow.
+5. `followUpTopicDetectionFindsFillers` — filler + quoted "um".
+6. `followUpTopicDetectionFindsWeekly` — this week / next week / 7
+   days / seven days.
+7. `followUpTopicDetectionFallsBackToGeneric` — replies with no
+   detectable anchor still yield generic chips, never an empty row.
+8. `followUpSuggestionsEveryVoiceProducesThreeChips` — coverage
+   invariant: every voice × every topic = exactly three chips.
+   Including the nil-voice path. A future refactor that drops a
+   case will fail this test.
+9. `followUpSuggestionsAreVoiceShapedForDrillTopic` — voice register
+   preserved across topics; authoritative reaches for verdict
+   language, warm reaches for felt-experience, concise is shorter
+   than authoritative (asserted numerically), storytelling
+   references the arc / scene.
+10. `followUpSuggestionsRespectBrandVoiceRules` — no exclamations,
+    no "Let's", no chip > 60 chars across all voice × topic cells.
+
+### Move 4 — `docs/CURRENT_STATE.md` updated
+
+- Header trail-of-breadcrumbs gets a new entry summarising the
+  follow-up chip ship.
+- The Ask Noum section's first bullet (the `Noum/AskNoumView.swift`
+  description) gains a follow-up chip block — placement matches
+  the existing pattern of "describe the surface, then describe
+  what's special about it".
 
 ## What did NOT change
 
-- `Noum/ContentView.swift` — untouched. The home `askNoumPromoCard`
-  + the existing `noum://ask` deep-link route at lines 1718–1720
-  are the navigation owner; the new Profile link is just a
-  consumer of that same route. No new `AppDestination` case, no
-  navigationPath binding bleed into Profile.
-- `Noum/SummaryView.swift` — untouched. The post-session bridge
-  preserves its session-anchored opener seeding pattern (different
-  contract from the Profile ambient handoff). Both can coexist —
-  Profile fires ambient, Summary fires rep-anchored, neither
-  overlaps the other.
-- `Noum/AskNoumStore.swift`, `Noum/AskNoumView.swift`,
-  `Noum/AICoachChatService.swift`, `Noum/CoachContextBuilder.swift`
-  — all untouched. The third entry point reads from the same
-  store, surfaces the same view, runs the same provider chain.
-- `firestore.rules` — untouched. The file is correct; the
-  `firebase.json` was the only piece blocking the literal one-shot
-  deploy command.
-- Brand voice rules respected: link copy carries no exclamations,
-  no "Let's", no chirpiness, no emoji. The arrow glyph
-  (`arrow.right`) matches the chevron pattern the existing
-  promo/bridge cards use.
+- `Noum/AskNoumStore.swift` — untouched. Chips ride on top of the
+  existing `appendUserTurn` + `completeCoachTurn` plumbing. No
+  new published property, no new accessor.
+- `Noum/AICoachChatService.swift` — untouched. The model never
+  sees the chip text directly; it sees the chip text as a
+  user-authored turn (because that's exactly what it is).
+- `Noum/ContentView.swift` — untouched. The three entry points to
+  Ask Noum are unchanged; only the inside of the chat surface
+  evolved.
+- `Noum/SummaryView.swift`, `Noum/ProfileView.swift` — untouched.
+  The three entry-point catalogues (`askNoumPromoHeadline`,
+  `askCoachBridgeHeadline`, `askNoumProfileLabel`) are unrelated
+  to the follow-up catalogue and stay siloed by surface register
+  (ambient / session-anchored / goal-anchored).
+- `Noum/AIWeeklyInsightCard.swift` — untouched. The `FlowLayout`
+  defined there is reused, not duplicated.
+- Brand voice rules respected: chip catalogue carries no
+  exclamations, no "Let's", no chirpiness, no emoji. Locked by
+  the `followUpSuggestionsRespectBrandVoiceRules` test.
 - Design tokens pulled from `DesignSystem.swift` (`AppColor.pro`,
-  `Spacing.lg`) and `Typography.swift` (`Typography.caption`).
-  No literal hex, no magic spacing, no bespoke fonts.
-- `Localizable.xcstrings` — untouched. Link copy is English-only
-  per the M13 honest gap. Future localisation pass picks this up
-  alongside the rest of the Ask Noum copy.
+  `AppColor.cardBackground`, `Spacing.xs`/`.sm`) and
+  `Typography.swift` (`Typography.caption`, `Typography.micro`).
+  No literal hex, no magic spacing.
+- `Localizable.xcstrings` — untouched. Chip copy is English-only
+  per the M13 honest gap. The chip catalogue is a natural pick-up
+  for a future localisation pass alongside `starterPrompts` and
+  `sessionOpener`.
 
 ## Risks
 
-1. **Three entry points might feel like the coach is being
-   "pushed."** The home promo is a hero card; the summary bridge
-   is a small inline button; the new Profile link is the smallest
-   surface of the three (no card, no glyph, single-line link).
-   The gradient of size matches the gradient of intent: ambient
-   discovery (home), in-the-moment (summary), goal-anchored
-   reflection (profile). Acceptable risk; if the link feels too
-   pushy in QA, the gate already silences it for pre-onboarding
-   sessions and could be downgraded further (e.g. only show when
-   `baseline.measuredDistanceFromGoal` returns nil-or-not-good).
-2. **Voice-catalogue drift across three surfaces.** All three
-   catalogues (`askNoumPromoHeadline`, `askCoachBridgeHeadline`,
-   `askNoumProfileLabel`) are independent copy maps keyed by
-   `SpeakingStyleGoal`. If a future move adds a 7th voice, three
-   sites need editing. Acceptable: the catalogue pattern is
-   intentional (each surface has its own register — ambient,
-   rep-anchored, goal-anchored), and a shared catalogue would
-   collapse them into one register and lose the voice texture.
-3. **`openURL("noum://ask")` round-trips through the URL handler
-   instead of pushing the destination directly.** This adds one
-   extra hop relative to the home promo's
-   `navigationPath.append(AppDestination.askNoum)` pattern. The
-   `DeepLinkRouter` handler at `ContentView.swift:1718` already
-   resets `navigationPath` and pushes `askNoum`, so the user
-   lands in the same place — but if the Profile is inside a deeper
-   nav stack, the route reset would pop those parents. Profile is
-   the tab root in this codebase (handled in `ContentView` as a
-   destination, not nested under anything that needs preserving),
-   so the reset is a no-op. If a future move adds a sub-stack
-   under Profile, this link should be re-evaluated.
-4. **`firebase.json` change doesn't trigger any CI we have on
-   Linux.** The cloud sandbox here has no `firebase-tools`. The
-   block is the documented contract; visual verification of the
-   one-shot deploy command landing requires a local `firebase
-   deploy --only firestore:rules --dry-run` pass before Jordan
-   greenlights the actual deploy.
-5. **Profile coaching-card density.** Adding a fifth row (after
-   goal text → progress ring → reflections → insight) raises the
-   card's vertical footprint slightly. The link is `Typography.
-   caption.weight(.semibold)` (small) with `padding(.top, 2)`, so
-   the height bump is ~16pt. Below the iPhone 12-Pro fold on a
-   long-reflection user, but the Profile is a vertical scroll —
-   the card stays the same width and the rest of the page just
-   scrolls one beat further. Acceptable.
+1. **Chip row could feel chatty.** Three chips after every reply is
+   a lot of new surface area. Mitigated by: chips are visually
+   quieter than starter prompts (caption-sized, capsule, brand-
+   purple stroke rather than full-row card), only render under the
+   most-recent reply (historical replies stay clean), collapse
+   under pending / system-notice / empty-reply conditions. If QA
+   feedback says they still feel pushy, we can drop to two chips
+   per cell with a single-line catalogue edit — no architectural
+   churn.
+2. **Topic detection is a substring match, not real NLP.** A reply
+   like "Don't rush — that's the move" would match `.paceMentioned`
+   because of "rush", which is correct intent. A reply like "your
+   pause **and** filler patterns are tied" would match `.pauseMentioned`
+   because pause is checked first — which is fine; the chips
+   shown will be pause-shaped, which is one of the two valid
+   directions to take the conversation. Acceptable false-positive
+   rate. If the chips start drifting from the conversation in
+   practice, the detection layer is the right place to add a
+   small priority tiebreaker (e.g. count occurrences, weight by
+   sentence position).
+3. **Chips don't see the user-context block.** The model gets the
+   full baseline / rating / streak / sessions context block on
+   every reply — chips don't. So a chip like "How long should a
+   pause be?" doesn't know the user already held a 4-second pause
+   yesterday. That's intentional: the chip is a *nudge*, not an
+   answer. The model's reply to the chip-as-question is where the
+   context lands. If a future move wants context-aware chips
+   ("Repeat yesterday's 4-second pause"), the chip catalogue
+   would need to grow into a function over the same user-context
+   block — fair extension, not in scope for this push.
+4. **The `FlowLayout` reuse crosses files.** `AskNoumView.swift`
+   now depends on a `FlowLayout` defined inside
+   `AIWeeklyInsightCard.swift`. Both ship in the same target and
+   the layout struct is intentionally project-internal, so the
+   cross-file reference is legitimate. If a future move extracts
+   `FlowLayout` into `DesignSystem.swift` (it probably should —
+   that's where shared layout primitives live), both call sites
+   pick it up automatically.
+5. **Eight new voice × topic cells could drift in copy quality.**
+   The catalogue is 6 voices × 6 topics × 3 chips = 108 strings.
+   Coach voice quality across that many cells is hard to spot-
+   check exhaustively in code review. Mitigated by: the
+   restraint-test asserts the brand-voice rules at the surface
+   level; the voice-shape test asserts the register split at the
+   sample-cell level; the rest is a copy job in the next coach-
+   voice-audit cloud routine.
 
 ## Verification
 
 ### Implemented
 
-- `ProfileView.askNoumProfileLink` mounts inside
-  `coachingDirectionCard`, gated on `coachingProfileStore.profile
-  != nil`, fires `openURL("noum://ask")`.
-- `ProfileView.askNoumProfileLabel(for:)` returns voice-shaped
-  copy for every `SpeakingStyleGoal` case + the nil case.
-- `firebase.json` carries the `"firestore": {"rules":
-  "firestore.rules"}` top-level block.
-- `docs/CURRENT_STATE.md` trail-of-breadcrumbs entry + new
-  Profile entry bullet + privacy-policy block rewrite.
+- `CoachContextBuilder.followUpSuggestions(forCoachReply:voice:)`
+  exists, returns three chips for every non-empty reply across
+  every voice × topic cell + the nil-voice path.
+- `CoachContextBuilder.FollowUpTopic` enum has six cases (drill,
+  pause, pace, filler, weekly, generic). `detectFollowUpTopic(in:)`
+  is order-sensitive and tested.
+- `AskNoumView.followUpChips` collapses under all four documented
+  conditions (in-flight, non-coach last message, pending, empty).
+- `AskNoumView.followUpRow(chips:)` mounts beneath the latest
+  coach reply, lays out via the existing `FlowLayout`, fires
+  `send(chip)` on tap.
+- Nine new tests in `CoachContextBuilderTests` cover empty input,
+  topic detection (drill / pause / pace / filler / weekly /
+  generic), every-voice-three-chips coverage, voice-shape register
+  split, brand-voice rules.
 
 ### Partially implemented
 
@@ -185,74 +261,88 @@ Voice catalogue:
 
 ### Blocked / needs visual QA on device
 
-- The new Profile link has not been visually verified in this
-  push (cloud sandbox, no Xcode toolchain). The three critical
-  visual checks for QA:
-  1. **Coaching Direction card layout**: link sits cleanly under
-     the existing coaching insight text, no awkward gap, no
-     overlap with the reflections block above when the user has
-     captured all three reflection answers.
-  2. **Voice-catalogue shape**: each of the 7 catalogue entries
-     (6 voices + nil) reads in the same register as its sister
-     entries in `askNoumPromoHeadline` and
-     `askCoachBridgeHeadline`. Spot-check by setting each voice
-     in Settings and screenshotting Profile.
-  3. **noum://ask deep link round-trip**: tap from Profile pops
-     to Home root and pushes the AskNoumView destination (because
-     the `DeepLinkRouter` handler at `ContentView.swift:1718–1720`
-     resets `navigationPath` before appending). Visual
-     verification: Profile → tap link → AskNoumView lands
-     cleanly with empty-state copy in the user's voice.
+This push touches a live UI surface; the cloud sandbox can't
+build or screenshot. The critical visual checks for QA:
+
+1. **Chip row visual register**: chips read as quieter than the
+   starter-prompt rows. Side-by-side compare empty-state vs.
+   mid-thread state — starter rows are full-width, follow-up
+   chips are capsule, the visual hierarchy should be obvious.
+2. **Flow layout wrap behaviour**: on an iPhone SE (smallest
+   regular-class width), do three chips wrap onto two rows
+   gracefully without truncating any chip's text?
+3. **Voice-catalogue spot-check**: set each of the six voices in
+   Settings + send a starter prompt that's likely to trigger
+   each topic. Verify the chip set reads in-register. The fastest
+   spot-check is `concise` voice + "I rambled in my last rep —
+   what cut it?" starter (should fire `.fillerMentioned` chips
+   in clipped concise voice — "Best filler-cut drill?" / "When
+   do mine cluster?" / "Replacement move?").
+4. **Tap-and-send round-trip**: tap a chip → user bubble appears
+   with the chip text → pending coach reply → reply hydrates →
+   new chip row appears (possibly with different topic anchor).
+5. **Scroll-to-bottom on chip appear**: when the chips fade in
+   after the reply hydrates, does the scroll position track to
+   the chip row so the user sees them? The existing
+   `onChange(of: store.isAwaitingReply)` handler scrolls to
+   "bottom" which is the bottom spacer AFTER the chips, so the
+   chips should be in view by construction. Visual verification
+   needed to confirm there's no half-second flash where the chips
+   are below the fold.
+6. **Reduce-motion respect**: with reduce-motion on, does the
+   chip row appear without the move-edge transition (it should
+   just opacity-fade or appear instantly)? The
+   `.transition(.opacity.combined(with: .move(edge: .top)))`
+   modifier is governed by the surrounding `withAnimation`
+   contexts which already gate on the env value, so this should
+   be correct — confirm visually.
 
 ### Assumptions
 
-- `openURL("noum://ask")` is the right navigation contract for
-  the Profile entry point. Pattern verified against the existing
-  deep-link consumer at `ContentView.swift:1718`. Resets the
-  nav path before appending, so the user lands at AskNoum with
-  no Profile-stack ghost behind them. Acceptable — once the
-  user is talking to the coach, the previous Profile state isn't
-  load-bearing.
-- The `if coachingProfileStore.profile != nil` gate is the right
-  silence condition. Stricter gates considered (e.g. require a
-  goal to be set, require `≥ 1` finished session) but the
-  Coaching Direction card itself already needs a profile to
-  render its existing contents — adding a stricter gate on the
-  link would create asymmetric visibility within the same card.
-- The arrow-glyph (`arrow.right`) matches the chevron pattern
-  the existing two promo/bridge surfaces use. Verified by
-  reading `askCoachBridgeCard` (line 1786–1793 of SummaryView)
-  and `askNoumPromoCard` (line 1077–1085 of ContentView) —
-  both use `Image(systemName: "arrow.right")` with the same
-  `font(.caption.weight(.bold))` + `foregroundStyle(AppColor.pro)`
-  pattern. One visual rhythm across all three coach entry
-  points.
+- The most-recent coach reply is the right anchor for the chips.
+  Considered: chips beneath every coach reply (rejected — would
+  clutter the thread on long conversations), chips above the
+  input bar as a global suggestion strip (rejected — they
+  wouldn't read as "from this specific reply"). The chosen
+  inline-under-last-reply position matches the iMessage / Slack
+  "thread continuation" pattern users already know.
+- Topic detection priority (drill > pause > pace > filler >
+  weekly > generic) is the right order. Reasoning: drills are
+  the most concrete coach recommendation, so they take priority;
+  pauses are the most concrete delivery mechanic; pace / fillers
+  are diagnostic categories; weekly is a framing layer; generic
+  is the floor. If the model reply describes a drill that
+  involves a pause, the chips should be drill-shaped because
+  *executing the drill* is what the user needs help with next.
+- Three chips is the right count. Two would feel arbitrary;
+  four would crowd. The starter-prompts surface lands on four
+  (two voice-specific + two common), but starters need to cover
+  more first-message cold-start ground; follow-ups only need to
+  keep one specific conversation moving.
 
 ### Verification (what was checked)
 
 - All file reads + edits applied via Edit / Write tools; no
   Bash builds run (sandboxed Linux environment, no Xcode
   toolchain).
-- `grep` after the ProfileView edit confirmed the new
-  `askNoumProfileLink` and `askNoumProfileLabel` symbols land
-  exactly once in the file with no accidental duplication into
-  the SummaryView or ContentView equivalents.
-- The deep-link route `case "ask", "asknoum":` is confirmed in
-  `ContentView.swift:1718–1720` — the new Profile link is just a
-  consumer of that already-registered route. No new route added,
-  no `AppDestination` enum case added.
-- `firebase.json` JSON validity: the new `firestore` block is a
-  top-level sibling of `functions` and `hosting`, comma after
-  the `functions` array close (line 19), comma before the
-  `hosting` key (line 23). Matches the schema documented at
-  firebase.google.com/docs/cli#initialize_a_firebase_project.
-- The `firestore.rules` file referenced by the new block exists
-  at the project root (confirmed via `ls firestore.rules`), so
-  the deploy command will find it.
-- `CoachingProfileStore.profile` access pattern in ProfileView is
-  identical to the existing `if let profile = coachingProfileStore.
-  profile` read at the top of the same `coachingDirectionCard`
-  body — same store, same nullability contract.
+- `grep` after the CoachContextBuilder edit confirmed the new
+  `followUpSuggestions`, `FollowUpTopic`, `detectFollowUpTopic`,
+  `followUpChips`, and the six topic-specific catalogue helpers
+  (`drillFollowUps`, `pauseFollowUps`, `paceFollowUps`,
+  `fillerFollowUps`, `weeklyFollowUps`, `genericFollowUps`) land
+  exactly once in the file.
+- AskNoumView.swift wiring traced end-to-end: ScrollView mount
+  spot → `followUpChips` accessor → `followUpRow(chips:)` view
+  → `send(chip)` invocation → existing store.appendUserTurn
+  path → existing runReply path. No new state owners introduced.
+- Test block follows the existing `CoachContextBuilderTests`
+  rhythm (struct member, no new file, no new target). Coverage
+  invariant test guards against future voice / topic adds
+  drifting out of the catalogue.
+- `FlowLayout` symbol confirmed visible in the same Noum target
+  via the existing `AIWeeklyInsightCard.swift:344` definition —
+  cross-file usage is legitimate, both files compile against
+  the same `Layout` protocol.
 
 ### Risks
 
@@ -260,10 +350,15 @@ Voice catalogue:
 
 ## Files modified
 
-- `ProfileView.swift` (+58 LOC — `askNoumProfileLink` + helper).
-- `firebase.json` (+3 LOC — `firestore.rules` pointer block).
-- `docs/CURRENT_STATE.md` (trail-of-breadcrumbs + Ask Noum
-  section Profile bullet + privacy-policy block rewrite).
+- `Noum/CoachContextBuilder.swift` (+~150 LOC — `followUpSuggestions`
+  API + `FollowUpTopic` enum + six voice × topic chip catalogues).
+- `Noum/AskNoumView.swift` (+~70 LOC — `followUpChips` accessor +
+  `followUpRow(chips:)` view-builder + chip row mount under the
+  most-recent coach reply).
+- `NoumTests/NoumTests.swift` (+~140 LOC — nine new follow-up
+  tests inside `CoachContextBuilderTests`).
+- `docs/CURRENT_STATE.md` (trail-of-breadcrumbs entry + Ask Noum
+  section sub-bullet).
 - `HANDOFF.md` (rewritten — this file).
 
 ## Branch

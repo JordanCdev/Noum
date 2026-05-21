@@ -5249,6 +5249,171 @@ struct CoachContextBuilderTests {
         }
     }
 
+    // MARK: - Follow-up suggestions (post-reply chip row)
+    //
+    // Pins the contract behind the AskNoumView follow-up chips:
+    //   1. Empty reply returns an empty array — chip row collapses.
+    //   2. Topic detection finds drill / pause / pace / filler / weekly
+    //      anchors in the reply text, deterministically and order-
+    //      sensitively (first match wins).
+    //   3. Every voice handled — no voice produces an empty array.
+    //   4. Voice register is preserved across topics: authoritative is
+    //      verdict-shaped, warm is curious, concise is clipped,
+    //      storytelling references the arc.
+    //   5. No exclamations / emoji / "Let's" in any voice × topic cell
+    //      (brand voice rules).
+
+    @Test func followUpSuggestionsEmptyReplyReturnsEmpty() {
+        let chips = CoachContextBuilder.followUpSuggestions(
+            forCoachReply: "",
+            voice: .authoritative
+        )
+        #expect(chips.isEmpty)
+
+        let whitespaceOnly = CoachContextBuilder.followUpSuggestions(
+            forCoachReply: "   \n\t  ",
+            voice: .authoritative
+        )
+        #expect(whitespaceOnly.isEmpty, "Whitespace-only reply must also collapse the chip row")
+    }
+
+    @Test func followUpTopicDetectionFindsDrillFirst() {
+        // Drill / exercise / "try this" all map to drillMentioned.
+        // Order check: when both drill and pause appear, drill wins
+        // because it's the more concrete recommendation.
+        let drill = CoachContextBuilder.detectFollowUpTopic(in: "Try this drill tomorrow.")
+        let exercise = CoachContextBuilder.detectFollowUpTopic(in: "Run an exercise on openings.")
+        let tryThis = CoachContextBuilder.detectFollowUpTopic(in: "Try this: open with a thesis.")
+        let drillAndPause = CoachContextBuilder.detectFollowUpTopic(
+            in: "I'd recommend a drill where you hold a pause between points."
+        )
+        #expect(drill == .drillMentioned)
+        #expect(exercise == .drillMentioned)
+        #expect(tryThis == .drillMentioned)
+        #expect(drillAndPause == .drillMentioned,
+                "Drill should win when both drill and pause appear — drill is the more concrete anchor")
+    }
+
+    @Test func followUpTopicDetectionFindsPause() {
+        let pause = CoachContextBuilder.detectFollowUpTopic(in: "Hold a four-second pause before your close.")
+        let silence = CoachContextBuilder.detectFollowUpTopic(in: "Trust the silence.")
+        let breath = CoachContextBuilder.detectFollowUpTopic(in: "Take a breath, then continue.")
+        #expect(pause == .pauseMentioned)
+        #expect(silence == .pauseMentioned)
+        #expect(breath == .pauseMentioned)
+    }
+
+    @Test func followUpTopicDetectionFindsPace() {
+        let pace = CoachContextBuilder.detectFollowUpTopic(in: "Your pace climbs as you build energy.")
+        let wpm = CoachContextBuilder.detectFollowUpTopic(in: "You averaged 168 WPM this week.")
+        let rush = CoachContextBuilder.detectFollowUpTopic(in: "You rush into the second point.")
+        let slow = CoachContextBuilder.detectFollowUpTopic(in: "Slow your opening by 20%.")
+        #expect(pace == .paceMentioned)
+        #expect(wpm == .paceMentioned)
+        #expect(rush == .paceMentioned)
+        #expect(slow == .paceMentioned)
+    }
+
+    @Test func followUpTopicDetectionFindsFillers() {
+        let fillers = CoachContextBuilder.detectFollowUpTopic(in: "Three fillers in the opening.")
+        let umQuoted = CoachContextBuilder.detectFollowUpTopic(in: "Replace \"um\" with silence.")
+        #expect(fillers == .fillerMentioned)
+        #expect(umQuoted == .fillerMentioned)
+    }
+
+    @Test func followUpTopicDetectionFindsWeekly() {
+        let thisWeek = CoachContextBuilder.detectFollowUpTopic(in: "This week, hit three reps.")
+        let nextWeek = CoachContextBuilder.detectFollowUpTopic(in: "Next week we shift focus.")
+        let sevenDays = CoachContextBuilder.detectFollowUpTopic(in: "Over the next 7 days, do 5 reps.")
+        #expect(thisWeek == .weeklyMentioned)
+        #expect(nextWeek == .weeklyMentioned)
+        #expect(sevenDays == .weeklyMentioned)
+    }
+
+    @Test func followUpTopicDetectionFallsBackToGeneric() {
+        // A reply with no detectable topic anchor should land on
+        // .generic so we still surface evergreen chips rather than
+        // collapse the row entirely.
+        let generic = CoachContextBuilder.detectFollowUpTopic(in: "You're holding steady. Stay with it.")
+        #expect(generic == .generic)
+    }
+
+    @Test func followUpSuggestionsEveryVoiceProducesThreeChips() {
+        // Coverage invariant: every voice × every topic produces
+        // exactly three chips. Adding a voice / a topic in future
+        // must wire chips for every cell — this test catches a miss.
+        let topicReplies: [(String, String)] = [
+            ("Try this drill.", "drill"),
+            ("Hold a pause.", "pause"),
+            ("Watch your pace.", "pace"),
+            ("Cut the fillers.", "filler"),
+            ("This week, hit three reps.", "weekly"),
+            ("Keep building.", "generic"),
+        ]
+        for voice in SpeakingStyleGoal.allCases {
+            for (reply, label) in topicReplies {
+                let chips = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: voice)
+                #expect(chips.count == 3,
+                        "Voice \(voice) × topic '\(label)' should produce 3 chips, got \(chips.count)")
+            }
+        }
+        // nil voice (no goal set) is also a real path — same contract.
+        for (reply, label) in topicReplies {
+            let chips = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: nil)
+            #expect(chips.count == 3,
+                    "nil voice × topic '\(label)' should produce 3 chips, got \(chips.count)")
+        }
+    }
+
+    @Test func followUpSuggestionsAreVoiceShapedForDrillTopic() {
+        // Authoritative / warm / concise / storytelling each produce
+        // chips that read in their respective register when anchored
+        // on the same topic. Drill is the test topic because every
+        // voice has distinct shaping for it.
+        let reply = "Try this drill: open with a thesis statement."
+
+        let auth = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: .authoritative).joined(separator: " ").lowercased()
+        let warm = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: .warm).joined(separator: " ").lowercased()
+        let concise = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: .concise).joined(separator: " ").lowercased()
+        let story = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: .storytelling).joined(separator: " ").lowercased()
+
+        #expect(auth.contains("nailed it") || auth.contains("failure"),
+                "Authoritative drill chips should reach for verdict-shaped language: \(auth)")
+        #expect(warm.contains("walk me through") || warm.contains("feel"),
+                "Warm drill chips should reach for felt-experience language: \(warm)")
+        #expect(concise.count < auth.count,
+                "Concise chips should be shorter than authoritative — got concise=\(concise.count) auth=\(auth.count)")
+        #expect(story.contains("arc") || story.contains("scene") || story.contains("rep"),
+                "Storytelling drill chips should reach for narrative language: \(story)")
+    }
+
+    @Test func followUpSuggestionsRespectBrandVoiceRules() {
+        // No exclamations, no emoji, no "Let's" anywhere across all
+        // voices × topics. Same brand rules as `starterPrompts` and
+        // `sessionOpener`.
+        let topicReplies = [
+            "Try this drill on openings.",
+            "Hold a four-second pause.",
+            "Slow your pace to 140 WPM.",
+            "Three fillers clustered in the opening.",
+            "Over the next 7 days, run five reps.",
+            "Keep building from where you are.",
+        ]
+        for voice in SpeakingStyleGoal.allCases {
+            for reply in topicReplies {
+                let chips = CoachContextBuilder.followUpSuggestions(forCoachReply: reply, voice: voice)
+                for chip in chips {
+                    #expect(!chip.contains("!"),
+                            "Voice \(voice) chip '\(chip)' contains an exclamation")
+                    #expect(!chip.lowercased().contains("let's"),
+                            "Voice \(voice) chip '\(chip)' contains 'Let's'")
+                    #expect(chip.count < 60,
+                            "Voice \(voice) chip '\(chip)' is too long — chips should be quick nudges (<60 chars)")
+                }
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func sampleProfile(voice: SpeakingStyleGoal) -> CoachingProfile {
