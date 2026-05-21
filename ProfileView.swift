@@ -31,6 +31,7 @@ struct ProfileView: View {
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
     @State private var selectedFeedbackRequest: StoredFeedbackRequest?
     @StateObject private var league = LeagueManager.shared
+    @StateObject private var proofStore = ProofMomentStore.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -155,6 +156,13 @@ struct ProfileView: View {
                 }
 
                 speakingRatingCard
+
+                // M15 Phase 5: ambient "Insights banked" chip. Derived
+                // straight off `ProofMomentStore.shared.records` — no
+                // new state, no new persistence. Hidden when the
+                // archive is empty so the surface stays silent until
+                // the coach has actually banked something.
+                insightsBankedChip
 
                 // M14: "Your Arc" — horizontal timeline that makes the
                 // user's progression LEGIBLE (Day 1 → Today → Next mission
@@ -522,6 +530,65 @@ struct ProfileView: View {
             .background(speakingRatingHeroBackground)
             .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
         }
+    }
+
+    /// M15 Phase 5: "Insights banked" — quiet chip that mirrors the
+    /// strengths / working-on row register (icon + caption text). Counts
+    /// the persisted proof-moment records and surfaces the most-recent
+    /// session's relative age. Hidden entirely when the archive is empty
+    /// so we never render "0 insights" or a "you lost your streak" prompt
+    /// — VISION.md bans the streak-and-badge loop.
+    @ViewBuilder
+    private var insightsBankedChip: some View {
+        let count = proofStore.records.count
+        if count > 0 {
+            let noun = count == 1 ? "insight" : "insights"
+            HStack(spacing: 6) {
+                Image(systemName: "quote.opening")
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.pro)
+                Text("\(count) \(noun) banked")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                if let recency = mostRecentInsightRecency {
+                    Text("\u{00B7} Most recent: \(recency)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(insightsAccessibilityLabel(count: count))
+        }
+    }
+
+    /// Human phrasing for the most-recent proof's age. Whole-day
+    /// granularity to match `SummaryView` / `HomeCoachCard` recency idiom.
+    /// Returns nil when the archive is empty (caller already guards).
+    private var mostRecentInsightRecency: String? {
+        guard let mostRecent = proofStore.recent(limit: 1).first?.proof.sessionDate else {
+            return nil
+        }
+        let cal = Calendar.current
+        let days = cal.dateComponents(
+            [.day],
+            from: cal.startOfDay(for: mostRecent),
+            to: cal.startOfDay(for: Date())
+        ).day ?? 0
+        switch days {
+        case ..<1: return "today"
+        case 1: return "1d ago"
+        default: return "\(days)d ago"
+        }
+    }
+
+    private func insightsAccessibilityLabel(count: Int) -> String {
+        let noun = count == 1 ? "insight" : "insights"
+        if let recency = mostRecentInsightRecency {
+            return "\(count) \(noun) banked. Most recent \(recency)."
+        }
+        return "\(count) \(noun) banked."
     }
 
     /// Rating hero chrome — mirrors `identityHeroBackground` with the

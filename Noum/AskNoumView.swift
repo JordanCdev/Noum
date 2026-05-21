@@ -98,6 +98,7 @@ struct AskNoumView: View {
                         }
                     }
                 }
+                insightsCaption
                 inputBar
             }
         }
@@ -473,6 +474,34 @@ struct AskNoumView: View {
             Spacer(minLength: 0)
         }
         .accessibilityLabel("Noum is thinking")
+    }
+
+    // MARK: - Insights caption (M15 Phase 5)
+    //
+    // Ambient signal that the coach has banked N proof moments about
+    // you. Reads `ProofMomentStore.shared.records.count` directly — no
+    // new store, no tap-through, no animation. Hidden when the archive
+    // is empty so we never render "0 insights" or any "you lost your
+    // streak" loss-aversion copy. VISION.md anti-goal #2.
+    @ViewBuilder
+    private var insightsCaption: some View {
+        let count = proofStore.records.count
+        if count > 0 {
+            let noun = count == 1 ? "insight" : "insights"
+            HStack(spacing: 6) {
+                Image(systemName: "quote.opening")
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.pro.opacity(0.75))
+                Text("\(count) \(noun) banked")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(count) \(noun) banked.")
+        }
     }
 
     // MARK: - Input bar
