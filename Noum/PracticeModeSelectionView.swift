@@ -50,6 +50,12 @@ struct PracticeModeSelectionView: View {
         /// Pre-baked single line shown only when this mode is the recommended pick.
         /// Never user-derived — designed to read on-voice for any speaker.
         let recommendedReason: String
+        /// M15 — three coach-voice lines that explain the mode without
+        /// requiring the user to start a rep to find out. Surfaced when
+        /// the row is selected; collapsed otherwise (no row reflow at rest).
+        let pressureType: String
+        let surfaces: String
+        let repLength: String
         var id: PracticeMode { mode }
     }
 
@@ -61,7 +67,10 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Build a full answer with structure and a soft clock.",
                 systemImage: "clock.fill",
                 tint: AppColor.modeTimed,
-                recommendedReason: "Helps when your answers end early."
+                recommendedReason: "Helps when your answers end early.",
+                pressureType: "Soft clock — you choose 60s, 90s, or 120s.",
+                surfaces: "Shows whether you can shape a full answer with a clear opener and close.",
+                repLength: "60–120s rep."
             ),
             ModeOption(
                 mode: .suddenDeath,
@@ -69,7 +78,10 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Stay alive without a single filler word.",
                 systemImage: "bolt.fill",
                 tint: AppColor.modeSuddenDeath,
-                recommendedReason: "Sharpens composure under live pressure."
+                recommendedReason: "Sharpens composure under live pressure.",
+                pressureType: "Zero tolerance — one filler ends the round.",
+                surfaces: "Shows whether you reach for crutch words when the stakes climb.",
+                repLength: "30–90s per round."
             ),
             ModeOption(
                 mode: .ahCounter,
@@ -77,7 +89,10 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Speak freely while Noum tracks fillers and pacing.",
                 systemImage: "waveform.and.mic",
                 tint: AppColor.modeAhCounter,
-                recommendedReason: "Cleans openings and steadies rhythm."
+                recommendedReason: "Cleans openings and steadies rhythm.",
+                pressureType: "No clock — open-ended, low pressure.",
+                surfaces: "Shows your filler patterns and natural rhythm when you have time.",
+                repLength: "Free-form, 45s+."
             )
         ] + (IMModeAvailability.isAvailable ? [
             ModeOption(
@@ -86,7 +101,10 @@ struct PracticeModeSelectionView: View {
                 subtitle: "Live conversation reps with tone and pressure control.",
                 systemImage: "message.badge.waveform.fill",
                 tint: AppColor.modeIM,
-                recommendedReason: "Trains realistic social or work pressure."
+                recommendedReason: "Trains realistic social or work pressure.",
+                pressureType: "Live partner — they push back, you adjust.",
+                surfaces: "Shows how you hold tone when a real person is reacting in real time.",
+                repLength: "3–6 turns per conversation."
             )
         ] : [])
     }
@@ -219,6 +237,11 @@ struct PracticeModeSelectionView: View {
                             .padding(.top, 2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    if isSelected {
+                        whatThisTrainsSection(option)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -251,6 +274,45 @@ struct PracticeModeSelectionView: View {
         .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
         .accessibilityHint(option.subtitle)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// "What this trains" expansion. Surfaces when the row is selected
+    /// so newcomers don't need to start a rep to find out what the mode
+    /// actually exercises. Three lines: pressure profile, what it
+    /// reveals, typical rep length. Inline NoumCharacter glyph narrates
+    /// the section so the coach is the messenger, not a chrome label.
+    private func whatThisTrainsSection(_ option: ModeOption) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                NoumCharacter.Inline(size: 14, mood: .coaching, tint: option.tint)
+                Text("What this trains")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
+            .padding(.top, 6)
+
+            trainsRow(icon: "gauge.with.dots.needle.50percent", text: option.pressureType, tint: option.tint)
+            trainsRow(icon: "eye", text: option.surfaces, tint: option.tint)
+            trainsRow(icon: "timer", text: option.repLength, tint: option.tint)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("What this trains: \(option.pressureType) \(option.surfaces) \(option.repLength)")
+    }
+
+    private func trainsRow(icon: String, text: String, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint.opacity(0.78))
+                .frame(width: 14)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
     }
 
     /// Mode-card chrome. Two registers:

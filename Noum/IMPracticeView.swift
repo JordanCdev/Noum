@@ -374,6 +374,11 @@ struct IMPracticeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var imOrbMood: NoumCharacter.Mood {
+        if isAwaitingNPC { return .thinking }
+        return speechVM.isRecording ? .listening : .calm
+    }
+
     private var activeHeaderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
@@ -396,10 +401,13 @@ struct IMPracticeView: View {
 
                 Spacer()
 
-                if isAwaitingNPC {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+                NoumCharacter(
+                    mood: imOrbMood,
+                    tint: AppColor.brandBlue,
+                    size: 44,
+                    audioLevel: speechVM.audioLevel,
+                    stage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+                )
             }
 
             HStack(spacing: 8) {

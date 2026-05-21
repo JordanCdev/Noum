@@ -125,10 +125,14 @@ struct AhCounterView: View {
                     // tinted waveform icon + rounded display headline so
                     // every mode pre-rep screen shares one visual rhythm.
                     VStack(alignment: .leading, spacing: Spacing.sm) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "waveform")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(AppColor.modeAhCounter)
+                        HStack(alignment: .center, spacing: 12) {
+                            NoumCharacter(
+                                mood: speechVM.isRecording ? .listening : .calm,
+                                tint: AppColor.modeAhCounter,
+                                size: 44,
+                                audioLevel: speechVM.audioLevel,
+                                stage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+                            )
                             Text("Ah-Counter")
                                 .font(.system(size: 28, weight: .bold, design: .rounded))
                         }

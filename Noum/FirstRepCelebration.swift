@@ -43,6 +43,8 @@ struct FirstRepCelebration: View {
     @State private var phase: Phase = .preReveal
     @State private var confettiActive = false
     @State private var showShareSheet = false
+    @State private var proofMoment: ProofMoment?
+    @State private var characterMood: NoumCharacter.Mood = .excited
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Animation phases. Drives both the spring sequence (full-motion) and
@@ -105,6 +107,7 @@ struct FirstRepCelebration: View {
             }
         }
         .onAppear { runSequence() }
+        .task { await loadProof() }
         .accessibilityIdentifier("firstRep.celebration")
         .sheet(isPresented: $showShareSheet) {
             FirstRepShareSheet(session: session)
@@ -151,11 +154,11 @@ struct FirstRepCelebration: View {
     // MARK: - Character
 
     /// Large `NoumCharacter` at `.excited` — the only "face" of the
-    /// celebration. The mood owns the sparkle ribbon already, so we don't
-    /// stack a second one. Springs from 0.8 → 1.0 on entrance.
+    /// celebration. Briefly flashes to `.noticing` when the quote-anchored
+    /// proof lands, so the user sees the orb register the moment.
     private var character: some View {
         NoumCharacter(
-            mood: .excited,
+            mood: characterMood,
             tint: .white,
             size: 160
         )
@@ -177,15 +180,59 @@ struct FirstRepCelebration: View {
             .accessibilityAddTraits(.isHeader)
     }
 
+    @ViewBuilder
     private var subtitle: some View {
-        Text(subtitleCopy)
-            .font(Typography.subheadline)
-            .foregroundStyle(.white.opacity(0.86))
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .opacity(phase >= .subtitleIn ? 1 : 0)
-            .accessibilityElement(children: .combine)
+        if let proof = proofMoment {
+            proofCard(proof)
+                .opacity(phase >= .subtitleIn ? 1 : 0)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        } else {
+            Text(subtitleCopy)
+                .font(Typography.subheadline)
+                .foregroundStyle(.white.opacity(0.86))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(phase >= .subtitleIn ? 1 : 0)
+                .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// Quote-anchored coach observation. The first thing a brand-new user
+    /// sees after rep 1: their own words, named technique, voice-shaped
+    /// claim — not a stats line. This is the "Noum heard me" moment.
+    private func proofCard(_ proof: ProofMoment) -> some View {
+        VStack(spacing: Spacing.sm) {
+            Text("\u{201C}\(proof.quote)\u{201D}")
+                .font(.system(.title3, design: .serif).italic())
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "waveform.path.badge.plus")
+                    .font(.caption.weight(.bold))
+                Text(proof.technique)
+                    .font(Typography.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
+            .foregroundStyle(.white.opacity(0.78))
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, 4)
+            .background(
+                Capsule().fill(Color.white.opacity(0.10))
+            )
+
+            Text(proof.claim)
+                .font(Typography.subheadline)
+                .foregroundStyle(.white.opacity(0.86))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Spacing.md)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("You said \(proof.quote). \(proof.technique). \(proof.claim)")
     }
 
     // MARK: - CTAs
@@ -320,6 +367,52 @@ struct FirstRepCelebration: View {
         }()
 
         return "\(durationPhrase), \(fillerPhrase). The read starts now."
+    }
+
+    // MARK: - Proof loading
+
+    /// Fetch a quote-anchored proof for the session. AI path attempts
+    /// first; deterministic template is the always-on fallback. Nil
+    /// results (transcript too short, no qualifying clause) leave the
+    /// generic-stats subtitle in place — the celebration never shows
+    /// "loading…" or a half-rendered card.
+    private func loadProof() async {
+        guard !session.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              session.duration > 8 else { return }
+
+        let baseline = BaselineStore.shared.baseline
+        let profile = CoachingProfileStore.shared.profile
+        let input = ProofMomentInput(
+            session: session,
+            voice: profile?.speakingStyleGoal,
+            goalParaphrase: profile?.displayableGoal,
+            baselineFillerRate: baseline.fillerRate.confidence != .insufficient
+                ? baseline.fillerRate.value : nil,
+            baselinePace: baseline.pace.confidence != .insufficient
+                ? baseline.pace.value : nil
+        )
+        let proof = await ProofMomentService.shared.proof(for: input)
+        guard let proof = proof else { return }
+        await MainActor.run {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                proofMoment = proof
+            }
+            flashNoticingMood()
+        }
+    }
+
+    /// Briefly flip the character to `.noticing` (the orb's "I just
+    /// spotted something" mood) and back to `.excited`. Reduce-motion
+    /// users get an instant swap with no flare animation — the
+    /// character itself handles that gating.
+    private func flashNoticingMood() {
+        characterMood = .noticing
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation(.easeOut(duration: 0.4)) {
+                characterMood = .excited
+            }
+        }
     }
 }
 

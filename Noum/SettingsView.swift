@@ -35,6 +35,8 @@ struct SettingsView: View {
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
 
+    @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
+
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
     @State private var showPaywall = false
@@ -404,6 +406,15 @@ struct SettingsView: View {
                 subtitle: "One-take reps, shorter prep, and a rated finish across modes.",
                 isOn: $practiceSettings.pressureModeEnabled,
                 accessibilityHint: "Adds time pressure and rating to every drill."
+            )
+
+            Divider()
+
+            SettingsToggleRow(
+                title: "Show all home cards",
+                subtitle: "By default, home reveals more cards as you log more reps. Turn this on to see every surface from the first session.",
+                isOn: $showAllHomeCards,
+                accessibilityHint: "Bypasses the gradual home reveal."
             )
 
             Divider()
