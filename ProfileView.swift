@@ -703,10 +703,65 @@ struct ProfileView: View {
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // M14: third Ask Noum entry point — Profile sits where the
+            // user reads their goal + progress + reflections, so the
+            // contextual "talk to your coach about this" handoff lives
+            // here too. Brand-purple register mirrors the home promo
+            // and summary bridge; the link is restrained on purpose
+            // (no card, no glyph) so it reads as a quiet handoff, not
+            // a second hero competing with the goal ring above.
+            if coachingProfileStore.profile != nil {
+                askNoumProfileLink
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    /// Restrained voice-shaped Ask Noum handoff inside the Coaching
+    /// Direction card. Opens `noum://ask` so the existing DeepLinkRouter
+    /// pathway owns the navigation (no path-binding into Profile needed).
+    private var askNoumProfileLink: some View {
+        let voice = coachingProfileStore.profile?.speakingStyleGoal
+        let label = askNoumProfileLabel(for: voice)
+        return Button {
+            if let url = URL(string: "noum://ask") {
+                openURL(url)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                Image(systemName: "arrow.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+            }
+            .padding(.top, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("\(label). Opens the Ask Noum thread."))
+        .accessibilityIdentifier("profile.askNoumLink")
+    }
+
+    /// Voice-shaped Ask Noum handoff copy for the Profile coaching card.
+    /// Mirrors the `askCoachBridgeHeadline` / `askNoumPromoHeadline`
+    /// catalogues so all three coach entry points sound like the same
+    /// voice. Phrasing is ambient ("about your goal", "what to drill
+    /// next") because Profile isn't anchored to a specific rep.
+    private func askNoumProfileLabel(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative: return "Ask Noum what to drill next"
+        case .warm: return "Talk to Noum about your goal"
+        case .concise: return "Ask Noum — one move"
+        case .persuasive: return "Ask Noum where to leverage"
+        case .executive: return "Brief Noum on what's next"
+        case .storytelling: return "Tell Noum what's next"
+        case .none: return "Ask Noum about your goal"
+        }
     }
 
     // MARK: - Active Challenge

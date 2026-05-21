@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best** + **Summary → Ask Noum bridge — session-anchored, voice-shaped opener seeds the chat so users can ask their coach about THIS rep with one tap** + **Goal-aware live UI extended to every practice mode — VoiceAnchorBanner + LiveEloquenceHUD now ship in SuddenDeath, AhCounter, and IM, not just Timed; banner gains `resetsBetweenReps: false` so multi-round / multi-turn surfaces fire it once per session, not once per turn**)_
+_Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best** + **Summary → Ask Noum bridge — session-anchored, voice-shaped opener seeds the chat so users can ask their coach about THIS rep with one tap** + **Goal-aware live UI extended to every practice mode — VoiceAnchorBanner + LiveEloquenceHUD now ship in SuddenDeath, AhCounter, and IM, not just Timed; banner gains `resetsBetweenReps: false` so multi-round / multi-turn surfaces fire it once per session, not once per turn** + **Ask Noum third entry point — Profile Coaching Direction card now carries a restrained voice-shaped "Ask Noum about your goal →" link; persistent-coach footprint now reaches Home (ambient) + Summary (rep-anchored) + Profile (goal-anchored), all three through the same `noum://ask` deep link** + **`firebase.json` carries the `firestore.rules` pointer — `firebase deploy --only firestore:rules,hosting` is now the literal command for the M14 milestone deploy, no config edit step in between**)_
 
 ## Architecture overview
 
@@ -164,6 +164,25 @@ _Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   Voice-specific headline + body + "Open the thread →" CTA.
   Tap pushes `AppDestination.askNoum`. Also reachable via
   `noum://ask` deep link.
+- Profile entry: `ProfileView.askNoumProfileLink` — restrained
+  brand-purple "Ask Noum about your goal →" link at the bottom
+  of the Coaching Direction card, sits right after the
+  goal-progress ring + captured reflections + coaching insight.
+  Voice-shaped label catalogue mirrors the home promo and
+  summary bridge so all three coach entry points sound like the
+  same voice (e.g. authoritative: "Ask Noum what to drill
+  next"; warm: "Talk to Noum about your goal"; concise: "Ask
+  Noum — one move"). Hidden when no `CoachingProfile` is set
+  (silent for pre-onboarding sessions, matching the rest of the
+  goal-aware surfaces). Uses `openURL("noum://ask")` so the
+  existing `DeepLinkRouter` consumer in `ContentView` owns the
+  navigation — no path binding leaks into Profile. Restrained
+  visually (no card chrome, no glyph) so it reads as a quiet
+  handoff inside the existing Coaching card, not a second hero
+  competing with the goal ring above. Closes the persistent-
+  coach footprint: the user can now reach Ask Noum from Home
+  (ambient promo), Summary (session-anchored bridge), and
+  Profile (goal-anchored link).
 - Post-session entry: `SummaryView.askCoachBridgeCard` — small
   brand-purple bridge card inside the secondary stack (above
   `xpProgressCard`, below the drill CTA) that opens Ask Noum
@@ -918,10 +937,12 @@ _Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   Settings → Privacy & Data → Privacy policy. `public/privacy.html`
   + `public/index.html` are staged and `firebase.json` has the
   hosting + `/privacy` rewrite. `firestore.rules` file is committed
-  alongside `FIRESTORE_RULES.md`. Deploy still pending explicit
-  greenlight — `firebase.json` needs the `"firestore": {"rules":
-  "firestore.rules"}` block added, then
-  `firebase deploy --only firestore:rules,hosting --project noum-d0b6f`.
+  alongside `FIRESTORE_RULES.md`, AND `firebase.json` now carries
+  the `"firestore": {"rules": "firestore.rules"}` pointer block so
+  `firebase deploy --only firestore:rules,hosting --project
+  noum-d0b6f` is the literal one-shot command — no in-between edit.
+  Deploy itself still pending explicit greenlight (operational,
+  not engineering).
 - **SpeakingRatingCard placeholder — resolved.** When
   `rating.ratingHistory` is empty `RatingHistoryChart` returns
   `EmptyView()` from the chart slot, collapsing it entirely. The
