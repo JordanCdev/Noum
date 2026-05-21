@@ -443,7 +443,15 @@ struct SuddenDeathPracticeView: View {
     // MARK: Top Bar
 
     private func topBar(round: Int) -> some View {
-        HStack {
+        HStack(spacing: 10) {
+            NoumCharacter(
+                mood: speechVM.isRecording ? .listening : .calm,
+                tint: accentColor,
+                size: 44,
+                audioLevel: speechVM.audioLevel,
+                stage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+            )
+
             // Round label
             Text("Round \(round)")
                 .font(.subheadline.weight(.bold))

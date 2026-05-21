@@ -31,6 +31,7 @@ struct ProfileView: View {
     @StateObject private var feedbackManager = FeedbackRequestManager.shared
     @State private var selectedFeedbackRequest: StoredFeedbackRequest?
     @StateObject private var league = LeagueManager.shared
+    @StateObject private var proofStore = ProofMomentStore.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -155,6 +156,11 @@ struct ProfileView: View {
                 }
 
                 speakingRatingCard
+
+                // M15: "Insights banked" — a restrained count of proof
+                // moments the coach has caught in the user's own words.
+                // Reads as evidence, not gamification. Hidden when zero.
+                insightsBankedChip
 
                 // M14: "Your Arc" — horizontal timeline that makes the
                 // user's progression LEGIBLE (Day 1 → Today → Next mission
@@ -393,6 +399,44 @@ struct ProfileView: View {
         }
         .padding(20)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    // MARK: - Insights Banked Chip
+
+    /// Low-emphasis count of transcript-anchored proof moments the user
+    /// has banked. Reads as "Noum has heard you N specific times" — not
+    /// a streak, not a badge. Hidden entirely when the archive is empty.
+    @ViewBuilder
+    private var insightsBankedChip: some View {
+        let count = proofStore.records.count
+        let mostRecent = proofStore.recent(limit: 1).first?.proof.sessionDate
+        if count > 0 {
+            HStack(spacing: 6) {
+                NoumCharacter.Inline(size: 16, mood: .noticing, tint: AppColor.brandBlue)
+                Text("\(count) insight\(count == 1 ? "" : "s") banked")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                if let mostRecent = mostRecent {
+                    Text("· \(insightAgoCopy(for: mostRecent))")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("profile.insightsBanked")
+        }
+    }
+
+    private func insightAgoCopy(for date: Date) -> String {
+        let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
+        switch days {
+        case ..<1:  return "today"
+        case 1:     return "yesterday"
+        default:    return "\(days)d ago"
+        }
     }
 
     // MARK: - Speaking Rating

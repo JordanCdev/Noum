@@ -98,6 +98,7 @@ struct AskNoumView: View {
                         }
                     }
                 }
+                insightsCaption
                 inputBar
             }
         }
@@ -473,6 +474,31 @@ struct AskNoumView: View {
             Spacer(minLength: 0)
         }
         .accessibilityLabel("Noum is thinking")
+    }
+
+    // MARK: - Insights caption
+    //
+    // Low-emphasis count of banked proof moments. The coach can quote
+    // these in the next reply (see CoachContextBuilder.userContext's
+    // PROOFS section), so the caption reads as evidence the coach has
+    // to draw on, not as a streak the user has to defend.
+
+    @ViewBuilder
+    private var insightsCaption: some View {
+        let count = proofStore.records.count
+        if count > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "waveform.path.badge.plus")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("\(count) insight\(count == 1 ? "" : "s") banked")
+                    .font(Typography.captionSmall)
+                Spacer()
+            }
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, 2)
+            .accessibilityIdentifier("askNoum.insightsCaption")
+        }
     }
 
     // MARK: - Input bar

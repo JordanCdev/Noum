@@ -82,6 +82,10 @@ struct ContentView: View {
     @State private var homeCelebrationVisible = false
     @State private var homeScrollOffset: CGFloat = 0
     @State private var navigationPath = NavigationPath()
+    /// M15 — escape hatch for the gradual home reveal. Off by default so
+    /// brand-new users see a 3-card home for the first few sessions; on
+    /// for power users who want every surface from session 1.
+    @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
     @State private var hourBucket: HourBucket = HourBucket.current()
     /// Proof moment loaded for the active path celebration. Stays nil
     /// until the async extraction resolves, at which point the
@@ -229,15 +233,22 @@ struct ContentView: View {
                             // single low-emphasis pair, replacing what used
                             // to need its own WordOfTheDayTile card.
                             HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
-                            // Path Journey — promoted to slot 3 as a second
-                            // hero. The Path is the gameplay loop; "next
-                            // move" framing belongs near the Coach Card, not
-                            // at the bottom of the stack under the weekly
-                            // digest. Rewritten with mission framing
-                            // (Chapter <tier> · Mission X of N · node title).
-                            journeyPreviewCard.cardEntrance(2)
-                            askNoumPromoCard.cardEntrance(3)
-                            DailyChallengeTile().cardEntrance(4)
+                            // M15 — Ask Noum promo is the Day-1 value beyond
+                            // the Coach Card: a persistent coach the user
+                            // can talk to. Always present from session 1.
+                            askNoumPromoCard.cardEntrance(2)
+                            // M15 — journey/path needs the user to have done
+                            // at least one rep before the "next move" framing
+                            // means anything. Unlocks at session 2.
+                            if shouldShowJourneyCard {
+                                journeyPreviewCard.cardEntrance(3)
+                            }
+                            // M15 — daily-open mechanic needs prior reps for
+                            // "N of M today" to feel earned. Unlocks at
+                            // session 2.
+                            if shouldShowDailyChallenge {
+                                DailyChallengeTile().cardEntrance(4)
+                            }
                             // M14 — VoiceMetricsCard promotes Pause + Word-
                             // choice from optional post-session surfaces to a
                             // first-class Home read. VISION.md called these
@@ -245,16 +256,26 @@ struct ContentView: View {
                             // fillers and pace. The card collapses entirely
                             // when neither dimension has enough qualifying
                             // baseline data, so cold-start users see nothing
-                            // here — not a placeholder.
-                            VoiceMetricsCard(navigationPath: $navigationPath)
-                                .cardEntrance(5)
-                            AIWeeklyInsightCard(
-                                sessionStore: sessionStore,
-                                ratingStore: ratingStore,
-                                clutchWordStore: ClutchWordStore.shared,
-                                coachingProfileStore: coachingProfileStore
-                            )
-                            .cardEntrance(6)
+                            // here — not a placeholder. M15 adds an outer
+                            // session-count gate so it doesn't ship before
+                            // the data window can possibly be meaningful.
+                            if shouldShowVoiceMetrics {
+                                VoiceMetricsCard(navigationPath: $navigationPath)
+                                    .cardEntrance(5)
+                            }
+                            // M15 — weekly-narrative reads as fabricated when
+                            // there's only one or two reps in the week. Wait
+                            // for at least 3 reps in the current week before
+                            // surfacing the AI weekly card.
+                            if shouldShowWeeklyInsight {
+                                AIWeeklyInsightCard(
+                                    sessionStore: sessionStore,
+                                    ratingStore: ratingStore,
+                                    clutchWordStore: ClutchWordStore.shared,
+                                    coachingProfileStore: coachingProfileStore
+                                )
+                                .cardEntrance(6)
+                            }
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -462,6 +483,49 @@ struct ContentView: View {
                 isAIBacked: aiRecommendation != nil
             )
         }
+    }
+
+    // MARK: - M15 home signal gates
+    //
+    // Cards aren't deleted — they unlock as the user's signal accrues.
+    // Brand-new users see a short, calm 3-card home (Coach + Utility +
+    // AskNoum). By session ~3 most surfaces are live. The `practice.
+    // showAllHomeCards` AppStorage toggle bypasses every gate for power
+    // users who want the full home from session 1.
+
+    private var sessionCount: Int { sessionStore.sessions.count }
+
+    /// Journey/path framing reads as "next move toward your goal." With
+    /// zero or one rep behind the user, "next move" has no grounding.
+    /// From session 2 it does.
+    private var shouldShowJourneyCard: Bool {
+        if showAllHomeCards { return true }
+        return sessionCount >= 2
+    }
+
+    /// Daily challenge tile shows "N of M reps today" — meaningless if
+    /// the user has only ever done one rep. Wait for session 2.
+    private var shouldShowDailyChallenge: Bool {
+        if showAllHomeCards { return true }
+        return sessionCount >= 2
+    }
+
+    /// Voice-metrics surfaces Pause + Word-choice trends. The card has
+    /// its own internal `displaysQualifyingData` gate, but at session 1
+    /// even "qualifying" baselines read as overconfident. Wait for 3 reps.
+    private var shouldShowVoiceMetrics: Bool {
+        if showAllHomeCards { return true }
+        return sessionCount >= 3
+    }
+
+    /// Weekly narrative needs at least 3 reps in the current week before
+    /// the model has anything honest to say about trend.
+    private var shouldShowWeeklyInsight: Bool {
+        if showAllHomeCards { return true }
+        let cal = Calendar.current
+        let now = Date()
+        let repsThisWeek = sessionStore.sessions.filter { cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }.count
+        return repsThisWeek >= 3
     }
 
     /// Home-only ambient background. Other screens keep using

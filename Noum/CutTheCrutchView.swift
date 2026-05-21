@@ -289,6 +289,13 @@ struct CutTheCrutchView: View {
     private var statusBar: some View {
         VStack(spacing: Spacing.xs) {
             HStack(alignment: .center, spacing: Spacing.md) {
+                NoumCharacter(
+                    mood: speechVM.isRecording ? .listening : .calm,
+                    tint: tint,
+                    size: 44,
+                    audioLevel: speechVM.audioLevel,
+                    stage: ProgressionRatchet.resolvedStage(forXP: profileManager.xp)
+                )
                 heartsRow
                 Spacer()
                 Text(timeRemainingLabel)

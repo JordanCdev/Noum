@@ -1417,7 +1417,15 @@ struct TimedPracticeView: View {
     private var speakingTranscriptLayout: some View {
         VStack(spacing: 0) {
             // Premium header with status
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 12) {
+                NoumCharacter(
+                    mood: speechVM.isRecording ? .listening : .calm,
+                    tint: AppColor.brandBlue,
+                    size: 44,
+                    audioLevel: speechVM.audioLevel,
+                    stage: ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+                )
+
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Circle()
