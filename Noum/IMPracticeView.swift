@@ -147,6 +147,20 @@ struct IMPracticeView: View {
 
             content
         }
+        .overlay(alignment: .top) {
+            // Real-time positive feedback — pulses when the engine catches
+            // a rhetorical move in the user's dictated reply. styleGoal
+            // makes the chip subtext goal-aware. Only mounts during the
+            // active conversation phase so the setup and ending screens
+            // stay calm.
+            if isSessionActive && !isEndingConversation {
+                LiveEloquenceHUD(
+                    speechVM: speechVM,
+                    styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                )
+                .padding(.top, 4)
+            }
+        }
         .accessibilityIdentifier("imPractice.screen")
         .safeAreaInset(edge: .bottom) {
             if isSessionActive && !isEndingConversation {
@@ -256,6 +270,19 @@ struct IMPracticeView: View {
         } else {
             VStack(spacing: 12) {
                 activeHeaderCard
+
+                // Goal-aware intent reminder — fires once per session (not
+                // per dictated reply) so the IM user sees what voice
+                // they're working toward without being re-anchored every
+                // turn. Silent when no CoachingProfile is set.
+                if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                    VoiceAnchorBanner(
+                        styleGoal: voice,
+                        isRecording: speechVM.isRecording,
+                        resetsBetweenReps: false
+                    )
+                }
+
                 conversationCard
             }
             .padding(.horizontal, 16)

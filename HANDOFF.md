@@ -1,351 +1,306 @@
-# HANDOFF — Summary → Ask Noum bridge
+# HANDOFF — Goal-aware live UI extended to every practice mode
 
 ## Scope
 
-Five files touched: `Noum/CoachContextBuilder.swift` (+57 LOC, new
-`sessionOpener` pure helper), `Noum/AskNoumStore.swift` (+72 LOC, new
-`injectUserTurn` + `pendingInjectedCoachID` + `consumePendingInjectedCoachID`
-+ `clearThread` wipe), `Noum/AskNoumView.swift` (+10 LOC, new `.onAppear`
-inject consumer), `Noum/SummaryView.swift` (+~115 LOC, new
-`onAskNoumAboutRep` callback prop + `askCoachBridgeCard` + path-based init
-wire-up + insertion above `xpProgressCard`), `NoumTests/NoumTests.swift`
-(+~140 LOC, 12 new tests). Plus `docs/CURRENT_STATE.md` (timestamp + Ask
-Noum subsection extension) and this `HANDOFF.md`.
+Four Swift files touched: `Noum/VoiceAnchorBanner.swift` (+13 LOC, new
+`resetsBetweenReps` flag), `Noum/SuddenDeathPracticeView.swift`
+(+24 LOC, new HUD overlay + VoiceAnchorBanner inside `liveScreen`),
+`Noum/AhCounterView.swift` (+18 LOC, new VoiceAnchorBanner + HUD
+overlay), `Noum/IMPracticeView.swift` (+25 LOC, new VoiceAnchorBanner
+inside the active conversation column + HUD overlay on the body).
+Plus `docs/CURRENT_STATE.md` (header trail-of-breadcrumbs + Stubbed /
+placeholder section extension) and this `HANDOFF.md`.
 
-The brief: continue the Ask Noum dream-tier pass. The persistent coach
-shipped last commit, knows the user's full context, and is reachable
-from the home promo card + `noum://ask`. But the post-session moment —
-the one moment a user is most likely to want a coach's take on a
-specific rep — had no bridge. The templated `CoachNoteCard` answers
-in advance; the user has no friction-free way to ask "what should I
-take from THIS rep?" of the persistent coach. This handoff closes
-that loop.
+The brief: continue from the existing TO-DO and push toward A+
+on the in-flight goal-aware coaching loop. Previously, the
+mid-session goal-aware surfaces (`VoiceAnchorBanner` for "what voice
+are you working toward" + `LiveEloquenceHUD` chip subtext for
+"toward your <voice> voice" on aligned rhetorical moves) only
+shipped in `TimedPracticeView`. Three other live practice modes —
+SuddenDeath, AhCounter, IM — had no in-the-moment goal touchpoint.
+The "Goal-driven coaching feedback in mid-session UI" entry under
+"Stubbed / placeholder" in `docs/CURRENT_STATE.md` explicitly flagged
+this and `.routines/06_m5_goal_aware_hud.md` sequenced it as steps
+3–5 of the closing-the-loop work. This handoff closes those three
+steps.
 
 ## What changed
 
-### Move 1 — `CoachContextBuilder.sessionOpener(mode:score:fillerCount:duration:voice:)`
+### Move 1 — `VoiceAnchorBanner.resetsBetweenReps: Bool = true`
 
-- `Noum/CoachContextBuilder.swift` lines 279–333. Pure-function copy
-  generator. Takes the rep's identifying metrics + the user's voice
-  goal; returns a two-sentence seed message the Summary surface can
-  inject into the AskNoum thread on the user's behalf. The seed lands
-  *as a user turn* so the model reads it as if the user had typed it.
-- Sentence 1 is the fact line: `"Just finished a <Mode> rep — <N>s,
-  <K> filler[s], <S>/10."`. Score is omitted entirely when nil
-  (Ah-Counter) so we never leak `"nil/10"` or `"0/10"`. Pluralisation
-  is handled on the `filler/fillers` token.
-- Sentence 2 is a voice-shaped ask. Same per-voice mapping pattern
-  the rest of the AskNoum surface uses (`coachPersonality(for:)`,
-  `starterPrompts(for:)`) — authoritative gets "Give me your read.",
-  warm gets "How did that one feel from your seat?", concise gets
-  "One move?", persuasive gets "Walk me through what the data says.",
-  executive gets "Brief me — top line first.", storytelling gets
-  "Where does this one sit in my arc?", `nil` gets "What stood out?".
-- No I/O, no async, no singletons. Easy to unit-test (six tests
-  added, see below).
+- `Noum/VoiceAnchorBanner.swift` lines 36–55 add an optional
+  `resetsBetweenReps` flag, defaulted to `true` so the existing
+  `TimedPracticeView` call site keeps its exact behavior with no
+  call-site change.
+- `Noum/VoiceAnchorBanner.swift` lines 77–86 swap the `else`
+  branch of the `.onChange(of: isRecording)` handler from an
+  unconditional `resetForNextRep()` to a flag-gated one. When
+  `resetsBetweenReps == false`, the banner fires once on the
+  first false→true transition per mount and stays "shown
+  already" forever — the user gets one anchor per session, not
+  one anchor per round / turn.
+- Why a flag instead of two structs: the banner copy + styling
+  + accessibility label + reduce-motion behavior is identical
+  across the two modes. Splitting into two structs would
+  duplicate ~50 LOC for a single boolean's worth of difference.
 
-### Move 2 — `AskNoumStore.injectUserTurn(_:)` + cross-surface signal
+### Move 2 — `SuddenDeathPracticeView` wiring
 
-- `Noum/AskNoumStore.swift` lines 88–101 add `pendingInjectedCoachID:
-  UUID?` as a `@Published` property — the published "AskNoumView,
-  there's a reply waiting for you to fire" handoff signal.
-- `Noum/AskNoumStore.swift` lines 158–207 add `injectUserTurn(_:)`
-  and `consumePendingInjectedCoachID()`. Together they bridge the gap
-  between *the Summary bridge tap fires* and *AskNoumView mounts and
-  needs to know to run the reply*. The store owns the signal so the
-  caller never has to know AskNoumView's lifecycle.
-- Idempotency: while a reply is pending, re-injecting the same opener
-  returns the existing pending coachID instead of queuing a duplicate
-  pair. A double-tap on the bridge is a no-op. After the prior reply
-  has actually landed, re-injecting the same opener *is* a fresh ask
-  — the user is asking again, which is a real action the bridge
-  supports (e.g. user navigates back to Summary, scrolls, taps again
-  later). Three of the new tests pin this contract from the three
-  natural angles (idempotency-while-pending, re-inject-after-reply,
-  consume-once).
-- Empty / whitespace-only inputs are rejected at the boundary — they
-  would produce a useless coach reply and a confusing blank user
-  bubble.
-- `clearThread()` now also wipes `pendingInjectedCoachID` so a sign-out
-  / "Reset Ask Noum thread" doesn't leave the signal dangling.
+- `Noum/SuddenDeathPracticeView.swift` lines 55–69 add a
+  `.overlay(alignment: .top)` on the outer `ZStack` that mounts
+  `LiveEloquenceHUD(styleGoal:)` whenever `phaseGroup == .live`.
+  The `phaseGroup` accessor (line 137) maps `.npcTurn`,
+  `.userTurnWaiting`, `.userTurnActive`, and `.roundResult` all
+  to `.live` so the HUD stays mounted across round transitions
+  inside one session — the announced-device set only resets
+  when `speechVM.isRecording` actually flips on (start of each
+  user turn), which is exactly the contract a per-round
+  re-celebration wants.
+- `Noum/SuddenDeathPracticeView.swift` lines 397–406 add a
+  `VoiceAnchorBanner` inside `liveScreen` directly under
+  `topBar`. Passes `resetsBetweenReps: false` — SuddenDeath
+  has many rounds inside one session and re-firing the anchor
+  each round would dilute the moment.
+- The banner reads `coachingProfileStore.profile?.speakingStyleGoal`
+  with the same `if let voice = ...` pattern Timed uses. Silent
+  when no profile is set — no fake personalization for
+  pre-onboarding sessions.
+- Setup / countdown / sessionComplete phases do not mount the
+  HUD overlay. Result screens stay visually calm; setup is the
+  user picking difficulty, not speaking.
 
-### Move 3 — `AskNoumView` consumes the signal on appear
+### Move 3 — `AhCounterView` wiring
 
-- `Noum/AskNoumView.swift` lines 100–115 add a top-level `.onAppear`
-  that calls `store.consumePendingInjectedCoachID()` and, if non-nil,
-  fires `runReply(coachID:)` for that ID. One-shot by construction:
-  the store clears its own signal on consume, so a re-mount of
-  AskNoumView (e.g. user navigates back and then forward again
-  through the nav stack) won't fire a duplicate reply for the same
-  seed. The existing `didLandFirstAppear` scroll hook is kept
-  separate inside the `ScrollViewReader` block — they don't share
-  state, and shouldn't.
-- The reply task uses the same `runReply` plumbing the typed-message
-  path uses (same `CoachContextBuilder.systemPrompt`, same
-  `userContext` block, same `AICoachChatService` actor). The seed
-  shape doesn't get any special treatment downstream — the model
-  just sees a user message that happens to start with "Just
-  finished a <Mode> rep…", then the standard context block. This is
-  the right call: the bridge is a UX shortcut, not a different
-  coaching mode.
+- `Noum/AhCounterView.swift` lines 145–151 add the
+  `VoiceAnchorBanner` right under the header card, inside the
+  pre-rep scroll column. Default `resetsBetweenReps: true` is
+  the right call — AhCounter is one continuous open-ended rep
+  per mount; one `isRecording` cycle, one anchor.
+- `Noum/AhCounterView.swift` lines 344–355 add the
+  `.overlay(alignment: .top)` that mounts
+  `LiveEloquenceHUD(styleGoal:)` on the outer ZStack. No
+  conditional gate — AhCounter is one phase from mount to
+  dismount, and the HUD's own observer self-gates on
+  `transcribedText` changes (no transcript → no findings → no
+  chip).
 
-### Move 4 — `SummaryView.askCoachBridgeCard` + `onAskNoumAboutRep` callback
+### Move 4 — `IMPracticeView` wiring
 
-- `Noum/SummaryView.swift` adds `var onAskNoumAboutRep: ((String) ->
-  Void)?` as an optional callback prop (line 42–46) so the host can
-  decline to wire it (previews + share-card renderers); the card
-  hides itself when nil.
-- `Noum/SummaryView.swift` lines 1740–1850 add the bridge card
-  (`askCoachBridgeCard`), the opener accessor
-  (`sessionAnchoredOpener` — calls into the new
-  `CoachContextBuilder.sessionOpener` with the SummaryView's
-  computed metrics), and the voice-shaped headline helper
-  (`askCoachBridgeHeadline(for:)`). The card is brand-purple
-  ambient — same `AppColor.pro` register the home AskNoum promo
-  card already uses, so the surface stitches to the same speaker
-  visually. NoumCharacter.Inline at 22pt sits left of the copy
-  for the same coach-presence beat the rest of the app uses for
-  coach-voice tiles.
-- The card lives in `expandableDetailsSection` (lines 814–820)
-  between `SkillProgressView` and `xpProgressCard`. That keeps
-  the drill CTA (`YourNextMoveCard` above) as the in-the-moment
-  hero, while putting the bridge in the secondary stack where
-  the user lands when they've actioned the drill recommendation
-  and now want a richer take.
-- Accessibility: `accessibilityIdentifier("summary.askNoumBridge")`
-  for the UI test suite. VoiceOver reads "Ask Noum. <Headline>.
-  Opens the coach thread with this rep already in hand."
+- `Noum/IMPracticeView.swift` lines 153–166 add the
+  `.overlay(alignment: .top)` on the body's outer ZStack that
+  mounts `LiveEloquenceHUD(styleGoal:)` whenever
+  `isSessionActive && !isEndingConversation`. The gates keep
+  setup + ending screens calm; the active conversation column
+  is the only place where the user is actually dictating.
+- `Noum/IMPracticeView.swift` lines 270–283 add the
+  `VoiceAnchorBanner` to the active conversation column,
+  between `activeHeaderCard` and `conversationCard`. Passes
+  `resetsBetweenReps: false` — IM users dictate several
+  replies inside one conversation, and the anchor only needs
+  to land once.
+- The banner sits above the conversation card so it doesn't
+  push the conversation transcript down mid-flow — it shows
+  briefly at session start and then quietly fades, leaving
+  the conversation card as the visual hero.
 
-### Move 5 — path-based init wire-up
+### Move 5 — `docs/CURRENT_STATE.md` updated
 
-- `Noum/SummaryView.swift` lines 2655–2665 extend the path-based
-  init (the one `ContentView` uses to push the summary) with the
-  bridge wiring:
-  ```swift
-  self.onAskNoumAboutRep = { opener in
-      _ = AskNoumStore.shared.injectUserTurn(opener)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-          pathBinding.wrappedValue.append(AppDestination.askNoum)
-      }
-  }
-  ```
-  The 50ms `asyncAfter` mirrors the pattern `onPracticeAgain` /
-  `onSelectPracticeMode` already use — gives the store's
-  `@Published` flush a frame to settle before AskNoumView mounts
-  and reads it. Without the hop the consume can race the flush in
-  rare cases.
-- The previously-memberwise init in the struct body is preserved
-  intact — the new callback defaults to `nil`, so any call site
-  that hasn't been updated (previews, the share-render path)
-  keeps compiling and renders the card hidden, which is the
-  honest behaviour.
-
-### Move 6 — tests
-
-- `NoumTests/NoumTests.swift` adds twelve new tests across the
-  two existing test structs.
-- `CoachContextBuilderTests` (six new tests, lines 5149–5240):
-  - `sessionOpenerIncludesConcreteMetrics` — mode label,
-    duration in whole seconds, filler count, score-over-10 all
-    present.
-  - `sessionOpenerPluralisesFillers` — `1 filler` vs `4 fillers`.
-  - `sessionOpenerDropsScoreWhenAbsent` — no `/10`, no `nil`,
-    mode + duration + filler count still present.
-  - `sessionOpenerEndingIsVoiceShaped` — every voice's closing
-    ask hits its register signature (verdict / feel / move /
-    brief / arc / stood-out).
-  - `sessionOpenerHandlesEveryVoiceWithoutCrashing` — coverage
-    invariant: every `SpeakingStyleGoal` produces an opener
-    ending in `?` or `.`. Catches a future voice added without
-    being wired into the switch.
-- `AskNoumStoreTests` (six new tests, lines 5278–5375):
-  - `injectUserTurnAddsTurnAndExposesPendingCoachID` — inject
-    produces the same `[user, pending-coach]` pair shape that
-    `appendUserTurn` does, but additionally publishes
-    `pendingInjectedCoachID`.
-  - `consumePendingInjectedClearsTheSignal` — one-shot.
-  - `injectUserTurnIsIdempotentWhilePending` — double-tap
-    returns the existing coachID, thread shape unchanged.
-  - `injectUserTurnRejectsEmptyText` — whitespace-only seeds
-    are rejected, store state untouched.
-  - `injectUserTurnAfterCompletedReplyAppendsFreshTurn` —
-    after the prior reply lands, re-inject is a legitimate
-    fresh ask.
-  - `clearThreadAlsoClearsPendingInjectedSignal` — sign-out /
-    reset path leaves no dangling signal.
+- Header trail-of-breadcrumbs gets the new bullet so a
+  cold-read of the doc tells you what's new since the last
+  push.
+- The "Stubbed / placeholder" → "Goal-driven coaching feedback
+  in mid-session UI" paragraph (lines 753–812) gets a new
+  extension block. The earlier text already described the
+  Timed-only state; the new block records the extension to
+  SuddenDeath / AhCounter / IM, the `resetsBetweenReps` flag's
+  purpose, and the per-mode mounting gate (phaseGroup for
+  SuddenDeath, isSessionActive for IM).
 
 ## What did NOT change
 
-- `CoachContextBuilder.systemPrompt`, `userContext`,
-  `coachPersonality`, `starterPrompts` — untouched. The new helper
-  is additive.
-- `AICoachChatService` — untouched. The reply path for an injected
-  opener is identical to a typed message (model sees a user turn +
-  the standard context block).
-- `AskNoumStore.appendUserTurn`, `completeCoachTurn`,
-  `cancelPendingCoachTurn`, `replayForModel`, persistence — all
-  untouched. `injectUserTurn` is built on top of `appendUserTurn`
-  with the idempotency guard layered above.
-- `AskNoumView` chat thread layout, message bubble styling, input
-  bar, pending-dots indicator, header NoumCharacter — all
-  untouched. The only addition is the top-level `.onAppear` that
-  consumes the cross-surface signal.
-- `SummaryView` hero score card, Coach Note, AI debrief, drill
-  recommendation V2, baseline comparison, transcript card,
-  skill-progress section, XP progress, looking-ahead hint —
-  untouched. The bridge is purely additive in the secondary
-  stack.
-- `ContentView` — no changes. The path-based init handles the
-  wire-up; ContentView's `.summary` case keeps using the same
-  `SummaryView(payload:navigationPath:)` it already does.
-- `noum://ask` deep link — unchanged. Still pushes a clean
-  AskNoum surface (no injected opener; that's only on the
-  Summary bridge path).
-- All design tokens are pulled from `DesignSystem.swift` and
+- `Noum/TimedPracticeView.swift` — untouched. The default
+  `resetsBetweenReps: true` preserves the existing call site
+  semantics exactly. No regression.
+- `Noum/LiveEloquenceHUD.swift` — untouched. The chip's
+  styleGoal-aware subtext + stroke + shadow already shipped;
+  the new call sites just hand it a new `styleGoal:` parameter
+  via the existing public API.
+- `Noum/CoachingProfileStore.swift`, `Noum/DrillSystem.swift`
+  (`SpeakingStyleGoal.alignedEloquenceDevices`, `aligns(with
+  device:)`, `shortVoiceLabel`) — untouched. The new surfaces
+  read from the same source of truth Timed already reads from.
+- All four practice views' core practice loops — untouched.
+  The two new overlays are purely additive surfaces; no
+  metric pipeline, no scoring, no XP math changed.
+- Brand voice rules respected: banner copy is the existing
+  "Toward your <voice> voice" — no exclamations, no "Let's",
+  no chirpiness, no emoji. Chip subtext is the existing
+  "toward your <voice> voice" / "noticed" pair.
+- All design tokens are pulled from `DesignSystem.swift` /
   `Typography.swift`. No literal hex, no magic spacing, no
-  bespoke fonts.
-- Brand voice rules respected: no exclamations on the bridge
-  copy, no "Let's", no chirpiness, no emoji. The card eyebrow
-  reads "ASK NOUM" with the same micro/uppercase/tracking
-  treatment Coach Card eyebrows already use.
+  bespoke fonts. The padding on the HUD overlays (`.padding(
+  .top, 4)`) mirrors the Timed overlay exactly so the four
+  modes share one visual rhythm.
+- `Localizable.xcstrings` — untouched. Banner / chip copy is
+  English-only per the M13 honest gap (~30 keys localised).
+  Non-English users on these three modes see the same
+  English copy Timed has shown for the past two pushes.
 
 ## Risks
 
-1. **AskNoumView re-mount during in-flight reply.** SwiftUI's
-   `NavigationStack` reconstructs a pushed view's body when state
-   upstream changes. If the user pushes Summary → bridge →
-   AskNoum, and the model is still replying, then somehow the
-   view body re-creates (rare but possible under upstream state
-   churn), `.onAppear` fires again. `consumePendingInjectedCoachID`
-   is one-shot so a second auto-trigger is impossible. The
-   in-flight `runReply` Task is still owned by the previous
-   instance and will hydrate the pending row when it returns. No
-   duplicate reply.
-2. **Idempotency vs legitimate re-ask.** The bridge guards
-   against double-tap, but the user CAN re-ask the same opener
-   after the reply lands — and that's correct. If the user wants
-   to keep asking "give me your read" after the coach answers,
-   each tap appends a fresh pair. Verified by
-   `injectUserTurnAfterCompletedReplyAppendsFreshTurn`.
-3. **Bridge visibility on IM mode summaries.** IM-mode Summary
-   has its own card hierarchy
-   (`IMVerdictCard`/`IMReadCard`/`IMOneMoveCard`) before falling
-   into `expandableDetailsSection`. The bridge appears in the
-   shared expandable section, so IM users also get the bridge
-   — which is right: an IM rep is exactly the kind of session a
-   user would want a coach's take on. No special-casing needed.
-4. **Bridge copy is English-only.** The seven voice-shaped
-   headlines + the `Open the thread` CTA are not yet in
-   `Localizable.xcstrings`. Consistent with the M13 honest gap
-   (~30 keys localised). Spanish / French users see the same
-   English copy the rest of the post-session surface shows.
-5. **The 50ms `asyncAfter` between inject and push.** Mirrors
-   the existing `onPracticeAgain` / `onSelectPracticeMode`
-   pattern. If a future refactor moves to a faster nav primitive
-   that doesn't need the hop, the hop can be dropped — the
-   one-shot consume still guarantees correctness.
-6. **No keyboard-suppression on the bridge-driven mount.** A
-   user landing on AskNoum through the bridge probably doesn't
-   want the keyboard auto-presenting (they're reading the
-   reply). The existing `inputFocused` state stays false on
-   mount, so the keyboard stays down — verified by reading
-   AskNoumView; no `.onAppear { inputFocused = true }` was
-   ever wired in. Honest behaviour by accident.
+1. **SuddenDeath HUD remount cost across rounds.** The
+   `.overlay` condition gates on `phaseGroup == .live`. Inside
+   `.live`, the engine cycles through `.npcTurn` →
+   `.userTurnWaiting` → `.userTurnActive` → `.roundResult` → next
+   round's `.npcTurn`. All four map to `.live` in `phaseGroup`
+   so the overlay stays mounted across the round — `observer`
+   keeps its state, `cancellable` keeps its subscription. The
+   HUD's `.onChange(of: speechVM.isRecording)` resets the
+   announced-device set every time recording flips on, which
+   is exactly what we want for per-round re-celebration. If
+   SwiftUI does decide to recreate the HUD body across phase
+   transitions in some future refactor, the `.onAppear` re-
+   subscribes to `speechVM.$transcribedText` — no leak.
+2. **AhCounter HUD doesn't gate on `isRecording`.** AhCounter
+   is one continuous mount; the HUD's own observer gates
+   silently on transcript content. Tested mentally against
+   the no-text pre-recording state: the engine returns []
+   findings on empty input, the observer enqueues nothing,
+   no chip ever shows. Pre-rep is visually calm.
+3. **IM HUD on dictated replies vs typed input.** IM in this
+   codebase only accepts dictated replies (mic button →
+   `speechVM.startRecording`). There's no typed-input path
+   that the HUD would have to ignore. If a future move adds
+   keyboard input to IM, the HUD will still only react to
+   `speechVM.transcribedText` changes — typed input wouldn't
+   surface there, so the chip stays silent. Honest by
+   construction.
+4. **`resetsBetweenReps` is a behavioral flag with no UI
+   test.** SwiftUI internal `@State` (`hasShownThisSession`)
+   isn't trivially testable from outside the view. The
+   contract is small and additive — the existing Timed call
+   site keeps its exact behavior because the default is
+   `true`. The SuddenDeath + IM paths pass `false`
+   explicitly. Visual verification on hardware is the right
+   guard rail here; flagged in the verification section
+   below.
+5. **No double-overlay collision with the existing AhCounter
+   toast.** AhCounter's toast surface (lines 307–342) lives
+   inside the inner ZStack as a sibling, not as an overlay.
+   The new `.overlay(alignment: .top)` is on the outer ZStack
+   — it sits *above* the inner content including the toast,
+   so a simultaneous "toast + HUD chip" moment would stack
+   the chip on top of the toast briefly. Both are top-aligned
+   and fade independently; the visual collision window is
+   short (chip ~1.8s, toast ~2s) and rare (toast fires on
+   milestones, chip on rhetorical detection). Acceptable
+   collision risk; if it bites in QA the chip can move to
+   `.top` with a `.padding(.top, 60)` to clear the toast.
+6. **No `liveActivityCoordinator` interaction.** The HUD
+   overlay on SuddenDeath is a pure SwiftUI mount; it
+   doesn't touch `liveActivityCoordinator`. Phase changes
+   that drive the Dynamic Island are untouched.
 
 ## Verification
 
 ### Implemented
 
-- `CoachContextBuilder.sessionOpener(mode:score:fillerCount:
-  duration:voice:)` produces a two-sentence seed with concrete
-  metrics + a voice-shaped ask. Six tests pin the contract.
-- `AskNoumStore.injectUserTurn(_:)` + `pendingInjectedCoachID`
-  + `consumePendingInjectedCoachID()` cross-surface signal,
-  idempotent while pending, empty-text-rejected, fresh-after-
-  reply, clear-thread-wipes. Six tests pin the contract.
-- `AskNoumView.onAppear` consumes the signal once and triggers
-  `runReply` for the matching coachID. The existing
-  `didLandFirstAppear` scroll hook is untouched.
-- `SummaryView.askCoachBridgeCard` renders inside
-  `expandableDetailsSection` above `xpProgressCard`, voice-
-  shaped headline, NoumCharacter inline glyph, brand-purple
-  ambient register matching the home AskNoum promo card.
-  Accessibility identifier `summary.askNoumBridge`.
-- Path-based init wires `onAskNoumAboutRep` to inject the
-  opener into `AskNoumStore.shared` and push the AskNoum
-  destination after a 50ms hop.
-- `CURRENT_STATE.md` updated with the new bridge in the AI
-  Coach Chat subsection and the timestamp / header
-  trail-of-breadcrumbs.
+- `VoiceAnchorBanner` gains `resetsBetweenReps: Bool = true`.
+  Default preserves the Timed call site; explicit `false`
+  honoured by gating `resetForNextRep()` behind it.
+- `SuddenDeathPracticeView` mounts
+  `LiveEloquenceHUD(speechVM:styleGoal:)` as a top overlay
+  when `phaseGroup == .live`, and `VoiceAnchorBanner(
+  styleGoal:isRecording:resetsBetweenReps: false)` inside
+  `liveScreen` directly under `topBar`.
+- `AhCounterView` mounts the HUD as a top overlay (no
+  conditional gate, the observer self-gates on
+  transcribedText) and `VoiceAnchorBanner(styleGoal:
+  isRecording:)` inside the pre-rep scroll column (default
+  reset behaviour).
+- `IMPracticeView` mounts the HUD as a top overlay when
+  `isSessionActive && !isEndingConversation`, and
+  `VoiceAnchorBanner(... resetsBetweenReps: false)` inside
+  the active-conversation column between `activeHeaderCard`
+  and `conversationCard`.
+- `docs/CURRENT_STATE.md` updated with the header trail-of-
+  breadcrumbs entry and the Stubbed-section extension.
 
 ### Partially implemented
 
 - None.
 
-### Blocked
+### Blocked / needs visual QA on device
 
-- None.
+- Live HUD + banner co-existence has not been visually
+  verified in this push (cloud sandbox, no Xcode toolchain).
+  The four critical visual checks for QA:
+  1. **SuddenDeath**: VoiceAnchorBanner fires once at start
+     of round 1, does NOT re-fire on rounds 2/3/4. HUD
+     chip fires when rhetoric lands inside a user turn,
+     resets at the start of each new user turn.
+  2. **AhCounter**: VoiceAnchorBanner fires once when the
+     user taps Start. HUD chip fires when rhetoric lands.
+     Both surfaces co-exist with the existing milestone
+     toast without overlap (rare; documented as acceptable
+     risk in Risks #5).
+  3. **IM**: VoiceAnchorBanner fires once when the
+     conversation activates, does NOT re-fire on each
+     dictated reply. HUD chip fires only inside the
+     active conversation phase.
+  4. **Timed (regression)**: Banner + HUD behaviour is
+     unchanged. Banner still re-arms between reps because
+     `resetsBetweenReps` defaults to `true`.
 
 ### Assumptions
 
-- The expandable-details-section is the right home for the
-  bridge. Three honest alternatives considered:
-  - Top of the summary (above the hero score card) → would
-    compete with the score-reveal moment, which is the wrong
-    register for "ask a follow-up."
-  - Inside the action bar at the bottom → would compete with
-    Home / Practice Again / New Topic, which is the wrong
-    weight for a tertiary action.
-  - Between `YourNextMoveCard` and `BaselineComparisonCard` →
-    too close to the drill CTA; would dilute the hero action.
-  - Inside `expandableDetailsSection` between
-    `SkillProgressView` and `xpProgressCard` → the user has
-    moved past the drill, is reading their progression, and
-    has both the data and the appetite for a richer coaching
-    conversation. Lands.
-- The voice-shaped ask sentences are the right register
-  signatures. Reviewed against `coachPersonality(for:)` and
-  `starterPrompts(for:)` — the registers match. A user who
-  picked `.authoritative` will see "Want a verdict on this
-  rep?" on the bridge and "Just finished a Timed rep — 28s,
-  2 fillers, 8/10. Give me your read." land as the first
-  user message in the thread. Both read as the same voice.
-- `_ = AskNoumStore.shared.injectUserTurn(opener)` in the
-  path-based init is the right wiring location vs. doing it
-  in ContentView's `.summary` case. The path-based init
-  already owns the `onHome` / `onSelectPracticeMode` /
-  `onPracticeAgain` wiring patterns; consistency wins.
-- The 50ms hop between store mutation and nav push is the
-  same hop `onPracticeAgain` uses. Honest convention.
+- The HUD overlay belongs above the safe-area inset on
+  IMPracticeView, not inside the conversation card. The
+  card is a scrolling chat transcript; putting the chip
+  inside it would scroll out of view immediately.
+- The VoiceAnchorBanner belongs above the conversation card
+  on IM (not below), so the chat transcript stays the
+  visual hero once the conversation is going. Verified by
+  reading the existing `activeHeaderCard` placement — the
+  banner slots cleanly between header and chat.
+- The banner default of `resetsBetweenReps: true` is the
+  right call for new single-rep call sites that may be
+  added later. The flag is a downshift, not an upshift —
+  multi-rep surfaces opt into the calmer behaviour
+  explicitly.
+- The HUD overlay padding (`.padding(.top, 4)`) matches
+  TimedPracticeView's existing overlay exactly. One
+  spacing rhythm across all four modes.
 
 ### Verification (what was checked)
 
-- All file reads + edits applied via Edit / Write tools; no
-  Bash builds run (sandboxed Linux environment, no Xcode
-  toolchain). Files read cleanly end-to-end after edits.
-- `CoachContextBuilder.sessionOpener` reuses `PracticeMode.
-  displayLabel` from `DesignSystem.swift:326`, returns a
-  `String`, no fail paths.
-- `AskNoumStore.injectUserTurn` is `@MainActor` (inherits from
-  the class), guards on whitespace-trimmed empty, checks for a
-  trailing matching user turn before deciding to dedupe, falls
-  through to `appendUserTurn` which sets the right published
-  state including `isAwaitingReply`.
-- `AskNoumView.onAppear` runs on the main actor (it's a
-  SwiftUI view body), `consumePendingInjectedCoachID` is
-  called from the main actor, `Task { await runReply(...) }`
-  detaches the model call into a structured concurrency
-  context without blocking the UI mount.
-- `SummaryView.askCoachBridgeCard` uses `Spacing.lg`,
-  `CornerRadius.large`, `AppColor.pro`, `Typography.micro` /
-  `body` / `caption` — every token from the canonical
-  sources. No magic numbers.
-- All twelve tests written against the public API of the
-  new helpers — pure functions or the documented `@Published`
-  surface. No internal-state inspection.
-- No regressions to the existing seven AskNoumStore tests
-  (relying on the unchanged `appendUserTurn` /
-  `completeCoachTurn` / `cancelPendingCoachTurn` paths).
+- All file reads + edits applied via Edit / Write tools;
+  no Bash builds run (sandboxed Linux environment, no
+  Xcode toolchain).
+- `grep` after each edit confirmed the new call sites land
+  exactly once in each target file, with no accidental
+  duplication into TimedPracticeView.
+- `VoiceAnchorBanner` flag semantics: traced the
+  `.onChange(of: isRecording)` handler to confirm the
+  `else if resetsBetweenReps` branch is the only path
+  that flips `hasShownThisSession` back to `false`. With
+  the flag false, the banner is one-shot per mount.
+- `phaseGroup == .live` is the right gate for the
+  SuddenDeath HUD: confirmed via the
+  `private var phaseGroup: PhaseGroup` accessor at line
+  137 — `.npcTurn`, `.userTurnWaiting`, `.userTurnActive`,
+  `.roundResult` all default to `.live`, so the HUD
+  stays mounted across the round.
+- `isSessionActive && !isEndingConversation` is the right
+  gate for IM: traced `isSessionActive` (line 24, flips
+  in `startConversation()` line 961 and resets in
+  `endConversation()` line 1000) and `isEndingConversation`
+  (set during the wrap-up screen, cleared after summary
+  navigation).
+- The two new tokens (`Spacing.lg`, `Spacing.sm`) on the
+  AhCounter VoiceAnchorBanner are inherited from the
+  surrounding `VStack(spacing: Spacing.lg)` — no new
+  spacing constants introduced.
 
 ### Risks
 
@@ -353,13 +308,11 @@ that loop.
 
 ## Files modified
 
-- `Noum/CoachContextBuilder.swift` (+57 LOC).
-- `Noum/AskNoumStore.swift` (+72 LOC).
-- `Noum/AskNoumView.swift` (+10 LOC).
-- `Noum/SummaryView.swift` (+~115 LOC).
-- `NoumTests/NoumTests.swift` (+~140 LOC, 12 tests).
-- `docs/CURRENT_STATE.md` (timestamp + Ask Noum subsection
-  extension).
+- `Noum/VoiceAnchorBanner.swift` (+13 LOC).
+- `Noum/SuddenDeathPracticeView.swift` (+24 LOC).
+- `Noum/AhCounterView.swift` (+18 LOC).
+- `Noum/IMPracticeView.swift` (+25 LOC).
+- `docs/CURRENT_STATE.md` (timestamp + Stubbed-section extension).
 - `HANDOFF.md` (rewritten).
 
 ## Branch

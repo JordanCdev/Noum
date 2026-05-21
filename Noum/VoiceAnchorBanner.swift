@@ -37,6 +37,18 @@ struct VoiceAnchorBanner: View {
     /// false→true transition and hides itself after `visibleSeconds`.
     let isRecording: Bool
 
+    /// When true (default), the banner re-arms each time recording stops so
+    /// the next false→true transition can fire it again. This is the right
+    /// behavior for single-rep surfaces like `TimedPracticeView`, where one
+    /// view mount maps to one finished rep.
+    ///
+    /// When false, the banner fires once per mount and never re-arms.
+    /// Required for multi-rep surfaces like `SuddenDeathPracticeView`
+    /// (rounds) and `IMPracticeView` (dictated replies) where the user
+    /// goes through several isRecording cycles inside one session — they
+    /// don't need the same anchor flashed at them each turn.
+    var resetsBetweenReps: Bool = true
+
     @State private var visible = false
     @State private var hasShownThisSession = false
     @State private var dismissTask: Task<Void, Never>?
@@ -77,9 +89,11 @@ struct VoiceAnchorBanner: View {
         .onChange(of: isRecording) { _, recording in
             if recording {
                 showOnceIfNeeded()
-            } else {
+            } else if resetsBetweenReps {
                 // Recording stopped (rep ended or user cancelled) — reset so
                 // the next rep on the same mount fires the banner again.
+                // Skipped on multi-rep surfaces (SuddenDeath, IM) where we
+                // want one anchor per session, not one per round.
                 resetForNextRep()
             }
         }

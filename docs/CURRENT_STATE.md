@@ -1,6 +1,6 @@
 # Noum — Current state
 
-_Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best** + **Summary → Ask Noum bridge — session-anchored, voice-shaped opener seeds the chat so users can ask their coach about THIS rep with one tap**)_
+_Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching surfaces + LookingAheadCard + mid-session voice anchor + goal-aware live HUD + Typography Dynamic Type contract + goal-aware coach note momentum + visible goal-progress ring on the profile + home recommendation voice-alignment chip + calmer-delivery snapshot trend + Looking-Ahead voice chip closes the loop + goal-aware drill picker closes the inside of the loop + goal-aware leverage + next step + drill rationale closes the verdict copy edge + goal-aware delivery bonus closes the scoring edge — score, copy, and drill are all goal-aware end-to-end + **Home Coach Card hero redesign** + **6-surface premium hero pattern** (Profile/Review/Settings/Mode Picker/Path Journey/Bottom Nav) + **noum-screenshots skill + SessionEnd hook + 27-shot detailed tour** + **tab-level `noum://` deep links** + **UI_TESTING_SEED_FORCE + celebration suppression** + **VoiceAlignmentChip on hero** + **NoumCharacterStage 5-stage story arc** + **Path-centric Home (second hero with Chapter/Mission framing)** + **VoiceMetricsCard (Pause + Word Choice first-class)** + **PathNodeCelebration cinematic upgrade** + **Mission framing copy** + **SummaryView "Mission cleared" headline on path unlock** + **AIWeeklyInsightCard chapter eyebrow mirrors path chapter** + **HomeCoachCard now serves the empty state too — unified premium first impression** + **Ah-Counter hero parity with other modes** + **Coach voice audit — 7 user-facing exclamations dropped** + **NoumCharacterStage test coverage** + **Ask Noum — persistent AI coach chat with voice-specific personality + full user context** + **Proof Moments — transcript-anchored evidence of growth on Weekly Insight + Path Celebration + Personal Best** + **Summary → Ask Noum bridge — session-anchored, voice-shaped opener seeds the chat so users can ask their coach about THIS rep with one tap** + **Goal-aware live UI extended to every practice mode — VoiceAnchorBanner + LiveEloquenceHUD now ship in SuddenDeath, AhCounter, and IM, not just Timed; banner gains `resetsBetweenReps: false` so multi-round / multi-turn surfaces fire it once per session, not once per turn**)_
 
 ## Architecture overview
 
@@ -774,6 +774,26 @@ _Last updated: 2026-05-21 (M5–M13 shipped, M14 in flight: goal-aware coaching 
   `CoachingProfile` is set. Together those two surfaces give every
   Timed rep at least one personalized touchpoint (banner) and a richer
   one when the listener earns a goal-aligned rhetorical move (HUD).
+  **And both surfaces now extend to every other live practice mode
+  too**, not just Timed: `SuddenDeathPracticeView`, `AhCounterView`,
+  and `IMPracticeView` each mount a `LiveEloquenceHUD(styleGoal:)` at
+  the top of their live phase and a `VoiceAnchorBanner` when a voice
+  goal is set. `VoiceAnchorBanner` gains a `resetsBetweenReps: Bool
+  = true` flag so the Timed default (re-arm each rep, since one
+  view mount = one finished rep) is preserved, while multi-rep
+  surfaces pass `false` — SuddenDeath rounds and IM dictated replies
+  go through several `isRecording` cycles inside one session, and
+  re-flashing the same anchor at the user each turn would dilute
+  the moment. The HUD's existing self-reset behaviour (`.onChange(of:
+  speechVM.isRecording)` resets the announced-device set every time
+  recording flips on) is correct for those modes — each pressure
+  round / each dictated reply can re-celebrate the same rhetorical
+  move legitimately, since they're separate micro-reps. Result: the
+  in-the-moment side of the goal-aware coaching loop ships on every
+  practice surface a user can speak into, not just one. SuddenDeath
+  overlay gates on `phaseGroup == .live` so setup/result stay calm;
+  IM overlay gates on `isSessionActive && !isEndingConversation` so
+  the setup and ending screens stay calm.
   **Post-session momentum line is now goal-aware too**:
   `VerdictEngine.generate` runs `enrichMomentumWithStyleAlignment` when
   a `styleGoal` is set — for any improving `SkillTrend` whose

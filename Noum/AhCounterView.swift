@@ -142,6 +142,14 @@ struct AhCounterView: View {
                     .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
                     .accessibilityElement(children: .combine)
 
+                    // Goal-aware intent reminder — fades in at the start of
+                    // a free-form Ah-Counter rep so the user sees what voice
+                    // they're working toward. One mount = one rep; default
+                    // reset behaviour is correct here.
+                    if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                        VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
+                    }
+
                     // MARK: Prompt Suggestion (pre-recording only)
                     if !speechVM.isRecording && elapsedSeconds == 0 && speechVM.fillerWordCount == 0 {
                         VStack(spacing: Spacing.sm) {
@@ -332,6 +340,18 @@ struct AhCounterView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .allowsHitTesting(false)
             }
+        }
+        .overlay(alignment: .top) {
+            // Real-time positive feedback — pulses when the engine catches
+            // a rhetorical move during free-form speaking. styleGoal makes
+            // the chip subtext goal-aware when the device aligns with the
+            // user's chosen voice. Self-contained lifecycle bound to the
+            // speech VM's recording flag.
+            LiveEloquenceHUD(
+                speechVM: speechVM,
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+            )
+            .padding(.top, 4)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)

@@ -52,6 +52,21 @@ struct SuddenDeathPracticeView: View {
             content
                 .animation(.snappySpring, value: phaseGroup)
         }
+        .overlay(alignment: .top) {
+            // Real-time positive feedback — pulses when the engine catches
+            // a rhetorical move during a pressure round. styleGoal makes the
+            // chip subtext goal-aware (e.g. "toward your authoritative
+            // voice" when rule-of-three lands for an authoritative user).
+            // Hidden outside live phases so the setup/result screens stay
+            // calm.
+            if phaseGroup == .live {
+                LiveEloquenceHUD(
+                    speechVM: speechVM,
+                    styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                )
+                .padding(.top, 4)
+            }
+        }
         .accessibilityIdentifier("suddenDeath.screen")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -381,6 +396,18 @@ struct SuddenDeathPracticeView: View {
         return VStack(spacing: 0) {
             // Top bar: round + survival dots
             topBar(round: round)
+
+            // Goal-aware intent reminder — fires once per session (not per
+            // round) so the user sees what voice they're working toward
+            // without being re-prompted each pressure turn. Silent when
+            // no CoachingProfile is set.
+            if let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                VoiceAnchorBanner(
+                    styleGoal: voice,
+                    isRecording: speechVM.isRecording,
+                    resetsBetweenReps: false
+                )
+            }
 
             // Start timer bar — only visible during userTurnWaiting
             if engine.isStartTimerActive {
