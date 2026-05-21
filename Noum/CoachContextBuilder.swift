@@ -145,6 +145,11 @@ enum CoachContextBuilder {
     ///   • RECENT — last 3 sessions: mode, score, fillers, duration
     ///   • PATH — current node title + mission position
     ///   • TRENDS — strengths + persistent blockers
+    ///   • PROOFS — transcript-anchored evidence of growth (verbatim
+    ///     quotes the user actually said in past reps). Omitted entirely
+    ///     when no proofs exist so the model never invents one. Bounded
+    ///     to the most-recent 3 — enough texture without crowding the
+    ///     system prompt.
     static func userContext(
         profile: CoachingProfile?,
         baseline: CommunicationBaseline,
@@ -152,7 +157,8 @@ enum CoachContextBuilder {
         sessions: [PracticeSession],
         currentStreak: Int,
         pathStatus: PathNodeStatus?,
-        pathGatingPhrase: String?
+        pathGatingPhrase: String?,
+        recentProofs: [ProofMomentRecord] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -268,6 +274,25 @@ enum CoachContextBuilder {
             if !baseline.persistentBlockers.isEmpty {
                 let b = baseline.persistentBlockers.prefix(3).joined(separator: ", ")
                 lines.append("- Persistent blockers: \(b).")
+            }
+        }
+
+        // PROOFS — verbatim moments from the user's actual reps. Lets the
+        // model quote the user's own words back ("Three weeks ago you
+        // said 'we focused on three priorities' — that's the move you've
+        // been refining") rather than relying on numbers alone. Hard cap
+        // at 3 so the system prompt stays bounded.
+        let proofs = recentProofs
+            .sorted { $0.proof.sessionDate > $1.proof.sessionDate }
+            .prefix(3)
+        if !proofs.isEmpty {
+            lines.append("")
+            lines.append("PROOFS (verbatim moments from past reps — quote these directly when relevant)")
+            for record in proofs {
+                let day = recentDayLabel(for: record.proof.sessionDate)
+                let technique = record.proof.technique
+                let quote = record.proof.quote
+                lines.append("- \(day) · \(technique): \"\(quote)\"")
             }
         }
 

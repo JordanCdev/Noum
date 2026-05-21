@@ -5781,3 +5781,393 @@ struct ProofMomentServiceTests {
         )
     }
 }
+
+// MARK: - Proof Moment Archive (persistent, per-account, bounded)
+//
+// Pins the contract behind the proof archive store:
+//   1. `record(_:for:)` is idempotent on session ID — refreshing a
+//      proof replaces the existing record rather than appending.
+//   2. `recent(limit:)` returns most-recent-by-session-date first.
+//   3. Persistence round-trips: a second store reading the same
+//      defaults suite sees the same archive.
+//   4. Per-account isolation — switching the account ID switches the
+//      visible archive without crossing data.
+//   5. Cap at `maxStoredRecords`. Older entries (by addedAt) drop off
+//      the front when the cap is exceeded.
+//
+// Together these guarantee the coach reads from a stable, account-
+// scoped log of the user's actual past words — never quoting another
+// account's proof, never returning stale duplicates after refresh.
+
+struct ProofMomentArchiveTests {
+
+    private func freshStore(account: String = "tester") -> ProofMomentStore {
+        // Each test gets its own UserDefaults suite + a deterministic
+        // account ID so persistence is isolated and reproducible.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return ProofMomentStore(defaults: suite, accountIDProvider: { account })
+    }
+
+    private func sampleProof(
+        quote: String,
+        technique: String = "Power Pause",
+        claim: String = "Steady hold — composure reads as authority.",
+        sessionDate: Date = Date(),
+        isAIBacked: Bool = false
+    ) -> ProofMoment {
+        ProofMoment(
+            quote: quote,
+            technique: technique,
+            claim: claim,
+            sessionDate: sessionDate,
+            isAIBacked: isAIBacked,
+            generatedAt: Date()
+        )
+    }
+
+    @Test func recordPersistsSingleProof() {
+        let store = freshStore()
+        let sessionID = UUID()
+        let proof = sampleProof(quote: "Three priorities this quarter.")
+        store.record(proof, for: sessionID)
+        #expect(store.records.count == 1)
+        #expect(store.records.first?.sessionID == sessionID)
+        #expect(store.records.first?.proof.quote == "Three priorities this quarter.")
+    }
+
+    @Test func recordIsIdempotentOnSessionID() {
+        // Re-recording the same session ID replaces the existing
+        // entry rather than appending a duplicate. This is the path
+        // where a deterministic fallback gets upgraded by a later
+        // AI re-fetch — the archive should reflect the upgraded proof
+        // without the old + new both surfacing in the chat context.
+        let store = freshStore()
+        let sessionID = UUID()
+        let templateProof = sampleProof(
+            quote: "First version of the quote.",
+            technique: "Trim Move",
+            isAIBacked: false
+        )
+        let aiProof = sampleProof(
+            quote: "Upgraded version of the quote.",
+            technique: "BLUF",
+            isAIBacked: true
+        )
+        store.record(templateProof, for: sessionID)
+        store.record(aiProof, for: sessionID)
+        #expect(store.records.count == 1, "Re-saving the same session ID must not produce a duplicate row")
+        #expect(store.records.first?.proof.quote == "Upgraded version of the quote.")
+        #expect(store.records.first?.proof.isAIBacked == true)
+    }
+
+    @Test func recentReturnsMostRecentFirstBySessionDate() {
+        // The chat context wants the freshest proof at the top —
+        // session date drives the ordering (not `addedAt`), because
+        // a user could regenerate an old session's proof and it
+        // shouldn't suddenly become the freshest.
+        let store = freshStore()
+        let oldDate = Date(timeIntervalSinceNow: -86_400 * 14) // 2 weeks ago
+        let midDate = Date(timeIntervalSinceNow: -86_400 * 3)  // 3 days ago
+        let newDate = Date()
+        store.record(sampleProof(quote: "Oldest.", sessionDate: oldDate), for: UUID())
+        store.record(sampleProof(quote: "Newest.", sessionDate: newDate), for: UUID())
+        store.record(sampleProof(quote: "Middle.", sessionDate: midDate), for: UUID())
+        let recent = store.recent(limit: 5)
+        #expect(recent.count == 3)
+        #expect(recent[0].proof.quote == "Newest.")
+        #expect(recent[1].proof.quote == "Middle.")
+        #expect(recent[2].proof.quote == "Oldest.")
+    }
+
+    @Test func recentRespectsLimit() {
+        let store = freshStore()
+        for i in 0..<6 {
+            store.record(
+                sampleProof(
+                    quote: "Quote \(i).",
+                    sessionDate: Date(timeIntervalSinceNow: TimeInterval(-i) * 100)
+                ),
+                for: UUID()
+            )
+        }
+        let three = store.recent(limit: 3)
+        #expect(three.count == 3, "limit should cap the returned count")
+        // First three should be the most-recent three (i=0,1,2).
+        #expect(three[0].proof.quote == "Quote 0.")
+        #expect(three[2].proof.quote == "Quote 2.")
+    }
+
+    @Test func recentClampsNegativeLimitToZero() {
+        let store = freshStore()
+        store.record(sampleProof(quote: "Something."), for: UUID())
+        #expect(store.recent(limit: -3).isEmpty,
+                "Negative limit should clamp to zero — never crash, never return junk")
+    }
+
+    @Test func persistenceRoundTripsAcrossStores() {
+        // Mirror the AskNoumStore relaunch test — a fresh store reading
+        // the same defaults suite + account ID should see the saved
+        // archive. Locks the on-disk format against silent regressions.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store1 = ProofMomentStore(defaults: suite, accountIDProvider: { "tester" })
+        let sessionID = UUID()
+        store1.record(sampleProof(quote: "Persistent quote."), for: sessionID)
+
+        let store2 = ProofMomentStore(defaults: suite, accountIDProvider: { "tester" })
+        #expect(store2.records.count == 1)
+        #expect(store2.records.first?.sessionID == sessionID)
+        #expect(store2.records.first?.proof.quote == "Persistent quote.")
+    }
+
+    @Test func accountSwitchHidesOtherAccountArchive() {
+        // Account A writes a proof. Account B (same defaults suite,
+        // different ID) starts empty — per-account scoping locks the
+        // archive to the signed-in user.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let storeA = ProofMomentStore(defaults: suite, accountIDProvider: { "alpha" })
+        storeA.record(sampleProof(quote: "A's quote."), for: UUID())
+
+        let storeB = ProofMomentStore(defaults: suite, accountIDProvider: { "beta" })
+        #expect(storeB.records.isEmpty,
+                "Account B must not see Account A's archive")
+
+        // And A re-loaded still sees its own.
+        let storeAReload = ProofMomentStore(defaults: suite, accountIDProvider: { "alpha" })
+        #expect(storeAReload.records.count == 1)
+        #expect(storeAReload.records.first?.proof.quote == "A's quote.")
+    }
+
+    @Test func capDropsOldestByAddedAt() {
+        // Push more than the cap. Oldest-by-addedAt should be the one
+        // that drops off so a recent refresh-replace doesn't accidentally
+        // evict a record we just upgraded.
+        let store = freshStore()
+        let now = Date()
+        // 14 records — 2 over the cap of 12.
+        for i in 0..<14 {
+            let addedAt = now.addingTimeInterval(TimeInterval(i))
+            let proof = sampleProof(
+                quote: "Quote \(i).",
+                sessionDate: now.addingTimeInterval(TimeInterval(-i) * 10)
+            )
+            store.record(proof, for: UUID(), at: addedAt)
+        }
+        #expect(store.records.count == ProofMomentStore.maxStoredRecords,
+                "Archive should never exceed maxStoredRecords on disk")
+        // Quote 0 (oldest addedAt) is gone. Quote 13 (newest addedAt) is in.
+        #expect(!store.records.contains(where: { $0.proof.quote == "Quote 0." }),
+                "Oldest-by-addedAt should be evicted first")
+        #expect(store.records.contains(where: { $0.proof.quote == "Quote 13." }))
+    }
+
+    @Test func clearWipesAllRecords() {
+        let store = freshStore()
+        store.record(sampleProof(quote: "One."), for: UUID())
+        store.record(sampleProof(quote: "Two."), for: UUID())
+        #expect(store.records.count == 2)
+        store.clear()
+        #expect(store.records.isEmpty)
+    }
+
+    @Test func removeDropsSpecificRecord() {
+        let store = freshStore()
+        let keepID = UUID()
+        let dropID = UUID()
+        store.record(sampleProof(quote: "Keep."), for: keepID)
+        store.record(sampleProof(quote: "Drop."), for: dropID)
+        store.remove(sessionID: dropID)
+        #expect(store.records.count == 1)
+        #expect(store.records.first?.sessionID == keepID)
+    }
+}
+
+// MARK: - userContext proof rendering
+//
+// Pins the contract that proof moments thread into the AI coach's
+// context block:
+//   1. With proofs, a PROOFS section appears with verbatim quotes.
+//   2. Without proofs, the section is omitted entirely (never an
+//      empty heading, never a fabricated quote).
+//   3. Most-recent-first ordering — the freshest proof reads top.
+//   4. Hard cap at 3 — the system prompt stays bounded even if the
+//      archive holds 12 records.
+
+struct CoachContextBuilderProofTests {
+
+    private func sampleProfile(voice: SpeakingStyleGoal = .authoritative) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: voice,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    private func sampleProof(
+        quote: String,
+        technique: String,
+        date: Date
+    ) -> ProofMoment {
+        ProofMoment(
+            quote: quote,
+            technique: technique,
+            claim: "Coach-voice claim — voice-shaped.",
+            sessionDate: date,
+            isAIBacked: false,
+            generatedAt: Date()
+        )
+    }
+
+    private func record(quote: String, technique: String, date: Date) -> ProofMomentRecord {
+        ProofMomentRecord(
+            sessionID: UUID(),
+            proof: sampleProof(quote: quote, technique: technique, date: date),
+            addedAt: Date()
+        )
+    }
+
+    @Test func proofsSectionAppearsWhenRecordsProvided() {
+        // With non-empty proofs, the context should carry a PROOFS
+        // section + at least one verbatim quote so the model can
+        // quote it back at the user.
+        let r = record(
+            quote: "we focused on three priorities",
+            technique: "Triad",
+            date: Date()
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [r]
+        )
+        #expect(ctx.contains("PROOFS"),
+                "Non-empty proofs should produce a PROOFS section header")
+        #expect(ctx.contains("we focused on three priorities"),
+                "PROOFS section should carry the verbatim quote")
+        #expect(ctx.contains("Triad"),
+                "PROOFS section should carry the technique label")
+    }
+
+    @Test func proofsSectionOmittedWhenRecordsEmpty() {
+        // Cold-start / pre-proof users get NO PROOFS section. The
+        // model can't quote what doesn't exist; the section is silent
+        // rather than rendering an empty header.
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: []
+        )
+        #expect(!ctx.contains("PROOFS"),
+                "Empty proofs should omit the PROOFS section entirely")
+    }
+
+    @Test func proofsRenderMostRecentFirst() {
+        // Three proofs across three different dates. The newest must
+        // read on top so the model anchors on the freshest evidence.
+        let old = record(
+            quote: "older quote here",
+            technique: "Anchor Phrase",
+            date: Date(timeIntervalSinceNow: -86_400 * 14)
+        )
+        let mid = record(
+            quote: "middle quote here",
+            technique: "Triad",
+            date: Date(timeIntervalSinceNow: -86_400 * 3)
+        )
+        let new = record(
+            quote: "newest quote here",
+            technique: "BLUF",
+            date: Date()
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [old, mid, new] // intentionally unsorted on input
+        )
+        let newestIdx = ctx.range(of: "newest quote here")?.lowerBound
+        let middleIdx = ctx.range(of: "middle quote here")?.lowerBound
+        let oldestIdx = ctx.range(of: "older quote here")?.lowerBound
+        #expect(newestIdx != nil && middleIdx != nil && oldestIdx != nil,
+                "All three proofs should render")
+        if let n = newestIdx, let m = middleIdx, let o = oldestIdx {
+            #expect(n < m, "Newest must precede middle")
+            #expect(m < o, "Middle must precede oldest")
+        }
+    }
+
+    @Test func proofsAreHardCappedAtThree() {
+        // Even if the archive holds 12, the system prompt only sees 3
+        // — the contract is bounded context, not an exhaustive dump.
+        var records: [ProofMomentRecord] = []
+        for i in 0..<12 {
+            records.append(record(
+                quote: "quote number \(i)",
+                technique: "Move \(i)",
+                date: Date(timeIntervalSinceNow: TimeInterval(-i) * 100)
+            ))
+        }
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: records
+        )
+        // The three most-recent appear (0, 1, 2 — closest to "now").
+        #expect(ctx.contains("quote number 0"))
+        #expect(ctx.contains("quote number 1"))
+        #expect(ctx.contains("quote number 2"))
+        // The fourth onward must NOT appear — context stays bounded.
+        #expect(!ctx.contains("quote number 3"),
+                "Hard cap at 3 — older proofs must not bleed into the system prompt")
+        #expect(!ctx.contains("quote number 11"))
+    }
+
+    @Test func proofsSectionLandsAfterTrends() {
+        // Section order matters for the model — GOAL / RATING / etc.
+        // come first, PROOFS reads as supporting evidence at the end.
+        // Locks the ordering so a future refactor can't accidentally
+        // bury GOAL beneath PROOFS.
+        let r = record(quote: "evidence quote here", technique: "BLUF", date: Date())
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [r]
+        )
+        let goalIdx = ctx.range(of: "GOAL")?.lowerBound
+        let proofsIdx = ctx.range(of: "PROOFS")?.lowerBound
+        #expect(goalIdx != nil && proofsIdx != nil)
+        if let g = goalIdx, let p = proofsIdx {
+            #expect(g < p, "GOAL must precede PROOFS in the system prompt")
+        }
+    }
+}

@@ -1,259 +1,255 @@
-# HANDOFF — Ask Noum "Keep going" follow-up chips
+# HANDOFF — Ask Noum proof-aware coaching context
 
 ## Scope
 
-Three files touched: `Noum/CoachContextBuilder.swift` (+~150 LOC,
-new `followUpSuggestions(forCoachReply:voice:)` API + nested
-`FollowUpTopic` enum + six voice × topic chip catalogues),
-`Noum/AskNoumView.swift` (+~70 LOC, new `followUpChips` computed
-view, `followUpRow(chips:)` view-builder, FlowLayout-based capsule
-chip row mounted under the most-recent coach reply), and
-`NoumTests/NoumTests.swift` (+~140 LOC, nine new follow-up tests
-inside the existing `CoachContextBuilderTests` struct). Two doc
-updates: `docs/CURRENT_STATE.md` trail-of-breadcrumbs + a new
-sub-bullet under the Ask Noum section.
-
-The brief: continue from the existing TO-DO, push toward A+ on
-the M14 "open the loop" milestone, stay on the `Redesign` branch,
-and "make the dream come true." Up to this push, Ask Noum had
-three entry points (Home ambient promo, Profile goal-anchored
-link, Summary session-anchored bridge) — but once a user was
-*inside* the chat, the surface was a respond-and-wait loop. Every
-reply landed; the thread sat dead until the user typed. The
-empty-state starter prompts existed to remove the friction of
-the *first* message — there was no equivalent surface for the
-*continuing* conversation. That gap is the engineering content
-of this push: surface 2–3 voice-shaped, topic-anchored follow-up
-chips beneath the most-recent coach reply so the conversation
-keeps moving without forcing the user to author their own
-follow-up from scratch.
+Three new files / edits land on `Redesign` for this push:
+`Noum/ProofMomentArchive.swift` (new file, ~155 LOC — defines
+`ProofMomentRecord` + `ProofMomentStore` with per-account
+UserDefaults persistence, max 12 records, idempotent-on-session-ID
+recording, oldest-by-`addedAt` cap eviction, and most-recent-by-
+`sessionDate` read ordering), `Noum/ProofMomentService.swift`
+(+~30 LOC — six new persistence hops after each path that produces
+a successful proof, one new `@MainActor private func
+persistToArchive` helper), `Noum/CoachContextBuilder.swift`
+(+~25 LOC — new optional `recentProofs:` param on `userContext(...)`,
+new PROOFS section rendered after TRENDS), `Noum/AskNoumView.swift`
+(+2 LOC — `@StateObject` for the new store, threads
+`proofStore.recent(limit: 3)` into the context call),
+`NoumTests/NoumTests.swift` (+~320 LOC — two new test structs
+`ProofMomentArchiveTests` and `CoachContextBuilderProofTests`,
+fifteen unit tests total), `docs/CURRENT_STATE.md` (trail-of-
+breadcrumbs entry + new bullet under the Ask Noum section).
 
 ## What changed
 
-### Move 1 — `CoachContextBuilder.followUpSuggestions(forCoachReply:voice:)`
+### Move 1 — `ProofMomentStore` persistent per-account archive
 
-A new pure-function API on the existing context builder. Takes
-the most-recent coach reply text + the user's `SpeakingStyleGoal?`
-and returns up to three chip strings. Empty / whitespace-only
-reply returns `[]` (defensive — should never happen in practice
-because the call site already gates on `!isPending && !text.isEmpty`,
-but the function contract is robust).
+A new ObservableObject mirroring the `AskNoumStore` shape: per-account
+UserDefaults persistence keyed `proofMoment.archive.<accountID>`,
+bounded at 12 records, MainActor-isolated to stay SwiftUI-safe for
+future Profile surfaces. The store exposes:
 
-Architecture:
+- `record(_ proof: ProofMoment, for sessionID: UUID, at date: Date)`
+  — idempotent on session ID. Re-recording the same session replaces
+  the existing entry rather than appending (so a deterministic
+  fallback upgraded by a later AI fetch lands as a single row, not
+  two).
+- `recent(limit:)` — most-recent-first by the proof's `sessionDate`.
+  Used by the chat context builder to pick the freshest few. Limit
+  clamps negative inputs to 0 — defensive.
+- `remove(sessionID:)` + `clear()` — granular and full wipe paths.
+  `clear()` is the sign-out hook (Settings can pick it up later).
 
-- **Topic detection** is a deterministic, case-insensitive substring
-  walk over the reply text. The first match wins. Order is intentional:
-  drill > pause > pace > filler > weekly > generic. The reasoning:
-  drills are the most concrete coach recommendation (the user needs
-  to know *how to do it*), so they take priority over more general
-  framings. Pauses are second-most-concrete. Generic is the floor —
-  every reply yields three chips, never zero (unless the reply is
-  empty).
-- **Detection lexicon** is intentionally narrow:
-  - `.drillMentioned` — "drill", "exercise", "try this"
-  - `.pauseMentioned` — "pause", "silence", "breath"
-  - `.paceMentioned` — "pace", "wpm", "slow", "rush"
-  - `.fillerMentioned` — "filler", quoted "um" / "uh"
-  - `.weeklyMentioned` — "this week", "next week", "7 days", "seven days"
-  - `.generic` — fallback
-- **Chip catalogue** is voice × topic. Six voices + nil fallback ×
-  six topics = 42 cells, each carrying exactly three chips. Every
-  chip is < 60 characters (the test asserts this), brand-voice
-  compliant (no exclamations, no "Let's", no emoji — the test asserts
-  this too), and matches the register of its sister catalogue
-  entries (`coachPersonality`, `starterPrompts`, `sessionOpener`,
-  `askNoumProfileLabel`). Authoritative reaches for verdict-shaped
-  questions ("How will I know I nailed it?"); warm reaches for
-  felt-experience ("What does it feel like when it lands?"); concise
-  is clipped ("Show me one example."); storytelling references the
-  arc ("Where does this fit in my arc?"); executive uses chief-of-
-  staff framings ("Top line: what does success look like?");
-  persuasive shows reasoning ("Walk me through the reasoning.");
-  the nil fallback is calm, direct, voice-neutral.
+The cap-eviction policy is by `addedAt` (when the entry was last
+written), not `sessionDate`. Reasoning: refresh-replacing an old
+session's proof with an AI-upgraded version should NOT make that
+record vulnerable to eviction — its `addedAt` is fresh, so the
+oldest record by `addedAt` is the actual evictable one.
 
-The new `FollowUpTopic` enum is `internal` (visible to the test
-suite via the same module) but not `public` — there's no other
-external consumer.
+### Move 2 — `ProofMomentService.proof(for:)` writes to the archive
 
-### Move 2 — `AskNoumView` chip row
+Every code path inside `proof(for:)` that resolves to a non-nil
+`ProofMoment` (cache hit excluded — that proof was already
+persisted on first generation) now hops to MainActor and writes to
+`ProofMomentStore.shared`. Six hop sites covering:
 
-The view picks up `followUpChips` (computed `[String]?`) which
-returns nil to collapse the row entirely under any of these
-conditions:
-- a coach reply is in flight (`store.isAwaitingReply`),
-- the latest message is not a coach reply (`last.role != .coach`),
-- the latest message is pending (`last.isPending`),
-- the reply text is empty.
+1. Non-English locale fallback path.
+2. No-AI-provider fallback path.
+3. Provider matched but `.none` case in the switch (defensive).
+4. HTTP failure / parse failure → template fallback path.
+5. Catch path on URLSession throw → template fallback path.
+6. Successful AI parse path.
 
-When the conditions are satisfied, it delegates to
-`CoachContextBuilder.followUpSuggestions(...)` and renders the
-returned strings as capsule chips inside a `FlowLayout` (reused
-from `AIWeeklyInsightCard.swift:344` so the chip rhythm matches
-the evidence-pills surface visually).
+Each hop is gated on `if let fallback = fallback { ... }` /
+non-nil parsed result, so a session that produces no proof at all
+(too-short transcript, no qualifying clause) never inserts a row.
+The MainActor hop pattern matches the existing `currentProvider()`
+and `activeLocaleSupportsAI()` helpers in the same file — same
+isolation style, same `await` shape at call sites.
 
-Visual register:
-- `Typography.caption.weight(.semibold)` for chip text (quieter
-  than the starter prompts which use `Typography.body`).
-- `AppColor.pro` text on `AppColor.cardBackground` capsules.
-- `AppColor.pro.opacity(0.22)` 1pt stroke — same brand-purple-but-
-  whispered register as the existing coach card border.
-- `Spacing.sm` horizontal / 6pt vertical padding — capsule reads
-  as a tap target without dominating.
-- 34pt leading inset on the row + the eyebrow label — aligns with
-  the coach card body content past the inline NoumCharacter glyph.
-- "KEEP GOING" eyebrow above the chips (`Typography.micro.weight(.bold)`
-  uppercased w/ 0.8 tracking) — matches the eyebrow register used
-  elsewhere on the surface ("ASK NOUM · <voice>", "STARTERS").
-  `.accessibilityHidden(true)` because the per-chip
-  `accessibilityLabel: "Follow up: <chip>"` already carries the
-  intent for VoiceOver users.
-- `.transition(.opacity.combined(with: .move(edge: .top)))` so the
-  row fades + drops in when a fresh reply hydrates — reduce-motion
-  honored because the surrounding `withAnimation` calls in
-  `scrollToBottom` already gate on the env value.
+### Move 3 — `CoachContextBuilder.userContext(recentProofs:)`
 
-Tap path: each chip is a Button that fires `send(chip)` — the same
-path the starter prompts use. The chip text becomes the user's
-next turn (appears as a user bubble), and the coach replies
-normally. The chip row then re-evaluates on the new reply.
+A new optional parameter, defaulted to `[]`. When non-empty, a new
+PROOFS section renders after TRENDS:
 
-### Move 3 — Nine new tests in `CoachContextBuilderTests`
+```
+PROOFS (verbatim moments from past reps — quote these directly when relevant)
+- Yesterday · BLUF: "Bottom line is we held retention this quarter"
+- Mon · Triad: "We focused on three priorities"
+- Apr 12 · Power Pause: "Steady — three breaths — then the close"
+```
 
-All inside the existing struct (no new test target, no new file).
-The block matches the rhythm of the existing `starterPrompts` +
-`sessionOpener` blocks:
+Section design rules:
 
-1. `followUpSuggestionsEmptyReplyReturnsEmpty` — empty + whitespace-
-   only inputs collapse the row.
-2. `followUpTopicDetectionFindsDrillFirst` — drill / exercise / "try
-   this" all map to drillMentioned; drill wins when both drill and
-   pause appear (priority order locked).
-3. `followUpTopicDetectionFindsPause` — pause / silence / breath.
-4. `followUpTopicDetectionFindsPace` — pace / WPM / rush / slow.
-5. `followUpTopicDetectionFindsFillers` — filler + quoted "um".
-6. `followUpTopicDetectionFindsWeekly` — this week / next week / 7
-   days / seven days.
-7. `followUpTopicDetectionFallsBackToGeneric` — replies with no
-   detectable anchor still yield generic chips, never an empty row.
-8. `followUpSuggestionsEveryVoiceProducesThreeChips` — coverage
-   invariant: every voice × every topic = exactly three chips.
-   Including the nil-voice path. A future refactor that drops a
-   case will fail this test.
-9. `followUpSuggestionsAreVoiceShapedForDrillTopic` — voice register
-   preserved across topics; authoritative reaches for verdict
-   language, warm reaches for felt-experience, concise is shorter
-   than authoritative (asserted numerically), storytelling
-   references the arc / scene.
-10. `followUpSuggestionsRespectBrandVoiceRules` — no exclamations,
-    no "Let's", no chip > 60 chars across all voice × topic cells.
+- **Hard cap at 3** — even when the archive holds 12, the system
+  prompt only sees the freshest three. Keeps the prompt bounded.
+- **Sorted by `sessionDate` descending** — newest evidence reads at
+  the top, matching how a real coach references "what you just did"
+  vs "last week."
+- **Section omitted entirely when proofs are empty** — cold-start
+  users get no PROOFS header, no fabricated quote. The contract is
+  the same as the per-baseline-dimension confidence gate: only
+  surface what's earned.
+- **Section header instructs the model to quote directly** — the
+  framing "quote these directly when relevant" is the cue for the
+  coach to use the user's own words rather than paraphrase. This
+  is the difference between "you've been working on pauses" and
+  "Last Tuesday you said 'three breaths, then the close' — that's
+  the pattern."
 
-### Move 4 — `docs/CURRENT_STATE.md` updated
+### Move 4 — `AskNoumView.runReply` threads recent proofs
+
+Adds `@StateObject private var proofStore = ProofMomentStore.shared`
+to the view's state owners + passes `proofStore.recent(limit: 3)`
+into the existing `CoachContextBuilder.userContext(...)` call. No
+other view wiring needed — the chat surface already mounted the
+store automatically once shared resolved, and every reply now
+carries proof context.
+
+### Move 5 — Fifteen new tests across two structs
+
+`ProofMomentArchiveTests` (10 tests):
+
+1. `recordPersistsSingleProof` — single-record round-trip.
+2. `recordIsIdempotentOnSessionID` — re-saving replaces, never
+   duplicates. AI-upgrade path verified.
+3. `recentReturnsMostRecentFirstBySessionDate` — three proofs
+   across three different dates emerge newest-first.
+4. `recentRespectsLimit` — limit caps the count.
+5. `recentClampsNegativeLimitToZero` — defensive — never crashes.
+6. `persistenceRoundTripsAcrossStores` — fresh store on same
+   defaults sees the saved archive.
+7. `accountSwitchHidesOtherAccountArchive` — per-account scoping
+   locks the archive to the signed-in user.
+8. `capDropsOldestByAddedAt` — over-cap inserts evict by
+   `addedAt`, not `sessionDate` (so refresh-replaces survive).
+9. `clearWipesAllRecords` — sign-out path.
+10. `removeDropsSpecificRecord` — granular wipe path.
+
+`CoachContextBuilderProofTests` (5 tests):
+
+1. `proofsSectionAppearsWhenRecordsProvided` — header + quote +
+   technique all land.
+2. `proofsSectionOmittedWhenRecordsEmpty` — cold-start has no
+   PROOFS section.
+3. `proofsRenderMostRecentFirst` — unsorted input still emerges
+   newest-first in the rendered context.
+4. `proofsAreHardCappedAtThree` — 12 records in → 3 lines in
+   context, the rest never bleed into the system prompt.
+5. `proofsSectionLandsAfterTrends` — GOAL precedes PROOFS in the
+   prompt order. Locks the section ordering against future drift.
+
+### Move 6 — `docs/CURRENT_STATE.md` updated
 
 - Header trail-of-breadcrumbs gets a new entry summarising the
-  follow-up chip ship.
-- The Ask Noum section's first bullet (the `Noum/AskNoumView.swift`
-  description) gains a follow-up chip block — placement matches
-  the existing pattern of "describe the surface, then describe
-  what's special about it".
+  proof archive + proof-aware context ship.
+- The Ask Noum section's `CoachContextBuilder` bullet gains a
+  PROOFS-block description.
+- A new bullet under the Ask Noum section describes
+  `ProofMomentArchive.swift`, the store's persistence contract,
+  the idempotency-on-session-ID guarantee, and the
+  upgrade-from-fallback-to-AI behaviour.
 
 ## What did NOT change
 
-- `Noum/AskNoumStore.swift` — untouched. Chips ride on top of the
-  existing `appendUserTurn` + `completeCoachTurn` plumbing. No
-  new published property, no new accessor.
-- `Noum/AICoachChatService.swift` — untouched. The model never
-  sees the chip text directly; it sees the chip text as a
-  user-authored turn (because that's exactly what it is).
-- `Noum/ContentView.swift` — untouched. The three entry points to
-  Ask Noum are unchanged; only the inside of the chat surface
-  evolved.
-- `Noum/SummaryView.swift`, `Noum/ProfileView.swift` — untouched.
-  The three entry-point catalogues (`askNoumPromoHeadline`,
-  `askCoachBridgeHeadline`, `askNoumProfileLabel`) are unrelated
-  to the follow-up catalogue and stay siloed by surface register
-  (ambient / session-anchored / goal-anchored).
-- `Noum/AIWeeklyInsightCard.swift` — untouched. The `FlowLayout`
-  defined there is reused, not duplicated.
-- Brand voice rules respected: chip catalogue carries no
-  exclamations, no "Let's", no chirpiness, no emoji. Locked by
-  the `followUpSuggestionsRespectBrandVoiceRules` test.
-- Design tokens pulled from `DesignSystem.swift` (`AppColor.pro`,
-  `AppColor.cardBackground`, `Spacing.xs`/`.sm`) and
-  `Typography.swift` (`Typography.caption`, `Typography.micro`).
-  No literal hex, no magic spacing.
-- `Localizable.xcstrings` — untouched. Chip copy is English-only
-  per the M13 honest gap. The chip catalogue is a natural pick-up
-  for a future localisation pass alongside `starterPrompts` and
-  `sessionOpener`.
+- `Noum/AskNoumStore.swift` — untouched. The chat thread store is
+  unchanged; only the *context* the model reads at reply time gains
+  the PROOFS layer.
+- `Noum/AICoachChatService.swift` — untouched. The service still
+  receives `userContext` as an opaque string; it doesn't know proofs
+  are now part of it.
+- `Noum/SummaryView.swift`, `Noum/ContentView.swift`,
+  `Noum/AIWeeklyInsightCard.swift` — untouched. The three current
+  consumers of `ProofMomentService.proof(for:)` keep their existing
+  call shape; the persist-to-archive side-effect happens inside the
+  service without changing their behaviour.
+- The Proof Moment UI surfaces (Personal Best, Path Celebration,
+  Weekly Insight) — untouched. The archive is a write-only side
+  effect from their perspective.
+- `firestore.rules` + Firebase config — untouched. The archive
+  lives on-device only. Adding sync would be a future move; today
+  the priority is "the coach knows what you actually said" with
+  zero infra.
+- Brand voice rules — fully preserved. The PROOFS section header
+  uses sentence case + parens for the instruction clause; no
+  exclamations, no chirpy framing, no emoji. The new test
+  `proofsSectionLandsAfterTrends` locks ordering but doesn't
+  introduce any voice violations.
+- Design tokens — N/A. No new UI surfaces; the only change is
+  inside the system prompt the model reads.
+- `Localizable.xcstrings` — untouched. The PROOFS section header
+  is English-only, matching the rest of the AI coaching context
+  block. Localisation would happen in a future M13-style pass.
 
 ## Risks
 
-1. **Chip row could feel chatty.** Three chips after every reply is
-   a lot of new surface area. Mitigated by: chips are visually
-   quieter than starter prompts (caption-sized, capsule, brand-
-   purple stroke rather than full-row card), only render under the
-   most-recent reply (historical replies stay clean), collapse
-   under pending / system-notice / empty-reply conditions. If QA
-   feedback says they still feel pushy, we can drop to two chips
-   per cell with a single-line catalogue edit — no architectural
-   churn.
-2. **Topic detection is a substring match, not real NLP.** A reply
-   like "Don't rush — that's the move" would match `.paceMentioned`
-   because of "rush", which is correct intent. A reply like "your
-   pause **and** filler patterns are tied" would match `.pauseMentioned`
-   because pause is checked first — which is fine; the chips
-   shown will be pause-shaped, which is one of the two valid
-   directions to take the conversation. Acceptable false-positive
-   rate. If the chips start drifting from the conversation in
-   practice, the detection layer is the right place to add a
-   small priority tiebreaker (e.g. count occurrences, weight by
-   sentence position).
-3. **Chips don't see the user-context block.** The model gets the
-   full baseline / rating / streak / sessions context block on
-   every reply — chips don't. So a chip like "How long should a
-   pause be?" doesn't know the user already held a 4-second pause
-   yesterday. That's intentional: the chip is a *nudge*, not an
-   answer. The model's reply to the chip-as-question is where the
-   context lands. If a future move wants context-aware chips
-   ("Repeat yesterday's 4-second pause"), the chip catalogue
-   would need to grow into a function over the same user-context
-   block — fair extension, not in scope for this push.
-4. **The `FlowLayout` reuse crosses files.** `AskNoumView.swift`
-   now depends on a `FlowLayout` defined inside
-   `AIWeeklyInsightCard.swift`. Both ship in the same target and
-   the layout struct is intentionally project-internal, so the
-   cross-file reference is legitimate. If a future move extracts
-   `FlowLayout` into `DesignSystem.swift` (it probably should —
-   that's where shared layout primitives live), both call sites
-   pick it up automatically.
-5. **Eight new voice × topic cells could drift in copy quality.**
-   The catalogue is 6 voices × 6 topics × 3 chips = 108 strings.
-   Coach voice quality across that many cells is hard to spot-
-   check exhaustively in code review. Mitigated by: the
-   restraint-test asserts the brand-voice rules at the surface
-   level; the voice-shape test asserts the register split at the
-   sample-cell level; the rest is a copy job in the next coach-
-   voice-audit cloud routine.
+1. **System prompt token growth.** Adding 3 proofs to the context
+   block adds ~60–120 tokens per reply (~20–40 per proof). At a
+   typical Ask Noum exchange of ~600 tokens of context + ~24
+   messages of replay, this is a 10–20% bump. Acceptable for the
+   value of voice-anchored replies — but worth watching if a future
+   move adds a fourth proof or a sentence-length claim line per
+   proof. The 3-cap is the right cap today.
+2. **Provider-cost lift.** The archive contains existing proofs the
+   service already generated; adding them to the context block
+   doesn't cause new AI calls. But because every Ask Noum turn now
+   ships richer context, each turn's input-token cost ticks up
+   slightly. At GPT-4o input pricing (~$5/M tokens), the marginal
+   cost is roughly $0.0003/turn over the previous build. Negligible.
+3. **Cross-isolation Sendability.** `ProofMomentService` is an
+   actor; `ProofMomentStore` is `@MainActor`. The hop pattern
+   `await persistToArchive(parsed, sessionID: input.session.id)`
+   crosses the boundary with `ProofMoment` (struct of String /
+   Date / Bool — implicitly Sendable) and `UUID` (Sendable). Both
+   are safe. If a future refactor adds a non-Sendable field to
+   `ProofMoment` (e.g. a closure), the compiler will catch it at
+   the hop site.
+4. **Idempotency only protects against duplicate session IDs.** If
+   the same transcript appears under TWO session IDs (which
+   shouldn't happen in practice — sessions are UUID-keyed at
+   finalize), the archive could carry two entries with identical
+   quotes. The chat surface would then show the same quote twice
+   in the PROOFS block, which would read oddly. Mitigated by the
+   reality that `PracticeSession.id` is a fresh UUID per finalize;
+   re-finalizing the same recording would only happen via debug
+   tooling.
+5. **Test coverage on the persist-to-archive side effect inside
+   `ProofMomentService`.** The 15 new tests cover the store and
+   the context builder, but the side-effect link inside the actor
+   isn't directly tested (would require seeding an AI provider in
+   the test environment + an actor-tested integration shape).
+   Mitigated by: each persist call is a one-liner, lifted into a
+   single helper method `persistToArchive`, so the surface area for
+   a bug is small. The store itself is fully tested in isolation.
+6. **No UI surface for the archive yet.** This push is a data-and-
+   context-layer move. The natural follow-on is a Profile "growth
+   library" card surfacing the same archive visually — that's a
+   separate push so this one stays scoped to the dream-coach goal
+   (the AI knowing your past words).
 
 ## Verification
 
 ### Implemented
 
-- `CoachContextBuilder.followUpSuggestions(forCoachReply:voice:)`
-  exists, returns three chips for every non-empty reply across
-  every voice × topic cell + the nil-voice path.
-- `CoachContextBuilder.FollowUpTopic` enum has six cases (drill,
-  pause, pace, filler, weekly, generic). `detectFollowUpTopic(in:)`
-  is order-sensitive and tested.
-- `AskNoumView.followUpChips` collapses under all four documented
-  conditions (in-flight, non-coach last message, pending, empty).
-- `AskNoumView.followUpRow(chips:)` mounts beneath the latest
-  coach reply, lays out via the existing `FlowLayout`, fires
-  `send(chip)` on tap.
-- Nine new tests in `CoachContextBuilderTests` cover empty input,
-  topic detection (drill / pause / pace / filler / weekly /
-  generic), every-voice-three-chips coverage, voice-shape register
-  split, brand-voice rules.
+- `ProofMomentRecord` struct + `ProofMomentStore` class live in
+  `Noum/ProofMomentArchive.swift`. Per-account UserDefaults
+  persistence, max 12, idempotent-on-session-ID record, oldest-
+  by-addedAt eviction, recent-by-sessionDate read ordering — all
+  verified by the 10 `ProofMomentArchiveTests`.
+- `ProofMomentService.proof(for:)` writes to the archive on every
+  successful proof path (fallback + AI-parsed). The hop helper
+  `persistToArchive` lives at file scope (private `@MainActor`).
+- `CoachContextBuilder.userContext(...)` accepts an optional
+  `recentProofs: [ProofMomentRecord]` parameter (defaulted to
+  `[]` for back-compat — existing call sites in tests don't need
+  edits). The new PROOFS section renders after TRENDS, sorted
+  most-recent-first, hard-capped at 3, omitted entirely when
+  empty.
+- `AskNoumView.runReply` passes `proofStore.recent(limit: 3)`
+  into the context call.
+- Five `CoachContextBuilderProofTests` lock the rendering
+  contract: section present iff records present, ordering,
+  cap-at-3, GOAL-precedes-PROOFS.
 
 ### Partially implemented
 
@@ -261,88 +257,83 @@ The block matches the rhythm of the existing `starterPrompts` +
 
 ### Blocked / needs visual QA on device
 
-This push touches a live UI surface; the cloud sandbox can't
-build or screenshot. The critical visual checks for QA:
+This push has no new UI surface — every change is inside the
+system prompt the model receives. Visual QA is therefore limited
+to the indirect "does the coach quote my actual words now?"
+check:
 
-1. **Chip row visual register**: chips read as quieter than the
-   starter-prompt rows. Side-by-side compare empty-state vs.
-   mid-thread state — starter rows are full-width, follow-up
-   chips are capsule, the visual hierarchy should be obvious.
-2. **Flow layout wrap behaviour**: on an iPhone SE (smallest
-   regular-class width), do three chips wrap onto two rows
-   gracefully without truncating any chip's text?
-3. **Voice-catalogue spot-check**: set each of the six voices in
-   Settings + send a starter prompt that's likely to trigger
-   each topic. Verify the chip set reads in-register. The fastest
-   spot-check is `concise` voice + "I rambled in my last rep —
-   what cut it?" starter (should fire `.fillerMentioned` chips
-   in clipped concise voice — "Best filler-cut drill?" / "When
-   do mine cluster?" / "Replacement move?").
-4. **Tap-and-send round-trip**: tap a chip → user bubble appears
-   with the chip text → pending coach reply → reply hydrates →
-   new chip row appears (possibly with different topic anchor).
-5. **Scroll-to-bottom on chip appear**: when the chips fade in
-   after the reply hydrates, does the scroll position track to
-   the chip row so the user sees them? The existing
-   `onChange(of: store.isAwaitingReply)` handler scrolls to
-   "bottom" which is the bottom spacer AFTER the chips, so the
-   chips should be in view by construction. Visual verification
-   needed to confirm there's no half-second flash where the chips
-   are below the fold.
-6. **Reduce-motion respect**: with reduce-motion on, does the
-   chip row appear without the move-edge transition (it should
-   just opacity-fade or appear instantly)? The
-   `.transition(.opacity.combined(with: .move(edge: .top)))`
-   modifier is governed by the surrounding `withAnimation`
-   contexts which already gate on the env value, so this should
-   be correct — confirm visually.
+1. **End-to-end coach quoting**: configure an AI provider in
+   Settings, run a few sessions (so the proof archive populates),
+   then open Ask Noum and ask a question that invites the coach
+   to reference past moments ("How am I trending?"). The reply
+   should contain at least one verbatim quote from a past
+   transcript. If it doesn't, suspect either the archive isn't
+   populating (check on-device via the existing
+   `ProofMomentService` consumers — Personal Best, Path
+   Celebration, Weekly Insight) or the model is ignoring the
+   PROOFS section (check the actual system prompt the model
+   received).
+2. **Cold-start silence**: brand-new install, no sessions yet,
+   open Ask Noum with the empty thread starter prompts. Tap a
+   starter, watch the reply land. The reply must NOT contain a
+   fabricated quote in quotation marks — the PROOFS section is
+   omitted at cold start. If a quote appears anyway, the model
+   is hallucinating outside the section; tighten the system
+   prompt guardrails.
+3. **Cross-account isolation**: sign out, sign in as a different
+   account, open Ask Noum. Reply must NOT reference the previous
+   account's quotes. The per-account keying locks this at the
+   store level; visual confirm picks up any regression to
+   global-keyed storage.
 
 ### Assumptions
 
-- The most-recent coach reply is the right anchor for the chips.
-  Considered: chips beneath every coach reply (rejected — would
-  clutter the thread on long conversations), chips above the
-  input bar as a global suggestion strip (rejected — they
-  wouldn't read as "from this specific reply"). The chosen
-  inline-under-last-reply position matches the iMessage / Slack
-  "thread continuation" pattern users already know.
-- Topic detection priority (drill > pause > pace > filler >
-  weekly > generic) is the right order. Reasoning: drills are
-  the most concrete coach recommendation, so they take priority;
-  pauses are the most concrete delivery mechanic; pace / fillers
-  are diagnostic categories; weekly is a framing layer; generic
-  is the floor. If the model reply describes a drill that
-  involves a pause, the chips should be drill-shaped because
-  *executing the drill* is what the user needs help with next.
-- Three chips is the right count. Two would feel arbitrary;
-  four would crowd. The starter-prompts surface lands on four
-  (two voice-specific + two common), but starters need to cover
-  more first-message cold-start ground; follow-ups only need to
-  keep one specific conversation moving.
+- Three proofs is the right cap. Fewer would leave the coach
+  reaching for numeric framing; more would crowd the system
+  prompt and risk the model ignoring earlier sections (GOAL,
+  RATING). Three matches the visual chip cap on the follow-up
+  row, so the surface registers as "three things to look at" at
+  every layer.
+- `addedAt`-based eviction is correct over `sessionDate`-based.
+  The two policies disagree when the user refreshes an old proof
+  (e.g. an AI re-fetch after a deterministic fallback): under
+  `sessionDate` policy, the refreshed proof's old session date
+  would still mark it as evictable; under `addedAt` policy, the
+  refresh keeps it safe because we just touched it. The latter
+  is what a "the coach remembers what I just earned" UX wants.
+- The PROOFS section lives at the END of the context block (after
+  TRENDS). Reasoning: GOAL / RATING / BASELINE are anchoring
+  facts the model needs first; PROOFS are supporting evidence
+  for the reply, best read just before the model composes. If
+  this turns out to under-weight proofs in practice (the model
+  defaults to citing baseline numbers over quotes), the right
+  fix is to move PROOFS earlier or to bold the instruction in
+  the section header — both are one-line edits.
 
 ### Verification (what was checked)
 
-- All file reads + edits applied via Edit / Write tools; no
-  Bash builds run (sandboxed Linux environment, no Xcode
-  toolchain).
-- `grep` after the CoachContextBuilder edit confirmed the new
-  `followUpSuggestions`, `FollowUpTopic`, `detectFollowUpTopic`,
-  `followUpChips`, and the six topic-specific catalogue helpers
-  (`drillFollowUps`, `pauseFollowUps`, `paceFollowUps`,
-  `fillerFollowUps`, `weeklyFollowUps`, `genericFollowUps`) land
-  exactly once in the file.
-- AskNoumView.swift wiring traced end-to-end: ScrollView mount
-  spot → `followUpChips` accessor → `followUpRow(chips:)` view
-  → `send(chip)` invocation → existing store.appendUserTurn
-  path → existing runReply path. No new state owners introduced.
-- Test block follows the existing `CoachContextBuilderTests`
-  rhythm (struct member, no new file, no new target). Coverage
-  invariant test guards against future voice / topic adds
-  drifting out of the catalogue.
-- `FlowLayout` symbol confirmed visible in the same Noum target
-  via the existing `AIWeeklyInsightCard.swift:344` definition —
-  cross-file usage is legitimate, both files compile against
-  the same `Layout` protocol.
+- File reads + edits applied via Edit / Write tools; no Bash
+  builds run (sandboxed Linux environment, no Xcode toolchain).
+- `grep` after each edit confirmed: (a) the new
+  `ProofMomentArchive.swift` file lands in `Noum/` (auto-included
+  by the `PBXFileSystemSynchronizedRootGroup` already configured
+  for that directory), (b) the new `recentProofs:` parameter
+  lands once in `CoachContextBuilder.userContext`, (c) the
+  AskNoumView call site uses `proofStore.recent(limit: 3)`, (d)
+  no other call site of `userContext` needs to change
+  (existing tests / consumers pick up the default `[]`).
+- Test struct rhythm matches existing `AskNoumStoreTests` (
+  `freshStore()` helper + UUID-suite UserDefaults + deterministic
+  account ID).
+- Sendability — `ProofMoment` (String / Date / Bool fields) and
+  `UUID` cross the actor → MainActor boundary cleanly. No new
+  closures, no class types added to the struct, so the boundary
+  is safe.
+- Brand voice — the only user-visible string is the PROOFS
+  section header inside the system prompt, which the user never
+  sees directly. The coach's *quotes* of the user's transcript
+  are verbatim by design (fabrication guard already in
+  `ProofMomentService.transcriptContains`).
 
 ### Risks
 
@@ -350,15 +341,18 @@ build or screenshot. The critical visual checks for QA:
 
 ## Files modified
 
-- `Noum/CoachContextBuilder.swift` (+~150 LOC — `followUpSuggestions`
-  API + `FollowUpTopic` enum + six voice × topic chip catalogues).
-- `Noum/AskNoumView.swift` (+~70 LOC — `followUpChips` accessor +
-  `followUpRow(chips:)` view-builder + chip row mount under the
-  most-recent coach reply).
-- `NoumTests/NoumTests.swift` (+~140 LOC — nine new follow-up
-  tests inside `CoachContextBuilderTests`).
+- `Noum/ProofMomentArchive.swift` (NEW, ~155 LOC — `ProofMomentRecord`
+  struct + `ProofMomentStore` ObservableObject + persistence).
+- `Noum/ProofMomentService.swift` (+~30 LOC — six MainActor hops
+  + new `persistToArchive` helper).
+- `Noum/CoachContextBuilder.swift` (+~25 LOC — new optional
+  `recentProofs:` param + PROOFS section renderer).
+- `Noum/AskNoumView.swift` (+2 LOC — `@StateObject` for the new
+  store + `recentProofs:` argument on the context call).
+- `NoumTests/NoumTests.swift` (+~320 LOC — `ProofMomentArchiveTests`
+  + `CoachContextBuilderProofTests`).
 - `docs/CURRENT_STATE.md` (trail-of-breadcrumbs entry + Ask Noum
-  section sub-bullet).
+  section bullet).
 - `HANDOFF.md` (rewritten — this file).
 
 ## Branch

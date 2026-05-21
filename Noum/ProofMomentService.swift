@@ -117,7 +117,10 @@ actor ProofMomentService {
         // M13: AI surfaces are English-only. Non-English locales get
         // the deterministic proof, no model call.
         guard await activeLocaleSupportsAI() else {
-            if let fallback = fallback { cache[input.session.id] = fallback }
+            if let fallback = fallback {
+                cache[input.session.id] = fallback
+                await persistToArchive(fallback, sessionID: input.session.id)
+            }
             return fallback
         }
 
@@ -125,7 +128,10 @@ actor ProofMomentService {
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
         else {
-            if let fallback = fallback { cache[input.session.id] = fallback }
+            if let fallback = fallback {
+                cache[input.session.id] = fallback
+                await persistToArchive(fallback, sessionID: input.session.id)
+            }
             return fallback
         }
 
@@ -145,7 +151,10 @@ actor ProofMomentService {
             case .gemini:
                 request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
             case .none:
-                if let fallback = fallback { cache[input.session.id] = fallback }
+                if let fallback = fallback {
+                    cache[input.session.id] = fallback
+                    await persistToArchive(fallback, sessionID: input.session.id)
+                }
                 return fallback
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -154,15 +163,32 @@ actor ProofMomentService {
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
                   let parsed = Self.parse(data: data, provider: provider, input: input)
             else {
-                if let fallback = fallback { cache[input.session.id] = fallback }
+                if let fallback = fallback {
+                    cache[input.session.id] = fallback
+                    await persistToArchive(fallback, sessionID: input.session.id)
+                }
                 return fallback
             }
             cache[input.session.id] = parsed
+            await persistToArchive(parsed, sessionID: input.session.id)
             return parsed
         } catch {
-            if let fallback = fallback { cache[input.session.id] = fallback }
+            if let fallback = fallback {
+                cache[input.session.id] = fallback
+                await persistToArchive(fallback, sessionID: input.session.id)
+            }
             return fallback
         }
+    }
+
+    /// Persist a generated proof to the per-account archive so the Ask
+    /// Noum coach can quote the user's actual past words on later turns.
+    /// Hops to MainActor — the archive is `@MainActor` to stay SwiftUI-
+    /// safe for the upcoming Profile library card. Best-effort: a save
+    /// failure never blocks the proof from reaching the calling UI.
+    @MainActor
+    private func persistToArchive(_ proof: ProofMoment, sessionID: UUID) {
+        ProofMomentStore.shared.record(proof, for: sessionID)
     }
 
     /// Invalidate the cached proof for a session — call when a user
