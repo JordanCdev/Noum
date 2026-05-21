@@ -6353,3 +6353,661 @@ struct HomeSignalGateTests {
         #expect(count == 2)
     }
 }
+
+// MARK: - Home discipline augmentation (M15 Phase 4 edge cases)
+
+/// Edge cases on top of `HomeSignalGateTests`. The phase commit landed
+/// the happy-path coverage; these pin the contract at the corners where
+/// a future refactor is most likely to silently regress:
+///   • Override beats every signal-derived flag (not just when signals
+///     are zero) — a returning power-user with full signal must still
+///     get `.allVisible` exactly.
+///   • Empty-week boundary: `sessionsInCurrentISOWeek` on an empty
+///     date list must return 0 (defensive against optionals collapsing
+///     to `[]`).
+///   • Floor cards never depend on signal — re-asserted explicitly so a
+///     refactor that wires `coachCard` to a session threshold can't
+///     slip through.
+@MainActor
+struct HomeSignalGateEdgeTests {
+
+    @Test func overrideWinsEvenWhenSignalsAlreadyTrue() {
+        // Returning user with rich signal flips the toggle on. The
+        // override path should still hand back the canonical
+        // `.allVisible` value identically, so call sites that compare
+        // against `.allVisible` to short-circuit downstream gating stay
+        // correct.
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 50,
+            sessionsThisWeekCount: 12,
+            hasUnlockedPathNode: true,
+            hasCoachingProfile: true,
+            showAllOverride: true
+        )
+        #expect(gate == .allVisible)
+    }
+
+    @Test func emptyDateListReturnsZeroForCurrentWeek() {
+        // Defensive: callers will pass `sessionStore.sessions.map(\.date)`
+        // — that array is empty for fresh installs. Must not crash, must
+        // not surface a non-zero count.
+        let count = HomeSignalGate.sessionsInCurrentISOWeek(
+            sessionDates: [],
+            now: Date()
+        )
+        #expect(count == 0)
+    }
+
+    @Test func floorCardsNeverDependOnSignal() {
+        // Coach + UtilityStrip + AskNoum promo are the cold-start floor.
+        // Re-asserted as a separate contract because they're the only
+        // three cards the cold-start home shows, and a future "hide
+        // everything until session 1" refactor would silently break
+        // the empty-state read.
+        for sessions in [0, 1, 5, 25] {
+            let gate = HomeSignalGate.evaluate(
+                sessionCount: sessions,
+                sessionsThisWeekCount: 0,
+                hasUnlockedPathNode: false,
+                hasCoachingProfile: false,
+                showAllOverride: false
+            )
+            #expect(gate.coachCard, "coachCard must be true at \(sessions) sessions")
+            #expect(gate.utilityStrip, "utilityStrip must be true at \(sessions) sessions")
+            #expect(gate.askNoumPromo, "askNoumPromo must be true at \(sessions) sessions")
+        }
+    }
+
+    @Test func journeyUnlockSatisfiedByEitherCondition() {
+        // OR contract: either an unlocked path node OR a captured voice
+        // goal is enough on its own. Re-stated separately from
+        // `goalSetStateUnlocksJourney` / `unlockedPathNodeUnlocksJourney`
+        // so a refactor that accidentally tightens it to `AND` fails
+        // the contract regardless of which leg gets dropped first.
+        let pathOnly = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: true,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(pathOnly.journey)
+
+        let goalOnly = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false
+        )
+        #expect(goalOnly.journey)
+
+        let neither = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(!neither.journey, "Journey must stay gated when neither leg is satisfied")
+    }
+
+    @Test func weeklyInsightStaysGatedAtTwoSessions() {
+        // `aiWeeklyInsight` opens at 3 sessions in the current ISO week.
+        // Tests the lower side of the threshold so a future `>= 2` typo
+        // gets caught.
+        let twoSessions = HomeSignalGate.evaluate(
+            sessionCount: 12,
+            sessionsThisWeekCount: 2,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(!twoSessions.aiWeeklyInsight, "Two sessions this week should not unlock the AI Weekly Insight card")
+
+        let threeSessions = HomeSignalGate.evaluate(
+            sessionCount: 12,
+            sessionsThisWeekCount: 3,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(threeSessions.aiWeeklyInsight)
+    }
+}
+
+// MARK: - Insights banked chip (M15 Phase 5)
+//
+// Phase 5 surfaces `ProofMomentStore.shared.records` as a quiet ambient
+// signal on Profile + Ask Noum. The two surfaces share the same shape:
+//   • Hidden entirely when the archive is empty (no "0 insights" copy,
+//     no "you lost your streak" loss-aversion — VISION.md anti-goal #2).
+//   • Pluralisation: "1 insight" (singular), otherwise "N insights".
+//   • Most-recent recency uses whole-day granularity matching the
+//     SummaryView / HomeCoachCard idiom: "today" / "1d ago" / "Nd ago".
+//
+// The Profile and AskNoum view helpers that compute this are `private`,
+// so these tests pin the contract by re-implementing the exact formula
+// the production code uses. If the production helper drifts, the chip
+// will visibly disagree with this contract in QA — and a later
+// re-promotion of the helper to `internal` will let us swap to direct
+// calls without changing the assertions.
+
+@MainActor
+struct InsightsBankedChipTests {
+
+    private func proof(daysAgo: Int) -> ProofMoment {
+        let sessionDate = Calendar.current.date(
+            byAdding: .day, value: -daysAgo, to: Date()
+        ) ?? Date()
+        return ProofMoment(
+            quote: "Sample quote \(daysAgo).",
+            technique: "Power Pause",
+            claim: "",
+            sessionDate: sessionDate,
+            isAIBacked: false,
+            generatedAt: Date()
+        )
+    }
+
+    /// Mirror of ProfileView's `mostRecentInsightRecency`. The production
+    /// helper is private; this is the contract it must satisfy.
+    private func recency(forMostRecentSessionDate date: Date) -> String {
+        let cal = Calendar.current
+        let days = cal.dateComponents(
+            [.day],
+            from: cal.startOfDay(for: date),
+            to: cal.startOfDay(for: Date())
+        ).day ?? 0
+        switch days {
+        case ..<1: return "today"
+        case 1: return "1d ago"
+        default: return "\(days)d ago"
+        }
+    }
+
+    /// Mirror of the pluralisation rule shared by Profile + AskNoum.
+    private func noun(for count: Int) -> String {
+        count == 1 ? "insight" : "insights"
+    }
+
+    @Test func nounSingularAtOne() {
+        #expect(noun(for: 1) == "insight")
+    }
+
+    @Test func nounPluralAtZeroAndAboveOne() {
+        // Zero matters even though the chip is hidden at zero — the
+        // copy still has to read correctly if it ever does render
+        // (e.g. a future "0 banked, your first rep starts the count"
+        // empty-state experiment).
+        #expect(noun(for: 0) == "insights")
+        #expect(noun(for: 2) == "insights")
+        #expect(noun(for: 99) == "insights")
+    }
+
+    @Test func recencyReadsAsTodayForSameCalendarDay() {
+        // Same calendar day — `days == 0` falls into the `..<1` arm.
+        let now = Date()
+        #expect(recency(forMostRecentSessionDate: now) == "today")
+    }
+
+    @Test func recencyReadsAsOneDayAgoForYesterday() {
+        let yesterday = Calendar.current.date(
+            byAdding: .day, value: -1, to: Date()
+        )!
+        #expect(recency(forMostRecentSessionDate: yesterday) == "1d ago")
+    }
+
+    @Test func recencyReadsAsDaysAgoForOlderDates() {
+        let threeDaysAgo = Calendar.current.date(
+            byAdding: .day, value: -3, to: Date()
+        )!
+        let twoWeeksAgo = Calendar.current.date(
+            byAdding: .day, value: -14, to: Date()
+        )!
+        #expect(recency(forMostRecentSessionDate: threeDaysAgo) == "3d ago")
+        #expect(recency(forMostRecentSessionDate: twoWeeksAgo) == "14d ago")
+    }
+
+    @Test func chipHiddenWhenArchiveIsEmpty() {
+        // Locks the "no streak loop" anti-goal. The chip composition
+        // hinges on `count > 0`; emptyArchive must not render at all.
+        let store = ProofMomentStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            accountIDProvider: { "chip-empty" }
+        )
+        #expect(store.records.isEmpty)
+        // The view layer guards with `if count > 0`. Asserting on the
+        // store itself is the layer-of-record check — if the archive is
+        // empty the chip cannot render.
+        let count = store.records.count
+        #expect(count == 0, "Empty archive must yield zero count so the chip stays hidden")
+    }
+
+    @Test func chipRendersOldestSessionRecencyForOnlyRecord() {
+        // Single proof, three days old. The chip's "Most recent" arm
+        // must read the same session date back as recency input. Locks
+        // the ordering contract: the chip pulls `recent(limit: 1).first`
+        // which `ProofMomentStore` returns sorted by sessionDate desc —
+        // so for a single record the chip's recency == that record's
+        // session date.
+        let store = ProofMomentStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            accountIDProvider: { "chip-single" }
+        )
+        let onlyProof = proof(daysAgo: 3)
+        store.record(onlyProof, for: UUID())
+        let mostRecent = store.recent(limit: 1).first?.proof.sessionDate
+        #expect(mostRecent != nil)
+        if let mostRecent {
+            #expect(recency(forMostRecentSessionDate: mostRecent) == "3d ago")
+        }
+    }
+
+    @Test func chipPicksFreshestWhenMultipleRecordsExist() {
+        // Multiple proofs across ages — `recent(limit: 1).first` returns
+        // the freshest session. The chip's recency string must reflect
+        // that one, not the median or the oldest.
+        let store = ProofMomentStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            accountIDProvider: { "chip-multi" }
+        )
+        store.record(proof(daysAgo: 14), for: UUID())
+        store.record(proof(daysAgo: 1),  for: UUID())
+        store.record(proof(daysAgo: 7),  for: UUID())
+        let freshest = store.recent(limit: 1).first?.proof.sessionDate
+        #expect(freshest != nil)
+        if let freshest {
+            #expect(recency(forMostRecentSessionDate: freshest) == "1d ago")
+        }
+        #expect(store.records.count == 3)
+        #expect(noun(for: store.records.count) == "insights")
+    }
+}
+
+// MARK: - First-rep celebration fallback chain (M15 Phase 2)
+//
+// Phase 2 swaps the generic "duration + fillers" subtitle on the first-
+// rep celebration for a verbatim coach observation. The observation
+// flows through a two-stage fallback chain inside FirstRepCelebration:
+//
+//   ProofMomentService.proof(for:)      // canonical AI / template path
+//     ↳ if nil ↦ celebrationLocalProof  // celebration-only minimum
+//         ↳ pulls a 4-14 word slice via minimumVerbatimSlice
+//         ↳ frames it via quoteFramingCopy (voice × filler matrix)
+//
+// These helpers are the path most likely to break silently in
+// production — the AI path has its own tests over in
+// `ProofMomentServiceTests`, but the celebration-local fallback only
+// fires when the AI path returns nil (rep ≤8s, very sparse transcript)
+// and is the read every brand-new user gets on rep 1.
+//
+// The matrix of voices × filler-count buckets is large; rather than
+// asserting exact copy on every cell (which would be a maintenance
+// magnet), these tests assert tone-shape: each cell returns a non-empty
+// distinct string, the "claim wins if non-empty" precedence is locked,
+// and the per-voice register has a recognisable mark (e.g. authoritative
+// closes on a period, warm uses "felt" / "heard" / "honest", concise
+// stays brief). If a future copy edit drifts the register, the test
+// fails before QA reads it on-device.
+
+@MainActor
+struct FirstRepCelebrationFallbackTests {
+
+    // MARK: - minimumVerbatimSlice
+
+    @Test func sliceReturnsNilForEmptyTranscript() {
+        #expect(FirstRepCelebration.minimumVerbatimSlice(in: "") == nil)
+        #expect(FirstRepCelebration.minimumVerbatimSlice(in: "    ") == nil)
+    }
+
+    @Test func sliceReturnsNilForSingleWord() {
+        // <4 words is the floor — the slot stays empty and the
+        // celebration falls back to the duration+filler safety net.
+        #expect(FirstRepCelebration.minimumVerbatimSlice(in: "Hello") == nil)
+        #expect(FirstRepCelebration.minimumVerbatimSlice(in: "Hello there friend") == nil)
+    }
+
+    @Test func sliceReturnsFullPhraseAtExactlyFourWords() {
+        // Exactly the lower-bound. The whole phrase must come back —
+        // no truncation, no extra trimming.
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: "Three priorities this quarter")
+        #expect(slice == "Three priorities this quarter")
+    }
+
+    @Test func sliceReturnsFullPhraseAtExactlyFourteenWords() {
+        // Upper bound of the "return as-is" branch — fourteen words
+        // qualifies as still concise enough to render verbatim
+        // (boundary check: <=14 returns whole, 15+ trims to 12).
+        let fourteenWords = "I think the most important thing about leadership is empathy and authority every day"
+        #expect(FirstRepCelebration.wordCount(fourteenWords) == 14,
+                "Test fixture sanity — wordCount must be 14, got \(FirstRepCelebration.wordCount(fourteenWords))")
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: fourteenWords)
+        #expect(slice == fourteenWords,
+                "14-word transcript should return verbatim, got: \(slice ?? "nil")")
+    }
+
+    @Test func sliceTrimsAtFifteenWordsToTwelve() {
+        // Just-over-the-boundary check. 15 words triggers the trim
+        // path; the returned slice should be exactly 12 words.
+        let fifteenWords = "I think the most important thing about leadership is empathy and quiet authority every day"
+        #expect(FirstRepCelebration.wordCount(fifteenWords) == 15,
+                "Test fixture sanity — wordCount must be 15")
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: fifteenWords)
+        #expect(slice != nil)
+        if let slice {
+            #expect(FirstRepCelebration.wordCount(slice) == 12,
+                    "15-word input should trim to 12, got \(FirstRepCelebration.wordCount(slice))-word slice: \(slice)")
+        }
+    }
+
+    @Test func sliceTrimsLongerSentenceToTwelveWords() {
+        // Beyond fourteen words the slice trims to twelve via the
+        // raw-word window. Locks the "12-word window" magic number;
+        // a future refactor that drops it would silently expand the
+        // celebration quote.
+        let long = "This rep was one of those moments where I really wanted to nail the opening and not stumble out of the gate at all"
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: long)
+        #expect(slice != nil)
+        if let slice {
+            #expect(FirstRepCelebration.wordCount(slice) == 12,
+                    "Long sentence should trim to a 12-word window, got: \(slice)")
+            // First word must be preserved — the trim takes from the
+            // tail, not the head (otherwise the quote loses its opener).
+            #expect(slice.hasPrefix("This rep was"),
+                    "Trim window should retain the opener, got: \(slice)")
+        }
+    }
+
+    @Test func slicePunctuationHeavyPicksFirstQualifyingClause() {
+        // Sentence terminators split the transcript first. The first
+        // clause with ≥4 words wins — even if a later clause is shorter
+        // and "cleaner". Pins the deterministic ordering so two reps
+        // with the same opening don't yield different quotes.
+        let punctuationHeavy = "Hi! So the thing I want to talk about today is leadership. Then I'll cover trust."
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: punctuationHeavy)
+        #expect(slice != nil)
+        if let slice {
+            // First qualifying clause is the long "So the thing..." one.
+            #expect(slice.lowercased().contains("the thing"),
+                    "First clause with ≥4 words should win, got: \(slice)")
+            #expect(!slice.contains("!"),
+                    "Slice should not carry the terminator that split it")
+        }
+    }
+
+    @Test func sliceNormalisesSmartQuoteApostrophe() {
+        // U+2019 right-single-quote (Apple keyboard default) gets
+        // normalised to ASCII apostrophe so downstream verbatim-match
+        // checks (ProofMomentService.transcriptContains) don't reject
+        // the slice when the transcript happens to render with smart
+        // quotes.
+        let smartQuoted = "It\u{2019}s the moment that matters most"
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: smartQuoted)
+        #expect(slice != nil)
+        if let slice {
+            #expect(slice.contains("'"),
+                    "Smart-quote apostrophe should be normalised to ASCII apostrophe")
+            #expect(!slice.contains("\u{2019}"),
+                    "Smart-quote U+2019 should not survive normalisation")
+        }
+    }
+
+    @Test func sliceHandlesNewlinesAsWhitespace() {
+        // Transcript can arrive with line breaks (multi-paragraph
+        // transcription); these must not split the slice arbitrarily
+        // or leave embedded `\n` in the rendered quote.
+        let multiline = "First line of thought\nsecond line continuing the same idea"
+        let slice = FirstRepCelebration.minimumVerbatimSlice(in: multiline)
+        #expect(slice != nil)
+        if let slice {
+            #expect(!slice.contains("\n"),
+                    "Newlines should normalise to spaces, got: \(slice)")
+            #expect(FirstRepCelebration.wordCount(slice) >= 4)
+        }
+    }
+
+    // MARK: - wordCount
+
+    @Test func wordCountIgnoresExtraWhitespace() {
+        #expect(FirstRepCelebration.wordCount("") == 0)
+        #expect(FirstRepCelebration.wordCount("one") == 1)
+        #expect(FirstRepCelebration.wordCount("  one    two   ") == 2)
+        #expect(FirstRepCelebration.wordCount("a b c d e") == 5)
+    }
+
+    // MARK: - celebrationLocalProof
+
+    private func session(transcript: String, fillers: Int = 0, duration: TimeInterval = 30) -> PracticeSession {
+        PracticeSession(
+            transcript: transcript,
+            fillerWordCount: fillers,
+            duration: duration,
+            date: Date(),
+            mode: .timed,
+            pressureLevel: .standard
+        )
+    }
+
+    @Test func localProofIsNilWhenTranscriptIsEmpty() {
+        let proof = FirstRepCelebration.celebrationLocalProof(for: session(transcript: ""))
+        #expect(proof == nil)
+    }
+
+    @Test func localProofIsNilWhenTranscriptIsBelowFourWords() {
+        let proof = FirstRepCelebration.celebrationLocalProof(for: session(transcript: "Hello world there"))
+        #expect(proof == nil, "Sub-floor transcript should not produce a local proof")
+    }
+
+    @Test func localProofExtractsVerbatimAtFourWords() {
+        let proof = FirstRepCelebration.celebrationLocalProof(
+            for: session(transcript: "Three priorities this quarter")
+        )
+        #expect(proof != nil)
+        if let proof {
+            #expect(proof.quote == "Three priorities this quarter")
+            #expect(proof.claim.isEmpty,
+                    "Local-fallback proof must leave claim empty so quoteFramingCopy supplies the framing")
+            #expect(!proof.isAIBacked, "Celebration-local proof must never be marked AI-backed")
+            #expect(proof.technique == "First Read",
+                    "Celebration-local proof uses the dedicated 'First Read' technique label")
+        }
+    }
+
+    @Test func localProofCarriesSessionDateThrough() {
+        // The proof's `sessionDate` drives the chat-context ordering
+        // downstream; it must mirror the session it was extracted from
+        // (not the wall clock at extraction time).
+        let oldSession = PracticeSession(
+            transcript: "Three priorities this quarter",
+            fillerWordCount: 0,
+            duration: 30,
+            date: Date(timeIntervalSinceNow: -86_400 * 3),
+            mode: .timed,
+            pressureLevel: .standard
+        )
+        let proof = FirstRepCelebration.celebrationLocalProof(for: oldSession)
+        #expect(proof != nil)
+        if let proof {
+            #expect(proof.sessionDate == oldSession.date)
+        }
+    }
+
+    // MARK: - quoteFramingCopy — precedence
+
+    @Test func framingHonoursNonEmptyClaim() {
+        // If the service handed back a real claim string (AI path or
+        // templated fallback inside the canonical service), that copy
+        // was already voice-shaped — the framing must trust it and
+        // return it verbatim regardless of voice or filler count.
+        let claim = "Steady hold — composure reads as authority."
+        let result = FirstRepCelebration.quoteFramingCopy(
+            claim: claim,
+            fillerCount: 5,
+            voice: .warm
+        )
+        #expect(result == claim)
+    }
+
+    @Test func framingFallsThroughOnEmptyClaim() {
+        // Empty claim is the celebration-local path; the framing must
+        // produce a non-empty observation pulled from the voice × filler
+        // matrix, never echo the empty string.
+        for voice in SpeakingStyleGoal.allCases {
+            for fillers in [0, 1, 3] {
+                let result = FirstRepCelebration.quoteFramingCopy(
+                    claim: "",
+                    fillerCount: fillers,
+                    voice: voice
+                )
+                #expect(!result.isEmpty,
+                        "voice=\(voice), fillers=\(fillers) must return a non-empty observation")
+            }
+        }
+    }
+
+    // MARK: - quoteFramingCopy — voice × filler matrix coverage
+
+    @Test func framingCoversEveryVoiceFillerCellWithoutDuplicates() {
+        // Locks the "every voice has three distinct branches" contract:
+        // a 0-filler line, a 1-2-filler line, and a 3+ filler line. A
+        // refactor that accidentally collapses two branches into one
+        // (or copy-pastes the warm line into executive) would silently
+        // strip the per-voice register on rep 1.
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { $0 } + [nil]
+        for voice in voices {
+            let zero = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 0, voice: voice)
+            let oneOrTwo = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 1, voice: voice)
+            let many = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 4, voice: voice)
+            // All three branches non-empty
+            #expect(!zero.isEmpty)
+            #expect(!oneOrTwo.isEmpty)
+            #expect(!many.isEmpty)
+            // All three branches distinct — same string in two cells
+            // means a branch was lost.
+            #expect(zero != oneOrTwo, "voice=\(String(describing: voice)) 0 == 1-2 — branch collapsed")
+            #expect(oneOrTwo != many, "voice=\(String(describing: voice)) 1-2 == 3+ — branch collapsed")
+            #expect(zero != many, "voice=\(String(describing: voice)) 0 == 3+ — branch collapsed")
+        }
+    }
+
+    @Test func framingFillerBucketBoundaryAtTwo() {
+        // 2 fillers must use the 1-2 line; 3 must use the "3+" line.
+        // Pins the off-by-one. Tested on .none so we don't have to pick
+        // a particular voice arbitrarily.
+        let two = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 2, voice: .none)
+        let three = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 3, voice: .none)
+        // Reference values from the source: 2 ⇒ "A few fillers in the open..."
+        //                                    3 ⇒ "Fillers cluster early. The pause..."
+        #expect(two.contains("few fillers") || two.contains("tell"),
+                "fillerCount==2 should land on the 1-2 branch, got: \(two)")
+        #expect(three.contains("cluster") || three.contains("pause"),
+                "fillerCount==3 should land on the 3+ branch, got: \(three)")
+        #expect(two != three)
+    }
+
+    @Test func framingNoBranchUsesAnExclamation() {
+        // Brand rule + Phase 2 brief: the framing must read as
+        // observation, not as a cheerleader. No exclamation marks
+        // anywhere in the matrix.
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { $0 } + [nil]
+        for voice in voices {
+            for fillers in [0, 1, 2, 3, 4, 10] {
+                let result = FirstRepCelebration.quoteFramingCopy(
+                    claim: "", fillerCount: fillers, voice: voice
+                )
+                #expect(!result.contains("!"),
+                        "voice=\(String(describing: voice)) fillers=\(fillers) must not use an exclamation mark, got: \(result)")
+            }
+        }
+    }
+
+    @Test func framingAuthoritativeRegisterClosesOnDeclarative() {
+        // Authoritative register reads as a verdict — every cell ends
+        // with a period (no question marks, no soft endings). Holds
+        // the per-voice "shape" rule from the brief.
+        for fillers in [0, 1, 3] {
+            let result = FirstRepCelebration.quoteFramingCopy(
+                claim: "", fillerCount: fillers, voice: .authoritative
+            )
+            #expect(result.hasSuffix("."),
+                    "Authoritative voice should close declaratively, got: \(result)")
+            #expect(!result.contains("?"),
+                    "Authoritative voice should never use a question, got: \(result)")
+        }
+    }
+
+    @Test func framingWarmRegisterCarriesEmpathyMarkers() {
+        // Warm register: at least one branch must use one of the
+        // empathy verbs ("felt" / "heard" / "honest" / "calm"). This
+        // is the cell-level register check — a copy refactor that
+        // strips all empathy markers would land flat to the user.
+        let resultsByFillers = [
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 0, voice: .warm),
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 1, voice: .warm),
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 4, voice: .warm),
+        ]
+        let combined = resultsByFillers.joined(separator: " ").lowercased()
+        let empathyMarkers = ["felt", "heard", "honest", "calm", "feels"]
+        let hit = empathyMarkers.contains { combined.contains($0) }
+        #expect(hit,
+                "Warm voice should carry at least one empathy marker across its branches, got: \(combined)")
+    }
+
+    @Test func framingConciseRegisterStaysBrief() {
+        // Concise register: every cell stays under ~80 chars. A long
+        // line in the concise voice breaks the brand promise of the
+        // setting. Soft cap chosen to match the existing
+        // PracticeModeExpansionCopy ~80-char rule.
+        for fillers in [0, 1, 3] {
+            let result = FirstRepCelebration.quoteFramingCopy(
+                claim: "", fillerCount: fillers, voice: .concise
+            )
+            #expect(result.count <= 80,
+                    "Concise voice should stay terse (≤80 chars), got \(result.count): \(result)")
+        }
+    }
+
+    @Test func framingExecutiveRegisterCarriesBriefingMarkers() {
+        // Executive register: at least one branch uses a briefing /
+        // recommendation marker ("Recommend" / "Brief" / "signal").
+        let combined = [
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 0, voice: .executive),
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 1, voice: .executive),
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 4, voice: .executive),
+        ].joined(separator: " ").lowercased()
+        let hit = ["recommend", "brief", "signal", "composed"].contains { combined.contains($0) }
+        #expect(hit,
+                "Executive voice should carry a briefing marker across its branches, got: \(combined)")
+    }
+
+    @Test func framingStorytellingRegisterCarriesNarrativeMarkers() {
+        // Storytelling register: scene / arc / line / page narrative
+        // markers — anything that gestures at a craft vocabulary.
+        let combined = [
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 0, voice: .storytelling),
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 1, voice: .storytelling),
+            FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 4, voice: .storytelling),
+        ].joined(separator: " ").lowercased()
+        let hit = ["scene", "arc", "story", "page", "draft", "breath"].contains { combined.contains($0) }
+        #expect(hit,
+                "Storytelling voice should gesture at narrative craft across its branches, got: \(combined)")
+    }
+
+    @Test func framingNilVoiceFallsBackToNeutralObservation() {
+        // nil voice = user hasn't set a SpeakingStyleGoal. The framing
+        // must still produce on-brand observation copy (no per-voice
+        // adornments leak into the neutral line).
+        let zero = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 0, voice: nil)
+        let many = FirstRepCelebration.quoteFramingCopy(claim: "", fillerCount: 4, voice: nil)
+        #expect(!zero.isEmpty)
+        #expect(!many.isEmpty)
+        // Neutral line must not borrow per-voice register markers that
+        // would tip a user about a voice they haven't set.
+        #expect(!zero.lowercased().contains("recommend"),
+                "Neutral voice should not borrow executive register, got: \(zero)")
+        #expect(!many.lowercased().contains("story breath"),
+                "Neutral voice should not borrow storytelling register, got: \(many)")
+    }
+}
+

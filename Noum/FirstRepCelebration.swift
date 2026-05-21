@@ -443,7 +443,7 @@ struct FirstRepCelebration: View {
     /// observation. Never persisted to the proof archive — that store
     /// keeps "real" proofs only; celebration-local quotes are surface-
     /// only so Ask Noum never quotes a low-evidence rep 1 weeks later.
-    private static func celebrationLocalProof(for session: PracticeSession) -> ProofMoment? {
+    static func celebrationLocalProof(for session: PracticeSession) -> ProofMoment? {
         let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return nil }
         guard let slice = minimumVerbatimSlice(in: transcript) else { return nil }
@@ -461,7 +461,7 @@ struct FirstRepCelebration: View {
     /// clauses split on sentence terminators, then comma, then a raw
     /// word window. Returns nil only if the transcript has fewer than
     /// four words.
-    private static func minimumVerbatimSlice(in transcript: String) -> String? {
+    static func minimumVerbatimSlice(in transcript: String) -> String? {
         let cleaned = transcript
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\u{2019}", with: "'")
@@ -479,7 +479,7 @@ struct FirstRepCelebration: View {
         return allWords.prefix(min(12, allWords.count)).joined(separator: " ")
     }
 
-    private static func wordCount(_ s: String) -> Int {
+    static func wordCount(_ s: String) -> Int {
         s.components(separatedBy: .whitespaces).filter { !$0.isEmpty }.count
     }
 
@@ -497,38 +497,54 @@ struct FirstRepCelebration: View {
     ///     as composure, a small handful as a tell-not-a-habit, more as
     ///     "the moment surprised you." Never lectures. Never punishes.
     private func quoteFraming(proof: ProofMoment, voice: SpeakingStyleGoal?) -> String {
-        if !proof.claim.isEmpty {
-            return proof.claim
+        Self.quoteFramingCopy(
+            claim: proof.claim,
+            fillerCount: session.fillerWordCount,
+            voice: voice
+        )
+    }
+
+    /// Pure copy resolver for the quote framing line. Pulled out of the
+    /// instance method so unit tests can pin the per-voice × per-filler
+    /// matrix without instantiating a View. Behaviour is verbatim from
+    /// the original `quoteFraming` implementation — same branches, same
+    /// strings, same precedence ("if claim is set, trust it").
+    static func quoteFramingCopy(
+        claim: String,
+        fillerCount: Int,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        if !claim.isEmpty {
+            return claim
         }
-        let fillers = session.fillerWordCount
         switch voice {
         case .authoritative:
-            if fillers == 0 { return "Clean line, first time out. That's authority showing up early." }
-            if fillers <= 2 { return "A couple of fillers in your opener. That's a tell, not a habit yet." }
+            if fillerCount == 0 { return "Clean line, first time out. That's authority showing up early." }
+            if fillerCount <= 2 { return "A couple of fillers in your opener. That's a tell, not a habit yet." }
             return "Fillers cluster early when the moment matters. We work the pause next."
         case .warm:
-            if fillers == 0 { return "Calm and unhurried on the first try. The listener feels that." }
-            if fillers <= 2 { return "Heard the hesitation — feels like the moment caught you a little." }
+            if fillerCount == 0 { return "Calm and unhurried on the first try. The listener feels that." }
+            if fillerCount <= 2 { return "Heard the hesitation — feels like the moment caught you a little." }
             return "First reps surprise everyone. The hesitation is honest, and it's workable."
         case .concise:
-            if fillers == 0 { return "Clean. No filler. That's the baseline to hold." }
-            if fillers <= 2 { return "Small fillers, big tell. The fix is one pause, not less talking." }
+            if fillerCount == 0 { return "Clean. No filler. That's the baseline to hold." }
+            if fillerCount <= 2 { return "Small fillers, big tell. The fix is one pause, not less talking." }
             return "Fillers cluster. Pause is the trim move."
         case .persuasive:
-            if fillers == 0 { return "A direct opener, no softeners. That's how a case starts." }
-            if fillers <= 2 { return "Fillers leak conviction. Yours are minor — the line still lands." }
+            if fillerCount == 0 { return "A direct opener, no softeners. That's how a case starts." }
+            if fillerCount <= 2 { return "Fillers leak conviction. Yours are minor — the line still lands." }
             return "Hesitation reads as uncertainty. A short pause buys back the same beat with weight."
         case .executive:
-            if fillers == 0 { return "Composed delivery on rep one. Recommend: hold that register." }
-            if fillers <= 2 { return "Light fillers in the open. Brief read: a tell to track, not yet a pattern." }
+            if fillerCount == 0 { return "Composed delivery on rep one. Recommend: hold that register." }
+            if fillerCount <= 2 { return "Light fillers in the open. Brief read: a tell to track, not yet a pattern." }
             return "Fillers signal warm-up time. We bake in a pre-rep beat next."
         case .storytelling:
-            if fillers == 0 { return "You set the scene clean, no scaffolding. That's a story breath." }
-            if fillers <= 2 { return "The opener wobbled, then steadied. That's the arc of a first read." }
+            if fillerCount == 0 { return "You set the scene clean, no scaffolding. That's a story breath." }
+            if fillerCount <= 2 { return "The opener wobbled, then steadied. That's the arc of a first read." }
             return "First reads are draft pages. The line is there — the silences around it are next."
         case .none:
-            if fillers == 0 { return "Clean first line. That's the starting baseline." }
-            if fillers <= 2 { return "A few fillers in the open. That's a tell, not a habit yet." }
+            if fillerCount == 0 { return "Clean first line. That's the starting baseline." }
+            if fillerCount <= 2 { return "A few fillers in the open. That's a tell, not a habit yet." }
             return "Fillers cluster early. The pause is the move we work on next."
         }
     }
