@@ -1,26 +1,131 @@
 ---
 name: noum-orchestrator
-description: Runs 2-4 Noum parallel agents end-to-end with zero user babysitting. Default path spawns background sub-agents via the Agent tool (`isolation: "worktree"`, `run_in_background: true`), monitors them, and integrates their results sequentially when they finish. Reads docs/M15_handoff.md for phase briefs; carries the architectural layer + file-ownership map internally; pre-writes per-worktree permission settings so agents auto-approve safe ops. Trigger for any 2+ concurrent agent run on this 78k-LoC iOS codebase.
+description: Runs 2-5 Noum parallel agents end-to-end via Claude Code Agent Teams (https://code.claude.com/docs/en/agent-teams). Spawns the team in this session, pre-stages each worktree with gitignored build plists + safe-op permission settings, monitors task completion via the shared task list, and integrates results sequentially. Reads docs/M15_handoff.md for phase briefs; carries the architectural layer + file-ownership map internally. Trigger for any 2+ concurrent agent run on this 78k-LoC iOS codebase.
 ---
 
 # noum-orchestrator
 
-When the user wants to run 2 or more Claude agents concurrently on Noum, this skill **does the orchestration itself**: decomposes the work into isolated tracks, spawns background sub-agents that won't step on each other, monitors them, and integrates the results sequentially. The user sits back.
+This skill runs 2-5 parallel Claude Code agents on Noum using the official **Agent Teams** mechanism (Claude Code v2.1.32+). The user sits back; the lead session (you) creates the team, the teammates work concurrently in their own worktrees with their own context windows, and you integrate when they finish.
 
-## Default path — full automation (recommended)
+Reference: `https://code.claude.com/docs/en/agent-teams`
 
-The default behaviour is "I do it all":
+## Default path — Agent Teams
 
-1. **You** (orchestrator agent, this skill) decompose into 2-4 tracks per the architectural layer map below.
-2. **You** create the worktrees + write per-worktree `.claude/settings.local.json` so the sub-agents auto-approve safe ops (file writes inside the worktree, xcodebuild, git read commands) and refuse risky ops (push, commit, reset --hard, rm -rf, brew/npm).
-3. **You** spawn each track as a background sub-agent via `Agent(isolation: "worktree", run_in_background: true, prompt: <self-contained brief>)`.
-4. **You** receive completion notifications, run the sequential merge plan in your own (main) worktree, push when greenlit.
+### Prerequisite — enable the feature flag
 
-The user only has to confirm scope at Step 1 and authorise the final push.
+Agent Teams is experimental and gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. Check first:
 
-## Fallback path — produce static bundles only
+```bash
+echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-unset}"
+```
 
-If the user explicitly asks for "give me the bundles, I'll run them myself" — or if `Agent` tool isn't available (rare) — fall back to producing static worker bundles + a bash bootstrap + a merge plan. They open terminal tabs, paste prompts, ferry results back. Use this only when explicitly requested; it's strictly worse than the default.
+If unset, write it into `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+```
+
+The user has to restart their `claude` session for the env var to take effect. Tell them.
+
+### Step 1 — Pre-stage worktrees (you do this in your main session)
+
+For each track, create a locked worktree and copy the gitignored build-required plists in. These are **all four** of them — missing any causes a build or runtime crash:
+
+```bash
+set -e
+cd /Users/jordan/src/GitHub/Noum
+BASE=$(git rev-parse Redesign)
+
+for slug in <slug-1> <slug-2>; do
+  git worktree add --lock .claude/worktrees/agent-$slug -b agent-$slug "$BASE"
+  for plist in Info.plist GoogleService-Info.plist AIConfig.plist BackendConfig.plist; do
+    cp Noum/$plist .claude/worktrees/agent-$slug/Noum/$plist
+  done
+done
+```
+
+**Why all four:**
+- `Info.plist` — main app plist; without it, `xcodebuild` fails at the Plist phase
+- `GoogleService-Info.plist` — Firebase config; without it, `+[FIRApp configure]` throws and the test sim crashes on launch (SIGABRT in FirebaseBootstrap)
+- `AIConfig.plist` — AI provider API keys; without it, AI surfaces silently fall through to template fallback (the agent thinks it works but AI-backed paths are dead)
+- `BackendConfig.plist` — backend endpoints; without it, optional backend sync fails silently
+
+Mention all four in every prompt so the agent can re-copy if a clean-build wiped them.
+
+### Step 2 — Write per-worktree permission settings
+
+For each worktree, write `.claude/settings.local.json` so teammates auto-approve safe operations and refuse risky ones. **This step is mandatory** — without it teammates pause on every Write and the user babysits.
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "Glob", "Grep",
+      "Bash(xcodebuild *)",
+      "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
+      "Bash(git show*)", "Bash(git add*)",
+      "Bash(grep *)", "Bash(find *)", "Bash(ls *)",
+      "Bash(cat *)", "Bash(wc *)", "Bash(echo *)",
+      "Bash(xcrun simctl list*)", "Bash(xcrun simctl boot*)",
+      "Bash(xcrun xcresulttool *)",
+      "Bash(cp *)", "Bash(mkdir *)"
+    ],
+    "deny": [
+      "Bash(git push*)", "Bash(git commit*)",
+      "Bash(git reset --hard*)", "Bash(git checkout *)",
+      "Bash(rm -rf*)", "Bash(npm *)", "Bash(brew *)"
+    ]
+  }
+}
+```
+
+### Step 3 — Spawn the team
+
+You, the lead, request the team in natural language. Don't fabricate teammate names mid-thought; assign predictable names you can reference later. Example for M15 Phases 3 + 4:
+
+> Create an agent team with 2 teammates, one named `phase3` and one named `phase4`.
+>
+> **phase3** works in `/Users/jordan/src/GitHub/Noum/.claude/worktrees/agent-m15-phase3`. Their task: M15 Phase 3 — Mode literacy. Brief is in `docs/M15_handoff.md` § "Phase 3". They own `Noum/PracticeModeSelectionView.swift`. Touch `NoumTests/NoumTests.swift` to append a `PracticeModeRowExpansionTests` struct. Forbidden: every other file. Build with `-derivedDataPath .build`. Stage but do not commit. Report Implemented / Partially / Blocked / Assumptions / Verification / Risks at the end.
+>
+> **phase4** works in `/Users/jordan/src/GitHub/Noum/.claude/worktrees/agent-m15-phase4`. Their task: M15 Phase 4 — Home discipline. Brief in `docs/M15_handoff.md` § "Phase 4". They own `Noum/HomeSignalGate.swift` (create). Touch `Noum/ContentView.swift` (home block only, single track this session), `Noum/SettingsView.swift` (one toggle), `NoumTests/NoumTests.swift` (append `HomeSignalGateTests`). Forbidden: all other connective-tissue files. Same build + report contract as phase3.
+>
+> Use Sonnet for both teammates. Do not require plan approval — both phases are concrete and pre-briefed. Wait for both to finish before any synthesis.
+
+The team config lands in `~/.claude/teams/<team-name>/config.json` and tasks in `~/.claude/tasks/<team-name>/`. Both auto-managed; do not edit by hand.
+
+### Step 4 — Monitor (passive)
+
+The team's shared task list shows progress. Press **Shift+Down** to cycle teammates in in-process mode. Press **Ctrl+T** to toggle the task list. Teammates auto-notify you when idle.
+
+Do NOT pre-emptively poll or check on them — the runtime delivers messages automatically. Just sit until they report done.
+
+### Step 5 — Integrate on completion
+
+When all teammates have completed their tasks:
+
+1. `cd /Users/jordan/src/GitHub/Noum`
+2. Confirm `git status` clean on `Redesign`.
+3. For each teammate in spawn order:
+   - `git -C .claude/worktrees/agent-<slug> status` — see staged work
+   - `git -C .claude/worktrees/agent-<slug> commit -m "<phase title>"` — make the commit in the worktree
+   - `git cherry-pick agent-<slug>` from main worktree
+   - Resolve `NoumTests/NoumTests.swift` conflict if any (keep both sides of `<<<<<<<` — independent test structs)
+   - `xcodebuild build -derivedDataPath .build` → green
+4. Update `docs/CURRENT_STATE.md` in one final commit summarising all phases
+5. **Clean up the team:** tell the lead "Clean up the team" — this removes shared resources. Then:
+   - `git worktree unlock .claude/worktrees/agent-<slug>`
+   - `git worktree remove --force .claude/worktrees/agent-<slug>`
+   - `git branch -d agent-<slug>` (`-d` not `-D`; should succeed)
+6. **STOP** and ask the user to authorise `git push origin Redesign`. Don't push unprompted — even at the end of a clean orchestration.
+
+## Fallback path — static bundles only
+
+When the Agent Teams feature flag is off and the user doesn't want to enable it, OR when running pre-v2.1.32 Claude Code, fall back to producing copy-pasteable worker bundles + a bash bootstrap script + a merge plan. They open separate terminal tabs, paste prompts, ferry results back. Strictly worse than the Agent Teams path. Use only when explicitly requested.
 
 ## Invocation
 
@@ -129,173 +234,45 @@ When splitting a new feature (not an M15 phase), reach for these shapes first.
 
 ---
 
-## How the skill runs
+## Writing the isolated prompt (used by both default and fallback paths)
 
-### Step 1 — Confirm scope
-Echo: "Splitting `<input>` into `<N>` parallel tracks. Each track owns a worktree at `.claude/worktrees/agent-<slug>/`, branch `agent-<slug>`. Final integration is sequential rebase into `Redesign`."
+Whether you're spawning teammates via Agent Teams (default) or producing static bundles (fallback), each track's prompt body must include:
 
-If the user gave a feature description (not phase numbers), do the architectural breakdown — pick 2–4 of the templates above, name each track.
+1. **CLAUDE.md mandate.** "Follow the response structure: Scope / Product goal / Existing patterns / Root causes / Risks / Plan before any implementation. Verification output: Implemented / Partially / Blocked / Assumptions / Verification / Risks before final."
+2. **Goal in one paragraph** — quoted directly from the corresponding phase in `docs/M15_handoff.md`. Don't paraphrase.
+3. **File paths with line numbers** — pulled from the phase brief.
+4. **What NOT to change** — the `Forbidden:` list. "If you find you need to touch a Forbidden file, stop and report. Do not silently expand scope."
+5. **Brand voice reminder.** "Coach voice: direct, second person, no chirpy filler, no exclamation marks, no emoji. See `.claude/skills/noum-design/SKILL.md`."
+6. **Worktree hygiene.** "If `Noum/Info.plist`, `Noum/GoogleService-Info.plist`, `Noum/AIConfig.plist`, or `Noum/BackendConfig.plist` is missing, re-copy: `for f in Info.plist GoogleService-Info.plist AIConfig.plist BackendConfig.plist; do cp /Users/jordan/src/GitHub/Noum/Noum/$f Noum/$f; done`."
+7. **Validation command.** "Run `xcodebuild build -project Noum.xcodeproj -scheme Noum -destination 'platform=iOS Simulator,id=BD2DE1AB-DAC7-4538-A5AD-BECC4D603C0E' -configuration Debug -derivedDataPath .build` before reporting complete."
+8. **Disposition.** "Stage changes but do not commit. Leave the worktree clean for human review + sequential rebase."
+9. **Verification stub.** "Before final response, provide the CLAUDE.md verification block."
 
-### Step 2 — Collision check
-For every pair of proposed tracks, verify the `Owns:` + `Touches:` sets don't overlap on a file in the layer-7 collision zone.
+## Collision check (always)
+
+For every pair of proposed tracks, verify the `Owns:` + `Touches:` sets don't overlap on a file in the layer-7 collision zone:
 
 - Two tracks both modifying `ContentView.swift` → **REJECT**. Merge one into the other or run serially.
 - Both modifying `NoumTests/NoumTests.swift` → **OK** (append-at-end; mechanical conflict resolution).
 - Both modifying `CURRENT_STATE.md` → **OK** (single final pass).
 - Both modifying `PracticeSupport.swift` → **REJECT** (`AppDestination` collisions).
 
-If the user has explicitly opted into a known-serial pair (e.g. M15 Phase 1b + Phase 2 per `docs/M15_handoff.md` § Sequencing recommendation), warn clearly before producing bundles. Don't refuse — they may know something the doc doesn't.
+If the user has explicitly opted into a known-serial pair (e.g. M15 Phase 1b + Phase 2 per `docs/M15_handoff.md` § Sequencing recommendation), warn clearly. Don't refuse — they may know something the doc doesn't.
 
-### Step 3 — Generate per-track bundles
+## Failure handling
 
-For each track, output a Markdown block with six fields:
+If any teammate fails (compile error, blocked on Forbidden file, model error):
 
-```markdown
-## Track <N>: <human-friendly title>
+- Read their final report. The agent should follow CLAUDE.md verification format — the `Blocked:` field tells you what stopped them.
+- If the failure is isolated, integrate the others and report the failed track separately to the user.
+- If the failure is structural (the orchestration plan was wrong), abort all in-flight integration and report.
 
-**Branch:** `agent-<slug>`
-**Worktree:** `.claude/worktrees/agent-<slug>`
-**Base:** `Redesign` at `<short SHA>` (current HEAD)
-
-**Owns (create):**
-- `Noum/<File>.swift` — <one-line purpose>
-
-**Touches (modify, single-track in this session):**
-- `Noum/<File>.swift` — <what changes>
-
-**Forbidden (other tracks own these):**
-- `Noum/<File>.swift`
-
-**Context files (read first):**
-- `CLAUDE.md`
-- `docs/VISION.md`
-- `docs/M15_handoff.md` § <relevant section, exact heading>
-- <specific Swift files the worker should study>
-
-**Isolated prompt** (drop into a fresh agent):
-
-> <self-contained 400–700 word brief — see Step 4>
-```
-
-### Step 4 — Write the isolated prompt
-
-Each prompt averages 400–700 words and must include:
-
-1. **CLAUDE.md mandate.** "Follow the response structure: Scope / Product goal / Existing patterns / Root causes / Risks / Plan before any implementation. Verification output: Implemented / Partially / Blocked / Assumptions / Verification / Risks before final."
-
-2. **Goal in one paragraph** — quoted directly from the corresponding phase in `docs/M15_handoff.md`. Don't paraphrase.
-
-3. **File paths with line numbers** — pulled from the phase brief.
-
-4. **What NOT to change** — the `Forbidden:` list. "If you find you need to touch a Forbidden file, stop and report. Do not silently expand scope."
-
-5. **Brand voice reminder.** "Coach voice: direct, second person, no chirpy filler, no exclamation marks, no emoji. See `.claude/skills/noum-design/SKILL.md`."
-
-6. **Worktree hygiene.** "Your worktree may be missing `Noum/Info.plist` (gitignored but required for `xcodebuild`). Copy it from the primary checkout: `cp /Users/jordan/src/GitHub/Noum/Noum/Info.plist <worktree>/Noum/Info.plist`."
-
-7. **Validation command.** "Run `xcodebuild build -project Noum.xcodeproj -scheme Noum -destination 'platform=iOS Simulator,id=BD2DE1AB-DAC7-4538-A5AD-BECC4D603C0E' -configuration Debug` before reporting complete."
-
-8. **Disposition.** "Stage changes but do not commit. Leave the worktree clean for human review + sequential rebase."
-
-9. **Verification stub.** "Before final response, provide the CLAUDE.md verification block."
-
-### Step 5 — Bootstrap worktrees (you, not the user)
-
-In the **default path**, you (the orchestrator) run these via the Bash tool yourself. The user does not paste anything.
-
-```bash
-set -e
-cd /Users/jordan/src/GitHub/Noum
-BASE=$(git rev-parse Redesign)
-
-# One worktree per track. --lock prevents accidental clobbering.
-git worktree add --lock .claude/worktrees/agent-<slug-1> -b agent-<slug-1> "$BASE"
-git worktree add --lock .claude/worktrees/agent-<slug-2> -b agent-<slug-2> "$BASE"
-
-# Copy gitignored-but-required Info.plist into each worktree so xcodebuild works.
-cp Noum/Info.plist .claude/worktrees/agent-<slug-1>/Noum/Info.plist
-cp Noum/Info.plist .claude/worktrees/agent-<slug-2>/Noum/Info.plist
-```
-
-### Step 5.5 — Write per-worktree permission settings (you, not the user)
-
-For each worktree, write `.claude/settings.local.json` so the sub-agent auto-approves safe operations and refuses risky ones. Without this, the sub-agent pauses on every file write and the user has to babysit — which defeats the orchestration. **This step is mandatory in the default path.**
-
-```json
-{
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "permissions": {
-    "allow": [
-      "Read", "Write", "Edit", "Glob", "Grep",
-      "Bash(xcodebuild *)",
-      "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
-      "Bash(git show*)", "Bash(git add*)",
-      "Bash(grep *)", "Bash(find *)", "Bash(ls *)",
-      "Bash(cat *)", "Bash(wc *)", "Bash(echo *)",
-      "Bash(xcrun simctl list*)", "Bash(xcrun simctl boot*)",
-      "Bash(cp *)", "Bash(mkdir *)"
-    ],
-    "deny": [
-      "Bash(git push*)", "Bash(git commit*)",
-      "Bash(git reset --hard*)", "Bash(git checkout *)",
-      "Bash(rm -rf*)", "Bash(npm *)", "Bash(brew *)"
-    ]
-  }
-}
-```
-
-The `allow` list covers everything a code-change track needs (reading, writing, editing, building, staging, sim inspection). The `deny` list blocks the four destructive operations the agent should never autonomously do (push, commit, hard reset, rm -rf) plus system-level installs (npm, brew). Anything not in either list still prompts the user — which is the right behaviour for genuinely-novel operations.
-
-### Step 5.75 — Spawn sub-agents (you, not the user)
-
-For each track, invoke:
-
-```
-Agent(
-  subagent_type: "general-purpose",
-  description: "<track title>",
-  isolation: "worktree",
-  run_in_background: true,
-  prompt: "<the self-contained brief from Step 4 — same as the static bundle's isolated prompt>"
-)
-```
-
-The `isolation: "worktree"` flag auto-creates a worktree if you didn't already in Step 5; if you DID, the sub-agent picks it up by branch name. The `run_in_background: true` returns control immediately and you get a notification when each finishes.
-
-Do NOT sleep, poll, or pre-emptively check. The runtime notifies you.
-
-### Step 6 — Integrate on completion (you, not the user)
-
-When the runtime notifies you that each sub-agent has completed, integrate sequentially in your main worktree:
-
-1. `cd /Users/jordan/src/GitHub/Noum`
-2. Confirm `git status` is clean on `Redesign`.
-3. For each completed track in spawn order:
-   - `git diff Redesign..agent-<slug>` — sanity-check the diff before applying
-   - The sub-agent leaves work staged but not committed (per its disposition contract). Either:
-     - Make the commit from the agent's worktree (`git -C <worktree> commit ...`) then cherry-pick into `Redesign`, OR
-     - Copy the staged files into the main worktree and commit there
-   - `xcodebuild build -derivedDataPath .build` → green before moving to the next track
-   - Resolve any conflict (`NoumTests/NoumTests.swift` is typical — keep both sides of every `<<<<<<<` since test structs are independent)
-4. Update `docs/CURRENT_STATE.md` in one final commit summarising all phases. Conflicts here are routine; you own the resolution.
-5. Cleanup:
-   - `git worktree unlock .claude/worktrees/agent-<slug>` (if locked)
-   - `git worktree remove --force .claude/worktrees/agent-<slug>`
-   - `git branch -d agent-<slug>` (`-d` not `-D` — should succeed since commits are on `Redesign`)
-6. **STOP.** Ask the user to authorise the push before running `git push origin Redesign`. The default-deny list on the worktrees blocks the sub-agent from pushing; the orchestrator should also defer to the user here. A push touches shared remote state — explicit greenlight required even at the end of a clean orchestration.
-
-### Step 7 — Failure handling
-
-If any sub-agent fails (compile error, blocked on Forbidden file, model error):
-
-- Read its final report. The agent should have followed CLAUDE.md verification format — the `Blocked:` field tells you exactly what stopped it.
-- If the failure is isolated (just that track), proceed with the others' integration and report the failed track separately to the user.
-- If the failure is structural (the orchestration plan was wrong), abort all in-flight cherry-picks and report.
-
-If a sub-agent expanded scope into a Forbidden file:
+If a teammate expanded scope into a Forbidden file:
 - `git -C <worktree> diff` to see what they touched outside their `Owns:`/`Touches:` set
-- Cherry-pick only the intended changes (`git checkout -p` or selective staging) and discard the rest
+- Selectively stage only the intended changes (`git checkout -p`) and discard the rest
 - Report the scope violation to the user so the next orchestration tightens the brief
+
+If the FIRApp.configure() / Firebase crash hits the test sim: `Noum/GoogleService-Info.plist` was missing from the worktree. Copy it in (and the other three plists), then have the agent retry `xcodebuild build`.
 
 ## Edge cases
 
