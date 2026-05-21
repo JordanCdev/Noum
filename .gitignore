@@ -38,3 +38,8 @@ PLAN.md
 .screenshots/**/*.jpg
 .screenshots/**/*.jpeg
 .claude/worktrees/
+
+# Per-developer / per-worktree Claude Code permission overrides.
+# Written by noum-orchestrator into each agent worktree so teammates auto-approve
+# safe ops; must stay out of git so it doesn't pollute review diffs.
+.claude/settings.local.json
