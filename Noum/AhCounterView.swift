@@ -113,6 +113,10 @@ struct AhCounterView: View {
         return String(format: "%02d:%02d", m, s)
     }
 
+    private var characterStage: NoumCharacter.Stage {
+        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
     var body: some View {
         ZStack {
             AppColor.screenBackground
@@ -124,18 +128,24 @@ struct AhCounterView: View {
                     // Cut the Crutch / Sudden Death / Timed setup. Mode-
                     // tinted waveform icon + rounded display headline so
                     // every mode pre-rep screen shares one visual rhythm.
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "waveform")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(AppColor.modeAhCounter)
+                    HStack(alignment: .center, spacing: Spacing.md) {
+                        NoumCharacter(
+                            mood: speechVM.isRecording ? .listening : .calm,
+                            tint: AppColor.modeAhCounter,
+                            size: 44,
+                            audioLevel: speechVM.audioLevel,
+                            stage: characterStage
+                        )
+                        .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("Ah-Counter")
                                 .font(.system(size: 28, weight: .bold, design: .rounded))
+                            Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely while Noum listens.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Text("Track filler words live. Open-ended reps without a fixed countdown — speak freely while Noum listens.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(Spacing.lg)

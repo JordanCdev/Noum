@@ -126,6 +126,10 @@ struct IMPracticeView: View {
         targetTone ?? preferredTone ?? .confident
     }
 
+    private var characterStage: NoumCharacter.Stage {
+        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -377,6 +381,15 @@ struct IMPracticeView: View {
     private var activeHeaderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
+                NoumCharacter(
+                    mood: speechVM.isRecording ? .listening : .calm,
+                    tint: AppColor.modeIM,
+                    size: 32,
+                    audioLevel: speechVM.audioLevel,
+                    stage: characterStage
+                )
+                .accessibilityHidden(true)
+
                 ZStack {
                     Circle()
                         .fill(Color.blue.opacity(0.12))

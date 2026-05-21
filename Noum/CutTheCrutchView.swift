@@ -20,6 +20,10 @@ struct CutTheCrutchView: View {
     private let tint: Color = AppColor.modeCrutch
     private static let universalCrutches = ["actually", "basically", "honestly"]
 
+    private var characterStage: NoumCharacter.Stage {
+        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
         let firstClutch = ClutchWordStore.shared.topClutchWords.first?.word.lowercased()
@@ -113,18 +117,24 @@ struct CutTheCrutchView: View {
     }
 
     private var introCard: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(spacing: 8) {
-                Image(systemName: "scissors")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(tint)
+        HStack(alignment: .center, spacing: Spacing.md) {
+            NoumCharacter(
+                mood: speechVM.isRecording ? .listening : .calm,
+                tint: tint,
+                size: 44,
+                audioLevel: speechVM.audioLevel,
+                stage: characterStage
+            )
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Cut the Crutch")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
+                Text("Speak for 60 seconds without using one specific word. 3 hearts. Each use chips one. Survive without dropping all three for a clean cut.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Speak for 60 seconds without using one specific word. 3 hearts. Each use chips one. Survive without dropping all three for a clean cut.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
@@ -289,6 +299,15 @@ struct CutTheCrutchView: View {
     private var statusBar: some View {
         VStack(spacing: Spacing.xs) {
             HStack(alignment: .center, spacing: Spacing.md) {
+                NoumCharacter(
+                    mood: speechVM.isRecording ? .listening : .calm,
+                    tint: tint,
+                    size: 36,
+                    audioLevel: speechVM.audioLevel,
+                    stage: characterStage
+                )
+                .accessibilityHidden(true)
+
                 heartsRow
                 Spacer()
                 Text(timeRemainingLabel)

@@ -650,6 +650,10 @@ struct TimedPracticeView: View {
         return thinkingCountdown > 10 ? "Breathe and think" : thinkingCountdown > 5 ? "Plan your opening" : "Almost ready..."
     }
 
+    private var characterStage: NoumCharacter.Stage {
+        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
     var body: some View {
         ZStack {
             backgroundLayer
@@ -802,14 +806,27 @@ struct TimedPracticeView: View {
     private var setupContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                // Header
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Impromptu")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text("Pick a theme. Think fast. Speak well.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
+                // Header — orb anchors the screen as a coach presence
+                // before the user even sees the timer; once recording
+                // starts the bound audioLevel reads as live.
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    NoumCharacter(
+                        mood: speechVM.isRecording ? .listening : .calm,
+                        tint: AppColor.brandBlue,
+                        size: 44,
+                        audioLevel: speechVM.audioLevel,
+                        stage: characterStage
+                    )
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Impromptu")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                        Text("Pick a theme. Think fast. Speak well.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
@@ -1417,7 +1434,16 @@ struct TimedPracticeView: View {
     private var speakingTranscriptLayout: some View {
         VStack(spacing: 0) {
             // Premium header with status
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 12) {
+                NoumCharacter(
+                    mood: speechVM.isRecording ? .listening : .calm,
+                    tint: AppColor.brandBlue,
+                    size: 36,
+                    audioLevel: speechVM.audioLevel,
+                    stage: characterStage
+                )
+                .accessibilityHidden(true)
+
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Circle()

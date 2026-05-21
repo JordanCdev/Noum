@@ -44,6 +44,10 @@ struct SuddenDeathPracticeView: View {
 
     private let accentColor = AppColor.modeSuddenDeath
 
+    private var characterStage: NoumCharacter.Stage {
+        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
     var body: some View {
         ZStack {
             background
@@ -228,11 +232,18 @@ struct SuddenDeathPracticeView: View {
             Spacer()
 
             VStack(spacing: 24) {
-                // Icon + title
+                // Icon + title — the orb sits where the static bolt used to
+                // anchor the hero. Calm at rest; flips to listening once the
+                // user is mid-drill so the bound audioLevel reads as live.
                 VStack(spacing: 8) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(accentColor)
+                    NoumCharacter(
+                        mood: speechVM.isRecording ? .listening : .calm,
+                        tint: accentColor,
+                        size: 44,
+                        audioLevel: speechVM.audioLevel,
+                        stage: characterStage
+                    )
+                    .accessibilityHidden(true)
 
                     Text("Pressure Drill")
                         .font(Typography.bigStat)
@@ -444,6 +455,15 @@ struct SuddenDeathPracticeView: View {
 
     private func topBar(round: Int) -> some View {
         HStack {
+            NoumCharacter(
+                mood: speechVM.isRecording ? .listening : .calm,
+                tint: accentColor,
+                size: 32,
+                audioLevel: speechVM.audioLevel,
+                stage: characterStage
+            )
+            .accessibilityHidden(true)
+
             // Round label
             Text("Round \(round)")
                 .font(.subheadline.weight(.bold))
