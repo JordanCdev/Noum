@@ -1,13 +1,26 @@
 ---
 name: noum-orchestrator
-description: Splits a Noum macro feature or M15 phase set into isolated parallel worker bundles bound to Git worktrees. Reads docs/M15_handoff.md for phase-specific briefs; carries the architectural layer + file-ownership map internally. Trigger when starting two-or-more concurrent agent runs on this 78k-LoC iOS codebase.
+description: Runs 2-4 Noum parallel agents end-to-end with zero user babysitting. Default path spawns background sub-agents via the Agent tool (`isolation: "worktree"`, `run_in_background: true`), monitors them, and integrates their results sequentially when they finish. Reads docs/M15_handoff.md for phase briefs; carries the architectural layer + file-ownership map internally; pre-writes per-worktree permission settings so agents auto-approve safe ops. Trigger for any 2+ concurrent agent run on this 78k-LoC iOS codebase.
 ---
 
 # noum-orchestrator
 
-When the user wants to run two or more Claude agents concurrently on Noum, this skill decomposes the work into isolated tracks that won't step on each other. Output: copy-pasteable worker bundle per track + a single bash script that creates the worktrees + a sequential merge plan.
+When the user wants to run 2 or more Claude agents concurrently on Noum, this skill **does the orchestration itself**: decomposes the work into isolated tracks, spawns background sub-agents that won't step on each other, monitors them, and integrates the results sequentially. The user sits back.
 
-This skill does NOT spawn agents itself. It produces the briefs + worktree commands the user (or the orchestrating agent) then invokes via `Agent(isolation: "worktree", run_in_background: true, …)`.
+## Default path — full automation (recommended)
+
+The default behaviour is "I do it all":
+
+1. **You** (orchestrator agent, this skill) decompose into 2-4 tracks per the architectural layer map below.
+2. **You** create the worktrees + write per-worktree `.claude/settings.local.json` so the sub-agents auto-approve safe ops (file writes inside the worktree, xcodebuild, git read commands) and refuse risky ops (push, commit, reset --hard, rm -rf, brew/npm).
+3. **You** spawn each track as a background sub-agent via `Agent(isolation: "worktree", run_in_background: true, prompt: <self-contained brief>)`.
+4. **You** receive completion notifications, run the sequential merge plan in your own (main) worktree, push when greenlit.
+
+The user only has to confirm scope at Step 1 and authorise the final push.
+
+## Fallback path — produce static bundles only
+
+If the user explicitly asks for "give me the bundles, I'll run them myself" — or if `Agent` tool isn't available (rare) — fall back to producing static worker bundles + a bash bootstrap + a merge plan. They open terminal tabs, paste prompts, ferry results back. Use this only when explicitly requested; it's strictly worse than the default.
 
 ## Invocation
 
@@ -186,18 +199,14 @@ Each prompt averages 400–700 words and must include:
 
 9. **Verification stub.** "Before final response, provide the CLAUDE.md verification block."
 
-### Step 5 — Worktree bootstrap script
+### Step 5 — Bootstrap worktrees (you, not the user)
 
-After all bundles, output one bash block:
+In the **default path**, you (the orchestrator) run these via the Bash tool yourself. The user does not paste anything.
 
 ```bash
-# Bootstrap parallel worktrees for the tracks above.
 set -e
 cd /Users/jordan/src/GitHub/Noum
-
-# Capture current Redesign HEAD so every track starts from the same base.
 BASE=$(git rev-parse Redesign)
-echo "Base commit: $BASE"
 
 # One worktree per track. --lock prevents accidental clobbering.
 git worktree add --lock .claude/worktrees/agent-<slug-1> -b agent-<slug-1> "$BASE"
@@ -206,36 +215,87 @@ git worktree add --lock .claude/worktrees/agent-<slug-2> -b agent-<slug-2> "$BAS
 # Copy gitignored-but-required Info.plist into each worktree so xcodebuild works.
 cp Noum/Info.plist .claude/worktrees/agent-<slug-1>/Noum/Info.plist
 cp Noum/Info.plist .claude/worktrees/agent-<slug-2>/Noum/Info.plist
-
-echo "Worktrees created:"
-git worktree list
-echo ""
-echo "Spawn agents against these paths."
 ```
 
-### Step 6 — Merge plan
+### Step 5.5 — Write per-worktree permission settings (you, not the user)
 
-End with a numbered plan the user runs after all agents finish:
+For each worktree, write `.claude/settings.local.json` so the sub-agent auto-approves safe operations and refuses risky ones. Without this, the sub-agent pauses on every file write and the user has to babysit — which defeats the orchestration. **This step is mandatory in the default path.**
 
-```markdown
-## Merge plan (after all agents finish)
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "Glob", "Grep",
+      "Bash(xcodebuild *)",
+      "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)",
+      "Bash(git show*)", "Bash(git add*)",
+      "Bash(grep *)", "Bash(find *)", "Bash(ls *)",
+      "Bash(cat *)", "Bash(wc *)", "Bash(echo *)",
+      "Bash(xcrun simctl list*)", "Bash(xcrun simctl boot*)",
+      "Bash(cp *)", "Bash(mkdir *)"
+    ],
+    "deny": [
+      "Bash(git push*)", "Bash(git commit*)",
+      "Bash(git reset --hard*)", "Bash(git checkout *)",
+      "Bash(rm -rf*)", "Bash(npm *)", "Bash(brew *)"
+    ]
+  }
+}
+```
 
-Sequential, not parallel.
+The `allow` list covers everything a code-change track needs (reading, writing, editing, building, staging, sim inspection). The `deny` list blocks the four destructive operations the agent should never autonomously do (push, commit, hard reset, rm -rf) plus system-level installs (npm, brew). Anything not in either list still prompts the user — which is the right behaviour for genuinely-novel operations.
+
+### Step 5.75 — Spawn sub-agents (you, not the user)
+
+For each track, invoke:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  description: "<track title>",
+  isolation: "worktree",
+  run_in_background: true,
+  prompt: "<the self-contained brief from Step 4 — same as the static bundle's isolated prompt>"
+)
+```
+
+The `isolation: "worktree"` flag auto-creates a worktree if you didn't already in Step 5; if you DID, the sub-agent picks it up by branch name. The `run_in_background: true` returns control immediately and you get a notification when each finishes.
+
+Do NOT sleep, poll, or pre-emptively check. The runtime notifies you.
+
+### Step 6 — Integrate on completion (you, not the user)
+
+When the runtime notifies you that each sub-agent has completed, integrate sequentially in your main worktree:
 
 1. `cd /Users/jordan/src/GitHub/Noum`
 2. Confirm `git status` is clean on `Redesign`.
-3. For each track in order (Track 1 → Track N):
-   - `git diff Redesign..agent-<slug>` — sanity-check
-   - `git cherry-pick agent-<slug>` (or `--no-commit` if you want to inspect)
-   - Resolve conflicts (typically `NoumTests/NoumTests.swift` — keep both sides of every `<<<<<<<`)
-   - `xcodebuild build` → green
-4. Update `docs/CURRENT_STATE.md` in one final commit summarising all phases
+3. For each completed track in spawn order:
+   - `git diff Redesign..agent-<slug>` — sanity-check the diff before applying
+   - The sub-agent leaves work staged but not committed (per its disposition contract). Either:
+     - Make the commit from the agent's worktree (`git -C <worktree> commit ...`) then cherry-pick into `Redesign`, OR
+     - Copy the staged files into the main worktree and commit there
+   - `xcodebuild build -derivedDataPath .build` → green before moving to the next track
+   - Resolve any conflict (`NoumTests/NoumTests.swift` is typical — keep both sides of every `<<<<<<<` since test structs are independent)
+4. Update `docs/CURRENT_STATE.md` in one final commit summarising all phases. Conflicts here are routine; you own the resolution.
 5. Cleanup:
    - `git worktree unlock .claude/worktrees/agent-<slug>` (if locked)
    - `git worktree remove --force .claude/worktrees/agent-<slug>`
    - `git branch -d agent-<slug>` (`-d` not `-D` — should succeed since commits are on `Redesign`)
-6. `git push origin Redesign`
-```
+6. **STOP.** Ask the user to authorise the push before running `git push origin Redesign`. The default-deny list on the worktrees blocks the sub-agent from pushing; the orchestrator should also defer to the user here. A push touches shared remote state — explicit greenlight required even at the end of a clean orchestration.
+
+### Step 7 — Failure handling
+
+If any sub-agent fails (compile error, blocked on Forbidden file, model error):
+
+- Read its final report. The agent should have followed CLAUDE.md verification format — the `Blocked:` field tells you exactly what stopped it.
+- If the failure is isolated (just that track), proceed with the others' integration and report the failed track separately to the user.
+- If the failure is structural (the orchestration plan was wrong), abort all in-flight cherry-picks and report.
+
+If a sub-agent expanded scope into a Forbidden file:
+- `git -C <worktree> diff` to see what they touched outside their `Owns:`/`Touches:` set
+- Cherry-pick only the intended changes (`git checkout -p` or selective staging) and discard the rest
+- Report the scope violation to the user so the next orchestration tightens the brief
 
 ## Edge cases
 
