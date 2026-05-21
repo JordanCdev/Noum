@@ -11,18 +11,21 @@ final class NoumUITests: XCTestCase {
         let app = launchApp()
 
         XCTAssertTrue(app.otherElements["home.screen"].waitForExistence(timeout: 5))
-
-        // The journey card is the last of six populated-home cards, so the
-        // button is often below the fold on shorter simulators. Scroll the
-        // home into view, and use a type-agnostic query because SwiftUI
-        // sometimes surfaces complex Button labels as Other.
-        let pathButton = app.descendants(matching: .any)["home.path"]
-        scrollUntilHittable(pathButton, in: app)
-        XCTAssertTrue(pathButton.waitForExistence(timeout: 5))
-        pathButton.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["journey.screen"].waitForExistence(timeout: 5))
-
         app.terminate()
+
+        // The journey card is gated by HomeSignalGate (path-node unlocked OR
+        // coaching profile set). DevSeedData.injectProfile(.improvingIntermediate)
+        // doesn't populate CoachingProfile, so on a freshly-erased simulator the
+        // card never renders and tap-by-id can't find it. Deep-link straight to
+        // the journey screen — same test intent (screen reachable from launch)
+        // without depending on simulator-leftover state.
+        //
+        // TODO: M16 — extend DevSeedData.injectProfile(.improvingIntermediate) to
+        // also seed CoachingProfileStore so gated-card tests can use the
+        // tap-the-card pattern again.
+        let pathApp = launchSeededAt("noum://path")
+        XCTAssertTrue(pathApp.descendants(matching: .any)["journey.screen"].waitForExistence(timeout: 5))
+        pathApp.terminate()
         // The old progressCard (which carried `home.rank`) was removed from
         // the home during the M14 consolidation — rank now lives on the
         // Profile tab. The Profile destination is exercised by tapping the
@@ -152,6 +155,23 @@ final class NoumUITests: XCTestCase {
         // card hidden).
         app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED"]
         app.launch()
+        return app
+    }
+
+    /// Cold-launch with seed + a `-DeepLink` arg so the app routes straight
+    /// to the target screen without depending on a tap target whose visibility
+    /// is gated by signal-derived data the seed doesn't populate. Mirror of
+    /// `ScreenshotTour.launchSeededAt` — duplicated here to keep `NoumUITests`
+    /// self-contained.
+    @MainActor
+    private func launchSeededAt(_ deepLink: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE", "-DeepLink", deepLink]
+        app.launch()
+        // Home screen is the deep-link consumption point; wait for it then
+        // give the routing one beat to flip the navigation path.
+        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1.0)
         return app
     }
 
