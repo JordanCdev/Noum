@@ -10,6 +10,47 @@ enum PracticeMode: String, Codable {
     case imConversation
 }
 
+/// The 3-line "What this trains" copy that surfaces under a mode row
+/// when the user taps the expand affordance. Kept on its own type so
+/// `PracticeModeRowExpansionTests` can pin the contract: every mode has
+/// a complete, coach-voice triple (no exclamation marks, no emoji,
+/// specific duration in the rep-length line). Living next to
+/// `PracticeMode` keeps the copy beside the enum it documents.
+struct PracticeModeExpansionCopy {
+    let pressureType: String
+    let surfaces: String
+    let repLength: String
+
+    static func copy(for mode: PracticeMode) -> PracticeModeExpansionCopy {
+        switch mode {
+        case .timed:
+            return PracticeModeExpansionCopy(
+                pressureType: "Soft clock. Room to think, structure to hit.",
+                surfaces: "Whether your answers land complete or trail off early.",
+                repLength: "60–120s rep."
+            )
+        case .suddenDeath:
+            return PracticeModeExpansionCopy(
+                pressureType: "Hard clock. One filler ends the rep.",
+                surfaces: "What you reach for when there's no safety net.",
+                repLength: "30–90s rep."
+            )
+        case .ahCounter:
+            return PracticeModeExpansionCopy(
+                pressureType: "No clock. Live filler and pace counting.",
+                surfaces: "The crutches and rhythms you don't hear yourself use.",
+                repLength: "45–120s rep."
+            )
+        case .imConversation:
+            return PracticeModeExpansionCopy(
+                pressureType: "Live conversation. You set the tone and the stakes.",
+                surfaces: "How you hold up under realistic back-and-forth.",
+                repLength: "2–5 minute rep."
+            )
+        }
+    }
+}
+
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
 struct PracticeModeSelectionView: View {
@@ -29,6 +70,11 @@ struct PracticeModeSelectionView: View {
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
     @State private var crutchSelected: Bool = false
+    /// Per-row expansion state for the "What this trains" affordance.
+    /// Set semantics so multiple rows can stay expanded if the user opens
+    /// several — explore-then-commit, not modal "one at a time".
+    @State private var expandedModes: Set<PracticeMode> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct CrutchOption {
         let title: String = "Cut the Crutch"
@@ -177,80 +223,191 @@ struct PracticeModeSelectionView: View {
     private func modeCard(_ option: ModeOption) -> some View {
         let isSelected = !crutchSelected && selectedMode == option.mode
         let isRecommended = option.mode == recommendedMode
+        let isExpanded = expandedModes.contains(option.mode)
 
-        return Button {
-            withAnimation(.snappySpring) {
-                selectedMode = option.mode
-                crutchSelected = false
+        return VStack(spacing: 0) {
+            Button {
+                animateMode {
+                    selectedMode = option.mode
+                    crutchSelected = false
+                    expandedModes.insert(option.mode)
+                }
+                CoachHaptic.selectionTap()
+            } label: {
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    modeIcon(option)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text(option.title)
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+
+                            if isRecommended {
+                                recommendedPill(tint: option.tint)
+                            }
+
+                            Spacer(minLength: 0)
+
+                            let snapshot = masteryStore.snapshot(for: option.mode)
+                            if snapshot.sessionsLogged > 0 {
+                                ModeMasteryBadge(snapshot: snapshot)
+                            }
+
+                            // Visual-only chevron — the actual tap target
+                            // is the transparent overlay button below.
+                            // Drawing the icon inside the row label keeps
+                            // the existing layout coherent; using an
+                            // overlay button avoids nesting buttons
+                            // (which SwiftUI doesn't tap-route).
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+
+                        Text(option.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+
+                        if isRecommended {
+                            Text(cachedRecommendedReason ?? option.recommendedReason)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(option.tint)
+                                .padding(.top, 2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(isSelected ? option.tint : Color.secondary.opacity(0.4))
+                        .accessibilityHidden(true)
+                }
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
+            .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
+            .accessibilityHint(option.subtitle)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .overlay(alignment: .topTrailing) {
+                expandToggleButton(for: option, isExpanded: isExpanded)
+            }
+
+            if isExpanded {
+                modeExpandedSection(option)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, Spacing.lg)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(modeCardBackground(option, isRecommended: isRecommended, isSelected: isSelected))
+        // Recommended carries a soft tint-ambient shadow even at
+        // rest — that's the "this is tonight's pick" signal. The
+        // selected sharp shadow stacks on top so the chosen card
+        // still earns a touch more elevation than the others.
+        .shadow(
+            color: isRecommended ? option.tint.opacity(0.16) : .clear,
+            radius: 20,
+            y: 10
+        )
+        .shadow(
+            color: isSelected ? option.tint.opacity(0.10) : .clear,
+            radius: 16,
+            y: 8
+        )
+        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
+    }
+
+    /// Transparent tap target overlaying the visible chevron icon.
+    /// Separating this from the row Button lets the user "preview" a
+    /// mode (expand without selecting) — important for first-timers
+    /// who don't yet know what each mode trains. Tapping the row
+    /// proper still both selects and expands.
+    private func expandToggleButton(for option: ModeOption, isExpanded: Bool) -> some View {
+        Button {
+            animateMode {
+                if expandedModes.contains(option.mode) {
+                    expandedModes.remove(option.mode)
+                } else {
+                    expandedModes.insert(option.mode)
+                }
             }
             CoachHaptic.selectionTap()
         } label: {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                modeIcon(option)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(option.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.primary)
-
-                        if isRecommended {
-                            recommendedPill(tint: option.tint)
-                        }
-
-                        Spacer(minLength: 0)
-
-                        let snapshot = masteryStore.snapshot(for: option.mode)
-                        if snapshot.sessionsLogged > 0 {
-                            ModeMasteryBadge(snapshot: snapshot)
-                        }
-                    }
-
-                    Text(option.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-
-                    if isRecommended {
-                        Text(cachedRecommendedReason ?? option.recommendedReason)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(option.tint)
-                            .padding(.top, 2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? option.tint : Color.secondary.opacity(0.4))
-                    .accessibilityHidden(true)
-            }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(modeCardBackground(option, isRecommended: isRecommended, isSelected: isSelected))
-            // Recommended carries a soft tint-ambient shadow even at
-            // rest — that's the "this is tonight's pick" signal. The
-            // selected sharp shadow stacks on top so the chosen card
-            // still earns a touch more elevation than the others.
-            .shadow(
-                color: isRecommended ? option.tint.opacity(0.16) : .clear,
-                radius: 20,
-                y: 10
-            )
-            .shadow(
-                color: isSelected ? option.tint.opacity(0.10) : .clear,
-                radius: 16,
-                y: 8
-            )
+            Color.clear
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.pressable)
-        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-        .accessibilityIdentifier("practiceMode.\(option.mode.rawValue)")
-        .accessibilityLabel(accessibilityLabel(option, isRecommended: isRecommended))
-        .accessibilityHint(option.subtitle)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .buttonStyle(.plain)
+        .padding(.trailing, Spacing.lg - 14)
+        .padding(.top, Spacing.lg - 14)
+        .accessibilityIdentifier("practiceMode.\(option.mode.rawValue).expandButton")
+        .accessibilityLabel(isExpanded
+            ? "Collapse what this trains"
+            : "Expand what this trains")
+        .accessibilityHint("Shows the pressure type, what this surfaces, and the typical rep length.")
+    }
+
+    /// The "What this trains" body that drops in under the row when
+    /// the user taps to expand. 28pt `NoumCharacter.Inline` on the left
+    /// gives the moment a coach-presence anchor — visual narration,
+    /// no audio. Three lines, each on-voice (declarative, specific,
+    /// no exclamation marks).
+    private func modeExpandedSection(_ option: ModeOption) -> some View {
+        let copy = PracticeModeExpansionCopy.copy(for: option.mode)
+        return HStack(alignment: .top, spacing: Spacing.md) {
+            NoumCharacter.Inline(
+                size: 28,
+                mood: .coaching,
+                tint: option.tint
+            )
+            .padding(.top, 2)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(copy.pressureType)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(copy.surfaces)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(copy.repLength)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.top, Spacing.md)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.14))
+                .frame(height: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("What this trains. \(copy.pressureType) \(copy.surfaces) \(copy.repLength)")
+    }
+
+    /// Reduce-motion shapes the expand/collapse feel. Spring under
+    /// normal motion; a short linear fade when the user has opted into
+    /// the reduced-motion accessibility setting.
+    private func animateMode(_ changes: () -> Void) {
+        withAnimation(reduceMotion ? .linear(duration: 0.15) : .snappySpring) {
+            changes()
+        }
     }
 
     /// Mode-card chrome. Two registers:

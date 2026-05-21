@@ -6172,3 +6172,81 @@ struct CoachContextBuilderProofTests {
         }
     }
 }
+
+// MARK: - Practice Mode Row Expansion (M15 Phase 3)
+//
+// Pins the contract behind the "What this trains" affordance copy:
+//   1. Every `PracticeMode` resolves to a complete triple (pressureType,
+//      surfaces, repLength). No silent gaps.
+//   2. Coach voice — no exclamation marks, no emoji. The user is
+//      already tense in the picker; chirpy filler reads as a sales
+//      pitch, not a coach.
+//   3. The rep-length line is specific (mentions seconds or minutes).
+//      "Typical rep length" without a duration is exactly the kind of
+//      generic copy this affordance exists to replace.
+
+@MainActor
+struct PracticeModeRowExpansionTests {
+
+    private static let allModes: [PracticeMode] = [
+        .timed, .suddenDeath, .ahCounter, .imConversation
+    ]
+
+    @Test func everyModeHasCompleteExpansionCopy() {
+        for mode in Self.allModes {
+            let copy = PracticeModeExpansionCopy.copy(for: mode)
+            #expect(!copy.pressureType.trimmingCharacters(in: .whitespaces).isEmpty,
+                    "\(mode) missing pressureType")
+            #expect(!copy.surfaces.trimmingCharacters(in: .whitespaces).isEmpty,
+                    "\(mode) missing surfaces")
+            #expect(!copy.repLength.trimmingCharacters(in: .whitespaces).isEmpty,
+                    "\(mode) missing repLength")
+        }
+    }
+
+    @Test func expansionCopyHonorsCoachVoice() {
+        for mode in Self.allModes {
+            let copy = PracticeModeExpansionCopy.copy(for: mode)
+            let combined = "\(copy.pressureType) \(copy.surfaces) \(copy.repLength)"
+            #expect(!combined.contains("!"),
+                    "\(mode) copy must not use exclamation marks")
+            let hasEmoji = combined.unicodeScalars.contains { scalar in
+                scalar.properties.isEmojiPresentation
+                    || (scalar.value >= 0x1F300 && scalar.value <= 0x1FAFF)
+            }
+            #expect(!hasEmoji, "\(mode) copy must not contain emoji")
+        }
+    }
+
+    @Test func repLengthIsSpecific() {
+        for mode in Self.allModes {
+            let copy = PracticeModeExpansionCopy.copy(for: mode)
+            let lower = copy.repLength.lowercased()
+            // Must mention a duration unit — `s` (seconds), `min`, or
+            // `minute`. Catches a future edit that strips the unit
+            // while leaving the line in place.
+            let mentionsDuration = lower.contains("s ")
+                || lower.hasSuffix("s.")
+                || lower.contains("min")
+            #expect(mentionsDuration,
+                    "\(mode) repLength should mention a unit: \(copy.repLength)")
+        }
+    }
+
+    @Test func expansionCopyStaysTerse() {
+        // 3 lines max means each line should still read as one sentence,
+        // not a paragraph. Cap each line at a soft ~80 chars so a future
+        // edit doesn't grow the affordance into a wall of text.
+        for mode in Self.allModes {
+            let copy = PracticeModeExpansionCopy.copy(for: mode)
+            for (label, line) in [
+                ("pressureType", copy.pressureType),
+                ("surfaces", copy.surfaces),
+                ("repLength", copy.repLength)
+            ] {
+                #expect(line.count <= 80,
+                        "\(mode) \(label) too long (\(line.count) chars): \(line)")
+            }
+        }
+    }
+}
