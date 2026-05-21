@@ -23,6 +23,12 @@
 - The post-session debrief opens with how close that rep moved you to your goal. Drill picks read from the same source.
 - The Insights chip shows how many AI coaching reads you have banked this month.
 
+## Reasons to open the app
+
+- A new peak-rating wall surfaces your best in week, your best in your league, and your best ever. Reach it from Profile or the league screen.
+- Three daily challenges rotate at local midnight. A short rep clears one. An evening nudge fires only if something is still claimable.
+- Word of the day grew to a 142-word catalog of communication-grade words. The home strip shows a small mark when you have used today's.
+
 ## Quality
 
 - Coach voice audit removed remaining filler exclamations from user-facing copy.
