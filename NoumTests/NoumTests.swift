@@ -6250,3 +6250,106 @@ struct PracticeModeRowExpansionTests {
         }
     }
 }
+
+// MARK: - Home discipline (M15 Phase 4)
+
+/// Locks the contract that the signal-gated home holds back cards until
+/// the user has the signal to fill them — and that the Settings override
+/// fully reverses the gate.
+struct HomeSignalGateTests {
+    @Test func coldStartShowsOnlyFloorCards() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(gate.coachCard)
+        #expect(gate.utilityStrip)
+        #expect(gate.askNoumPromo)
+        #expect(!gate.dailyChallenge)
+        #expect(!gate.voiceMetrics)
+        #expect(!gate.aiWeeklyInsight)
+        #expect(!gate.journey)
+    }
+
+    @Test func firstSessionUnlocksDailyChallengeAndVoiceMetrics() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 1,
+            sessionsThisWeekCount: 1,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(gate.dailyChallenge)
+        #expect(gate.voiceMetrics)
+        // Weekly insight stays gated until session 3 this week.
+        #expect(!gate.aiWeeklyInsight)
+    }
+
+    @Test func threeSessionsInWeekUnlocksWeeklyInsight() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 3,
+            sessionsThisWeekCount: 3,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(gate.aiWeeklyInsight)
+    }
+
+    @Test func goalSetStateUnlocksJourney() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false
+        )
+        #expect(gate.journey, "Journey card should surface once a voice goal is captured, even before any rep.")
+    }
+
+    @Test func unlockedPathNodeUnlocksJourney() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 5,
+            sessionsThisWeekCount: 2,
+            hasUnlockedPathNode: true,
+            hasCoachingProfile: false,
+            showAllOverride: false
+        )
+        #expect(gate.journey)
+    }
+
+    /// Reversibility contract — flipping the AppStorage escape hatch must
+    /// restore every card regardless of signal. Returning power-users who
+    /// don't want the gradual reveal get the dense home back.
+    @Test func showAllOverrideReturnsEveryCard() {
+        let gate = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: false,
+            showAllOverride: true
+        )
+        #expect(gate == .allVisible)
+    }
+
+    @Test func weeklyCountUsesISOWeekBoundary() {
+        let iso = Calendar(identifier: .iso8601)
+        let now = Date()
+        guard let weekInterval = iso.dateInterval(of: .weekOfYear, for: now) else {
+            Issue.record("ISO week interval not derivable")
+            return
+        }
+        let insideMid = weekInterval.start.addingTimeInterval(weekInterval.duration / 2)
+        let insideStart = weekInterval.start.addingTimeInterval(60)
+        let beforeWeek = weekInterval.start.addingTimeInterval(-86_400)
+        let afterWeek = weekInterval.end.addingTimeInterval(86_400)
+        let count = HomeSignalGate.sessionsInCurrentISOWeek(
+            sessionDates: [insideMid, insideStart, beforeWeek, afterWeek],
+            now: now
+        )
+        #expect(count == 2)
+    }
+}

@@ -74,6 +74,9 @@ struct ContentView: View {
     @StateObject private var deepLinkRouter = DeepLinkRouter.shared
     @StateObject private var league = LeagueManager.shared
     @StateObject private var ratingStore = RatingStore.shared
+    // M15 Phase 4 — Home discipline. Off by default; users who want every
+    // card from rep 1 can flip it in Settings → Practice.
+    @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedPracticeMode: PracticeMode = .timed
     @State private var showDailyGoalCelebration = false
@@ -213,6 +216,12 @@ struct ContentView: View {
                                         }
                                     }
                             }
+                            // M15 Phase 4 — signal-gated composition. Coach
+                            // Card + UtilityStrip + Ask Noum are the cold-
+                            // start floor; the rest unlock as signal accrues.
+                            // Reversible from Settings via
+                            // `practice.showAllHomeCards`.
+                            let gate = homeCardGate
                             // M14 redesign: HomeCoachCard replaces the old
                             // heroCard + quickStartCard pair. One composed
                             // hero with NoumCharacter present, the coach's
@@ -220,24 +229,34 @@ struct ContentView: View {
                             // Begin CTA. The recommendation pipeline
                             // (RecommendationBiasEngine + CoachingPlanner)
                             // feeds it directly — no new coaching logic.
-                            HomeCoachCard(
-                                navigationPath: $navigationPath,
-                                scrollOffset: homeScrollOffset
-                            ).cardEntrance(0)
+                            if gate.coachCard {
+                                HomeCoachCard(
+                                    navigationPath: $navigationPath,
+                                    scrollOffset: homeScrollOffset
+                                ).cardEntrance(0)
+                            }
                             // HomeUtilityStrip is the thin status row beneath
                             // the Coach Card: streak + word of the day as a
                             // single low-emphasis pair, replacing what used
                             // to need its own WordOfTheDayTile card.
-                            HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
+                            if gate.utilityStrip {
+                                HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
+                            }
                             // Path Journey — promoted to slot 3 as a second
                             // hero. The Path is the gameplay loop; "next
                             // move" framing belongs near the Coach Card, not
                             // at the bottom of the stack under the weekly
                             // digest. Rewritten with mission framing
                             // (Chapter <tier> · Mission X of N · node title).
-                            journeyPreviewCard.cardEntrance(2)
-                            askNoumPromoCard.cardEntrance(3)
-                            DailyChallengeTile().cardEntrance(4)
+                            if gate.journey {
+                                journeyPreviewCard.cardEntrance(2)
+                            }
+                            if gate.askNoumPromo {
+                                askNoumPromoCard.cardEntrance(3)
+                            }
+                            if gate.dailyChallenge {
+                                DailyChallengeTile().cardEntrance(4)
+                            }
                             // M14 — VoiceMetricsCard promotes Pause + Word-
                             // choice from optional post-session surfaces to a
                             // first-class Home read. VISION.md called these
@@ -246,15 +265,19 @@ struct ContentView: View {
                             // when neither dimension has enough qualifying
                             // baseline data, so cold-start users see nothing
                             // here — not a placeholder.
-                            VoiceMetricsCard(navigationPath: $navigationPath)
-                                .cardEntrance(5)
-                            AIWeeklyInsightCard(
-                                sessionStore: sessionStore,
-                                ratingStore: ratingStore,
-                                clutchWordStore: ClutchWordStore.shared,
-                                coachingProfileStore: coachingProfileStore
-                            )
-                            .cardEntrance(6)
+                            if gate.voiceMetrics {
+                                VoiceMetricsCard(navigationPath: $navigationPath)
+                                    .cardEntrance(5)
+                            }
+                            if gate.aiWeeklyInsight {
+                                AIWeeklyInsightCard(
+                                    sessionStore: sessionStore,
+                                    ratingStore: ratingStore,
+                                    clutchWordStore: ClutchWordStore.shared,
+                                    coachingProfileStore: coachingProfileStore
+                                )
+                                .cardEntrance(6)
+                            }
                         }
                     }
                     .padding(.horizontal, Spacing.screenH)
@@ -488,6 +511,24 @@ struct ContentView: View {
         if hourBucket != next {
             hourBucket = next
         }
+    }
+
+    // MARK: - M15 Phase 4 — Home card gate
+
+    /// Read the live store state once per body invocation and produce the
+    /// signal gate for the populated home. Coach + UtilityStrip + Ask Noum
+    /// stay on at the floor; the rest unlock as signal accrues.
+    /// `showAllHomeCards` (Settings) flips every flag true regardless.
+    private var homeCardGate: HomeCardGate {
+        HomeSignalGate.evaluate(
+            sessionCount: sessionStore.sessions.count,
+            sessionsThisWeekCount: HomeSignalGate.sessionsInCurrentISOWeek(
+                sessionDates: sessionStore.sessions.map(\.date)
+            ),
+            hasUnlockedPathNode: !pathProgress.completedNodes.isEmpty,
+            hasCoachingProfile: coachingProfileStore.profile != nil,
+            showAllOverride: showAllHomeCards
+        )
     }
 
     // MARK: - Personal-best anchor (Figma "Premium Hero")

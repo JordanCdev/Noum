@@ -35,6 +35,11 @@ struct SettingsView: View {
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
 
+    // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
+    // AppStorage key read by ContentView; flipping this on shows every
+    // home card from rep 1.
+    @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
+
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
     @State private var showPaywall = false
@@ -404,6 +409,15 @@ struct SettingsView: View {
                 subtitle: "One-take reps, shorter prep, and a rated finish across modes.",
                 isOn: $practiceSettings.pressureModeEnabled,
                 accessibilityHint: "Adds time pressure and rating to every drill."
+            )
+
+            Divider()
+
+            SettingsToggleRow(
+                title: "Show every home card",
+                subtitle: "Skip the gradual reveal. The home shows the full stack from rep 1, before there's signal to fill it.",
+                isOn: $showAllHomeCards,
+                accessibilityHint: "Turns off the signal-gated home and shows every card immediately."
             )
 
             Divider()
