@@ -13,9 +13,13 @@ import SwiftUI
 //   • Slow-drifting orbs for depth (no illustration, brand rule).
 //   • Large `NoumCharacter` at `.excited` (150–180pt) — the coach
 //     character, sparkle ribbon, the only "face" of the moment.
+//     Briefly pulses `.noticing` when the proof-moment lands so the
+//     orb itself acknowledges the catch.
 //   • A single bold display headline.
-//   • A two-line concrete subtitle that names what the user just did
-//     (duration + filler count) — coach evidence, not vanity stats.
+//   • The observation slot — a verbatim quote pulled from the user's
+//     actual first rep, framed in their voice. The async proof-moment
+//     fetch upgrades the line as soon as it lands; the duration+filler
+//     summary is the safety net so the screen is never empty.
 //   • One primary "Continue" CTA tinted in `AppColor.pro`.
 //   • Optional "Share" secondary (kept — `ImageRenderer` is wired).
 //
@@ -43,6 +47,15 @@ struct FirstRepCelebration: View {
     @State private var phase: Phase = .preReveal
     @State private var confettiActive = false
     @State private var showShareSheet = false
+    /// Async-loaded proof moment. Nil while loading or when the rep
+    /// can't yield a verbatim slice (we fall through to the duration+
+    /// filler safety net in that case). Bumping this triggers the
+    /// observation slot fade-in and the `.noticing` orb pulse.
+    @State private var proof: ProofMoment?
+    /// Bumped once when the proof transitions from nil → non-nil so the
+    /// `.noticing` mood pulse fires exactly once, not on every redraw.
+    @State private var noticeFlashID: Int = 0
+    @State private var loadTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Animation phases. Drives both the spring sequence (full-motion) and
@@ -89,7 +102,7 @@ struct FirstRepCelebration: View {
                 character
                     .padding(.vertical, Spacing.xs)
 
-                subtitle
+                observationSlot
                     .padding(.horizontal, Spacing.lg)
 
                 Spacer(minLength: 0)
@@ -104,7 +117,14 @@ struct FirstRepCelebration: View {
                 .padding(.bottom, Spacing.lg)
             }
         }
-        .onAppear { runSequence() }
+        .onAppear {
+            runSequence()
+            loadProof()
+        }
+        .onDisappear {
+            loadTask?.cancel()
+            loadTask = nil
+        }
         .accessibilityIdentifier("firstRep.celebration")
         .sheet(isPresented: $showShareSheet) {
             FirstRepShareSheet(session: session)
@@ -152,13 +172,22 @@ struct FirstRepCelebration: View {
 
     /// Large `NoumCharacter` at `.excited` — the only "face" of the
     /// celebration. The mood owns the sparkle ribbon already, so we don't
-    /// stack a second one. Springs from 0.8 → 1.0 on entrance.
+    /// stack a second one. Springs from 0.8 → 1.0 on entrance. Briefly
+    /// pulses `.noticing` once when the proof-moment lands so the orb
+    /// itself acknowledges the catch — keyed by `noticeFlashID` so the
+    /// pulse fires exactly once on the proof transition, not on every
+    /// surrounding redraw.
+    @ViewBuilder
     private var character: some View {
-        NoumCharacter(
-            mood: .excited,
-            tint: .white,
-            size: 160
-        )
+        let base = NoumCharacter(mood: .excited, tint: .white, size: 160)
+        Group {
+            if noticeFlashID > 0 {
+                base.moodPulse(.noticing, duration: 1.2)
+                    .id(noticeFlashID)
+            } else {
+                base
+            }
+        }
         .scaleEffect(phase >= .characterIn ? 1.0 : 0.8)
         .opacity(phase >= .characterIn ? 1.0 : 0.0)
     }
@@ -177,15 +206,62 @@ struct FirstRepCelebration: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private var subtitle: some View {
-        Text(subtitleCopy)
-            .font(Typography.subheadline)
-            .foregroundStyle(.white.opacity(0.86))
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .opacity(phase >= .subtitleIn ? 1 : 0)
-            .accessibilityElement(children: .combine)
+    /// Observation slot. Renders a verbatim-quote observation as soon
+    /// as the proof lands. Until then — or in the (rare) case the proof
+    /// fetch yields nothing useful — falls through to the duration+
+    /// filler summary so the slot is never empty. Pre-proof and post-
+    /// proof live in the same vertical so the layout doesn't reflow when
+    /// the proof arrives.
+    private var observationSlot: some View {
+        Group {
+            if let proof = proof, !proof.quote.isEmpty {
+                quoteObservation(proof: proof)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            } else {
+                Text(subtitleCopy)
+                    .font(Typography.subheadline)
+                    .foregroundStyle(.white.opacity(0.86))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .opacity(phase >= .subtitleIn ? 1 : 0)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Voice-shaped, quote-anchored observation. The user's verbatim
+    /// slice is rendered in italics on its own line so it reads as
+    /// quoted speech rather than coach copy; the voice-shaped frame
+    /// follows underneath. Italicised quote, then a one-line claim —
+    /// nothing else.
+    private func quoteObservation(proof: ProofMoment) -> some View {
+        let voice = CoachingProfileStore.shared.profile?.speakingStyleGoal
+        return VStack(spacing: Spacing.xs) {
+            (Text(Image(systemName: "quote.opening"))
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(.white.opacity(0.55))
+             + Text("  ")
+             + Text(proof.quote)
+                .font(Typography.subheadline.italic())
+                .foregroundStyle(.white)
+             + Text("  ")
+             + Text(Image(systemName: "quote.closing"))
+                .font(Typography.caption.weight(.bold))
+                .foregroundStyle(.white.opacity(0.55)))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(quoteFraming(proof: proof, voice: voice))
+                .font(Typography.subheadline)
+                .foregroundStyle(.white.opacity(0.86))
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Coach observation: \(proof.quote). \(quoteFraming(proof: proof, voice: voice))")
+        .accessibilityIdentifier("firstRep.celebration.observation")
     }
 
     // MARK: - CTAs
@@ -320,6 +396,141 @@ struct FirstRepCelebration: View {
         }()
 
         return "\(durationPhrase), \(fillerPhrase). The read starts now."
+    }
+
+    // MARK: - Proof moment loading
+
+    /// Kicks off the rep-1 proof fetch. Hits `ProofMomentService` (AI
+    /// path with deterministic fallback inside the service), then falls
+    /// through to a celebration-local extractor if even the service's
+    /// fallback returns nil (very short rep, no qualifying clause).
+    /// The celebration cannot fail — if every path returns nothing
+    /// useful, the slot keeps the duration+filler safety net.
+    private func loadProof() {
+        guard proof == nil, loadTask == nil else { return }
+        loadTask = Task { @MainActor in
+            let profile = CoachingProfileStore.shared.profile
+            let baseline = BaselineStore.shared.baseline
+            let input = ProofMomentInput(
+                session: session,
+                voice: profile?.speakingStyleGoal,
+                goalParaphrase: profile?.displayableGoal,
+                baselineFillerRate: baseline.fillerRate.confidence != .insufficient
+                    ? baseline.fillerRate.value : nil,
+                baselinePace: baseline.pace.confidence != .insufficient
+                    ? baseline.pace.value : nil
+            )
+            // First try the canonical archive-bound service. On rep 1 the
+            // session frequently sits at the boundary (≤8s, very short
+            // transcript) so this can legitimately return nil.
+            let serviceProof = await ProofMomentService.shared.proof(for: input)
+            if Task.isCancelled { return }
+            let resolved: ProofMoment? = serviceProof ?? Self.celebrationLocalProof(for: session)
+            if Task.isCancelled { return }
+            guard let resolved = resolved else { return }
+            withAnimation(.easeOut(duration: 0.45)) {
+                self.proof = resolved
+                self.noticeFlashID += 1
+            }
+            CoachHaptic.selectionTap()
+        }
+    }
+
+    /// Celebration-only rep-1 minimum-viable proof. Reached only when the
+    /// canonical `ProofMomentService` can't produce one (rep too short,
+    /// transcript too sparse, no ≥4-word qualifying clause). Extracts
+    /// any 4–14 word verbatim slice and pairs it with a neutral
+    /// observation. Never persisted to the proof archive — that store
+    /// keeps "real" proofs only; celebration-local quotes are surface-
+    /// only so Ask Noum never quotes a low-evidence rep 1 weeks later.
+    private static func celebrationLocalProof(for session: PracticeSession) -> ProofMoment? {
+        let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return nil }
+        guard let slice = minimumVerbatimSlice(in: transcript) else { return nil }
+        return ProofMoment(
+            quote: slice,
+            technique: "First Read",
+            claim: "",
+            sessionDate: session.date,
+            isAIBacked: false,
+            generatedAt: Date()
+        )
+    }
+
+    /// Pick the first 4–14 word slice from the transcript. Prefers
+    /// clauses split on sentence terminators, then comma, then a raw
+    /// word window. Returns nil only if the transcript has fewer than
+    /// four words.
+    private static func minimumVerbatimSlice(in transcript: String) -> String? {
+        let cleaned = transcript
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+        let firstPass = cleaned
+            .components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first(where: { wordCount($0) >= 4 })
+        if let firstPass, wordCount(firstPass) <= 14 { return firstPass }
+        if let firstPass {
+            let words = firstPass.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            return words.prefix(12).joined(separator: " ")
+        }
+        let allWords = cleaned.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        guard allWords.count >= 4 else { return nil }
+        return allWords.prefix(min(12, allWords.count)).joined(separator: " ")
+    }
+
+    private static func wordCount(_ s: String) -> Int {
+        s.components(separatedBy: .whitespaces).filter { !$0.isEmpty }.count
+    }
+
+    /// Voice-shaped one-line framing for the verbatim quote. The frame
+    /// must feel observational, not mocking — rep 1 is weak evidence so
+    /// the language stays soft ("a tell, not a habit yet") rather than
+    /// declarative ("you have a filler problem"). Mirrors the per-voice
+    /// register pattern in `CoachContextBuilder.coachPersonality`.
+    ///
+    /// Branch logic:
+    ///   • If the service returned a real claim (AI path or templated
+    ///     fallback), trust it — that copy was already voice-shaped.
+    ///   • Otherwise (rep-1 minimum-viable celebration-only path), build
+    ///     a soft observation off the filler count: zero fillers reads
+    ///     as composure, a small handful as a tell-not-a-habit, more as
+    ///     "the moment surprised you." Never lectures. Never punishes.
+    private func quoteFraming(proof: ProofMoment, voice: SpeakingStyleGoal?) -> String {
+        if !proof.claim.isEmpty {
+            return proof.claim
+        }
+        let fillers = session.fillerWordCount
+        switch voice {
+        case .authoritative:
+            if fillers == 0 { return "Clean line, first time out. That's authority showing up early." }
+            if fillers <= 2 { return "A couple of fillers in your opener. That's a tell, not a habit yet." }
+            return "Fillers cluster early when the moment matters. We work the pause next."
+        case .warm:
+            if fillers == 0 { return "Calm and unhurried on the first try. The listener feels that." }
+            if fillers <= 2 { return "Heard the hesitation — feels like the moment caught you a little." }
+            return "First reps surprise everyone. The hesitation is honest, and it's workable."
+        case .concise:
+            if fillers == 0 { return "Clean. No filler. That's the baseline to hold." }
+            if fillers <= 2 { return "Small fillers, big tell. The fix is one pause, not less talking." }
+            return "Fillers cluster. Pause is the trim move."
+        case .persuasive:
+            if fillers == 0 { return "A direct opener, no softeners. That's how a case starts." }
+            if fillers <= 2 { return "Fillers leak conviction. Yours are minor — the line still lands." }
+            return "Hesitation reads as uncertainty. A short pause buys back the same beat with weight."
+        case .executive:
+            if fillers == 0 { return "Composed delivery on rep one. Recommend: hold that register." }
+            if fillers <= 2 { return "Light fillers in the open. Brief read: a tell to track, not yet a pattern." }
+            return "Fillers signal warm-up time. We bake in a pre-rep beat next."
+        case .storytelling:
+            if fillers == 0 { return "You set the scene clean, no scaffolding. That's a story breath." }
+            if fillers <= 2 { return "The opener wobbled, then steadied. That's the arc of a first read." }
+            return "First reads are draft pages. The line is there — the silences around it are next."
+        case .none:
+            if fillers == 0 { return "Clean first line. That's the starting baseline." }
+            if fillers <= 2 { return "A few fillers in the open. That's a tell, not a habit yet." }
+            return "Fillers cluster early. The pause is the move we work on next."
+        }
     }
 }
 
