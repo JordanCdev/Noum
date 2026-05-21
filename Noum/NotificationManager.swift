@@ -62,6 +62,16 @@ final class NotificationManager: ObservableObject {
     private let dailyReminderIdentifier = "noum.daily.reminder"
     private let streakWarningIdentifier = "noum.streak.warning"
     private let weeklyDigestIdentifier = "noum.weekly.digest"
+    private let dailyChallengeExpiryIdentifier = "noum.daily.challengeExpiry"
+
+    /// Fixed 8:30 PM local fire time for the daily-challenge expiry warning.
+    /// Set 30 minutes after the streak warning's 8 PM so the two surfaces
+    /// never stack — a user with both enabled gets the streak ping first,
+    /// then this one only if challenges are still open. Kept as a constant
+    /// because the brief calls for a single nightly nudge, not a
+    /// user-configurable time.
+    private let dailyChallengeExpiryHour: Int = 20
+    private let dailyChallengeExpiryMinute: Int = 30
 
     // MARK: - Init
 
@@ -142,7 +152,8 @@ final class NotificationManager: ObservableObject {
             center.removePendingNotificationRequests(withIdentifiers: [
                 dailyReminderIdentifier,
                 streakWarningIdentifier,
-                weeklyDigestIdentifier
+                weeklyDigestIdentifier,
+                dailyChallengeExpiryIdentifier
             ])
 
             // Read authorization state passively — do NOT request, do NOT
@@ -157,6 +168,14 @@ final class NotificationManager: ObservableObject {
 
             if dailyReminderEnabled {
                 await scheduleDailyReminder()
+                // The expiry warning piggy-backs on the same "you opted
+                // into daily nudges" mental model as the daily reminder.
+                // No new Settings toggle — one switch controls the
+                // user's appetite for evening nudges, two cohesive
+                // surfaces fire under it. Always-safe: the schedule
+                // method itself bails when there's nothing to nudge
+                // about (no challenges open / all claimed / etc.).
+                await scheduleDailyChallengeExpiryWarning()
             }
             if streakWarningEnabled {
                 await scheduleStreakWarning()
@@ -246,6 +265,57 @@ final class NotificationManager: ObservableObject {
 
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
         let request = UNNotificationRequest(identifier: weeklyDigestIdentifier, content: content, trigger: trigger)
+        try? await UNUserNotificationCenter.current().add(request)
+#endif
+    }
+
+    /// Public, additive entry point — the caller (today: only the
+    /// internal `refreshScheduledNotifications` path) re-arms the
+    /// expiry warning. Reads the daily-challenge state at schedule
+    /// time and bails when there's nothing to nudge about, so the
+    /// notification never lies about claimable work.
+    ///
+    /// Anti-goal alignment: this surface MUST never punish-shame
+    /// (no "you'll lose", no "Hurry") — copy lives in
+    /// `NotificationCopy.dailyChallengeExpiry(unclaimedCount:)`.
+    func scheduleDailyChallengeExpiryWarning() async {
+#if canImport(UserNotifications)
+        // Honesty guard: read the live unclaimed count from the
+        // DailyChallengesManager at schedule time. If everything's
+        // already claimed today (or hasn't been initialised yet),
+        // there's nothing to nudge — don't arm the trigger.
+        let unclaimed: Int
+        let pastSoftExpiry: Bool
+        if #available(iOS 17.0, macOS 12.0, *) {
+            unclaimed = DailyChallengesManager.shared.unclaimedCount
+            pastSoftExpiry = DailyChallengesManager.shared.isPastSoftExpiry
+        } else {
+            return
+        }
+        guard unclaimed > 0 else { return }
+
+        // Extra restraint: if the user is already past the tile's
+        // soft-expiry (9 PM in the existing M8 contract), the in-app
+        // tile is already showing the muted treatment — they've seen
+        // the signal. We skip the push so we don't double-nudge.
+        guard !pastSoftExpiry else { return }
+
+        let content = UNMutableNotificationContent()
+        let copy = NotificationCopy.dailyChallengeExpiry(unclaimedCount: unclaimed)
+        content.title = copy.title
+        content.body = copy.body
+        content.sound = .default
+
+        var components = DateComponents()
+        components.hour = max(0, min(23, dailyChallengeExpiryHour))
+        components.minute = max(0, min(59, dailyChallengeExpiryMinute))
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        let request = UNNotificationRequest(
+            identifier: dailyChallengeExpiryIdentifier,
+            content: content,
+            trigger: trigger
+        )
         try? await UNUserNotificationCenter.current().add(request)
 #endif
     }

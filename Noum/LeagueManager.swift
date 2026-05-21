@@ -130,9 +130,19 @@ final class LeagueManager: ObservableObject {
     /// promotion mid-session shows on next app open, not silently.
     @Published var pendingPromotion: TierPromotion?
 
+    /// Daily-challenge claims inside the current ISO week. Bumped by
+    /// `recordDailyChallengeCompletion(_:)` whenever the user claims a
+    /// daily challenge. Surfaces can read this alongside the
+    /// session-derived `weeklyReps` to show a complete picture of the
+    /// user's weekly activity; persisted per-account and zeroed on the
+    /// week boundary so an old week's count never carries over.
+    @Published private(set) var weeklyDailyChallengeCompletions: Int = 0
+
     private let lastSeenTierKey = "league.lastSeenTier"
     private let lastSeenTierInitializedKey = "league.lastSeenTierInitialized"
     private let pendingPromotionKey = "league.pendingPromotion"
+    private let dailyChallengeWeekKey = "league.dailyChallenges.isoWeek"
+    private let dailyChallengeCountKey = "league.dailyChallenges.count"
 
     private static let refreshThrottle: TimeInterval = 60
     private var lastFetchAttempt: Date?
@@ -141,6 +151,7 @@ final class LeagueManager: ObservableObject {
 
     private init() {
         loadPendingPromotion()
+        loadWeeklyDailyChallengeCompletions()
         recomputeTierAndBucket()
         observeStateChanges()
     }
@@ -186,6 +197,47 @@ final class LeagueManager: ObservableObject {
     func consumePendingPromotion() {
         pendingPromotion = nil
         UserDefaults.standard.removeObject(forKey: pendingPromotionKey)
+    }
+
+    /// Record that the user claimed a daily challenge. Counts toward the
+    /// current ISO week's daily-challenge tally so a user who engages with
+    /// the daily rhythm — even without running a full rated session —
+    /// shows up as active in their league. Auto-resets on the week
+    /// boundary; no manual rollover needed.
+    ///
+    /// Intentionally NOT a rating mutator: daily challenges are
+    /// supplemental engagement, not a backdoor for rating climb. The
+    /// rating bump pathway stays inside `RatingStore.recordRatedSession`
+    /// so the climb still represents real rated reps. The weekly counter
+    /// is a presence signal for league surfaces.
+    func recordDailyChallengeCompletion(_ kind: DailyChallengeKind) {
+        let nowWeekKey = Self.isoWeekKey(for: Date())
+        let storedWeek = UserDefaults.standard.string(forKey: dailyChallengeWeekKey) ?? ""
+        if storedWeek != nowWeekKey {
+            // New week — zero the counter before adding this claim.
+            UserDefaults.standard.set(nowWeekKey, forKey: dailyChallengeWeekKey)
+            weeklyDailyChallengeCompletions = 0
+        }
+        weeklyDailyChallengeCompletions += 1
+        UserDefaults.standard.set(weeklyDailyChallengeCompletions, forKey: dailyChallengeCountKey)
+
+        // Trigger a tier+bucket recompute so any rating mutation that
+        // landed alongside this claim (rating store updates ripple to
+        // this manager via the subscription, but we keep the
+        // recompute synchronous so the next read is always fresh).
+        recomputeTierAndBucket()
+
+        _ = kind  // reserved for future kind-specific weighting; the
+                  // counter today treats all kinds as one engagement
+                  // unit because the league signal is presence, not
+                  // difficulty-of-claim.
+    }
+
+    /// Reload the per-account weekly daily-challenge counter — called from
+    /// `reloadForCurrentAccount()` lifecycle paths so a switched-into
+    /// account doesn't inherit the previous one's tally.
+    func reloadDailyChallengeCompletionsForCurrentAccount() {
+        loadWeeklyDailyChallengeCompletions()
     }
 
     #if DEBUG
@@ -303,6 +355,30 @@ final class LeagueManager: ObservableObject {
         let week = String(format: "W%02d", comps.weekOfYear ?? 0)
         let year = comps.yearForWeekOfYear ?? 0
         return "\(tier.rawValue)_\(year)-\(week)"
+    }
+
+    /// ISO-week-of-year key used to scope the weekly daily-challenge
+    /// counter. Shape: "2026-W21" — purely a comparison string, never
+    /// surfaced in copy.
+    static func isoWeekKey(for date: Date) -> String {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let week = String(format: "W%02d", comps.weekOfYear ?? 0)
+        let year = comps.yearForWeekOfYear ?? 0
+        return "\(year)-\(week)"
+    }
+
+    private func loadWeeklyDailyChallengeCompletions() {
+        let nowWeekKey = Self.isoWeekKey(for: Date())
+        let storedWeek = UserDefaults.standard.string(forKey: dailyChallengeWeekKey) ?? ""
+        if storedWeek == nowWeekKey {
+            weeklyDailyChallengeCompletions = UserDefaults.standard.integer(forKey: dailyChallengeCountKey)
+        } else {
+            // Stale or absent — clear the persisted count without writing
+            // a fresh zero (it'll be written on the next claim).
+            weeklyDailyChallengeCompletions = 0
+        }
     }
 
     static func endOfWeek(from date: Date) -> Date {

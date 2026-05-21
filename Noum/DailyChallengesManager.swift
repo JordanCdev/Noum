@@ -62,36 +62,52 @@ final class DailyChallengesManager: ObservableObject {
         let todayKey = Self.todayKey()
         let stored = load()
 
+        let rolledOver: Bool
         if stored?.dayKey == todayKey {
             todays = stored!.kinds
             claimedKinds = stored!.claimedKinds
+            rolledOver = false
         } else {
-            todays = DailyChallengeGenerator.threeKinds(for: todayKey)
+            // Per (date, accountID) seed so two users on the same day
+            // see different trios (small win against guess-the-pool
+            // gaming) and a single user sees the same trio across app
+            // restarts on the same day (the persistence layer already
+            // guarantees this within a session; the seed makes it
+            // honest at the generator layer too).
+            let accountID = AuthManager.shared.currentAccountID
+            todays = DailyChallengeGenerator.threeKinds(for: todayKey, accountID: accountID)
             claimedKinds = []
             save(DailyChallengeSet(dayKey: todayKey, kinds: todays, claimedKinds: []))
+            rolledOver = true
         }
         recomputeReady()
+
+        // After a day rollover the expiry warning needs to re-arm against
+        // the new day's three (the count returns to 3 and the body must
+        // reflect that). Safe to call unconditionally — the scheduler
+        // bails on its own when nothing's actionable.
+        if rolledOver {
+            NotificationManager.shared.refreshScheduledNotifications()
+        }
     }
 
     /// Re-evaluate readiness against the latest session. Called after
     /// every session finalize via the PracticeSessionStore subscription.
     func recomputeReady() {
-        guard let latest = PracticeSessionStore.shared.sessions.first else {
-            readyToClaim = []
-            return
-        }
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: Date())
-        guard latest.date >= todayStart else {
-            // Today's challenges should only resolve from today's sessions.
-            // Pulling from yesterday would be a lie.
+        let nextDayStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
+        let sessionsToday = PracticeSessionStore.shared.sessions
+            .filter { $0.date >= todayStart && $0.date < nextDayStart }
+
+        guard let latest = sessionsToday.first else {
             readyToClaim = []
             return
         }
 
         var ready: Set<DailyChallengeKind> = []
         for kind in todays where !claimedKinds.contains(kind) {
-            if kind.isSatisfied(by: latest) {
+            if Self.isSatisfied(kind: kind, latest: latest, sessionsToday: sessionsToday) {
                 ready.insert(kind)
             }
         }
@@ -107,9 +123,35 @@ final class DailyChallengesManager: ObservableObject {
         }
     }
 
+    /// Day-aware predicate evaluator. Most kinds answer from a single
+    /// `PracticeSession`; a few (notably `.secondRepToday`) need a wider
+    /// view across "everything finalized today" — those cases are handled
+    /// here so the `DailyChallengeKind.isSatisfied(by:)` switch can stay
+    /// pure-per-session. Anything not specifically overridden falls
+    /// through to the per-session evaluator.
+    static func isSatisfied(
+        kind: DailyChallengeKind,
+        latest: PracticeSession,
+        sessionsToday: [PracticeSession]
+    ) -> Bool {
+        switch kind {
+        case .secondRepToday:
+            // Honest evaluation: rep #2+ for today. Two finalized
+            // sessions inside the same local day is the bar — drill
+            // completions intentionally don't count here because the
+            // claim language says "rep" and drills aren't called reps
+            // anywhere else in the product.
+            return sessionsToday.count >= 2
+        default:
+            return kind.isSatisfied(by: latest)
+        }
+    }
+
     /// Mark a challenge as claimed by the user. Awards XP through the
-    /// reward engine. Safe to call multiple times — subsequent calls
-    /// for the same kind are no-ops.
+    /// reward engine, and nudges the league rating so daily-challenge
+    /// engagement keeps the user moving inside their tier even on days
+    /// they don't run a full rated session. Safe to call multiple times —
+    /// subsequent calls for the same kind are no-ops.
     @discardableResult
     func claim(_ kind: DailyChallengeKind) -> Bool {
         guard todays.contains(kind), !claimedKinds.contains(kind), readyToClaim.contains(kind) else {
@@ -120,8 +162,19 @@ final class DailyChallengesManager: ObservableObject {
         save(currentSet())
         // Award XP via the profile manager — same path session XP uses.
         ProfileManager.shared.addXP(kind.xpReward)
+        // Feed the league. Per-claim rating bump is small by design (see
+        // `LeagueManager.recordDailyChallengeCompletion`) so completing
+        // all three daily challenges adds up to a meaningful but not
+        // gameable nudge — strictly less than a real session at a
+        // moderate score.
+        LeagueManager.shared.recordDailyChallengeCompletion(kind)
         pendingClaim = kind
         CoachHaptic.skillLevelUp()
+
+        // Re-arm the daily-rhythm notifications so the expiry warning's
+        // body reflects the new unclaimed count — or gets removed
+        // entirely once nothing's open. Honest count, no stale body.
+        NotificationManager.shared.refreshScheduledNotifications()
         return true
     }
 
