@@ -457,6 +457,27 @@ final class RatingStore: ObservableObject {
         pendingPeakGlow = false
     }
 
+    /// Highest rating reached inside the current ISO week, derived purely
+    /// from `ratingHistory`. Nil when there are no rated sessions yet this
+    /// week — surfaces drive the "Best in week" framing only when there's
+    /// real evidence to show (no fake "—" placeholders).
+    ///
+    /// Note: `SpeakingRating.weekPeakRating` is the persisted snapshot
+    /// maintained by `recordRatedSession`; this computed property is the
+    /// pure read alongside it so the peak wall can render from a single
+    /// source of truth (history) without coupling to the persistence step.
+    var peakRatingThisWeek: Int? {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.firstWeekday = 2
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) else {
+            return nil
+        }
+        let thisWeek = rating.ratingHistory.filter { snapshot in
+            weekInterval.contains(snapshot.date)
+        }
+        return thisWeek.map(\.rating).max()
+    }
+
     /// Check personal bests for a session (called for all sessions, not just rated).
     /// Returns list of new PB categories.
     @discardableResult

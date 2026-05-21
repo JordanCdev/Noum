@@ -317,6 +317,61 @@ final class LeagueManager: ObservableObject {
     }
 }
 
+// MARK: - Peak rating entry
+
+/// A single row on the peak-rating wall: one bucket peer's all-time peak
+/// rating + when they achieved it. Sourced from the existing league
+/// `members/` documents (`PublicProfileSnapshot.peakRating`) — never
+/// transcript text, never goal copy. Matches VISION anti-goals: leagues
+/// surface aggregates, never words a user said.
+struct PeakRatingEntry: Identifiable, Equatable {
+    let accountID: String
+    let displayName: String?
+    let peakRating: Double
+    let achievedAt: Date
+
+    var id: String { accountID }
+}
+
+// MARK: - Peak ratings query
+
+@available(iOS 17.0, macOS 12.0, *)
+extension LeagueManager {
+    /// Top peak ratings inside the user's current league bucket, ordered by
+    /// `peakRating` descending. Reads from the same Firestore `members/`
+    /// collection that `refreshMembers` populates — additive, no new
+    /// backend shape. Returns at most `limit` rows.
+    ///
+    /// Bucket scoping: same `(tier, ISO-year-week)` key as the existing
+    /// league surface, so a user only ever sees peers in their tier this
+    /// week. Cross-tier comparison is intentionally absent — the league
+    /// is the comparison frame.
+    ///
+    /// Trade-off: the underlying `fetchLeagueMembers` orders server-side
+    /// by `rating` desc and caps at 20. We re-sort the page client-side
+    /// by `peakRating`. A bucket-mate whose current rating is below top-20
+    /// but whose peak is high may be missed; acceptable for v1 and avoids
+    /// a Firestore composite index. Bumpable when usage proves it out.
+    func peakRatingsInBucket(limit: Int = 5) async -> [PeakRatingEntry] {
+        recomputeTierAndBucket()
+        guard !bucketKey.isEmpty else { return [] }
+        let page = await BackendSyncManager.shared.fetchLeagueMembers(bucket: bucketKey, limit: 20)
+        let entries = page.map { snapshot in
+            PeakRatingEntry(
+                accountID: snapshot.accountID,
+                displayName: snapshot.displayName.isEmpty ? nil : snapshot.displayName,
+                peakRating: Double(snapshot.peakRating),
+                achievedAt: snapshot.updatedAt
+            )
+        }
+        return Array(
+            entries
+                .sorted { $0.peakRating > $1.peakRating }
+                .prefix(limit)
+        )
+    }
+}
+
 // MARK: - Public profile builder
 
 /// Pure function: pulls the current user's stats into a public snapshot

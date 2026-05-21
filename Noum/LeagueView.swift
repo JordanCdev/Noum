@@ -43,9 +43,13 @@ struct LeagueView: View {
 
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your league")
-                .font(Typography.bigStat)
-                .foregroundStyle(.primary)
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text("Your league")
+                    .font(Typography.bigStat)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                seePeaksLink
+            }
 
             Text("Speakers in your rating range, this week. Climbing rating moves you up a tier.")
                 .font(.subheadline)
@@ -54,6 +58,27 @@ struct LeagueView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    /// M16: opens the full peak-rating wall. Surfaces the same bucket
+    /// data this view shows, framed around personal-best comparisons
+    /// rather than current-week standings.
+    private var seePeaksLink: some View {
+        NavigationLink(destination: PeakRatingWallView()) {
+            HStack(spacing: 4) {
+                Text("See peaks")
+                    .font(.caption.weight(.semibold))
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.bold))
+            }
+            .foregroundStyle(AppColor.brandBlue)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("league.peakRatingWall.link")
+        .accessibilityLabel("See your peak rating wall")
     }
 
     // MARK: - Tier card

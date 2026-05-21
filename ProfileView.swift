@@ -157,6 +157,14 @@ struct ProfileView: View {
 
                 speakingRatingCard
 
+                // M16: slim entry-link to the full peak-rating wall.
+                // The compact `PeakRatingWallCard` below (in the
+                // Progression cluster) still summarises the three
+                // framings inline; this link opens the dedicated screen
+                // with sparklines + league-bucket comparison without
+                // restructuring any existing card.
+                peakRatingWallLink
+
                 // M15 Phase 5: ambient "Insights banked" chip. Derived
                 // straight off `ProofMomentStore.shared.records` — no
                 // new state, no new persistence. Hidden when the
@@ -529,6 +537,55 @@ struct ProfileView: View {
             // registers, one product.
             .background(speakingRatingHeroBackground)
             .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 22, x: 0, y: 10)
+        }
+    }
+
+    /// M16: slim entry-link card that pushes `PeakRatingWallView`.
+    /// Sits directly under `speakingRatingCard` so the user can drill
+    /// from "your current rating" into "where you peak" without leaving
+    /// the rating ambient. Hidden until the user has at least one rated
+    /// session — VISION bans surfacing empty comparisons.
+    @ViewBuilder
+    private var peakRatingWallLink: some View {
+        if ratingStore.rating.totalRatedSessions > 0 {
+            NavigationLink(destination: PeakRatingWallView()) {
+                HStack(spacing: Spacing.sm) {
+                    ZStack {
+                        Circle()
+                            .fill(AppColor.brandBlue.opacity(0.14))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(AppColor.brandBlue)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("See your peak wall")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("Best this week, best ever, best in your league.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: Spacing.xs)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(Color.white.opacity(0.72), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile.peakRatingWall.link")
         }
     }
 
