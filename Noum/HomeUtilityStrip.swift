@@ -152,6 +152,17 @@ struct HomeUtilityStrip: View {
     private var wordButton: some View {
         Button(action: openWordOfTheDay) {
             HStack(spacing: 6) {
+                // Tiny "used today" affirmation. Coach-voice rule from the
+                // M16 brief: surface state factually, no praise inflation
+                // and no streak counter. The checkmark replaces the chevron
+                // when the user has already used the word in a rep today.
+                if word.hasUsedToday {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .accessibilityHidden(true)
+                }
+
                 Text("Word: \(word.todaysEntry.word)")
                     .font(Typography.body)
                     .foregroundStyle(.primary)
@@ -159,7 +170,7 @@ struct HomeUtilityStrip: View {
                     .multilineTextAlignment(.trailing)
                     .minimumScaleFactor(0.9)
 
-                Image(systemName: "chevron.right")
+                Image(systemName: word.hasUsedToday ? "arrow.right" : "chevron.right")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
@@ -168,7 +179,9 @@ struct HomeUtilityStrip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel("Word of the day: \(word.todaysEntry.word).")
+        .accessibilityLabel(word.hasUsedToday
+            ? "Word of the day: \(word.todaysEntry.word). Used today."
+            : "Word of the day: \(word.todaysEntry.word).")
         .accessibilityHint(word.hasUsedToday
             ? "Already used today. Opens a timed rep using this word."
             : "Opens a timed rep seeded with today's word.")

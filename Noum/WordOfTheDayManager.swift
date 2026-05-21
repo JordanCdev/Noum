@@ -47,7 +47,8 @@ final class WordOfTheDayManager: ObservableObject {
 
     func ensureForToday() {
         let key = Self.todayKey()
-        todaysEntry = WordOfTheDayCatalog.entry(for: key)
+        let accountID = AuthManager.shared.currentAccountID
+        todaysEntry = WordOfTheDayCatalog.entry(for: key, accountID: accountID)
         let used = loadUsedDays()
         let nowUsed = used.contains(key)
         if nowUsed != hasUsedToday {
