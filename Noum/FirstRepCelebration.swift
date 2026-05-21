@@ -190,6 +190,7 @@ struct FirstRepCelebration: View {
         }
         .scaleEffect(phase >= .characterIn ? 1.0 : 0.8)
         .opacity(phase >= .characterIn ? 1.0 : 0.0)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Headline + subtitle
@@ -428,7 +429,7 @@ struct FirstRepCelebration: View {
             let resolved: ProofMoment? = serviceProof ?? Self.celebrationLocalProof(for: session)
             if Task.isCancelled { return }
             guard let resolved = resolved else { return }
-            withAnimation(.easeOut(duration: 0.45)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.45)) {
                 self.proof = resolved
                 self.noticeFlashID += 1
             }
