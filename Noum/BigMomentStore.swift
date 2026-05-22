@@ -34,6 +34,22 @@ enum BigMomentCategory: String, Codable, CaseIterable {
         case .other:         return "square.grid.2x2"
         }
     }
+
+    /// Lowercase, sentence-embeddable form for coach copy and
+    /// lock-screen notification bodies — "7 days to your presentation."
+    /// reads better than "...your Presentation." with a mid-sentence
+    /// capital. Use `title` for standalone labels (settings rows, sheet
+    /// headers); use `displayName` inside running sentences.
+    var displayName: String {
+        switch self {
+        case .presentation:  return "presentation"
+        case .interview:     return "interview"
+        case .review:        return "performance review"
+        case .conversation:  return "difficult conversation"
+        case .publicSpeaking: return "public speaking event"
+        case .other:         return "big moment"
+        }
+    }
 }
 
 struct BigMoment: Codable, Identifiable, Equatable {
@@ -107,7 +123,17 @@ final class BigMomentStore: ObservableObject {
     }
 
     func daysUntil() -> Int? {
-        guard let date = activeMoment?.date else { return nil }
+        guard let moment = activeMoment else { return nil }
+        return daysUntil(moment)
+    }
+
+    /// Days from today until `moment.date`, or nil if no date is set.
+    /// Negative values mean the moment has passed. `nonisolated` because
+    /// this is pure calendar math — no `activeMoment` read needed — so
+    /// non-MainActor callers (e.g. `CoachContextBuilder.userContext`)
+    /// can use it directly.
+    nonisolated func daysUntil(_ moment: BigMoment) -> Int? {
+        guard let date = moment.date else { return nil }
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let target = calendar.startOfDay(for: date)

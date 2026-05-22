@@ -1,46 +1,6 @@
 #if canImport(SwiftUI)
 import Foundation
 
-// MARK: - BigMoment stub
-//
-// BigMomentStore is authored by m19-state (Track 1) and merged by the
-// team lead. This stub compiles cleanly until that file lands. Remove
-// when BigMomentStore.swift is integrated.
-#if !BIGMOMENT_DEFINED
-struct BigMoment {
-    let title: String
-    let date: Date?
-    let category: BigMomentCategory
-}
-
-enum BigMomentCategory: String {
-    case presentation, interview, review, conversation, publicSpeaking, other
-
-    var displayName: String {
-        switch self {
-        case .presentation:   return "presentation"
-        case .interview:      return "interview"
-        case .review:         return "performance review"
-        case .conversation:   return "difficult conversation"
-        case .publicSpeaking: return "public speaking event"
-        case .other:          return "big moment"
-        }
-    }
-}
-
-final class BigMomentStore {
-    static let shared = BigMomentStore()
-    var activeMoment: BigMoment? { nil }
-
-    func daysUntil(_ moment: BigMoment) -> Int? {
-        guard let date = moment.date else { return nil }
-        return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: Calendar.current.startOfDay(for: date)).day
-    }
-
-    func cancelBigMomentNotifications() {}
-}
-#endif
-
 // MARK: - Coach Context Builder
 //
 // Pure-function helpers that produce the structured context an AI coach
