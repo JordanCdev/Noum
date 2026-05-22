@@ -35,6 +35,7 @@ enum AppDestination: Hashable {
     /// deleted or isn't in the store anymore — see `ContentView`'s
     /// destination switch.
     case sessionDetail(sessionID: UUID)
+    case bigMomentIntake
 }
 
 struct SummaryPayload: Identifiable, Hashable {
@@ -381,6 +382,9 @@ struct CoachingProfile: Codable, Equatable {
     /// Read-only post-capture: raw inputs stay for export, the paraphrase is
     /// the sanitised version safe to surface in UI and notifications.
     var paraphrasedGoal: String?
+    /// Points at the active `BigMoment` in `BigMomentStore`. Optional so
+    /// existing persisted profiles (without this field) decode cleanly as nil.
+    var bigMomentID: UUID?
 
     var isComplete: Bool { true }
     var personalGoalReference: String {
@@ -412,6 +416,7 @@ struct CoachingProfile: Codable, Equatable {
         case motivationWhyNow
         case successVision
         case paraphrasedGoal
+        case bigMomentID
     }
 
     init(
@@ -425,7 +430,8 @@ struct CoachingProfile: Codable, Equatable {
         coachingBrief: String,
         motivationWhyNow: String,
         successVision: String,
-        paraphrasedGoal: String? = nil
+        paraphrasedGoal: String? = nil,
+        bigMomentID: UUID? = nil
     ) {
         self.speakingContext = speakingContext
         self.primaryGoal = primaryGoal
@@ -438,6 +444,7 @@ struct CoachingProfile: Codable, Equatable {
         self.motivationWhyNow = motivationWhyNow
         self.successVision = successVision
         self.paraphrasedGoal = paraphrasedGoal
+        self.bigMomentID = bigMomentID
     }
 
     init(from decoder: Decoder) throws {
@@ -453,6 +460,7 @@ struct CoachingProfile: Codable, Equatable {
         motivationWhyNow = try container.decodeIfPresent(String.self, forKey: .motivationWhyNow) ?? ""
         successVision = try container.decodeIfPresent(String.self, forKey: .successVision) ?? ""
         paraphrasedGoal = try container.decodeIfPresent(String.self, forKey: .paraphrasedGoal)
+        bigMomentID = try container.decodeIfPresent(UUID.self, forKey: .bigMomentID)
     }
 }
 

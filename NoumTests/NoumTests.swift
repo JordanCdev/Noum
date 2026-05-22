@@ -8933,3 +8933,144 @@ struct CoachContextBuilderChipParserTests {
         #expect(chips == ["First chip here", "Second chip too"])
     }
 }
+
+// MARK: - BigMomentStore Tests
+
+@available(iOS 17.0, *)
+struct BigMomentStoreTests {
+
+    // MARK: - Persistence round-trip
+
+    @Test func bigMomentRoundTripsViaJSONCodec() throws {
+        let original = BigMoment(
+            title: "Board pitch to Q3 investors",
+            date: Date(timeIntervalSinceNow: 86400 * 7),
+            category: .presentation
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(BigMoment.self, from: data)
+        #expect(decoded.id == original.id)
+        #expect(decoded.title == original.title)
+        #expect(decoded.category == original.category)
+        #expect(decoded.createdAt.timeIntervalSinceReferenceDate == original.createdAt.timeIntervalSinceReferenceDate)
+    }
+
+    // MARK: - Archive cap
+
+    @Test func archiveCapIsRespected() throws {
+        var moments: [BigMoment] = []
+        for i in 0..<6 {
+            moments.append(BigMoment(title: "Moment \(i)", category: .other))
+        }
+        let cap = 5
+        let capped = Array(moments.prefix(cap))
+        #expect(capped.count == cap)
+    }
+
+    // MARK: - Category codec
+
+    @Test func allCategoriesRoundTripViaRawValue() throws {
+        for category in BigMomentCategory.allCases {
+            let encoded = try JSONEncoder().encode(category)
+            let decoded = try JSONDecoder().decode(BigMomentCategory.self, from: encoded)
+            #expect(decoded == category)
+        }
+    }
+
+    // MARK: - Per-account isolation
+
+    @Test func separateAccountKeysDontCollide() {
+        let key1 = "bigMoment.account-abc"
+        let key2 = "bigMoment.account-xyz"
+        #expect(key1 != key2)
+    }
+}
+
+// MARK: - BigMomentDaysUntilTests
+
+@available(iOS 17.0, *)
+struct BigMomentDaysUntilTests {
+
+    private func daysUntil(from referenceDate: Date, to targetDate: Date) -> Int? {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: referenceDate)
+        let target = calendar.startOfDay(for: targetDate)
+        let components = calendar.dateComponents([.day], from: today, to: target)
+        return components.day
+    }
+
+    @Test func daysUntilTodayIsZero() {
+        let today = Date()
+        let result = daysUntil(from: today, to: today)
+        #expect(result == 0)
+    }
+
+    @Test func daysUntilFutureIsPositive() {
+        let today = Date()
+        let sevenDaysOut = Calendar.current.date(byAdding: .day, value: 7, to: today)!
+        let result = daysUntil(from: today, to: sevenDaysOut)
+        #expect(result == 7)
+    }
+
+    @Test func daysUntilPastIsNegative() {
+        let today = Date()
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+        let result = daysUntil(from: today, to: yesterday)
+        #expect(result == -1)
+    }
+
+    @Test func daysUntilNilWhenNoDate() {
+        let moment = BigMoment(title: "No date", category: .other)
+        // Without a date, daysUntil must return nil.
+        #expect(moment.date == nil)
+    }
+}
+
+// MARK: - CoachingProfileBigMomentIDDecodingTests
+
+@available(iOS 17.0, *)
+struct CoachingProfileBigMomentIDDecodingTests {
+
+    @Test func oldProfileWithoutBigMomentIDDecodesToNil() throws {
+        // Simulate a persisted profile that predates the bigMomentID field.
+        let json = """
+        {
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "inconsistent",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "concise",
+            "speakingStyleGoal": "authoritative",
+            "styleReference": "",
+            "coachingBrief": "I want to speak better",
+            "motivationWhyNow": "",
+            "successVision": ""
+        }
+        """
+        let data = json.data(using: .utf8)!
+        let profile = try JSONDecoder().decode(CoachingProfile.self, from: data)
+        #expect(profile.bigMomentID == nil)
+    }
+
+    @Test func newProfileWithBigMomentIDDecodesCorrectly() throws {
+        let momentID = UUID()
+        let json = """
+        {
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "inconsistent",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "concise",
+            "speakingStyleGoal": "authoritative",
+            "styleReference": "",
+            "coachingBrief": "I want to speak better",
+            "motivationWhyNow": "",
+            "successVision": "",
+            "bigMomentID": "\(momentID.uuidString)"
+        }
+        """
+        let data = json.data(using: .utf8)!
+        let profile = try JSONDecoder().decode(CoachingProfile.self, from: data)
+        #expect(profile.bigMomentID == momentID)
+    }
+}

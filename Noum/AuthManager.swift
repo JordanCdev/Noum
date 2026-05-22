@@ -581,6 +581,7 @@ class AuthManager: ObservableObject {
             ProfileManager.shared.reloadForCurrentAccount()
             IMRelationshipStore.shared.reloadForCurrentAccount()
             RecommendationLearningStore.shared.reloadForCurrentAccount()
+            BigMomentStore.shared.reloadForCurrentAccount()
             completion?()
         }
     }
@@ -592,6 +593,7 @@ class AuthManager: ObservableObject {
             PracticeSessionStore.shared.endSession()
             ProfileManager.shared.endSession()
             IMRelationshipStore.shared.endSession()
+            BigMomentStore.shared.endSession()
         }
     }
 

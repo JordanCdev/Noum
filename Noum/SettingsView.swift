@@ -44,7 +44,9 @@ struct SettingsView: View {
     @AppStorage("settings.advancedExpanded") private var advancedExpanded: Bool = false
 
     @State private var isBackendConfigured = false
+    @StateObject private var bigMomentStore = BigMomentStore.shared
     @State private var showCoachingProfile = false
+    @State private var showBigMomentIntake = false
     @State private var showPaywall = false
     @State private var showLocalePicker = false
     @State private var showYourData = false
@@ -144,6 +146,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showCoachingProfile) {
             CoachingOnboardingView()
+        }
+        .sheet(isPresented: $showBigMomentIntake) {
+            BigMomentIntakeView()
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
@@ -608,6 +613,15 @@ struct SettingsView: View {
                 accessibilityHint: "Open the coaching profile flow."
             ) {
                 showCoachingProfile = true
+            }
+
+            SettingsNavRow(
+                title: "Upcoming moment",
+                value: bigMomentStore.activeMoment?.title,
+                icon: "calendar.badge.clock",
+                accessibilityHint: "Set or update the high-stakes moment you are preparing for."
+            ) {
+                showBigMomentIntake = true
             }
         }
     }

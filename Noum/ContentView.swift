@@ -91,6 +91,7 @@ struct ContentView: View {
     /// celebration's `proofLine` row fades in. Cleared when the
     /// celebration is dismissed.
     @State private var pathCelebrationProof: ProofMoment? = nil
+    @State private var showBigMomentIntake: Bool = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
@@ -380,6 +381,8 @@ struct ContentView: View {
                     } else {
                         SessionHistoryView(navigationPath: $navigationPath)
                     }
+                case .bigMomentIntake:
+                    BigMomentIntakeView()
                 }
             }
         }
@@ -458,6 +461,22 @@ struct ContentView: View {
         // Fires once on session 1 with a 30-day cool-down on decline.
         .sheet(isPresented: $notificationPrePrompt.pendingPrompt) {
             NotificationPrePromptSheet()
+        }
+        // Big Moment intake — fires once after onboarding completes (new
+        // accounts) or on noum://bigmoment deep link. Never blocks: Skip
+        // clears the state without saving.
+        .sheet(isPresented: $showBigMomentIntake) {
+            BigMomentIntakeView()
+        }
+        .onChange(of: coachingProfileStore.profile) { old, new in
+            // Fire BigMoment intake once after a brand-new profile is saved
+            // (old == nil, new != nil). Skip if a moment is already set or
+            // if the intake is already showing.
+            if old == nil, new != nil,
+               BigMomentStore.shared.activeMoment == nil,
+               !showBigMomentIntake {
+                showBigMomentIntake = true
+            }
         }
         .onChange(of: deepLinkRouter.pending) { _, url in
             guard let url else { return }
@@ -1785,6 +1804,8 @@ struct ContentView: View {
             navigationPath.append(AppDestination.growthLibrary)
         case "lessons":
             navigationPath.append(AppDestination.lessons)
+        case "bigmoment":
+            showBigMomentIntake = true
         case "friend":
             // Add the inviter as a friend immediately, then surface the
             // profile so the user sees the new entry. `acceptInvite`
