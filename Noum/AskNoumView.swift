@@ -590,13 +590,13 @@ struct AskNoumView: View {
             recentProofs: proofStore.recent(limit: 3)
         )
         let history = await MainActor.run { store.replayForModel }
-        let reply = await AICoachChatService.shared.reply(
+        let outcome = await AICoachChatService.shared.reply(
             history: history,
             systemPrompt: systemPrompt,
             userContext: context
         )
         await MainActor.run {
-            store.completeCoachTurn(id: coachID, text: reply ?? "")
+            store.completeCoachTurn(id: coachID, outcome: outcome)
         }
     }
 

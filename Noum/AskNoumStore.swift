@@ -129,32 +129,61 @@ final class AskNoumStore: ObservableObject {
         return (userMsg.id, coachMsg.id)
     }
 
-    /// Hydrate the pending coach row once the service returns. Marks
-    /// `isAwaitingReply` false. If `text` is empty (model failure /
-    /// no provider), the placeholder gets replaced with a system
-    /// notice instead of an empty bubble.
-    func completeCoachTurn(id: UUID, text: String) {
+    /// Hydrate the pending coach row once the service returns. On
+    /// `.reply` the placeholder becomes a coach bubble; on `.failure`
+    /// it becomes a system notice with cause-specific copy so the user
+    /// knows what to actually fix (locale, network, provider, prompt)
+    /// instead of being told to "check Settings" no matter what broke.
+    func completeCoachTurn(id: UUID, outcome: ChatOutcome) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            messages[idx] = CoachMessage(
-                id: id,
-                role: .systemNotice,
-                text: "I couldn't reach my model just now. Try again, or check that an AI provider is configured in Settings.",
-                createdAt: messages[idx].createdAt,
-                isPending: false
-            )
-        } else {
-            messages[idx] = CoachMessage(
-                id: id,
-                role: .coach,
-                text: trimmed,
-                createdAt: messages[idx].createdAt,
-                isPending: false
-            )
+        switch outcome {
+        case .reply(let text):
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                // Defensive: service shouldn't hand us a successful reply
+                // with empty content (that path returns `.failure(.empty)`),
+                // but if it does, route through the same notice.
+                replaceWithNotice(at: idx, id: id, failure: .empty)
+            } else {
+                messages[idx] = CoachMessage(
+                    id: id,
+                    role: .coach,
+                    text: trimmed,
+                    createdAt: messages[idx].createdAt,
+                    isPending: false
+                )
+            }
+        case .failure(let failure):
+            replaceWithNotice(at: idx, id: id, failure: failure)
         }
         isAwaitingReply = false
         trimAndPersist()
+    }
+
+    private func replaceWithNotice(at idx: Int, id: UUID, failure: ChatFailure) {
+        messages[idx] = CoachMessage(
+            id: id,
+            role: .systemNotice,
+            text: Self.noticeCopy(for: failure),
+            createdAt: messages[idx].createdAt,
+            isPending: false
+        )
+    }
+
+    /// User-facing copy per failure cause. First-person voice (Noum),
+    /// sentence case, no exclamation marks, action-oriented — matches
+    /// the coach voice rules used everywhere else.
+    private static func noticeCopy(for failure: ChatFailure) -> String {
+        switch failure {
+        case .noProvider:
+            return "I'm not set up with an AI provider yet. Add a key in Settings to continue."
+        case .localeUnsupported:
+            return "I can only chat in English right now. Switch practice locale in Settings to continue."
+        case .network:
+            return "I couldn't reach my model — check your connection and try again."
+        case .empty:
+            return "I came up empty on that one. Try rephrasing."
+        }
     }
 
     /// Cancel an in-flight coach reply (user navigated away, etc.).

@@ -18,9 +18,33 @@ import Foundation
 //     being baked into the user context block.
 //   • Token-conservative — temperature 0.6, max_tokens ~ 350 so a
 //     single response stays compact and never floods the chat.
-//   • Failure-soft — empty / failed completions return nil and the
-//     store renders a "couldn't reach my model" notice instead. We
-//     never fabricate a coach reply on error.
+//   • Failure-typed — `reply(...)` returns `ChatOutcome` so the store
+//     can route to per-cause copy (locale-block vs. network vs. no
+//     provider vs. empty) instead of one generic "couldn't reach my
+//     model" string that misdirected users. Never fabricate a reply.
+
+/// Why a chat turn didn't produce a coach reply. Mapped to per-cause
+/// copy by `AskNoumStore`; never shown raw to the user.
+enum ChatFailure: Equatable {
+    /// No AI provider has a usable API key configured.
+    case noProvider
+    /// Current practice locale isn't supported by the AI surfaces
+    /// (English-only today per M13).
+    case localeUnsupported
+    /// Transport / HTTP / JSON-encode failure.
+    case network
+    /// Request succeeded but the provider returned an empty / unparseable
+    /// completion. Distinct from `.network` because retrying the same
+    /// prompt won't help — rephrasing might.
+    case empty
+}
+
+/// Outcome of a chat turn — either a hydrated reply or a typed failure
+/// the store maps to per-cause copy.
+enum ChatOutcome {
+    case reply(String)
+    case failure(ChatFailure)
+}
 
 @available(iOS 17.0, macOS 12.0, *)
 actor AICoachChatService {
@@ -35,27 +59,27 @@ actor AICoachChatService {
 
     private init() {}
 
-    /// Send a turn to the model. Returns the coach's reply text on
-    /// success, or nil on any failure (no provider, network error,
-    /// empty completion). Callers should hydrate the store's pending
-    /// coach row regardless — the store renders a system notice for
-    /// nil replies.
+    /// Send a turn to the model. Returns `.reply(text)` on success or
+    /// `.failure(cause)` on any failure. The store maps the cause to
+    /// per-failure copy so the user always sees an accurate notice
+    /// instead of a generic "couldn't reach my model" string that
+    /// misdirected locale-blocked users to a useless settings page.
     func reply(
         history: [CoachMessage],
         systemPrompt: String,
         userContext: String
-    ) async -> String? {
+    ) async -> ChatOutcome {
         guard let provider = await currentProvider(),
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
         else {
-            return nil
+            return .failure(.noProvider)
         }
 
-        // M13: AI surfaces are English-only. Non-English locales get
-        // the "no reply" path — the store falls back to a notice.
+        // M13: AI surfaces are English-only. Surface a locale-specific
+        // notice rather than the generic provider-config message.
         guard await activeLocaleSupportsAI() else {
-            return nil
+            return .failure(.localeUnsupported)
         }
 
         // Compose the system prompt — voice + context block.
@@ -76,17 +100,20 @@ actor AICoachChatService {
             case .gemini:
                 request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
             case .none:
-                return nil
+                return .failure(.noProvider)
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return nil
+                return .failure(.network)
             }
-            return extractText(from: data, provider: provider)
+            if let text = extractText(from: data, provider: provider) {
+                return .reply(text)
+            }
+            return .failure(.empty)
         } catch {
-            return nil
+            return .failure(.network)
         }
     }
 
