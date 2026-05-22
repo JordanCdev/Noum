@@ -5694,7 +5694,7 @@ struct AskNoumStoreTests {
     @Test func completeCoachTurnHydratesPlaceholder() {
         let store = freshStore()
         let ids = store.appendUserTurn("Plan my week.")
-        store.completeCoachTurn(id: ids.coachID, text: "Do 3 reps of Sudden Death.")
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("Do 3 reps of Sudden Death."))
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .coach)
         #expect(store.messages[1].isPending == false)
@@ -5708,7 +5708,7 @@ struct AskNoumStoreTests {
         // user understands what happened.
         let store = freshStore()
         let ids = store.appendUserTurn("Plan my week.")
-        store.completeCoachTurn(id: ids.coachID, text: "")
+        store.completeCoachTurn(id: ids.coachID, outcome: .failure(.network))
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .systemNotice)
         #expect(store.messages[1].text.contains("couldn't reach"))
@@ -5728,9 +5728,9 @@ struct AskNoumStoreTests {
     @Test func replayForModelOmitsSystemNoticesAndPendingRows() {
         let store = freshStore()
         let ids1 = store.appendUserTurn("First.")
-        store.completeCoachTurn(id: ids1.coachID, text: "First reply.")
+        store.completeCoachTurn(id: ids1.coachID, outcome: .reply("First reply."))
         let ids2 = store.appendUserTurn("Second.")
-        store.completeCoachTurn(id: ids2.coachID, text: "") // → system notice
+        store.completeCoachTurn(id: ids2.coachID, outcome: .failure(.network)) // → system notice
         let ids3 = store.appendUserTurn("Third.")
         // ids3.coachID is still pending — should NOT be in replay.
 
@@ -5749,7 +5749,7 @@ struct AskNoumStoreTests {
     @Test func clearThreadRemovesAllMessages() {
         let store = freshStore()
         let ids = store.appendUserTurn("Hello.")
-        store.completeCoachTurn(id: ids.coachID, text: "Hi.")
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("Hi."))
         store.clearThread()
         #expect(store.messages.isEmpty)
     }
@@ -5833,7 +5833,7 @@ struct AskNoumStoreTests {
         let store = freshStore()
         let firstCoachID = store.injectUserTurn("Same opener.")
         // Reply lands.
-        store.completeCoachTurn(id: firstCoachID!, text: "Here's the read.")
+        store.completeCoachTurn(id: firstCoachID!, outcome: .reply("Here's the read."))
         // Second inject of the same text now appends a fresh pair.
         let secondCoachID = store.injectUserTurn("Same opener.")
         #expect(secondCoachID != nil)
@@ -7360,7 +7360,6 @@ struct GrowthLibraryWeeklyGroupingTests {
 //      `NavigationLink(value:)` can dedupe taps and re-enter cleanly).
 //   2. Different session IDs produce distinct destinations (so the navi-
 //      gation stack doesn't collapse two cards onto the same screen).
-@available(iOS 17.0, *)
 struct AppDestinationSessionDetailTests {
 
     @Test func sessionDetailEqualsBySessionID() {
