@@ -182,8 +182,15 @@ struct AskNoumView: View {
     }
 
     private var headerSubtitle: String {
+        // "Reading your context…" earned the user's complaint by showing
+        // during EVERY pending reply — even after the first reply had
+        // landed and the context was clearly already read. That made the
+        // header read as stuck/stale. Now we only claim "reading context"
+        // before the first reply of the thread has hydrated; after that,
+        // pending replies show "Thinking…" which matches the actual
+        // mental model the user has of what the coach is doing.
         if store.isAwaitingReply {
-            return "Reading your context\u{2026}"
+            return store.hasLandedCoachReply ? "Thinking\u{2026}" : "Reading your context\u{2026}"
         }
         if let voice = voice {
             return "Your \(voice.title.lowercased()) coach."

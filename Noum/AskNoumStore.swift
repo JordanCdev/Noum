@@ -261,6 +261,15 @@ final class AskNoumStore: ObservableObject {
         messages.filter { $0.role != .systemNotice && !$0.isPending }
     }
 
+    /// True once at least one coach reply has hydrated in this thread.
+    /// Used by the header to flip the pending-reply subtitle from
+    /// "Reading your context…" (cold start) to "Thinking…" (every
+    /// subsequent reply) so the header never claims to still be reading
+    /// context after the model has already responded.
+    var hasLandedCoachReply: Bool {
+        messages.contains { $0.role == .coach && !$0.isPending && !$0.text.isEmpty }
+    }
+
     // MARK: - Persistence
 
     private var currentKey: String {

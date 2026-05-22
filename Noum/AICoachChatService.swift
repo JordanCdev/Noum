@@ -16,8 +16,10 @@ import Foundation
 //   • Bounded replay — cap at 12 user-coach turn pairs in the request
 //     body (24 messages). Older context is summarised by virtue of
 //     being baked into the user context block.
-//   • Token-conservative — temperature 0.6, max_tokens ~ 350 so a
-//     single response stays compact and never floods the chat.
+//   • Token-bounded — temperature 0.6, max_tokens 700 so a multi-
+//     paragraph reply that quotes user data + lands a next move
+//     never truncates mid-sentence. The earlier 380 cap clipped
+//     replies mid-fraction (e.g. "rated it 8/" with nothing after).
 //   • Failure-typed — `reply(...)` returns `ChatOutcome` so the store
 //     can route to per-cause copy (locale-block vs. network vs. no
 //     provider vs. empty) instead of one generic "couldn't reach my
@@ -161,7 +163,11 @@ actor AICoachChatService {
             return [
                 "model": provider.model,
                 "temperature": 0.6,
-                "max_tokens": 380,
+                // 700 tokens (~520 words) so a multi-paragraph reply that
+                // quotes user data + ends with a concrete next move
+                // never truncates mid-sentence. Earlier 380 cap clipped
+                // replies mid-fraction ("rated it 8/" → empty).
+                "max_tokens": 700,
                 "messages": msgs
             ]
         case .gemini:
@@ -186,7 +192,7 @@ actor AICoachChatService {
                 "contents": contents,
                 "generationConfig": [
                     "temperature": 0.6,
-                    "maxOutputTokens": 380
+                    "maxOutputTokens": 700
                 ]
             ]
         case .none:
