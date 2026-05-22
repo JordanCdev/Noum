@@ -12,10 +12,14 @@ import Foundation
 // captured buffer and produce these aggregates.
 //
 // Honest gaps in v1:
-//   • Pitch is computed from the same mic stream as transcription. If
-//     the user's mic captures background music (rare; transcription
-//     would also degrade), the pitch readings will lean toward that
-//     fundamental, not the user's voice. We do not currently filter.
+//   • Hum/music false-positive: closed at the call site
+//     (`SpeechRecognizerViewModel.currentSessionPitchMetrics()`). That
+//     method now returns nil when the rep produced fewer than 8
+//     transcribed words or ran for under 4 seconds — without that
+//     transcript evidence we can't credibly attribute voiced f0 to the
+//     user's voice rather than background audio. `isReliable` below
+//     stays a pure value-type predicate and assumes the call site has
+//     already vetted that the metrics came from real speech.
 //   • We use voiced-frame stdev as the variation metric. This conflates
 //     intentional vocal variety with transcription jitter on whispered
 //     speech. Trend analysis will smooth out short-term noise.

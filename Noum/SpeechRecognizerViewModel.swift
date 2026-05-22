@@ -128,8 +128,21 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// (analysis is a few hundred milliseconds at most for a 60s rep).
     /// Returns nil when no analyzer was attached, when the buffer is too
     /// short to analyze, or when no window crossed the voicing threshold.
+    ///
+    /// Hum-vs-speech gate: also returns nil when the rep produced almost
+    /// no transcribed words or ran for under a few seconds. Closes the
+    /// gap documented in `PitchMetrics.swift` — without a transcript
+    /// signal, voiced f0 in the 70–400 Hz band may be HVAC, background
+    /// music, or a TV in the room, not the user's voice. We need the
+    /// transcript to credibly attribute the pitch reading to speech.
+    /// Thresholds are conservative: 8 words covers "uh, sorry — let me
+    /// start over" half-aborts; 4 seconds covers reps where the mic
+    /// barely opened.
     func currentSessionPitchMetrics() -> PitchMetrics? {
         guard let analyzer = pitchAnalyzer else { return nil }
+        let words = finalTranscript.split { !$0.isLetter && !$0.isNumber }.count
+        let duration = sessionStart.map { Date().timeIntervalSince($0) } ?? 0
+        guard words >= 8, duration >= 4 else { return nil }
         let metrics = analyzer.analyze()
         return metrics.windowCount > 0 ? metrics : nil
     }
