@@ -948,7 +948,7 @@ struct SuddenDeathPracticeView: View {
                             Text("Round \(index + 1)")
                                 .font(.caption.weight(.medium))
                             Spacer()
-                            Text(outcome.label)
+                            Text(roundOutcomeRowLabel(outcome: outcome, index: index, result: result))
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(outcome.isFailed ? .red : .green)
                         }
@@ -1013,6 +1013,19 @@ struct SuddenDeathPracticeView: View {
             .padding(.horizontal, Spacing.screenH)
             .padding(.bottom, 24)
         }
+    }
+
+    /// Legacy persisted sessions predate the per-round arrays; bounds-check
+    /// before subscripting and fall back to the generic enum label.
+    private func roundOutcomeRowLabel(outcome: RoundOutcome, index: Int, result: PressureSessionResult) -> String {
+        guard outcome == .tooShort,
+              index < result.wordCountsByRound.count,
+              index < result.minimumWordsByRound.count else {
+            return outcome.label
+        }
+        let said = result.wordCountsByRound[index]
+        let needed = result.minimumWordsByRound[index]
+        return "Too short — \(said) word\(said == 1 ? "" : "s") (needed \(needed))"
     }
 
     private func resultStat(value: String, label: String, tint: Color) -> some View {
