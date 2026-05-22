@@ -358,6 +358,8 @@ struct ContentView: View {
                         ratingStore: ratingStore,
                         coachingProfileStore: coachingProfileStore
                     )
+                case .growthLibrary:
+                    GrowthLibraryView()
                 }
             }
         }
@@ -1759,6 +1761,8 @@ struct ContentView: View {
         case "ask", "asknoum":
             navigationPath = NavigationPath()
             navigationPath.append(AppDestination.askNoum)
+        case "growth", "library":
+            navigationPath.append(AppDestination.growthLibrary)
         case "lessons":
             navigationPath.append(AppDestination.lessons)
         case "friend":

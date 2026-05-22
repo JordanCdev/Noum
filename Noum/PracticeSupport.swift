@@ -27,6 +27,7 @@ enum AppDestination: Hashable {
     case speakingRank
     case pathJourney
     case askNoum
+    case growthLibrary
 }
 
 struct SummaryPayload: Identifiable, Hashable {

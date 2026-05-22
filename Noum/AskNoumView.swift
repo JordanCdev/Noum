@@ -41,6 +41,7 @@ struct AskNoumView: View {
     @FocusState private var inputFocused: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
 
     private var voice: SpeakingStyleGoal? {
         coachingProfileStore.profile?.speakingStyleGoal
@@ -487,20 +488,37 @@ struct AskNoumView: View {
     private var insightsCaption: some View {
         let count = proofStore.records.count
         if count > 0 {
+            // M16: caption is also the discoverability handle for the
+            // Growth Library. Same chevron + `noum://growth` deep link
+            // pattern as the Profile chip — one library, three entry
+            // points (Profile + AskNoum + the deep link itself).
             let noun = count == 1 ? "insight" : "insights"
-            HStack(spacing: 6) {
-                Image(systemName: "quote.opening")
-                    .font(.caption2)
-                    .foregroundStyle(AppColor.pro.opacity(0.75))
-                Text("\(count) \(noun) banked")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+            Button {
+                if let url = URL(string: "noum://growth") {
+                    openURL(url)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "quote.opening")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.pro.opacity(0.75))
+                    Text("\(count) \(noun) banked")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.xs)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.xs)
+            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(count) \(noun) banked.")
+            .accessibilityHint(Text("Opens the growth library."))
+            .accessibilityIdentifier("askNoum.growthLibrary.link")
         }
     }
 

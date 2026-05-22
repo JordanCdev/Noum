@@ -6625,6 +6625,165 @@ struct InsightsBankedChipTests {
     }
 }
 
+// MARK: - Growth Library (M16)
+//
+// `GrowthLibraryView` is the persistent surface for the banked proof
+// archive. The SwiftUI body itself is not unit-testable in any
+// meaningful way, but two pieces of behavior matter and ARE
+// covered here:
+//
+//   1. `GrowthLibraryView.relativeDateLabel(_:now:)` — pure-function
+//      relative phrasing. Drives the per-row date eyebrow; the chip
+//      on Profile uses a more compact phrasing, but the library uses
+//      a longer "X days/weeks/months ago" form so a year of proofs
+//      still reads coherently.
+//   2. `GrowthLibraryView.accessibilityLabel(for:)` — flattens a
+//      ProofMomentRecord into one VoiceOver-friendly sentence. Must
+//      include every visible slot (date, technique, quote, claim)
+//      and must skip the claim cleanly when it's empty (the
+//      deterministic-fallback path can produce empty claims).
+//
+// Both helpers are static so the tests don't have to instantiate
+// SwiftUI. The library reads straight off the existing store
+// (`ProofMomentStore`) which is already covered by InsightsBankedChip
+// tests above — no need to re-test persistence here.
+
+@available(iOS 17.0, *)
+@MainActor
+struct GrowthLibraryTests {
+
+    private static let referenceNow: Date = {
+        // Fixed `now` so the day-arithmetic results don't drift across
+        // midnight on the test runner. Mirrors the pattern used in
+        // PauseSummary / RetentionLoopTests elsewhere.
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 5
+        components.day = 22
+        components.hour = 12
+        return Calendar.current.date(from: components) ?? Date()
+    }()
+
+    private func date(daysAgo: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: -daysAgo, to: Self.referenceNow) ?? Self.referenceNow
+    }
+
+    private func record(daysAgo: Int, technique: String = "Power Pause", quote: String = "We focused on three priorities.", claim: String = "That's authority. You've earned it.") -> ProofMomentRecord {
+        let proof = ProofMoment(
+            quote: quote,
+            technique: technique,
+            claim: claim,
+            sessionDate: date(daysAgo: daysAgo),
+            isAIBacked: false,
+            generatedAt: Self.referenceNow
+        )
+        return ProofMomentRecord(sessionID: UUID(), proof: proof, addedAt: Self.referenceNow)
+    }
+
+    // MARK: - relativeDateLabel
+
+    @Test func relativeDateLabelReadsAsTodayForSameCalendarDay() {
+        // 0 days delta → "Today". Hour-of-day differences inside the
+        // same calendar day must still collapse to Today (the helper
+        // uses `startOfDay` so a same-day-different-hour is 0 days).
+        let label = GrowthLibraryView.relativeDateLabel(Self.referenceNow, now: Self.referenceNow)
+        #expect(label == "Today")
+    }
+
+    @Test func relativeDateLabelReadsAsOneDayAgoForYesterday() {
+        let label = GrowthLibraryView.relativeDateLabel(date(daysAgo: 1), now: Self.referenceNow)
+        #expect(label == "1 day ago")
+    }
+
+    @Test func relativeDateLabelUsesDaysAgoUnderOneWeek() {
+        // 2-6 days fall into the "N days ago" bucket. Locks the
+        // boundary so 6d ago doesn't accidentally flip to "1 week".
+        for days in 2...6 {
+            let label = GrowthLibraryView.relativeDateLabel(date(daysAgo: days), now: Self.referenceNow)
+            #expect(label == "\(days) days ago",
+                    "\(days)d delta should read as '\(days) days ago', got: \(label)")
+        }
+    }
+
+    @Test func relativeDateLabelFlipsToOneWeekAgoAtSevenDays() {
+        let label = GrowthLibraryView.relativeDateLabel(date(daysAgo: 7), now: Self.referenceNow)
+        #expect(label == "1 week ago")
+    }
+
+    @Test func relativeDateLabelUsesWeeksAgoBetweenTwoAndFourWeeks() {
+        // 14 and 21 days both fall into the "N weeks ago" bucket
+        // (until 30 days, when it flips to months).
+        #expect(GrowthLibraryView.relativeDateLabel(date(daysAgo: 14), now: Self.referenceNow) == "2 weeks ago")
+        #expect(GrowthLibraryView.relativeDateLabel(date(daysAgo: 21), now: Self.referenceNow) == "3 weeks ago")
+    }
+
+    @Test func relativeDateLabelFlipsToMonthsAgoAtThirtyDays() {
+        // 30+ days collapses into "N months ago" so the eyebrow stays
+        // compact for the oldest entries in the archive (cap is 12
+        // records, so the deepest a row can sit is whatever the user's
+        // session cadence produces — months phrasing wins). Singular
+        // case must agree: a single-month-old proof reads "1 month
+        // ago", not "1 months ago."
+        #expect(GrowthLibraryView.relativeDateLabel(date(daysAgo: 30), now: Self.referenceNow) == "1 month ago")
+        #expect(GrowthLibraryView.relativeDateLabel(date(daysAgo: 60), now: Self.referenceNow) == "2 months ago")
+        #expect(GrowthLibraryView.relativeDateLabel(date(daysAgo: 95), now: Self.referenceNow) == "3 months ago")
+    }
+
+    // MARK: - accessibilityLabel
+
+    @Test func accessibilityLabelIncludesEverySlot() {
+        // VoiceOver pass must surface date + technique + quote + claim
+        // so iterating the library reads as a coherent narrative. Lock
+        // the slot order so a future refactor doesn't shuffle them.
+        let r = record(
+            daysAgo: 2,
+            technique: "Strip the Softeners",
+            quote: "We made the call.",
+            claim: "Conviction earned the room."
+        )
+        let label = GrowthLibraryView.accessibilityLabel(for: r)
+        #expect(label.contains("2 days ago"), "Missing date slot: \(label)")
+        #expect(label.contains("Strip the Softeners"), "Missing technique slot: \(label)")
+        #expect(label.contains("We made the call."), "Missing quote slot: \(label)")
+        #expect(label.contains("Conviction earned the room."), "Missing claim slot: \(label)")
+        // Slot order: date, technique, quote, claim
+        let dateIndex = label.range(of: "2 days ago")?.lowerBound
+        let techniqueIndex = label.range(of: "Strip the Softeners")?.lowerBound
+        let quoteIndex = label.range(of: "We made the call.")?.lowerBound
+        let claimIndex = label.range(of: "Conviction earned the room.")?.lowerBound
+        #expect(dateIndex != nil && techniqueIndex != nil && quoteIndex != nil && claimIndex != nil)
+        if let dateIndex, let techniqueIndex, let quoteIndex, let claimIndex {
+            #expect(dateIndex < techniqueIndex)
+            #expect(techniqueIndex < quoteIndex)
+            #expect(quoteIndex < claimIndex)
+        }
+    }
+
+    @Test func accessibilityLabelOmitsEmptyClaimCleanly() {
+        // Deterministic-fallback proofs can carry an empty `claim`.
+        // The VoiceOver label must skip that slot rather than reading
+        // a trailing ". ." or duplicating the quote.
+        let r = record(daysAgo: 1, claim: "")
+        let label = GrowthLibraryView.accessibilityLabel(for: r)
+        #expect(!label.hasSuffix(". "), "Trailing punctuation leakage: \(label)")
+        #expect(!label.contains(". . "), "Double-separator leakage: \(label)")
+        // The other three slots must still appear in order.
+        #expect(label.contains("1 day ago"))
+        #expect(label.contains("Power Pause"))
+        #expect(label.contains("We focused on three priorities."))
+    }
+
+    @Test func accessibilityLabelQuoteFraming() {
+        // The "You said: <quote>" framing matters — without the
+        // verb, VoiceOver reads the quote as if the assistant said
+        // it, not the user. Lock the framing wording.
+        let r = record(daysAgo: 3, quote: "I'll take that.")
+        let label = GrowthLibraryView.accessibilityLabel(for: r)
+        #expect(label.contains("You said: I'll take that."),
+                "Quote framing should attribute to the user, got: \(label)")
+    }
+}
+
 // MARK: - First-rep celebration fallback chain (M15 Phase 2)
 //
 // Phase 2 swaps the generic "duration + fillers" subtitle on the first-
