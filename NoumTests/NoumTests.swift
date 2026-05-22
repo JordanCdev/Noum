@@ -7823,6 +7823,7 @@ struct WhatYouDidWellBulletSelectorTests {
     @Test func goodCategoriesCappedAtTwo() {
         // Three good categories should not produce three category
         // bullets — the cap is two so the momentum line still anchors.
+        // With no eloquence finding, both categories land in slots 2+3.
         let bullets = WhatYouDidWellCard.computeBullets(
             coachNote: note(momentum: "Clean rep."),
             feedbackCategories: [
@@ -7861,11 +7862,14 @@ struct WhatYouDidWellBulletSelectorTests {
         #expect(bullets[0].id == "momentum")
     }
 
-    @Test func eloquenceFindingDropsWhenMomentumPlusTwoCategoriesAlreadyFill() {
-        // The total ceiling is three bullets. When momentum + 2 categories
-        // already saturate, eloquence appends a 4th but `prefix(3)` drops
-        // it. This is intentional — the comment in the source flags that
-        // the eloquence slot is the first to lose.
+    @Test func eloquencePromotedAboveSecondGoodCategory() {
+        // Contract: when momentum + a first good category + eloquence +
+        // a second good category all compete for 3 slots, the eloquence
+        // finding wins slot 3 over the second category. Rationale: an
+        // engine-detected rhetorical device is concrete on-tape evidence
+        // (we caught a real pattern in the user's words), whereas a
+        // second "felt solid" is the same impression voice already
+        // carried by the first category bullet. Concrete beats restated.
         let finding = EloquenceFinding(
             device: .tricolon,
             snippet: "clarity, courage, conviction",
@@ -7882,11 +7886,16 @@ struct WhatYouDidWellBulletSelectorTests {
             isMinimalEffort: false
         )
         #expect(bullets.count == 3)
-        #expect(!bullets.contains { $0.id.hasPrefix("eloquence-") })
+        #expect(bullets[0].id == "momentum")
+        #expect(bullets[1].id == "category-Opening")
+        #expect(bullets[2].id == "eloquence-tricolon")
+        // The second category is the one that loses to eloquence under
+        // the cap — not the first.
+        #expect(!bullets.contains { $0.id == "category-Structure" })
     }
 
     @Test func eloquenceFindingLandsWhenHeadroomExists() {
-        // momentum + 1 category leaves room for eloquence.
+        // momentum + 1 category leaves room for eloquence at slot 3.
         let finding = EloquenceFinding(
             device: .anaphora,
             snippet: "we will, we will",
@@ -7903,6 +7912,25 @@ struct WhatYouDidWellBulletSelectorTests {
         )
         #expect(bullets.count == 3)
         #expect(bullets[2].id == "eloquence-anaphora")
+    }
+
+    @Test func secondGoodCategoryStillLandsWhenNoEloquence() {
+        // The promotion only takes effect when eloquence is present —
+        // with no eloquence finding, the second good category claims
+        // slot 3 and the card reads as a "double win" rep.
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Structure", rating: .good, note: "")
+            ],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 3)
+        #expect(bullets[1].id == "category-Opening")
+        #expect(bullets[2].id == "category-Structure")
     }
 
     @Test func eloquenceQuoteEvidenceUsesSnippet() {
@@ -8456,6 +8484,7 @@ struct TalkToNoumCTACardCopyTests {
     }
 }
 
+
 // MARK: - Sudden Death Mechanic Tests
 
 struct SuddenDeathMechanicTests {
@@ -8611,5 +8640,296 @@ struct SuddenDeathHighScoreStoreTests {
         let isNew = store.recordRun(roundsSurvived: 11, difficulty: .medium)
         #expect(isNew == true)
         #expect(store.bestRounds(difficulty: .medium) == 11)
+
+// MARK: - CoachContextBuilder.parseAndFilterChips — brand-voice contract
+//
+// `parseAndFilterChips` is the gate between AI-generated chip output and
+// the Ask Noum follow-up chip row. Its job is to (a) tolerate the messy
+// output shapes models sometimes return (numbered lists, bullet
+// prefixes, smart quotes, trailing whitespace) and (b) enforce every
+// brand-voice rule the system prompt asks for — so a model that drifts
+// past its instructions can't slip exclamation marks, emoji, "Let's"
+// kickoffs, or runaway-length copy into the user-facing chip surface.
+//
+// These tests lock the parser AND the per-chip filter contract. The
+// filter itself is `private`, but every gate it enforces is reachable
+// through `parseAndFilterChips`: feed it raw text containing the
+// banned shape, and assert the function returns nil (because too few
+// chips survive filtering to meet the count).
+//
+// Caller contract: when `parseAndFilterChips` returns nil, the AI
+// follow-up generator falls back to the deterministic catalog chips.
+// That fallback is why nil-on-shortfall is the right behavior here —
+// a partial AI batch padded with catalog chips would mix tones, while
+// the all-or-nothing gate keeps each chip row coherent.
+
+@available(iOS 17.0, *)
+struct CoachContextBuilderChipParserTests {
+
+    // MARK: - Happy path: well-formed model output
+
+    @Test func parsesPlainNewlineSeparatedChips() {
+        // The contract: count 3 chips returned with no transformation
+        // beyond trim. Mirrors the system-prompt-compliant output the
+        // model is asked to produce.
+        let raw = """
+        Walk me through your goal
+        What part felt off
+        Show me what to try next
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "Walk me through your goal")
+        #expect(chips?[1] == "What part felt off")
+        #expect(chips?[2] == "Show me what to try next")
+    }
+
+    @Test func returnsNilWhenFewerChipsThanRequested() {
+        // Two chips when three are asked for — the caller's
+        // deterministic fallback is better than a partial AI batch.
+        let raw = """
+        Walk me through your goal
+        What part felt off
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func extraChipsAreTruncatedToCount() {
+        // The model might return four when we asked for three. We take
+        // the first three rather than throwing the whole batch out —
+        // the chips are already shape-validated by the filter.
+        let raw = """
+        First chip
+        Second chip
+        Third chip
+        Fourth chip
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips == ["First chip", "Second chip", "Third chip"])
+    }
+
+    // MARK: - Cleanup: tolerant of common model output messiness
+
+    @Test func stripsLeadingBulletAndDashMarkers() {
+        // Models sometimes wrap chips in "- " / "* " / "• " markers
+        // despite the system prompt asking for none. We strip them
+        // rather than failing the whole batch.
+        let raw = """
+        - First chip here
+        * Second chip too
+        • Third with bullet
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "First chip here")
+        #expect(chips?[1] == "Second chip too")
+        #expect(chips?[2] == "Third with bullet")
+    }
+
+    @Test func stripsNumericEnumeration() {
+        // "1. " / "2) " enumeration is another common drift. Stripped.
+        let raw = """
+        1. Walk me through it
+        2) What changed today
+        3. Show me a clean rep
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "Walk me through it")
+        #expect(chips?[1] == "What changed today")
+        #expect(chips?[2] == "Show me a clean rep")
+    }
+
+    @Test func stripsWrappingStraightAndSmartQuotes() {
+        // Models love to "quote" things. Both straight and smart
+        // quotes are unwrapped.
+        let raw = """
+        "Walk me through it"
+        \u{201C}What changed today\u{201D}
+        Show me a clean rep
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "Walk me through it")
+        #expect(chips?[1] == "What changed today")
+        #expect(chips?[2] == "Show me a clean rep")
+    }
+
+    @Test func tolerantOfBlankLinesAndWhitespace() {
+        // Empty lines and surrounding whitespace are normalized away.
+        // The four content lines reduce to three valid chips (the
+        // blank line is filtered out as failing the min-length gate).
+        let raw = """
+
+           First chip here
+        \tSecond chip too\t
+
+        Third chip lands
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "First chip here")
+        #expect(chips?[1] == "Second chip too")
+        #expect(chips?[2] == "Third chip lands")
+    }
+
+    // MARK: - Brand-voice contract: bans enforced per chip
+
+    @Test func banExclamationMarksDropsChip() {
+        // One chip carries an exclamation — it drops, leaving 2 valid
+        // chips, which is below count=3, so the whole batch is
+        // rejected. The fallback catalog runs instead.
+        let raw = """
+        Walk me through your goal
+        Awesome work today!
+        Show me a clean rep
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func banLetsKickoffDropsChipBothApostropheStyles() {
+        // "Let's" and "Lets" both drop. "let's" lowercase also drops.
+        let lowerStraight = """
+        Walk me through your goal
+        let's try a clean rep
+        Show me what changed
+        """
+        #expect(CoachContextBuilder.parseAndFilterChips(lowerStraight, count: 3) == nil)
+
+        let titleStraight = """
+        Walk me through your goal
+        Lets jump to next steps
+        Show me what changed
+        """
+        #expect(CoachContextBuilder.parseAndFilterChips(titleStraight, count: 3) == nil)
+    }
+
+    @Test func banLeadingDirectivesDropsChip() {
+        // "Tell me", "Describe", "Explain" etc. shouldn't lead a chip
+        // — the chips are meant to read as the user's question, not
+        // an order to the coach.
+        let directives = [
+            "Tell me what changed today",
+            "Describe what to fix next",
+            "Explain how to slow my pace",
+            "Discuss what went wrong",
+            "Elaborate on the close",
+            "Share what worked best",
+            "Talk about my structure"
+        ]
+        for directive in directives {
+            let raw = """
+            \(directive)
+            Walk me through it
+            Show me a clean rep
+            """
+            #expect(CoachContextBuilder.parseAndFilterChips(raw, count: 3) == nil,
+                    "Directive '\(directive)' should be filtered out")
+        }
+    }
+
+    @Test func banEmojiDropsChip() {
+        // Pictographs are banned (graphic Unicode above U+238C). The
+        // rocket emoji used to slip through some models is the
+        // canonical regression case.
+        let raw = """
+        Walk me through your goal
+        Show me the next move 🚀
+        What changed today
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func chipBelowMinimumLengthIsDropped() {
+        // 4-char floor. "Huh?" passes (4 chars with a `?`); "Hm"
+        // fails. Use a clearly-short chip so the gate is exercised.
+        let raw = """
+        Hm
+        Walk me through your goal
+        What changed today
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func chipAboveMaximumLengthIsDropped() {
+        // 60-char ceiling. Runaway-length chips no longer read as a
+        // quick tap and break the chip-row layout. Drop them.
+        let runaway = String(repeating: "long chip ", count: 8)  // 80+ chars
+        let raw = """
+        Walk me through your goal
+        \(runaway)
+        What changed today
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func chipsAtExactMinAndMaxLengthArePreserved() {
+        // 4-char "Huh?" and a 60-char chip both land — boundaries
+        // are inclusive on the (4...60) range.
+        let sixtyChars = "What is the single highest leverage move for next session"
+        // confirm length is in range before relying on it
+        #expect(sixtyChars.count >= 4 && sixtyChars.count <= 60)
+        let raw = """
+        Huh?
+        Walk me through it
+        \(sixtyChars)
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "Huh?")
+        #expect(chips?[2] == sixtyChars)
+    }
+
+    @Test func unicodeBelowEmojiThresholdIsAllowed() {
+        // Em-dashes, ellipses, accented characters etc. are still
+        // valid copy — the emoji gate triggers on graphic pictograph
+        // codepoints (U+238C and above), not all non-ASCII.
+        let raw = """
+        Walk me through it — fast
+        What changed today\u{2026}
+        Café cleanup next
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "Walk me through it — fast")
+        #expect(chips?[2] == "Café cleanup next")
+    }
+
+    @Test func combinedMessIsRecoveredWhenContentValid() {
+        // The parser is tolerant of layered mess: bullets +
+        // numbering + smart quotes + trailing whitespace + blank
+        // lines can all coexist with three valid chips inside.
+        let raw = """
+
+        1. \u{201C}Walk me through your goal\u{201D}
+        - "What changed today"
+        \t• Show me a clean rep \t
+
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips?[0] == "Walk me through your goal")
+        #expect(chips?[1] == "What changed today")
+        #expect(chips?[2] == "Show me a clean rep")
+    }
+
+    @Test func returnsExactlyTheRequestedCountNotMore() {
+        // count=2 → exactly 2 chips even if 5 valid chips exist.
+        let raw = """
+        First chip here
+        Second chip too
+        Third chip lands
+        Fourth chip extra
+        Fifth chip extra
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 2)
+        #expect(chips?.count == 2)
+        #expect(chips == ["First chip here", "Second chip too"])
     }
 }

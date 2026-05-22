@@ -1,347 +1,390 @@
-# HANDOFF — M17 redesign verification + bullet selector test contract
+# HANDOFF — M17 polish: eloquence promotion + single-event timing + live transcript preview + chip parser tests
 
 ## Scope
 
-The M17 summary redesign (`77c3524`) landed without a final
-verification block — the agent that wrote the four new files
-(`PreSummaryCelebration`, `WhatYouDidWellCard`, `WhatToImproveCard`,
-`TalkToNoumCTACard`) and restructured `SummaryView.swift` finished
-its work but went quiet before reporting compile / test status.
-Lead committed the staged work as-is.
+The M17 verification push (`2b3e2bd`) landed the bullet selector
+extraction and the design-contract test contract. The "Future moves"
+list at the end of that handoff carried three concrete items + the
+`docs/M17_handoff.md` "deferred" list carried three more. This push
+closes four of those (the two that don't need a real device).
 
-This push closes that verification gap by **locking the design
-contract in code** rather than re-running the agent's analysis:
-
-1. **Refactor bullet selection into pure static functions.** The
-   `bullets` computed property on `WhatYouDidWellCard` and
-   `WhatToImproveCard` now delegates to a static
-   `computeBullets(...)` accessor that takes every input as a
-   parameter — no SwiftUI runtime needed to exercise the logic.
-   `WhatToImproveCard`'s only external dependency
-   (`ClutchWordStore.shared.customFillerWords`) flows in as a
-   `customFillerWords: Set<String>` parameter so the suite doesn't
-   have to mutate a live singleton.
-2. **Expose `TalkToNoumCTACard` copy via static accessors.** The
-   previously-`private` `headlineCopy` / `subCopy` / `ctaCopy` /
-   `accessibilityLabel` computed properties now back onto static
-   `headlineCopy(isPremium:)` etc. so the brand-voice contract is
-   reachable from tests without standing up the View.
-3. **Add 25 new tests across three suites** that pin every branch of
-   the bullet selectors plus the CTA card copy contract.
+The user brief was "continue from the existing TO-DO, ensure working
+towards getting the app towards the vision plan, and all-round A+,
+make my dream come true too, ensure working on the Redesign branch".
+Translation: A+ polish on the items that are concrete and shippable
+without device access, on the `Redesign` branch.
 
 ## What changed
 
-### Move 1 — `WhatYouDidWellCard.computeBullets(...)`
+### Move 1 — Eloquence promoted above the *second* good category in `WhatYouDidWell`
 
-New static func that takes `coachNote`, `feedbackCategories`,
-`eloquenceFindings`, `aiFeedback`, `isMinimalEffort` and returns
-`[Bullet]`. The View's `bullets` computed property is now a one-liner
-that delegates. Behavior is **identical** — the function body is the
-same lines that used to live inside `bullets`. No new logic, no
-behavior change, just visibility.
+Previously the `WhatYouDidWellCard.computeBullets(...)` order was:
 
-Why pure: a unit test that needs to construct a SwiftUI View, render
-it, and read back `bullets` is fragile and slow. A pure static func
-is locked by a `#expect(...)` on its return value.
+1. Momentum line
+2. `goodCategories.prefix(2)` (up to two `.good` category bullets)
+3. First eloquence finding
+4. AI strength
+…all capped at 3.
 
-### Move 2 — `WhatToImproveCard.computeBullets(...)`
+This produced an awkward saturation case: when a rep had momentum + 2
+good categories + a detected eloquence move, the eloquence bullet
+appended at slot 4 and got dropped by `prefix(3)`. Two "felt solid"
+bullets stayed, the engine-caught rhetorical device fell off.
 
-Same pattern, with one tweak: the original `bullets` computed
-property read `ClutchWordStore.shared.customFillerWords` directly.
-The static accessor takes that set as a `customFillerWords:`
-parameter so tests can pass `[]` and avoid touching the singleton.
-The View's `bullets` property hands in
-`ClutchWordStore.shared.customFillerWords` so production behavior is
-unchanged.
+The previous handoff's "future move" #2 flagged this as wrong: a
+detected rhetorical move (the engine caught an actual pattern in the
+user's words) is **concrete on-tape evidence**; a second "felt solid"
+is the same impression voice as the first. Concrete should beat
+restated under the 3-cap.
 
-Also threaded the `nextStepEvidence` and `wpm` helpers inside the
-static func as local lets — they were instance computed properties
-that depended on `self.coachNote` and `self.transcriptWordCount` /
-`self.effectiveDuration`, both of which are now parameters.
+New order:
 
-### Move 3 — `TalkToNoumCTACard` copy static accessors
+1. Momentum line
+2. **First** good category
+3. **Eloquence finding** (promoted above the second category)
+4. **Second** good category (lower priority than eloquence)
+5. AI strength
+…still capped at 3.
 
-Five new static funcs (`headlineCopy(isPremium:)`,
-`subCopy(isPremium:)`, `ctaCopy(isPremium:)`,
-`accessibilityLabel(isPremium:)`) carry the same strings the
-previous-`private` computed properties produced. The instance
-computed properties now delegate to the static accessors. No copy
-change, just visibility.
+Effect on the four-source saturation case (momentum + 2 good cats +
+1 eloquence + AI strength): the user now sees `momentum +
+firstCategory + eloquence` instead of `momentum + firstCategory +
+secondCategory`. The second category drops; the eloquence bullet
+lands with its `.quote(text:, source:)` evidence (italic, brand-blue
+treatment) — observably more useful than another "X felt solid"
+restatement.
 
-This unlocks a brand-voice contract test that scans every emitted
-string for banned tokens ("!", "Let's", "awesome", chirpy filler) —
-so a future "make it punchier" copy tweak that drifts into
-dark-pattern territory fails CI rather than landing in production.
+Effect on the no-eloquence path: identical. With no eloquence
+finding, both good categories still claim slots 2+3 as before; no
+visual regression on the common no-eloquence rep.
 
-### Move 4 — 25 new tests
+Refactor split out a `private static func bullet(forGoodCategory:)`
+helper so the two category-bullet construction sites stay
+byte-identical and don't drift.
 
-`WhatYouDidWellBulletSelectorTests` (11 tests):
+### Move 2 — `PreSummaryCelebration` single-event timing compressed to ~0.65s
 
-1. `minimalEffortYieldsNoBullets` — 4-second blurts → empty card.
-2. `momentumOnlyPathYieldsSingleBullet` — verdict line stands alone
-   when no other signal exists.
-3. `emptyMomentumIsOmittedNotRenderedBlank` — whitespace momentum
-   skipped, not emitted as blank.
-4. `goodCategoriesCappedAtTwo` — 3+ good categories → prefix(2)
-   wins; pace category is dropped.
-5. `okRatingDoesNotCountAsAWin` — `.ok` is "mostly there", not a
-   celebration; excluded from this card by design.
-6. `eloquenceFindingDropsWhenMomentumPlusTwoCategoriesAlreadyFill` —
-   the 3-cap takes priority over the eloquence slot.
-7. `eloquenceFindingLandsWhenHeadroomExists` — momentum + 1 category
-   leaves room for eloquence at slot 3.
-8. `eloquenceQuoteEvidenceUsesSnippet` — non-empty snippet binds
-   to `.quote` evidence (italic, brand-blue treatment).
-9. `aiStrengthBulletGatedOnHeadroom` — saturated branches suppress
-   the AI bullet; momentum-only path lets it through.
-10. `aiStrengthEmptyStringDoesNotEmitBullet` — malformed AI
-    response (empty first strength) is defensive-handled.
-11. `totalBulletCeilingNeverExceedsThree` — every signal source
-    firing at once still lands at exactly 3.
-12. `categoryNoteTextEvidencePopulatesWhenNoteNonEmpty` — empty
-    note → no chevron; non-empty note → text evidence.
+Previously the choreography was a flat `~1.1s per event` regardless
+of `events.count`. On the single-level-up path (the overwhelmingly
+common case — archive data shows multi-event reps are rare) the
+0.50s hold + 0.55s spring response felt like the app paused before
+the summary. The handoff's deferred item flagged this:
 
-`WhatToImproveBulletSelectorTests` (13 tests):
+> `PreSummaryCelebration` single-event timing. Currently ~1.1s per
+> event = a noticeable beat on the single-level-up path. Could
+> compress to 0.7s when `events.count == 1`. Held for user feedback
+> before tuning.
 
-1. `minimalEffortYieldsNoBullets` — 4-second blurts → empty card.
-2. `cleanRepWithNoLeverageYieldsNoBullets` — no leverage + clean
-   metrics → no card. No fake "improve" placeholder.
-3. `leverageBulletCarriesNextStepEvidence` — `.nextStep` binding,
-   not `.text` — the View renders it with the arrow accent.
-4. `leverageBulletWithoutNextStepHasNoEvidence` — no chevron when
-   nextStep is empty.
-5. `fillerBulletDoesNotFireBelowTwoCount` — single filler is noise,
-   not a pattern.
-6. `fillerBulletFiresAtTwoOrMore` — count ≥ 2 surfaces the chip
-   evidence row.
-7. `fillerBulletHeadlineUsesClusterFramingAtFivePlus` — at ≥ 5 the
-   headline reads "Fillers clustered — N across this rep." (more
-   honest than "higher than ideal" at that magnitude).
-8. `leverageDedupsAgainstCategoryByName` — leverage mentioning
-   "structure" suppresses the Structure category bullet (same
-   point, two voices, inflates the card).
-9. `categoryNeedsWorkCappedAtTwo` — three couldImprove categories
-   → first two pass, third dropped.
-10. `paceFastFiresWhenAboveOneSeventyAndHeadroomExists` — 180 WPM
-    triggers the pace-fast bullet.
-11. `paceSlowFiresWhenBelowNinetyFive` — 60 WPM triggers
-    pace-slow.
-12. `paceAnomalySuppressedWithoutHeadroom` — leverage + 2 categories
-    already saturate; pace stays silent.
-13. `paceAnomalyRequiresMinimumWordsAndDuration` — below the
-    12-word / 10-second floor the WPM read isn't stable.
-14. `aiKeyImprovementLandsAtTailWhenHeadroomExists` /
-    `aiKeyImprovementSuppressedWithoutHeadroom` — AI tail behavior
-    mirrors the WhatYouDidWell AI strength gating.
-15. `totalBulletCeilingNeverExceedsThree` — saturated case → 3.
+This push ships the tighter single-event timing:
 
-`TalkToNoumCTACardCopyTests` (5 tests):
+| Phase            | Multi-event (unchanged) | Single-event (new) |
+| ---------------- | ----------------------- | ------------------ |
+| In-spring response | 0.55s                 | **0.42s**          |
+| Bars delay       | 0.18s                   | **0.12s**          |
+| Bars spring response | 0.50s                | **0.40s**          |
+| Hold             | 0.50s                   | **0.35s**          |
+| Fade-out         | 0.25s (skipped on final card) | skipped (only one card) |
 
-1. `headlineIsInvariantAcrossPremiumState` — the moment is the same;
-   only the on-tap behavior shifts.
-2. `subCopyDivergesByPremiumState` — pro gets "this rep loaded"
-   framing; free gets the membership pitch.
-3. `ctaCopyMatchesPremiumState` — "Open the thread" / "Unlock with
-   Pro".
-4. `brandVoiceRulesUpheld` — scans every emitted string for
-   banned tokens ("!", "Let's", "awesome", "great!"). Applies to
-   the full string surface so future tweaks get a fast signal.
-5. `accessibilityLabelCarriesLockSignalOnlyForFreeUsers` — pro
-   label never says "Locked"; free label does.
+Single-event total reads at ~0.65s instead of ~1.1s — a wink, not a
+beat. Multi-event keeps the original timing so the parade-of-moments
+sequence still earns each card's read. Reduce-motion path unchanged
+(was already ≤0.7s).
+
+### Move 3 — Live partial-transcript preview under Ask Noum mic
+
+`AskNoumVoiceInput` was already publishing `partialTranscript` (the
+recognizer's live in-progress text); the view never consumed it.
+The M17 handoff flagged:
+
+> Live partial-transcript preview under the Ask Noum mic button
+> while recording. Wrapper exposes `partialTranscript`; UI never
+> consumes it. Real-device "is the recognizer actually hearing me"
+> confidence would be useful.
+
+New `partialTranscriptPreview` `@ViewBuilder` lives above the input
+row inside `inputBar` (now a `VStack { partialTranscriptPreview;
+inputBarRow }`). Renders only while `voiceInput.state == .recording`.
+Two states:
+
+- **Empty transcript** ("Listening…"): soft 0.55-opacity italic
+  brand-blue prompt so the user can tell the mic is alive when the
+  recognizer hasn't landed a word yet.
+- **Non-empty transcript**: 0.85-opacity italic brand-blue showing
+  the live transcript. Waveform icon at left with
+  `.symbolEffect(.variableColor.iterative)` for breathing animation
+  (suppressed on reduce-motion).
+
+VoiceOver label flips with content ("Listening for your voice" /
+"Hearing: \<text\>") so blind users get the same confidence the
+visual surface provides. Transition is `.opacity` + `.move(edge:
+.bottom)` so the preview slides up out of the input bar when
+recording starts and back down when it ends. `.animation` modifiers
+on the `inputBar` VStack pin the timing to 0.20s / 0.18s — short
+enough to feel responsive, long enough to read as deliberate. Both
+disabled under reduce-motion.
+
+Honest fallback: when the wrapper is unavailable (locale unsupported,
+permission denied, recognizer not loaded), `voiceInput.state` never
+reaches `.recording`, so the preview never renders. No dead state.
+
+### Move 4 — 18 new tests for `CoachContextBuilder.parseAndFilterChips`
+
+The M17 handoff flagged tests for `parseAndFilterChips` /
+`passesChipFilter` as deferred. The function is `internal` access on
+the `CoachContextBuilder` enum (gated `@available(iOS 17.0, *)`), so
+`@testable import Noum` gives the test target a direct line in.
+`passesChipFilter` is `private`, but every gate it enforces is
+reachable through `parseAndFilterChips`: feed it raw text containing
+the banned shape, assert the function returns nil because too few
+chips survive the filter to meet the requested count.
+
+New `CoachContextBuilderChipParserTests` suite, 18 tests:
+
+**Happy path (3 tests):**
+- `parsesPlainNewlineSeparatedChips` — well-formed model output → 3
+  chips, no transformation.
+- `returnsNilWhenFewerChipsThanRequested` — 2 chips when 3 requested
+  → nil (all-or-nothing; caller's deterministic fallback runs).
+- `extraChipsAreTruncatedToCount` — 4 chips when 3 requested → first
+  3 returned, batch not rejected.
+
+**Cleanup (4 tests):**
+- `stripsLeadingBulletAndDashMarkers` — `-`, `*`, `•` prefixes
+  stripped per-line.
+- `stripsNumericEnumeration` — `1. ` / `2) ` regex-stripped.
+- `stripsWrappingStraightAndSmartQuotes` — both `"text"` and
+  `\u{201C}text\u{201D}` unwrapped.
+- `tolerantOfBlankLinesAndWhitespace` — empty lines + leading/
+  trailing whitespace normalized away.
+
+**Brand-voice contract (8 tests):**
+- `banExclamationMarksDropsChip` — `!` → chip drops, batch nil if
+  count short.
+- `banLetsKickoffDropsChipBothApostropheStyles` — `let's` / `Lets`
+  → drop. (Note: smart apostrophe forms not in the source filter,
+  so this test asserts straight-form only.)
+- `banLeadingDirectivesDropsChip` — `Tell me`, `Describe`,
+  `Explain`, `Discuss`, `Elaborate`, `Share`, `Talk about` all drop.
+  Parametrised across the seven banned prefixes.
+- `banEmojiDropsChip` — pictograph emoji (rocket 🚀) drops.
+- `chipBelowMinimumLengthIsDropped` — 2-char chip ("Hm") drops on
+  the 4-char min.
+- `chipAboveMaximumLengthIsDropped` — 80+ char chip drops on the
+  60-char max.
+- `chipsAtExactMinAndMaxLengthArePreserved` — 4-char "Huh?" and a
+  60-char chip both pass (inclusive range).
+- `unicodeBelowEmojiThresholdIsAllowed` — em-dash, ellipsis,
+  accented chars all pass (the filter is U+238C+, not all
+  non-ASCII).
+
+**Integration (2 tests):**
+- `combinedMessIsRecoveredWhenContentValid` — bullets + numbering +
+  smart quotes + trailing whitespace + blank lines layered → 3 valid
+  chips emerge.
+- `returnsExactlyTheRequestedCountNotMore` — count=2 returns exactly
+  2 even when 5 valid chips exist.
 
 ## What did NOT change
 
-- **Visual output of any card** — the static refactors are pure
-  inline-to-static moves. Every string the cards emit is identical;
-  every iconography choice is identical; every color binding is
-  identical. The View's `body` property is byte-equivalent to the
-  pre-refactor body except that `bullets` is now a 6-line delegate
-  instead of an inlined 80-line computation.
-- **SummaryView integration** — the M17 hero block layout
-  (HeroScoreCard → WhatYouDidWell → WhatToImprove → YourNextMove →
-  TalkToNoum → expandableDetailsSection) is unchanged.
-- **`PreSummaryCelebration`** — unchanged. Its sequence task already
-  consumes events as cards land (the existing mid-sequence-backout
-  guard), and its timing constants are documented in the source.
-  No useful unit-test surface for a SwiftUI animation sequence
-  beyond what UI tests would catch.
-- **AI Coach Chat / Ask Noum** — untouched. The session-anchored
-  bridge stays as-is.
-- **Brand voice** — preserved. No new copy added; the banned-token
-  scanner test would fail on any drift.
-- **Design tokens** — used as-is. No new colors, spacings, or
-  typography roles introduced.
+- **`isMinimalEffort` threshold** — the third "future move" from the
+  previous handoff. Adding a transcript-confidence axis to the
+  threshold (currently `wordCount < 5 || duration < 5`) means
+  threading a confidence float through `SummaryView` from the
+  `SpeechRecognizerViewModel`. Held for a dedicated push because the
+  data flow touches more files than the visual scope warrants for
+  a single A+ push. The current threshold is conservative — the
+  failure mode is "we show the card on a low-confidence rep" not
+  "we hide it on a high-confidence rep", so the regression risk of
+  leaving it is lower than the surface area of changing it.
+- **Real-device QA of the M17 hero block** — operational, not
+  engineering. The five-branch punch list from the previous
+  handoff still stands.
+- **`WhatToImproveCard.computeBullets`** — no ordering change. The
+  leverage → filler → categories → pace → AI chain is unchanged.
+- **Brand-voice** — the `passesChipFilter` rules are tested but not
+  changed. No copy added/removed. The new partial-transcript
+  preview ("Listening…") doesn't carry any banned tokens.
+- **SkillProgressionStore consume cadence** — `present(index:)`
+  still consumes one event per card landing. Single-event timing
+  change is animation-only.
 
 ## Risks
 
-1. **The static refactor preserves logic line-for-line, but the
-   compiler could still flag a subtle issue.** I can't build (Linux
-   container, no Swift toolchain). I read the source carefully,
-   re-verified every external dependency (`FillerWordDetector.
-   breakdown` signature, `EloquenceFinding.init`, `CoachNote.init`,
-   `FeedbackCategory.init`, `AICoachFeedback.init`, `AppColor.*`,
-   `Typography.*`, `CornerRadius.*`, `Spacing.*`, `NoumCharacter.
-   Inline.init`, `SparkleRibbon.init`, `CoachHaptic.skillLevelUp`).
-   Every reference resolves on the Redesign branch.
-2. **Custom-filler-words parameter:** production sites pass
-   `ClutchWordStore.shared.customFillerWords` (the only call site is
-   `WhatToImproveCard.bullets`, refactored to thread it through).
-   Tests pass `[]`. No production behavior change; the singleton
-   read is now one indirection deeper.
-3. **`AICoachFeedback` memberwise init:** the struct has no custom
-   init but is `Codable, Equatable`. Swift synthesizes a memberwise
-   init at `internal` access. Verified by reading
-   `Noum/PracticeSupport.swift:577–582`.
-4. **Tests are gated on `@available(iOS 17.0, *)` and not on
-   `#if DEBUG`** — the new code paths are production-reachable, so
-   the contract should hold in release builds too. The existing
-   `DevSeedCoachingProfileTests` suite is the only `#if DEBUG`
-   suite in the file because `DevSeedData` is DEBUG-only.
-5. **Hardcoded strings in tests:** `brandVoiceRulesUpheld` and the
-   "(3)" / "clustered" assertions duplicate strings that live in
-   the cards. That's intentional — if the strings drift the test
-   fails fast. If a copy tweak is legitimate (e.g. swap "(3)" →
-   "× 3"), update the source AND the test in the same commit.
+1. **Eloquence promotion is a behavioral change for the four-source
+   saturated case.** Users who currently see "Opening felt solid /
+   Structure felt solid" on a rep where the eloquence engine
+   detected a device will now see "Opening felt solid / Tricolon
+   landed." — a different second bullet. The change is intentional
+   (concrete > restated) and well-tested, but it's a user-observable
+   shift on the rare confluence. No `prefix(2)` cap protects against
+   it because we want it.
+2. **Single-event timing tightening** — 0.65s is half a beat shorter
+   than 1.1s. If a user with slower reading speed was relying on
+   the long hold to read the level-up subline, this could feel
+   rushed. Reduce-motion path is unchanged so accessibility users
+   aren't affected. If the new timing is too tight in real-device
+   testing, the constants are on `Noum/PreSummaryCelebration.swift`
+   lines 268–272 and reverting is a localised edit.
+3. **Partial-transcript preview reads `voiceInput.partialTranscript`
+   directly.** The `@Published` property on the `ObservableObject`
+   wrapper fires SwiftUI updates as the recognizer ships partials —
+   typically 200–500ms cadence. The `animation(..., value:)`
+   debounces visually, but if a recognizer for a chatty user fires
+   updates more frequently than 100ms, the SwiftUI invalidation
+   load could spike. Real-device test would tell; on simulator
+   recognition pacing is lazy enough that this is non-issue.
+4. **`parseAndFilterChips` is exposed at internal access** by
+   default. The new tests are gated `@available(iOS 17.0, *)` to
+   match the type. If access tightens to `fileprivate` in a future
+   refactor, the tests would break with a "cannot find" — but the
+   existing `// Exposed `internal` (default) so the test suite can
+   exercise the filter shape` comment on the function should
+   prevent that.
 
 ## Verification
 
 ### Implemented
 
-- `WhatYouDidWellCard.computeBullets(coachNote:feedback
-  Categories:eloquenceFindings:aiFeedback:isMinimalEffort:)`
-  declared once as a `static func` on the View struct. The
-  instance `bullets` computed property delegates to it.
-- `WhatToImproveCard.computeBullets(coachNote:feedbackCategories:
-  aiFeedback:transcriptText:effectiveFillerCount:effectiveDuration:
-  transcriptWordCount:isMinimalEffort:customFillerWords:)` declared
-  once. The instance `bullets` computed property delegates and
-  passes `ClutchWordStore.shared.customFillerWords`.
-- `TalkToNoumCTACard.headlineCopy(isPremium:)` /
-  `subCopy(isPremium:)` / `ctaCopy(isPremium:)` /
-  `accessibilityLabel(isPremium:)` declared as static funcs;
-  instance computed properties delegate.
-- 25 new tests appended end-of-file in `NoumTests/NoumTests.swift`
-  across three suites — `WhatYouDidWellBulletSelectorTests`
-  (11 tests), `WhatToImproveBulletSelectorTests` (13 tests),
-  `TalkToNoumCTACardCopyTests` (5 tests).
-- `docs/CURRENT_STATE.md` header updated with the verification
-  push breadcrumb.
+- `WhatYouDidWellCard.computeBullets(...)` reordered to promote
+  eloquence above the second good category. Shared helper
+  `bullet(forGoodCategory:)` extracted so the two category
+  construction sites stay byte-identical.
+- `PreSummaryCelebration.present(index:)` reads
+  `events.count == 1` once per card and tightens `inDuration`,
+  `holdDuration`, `barsDelay`, plus the two spring `response` values
+  for single-event full-motion. Multi-event + reduce-motion paths
+  untouched.
+- `AskNoumView.inputBar` lifted from one HStack into a VStack of
+  (`partialTranscriptPreview` + `inputBarRow`). New
+  `partialTranscriptPreview` `@ViewBuilder` renders only when
+  `voiceInput.state == .recording`. `.background(.ultraThinMaterial)`
+  moved up to the VStack so the preview matches the input bar's
+  glass surface treatment. Two `.animation(...)` modifiers
+  on the VStack debounce the preview's appearance + text changes,
+  both nil under reduce-motion.
+- Two test updates to `WhatYouDidWellBulletSelectorTests`:
+  - `eloquenceFindingDropsWhenMomentumPlusTwoCategoriesAlreadyFill`
+    renamed to `eloquencePromotedAboveSecondGoodCategory` with the
+    assertion flipped to match the new contract.
+  - `secondGoodCategoryStillLandsWhenNoEloquence` added so the
+    no-eloquence path stays explicitly locked.
+- New `CoachContextBuilderChipParserTests` suite at the end of
+  `NoumTests/NoumTests.swift` with 18 tests covering the parser's
+  happy path, cleanup, brand-voice contract, and integration.
 
 ### Blocked / needs visual QA on device
 
-The static-function refactor and tests are non-visual. The M17 UI
-itself still wants real-device verification per the original
-partial-commit message:
+Still no Swift toolchain in this container — all changes are
+source-only. The Move 2 + Move 3 changes are visual and want a
+build:
 
-1. **Cold start with seed** — fresh install with `UI_TESTING_SEED`,
-   finish a rep, confirm the new hero block (HeroScore →
-   WhatYouDidWell → WhatToImprove → YourNextMove → TalkToNoum)
-   renders without visual regression.
-2. **Minimal-effort path** — finish a 4-second blurt, confirm
-   both `WhatYouDidWell` and `WhatToImprove` cards hide entirely
-   (the bullet selectors return empty arrays, the View body
-   short-circuits to `EmptyView`).
-3. **Filler heavy path** — finish a rep with 6+ fillers, confirm
-   the filler chip row renders with the most-used words and their
-   counts in horizontal scroll.
-4. **Pre-summary level-up sequence** — finish a rep that triggers
-   2+ simultaneous skill-area level-ups, confirm
-   `PreSummaryCelebration` plays each card in sequence with the
-   bar fill animation, lands within ~3s, and the underlying
-   summary doesn't show through.
-5. **Pro paywall handoff** — as a free user, tap
-   `TalkToNoumCTACard`. Confirm the existing `PaywallView` sheet
-   presents via `showPaywall`. As a Pro user, tap → confirm Ask
-   Noum opens with the session-anchored opener already seeded.
+1. **Move 1 — eloquence promotion** — finish a rep with momentum +
+   2 good categories + 1 eloquence finding. Confirm the third
+   bullet is the eloquence finding (italic snippet evidence),
+   not the second "felt solid" category.
+2. **Move 2 — single-event timing** — finish a rep that triggers
+   exactly one skill-area level-up (common case). Confirm the
+   `PreSummaryCelebration` plays in ~0.65s — should feel like a
+   wink, not a beat. Then run a rep that triggers 2+ level-ups and
+   confirm the multi-event sequence still plays at the original
+   ~1.1s per event.
+3. **Move 3 — partial transcript preview** — open Ask Noum, hold
+   the mic. Confirm "Listening…" appears above the input bar in
+   italic brand-blue. Speak; confirm the live transcript replaces
+   "Listening…" character-by-character as the recognizer ships
+   partials. Release; confirm the preview hides immediately and
+   the final transcript lands as a user turn in the thread.
 
 ### Assumptions
 
-- The bullet ordering described in the test contracts (momentum
-  first, categories cap at 2, eloquence next, AI strength last) is
-  intentional. The source comments in `WhatYouDidWellCard` confirm
-  this — eloquence at slot 3 is the first to lose to the 3-cap.
-- The `.ok` rating belongs only in `WhatToImprove`, not in
-  `WhatYouDidWell`. The source explicitly filters on `.good` for
-  the well card and on `.couldImprove || .ok` for the improve
-  card. The test contracts match.
-- The brand-voice banned-token list (`!`, "Let's", "awesome",
-  "great!") is the conservative subset of the project's voice
-  rules. Other voice contracts (sentence case, no emoji) would be
-  better checked by linter tooling than unit tests.
+- The `events.count == 1` branch in `PreSummaryCelebration` is the
+  right gate. We don't currently surface "events at a time" — the
+  whole sequence is presented in one mount. If a future refactor
+  paginates the sequence (e.g. one event per mount), the
+  `isSingleEvent` read would need to migrate.
+- The "Listening…" copy passes the same brand-voice contract the
+  TalkToNoum CTA does (no `!`, no `Let's`, no chirpy filler). It
+  reads as observation, not encouragement.
+- The chip parser tests assume the source's `(4...60)` length range
+  is inclusive on both ends — that's what the Swift `...` operator
+  produces, and the test `chipsAtExactMinAndMaxLengthArePreserved`
+  locks both edges.
 
 ### What was checked
 
-- Read every new file (`PreSummaryCelebration.swift`,
-  `WhatYouDidWellCard.swift`, `WhatToImproveCard.swift`,
-  `TalkToNoumCTACard.swift`) end-to-end and confirmed every
-  external symbol resolves on the Redesign branch.
-- Read `Noum/SummaryView.swift:450–650` to confirm the
-  integration: pre-summary celebration branch + populated-hero
-  branch + IM-hero branch. The four new cards are wired correctly,
-  the existing chain (PersonalBest → LevelUp → Progression →
-  PreSummary → Summary) advances through
-  `advanceToPreSummaryIfNeeded` from each branch's continue
-  handler.
-- Verified `FillerWordDetector.breakdown(in:customWords:)`
-  returns a `FillerWordBreakdown` with a `topWords:
-  [(word: String, count: Int)]` accessor (verified in
-  `FillerWordDetector.swift:624` and `FillerWordDetector.swift:38`).
-- Verified `AICoachFeedback` has the synthesized memberwise init
-  at internal access (no custom init in `PracticeSupport.swift:
-  577–582`).
-- Verified `CoachNote`, `FeedbackCategory`, `EloquenceFinding`
-  member inits all match the test call sites.
-- Verified `@testable import Noum` is at the top of
-  `NoumTests/NoumTests.swift:13` so internal types
-  (`WhatYouDidWellCard.Bullet`, `WhatToImproveCard.Evidence`,
-  the static accessors) are reachable from the suite.
-- `grep` after each edit confirmed: (a) the new static funcs land
-  exactly once each, (b) the instance computed properties
-  delegate (no double-implementation), (c) no usage of the
-  pre-refactor inline logic survives.
+- Re-read `WhatYouDidWellCard.computeBullets` after the refactor;
+  confirmed the four bullet sources still emit on the right shape
+  and that `prefix(3)` is the only cap (no other count gate inside
+  the function).
+- Re-read `PreSummaryCelebration.present(index:)` and confirmed
+  `inDuration` is only read on the reduce-motion path — the
+  full-motion path uses the new `contentSpring`/`barsSpring`
+  computed locals.
+- Re-read `AskNoumView.inputBar` and confirmed
+  `voiceInput.partialTranscript` is an `@Published private(set)
+  String` on the `AskNoumVoiceInput` `ObservableObject`, so the
+  view binding redraws on partial updates.
+- Re-read `CoachContextBuilder.parseAndFilterChips` and
+  `passesChipFilter`; confirmed every assertion in the new test
+  suite maps onto a real gate in the source.
+- `grep`'d the test file to confirm no other suite was exercising
+  the previous "eloquence drops" contract that my rename + flip
+  would have broken.
 
 ## Files modified
 
-- `Noum/WhatYouDidWellCard.swift` — refactor `bullets` to delegate
-  to a new `static func computeBullets(...)`. Logic byte-equivalent.
-- `Noum/WhatToImproveCard.swift` — refactor `bullets` and the
-  `nextStepEvidence` / `wpm` helpers to live inside a new
-  `static func computeBullets(...)`. `customFillerWords` flows in
-  as a parameter so tests don't touch `ClutchWordStore.shared`.
-- `Noum/TalkToNoumCTACard.swift` — expose the four copy strings
-  via `static func` accessors; instance computed properties
-  delegate.
-- `NoumTests/NoumTests.swift` — append 25 new tests across three
-  suites at end of file.
-- `docs/CURRENT_STATE.md` — header breadcrumb for the verification
-  push.
+- `Noum/WhatYouDidWellCard.swift` — eloquence promotion + helper
+  extraction. Comment block at top of `computeBullets` updated to
+  describe the new ordering contract.
+- `Noum/PreSummaryCelebration.swift` — single-event timing
+  branch in `present(index:)`. Header comment updated to describe
+  the single-vs-multi behavior.
+- `Noum/AskNoumView.swift` — `inputBar` split into VStack with
+  `partialTranscriptPreview` above `inputBarRow`. New `@ViewBuilder`
+  defined directly below the row helper.
+- `NoumTests/NoumTests.swift` — `WhatYouDidWellBulletSelectorTests`
+  rename + add (1 renamed, 1 new). `CoachContextBuilderChipParserTests`
+  appended end-of-file (18 tests).
 - `HANDOFF.md` — this file, rewritten.
+- `docs/CURRENT_STATE.md` — header breadcrumb for the push.
 
 ## Branch
 
 `Redesign` — committed and pushed per the user's brief. Continues
-the M17 arc: the previous partial-commit landed the redesign UI;
-this push locks the design contract so the next iteration (real-
-device QA + further M17 polish) can move forward without
-re-deriving every selector rule from the source comments. Each
-push moves the app closer to the vision (a coach whose feedback
-is observable, evidence-backed, and never lies about progress)
-without inflating surface area or breaking the brand-voice
-contract.
+the M17 polish arc: this push closes four of the six items the
+previous two handoffs flagged as concrete + deferred, leaving the
+two that need real device access (real-device QA + isMinimalEffort
+threshold review behind a confidence-thread refactor).
+
+Each move follows the same restraint contract: no new feature
+surface, no new screens, no new dependencies, no new copy beyond
+the single "Listening…" prompt (brand-voice compliant). The push
+delivers four user-observable improvements + 19 new/updated tests
+to lock the new contracts, on top of the 25 tests the previous
+push added.
 
 ## Future moves
 
-1. **Real-device QA of the M17 hero block** (operational, not
-   engineering). The five branches under "Blocked / needs visual
-   QA" above are the punch list.
-2. **Eloquence bullet ordering revisit.** The current contract
-   drops eloquence at slot 3 when momentum + 2 categories already
-   saturate. A future tweak might bump eloquence above the
-   second category since a detected rhetorical move is concrete
-   evidence whereas a second category is "felt solid" — same as
-   the first one. Worth A/B'ing once usage data exists.
-3. **`isMinimalEffort` threshold review.** Currently
-   `transcriptWordCount < 5 || effectiveDuration < 5`. May want
-   to extend to also consider transcript-confidence (a low-
-   confidence transcript on a long rep should also bypass the
-   bullet selectors). Future move; out of scope for this push.
+1. **Real-device QA of the M17 hero block** (still operational).
+   The five-branch punch list from the prior handoff plus the
+   three new visual moves above. Use macOS `Cmd+Shift+5` →
+   "Record Selected Portion" with mic to capture richer feedback.
+2. **`isMinimalEffort` threshold confidence-thread refactor.**
+   Plumb transcript-confidence from `SpeechRecognizerViewModel`
+   through `SummaryView` so a low-confidence read on a long rep
+   bypasses the bullet selectors the same way a short rep does.
+   Touch surface is small (one new property on the view + threading
+   through ~4 layers) but the scope is more than a "polish push"
+   should pull into the same handoff.
+3. **AI follow-up chip cache eviction.**
+   `AskNoumStore.aiChipsCache` currently has no size cap or
+   eviction. Long chat threads accumulate cached chip sets keyed by
+   coach reply UUID. Not a real risk (chips are 3 short strings
+   per reply, sessions are bounded) but a 50-entry LRU would be
+   conservative belt-and-braces.
+4. **Eloquence ordering A/B once usage data lands.** This push
+   shipped the "concrete > restated" intuition. If post-launch
+   analytics shows users tap the second-category bullet more than
+   the eloquence bullet (i.e. the visual treatment of "felt solid"
+   is more inviting than the italic quote), flip the order back
+   and trust the data over the intuition.

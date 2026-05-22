@@ -9,8 +9,8 @@ import SwiftUI
 // real-device review flagged the stack as overwhelming and competing
 // with the score read.
 //
-// Choreography (full-motion):
-//   • Per event: ~1.1s total — 0.55s spring in, 0.3s hold, 0.25s fade out
+// Choreography (full-motion, multi-event):
+//   • Per event: ~1.1s total — 0.55s spring in, 0.50s hold, 0.25s fade out
 //   • Backdrop is the same purple-register radial used by
 //     `FirstRepCelebration` / `TierPromotionOverlay` so upward moments
 //     share one vocabulary.
@@ -18,8 +18,15 @@ import SwiftUI
 //     mirroring the original `SkillLevelUpCard` treatment so the card
 //     itself reads as "the same celebration moved up the chain".
 //
+// Single-event tightening:
+//   • When there's only one event the user is staring at a card with
+//     no "next" frame to wait for — the long hold reads as a beat
+//     too long. Compress to ~0.65s total (0.42s spring in + 0.35s
+//     hold, no fade-out because there's nothing to fade *to*) so the
+//     single-level-up path reads as a wink, not a beat.
+//
 // Reduce-motion:
-//   • Spring collapses to a single fade (0.2s in, 0.3s hold, 0.2s out).
+//   • Spring collapses to a single fade (0.2s in, ~0.3s hold, 0.2s out).
 //   • Per-event duration shortens to ~0.7s so the sequence never
 //     overstays its welcome on the vestibular-sensitive path.
 //
@@ -255,14 +262,29 @@ struct PreSummaryCelebration: View {
         }
 
         // Reduce-motion path: shorter beats, no spring.
-        let inDuration: Double = reduceMotion ? 0.20 : 0.35
-        let holdDuration: Double = reduceMotion ? 0.30 : 0.50
+        // Single-event full-motion path: the user isn't waiting on a
+        // "next" frame, so the hold + in-spring tightens. Keeps the
+        // common case from feeling like the app paused before the
+        // summary. Multi-event keeps the longer hold so each card
+        // earns its read before the next one lands.
+        let isSingleEvent = events.count == 1
+        let inDuration: Double = reduceMotion ? 0.20 : (isSingleEvent ? 0.30 : 0.35)
+        let holdDuration: Double = reduceMotion ? 0.30 : (isSingleEvent ? 0.35 : 0.50)
         let outDuration: Double = reduceMotion ? 0.20 : 0.25
-        let barsDelay: Double = reduceMotion ? 0.0 : 0.18
+        let barsDelay: Double = reduceMotion ? 0.0 : (isSingleEvent ? 0.12 : 0.18)
 
-        // Card slides in
+        // Card slides in. Single-event full-motion uses a faster
+        // spring response so the in-feel reads as a wink. Multi-event
+        // keeps the gentler 0.55s spring so the sequence still feels
+        // like a deliberate parade of moments.
+        let contentSpring: Animation = isSingleEvent
+            ? .spring(response: 0.42, dampingFraction: 0.78)
+            : .spring(response: 0.55, dampingFraction: 0.78)
+        let barsSpring: Animation = isSingleEvent
+            ? .spring(response: 0.40, dampingFraction: 0.78)
+            : .spring(response: 0.5, dampingFraction: 0.78)
         withAnimation(reduceMotion ? .easeOut(duration: inDuration)
-                                   : .spring(response: 0.55, dampingFraction: 0.78)) {
+                                   : contentSpring) {
             contentVisible = true
         }
         CoachHaptic.skillLevelUp()
@@ -274,7 +296,7 @@ struct PreSummaryCelebration: View {
         }
         if Task.isCancelled { return }
         withAnimation(reduceMotion ? .easeOut(duration: 0.25)
-                                   : .spring(response: 0.5, dampingFraction: 0.78)) {
+                                   : barsSpring) {
             barsAdvanced = true
         }
 
