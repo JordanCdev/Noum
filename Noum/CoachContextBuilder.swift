@@ -653,6 +653,273 @@ enum CoachContextBuilder {
         }
     }
 
+    // MARK: - AI-tailored follow-up chips (post-reply)
+    //
+    // Sibling to `followUpSuggestions` — same surface, same shape (three
+    // short tappable nudges below the coach reply), but the strings are
+    // model-generated against the actual last-user-turn + last-coach-reply
+    // + voice tone. Lets the chips read as "the coach knows what you just
+    // said" rather than a catalog draw.
+    //
+    // Contract:
+    //   • Returns nil on any cold path — no provider, network failure,
+    //     locale-blocked, model returned empty/unparseable output, or any
+    //     chip fails the brand-voice filter. AskNoumView keeps the
+    //     deterministic chips visible during the request and reuses them
+    //     unchanged on nil — chips never disappear mid-conversation.
+    //   • Returns exactly `count` chips on success (default 3). Each chip
+    //     trimmed, ≤ ~60 chars, no exclamation marks, no emoji, no leading
+    //     "Let's" / "Tell me" directives — same voice rules as everywhere
+    //     else on the surface.
+    //   • Bounded request — temperature 0.7 (mild variety, not random),
+    //     short max-tokens because the output is ~30 tokens of text.
+    //   • Same provider plumbing as `AICoachChatService` (OpenAI / DeepSeek
+    //     / Gemini via `AISettingsManager`). Locale-gated identically.
+    //
+    // Why not extend AICoachChatService instead of a sibling function: the
+    // chat service is request-shaped around conversation replay (history
+    // + system prompt + user context block). Chip generation is a one-shot
+    // text gen with no replay, a different system prompt, a much smaller
+    // token budget, and a content filter unique to chip shape. Routing it
+    // through the chat service would force a fake "history" parameter and
+    // overload the failure types (a chip-gen failure is not a "coach reply
+    // failure" the store needs to surface). A small standalone function in
+    // CoachContextBuilder keeps the chips co-located with their
+    // deterministic catalog — every reader sees both paths in one file.
+    static func generateAIFollowUpChips(
+        lastUserTurn: String,
+        lastCoachReply: String,
+        voice: SpeakingStyleGoal?,
+        count: Int = 3
+    ) async -> [String]? {
+        let trimmedReply = lastCoachReply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTurn = lastUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReply.isEmpty, !trimmedTurn.isEmpty else { return nil }
+
+        // Locale + provider gates first — match what AICoachChatService
+        // and AIPromptGeneratorService do. Reading state on the main
+        // actor since both stores live there.
+        guard await activeLocaleSupportsAI() else { return nil }
+        guard let provider = await currentProvider(),
+              let endpoint = provider.endpoint,
+              let key = apiKey(for: provider) else { return nil }
+
+        let system = aiChipsSystemPrompt
+        let user = aiChipsUserPrompt(
+            lastUserTurn: trimmedTurn,
+            lastCoachReply: trimmedReply,
+            voice: voice,
+            count: count
+        )
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Tight timeout — chips are a fast-path nice-to-have; a stalled
+        // request shouldn't keep the network in flight while the user is
+        // already reading the deterministic fallback.
+        request.timeoutInterval = 8
+
+        do {
+            switch provider {
+            case .none:
+                return nil
+            case .openAI, .deepSeek:
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                let body: [String: Any] = [
+                    "model": provider.model,
+                    "temperature": 0.7,
+                    // Small budget — 3 short chips on separate lines
+                    // is well under 80 tokens. Caps an over-eager
+                    // model that wants to write a paragraph.
+                    "max_tokens": 120,
+                    "messages": [
+                        ["role": "system", "content": system],
+                        ["role": "user", "content": user]
+                    ]
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            case .gemini:
+                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                let body: [String: Any] = [
+                    "systemInstruction": ["parts": [["text": system]]],
+                    "contents": [["role": "user", "parts": [["text": user]]]],
+                    "generationConfig": [
+                        "temperature": 0.7,
+                        "maxOutputTokens": 120
+                    ]
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            }
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return nil
+            }
+            guard let raw = extractAIChipsText(from: data, provider: provider) else { return nil }
+            return parseAndFilterChips(raw, count: count)
+        } catch {
+            return nil
+        }
+    }
+
+    private static let aiChipsSystemPrompt = """
+    You generate short tap-to-continue follow-up prompts for a speaking-coach \
+    chat surface. Each prompt is written AS THE USER asking their coach the \
+    next question — second person, direct.
+
+    Hard rules (every output must clear all of these):
+    - Exactly the requested number of prompts. One per line. No numbering, no \
+    bullets, no quotes, no JSON, no preface.
+    - Each prompt ≤ 8 words.
+    - Sentence case. No emoji. No exclamation marks. No "Let's".
+    - No leading directive verbs like "Tell me", "Describe", "Explain", \
+    "Discuss" — write as the user's own question or short ask.
+    - Tailor to the last coach reply + last user turn + the voice tone. A \
+    user training authoritative gets verdict-shaped follow-ups; warm gets \
+    felt-experience asks; concise gets clipped asks; persuasive gets \
+    reasoning asks; executive gets top-line asks; storytelling gets \
+    arc-shaped asks.
+    - If the coach asked the user a question, at least one of your prompts \
+    should help the user answer or push back on it.
+    - Output only the prompts themselves, separated by newlines.
+    """
+
+    private static func aiChipsUserPrompt(
+        lastUserTurn: String,
+        lastCoachReply: String,
+        voice: SpeakingStyleGoal?,
+        count: Int
+    ) -> String {
+        let voiceLine = voice.map { "Voice tone: \($0.title)." } ?? "Voice tone: not set — keep calm and direct."
+        return """
+        \(voiceLine)
+
+        Last user turn:
+        \"\"\"
+        \(lastUserTurn)
+        \"\"\"
+
+        Last coach reply:
+        \"\"\"
+        \(lastCoachReply)
+        \"\"\"
+
+        Return exactly \(count) follow-up prompts, one per line.
+        """
+    }
+
+    private static func extractAIChipsText(from data: Data, provider: AIProvider) -> String? {
+        switch provider {
+        case .none: return nil
+        case .openAI, .deepSeek:
+            guard
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let choices = object["choices"] as? [[String: Any]],
+                let first = choices.first,
+                let message = first["message"] as? [String: Any],
+                let content = message["content"] as? String
+            else { return nil }
+            return content
+        case .gemini:
+            guard
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let candidates = object["candidates"] as? [[String: Any]],
+                let first = candidates.first,
+                let content = first["content"] as? [String: Any],
+                let parts = content["parts"] as? [[String: Any]]
+            else { return nil }
+            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        }
+    }
+
+    /// Parse the model's newline-separated chip output, apply brand-voice
+    /// rules per chip, and return exactly `count` chips. Returns nil if
+    /// fewer than `count` chips survive filtering — the caller's
+    /// deterministic fallback is better than a partial set.
+    ///
+    /// Exposed `internal` (default) so the test suite can exercise the
+    /// filter shape without needing a provider stub.
+    static func parseAndFilterChips(_ raw: String, count: Int) -> [String]? {
+        let lines = raw
+            .components(separatedBy: CharacterSet.newlines)
+            .map { line -> String in
+                var t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Strip common list-marker prefixes a model might add.
+                while let first = t.first, "-*•".contains(first) {
+                    t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+                }
+                // Strip numeric "1. " / "2) " enumeration if present.
+                if let match = t.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) {
+                    t.removeSubrange(match)
+                }
+                // Strip wrapping quotes / smart quotes if present.
+                if (t.hasPrefix("\"") && t.hasSuffix("\""))
+                    || (t.hasPrefix("\u{201C}") && t.hasSuffix("\u{201D}")) {
+                    if t.count >= 2 {
+                        t = String(t.dropFirst().dropLast())
+                    }
+                }
+                return t.trimmingCharacters(in: .whitespaces)
+            }
+            .filter { passesChipFilter($0) }
+
+        guard lines.count >= count else { return nil }
+        return Array(lines.prefix(count))
+    }
+
+    /// Per-chip brand-voice filter. Mirrors the everywhere-else rules:
+    /// no exclamations, no emoji, no "Let's", no leading directives, no
+    /// runaway-length copy. Anything that fails is dropped — the caller
+    /// gates on chip count to decide whether to honour the AI batch.
+    private static func passesChipFilter(_ chip: String) -> Bool {
+        guard !chip.isEmpty else { return false }
+        // 4–60 chars covers "Next move?" up to ~8 words; longer than
+        // that no longer reads as a quick tap.
+        guard (4...60).contains(chip.count) else { return false }
+        // No exclamation marks — brand voice ban.
+        if chip.contains("!") { return false }
+        // No emoji — brand voice ban. Quick category check covers most
+        // graphic Unicode (Symbol + Pictograph + Misc Symbols + Emoji
+        // Presentation default-encoded chars).
+        for scalar in chip.unicodeScalars {
+            if scalar.properties.isEmoji && scalar.value > 0x238C {
+                return false
+            }
+        }
+        let lower = chip.lowercased()
+        if lower.hasPrefix("let's ") || lower.hasPrefix("lets ") { return false }
+        let leadingDirectives = [
+            "tell me ", "describe ", "explain ", "discuss ", "elaborate ",
+            "share ", "talk about "
+        ]
+        if leadingDirectives.contains(where: { lower.hasPrefix($0) }) { return false }
+        return true
+    }
+
+    // MARK: - Provider plumbing (shared with AICoachChatService /
+    // AIPromptGeneratorService). Tiny shims rather than a shared helper
+    // because the call sites are simple and the abstraction would obscure
+    // the actor boundaries.
+
+    @MainActor
+    private static func currentProvider() -> AIProvider? {
+        AISettingsManager.shared.activeProvider
+    }
+
+    @MainActor
+    private static func activeLocaleSupportsAI() -> Bool {
+        LocaleSettingsManager.shared.current.aiSupported
+    }
+
+    private static func apiKey(for provider: AIProvider) -> String? {
+        guard let keyName = provider.environmentKey else { return nil }
+        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
+            return value
+        }
+        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+    }
+
     // MARK: - Helpers
 
     /// "Today" / "Yesterday" / "Mon" / "Apr 14" — compact day label

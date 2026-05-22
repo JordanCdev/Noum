@@ -85,6 +85,21 @@ final class AskNoumStore: ObservableObject {
     /// disable the input bar and show the pending message row.
     @Published private(set) var isAwaitingReply: Bool = false
 
+    /// AI-tailored follow-up chips keyed by the coach message ID they
+    /// belong to. Lets `AskNoumView` request chips once per reply, cache
+    /// the result, and read it back synchronously on every view rebuild
+    /// without re-rolling the generation request (which would burn
+    /// tokens + jitter the chip text under the user's finger).
+    ///
+    /// In-memory only — chips are conversational ephemera tied to the
+    /// current view session. A relaunched app starts fresh; the cost
+    /// is one re-roll on the very last reply, the win is no persistence
+    /// surface dragging stale model output across sessions.
+    ///
+    /// Cleared by `clearThread()` so a thread-wipe doesn't leave
+    /// orphaned chip data for IDs that no longer exist.
+    @Published private(set) var aiChipsCache: [UUID: [String]] = [:]
+
     /// Set by `injectUserTurn(_:)` when a different surface (e.g. the
     /// post-session Summary's "Talk to your coach about this rep" CTA)
     /// drops a seed message into the thread *before* AskNoumView has
@@ -201,7 +216,26 @@ final class AskNoumStore: ObservableObject {
     func clearThread() {
         messages.removeAll()
         pendingInjectedCoachID = nil
+        // Drop the AI chip cache too — every cached entry is keyed by
+        // a coach message ID that no longer exists.
+        aiChipsCache.removeAll()
         persist()
+    }
+
+    /// Cache an AI-generated chip set for a specific coach reply. Called
+    /// by AskNoumView once the chip-generation request returns successfully.
+    /// Idempotent — overwriting is a no-op if the chips match; we don't
+    /// distinguish because the source of truth is the cached value, not
+    /// the request that produced it.
+    func setAIChips(_ chips: [String], for coachID: UUID) {
+        aiChipsCache[coachID] = chips
+    }
+
+    /// Read cached chips for a coach reply, if any. Returns nil when the
+    /// reply has no cached entry yet — the view falls back to the
+    /// deterministic chip catalog in the meantime.
+    func aiChips(for coachID: UUID) -> [String]? {
+        aiChipsCache[coachID]
     }
 
     /// Cross-surface seed-message inject. Used by post-session bridges
