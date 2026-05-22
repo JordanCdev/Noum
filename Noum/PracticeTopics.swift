@@ -549,9 +549,11 @@ struct PracticeTopics {
         if let profile,
            Double.random(in: 0..<1) < aiGenerationProbability {
             let weakest = baseline.flatMap(weakestDimensionLabel(for:))
+            let recents = history.recentTexts(limit: 5)
             if let generated = await Self.generateWithBudget(
                 profile: profile,
-                weakestDimension: weakest
+                weakestDimension: weakest,
+                recentPromptTexts: recents
             ), !history.wasRecentlySeen(generated) {
                 history.record(generated)
                 return generated
@@ -575,13 +577,15 @@ struct PracticeTopics {
     /// back to the pool in either case.
     private static func generateWithBudget(
         profile: CoachingProfile,
-        weakestDimension: String?
+        weakestDimension: String?,
+        recentPromptTexts: [String]
     ) async -> String? {
         await withTaskGroup(of: String?.self) { group in
             group.addTask {
                 await AIPromptGeneratorService.shared.generate(
                     profile: profile,
-                    weakestDimension: weakestDimension
+                    weakestDimension: weakestDimension,
+                    recentPromptTexts: recentPromptTexts
                 )
             }
             group.addTask {

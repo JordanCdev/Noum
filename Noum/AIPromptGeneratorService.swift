@@ -30,9 +30,16 @@ actor AIPromptGeneratorService {
     /// `weakestDimension` should be a short label like "filler control" or
     /// "structured opening" — the model uses it to make the prompt actually
     /// challenge the thing the user needs to practice.
+    ///
+    /// `recentPromptTexts` (newest first) is shown to the model with an
+    /// instruction to avoid near-clones. Pool dedup already covers exact
+    /// repeats; this only matters for the AI path so it doesn't generate
+    /// a paraphrase of last week's prompt. Defaults to empty for callers
+    /// that don't have prompt history available.
     func generate(
         profile: CoachingProfile,
-        weakestDimension: String?
+        weakestDimension: String?,
+        recentPromptTexts: [String] = []
     ) async -> String? {
         // M13: skip AI generation when the user is practising in a locale
         // we haven't localised AI prompts for. Falling back to the curated
@@ -49,7 +56,11 @@ actor AIPromptGeneratorService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 12
 
-        let prompt = userPrompt(profile: profile, weakestDimension: weakestDimension)
+        let prompt = userPrompt(
+            profile: profile,
+            weakestDimension: weakestDimension,
+            recentPromptTexts: recentPromptTexts
+        )
 
         do {
             switch provider {
@@ -121,10 +132,31 @@ actor AIPromptGeneratorService {
     knowledge. No second-person directives ("Tell me about…", "Describe…"). \
     Frame as a question the user is asked, e.g. "What is the most overrated \
     skill in your industry?" or "When should a leader admit they don't \
-    have an answer?". Bias toward the goal + weakness in the input.
+    have an answer?". Bias toward the goal + weakness in the input. \
+    When recent prompts are listed, avoid near-clones — pick a different \
+    angle, subject, or framing rather than paraphrasing.
     """
 
-    private func userPrompt(profile: CoachingProfile, weakestDimension: String?) -> String {
+    private func userPrompt(
+        profile: CoachingProfile,
+        weakestDimension: String?,
+        recentPromptTexts: [String]
+    ) -> String {
+        Self.buildUserPrompt(
+            profile: profile,
+            weakestDimension: weakestDimension,
+            recentPromptTexts: recentPromptTexts
+        )
+    }
+
+    /// Deterministic prompt-body builder. Pulled out as `static` so tests
+    /// can exercise the shape without standing up a provider or a network
+    /// stub — see `AIPromptGeneratorSeedTests` in NoumTests.
+    static func buildUserPrompt(
+        profile: CoachingProfile,
+        weakestDimension: String?,
+        recentPromptTexts: [String]
+    ) -> String {
         var lines: [String] = []
         lines.append("Goal: \(profile.primaryGoal.title)")
         lines.append("Style aim: \(profile.speakingStyleGoal.title)")
@@ -133,8 +165,21 @@ actor AIPromptGeneratorService {
         if let w = weakestDimension, !w.isEmpty {
             lines.append("Weakest dimension to challenge: \(w)")
         }
+        let cleanedRecents = recentPromptTexts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !cleanedRecents.isEmpty {
+            lines.append("")
+            lines.append("Recent prompts the user has already seen — avoid near-clones:")
+            for text in cleanedRecents {
+                lines.append("- \(text)")
+            }
+        }
         return lines.joined(separator: "\n") + "\n\nReturn one prompt."
     }
+
+    /// Exposed for tests so they can assert the system-prompt clause.
+    static var systemPromptForTesting: String { systemPrompt }
 
     // MARK: - Response decoding (mirrors GoalParaphraseService)
 

@@ -2493,6 +2493,169 @@ struct PromptHistoryStoreTests {
     }
 }
 
+// MARK: - PromptHistoryStore — recentTexts AI seed (recurrence-aware)
+//
+// The sibling text store lives next to the hash store and feeds the AI
+// generator the last N prompts so it can dodge near-clones. These tests
+// pin the contract — LRU order, freshness window, account-scope, reset
+// fan-out, and dedup against case-only variants.
+
+struct PromptHistoryStoreRecentTextsTests {
+
+    @Test @MainActor func recentTextsEmptyByDefault() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        #expect(store.recentTexts(limit: 5).isEmpty)
+        #expect(store.recentTexts(limit: 0).isEmpty)
+    }
+
+    @Test @MainActor func recentTextsReturnsNewestFirstOrdering() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        store.record("First prompt?")
+        store.record("Second prompt?")
+        store.record("Third prompt?")
+        let recents = store.recentTexts(limit: 5)
+        #expect(recents == ["Third prompt?", "Second prompt?", "First prompt?"])
+        store.reset()
+    }
+
+    @Test @MainActor func recentTextsRespectsLimit() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        for i in 1...6 {
+            store.record("Prompt number \(i)?")
+        }
+        #expect(store.recentTexts(limit: 3).count == 3)
+        #expect(store.recentTexts(limit: 3).first == "Prompt number 6?")
+        store.reset()
+    }
+
+    @Test @MainActor func recentTextsLruCapsAtMaxTextEntries() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        // Record more than the cap so the oldest must be dropped.
+        for i in 1...(PromptHistoryStore.maxTextEntries + 5) {
+            store.record("Cap test prompt \(i)?")
+        }
+        let all = store.recentTexts(limit: PromptHistoryStore.maxTextEntries + 5)
+        #expect(all.count == PromptHistoryStore.maxTextEntries)
+        // Newest entry must be present, oldest must be gone.
+        #expect(all.first == "Cap test prompt \(PromptHistoryStore.maxTextEntries + 5)?")
+        #expect(!all.contains("Cap test prompt 1?"))
+        store.reset()
+    }
+
+    @Test @MainActor func recordingSamePromptTwiceDoesNotDuplicateText() {
+        // The hash store no-ops on re-record, so the text store should
+        // stay in lockstep. The user re-seeing a prompt on a re-roll
+        // should not produce two adjacent identical entries.
+        let store = PromptHistoryStore.shared
+        store.reset()
+        store.record("Repeated prompt?")
+        store.record("Repeated prompt?")
+        store.record("REPEATED PROMPT?") // case-only variant
+        #expect(store.recentTexts(limit: 5) == ["Repeated prompt?"])
+        store.reset()
+    }
+
+    @Test @MainActor func resetClearsBothStores() {
+        let store = PromptHistoryStore.shared
+        store.reset()
+        store.record("Pre-reset prompt?")
+        #expect(store.wasRecentlySeen("Pre-reset prompt?") == true)
+        #expect(store.recentTexts(limit: 5).isEmpty == false)
+        store.reset()
+        #expect(store.wasRecentlySeen("Pre-reset prompt?") == false)
+        #expect(store.recentTexts(limit: 5).isEmpty == true)
+    }
+
+    @Test @MainActor func recentTextsHonorsSameFreshnessWindowAsHashStore() {
+        // The text store's freshness cut-off must match the hash store's
+        // 14-day window. We can't fast-forward time inside the store, so
+        // assert the contract via the shared static — if either side
+        // changes window without updating the other, this test fails the
+        // moment the constants diverge.
+        #expect(PromptHistoryStore.freshnessWindow == 14 * 24 * 60 * 60)
+        let store = PromptHistoryStore.shared
+        store.reset()
+        store.record("Today's prompt?")
+        // Freshly recorded entries land inside the window — same window
+        // controls both stores, so a fresh entry appears in both.
+        #expect(store.wasRecentlySeen("Today's prompt?") == true)
+        #expect(store.recentTexts(limit: 1) == ["Today's prompt?"])
+        store.reset()
+    }
+}
+
+// MARK: - AIPromptGeneratorService — recurrence-aware seed shape
+//
+// The deterministic prompt-body builder is exposed as a `static` so we
+// can pin the shape end-to-end without a provider, a network stub, or
+// the actor isolation hop. The system prompt is also exposed read-only
+// so we can assert the "avoid near-clones" clause is present.
+
+struct AIPromptGeneratorSeedTests {
+
+    private func makeProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .moreConcise,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    @Test func systemPromptInstructsModelToAvoidNearClones() {
+        let sys = AIPromptGeneratorService.systemPromptForTesting.lowercased()
+        #expect(sys.contains("near-clones") || sys.contains("near clone"))
+    }
+
+    @Test func userPromptOmitsRecentsBlockWhenEmpty() {
+        let body = AIPromptGeneratorService.buildUserPrompt(
+            profile: makeProfile(),
+            weakestDimension: "filler control",
+            recentPromptTexts: []
+        )
+        #expect(body.contains("Goal:"))
+        #expect(body.contains("Weakest dimension"))
+        #expect(!body.contains("Recent prompts"))
+        #expect(body.hasSuffix("Return one prompt."))
+    }
+
+    @Test func userPromptIncludesRecentsBlockWhenProvided() {
+        let body = AIPromptGeneratorService.buildUserPrompt(
+            profile: makeProfile(),
+            weakestDimension: nil,
+            recentPromptTexts: [
+                "What is the most underrated skill in your industry?",
+                "When should a leader admit they don't have an answer?"
+            ]
+        )
+        #expect(body.contains("Recent prompts the user has already seen — avoid near-clones:"))
+        #expect(body.contains("- What is the most underrated skill in your industry?"))
+        #expect(body.contains("- When should a leader admit they don't have an answer?"))
+        // Weakest dimension was nil — must NOT show up as a "nil" line.
+        #expect(!body.contains("Weakest dimension"))
+    }
+
+    @Test func userPromptDropsBlankAndWhitespaceOnlyRecents() {
+        let body = AIPromptGeneratorService.buildUserPrompt(
+            profile: makeProfile(),
+            weakestDimension: nil,
+            recentPromptTexts: ["", "   ", "Real prompt?"]
+        )
+        #expect(body.contains("- Real prompt?"))
+        #expect(!body.contains("- \n"))
+    }
+}
+
 // MARK: - PracticeTopics goal-aware orchestrator (M7)
 
 struct PracticeTopicsM7Tests {
