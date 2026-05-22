@@ -84,6 +84,15 @@ struct SummaryView: View {
     @State private var showLevelUpScreen = false
     @State private var levelUpPreviousLevel: String = ""
     @State private var levelUpNewLevel: String = ""
+    /// Skill level-up sequence played between PersonalBest (or
+    /// LevelUp / Progression) and the standard summary content. The
+    /// snapshot is locked at setup so the pre-summary celebration
+    /// plays the exact set of events that was pending at finalize
+    /// time, not whatever's pending the moment the user scrolls back.
+    /// Empty array = no celebration; the parent skips straight to
+    /// summary content without rendering the overlay.
+    @State private var showPreSummaryCelebration = false
+    @State private var preSummaryEvents: [SkillLevelUpEvent] = []
     @State private var activeMiniDrill: DrillRecommendationV2?
     @State private var miniDrillOutcome: MiniDrillOutcome?
     @State private var miniDrillAwardedXP: Int = 0
@@ -432,7 +441,7 @@ struct SummaryView: View {
                     onContinue: {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             showProgressionScreen = false
-                            // Chain: level-up → personal best → summary
+                            // Chain: level-up → personal best → pre-summary → summary
                             if levelUpPreviousLevel != levelUpNewLevel && !levelUpNewLevel.isEmpty {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                     withAnimation(.easeInOut(duration: 0.4)) {
@@ -445,6 +454,8 @@ struct SummaryView: View {
                                         showPersonalBestScreen = true
                                     }
                                 }
+                            } else {
+                                advanceToPreSummaryIfNeeded()
                             }
                         }
                     }
@@ -459,13 +470,17 @@ struct SummaryView: View {
                     onContinue: {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             showLevelUpScreen = false
-                            // Chain to personal best if needed
+                            // Chain to personal best if needed, otherwise
+                            // fall through to the skill-level-up sequence
+                            // before the summary content lands.
                             if personalBestMilestone != nil {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                     withAnimation(.easeInOut(duration: 0.4)) {
                                         showPersonalBestScreen = true
                                     }
                                 }
+                            } else {
+                                advanceToPreSummaryIfNeeded()
                             }
                         }
                     }
@@ -475,6 +490,18 @@ struct SummaryView: View {
                 // Full-screen personal best celebration (intermediary before summary)
                 personalBestCelebration(milestone: milestone)
                     .transition(.opacity)
+            } else if showPreSummaryCelebration, !preSummaryEvents.isEmpty {
+                // Skill level-up celebration sequence — plays each
+                // pending SkillLevelUpEvent one at a time before the
+                // summary content lands. Replaces the previous inline
+                // stack inside the hero (which competed with the score
+                // and added visual noise on multi-event reps).
+                PreSummaryCelebration(events: preSummaryEvents) {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        showPreSummaryCelebration = false
+                    }
+                }
+                .transition(.opacity)
             } else {
                 // Normal summary content — redesigned hierarchy
                 ScrollView(showsIndicators: false) {
@@ -538,29 +565,29 @@ struct SummaryView: View {
                                 xpEarned: xpEarned,
                                 celebrationVisible: celebrationVisible
                             )
-                            // Skill level-up celebration cards — render at
-                            // the top of the result stack so the moment lands
-                            // before the standard coach-note flow. Stacks
-                            // vertically if multiple skills crossed in one
-                            // session (rare).
-                            ForEach(skillProgression.pendingLevelUps) { event in
-                                SkillLevelUpCard(event: event) {
-                                    // Card consumes the event from the store
-                                    // itself; this is just a hook for any
-                                    // future analytics/animation cleanup.
-                                }
-                            }
-                            // AI debrief is the quote-anchored proof moment
-                            // (evidence chips lift the user's actual words).
-                            // Stays hero because it is the coach reading the
-                            // rep back in their own voice.
-                            AISessionDebriefCard(
-                                session: sessionStore.sessions.first,
-                                recentSessions: Array(sessionStore.sessions.prefix(5))
-                            )
-                            CoachNoteCard(
+                            // Observational hero block — replaces the
+                            // previous 5-card stack (SkillLevelUp loop +
+                            // AISessionDebrief + CoachNote + YourNextMove).
+                            // SkillLevelUps now play as a pre-summary
+                            // celebration (see PreSummaryCelebration).
+                            // AISessionDebrief + CoachNoteCard remain
+                            // reachable inside the Details disclosure.
+                            WhatYouDidWellCard(
                                 coachNote: coachNote,
-                                coachNoteRevealed: coachNoteRevealed
+                                feedbackCategories: feedbackCategories,
+                                eloquenceFindings: eloquenceFindings,
+                                aiFeedback: aiFeedback,
+                                isMinimalEffort: isMinimalEffort
+                            )
+                            WhatToImproveCard(
+                                coachNote: coachNote,
+                                feedbackCategories: feedbackCategories,
+                                aiFeedback: aiFeedback,
+                                transcriptText: transcriptText,
+                                effectiveFillerCount: effectiveFillerCount,
+                                effectiveDuration: effectiveDuration,
+                                transcriptWordCount: transcriptWordCount,
+                                isMinimalEffort: isMinimalEffort
                             )
                             YourNextMoveCard(
                                 drill: drillRecommendationV2,
@@ -572,6 +599,21 @@ struct SummaryView: View {
                                     activeMiniDrill = drill
                                 },
                                 onStartDrill: onStartDrill
+                            )
+                            // Talk to Noum — premium-gated bottom CTA.
+                            // The post-rep moment is the highest-intent
+                            // buying moment; Pro users get the direct
+                            // bridge into Ask Noum with the session
+                            // pre-loaded, free users hit the existing
+                            // PaywallView.
+                            TalkToNoumCTACard(
+                                isPremium: premium.isPremium,
+                                onAskNoum: {
+                                    onAskNoumAboutRep?(sessionAnchoredOpener)
+                                },
+                                onUpgradePrompt: {
+                                    showPaywall = true
+                                }
                             )
                             expandableDetailsSection
                         }
@@ -739,6 +781,22 @@ struct SummaryView: View {
                     // coach's read. Self-hides when nothing is pending.
                     if !isIMSummary {
                         DeferredCaptureInlineCard()
+                    }
+
+                    // Demoted from hero in the M17 redesign — the
+                    // observational "What you did well / improve" cards
+                    // own the hero block now. AI debrief + the templated
+                    // CoachNote three-part read both still live here for
+                    // users who want the full coach voice on the rep.
+                    if !isIMSummary {
+                        AISessionDebriefCard(
+                            session: sessionStore.sessions.first,
+                            recentSessions: Array(sessionStore.sessions.prefix(5))
+                        )
+                        CoachNoteCard(
+                            coachNote: coachNote,
+                            coachNoteRevealed: coachNoteRevealed
+                        )
                     }
 
                     // Speech-quality cards — each self-hides when there
@@ -2353,11 +2411,27 @@ struct SummaryView: View {
                 withAnimation(.easeInOut(duration: 0.4)) {
                     showPersonalBestScreen = false
                 }
+                advanceToPreSummaryIfNeeded()
             },
             proof: personalBestProof
         )
         .onAppear {
             Task { await loadPersonalBestProof() }
+        }
+    }
+
+    /// Bridge between the personal-best / level-up chain and the new
+    /// pre-summary celebration. Fires the celebration on a small async
+    /// delay (mirroring the rest of the chain's pacing) so the previous
+    /// screen has finished its fade before the new overlay swaps in.
+    /// Idempotent — calling twice is a no-op once the celebration has
+    /// drained the snapshot.
+    private func advanceToPreSummaryIfNeeded() {
+        guard !preSummaryEvents.isEmpty, !showPreSummaryCelebration else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                showPreSummaryCelebration = true
+            }
         }
     }
 
@@ -2583,6 +2657,35 @@ struct SummaryView: View {
             try? await Task.sleep(for: .seconds(0.8))
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.35)) { celebrationVisible = false }
+            }
+        }
+
+        // Snapshot the pending skill level-ups at finalize time so the
+        // pre-summary celebration plays the exact set that was pending
+        // when the session landed. The Summary previously rendered
+        // these as a stack inside the hero (which competed with the
+        // score read); they now play as a sequenced intermediary
+        // screen between any existing celebration chain and the
+        // summary content. We DON'T consume from the store here —
+        // PreSummaryCelebration consumes each event as its card lands
+        // so a mid-sequence back-out doesn't leave them queued for
+        // the next session.
+        preSummaryEvents = skillProgression.pendingLevelUps
+        if !preSummaryEvents.isEmpty {
+            // If no other intermediary screen is going to fire (no
+            // progression screen, no personal best, no level-up), the
+            // pre-summary celebration is the only intermediary — fire
+            // it directly so the user lands on it instead of the
+            // summary content. Other chain branches call
+            // `advanceToPreSummaryIfNeeded` from their own continue
+            // handlers, so we only need the direct path here.
+            let willChainFromOther = showProgressionScreen
+                || showPersonalBestScreen
+                || showLevelUpScreen
+                || personalBestMilestone != nil
+                || (!levelUpNewLevel.isEmpty && levelUpPreviousLevel != levelUpNewLevel)
+            if !willChainFromOther {
+                advanceToPreSummaryIfNeeded()
             }
         }
     }
