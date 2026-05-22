@@ -26,7 +26,6 @@ struct SettingsView: View {
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @StateObject private var imVoicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
@@ -37,8 +36,12 @@ struct SettingsView: View {
 
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
     // AppStorage key read by ContentView; flipping this on shows every
-    // home card from rep 1.
+    // home card from rep 1. Lives under Advanced — power-user surface only.
     @AppStorage("practice.showAllHomeCards") private var showAllHomeCards: Bool = false
+
+    // Persisted so an advanced user who opens the section doesn't have to
+    // re-open it every launch. Default collapsed so first-open is calm.
+    @AppStorage("settings.advancedExpanded") private var advancedExpanded: Bool = false
 
     @State private var isBackendConfigured = false
     @State private var showCoachingProfile = false
@@ -63,41 +66,42 @@ struct SettingsView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Spacing.lg) {
-                    // M14 editorial pass — cluster the nine sections into
-                    // four named zones (Practice / Coaching / Account / About)
-                    // so Settings reads as intentional groups instead of a
-                    // flat 9-card stack. Same surfaces, same labels, same
-                    // scrolling distance — visual structure only. Mirrors
-                    // the Profile clustering at `ProfileView.swift:113`.
+                    // M16 settings trim — first-open overwhelm was real
+                    // (20+ control rows packed across 10 cards). Top level
+                    // now surfaces 1 hero + 4 cluster zones + 1 advanced
+                    // disclosure. Every existing setting still reaches the
+                    // user; power-user toggles + dev tools live behind one
+                    // tap. Mirrors the Profile clustering at
+                    // `ProfileView.swift:113`.
                     //
                     //   Identity (no header — implicit hero)
                     //     • profileHero
                     //
                     //   Practice (the act of speaking)
-                    //     • practiceCard, localeCard, soundscapeCard
+                    //     • practiceCard (difficulty + 3 toggles),
+                    //       dailyGoalCard, localeCard, soundscapeCard,
+                    //       coachingProfileCard
                     //
-                    //   Coaching (the coaching relationship)
-                    //     • coachingProfileCard, feedbackCard
+                    //   Notifications (the coaching nudges)
+                    //     • feedbackCard (4 notifs + haptics)
                     //
                     //   Account (the user as customer)
                     //     • subscriptionCard, privacyCard, accountCard
                     //
-                    //   aboutCard stays as the trailing meta band, no
-                    //   header — same role `statsRow` plays on Profile.
+                    //   About — trailing meta band, no header
+                    //
+                    //   Advanced (collapsed) — escape hatch + dev tools
+                    //     for `isDeveloper` only
                     profileHero
 
                     clusterHeader("Practice")
-                    // Section labels under each cluster are tightened to
-                    // avoid duplicating the cluster header (was rendering
-                    // "PRACTICE" / "PRACTICE" / "PRACTICE LANGUAGE" — three
-                    // P-words in a row). Labels now describe the card's
-                    // content, not the cluster.
                     section(label: "Defaults") { practiceCard }
+                    section(label: "Daily goal") { dailyGoalCard }
+                    section(label: "Coaching profile") { coachingProfileCard }
                     section(label: "Language") { localeCard }
                     section(label: "Pre-rep ambience") { soundscapeCard }
 
-                    clusterHeader("Coaching")
-                    section(label: "Profile") { coachingProfileCard }
+                    clusterHeader("Notifications")
                     section(label: "Reminders") { feedbackCard }
 
                     clusterHeader("Account")
@@ -107,12 +111,7 @@ struct SettingsView: View {
 
                     section(label: "About") { aboutCard }
 
-                    if authManager.isDeveloper {
-                        clusterHeader("Developer")
-                        section(label: "Developer Tools") { transcriptionProviderCard }
-                        section(label: "Diagnostics") { recommendationDiagnosticsCard }
-                        section(label: "Seed Data") { developerSeedCard }
-                    }
+                    advancedDisclosure
 
                     Spacer(minLength: 8)
                 }
@@ -218,6 +217,65 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Advanced Disclosure
+
+    /// Power-user knobs + (when `isDeveloper`) the dev tooling collapse
+    /// behind one tap. Default collapsed so first-open is calm; expansion
+    /// state persists via `advancedExpanded` so a power user who opened
+    /// it doesn't have to re-open it every launch. Disclosure animation
+    /// is gated on `reduceMotion` to match the rest of the app.
+    @ViewBuilder
+    private var advancedDisclosure: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Button {
+                withAnimation(reduceMotion ? nil : .standardSpring) {
+                    advancedExpanded.toggle()
+                }
+                CoachHaptic.selectionTap()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Text("Advanced")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: advancedExpanded ? "chevron.up" : "chevron.down")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+                .padding(.horizontal, 4)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityLabel("Advanced settings")
+            .accessibilityHint(advancedExpanded ? "Tap to hide advanced settings" : "Tap to show advanced settings")
+            .accessibilityIdentifier("settings.advancedToggle")
+
+            if advancedExpanded {
+                section(label: "Home reveal") { advancedHomeCard }
+
+                if authManager.isDeveloper {
+                    section(label: "Developer tools") { transcriptionProviderCard }
+                    section(label: "Diagnostics") { recommendationDiagnosticsCard }
+                    section(label: "Seed data") { developerSeedCard }
+                }
+            }
+        }
+    }
+
+    private var advancedHomeCard: some View {
+        cardContainer(spacing: Spacing.sm) {
+            SettingsToggleRow(
+                title: "Show every home card",
+                subtitle: "Skip the gradual reveal. The home shows the full stack from rep 1, before there's signal to fill it.",
+                isOn: $showAllHomeCards,
+                accessibilityHint: "Turns off the signal-gated home and shows every card immediately."
+            )
+        }
+    }
+
     // MARK: - Section Wrapper
 
     @ViewBuilder
@@ -229,14 +287,10 @@ struct SettingsView: View {
     }
 
     /// Cluster header used to group related Settings sections into named
-    /// zones (Practice / Coaching / Account / Developer). M14 dream pass:
-    /// bumped from the uppercase micro-eyebrow to the 18pt SF Pro Rounded
-    /// bold display face that the Coach Card title uses so Settings reads
-    /// as part of the same premium typographic system. The per-section
-    /// labels below still carry the uppercase + tracking-0.8 micro-label
-    /// treatment via `SettingsSectionLabel`, so the visual hierarchy is
-    /// cluster (Title Case display) → label (micro uppercase) → card. The
-    /// extra top padding keeps each zone break as breathing room.
+    /// zones (Practice / Notifications / Account). 18pt SF Pro Rounded bold
+    /// matches the Advanced disclosure header so both read as part of the
+    /// same typographic system; per-section labels below stay on the
+    /// micro-uppercase + tracking-0.8 treatment via `SettingsSectionLabel`.
     private func clusterHeader(_ title: LocalizedStringKey) -> some View {
         HStack {
             Text(title)
@@ -410,42 +464,23 @@ struct SettingsView: View {
                 isOn: $practiceSettings.pressureModeEnabled,
                 accessibilityHint: "Adds time pressure and rating to every drill."
             )
-
-            Divider()
-
-            SettingsToggleRow(
-                title: "Show every home card",
-                subtitle: "Skip the gradual reveal. The home shows the full stack from rep 1, before there's signal to fill it.",
-                isOn: $showAllHomeCards,
-                accessibilityHint: "Turns off the signal-gated home and shows every card immediately."
-            )
-
-            Divider()
-
-            dailyGoalRow
         }
     }
 
-    private var dailyGoalRow: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Daily goal")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text("How many reps count as today's done. One is enough — picking more is a stretch goal.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    private var dailyGoalCard: some View {
+        cardContainer(spacing: Spacing.sm) {
+            Text("How many reps count as today's done. One is enough — picking more is a stretch goal.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: Spacing.xs) {
                 ForEach(dailyGoal.minGoalReps...dailyGoal.maxGoalReps, id: \.self) { value in
                     goalChip(value)
                 }
             }
+            .accessibilityElement(children: .contain)
         }
-        .frame(minHeight: 44)
-        .accessibilityElement(children: .contain)
     }
 
     private func goalChip(_ value: Int) -> some View {
