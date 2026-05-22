@@ -193,6 +193,11 @@ struct PracticeModeSelectionView: View {
             if options.contains(where: { $0.mode == recommendedMode }) {
                 selectedMode = recommendedMode
             }
+            // Defensive: clear any stale Quick Start flag from a prior
+            // arm-then-back-out so the next "Begin" tap doesn't get
+            // routed through a one-tap skip the user no longer wants.
+            PracticeModeQuickStart.clear()
+            PracticeModeQuickStart.clearCrutch()
         }
     }
 
@@ -361,35 +366,42 @@ struct PracticeModeSelectionView: View {
     /// the user taps to expand. 28pt `NoumCharacter.Inline` on the left
     /// gives the moment a coach-presence anchor — visual narration,
     /// no audio. Three lines, each on-voice (declarative, specific,
-    /// no exclamation marks).
+    /// no exclamation marks). The "Start now" affordance hangs off the
+    /// bottom of this block — see `quickStartButton` for the rationale.
     private func modeExpandedSection(_ option: ModeOption) -> some View {
         let copy = PracticeModeExpansionCopy.copy(for: option.mode)
-        return HStack(alignment: .top, spacing: Spacing.md) {
-            NoumCharacter.Inline(
-                size: 28,
-                mood: .coaching,
-                tint: option.tint
-            )
-            .padding(.top, 2)
-            .accessibilityHidden(true)
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                NoumCharacter.Inline(
+                    size: 28,
+                    mood: .coaching,
+                    tint: option.tint
+                )
+                .padding(.top, 2)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(copy.pressureType)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(copy.pressureType)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Text(copy.surfaces)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(copy.surfaces)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Text(copy.repLength)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(copy.repLength)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("What this trains. \(copy.pressureType) \(copy.surfaces) \(copy.repLength)")
+
+            quickStartButton(for: option)
         }
         .padding(.top, Spacing.md)
         .overlay(alignment: .top) {
@@ -397,8 +409,54 @@ struct PracticeModeSelectionView: View {
                 .fill(Color.secondary.opacity(0.14))
                 .frame(height: 0.5)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("What this trains. \(copy.pressureType) \(copy.surfaces) \(copy.repLength)")
+    }
+
+    /// Secondary "Start now" CTA that arms a one-tap launch flag and
+    /// pushes the same destination the floating Begin button uses. The
+    /// configure-first behaviour (tap a row → Begin at the bottom) is
+    /// preserved — Quick Start is purely additive, only visible inside
+    /// the expanded "What this trains" reveal so it never competes
+    /// with the curated picker hierarchy. Tint matches the mode so the
+    /// affordance reads as an extension of the row, not a separate
+    /// system control.
+    private func quickStartButton(for option: ModeOption) -> some View {
+        let title = quickStartLabel(for: option.mode)
+        return Button {
+            CoachHaptic.selectionTap()
+            PracticeModeQuickStart.arm(for: option.mode)
+            navigationPath.append(appDestination(for: option.mode))
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.footnote.weight(.bold))
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(option.tint)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(option.tint.opacity(0.10), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(option.tint.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("practiceMode.\(option.mode.rawValue).quickStart")
+        .accessibilityLabel(title)
+        .accessibilityHint("Begins a \(option.title) rep with default settings, no setup screen.")
+    }
+
+    /// Per-mode CTA copy. "Start now" is the shared verb; the mode
+    /// name is appended so accessibility users hear which rep they're
+    /// about to launch when scanning the picker linearly.
+    private func quickStartLabel(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed: return "Start now \u{00B7} Timed"
+        case .suddenDeath: return "Start now \u{00B7} Sudden Death"
+        case .ahCounter: return "Start now \u{00B7} Ah-Counter"
+        case .imConversation: return "Start now \u{00B7} IM Mode"
+        }
     }
 
     /// Reduce-motion shapes the expand/collapse feel. Spring under
@@ -497,65 +555,112 @@ struct PracticeModeSelectionView: View {
         let isSelected = crutchSelected
         let tint = crutchOption.tint
 
-        return Button {
-            withAnimation(.snappySpring) {
-                crutchSelected = true
-            }
-            CoachHaptic.selectionTap()
-        } label: {
-            HStack(alignment: .top, spacing: Spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .fill(tint.opacity(0.14))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: crutchOption.systemImage)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(tint)
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.snappySpring) {
+                    crutchSelected = true
                 }
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(crutchOption.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 0)
+                CoachHaptic.selectionTap()
+            } label: {
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .fill(tint.opacity(0.14))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: crutchOption.systemImage)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(tint)
                     }
-                    Text(crutchOption.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.4))
                     .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text(crutchOption.title)
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 0)
+                        }
+                        Text(crutchOption.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.4))
+                        .accessibilityHidden(true)
+                }
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .buttonStyle(.pressable)
+            .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
+            .accessibilityIdentifier("practiceMode.cutTheCrutch")
+            .accessibilityLabel(crutchOption.title)
+            .accessibilityHint(crutchOption.subtitle)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            // "Start now" mirrors the per-mode affordance — same secondary
+            // CTA pattern, same tint integration, same one-tap semantics.
+            // Only visible once the card is selected so the picker reads
+            // calm at rest; appears with the same expand-style transition
+            // the four mode rows use for their reveal block.
+            if isSelected {
+                crutchQuickStartButton(tint: tint)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, Spacing.lg)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(
+                    isSelected ? tint.opacity(0.32) : Color.white.opacity(0.72),
+                    lineWidth: isSelected ? 1.5 : 1
+                )
+        )
+        .shadow(
+            color: isSelected ? tint.opacity(0.10) : .clear,
+            radius: 16,
+            y: 8
+        )
+    }
+
+    /// Cut the Crutch sibling of `quickStartButton`. The drill isn't a
+    /// `PracticeMode`, so it routes through `cutTheCrutchPractice` with
+    /// its own armed flag — same UX, separate plumbing.
+    private func crutchQuickStartButton(tint: Color) -> some View {
+        Button {
+            CoachHaptic.selectionTap()
+            PracticeModeQuickStart.armCrutch()
+            navigationPath.append(AppDestination.cutTheCrutchPractice)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.footnote.weight(.bold))
+                Text("Start now \u{00B7} Cut the Crutch")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(tint.opacity(0.10), in: Capsule())
             .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                    .stroke(
-                        isSelected ? tint.opacity(0.32) : Color.white.opacity(0.72),
-                        lineWidth: isSelected ? 1.5 : 1
-                    )
-            )
-            .shadow(
-                color: isSelected ? tint.opacity(0.10) : .clear,
-                radius: 16,
-                y: 8
+                Capsule().strokeBorder(tint.opacity(0.18), lineWidth: 1)
             )
         }
         .buttonStyle(.pressable)
-        .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
-        .accessibilityIdentifier("practiceMode.cutTheCrutch")
-        .accessibilityLabel(crutchOption.title)
-        .accessibilityHint(crutchOption.subtitle)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("practiceMode.cutTheCrutch.quickStart")
+        .accessibilityLabel("Start now, Cut the Crutch")
+        .accessibilityHint("Begins a Cut the Crutch drill with default settings, no setup screen.")
     }
 
     // MARK: - Lessons Card

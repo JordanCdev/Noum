@@ -388,7 +388,21 @@ struct AhCounterView: View {
             Text("Your current session will be lost.")
         }
         .accessibilityIdentifier("ahCounter.screen")
-        .task { speechVM.prepareForInteractiveUse() }
+        .task {
+            speechVM.prepareForInteractiveUse()
+
+            // Quick Start handshake — picker armed Ah-Counter for a
+            // one-tap launch. Ah-Counter has the lightest setup of any
+            // mode (just a prompt suggestion); Quick Start auto-fires
+            // the launch countdown so the user goes straight into the
+            // shared 3-2-1 → GO ramp without the manual Start tap.
+            if !speechVM.isRecording,
+               launchCountdown == nil,
+               !showGoCue,
+               PracticeModeQuickStart.consume(for: .ahCounter) {
+                beginLaunchCountdown()
+            }
+        }
         .onChange(of: speechVM.fillerWordCount) { _, newCount in
             handleFillerCountChange(newCount: newCount)
             trackRapidFillers()

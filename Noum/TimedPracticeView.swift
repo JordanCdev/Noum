@@ -748,6 +748,16 @@ struct TimedPracticeView: View {
                     enableVideoRecording = false
                 }
             }
+
+            // Quick Start handshake — if the picker armed Timed for a
+            // one-tap launch, skip the setup card and go straight into
+            // the existing begin flow. `beginSession` re-reads the
+            // persisted Classic/Coach + theme config, so the user's
+            // last settings still apply; "Start now" only saves taps,
+            // not their preferences.
+            if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
+                beginSession()
+            }
         }
         .onDisappear { cleanup() }
         .sheet(isPresented: $showPaywall) {

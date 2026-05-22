@@ -101,6 +101,14 @@ struct SuddenDeathPracticeView: View {
         }
         .task {
             speechVM.prepareForInteractiveUse()
+
+            // Quick Start handshake — picker armed Sudden Death for a
+            // one-tap launch. `beginSession` re-resolves a fresh prompt
+            // and uses the persisted difficulty, so "Start now" only
+            // skips the setup tap; the user's settings still apply.
+            if engine.phase == .setup, PracticeModeQuickStart.consume(for: .suddenDeath) {
+                beginSession()
+            }
         }
         .onChange(of: speechVM.transcribedText) { _, newText in
             guard engine.isUserTurn else { return }

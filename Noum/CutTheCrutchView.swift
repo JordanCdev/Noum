@@ -78,6 +78,15 @@ struct CutTheCrutchView: View {
         .onDisappear {
             speechVM.stopRecording()
         }
+        .task {
+            // Quick Start handshake — picker armed Cut the Crutch for a
+            // one-tap launch. The engine's init already picked a top
+            // user crutch (or "actually") + a random prompt, so the
+            // countdown can fire immediately with sensible defaults.
+            if case .setup = engine.phase, PracticeModeQuickStart.consumeCrutch() {
+                engine.beginCountdown()
+            }
+        }
     }
 
     private func handlePhase(_ phase: CutTheCrutchPhase) {

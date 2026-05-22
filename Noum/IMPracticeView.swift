@@ -253,6 +253,19 @@ struct IMPracticeView: View {
                 setupStep = .tone
             }
             cachedRelationshipProfile = IMRelationshipProfile.initial(for: resolvedScenario)
+
+            // Quick Start handshake — picker armed IM for a one-tap
+            // launch. IM has two setup steps (scenario, tone); Quick
+            // Start defaults to social catch-up + confident (the
+            // existing `resolved*` fallbacks) and goes straight into
+            // `beginConversation` so the user lands in a live thread,
+            // not on the scenario grid.
+            if !isSessionActive, PracticeModeQuickStart.consume(for: .imConversation) {
+                if scenario == nil { scenario = resolvedScenario }
+                if targetTone == nil { targetTone = resolvedTargetTone }
+                cachedRelationshipProfile = IMRelationshipProfile.initial(for: resolvedScenario)
+                beginConversation()
+            }
         }
     }
 
