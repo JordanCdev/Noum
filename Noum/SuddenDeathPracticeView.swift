@@ -687,7 +687,9 @@ struct SuddenDeathPracticeView: View {
                 Text(engine.currentPromptText)
                     .font(expanded ? .title3.weight(.semibold) : .subheadline)
                     .foregroundStyle(expanded ? .primary : .secondary)
-                    .lineLimit(expanded ? nil : 2)
+                    // 3-line floor when collapsed so the prompt stays
+                    // readable even if the TTS completion gating fires early.
+                    .lineLimit(expanded ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1280,7 +1282,17 @@ struct SuddenDeathPracticeView: View {
             // users without network still get spoken prompts.
             let didPlayCloud = await speaker.speakPrompt(prompt)
             if didPlayCloud {
+                // speakPrompt() returns true the moment AVAudioPlayer.play()
+                // is called — audio may still be playing for several seconds.
+                // Estimate the readout duration so the card stays expanded
+                // for the full audio, then confirm the waiting phase.
+                // ~130 words/min at 0.85 rate ≈ 110 wpm → ~0.55 s/word.
+                let wordCount = prompt.split(separator: " ").count
+                let estimatedSeconds = max(1.5, Double(wordCount) * 0.55 + 0.5)
+                try? await Task.sleep(for: .seconds(estimatedSeconds))
                 await MainActor.run {
+                    // Only clear and unblock if TTS wasn't stopped mid-flight.
+                    guard isSpeakingPrompt else { return }
                     isSpeakingPrompt = false
                     engine.confirmBeginUserWaiting()
                 }

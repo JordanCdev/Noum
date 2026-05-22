@@ -240,7 +240,14 @@ class SpeechRecognizerViewModel: ObservableObject {
         pitchAnalyzer = nil
 
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            // .allowBluetooth lets AirPods serve as both mic and speaker.
+            // Must be set before AVAudioEngine inspects inputNode so the simulator
+            // returns a valid (non-zero-channel) input format.
+            try AVAudioSession.sharedInstance().setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetooth]
+            )
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Audio session error: \(error)")
@@ -350,10 +357,29 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
+    private enum AudioStreamError: LocalizedError {
+        case invalidInputFormat
+        var errorDescription: String? {
+            // Shown to the user via `connectionError`. Common on the simulator
+            // when the audio session category wasn't fully committed before
+            // AVAudioEngine inspected the input node.
+            "Microphone unavailable — check that no other app is using it and try again."
+        }
+    }
+
     private func startAudioStream(sendingTo session: any TranscriptionSession) throws {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
         let inputFormat = inputNode.inputFormat(forBus: 0)
+
+        // A zero-channel or zero-sampleRate format means the audio session
+        // category wasn't fully applied (common on the iOS simulator after a
+        // .playback session). Throw instead of crashing in installTap.
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            audioEngine = nil
+            throw AudioStreamError.invalidInputFormat
+        }
+
         inputNode.removeTap(onBus: 0)
 
         // Spin up a fresh pitch analyzer per recording. Lock-light so the
