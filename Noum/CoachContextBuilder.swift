@@ -1,6 +1,46 @@
 #if canImport(SwiftUI)
 import Foundation
 
+// MARK: - BigMoment stub
+//
+// BigMomentStore is authored by m19-state (Track 1) and merged by the
+// team lead. This stub compiles cleanly until that file lands. Remove
+// when BigMomentStore.swift is integrated.
+#if !BIGMOMENT_DEFINED
+struct BigMoment {
+    let title: String
+    let date: Date?
+    let category: BigMomentCategory
+}
+
+enum BigMomentCategory: String {
+    case presentation, interview, review, conversation, publicSpeaking, other
+
+    var displayName: String {
+        switch self {
+        case .presentation:   return "presentation"
+        case .interview:      return "interview"
+        case .review:         return "performance review"
+        case .conversation:   return "difficult conversation"
+        case .publicSpeaking: return "public speaking event"
+        case .other:          return "big moment"
+        }
+    }
+}
+
+final class BigMomentStore {
+    static let shared = BigMomentStore()
+    var activeMoment: BigMoment? { nil }
+
+    func daysUntil(_ moment: BigMoment) -> Int? {
+        guard let date = moment.date else { return nil }
+        return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: Calendar.current.startOfDay(for: date)).day
+    }
+
+    func cancelBigMomentNotifications() {}
+}
+#endif
+
 // MARK: - Coach Context Builder
 //
 // Pure-function helpers that produce the structured context an AI coach
@@ -70,6 +110,11 @@ enum CoachContextBuilder {
            confident". A move names the action ("hold a 3-second pause \
            after your second sentence") or the rep ("do an Ah-Counter \
            round next, target under 4 fillers in 60 seconds").
+        4. When the BIG MOMENT section is present, anchor at least one \
+           specific concrete next move to the days remaining and the \
+           category. Do not restate the moment — use it as gravity. A \
+           board pitch in 6 days gets a different drill than a job \
+           interview in 30 days.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -182,12 +227,14 @@ enum CoachContextBuilder {
         currentStreak: Int,
         pathStatus: PathNodeStatus?,
         pathGatingPhrase: String?,
-        recentProofs: [ProofMomentRecord] = []
+        recentProofs: [ProofMomentRecord] = [],
+        bigMoment: BigMoment? = nil
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
 
         // GOAL — the voice they're training toward + their stated reason
+        // + dormant intake fields surfaced to give the coach real context.
         if let profile = profile {
             lines.append("")
             lines.append("GOAL")
@@ -202,13 +249,36 @@ enum CoachContextBuilder {
             if !whyNow.isEmpty {
                 lines.append("- Why now: \(whyNow)")
             }
+            // successVision — user's own motivational anchor. Raw wording
+            // preserved so the coach can quote it back.
+            let vision = profile.successVisionReference
+            if !vision.isEmpty {
+                lines.append("- Their vision of success: \(vision)")
+            }
+            // biggestChallenge — what the user named as their primary problem.
+            // Coach can open with "you said <X> is your enemy — here's what I saw."
+            let challengeLabel = challengeDisplayLabel(profile.biggestChallenge)
+            lines.append("- Their stated biggest challenge: \(challengeLabel)")
+            // desiredOutcome — register-matching signal.
+            lines.append("- Desired outcome: \(profile.desiredOutcome.title.lowercased())")
         } else {
             lines.append("")
             lines.append("GOAL")
             lines.append("- No voice set yet. Treat this as cold start — gentle, curious.")
         }
 
-        // RATING — overall + week peak + weekly delta
+        // BIG MOMENT — only present when active + within 60 days.
+        // When present, the coach should ground at least one concrete next
+        // move in the days-remaining and category (rule 4 of intelligence floor).
+        if let moment = bigMoment,
+           let days = BigMomentStore.shared.daysUntil(moment),
+           days >= 0 && days <= 60 {
+            lines.append("")
+            lines.append("BIG MOMENT")
+            lines.append("- Preparing for: \(moment.title) (\(moment.category.displayName)). \(days) day\(days == 1 ? "" : "s") away.")
+        }
+
+        // RATING — overall + week peak + weekly delta + derived confidence
         lines.append("")
         lines.append("RATING")
         if rating.totalRatedSessions == 0 {
@@ -226,6 +296,12 @@ enum CoachContextBuilder {
                 lines.append("- Week-over-week: flat.")
             }
             lines.append("- Total rated sessions: \(rating.totalRatedSessions).")
+            // Derived confidence — computed from recent session history.
+            // Overrides the stale onboarding self-report: a user who was
+            // "beginner" at sign-up but is averaging 8/10 over 10 sessions
+            // should be coached as confident, not as a beginner.
+            let derived = derivedConfidenceLabel(baseline: baseline, sessions: sessions)
+            lines.append("- Derived confidence: \(derived)")
         }
 
         // BASELINE — the numbers you can actually quote
@@ -918,6 +994,47 @@ enum CoachContextBuilder {
             return value
         }
         return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+    }
+
+    // MARK: - Derived confidence
+
+    /// Computes a confidence label from session history rather than the
+    /// stale onboarding self-report. Uses `baseline.averageScore` when
+    /// reliable (≥ initial confidence threshold), otherwise falls back
+    /// to the last 10 rated sessions, then to the static profile field.
+    static func derivedConfidenceLabel(
+        baseline: CommunicationBaseline,
+        sessions: [PracticeSession]
+    ) -> String {
+        // Prefer the rolling baseline average when it has enough confidence.
+        if baseline.averageScore.confidence != .insufficient {
+            let avg = baseline.averageScore.value
+            if avg >= 7.5 { return "confident" }
+            if avg <= 5.0 { return "rebuilding" }
+            return "developing"
+        }
+        // Fall back to raw session scores when baseline isn't stable yet.
+        let scores = sessions
+            .compactMap(\.score)
+            .prefix(10)
+            .map(Double.init)
+        guard !scores.isEmpty else { return "unknown" }
+        let avg = scores.reduce(0, +) / Double(scores.count)
+        if avg >= 7.5 { return "confident" }
+        if avg <= 5.0 { return "rebuilding" }
+        return "developing"
+    }
+
+    /// Short coach-readable label for a `SpeakingChallenge`.
+    /// Uses a brief noun phrase so the coach context stays scannable:
+    /// "freezing" reads faster than "I blank when I'm put on the spot."
+    static func challengeDisplayLabel(_ challenge: SpeakingChallenge) -> String {
+        switch challenge {
+        case .fillerWords: return "filler words"
+        case .rambling:    return "rambling"
+        case .freezing:    return "freezing"
+        case .rushing:     return "rushing"
+        }
     }
 
     // MARK: - Helpers

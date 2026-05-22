@@ -34,6 +34,7 @@ struct HomeCoachCard: View {
     // the current path node is one rep / one score-point / one day from
     // unlocking, the coach voice points at it directly. Read-only.
     @StateObject private var pathProgress = PathProgressManager.shared
+    private var bigMomentStore: BigMomentStore { .shared }
 
     /// True while a fresh-recommendation burst is showing the `.excited`
     /// mood. The displayed mood otherwise reads from `restingMood` so the
@@ -349,6 +350,17 @@ struct HomeCoachCard: View {
     }
 
     private var coachSubtitle: String? {
+        // Big Moment countdown — highest-priority variant when a moment is
+        // set and within 30 days. Suppressed when daysUntil < 0 (moment
+        // passed) or > 30 (too far out to feel urgent). Falls back to the
+        // goal-voice subtitle when the moment is cleared or past.
+        if let moment = bigMomentStore.activeMoment,
+           let days = bigMomentStore.daysUntil(moment),
+           days >= 0 && days <= 30 {
+            let label = bigMomentCountdownCopy(moment: moment, days: days)
+            return label
+        }
+
         guard hasSignal else {
             // Empty-state — adapt to the user's stated challenge if the
             // CoachingProfile already exists (they finished onboarding
@@ -400,6 +412,19 @@ struct HomeCoachCard: View {
             return why
         }
         return nil
+    }
+
+    /// Countdown copy for the Big Moment subtitle.
+    /// Uses the title when it fits within ~40 chars, otherwise falls back
+    /// to the category displayName to keep the line compact on home.
+    private func bigMomentCountdownCopy(moment: BigMoment, days: Int) -> String {
+        let titleLabel: String
+        if moment.title.count <= 40 {
+            titleLabel = moment.title
+        } else {
+            titleLabel = moment.category.displayName
+        }
+        return "\(days) day\(days == 1 ? "" : "s") to your \(titleLabel)."
     }
 
     /// True when the current path node is honestly one step from unlocked.

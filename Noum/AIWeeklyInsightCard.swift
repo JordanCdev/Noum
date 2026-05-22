@@ -29,6 +29,7 @@ struct AIWeeklyInsightCard: View {
 
     @State private var insight: AIInsight?
     @State private var proof: ProofMoment?
+    @State private var focusShift: FocusShiftEvent?
     @State private var isRefreshing = false
     @State private var hasAppeared = false
 
@@ -80,6 +81,18 @@ struct AIWeeklyInsightCard: View {
         let insight = insight ?? AIInsight.placeholder
         VStack(alignment: .leading, spacing: 12) {
             header(insight: insight)
+            // Focus shift notice — one-sentence adaptation signal when
+            // the coach's primary focus area shifted since the last
+            // weekly window. Prepended so the user reads it before the
+            // AI narrative. Only shown within the first 7 days of detection.
+            if let shift = focusShift,
+               Calendar.current.dateComponents([.day], from: shift.detectedAt, to: Date()).day ?? 8 <= 7 {
+                Text("Your \(shift.from.displayName.lowercased()) is now stable. This week's focus shifts to \(shift.to.displayName.lowercased()).")
+                    .font(Typography.caption.weight(.medium))
+                    .foregroundStyle(AppColor.pro)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Focus shift: from \(shift.from.displayName) to \(shift.to.displayName)")
+            }
             // Chapter eyebrow — when there's a current path mission, the
             // weekly insight reads "Chapter · <Tier>" above the headline,
             // tying the AI read into the story register the rest of the
@@ -296,10 +309,30 @@ struct AIWeeklyInsightCard: View {
             nextProof = await ProofMomentService.shared.proof(for: proofInput)
         }
 
+        // Focus shift detection — detect when the primary focus area has
+        // changed since the last weekly window and store the event so the
+        // card can prepend a one-sentence adaptation notice.
+        var nextFocusShift: FocusShiftEvent? = nil
+        if let accountID = AuthManager.shared.currentAccountID {
+            let snapshots = SkillTrendStore.shared.snapshots
+            let trends = TrendAnalyzer.analyze(snapshots: snapshots)
+            let recentDrills = Array(DrillHistoryStore.shared.entries.prefix(4))
+            let currentFocus = TrendAnalyzer.primaryFocus(
+                trends: trends,
+                currentSessionSnapshot: snapshots.first,
+                recentDrills: recentDrills,
+                styleGoal: profile?.speakingStyleGoal
+            )
+            nextFocusShift = PrimaryFocusMemory.detectShift(current: currentFocus, accountID: accountID)
+        }
+
         await MainActor.run {
             withAnimation(.standardSpring) {
                 self.insight = next
                 self.proof = nextProof
+                if nextFocusShift != nil {
+                    self.focusShift = nextFocusShift
+                }
             }
             self.isRefreshing = false
         }

@@ -63,6 +63,8 @@ final class NotificationManager: ObservableObject {
     private let streakWarningIdentifier = "noum.streak.warning"
     private let weeklyDigestIdentifier = "noum.weekly.digest"
     private let dailyChallengeExpiryIdentifier = "noum.daily.challengeExpiry"
+    private let bigMomentT7Identifier = "noum.bigmoment.t7"
+    private let bigMomentT1Identifier = "noum.bigmoment.t1"
 
     /// Fixed 8:30 PM local fire time for the daily-challenge expiry warning.
     /// Set 30 minutes after the streak warning's 8 PM so the two surfaces
@@ -317,6 +319,82 @@ final class NotificationManager: ObservableObject {
             trigger: trigger
         )
         try? await UNUserNotificationCenter.current().add(request)
+#endif
+    }
+
+    // MARK: - Big Moment countdown notifications
+
+    /// Schedules T-7 and T-1 notifications for the given `BigMoment`.
+    /// Call when the user sets or updates their Big Moment; cancel first
+    /// via `cancelBigMomentNotifications()` to avoid duplicates.
+    ///
+    /// Privacy contract: NEVER expose `moment.title` (user-authored text)
+    /// on the lock screen. Use `category.displayName` only — the title
+    /// could contain sensitive information the user doesn't want visible
+    /// on a shared or unattended device.
+    func scheduleBigMomentCountdown(for moment: BigMoment) async {
+#if canImport(UserNotifications)
+        guard let eventDate = moment.date else { return }
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [
+            bigMomentT7Identifier,
+            bigMomentT1Identifier
+        ])
+
+        let settings = await center.notificationSettings()
+        guard [.authorized, .provisional, .ephemeral].contains(settings.authorizationStatus) else {
+            return
+        }
+
+        let categoryName = moment.category.displayName
+        let calendar = Calendar.current
+
+        // T-7: 7 days before the event at 9 AM local.
+        if let t7Date = calendar.date(byAdding: .day, value: -7, to: eventDate) {
+            var t7Components = calendar.dateComponents([.year, .month, .day], from: t7Date)
+            t7Components.hour = 9
+            t7Components.minute = 0
+            let t7Content = UNMutableNotificationContent()
+            t7Content.title = "7 days to your \(categoryName)."
+            t7Content.body = "Time for a focused rep."
+            t7Content.sound = .default
+            let t7Trigger = UNCalendarNotificationTrigger(dateMatching: t7Components, repeats: false)
+            let t7Request = UNNotificationRequest(
+                identifier: bigMomentT7Identifier,
+                content: t7Content,
+                trigger: t7Trigger
+            )
+            try? await center.add(t7Request)
+        }
+
+        // T-1: 1 day before the event at 9 AM local.
+        if let t1Date = calendar.date(byAdding: .day, value: -1, to: eventDate) {
+            var t1Components = calendar.dateComponents([.year, .month, .day], from: t1Date)
+            t1Components.hour = 9
+            t1Components.minute = 0
+            let t1Content = UNMutableNotificationContent()
+            t1Content.title = "Tomorrow is your \(categoryName)."
+            t1Content.body = "One last rep — make it the one that builds confidence."
+            t1Content.sound = .default
+            let t1Trigger = UNCalendarNotificationTrigger(dateMatching: t1Components, repeats: false)
+            let t1Request = UNNotificationRequest(
+                identifier: bigMomentT1Identifier,
+                content: t1Content,
+                trigger: t1Trigger
+            )
+            try? await center.add(t1Request)
+        }
+#endif
+    }
+
+    /// Cancels any pending Big Moment countdown notifications.
+    /// Call when the user clears or changes their Big Moment.
+    func cancelBigMomentNotifications() {
+#if canImport(UserNotifications)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
+            bigMomentT7Identifier,
+            bigMomentT1Identifier
+        ])
 #endif
     }
 
