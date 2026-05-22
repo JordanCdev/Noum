@@ -1,363 +1,312 @@
-# HANDOFF — Ask Noum proof-aware coaching context
+# HANDOFF — Growth Library (Profile-launched proof timeline)
 
 ## Scope
 
-Three new files / edits land on `Redesign` for this push:
-`Noum/ProofMomentArchive.swift` (new file, ~155 LOC — defines
-`ProofMomentRecord` + `ProofMomentStore` with per-account
-UserDefaults persistence, max 12 records, idempotent-on-session-ID
-recording, oldest-by-`addedAt` cap eviction, and most-recent-by-
-`sessionDate` read ordering), `Noum/ProofMomentService.swift`
-(+~30 LOC — six new persistence hops after each path that produces
-a successful proof, one new `@MainActor private func
-persistToArchive` helper), `Noum/CoachContextBuilder.swift`
-(+~25 LOC — new optional `recentProofs:` param on `userContext(...)`,
-new PROOFS section rendered after TRENDS), `Noum/AskNoumView.swift`
-(+2 LOC — `@StateObject` for the new store, threads
-`proofStore.recent(limit: 3)` into the context call),
-`NoumTests/NoumTests.swift` (+~320 LOC — two new test structs
-`ProofMomentArchiveTests` and `CoachContextBuilderProofTests`,
-fifteen unit tests total), `docs/CURRENT_STATE.md` (trail-of-
-breadcrumbs entry + new bullet under the Ask Noum section).
+This push closes the open follow-on flagged in the previous
+HANDOFF — making the per-account `ProofMomentArchive` *visible* to
+the user. The previous push (proof-aware coaching context) put the
+archive on disk and into the Ask Noum system prompt, but the user
+could only see a count chip on Profile; the underlying evidence —
+verbatim transcript moments + technique tags + voice-shaped claims —
+stayed invisible.
+
+Files in this push:
+
+- `Noum/GrowthLibraryView.swift` (NEW, ~210 LOC) — Profile-launched
+  scrollable timeline rendering the archive as quote cards grouped
+  by ISO week.
+- `Noum/ProofMomentArchive.swift` (+~70 LOC) — new
+  `nonisolated static weeklyGroups(from:now:calendar:)` pure helper
+  + instance wrapper `weeklyGroups(now:calendar:)` for the view +
+  private `weekLabel(...)` formatter. Pure-function; testable
+  without SwiftUI.
+- `Noum/PracticeSupport.swift` (+1 case) — `AppDestination.growthLibrary`
+  threads the new destination through the existing nav stack
+  contract.
+- `Noum/ContentView.swift` (+5 LOC) — `.navigationDestination(...)`
+  case for `.growthLibrary` → `GrowthLibraryView()`; deep-link router
+  case for `"growth"` / `"library"` hosts.
+- `ProfileView.swift` (~+10 / -3 LOC) — wraps `insightsBankedChip` in
+  a `NavigationLink(value: AppDestination.growthLibrary)`, adds a
+  chevron + accessibility identifier `profile.insightsBanked.link`.
+  Cold-state behaviour unchanged (chip stays hidden when archive is
+  empty, so the link is reachable only when there's something to
+  show).
+- `NoumTests/NoumTests.swift` (+~115 LOC) — six new tests in
+  `GrowthLibraryWeeklyGroupingTests` (no MainActor — the helper is
+  pure / nonisolated).
+- `docs/CURRENT_STATE.md` (header breadcrumbs + new Growth Library
+  bullet + deep-link route list).
+- `HANDOFF.md` (this file, rewritten).
 
 ## What changed
 
-### Move 1 — `ProofMomentStore` persistent per-account archive
+### Move 1 — `ProofMomentStore.weeklyGroups(from:now:calendar:)`
 
-A new ObservableObject mirroring the `AskNoumStore` shape: per-account
-UserDefaults persistence keyed `proofMoment.archive.<accountID>`,
-bounded at 12 records, MainActor-isolated to stay SwiftUI-safe for
-future Profile surfaces. The store exposes:
+Bucketing logic lives on the store as a `nonisolated static` so
+tests can drive it without crossing the MainActor boundary the
+class normally requires. The instance method `weeklyGroups()` is a
+thin wrapper that the SwiftUI view binds to (MainActor-context-safe
+since `records` is read from the store's published state).
 
-- `record(_ proof: ProofMoment, for sessionID: UUID, at date: Date)`
-  — idempotent on session ID. Re-recording the same session replaces
-  the existing entry rather than appending (so a deterministic
-  fallback upgraded by a later AI fetch lands as a single row, not
-  two).
-- `recent(limit:)` — most-recent-first by the proof's `sessionDate`.
-  Used by the chat context builder to pick the freshest few. Limit
-  clamps negative inputs to 0 — defensive.
-- `remove(sessionID:)` + `clear()` — granular and full wipe paths.
-  `clear()` is the sign-out hook (Settings can pick it up later).
+Contract:
 
-The cap-eviction policy is by `addedAt` (when the entry was last
-written), not `sessionDate`. Reasoning: refresh-replacing an old
-session's proof with an AI-upgraded version should NOT make that
-record vulnerable to eviction — its `addedAt` is fresh, so the
-oldest record by `addedAt` is the actual evictable one.
+- `dateInterval(of: .weekOfYear, for: sessionDate)?.start` is the
+  bucket key. Falls back to `startOfDay(for:)` if the calendar
+  somehow returns nil — defensive, untriggerable in practice.
+- Buckets emerge newest-week-first (keys sorted descending).
+- Inside each bucket, records sort most-recent-first by
+  `proof.sessionDate` (not `addedAt` — a re-fetch of an old
+  session's proof shouldn't make it look fresh; the surface is
+  about *when the user spoke*, not when the AI re-ran).
+- Labels: "This week" when the bucket key matches the current
+  week's start; "Last week" when the bucket key matches the
+  current week's start minus 7d; "Week of MMM d" otherwise, with
+  a year suffix when the bucket year differs from the current
+  year ("Week of Dec 14, 2025"). So a January 2025 vs January
+  2026 entry can never blur.
 
-### Move 2 — `ProofMomentService.proof(for:)` writes to the archive
+### Move 2 — `GrowthLibraryView`
 
-Every code path inside `proof(for:)` that resolves to a non-nil
-`ProofMoment` (cache hit excluded — that proof was already
-persisted on first generation) now hops to MainActor and writes to
-`ProofMomentStore.shared`. Six hop sites covering:
+Scrollable view with three states:
 
-1. Non-English locale fallback path.
-2. No-AI-provider fallback path.
-3. Provider matched but `.none` case in the switch (defensive).
-4. HTTP failure / parse failure → template fallback path.
-5. Catch path on URLSession throw → template fallback path.
-6. Successful AI parse path.
+1. **Empty archive** — honest empty card. "Nothing banked yet" +
+   short coach-voice explanation. No fabricated quotes, no fake
+   placeholder rows.
+2. **Populated** — header eyebrow "YOUR EVIDENCE" + sectionHero
+   "N banked moments" + secondary body explaining the surface.
+   Then week sections, each with a micro-tracked label and one
+   quote card per record.
+3. **Quote card** — technique chip (Pro-purple pill at 12% alpha
+   over `AppColor.cardBackground`) + relative date (tertiary, right-
+   aligned) + verbatim quote (Typography.body italic, prefixed by
+   a muted `quote.opening` glyph) + claim (caption, secondary) +
+   honest source badge:
+     - `sparkles` + Pro-purple + "Coach reading" → AI-backed proof.
+     - `checkmark.seal` + brandBlue + "Pattern match" →
+       deterministic-template proof.
+   The badge replaces the previous unsurfaced `isAIBacked` flag with
+   a label the user can read.
 
-Each hop is gated on `if let fallback = fallback { ... }` /
-non-nil parsed result, so a session that produces no proof at all
-(too-short transcript, no qualifying clause) never inserts a row.
-The MainActor hop pattern matches the existing `currentProvider()`
-and `activeLocaleSupportsAI()` helpers in the same file — same
-isolation style, same `await` shape at call sites.
+Visual register:
+- Card chrome matches the existing `peakRatingWallLink` shape
+  (rounded rect, `AppColor.cardBackground`, hairline overlay).
+- Stroke uses `AppColor.pro.opacity(0.16)` so the cards read as
+  the coach's tracking, not the brand-blue practice-loop register.
+- Background gradient matches Profile's `LightGradientBackground`
+  family so it feels like the same surface family.
 
-### Move 3 — `CoachContextBuilder.userContext(recentProofs:)`
+### Move 3 — `AppDestination.growthLibrary` + deep link
 
-A new optional parameter, defaulted to `[]`. When non-empty, a new
-PROOFS section renders after TRENDS:
+- One new case in `enum AppDestination`. Hashable conformance is
+  free (no associated value).
+- `ContentView.swift`'s `navigationDestination(for: AppDestination.self)`
+  switch gains the new case → `GrowthLibraryView()`.
+- `consumeDeepLink(_:)` gains a `"growth"` / `"library"` host case
+  matching the existing `noum://` family. The deep link uses
+  `navigationPath.append(...)` (no `NavigationPath()` reset),
+  matching `noum://path` and `noum://league` which behave the same
+  way — these are *within-tab* deep links rather than top-level
+  resets. (Compare to `noum://ask`, which DOES reset.)
+- The current Profile entry-point is a tap on the existing chip;
+  no Home card is added in this push. Discoverability ladder:
+  Profile chip → library → tap an evidence card (no follow-on
+  navigation yet — quotes are read-only). Future move: link a
+  quote card back to the source session in Review.
 
-```
-PROOFS (verbatim moments from past reps — quote these directly when relevant)
-- Yesterday · BLUF: "Bottom line is we held retention this quarter"
-- Mon · Triad: "We focused on three priorities"
-- Apr 12 · Power Pause: "Steady — three breaths — then the close"
-```
+### Move 4 — `insightsBankedChip` becomes a `NavigationLink`
 
-Section design rules:
+Profile's chip retains its existing register (icon + caption text +
+recency footnote) but now wraps in a `NavigationLink(value:)`. A
+small chevron lands at the trailing edge to telegraph
+"tappable" without changing the chip's visual weight. Accessibility
+ID `profile.insightsBanked.link` + hint "Opens your growth
+library." Hidden state contract preserved — the chip (and therefore
+the only entry point in this push) remains invisible until the
+archive has at least one record.
 
-- **Hard cap at 3** — even when the archive holds 12, the system
-  prompt only sees the freshest three. Keeps the prompt bounded.
-- **Sorted by `sessionDate` descending** — newest evidence reads at
-  the top, matching how a real coach references "what you just did"
-  vs "last week."
-- **Section omitted entirely when proofs are empty** — cold-start
-  users get no PROOFS header, no fabricated quote. The contract is
-  the same as the per-baseline-dimension confidence gate: only
-  surface what's earned.
-- **Section header instructs the model to quote directly** — the
-  framing "quote these directly when relevant" is the cue for the
-  coach to use the user's own words rather than paraphrase. This
-  is the difference between "you've been working on pauses" and
-  "Last Tuesday you said 'three breaths, then the close' — that's
-  the pattern."
+### Move 5 — Six new tests in `GrowthLibraryWeeklyGroupingTests`
 
-### Move 4 — `AskNoumView.runReply` threads recent proofs
+The bucketing helper is the only new logic worth testing in
+isolation (the rendering surface is SwiftUI). The new test struct
+uses a fixed Gregorian/GMT/POSIX calendar so the assertions are
+locale-independent.
 
-Adds `@StateObject private var proofStore = ProofMomentStore.shared`
-to the view's state owners + passes `proofStore.recent(limit: 3)`
-into the existing `CoachContextBuilder.userContext(...)` call. No
-other view wiring needed — the chat surface already mounted the
-store automatically once shared resolved, and every reply now
-carries proof context.
-
-### Move 5 — Fifteen new tests across two structs
-
-`ProofMomentArchiveTests` (10 tests):
-
-1. `recordPersistsSingleProof` — single-record round-trip.
-2. `recordIsIdempotentOnSessionID` — re-saving replaces, never
-   duplicates. AI-upgrade path verified.
-3. `recentReturnsMostRecentFirstBySessionDate` — three proofs
-   across three different dates emerge newest-first.
-4. `recentRespectsLimit` — limit caps the count.
-5. `recentClampsNegativeLimitToZero` — defensive — never crashes.
-6. `persistenceRoundTripsAcrossStores` — fresh store on same
-   defaults sees the saved archive.
-7. `accountSwitchHidesOtherAccountArchive` — per-account scoping
-   locks the archive to the signed-in user.
-8. `capDropsOldestByAddedAt` — over-cap inserts evict by
-   `addedAt`, not `sessionDate` (so refresh-replaces survive).
-9. `clearWipesAllRecords` — sign-out path.
-10. `removeDropsSpecificRecord` — granular wipe path.
-
-`CoachContextBuilderProofTests` (5 tests):
-
-1. `proofsSectionAppearsWhenRecordsProvided` — header + quote +
-   technique all land.
-2. `proofsSectionOmittedWhenRecordsEmpty` — cold-start has no
-   PROOFS section.
-3. `proofsRenderMostRecentFirst` — unsorted input still emerges
-   newest-first in the rendered context.
-4. `proofsAreHardCappedAtThree` — 12 records in → 3 lines in
-   context, the rest never bleed into the system prompt.
-5. `proofsSectionLandsAfterTrends` — GOAL precedes PROOFS in the
-   prompt order. Locks the section ordering against future drift.
-
-### Move 6 — `docs/CURRENT_STATE.md` updated
-
-- Header trail-of-breadcrumbs gets a new entry summarising the
-  proof archive + proof-aware context ship.
-- The Ask Noum section's `CoachContextBuilder` bullet gains a
-  PROOFS-block description.
-- A new bullet under the Ask Noum section describes
-  `ProofMomentArchive.swift`, the store's persistence contract,
-  the idempotency-on-session-ID guarantee, and the
-  upgrade-from-fallback-to-AI behaviour.
+1. `emptyArchiveReturnsNoBuckets` — empty input produces no
+   buckets so the SwiftUI view collapses to the empty state.
+2. `sameWeekRecordsCollapseIntoOneBucket` — two records inside
+   the same ISO week land in one bucket, sorted newest-first.
+3. `bucketsEmergeNewestWeekFirst` — across weeks, the newest
+   bucket sorts to the top.
+4. `thisWeekAndLastWeekLabelsRender` — relative labels resolve
+   for the immediate two-week window.
+5. `olderBucketsUseExplicitWeekOfLabel` — three weeks ago does
+   NOT fall back to "Last week", which would lie.
+6. `crossYearBucketIncludesYearInLabel` — December 2025 vs
+   February 2026 bucket carries the year so the user is never
+   confused. The same-year case is asserted in the previous test
+   ("must not contain '202'") to lock the gating.
 
 ## What did NOT change
 
-- `Noum/AskNoumStore.swift` — untouched. The chat thread store is
-  unchanged; only the *context* the model reads at reply time gains
-  the PROOFS layer.
-- `Noum/AICoachChatService.swift` — untouched. The service still
-  receives `userContext` as an opaque string; it doesn't know proofs
-  are now part of it.
-- `Noum/SummaryView.swift`, `Noum/ContentView.swift`,
-  `Noum/AIWeeklyInsightCard.swift` — untouched. The three current
-  consumers of `ProofMomentService.proof(for:)` keep their existing
-  call shape; the persist-to-archive side-effect happens inside the
-  service without changing their behaviour.
-- The Proof Moment UI surfaces (Personal Best, Path Celebration,
-  Weekly Insight) — untouched. The archive is a write-only side
-  effect from their perspective.
-- `firestore.rules` + Firebase config — untouched. The archive
-  lives on-device only. Adding sync would be a future move; today
-  the priority is "the coach knows what you actually said" with
-  zero infra.
-- Brand voice rules — fully preserved. The PROOFS section header
-  uses sentence case + parens for the instruction clause; no
-  exclamations, no chirpy framing, no emoji. The new test
-  `proofsSectionLandsAfterTrends` locks ordering but doesn't
-  introduce any voice violations.
-- Design tokens — N/A. No new UI surfaces; the only change is
-  inside the system prompt the model reads.
-- `Localizable.xcstrings` — untouched. The PROOFS section header
-  is English-only, matching the rest of the AI coaching context
-  block. Localisation would happen in a future M13-style pass.
+- `ProofMomentService.swift` — untouched. Persistence still
+  happens through the existing MainActor hops; the new surface
+  consumes the same store.
+- `ProofMoment` struct — untouched. The new view reads only
+  fields that already exist.
+- `AskNoumView.swift` — untouched. Chat continues to read the
+  archive via `ProofMomentStore.shared.recent(limit: 3)`.
+- `AIWeeklyInsightCard.swift`, `PathNodeCelebration.swift`,
+  `PersonalBestCelebrationScreen` — untouched. Existing
+  surface-tier proof rendering is unchanged.
+- `Localizable.xcstrings` — untouched. Hardcoded English copy
+  matches the rest of the M14/M15 surfaces.
+- Brand voice — preserved. Sentence case in the body; no
+  exclamations; the empty-state copy ("Nothing banked yet")
+  matches the coach's restrained register.
+- Design tokens — used as-is (Spacing, CornerRadius, AppColor,
+  Typography). No new constants.
 
 ## Risks
 
-1. **System prompt token growth.** Adding 3 proofs to the context
-   block adds ~60–120 tokens per reply (~20–40 per proof). At a
-   typical Ask Noum exchange of ~600 tokens of context + ~24
-   messages of replay, this is a 10–20% bump. Acceptable for the
-   value of voice-anchored replies — but worth watching if a future
-   move adds a fourth proof or a sentence-length claim line per
-   proof. The 3-cap is the right cap today.
-2. **Provider-cost lift.** The archive contains existing proofs the
-   service already generated; adding them to the context block
-   doesn't cause new AI calls. But because every Ask Noum turn now
-   ships richer context, each turn's input-token cost ticks up
-   slightly. At GPT-4o input pricing (~$5/M tokens), the marginal
-   cost is roughly $0.0003/turn over the previous build. Negligible.
-3. **Cross-isolation Sendability.** `ProofMomentService` is an
-   actor; `ProofMomentStore` is `@MainActor`. The hop pattern
-   `await persistToArchive(parsed, sessionID: input.session.id)`
-   crosses the boundary with `ProofMoment` (struct of String /
-   Date / Bool — implicitly Sendable) and `UUID` (Sendable). Both
-   are safe. If a future refactor adds a non-Sendable field to
-   `ProofMoment` (e.g. a closure), the compiler will catch it at
-   the hop site.
-4. **Idempotency only protects against duplicate session IDs.** If
-   the same transcript appears under TWO session IDs (which
-   shouldn't happen in practice — sessions are UUID-keyed at
-   finalize), the archive could carry two entries with identical
-   quotes. The chat surface would then show the same quote twice
-   in the PROOFS block, which would read oddly. Mitigated by the
-   reality that `PracticeSession.id` is a fresh UUID per finalize;
-   re-finalizing the same recording would only happen via debug
-   tooling.
-5. **Test coverage on the persist-to-archive side effect inside
-   `ProofMomentService`.** The 15 new tests cover the store and
-   the context builder, but the side-effect link inside the actor
-   isn't directly tested (would require seeding an AI provider in
-   the test environment + an actor-tested integration shape).
-   Mitigated by: each persist call is a one-liner, lifted into a
-   single helper method `persistToArchive`, so the surface area for
-   a bug is small. The store itself is fully tested in isolation.
-6. **No UI surface for the archive yet.** This push is a data-and-
-   context-layer move. The natural follow-on is a Profile "growth
-   library" card surfacing the same archive visually — that's a
-   separate push so this one stays scoped to the dream-coach goal
-   (the AI knowing your past words).
+1. **Two profile entry points to the same archive look ambiguous.**
+   The chip near the rating card is the new library entry; the
+   Coaching Direction card's "Ask Noum about your goal →" link
+   remains. These serve different intents — the chip leads to
+   evidence (read-only), the Ask Noum link to a conversation —
+   but a user could expect the same destination from both. Reads
+   fine in audit; revisit if usage data suggests confusion.
+2. **No empty-state entry point.** Cold-start users can't see the
+   library because the chip is hidden until the archive
+   populates. This is intentional (matches the "never fabricate"
+   contract) but means the surface is invisible until the first
+   proof lands. Mitigated by `ProofMomentService` writing on
+   every successful proof generation, which currently fires from
+   Personal Best / Path Celebration / Weekly Insight — those land
+   early enough that an active user gets a proof inside their
+   first week.
+3. **No "forget this moment" affordance.** The store has a
+   `remove(sessionID:)` API but the library doesn't surface it.
+   If a user generates a transcript they regret quoting, they
+   can't currently scrub it from the library (they CAN clear all
+   via Settings → account delete, which wipes everything). Open
+   for a future move; out of scope here because the proof system
+   already filters to coach-voice-positive moments — the
+   "regrettable quote" case is rare.
+4. **Sendable boundary on `weeklyGroups()`.** The instance method
+   is MainActor-isolated (the class is MainActor); the static
+   variant is `nonisolated`. Tests use the static path. Callers
+   inside the SwiftUI view stay on MainActor and use the instance
+   wrapper. No `@Sendable` annotation needed on the closure
+   because `Dictionary(grouping:by:)` runs synchronously.
+5. **Locale-sensitivity of week boundaries.** `Calendar.current`
+   in production observes the user's locale, so the bucket
+   boundaries are correct for the user even though the tests use
+   a fixed POSIX calendar. The pure-function shape makes this
+   testable; the rendering surface defaults to `.current` which
+   is what we want for users.
+6. **Project file auto-sync.** `Noum.xcodeproj` uses
+   `PBXFileSystemSynchronizedRootGroup`, so the new
+   `GrowthLibraryView.swift` is picked up automatically. Verified
+   via `grep -c "fileSystemSynchronized"` on
+   `project.pbxproj` (8 hits — multiple synced groups).
 
 ## Verification
 
 ### Implemented
 
-- `ProofMomentRecord` struct + `ProofMomentStore` class live in
-  `Noum/ProofMomentArchive.swift`. Per-account UserDefaults
-  persistence, max 12, idempotent-on-session-ID record, oldest-
-  by-addedAt eviction, recent-by-sessionDate read ordering — all
-  verified by the 10 `ProofMomentArchiveTests`.
-- `ProofMomentService.proof(for:)` writes to the archive on every
-  successful proof path (fallback + AI-parsed). The hop helper
-  `persistToArchive` lives at file scope (private `@MainActor`).
-- `CoachContextBuilder.userContext(...)` accepts an optional
-  `recentProofs: [ProofMomentRecord]` parameter (defaulted to
-  `[]` for back-compat — existing call sites in tests don't need
-  edits). The new PROOFS section renders after TRENDS, sorted
-  most-recent-first, hard-capped at 3, omitted entirely when
-  empty.
-- `AskNoumView.runReply` passes `proofStore.recent(limit: 3)`
-  into the context call.
-- Five `CoachContextBuilderProofTests` lock the rendering
-  contract: section present iff records present, ordering,
-  cap-at-3, GOAL-precedes-PROOFS.
-
-### Partially implemented
-
-- None.
+- `nonisolated static func weeklyGroups(from:now:calendar:)` lives
+  in `Noum/ProofMomentArchive.swift`. Pure-function shape, tested
+  in isolation.
+- `GrowthLibraryView` lives in `Noum/GrowthLibraryView.swift`,
+  picked up by the auto-synced project group.
+- `AppDestination.growthLibrary` threads through the existing
+  Hashable conformance — no manual cases needed.
+- `noum://growth` (and the `library` alias) route to the new
+  destination via the existing `consumeDeepLink` switch.
+- Profile chip wraps in a `NavigationLink(value:)` with a chevron
+  + accessibility identifier `profile.insightsBanked.link`.
+- Six `GrowthLibraryWeeklyGroupingTests` lock the bucketing
+  contract.
 
 ### Blocked / needs visual QA on device
 
-This push has no new UI surface — every change is inside the
-system prompt the model receives. Visual QA is therefore limited
-to the indirect "does the coach quote my actual words now?"
-check:
+Surface is new; visual QA goal:
 
-1. **End-to-end coach quoting**: configure an AI provider in
-   Settings, run a few sessions (so the proof archive populates),
-   then open Ask Noum and ask a question that invites the coach
-   to reference past moments ("How am I trending?"). The reply
-   should contain at least one verbatim quote from a past
-   transcript. If it doesn't, suspect either the archive isn't
-   populating (check on-device via the existing
-   `ProofMomentService` consumers — Personal Best, Path
-   Celebration, Weekly Insight) or the model is ignoring the
-   PROOFS section (check the actual system prompt the model
-   received).
-2. **Cold-start silence**: brand-new install, no sessions yet,
-   open Ask Noum with the empty thread starter prompts. Tap a
-   starter, watch the reply land. The reply must NOT contain a
-   fabricated quote in quotation marks — the PROOFS section is
-   omitted at cold start. If a quote appears anyway, the model
-   is hallucinating outside the section; tighten the system
-   prompt guardrails.
-3. **Cross-account isolation**: sign out, sign in as a different
-   account, open Ask Noum. Reply must NOT reference the previous
-   account's quotes. The per-account keying locks this at the
-   store level; visual confirm picks up any regression to
-   global-keyed storage.
+1. **Cold start** — fresh install, no sessions. Profile chip is
+   hidden (no link visible). Open `noum://growth` directly via
+   `xcrun simctl openurl` — the empty state should render.
+2. **Populated** — after at least one finished session that
+   produces a proof (which happens on Personal Best / Path
+   Celebration / Weekly Insight surface paths), the chip becomes
+   tappable on Profile. Tap → library. The card should show a
+   real verbatim quote from the user's transcript.
+3. **Honest source badge** — generate a proof with an AI provider
+   configured ("Coach reading"). Generate one without
+   ("Pattern match"). Both labels should render correctly.
+4. **Two-week timeline** — populate proofs across "this week"
+   and "last week"; confirm labels render relatively. Populate a
+   proof from > 2 weeks ago; confirm it gets "Week of MMM d".
 
 ### Assumptions
 
-- Three proofs is the right cap. Fewer would leave the coach
-  reaching for numeric framing; more would crowd the system
-  prompt and risk the model ignoring earlier sections (GOAL,
-  RATING). Three matches the visual chip cap on the follow-up
-  row, so the surface registers as "three things to look at" at
-  every layer.
-- `addedAt`-based eviction is correct over `sessionDate`-based.
-  The two policies disagree when the user refreshes an old proof
-  (e.g. an AI re-fetch after a deterministic fallback): under
-  `sessionDate` policy, the refreshed proof's old session date
-  would still mark it as evictable; under `addedAt` policy, the
-  refresh keeps it safe because we just touched it. The latter
-  is what a "the coach remembers what I just earned" UX wants.
-- The PROOFS section lives at the END of the context block (after
-  TRENDS). Reasoning: GOAL / RATING / BASELINE are anchoring
-  facts the model needs first; PROOFS are supporting evidence
-  for the reply, best read just before the model composes. If
-  this turns out to under-weight proofs in practice (the model
-  defaults to citing baseline numbers over quotes), the right
-  fix is to move PROOFS earlier or to bold the instruction in
-  the section header — both are one-line edits.
+- The right bucket boundary is the ISO week. Daily-bucketing
+  would be too granular (a user with 3 reps in one day would see
+  3 same-day buckets in a row, which is visually noisy);
+  monthly bucketing would lose the weekly-rhythm framing that
+  the rest of the app uses (League buckets are `ISO-year-Wweek`,
+  AI Weekly Insight is per-week).
+- The "Coach reading" vs "Pattern match" label is the right
+  honest framing for the `isAIBacked` flag. Earlier surfaces
+  hid this; the library is the right place to surface it because
+  the user is asking "what did I actually earn" — they deserve
+  to know which proofs came from a model reading their
+  transcript vs a template matching their stats.
+- The visual register tracks Pro-purple because the source
+  archive is associated with the coach-presence (Ask Noum)
+  register. BrandBlue would conflict with the practice-loop
+  register (paths, modes, ratings).
 
-### Verification (what was checked)
+### What was checked
 
-- File reads + edits applied via Edit / Write tools; no Bash
-  builds run (sandboxed Linux environment, no Xcode toolchain).
-- `grep` after each edit confirmed: (a) the new
-  `ProofMomentArchive.swift` file lands in `Noum/` (auto-included
-  by the `PBXFileSystemSynchronizedRootGroup` already configured
-  for that directory), (b) the new `recentProofs:` parameter
-  lands once in `CoachContextBuilder.userContext`, (c) the
-  AskNoumView call site uses `proofStore.recent(limit: 3)`, (d)
-  no other call site of `userContext` needs to change
-  (existing tests / consumers pick up the default `[]`).
-- Test struct rhythm matches existing `AskNoumStoreTests` (
-  `freshStore()` helper + UUID-suite UserDefaults + deterministic
-  account ID).
-- Sendability — `ProofMoment` (String / Date / Bool fields) and
-  `UUID` cross the actor → MainActor boundary cleanly. No new
-  closures, no class types added to the struct, so the boundary
-  is safe.
-- Brand voice — the only user-visible string is the PROOFS
-  section header inside the system prompt, which the user never
-  sees directly. The coach's *quotes* of the user's transcript
-  are verbatim by design (fabrication guard already in
-  `ProofMomentService.transcriptContains`).
-
-### Risks
-
-- See "Risks" section above.
+- File reads + edits applied via Read / Edit / Write. Sandboxed
+  Linux environment; no Xcode toolchain available to build.
+- `grep` after each edit confirmed: (a) the new file lands in
+  `Noum/`, (b) the new `AppDestination.growthLibrary` case
+  appears exactly once in `PracticeSupport.swift`, (c) the
+  `case .growthLibrary` lands exactly once in
+  `ContentView.swift`'s destination switch, (d) the deep-link
+  case `"growth"` / `"library"` lands exactly once in
+  `consumeDeepLink`, (e) the Profile chip wraps in a
+  `NavigationLink(value:)` once.
+- Tests added to `NoumTests/NoumTests.swift` end-of-file, follow
+  the existing `@Test` + `#expect(...)` rhythm.
+- Sendability — the pure helper is `nonisolated` and uses only
+  Sendable values (`Date`, `Calendar`, `String`, `ProofMomentRecord`).
+- Brand voice — header copy uses sentence case + uppercase
+  micro-eyebrow; empty-state line "Nothing banked yet" matches
+  the coach's restrained register; no exclamations; no emoji;
+  no Let's.
 
 ## Files modified
 
-- `Noum/ProofMomentArchive.swift` (NEW, ~155 LOC — `ProofMomentRecord`
-  struct + `ProofMomentStore` ObservableObject + persistence).
-- `Noum/ProofMomentService.swift` (+~30 LOC — six MainActor hops
-  + new `persistToArchive` helper).
-- `Noum/CoachContextBuilder.swift` (+~25 LOC — new optional
-  `recentProofs:` param + PROOFS section renderer).
-- `Noum/AskNoumView.swift` (+2 LOC — `@StateObject` for the new
-  store + `recentProofs:` argument on the context call).
-- `NoumTests/NoumTests.swift` (+~320 LOC — `ProofMomentArchiveTests`
-  + `CoachContextBuilderProofTests`).
-- `docs/CURRENT_STATE.md` (trail-of-breadcrumbs entry + Ask Noum
-  section bullet).
-- `HANDOFF.md` (rewritten — this file).
+- `Noum/GrowthLibraryView.swift` (NEW, ~210 LOC).
+- `Noum/ProofMomentArchive.swift` (+~70 LOC — `weeklyGroups` +
+  helpers).
+- `Noum/PracticeSupport.swift` (+1 line — `AppDestination.growthLibrary`).
+- `Noum/ContentView.swift` (+5 LOC — destination switch case + deep
+  link route).
+- `ProfileView.swift` (~+15 / -3 LOC — chip wraps in
+  NavigationLink + chevron + a11y).
+- `NoumTests/NoumTests.swift` (+~115 LOC — six tests).
+- `docs/CURRENT_STATE.md` (header breadcrumbs + new bullet under
+  Ask Noum section + deep-link route list).
+- `HANDOFF.md` (this file).
 
 ## Branch
 
-`Redesign` — committed and pushed per the brief. The user
-explicitly requested work on the Redesign branch ("ensure
-working on the redesign branch too (very important)"). All
-M14 commits land here; this push continues that pattern.
+`Redesign` — committed and pushed per the user's brief. The user
+explicitly requested work on the Redesign branch ("ensure working
+on the redesign branch too (very important)"). Continues the
+post-M15 pattern of small, voice-coherent additions that close
+loops opened by earlier pushes.

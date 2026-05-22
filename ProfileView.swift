@@ -600,23 +600,32 @@ struct ProfileView: View {
         let count = proofStore.records.count
         if count > 0 {
             let noun = count == 1 ? "insight" : "insights"
-            HStack(spacing: 6) {
-                Image(systemName: "quote.opening")
-                    .font(.caption2)
-                    .foregroundStyle(AppColor.pro)
-                Text("\(count) \(noun) banked")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                if let recency = mostRecentInsightRecency {
-                    Text("\u{00B7} Most recent: \(recency)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+            NavigationLink(value: AppDestination.growthLibrary) {
+                HStack(spacing: 6) {
+                    Image(systemName: "quote.opening")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.pro)
+                    Text("\(count) \(noun) banked")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let recency = mostRecentInsightRecency {
+                        Text("\u{00B7} Most recent: \(recency)")
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.tertiary)
                 }
-                Spacer(minLength: 0)
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 4)
+            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(insightsAccessibilityLabel(count: count))
+            .accessibilityHint("Opens your growth library.")
+            .accessibilityIdentifier("profile.insightsBanked.link")
         }
     }
 

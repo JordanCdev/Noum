@@ -107,6 +107,65 @@ final class ProofMomentStore: ObservableObject {
             .prefix(max(0, limit)))
     }
 
+    /// Group all records into week-buckets for the Growth Library surface.
+    /// Bucket key is the start-of-week date in the supplied calendar; the
+    /// returned tuples are ordered newest-week-first, and within each week
+    /// the records are most-recent-first by `proof.sessionDate`. Empty
+    /// archive returns an empty array — caller renders no list.
+    func weeklyGroups(
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [(weekStart: Date, label: String, records: [ProofMomentRecord])] {
+        ProofMomentStore.weeklyGroups(from: records, now: now, calendar: calendar)
+    }
+
+    /// Pure-function variant — tests drive it directly without touching
+    /// the shared instance. Same shape as the instance method.
+    nonisolated static func weeklyGroups(
+        from records: [ProofMomentRecord],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [(weekStart: Date, label: String, records: [ProofMomentRecord])] {
+        guard !records.isEmpty else { return [] }
+        let buckets = Dictionary(grouping: records) { record -> Date in
+            calendar.dateInterval(of: .weekOfYear, for: record.proof.sessionDate)?.start
+                ?? calendar.startOfDay(for: record.proof.sessionDate)
+        }
+        let sortedKeys = buckets.keys.sorted(by: >)
+        let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start
+        return sortedKeys.map { key in
+            let label = weekLabel(for: key, now: now, thisWeekStart: thisWeekStart, calendar: calendar)
+            let sorted = (buckets[key] ?? []).sorted { $0.proof.sessionDate > $1.proof.sessionDate }
+            return (weekStart: key, label: label, records: sorted)
+        }
+    }
+
+    nonisolated private static func weekLabel(
+        for weekStart: Date,
+        now: Date,
+        thisWeekStart: Date?,
+        calendar: Calendar
+    ) -> String {
+        if let thisWeekStart, calendar.isDate(weekStart, inSameDayAs: thisWeekStart) {
+            return "This week"
+        }
+        if let thisWeekStart,
+           let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart),
+           calendar.isDate(weekStart, inSameDayAs: lastWeekStart) {
+            return "Last week"
+        }
+        let now = now
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = calendar.locale ?? .current
+        if calendar.component(.year, from: weekStart) == calendar.component(.year, from: now) {
+            formatter.dateFormat = "MMM d"
+        } else {
+            formatter.dateFormat = "MMM d, yyyy"
+        }
+        return "Week of \(formatter.string(from: weekStart))"
+    }
+
     /// Drop a specific proof — used by callers that want to invalidate
     /// after a transcript edit (rare; sessions are immutable in
     /// practice) or by a future "forget this moment" surface.

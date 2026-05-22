@@ -7011,3 +7011,122 @@ struct FirstRepCelebrationFallbackTests {
     }
 }
 
+// MARK: - GrowthLibrary weekly grouping
+//
+// The Growth Library Profile surface reads
+// `ProofMomentStore.weeklyGroups()` to render a week-by-week timeline of
+// banked proof moments. The helper is pure-function over the records
+// array — these tests drive it directly without instantiating SwiftUI.
+//
+// Contract under test:
+//   • Empty input returns no buckets (the view collapses to the empty
+//     state).
+//   • Records inside the same ISO week land in one bucket, sorted
+//     most-recent-first within the bucket.
+//   • Buckets emerge newest-week-first.
+//   • Labels mirror the user-readable register: "This week", "Last week",
+//     then "Week of MMM d" for older buckets.
+//   • Cross-year weeks include the year in the label so the user is
+//     never confused between Jan of two different years.
+
+struct GrowthLibraryWeeklyGroupingTests {
+
+    private func calendar() -> Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "en_US_POSIX")
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        return cal
+    }
+
+    private func proof(_ quote: String, on date: Date) -> ProofMomentRecord {
+        ProofMomentRecord(
+            sessionID: UUID(),
+            proof: ProofMoment(
+                quote: quote,
+                technique: "Power Pause",
+                claim: "Steady hold — composure reads as authority.",
+                sessionDate: date,
+                isAIBacked: false,
+                generatedAt: date
+            ),
+            addedAt: date
+        )
+    }
+
+    @Test func emptyArchiveReturnsNoBuckets() {
+        let groups = ProofMomentStore.weeklyGroups(from: [], now: Date(), calendar: calendar())
+        #expect(groups.isEmpty, "Empty input must collapse to an empty timeline")
+    }
+
+    @Test func sameWeekRecordsCollapseIntoOneBucket() {
+        let cal = calendar()
+        let now = cal.date(from: DateComponents(year: 2026, month: 5, day: 21))!
+        let recordA = proof("A", on: cal.date(byAdding: .day, value: -1, to: now)!)
+        let recordB = proof("B", on: cal.date(byAdding: .day, value: -2, to: now)!)
+        let groups = ProofMomentStore.weeklyGroups(from: [recordA, recordB], now: now, calendar: cal)
+        #expect(groups.count == 1, "Two records inside the same ISO week must collapse to one bucket")
+        #expect(groups[0].records.count == 2)
+        // Within the bucket, most-recent-first.
+        #expect(groups[0].records[0].proof.quote == "A")
+        #expect(groups[0].records[1].proof.quote == "B")
+    }
+
+    @Test func bucketsEmergeNewestWeekFirst() {
+        let cal = calendar()
+        let now = cal.date(from: DateComponents(year: 2026, month: 5, day: 21))!
+        let recordThisWeek = proof("recent", on: cal.date(byAdding: .day, value: -1, to: now)!)
+        let recordTwoWeeksAgo = proof("older", on: cal.date(byAdding: .day, value: -14, to: now)!)
+        let groups = ProofMomentStore.weeklyGroups(
+            from: [recordTwoWeeksAgo, recordThisWeek],
+            now: now,
+            calendar: cal
+        )
+        #expect(groups.count == 2)
+        #expect(groups[0].records.first?.proof.quote == "recent",
+                "Newest week's bucket must appear first")
+        #expect(groups[1].records.first?.proof.quote == "older")
+    }
+
+    @Test func thisWeekAndLastWeekLabelsRender() {
+        let cal = calendar()
+        let now = cal.date(from: DateComponents(year: 2026, month: 5, day: 21))!
+        let recordThisWeek = proof("recent", on: cal.date(byAdding: .day, value: -1, to: now)!)
+        let recordLastWeek = proof("older", on: cal.date(byAdding: .day, value: -8, to: now)!)
+        let groups = ProofMomentStore.weeklyGroups(
+            from: [recordLastWeek, recordThisWeek],
+            now: now,
+            calendar: cal
+        )
+        #expect(groups[0].label == "This week")
+        #expect(groups[1].label == "Last week")
+    }
+
+    @Test func olderBucketsUseExplicitWeekOfLabel() {
+        // A record three weeks ago should get a "Week of MMM d" label,
+        // not "Last week" — the relative idiom only stretches one week.
+        let cal = calendar()
+        let now = cal.date(from: DateComponents(year: 2026, month: 5, day: 21))!
+        let recordThreeWeeksAgo = proof("oldish", on: cal.date(byAdding: .day, value: -21, to: now)!)
+        let groups = ProofMomentStore.weeklyGroups(from: [recordThreeWeeksAgo], now: now, calendar: cal)
+        #expect(groups.count == 1)
+        #expect(groups[0].label.hasPrefix("Week of "),
+                "Older buckets must use explicit week-of-date labels, got: \(groups[0].label)")
+        // Same-year records should not carry a year suffix.
+        #expect(!groups[0].label.contains("202"),
+                "Same-year bucket label must omit the year, got: \(groups[0].label)")
+    }
+
+    @Test func crossYearBucketIncludesYearInLabel() {
+        // A record from a previous calendar year must include the year
+        // in the label so a January 2025 vs January 2026 entry is never
+        // ambiguous.
+        let cal = calendar()
+        let now = cal.date(from: DateComponents(year: 2026, month: 2, day: 15))!
+        let lastYear = cal.date(from: DateComponents(year: 2025, month: 12, day: 20))!
+        let groups = ProofMomentStore.weeklyGroups(from: [proof("xmas", on: lastYear)], now: now, calendar: cal)
+        #expect(groups.count == 1)
+        #expect(groups[0].label.contains("2025"),
+                "Cross-year bucket must carry the year, got: \(groups[0].label)")
+    }
+}
+
