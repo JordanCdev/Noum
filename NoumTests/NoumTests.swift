@@ -7758,4 +7758,700 @@ struct CoachContextBuilderChipParserTests {
     }
 }
 
+// MARK: - M17 Summary redesign — bullet selector contracts
+//
+// The M17 redesign replaced the legacy AI debrief + CoachNote stack inside
+// the Summary hero with two observational cards: `WhatYouDidWellCard` and
+// `WhatToImproveCard`. The cards' bullet selection logic lives in two
+// pure static functions (`computeBullets(...)`) so the design contract is
+// testable without spinning up a SwiftUI runtime. These suites pin every
+// branch — silent paths (minimal effort, empty signals), ordering,
+// the 3-bullet cap, dedup against the leverage line, and the headroom
+// gates that decide whether eloquence/AI/pace bullets land.
 
+@available(iOS 17.0, *)
+struct WhatYouDidWellBulletSelectorTests {
+
+    private func note(momentum: String = "", leverage: String = "", nextStep: String = "") -> CoachNote {
+        CoachNote(momentum: momentum, leverage: leverage, nextStep: nextStep)
+    }
+
+    @Test func minimalEffortYieldsNoBullets() {
+        // 4-second blurts shouldn't earn "Structure felt solid." The card
+        // hides itself entirely so the hero never lies about progress.
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Cleaner delivery."),
+            feedbackCategories: [FeedbackCategory(dimension: "Opening", rating: .good, note: "")],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: true
+        )
+        #expect(bullets.isEmpty)
+    }
+
+    @Test func momentumOnlyPathYieldsSingleBullet() {
+        // No category wins, no eloquence — just the verdict engine's
+        // momentum line. That's a legitimate single-bullet card; we
+        // don't pad it with fake content.
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Filler rate dropped to 1.2/min."),
+            feedbackCategories: [],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 1)
+        #expect(bullets.first?.id == "momentum")
+        #expect(bullets.first?.headline == "Filler rate dropped to 1.2/min.")
+    }
+
+    @Test func emptyMomentumIsOmittedNotRenderedBlank() {
+        // The verdict engine should always produce something, but if it
+        // hands us whitespace we must not emit a blank bullet.
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "   "),
+            feedbackCategories: [FeedbackCategory(dimension: "Opening", rating: .good, note: "")],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        // Only the category bullet remains.
+        #expect(bullets.count == 1)
+        #expect(bullets.first?.id == "category-Opening")
+    }
+
+    @Test func goodCategoriesCappedAtTwo() {
+        // Three good categories should not produce three category
+        // bullets — the cap is two so the momentum line still anchors.
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Clean rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Structure", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Pace", rating: .good, note: "")
+            ],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        // momentum + 2 categories = 3 bullets total (cap respected).
+        #expect(bullets.count == 3)
+        #expect(bullets[0].id == "momentum")
+        #expect(bullets[1].id == "category-Opening")
+        #expect(bullets[2].id == "category-Structure")
+        // Pace should be dropped — not added beyond the prefix(2) cap.
+        #expect(!bullets.contains { $0.id == "category-Pace" })
+    }
+
+    @Test func okRatingDoesNotCountAsAWin() {
+        // .ok is "mostly there", not a celebration. Surfacing it as a
+        // "did well" bullet would punish accuracy of the underlying
+        // evaluator — kept out of this card by design.
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Solid rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .ok, note: ""),
+                FeedbackCategory(dimension: "Pace", rating: .ok, note: "")
+            ],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 1)
+        #expect(bullets[0].id == "momentum")
+    }
+
+    @Test func eloquenceFindingDropsWhenMomentumPlusTwoCategoriesAlreadyFill() {
+        // The total ceiling is three bullets. When momentum + 2 categories
+        // already saturate, eloquence appends a 4th but `prefix(3)` drops
+        // it. This is intentional — the comment in the source flags that
+        // the eloquence slot is the first to lose.
+        let finding = EloquenceFinding(
+            device: .tricolon,
+            snippet: "clarity, courage, conviction",
+            coachLine: "Lists of three feel complete."
+        )
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Structure", rating: .good, note: "")
+            ],
+            eloquenceFindings: [finding],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 3)
+        #expect(!bullets.contains { $0.id.hasPrefix("eloquence-") })
+    }
+
+    @Test func eloquenceFindingLandsWhenHeadroomExists() {
+        // momentum + 1 category leaves room for eloquence.
+        let finding = EloquenceFinding(
+            device: .anaphora,
+            snippet: "we will, we will",
+            coachLine: "Repetition with intent."
+        )
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: "")
+            ],
+            eloquenceFindings: [finding],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 3)
+        #expect(bullets[2].id == "eloquence-anaphora")
+    }
+
+    @Test func eloquenceQuoteEvidenceUsesSnippet() {
+        // When the engine returns a snippet, the bullet's evidence is the
+        // quoted snippet (italic, brand-blue treatment in the View). Cold
+        // (empty snippet) path falls back to text-only.
+        let finding = EloquenceFinding(
+            device: .alliteration,
+            snippet: "swift, sharp, smart",
+            coachLine: "Alliteration locks rhythm."
+        )
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [],
+            eloquenceFindings: [finding],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        guard let evidence = bullets.last?.evidence else {
+            #expect(Bool(false), "Eloquence bullet must carry evidence")
+            return
+        }
+        switch evidence {
+        case .quote(let text, _):
+            #expect(text == "swift, sharp, smart")
+        default:
+            #expect(Bool(false), "Eloquence snippet present → must be .quote evidence")
+        }
+    }
+
+    @Test func aiStrengthBulletGatedOnHeadroom() {
+        // AI strength is the lowest-priority bullet — only lands when
+        // the saturating bullets above didn't already fill three slots.
+        let aiFull = AICoachFeedback(
+            strengths: ["You opened with conviction."],
+            keyImprovement: "Tighten the close.",
+            suggestedDrill: "",
+            revisedOpening: ""
+        )
+        let saturated = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Structure", rating: .good, note: "")
+            ],
+            eloquenceFindings: [],
+            aiFeedback: aiFull,
+            isMinimalEffort: false
+        )
+        #expect(!saturated.contains { $0.id == "ai-strength" })
+
+        let withHeadroom = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [],
+            eloquenceFindings: [],
+            aiFeedback: aiFull,
+            isMinimalEffort: false
+        )
+        #expect(withHeadroom.contains { $0.id == "ai-strength" })
+    }
+
+    @Test func aiStrengthEmptyStringDoesNotEmitBullet() {
+        // Defensive: a malformed AI response (empty first strength)
+        // must not produce an empty-headline bullet.
+        let aiFeedback = AICoachFeedback(
+            strengths: ["   "],
+            keyImprovement: "",
+            suggestedDrill: "",
+            revisedOpening: ""
+        )
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [],
+            eloquenceFindings: [],
+            aiFeedback: aiFeedback,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 1)
+        #expect(!bullets.contains { $0.id == "ai-strength" })
+    }
+
+    @Test func totalBulletCeilingNeverExceedsThree() {
+        // Belt-and-braces: every signal source firing at once must
+        // still land at exactly 3 bullets. The cap protects the
+        // visual hierarchy of the hero block.
+        let finding = EloquenceFinding(
+            device: .isocolon,
+            snippet: "fast and clean and clear",
+            coachLine: "Parallel structure."
+        )
+        let aiFeedback = AICoachFeedback(
+            strengths: ["Strong open."],
+            keyImprovement: "",
+            suggestedDrill: "",
+            revisedOpening: ""
+        )
+        let bullets = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Strong rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Structure", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Pace", rating: .good, note: "")
+            ],
+            eloquenceFindings: [finding],
+            aiFeedback: aiFeedback,
+            isMinimalEffort: false
+        )
+        #expect(bullets.count == 3)
+    }
+
+    @Test func categoryNoteTextEvidencePopulatesWhenNoteNonEmpty() {
+        // A good-rated category with a coaching note should hang the
+        // note as expandable evidence; empty notes leave evidence nil
+        // so the chevron disappears.
+        let withNote = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Solid."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: "Clear, confident start.")
+            ],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        guard let categoryBullet = withNote.first(where: { $0.id == "category-Opening" }),
+              let evidence = categoryBullet.evidence else {
+            #expect(Bool(false), "Category with note must carry text evidence")
+            return
+        }
+        switch evidence {
+        case .text(let text):
+            #expect(text == "Clear, confident start.")
+        default:
+            #expect(Bool(false), "Category note → text evidence")
+        }
+
+        let withoutNote = WhatYouDidWellCard.computeBullets(
+            coachNote: note(momentum: "Solid."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: "")
+            ],
+            eloquenceFindings: [],
+            aiFeedback: nil,
+            isMinimalEffort: false
+        )
+        let categoryBulletBare = withoutNote.first(where: { $0.id == "category-Opening" })
+        #expect(categoryBulletBare?.evidence == nil)
+    }
+}
+
+@available(iOS 17.0, *)
+struct WhatToImproveBulletSelectorTests {
+
+    private func note(momentum: String = "", leverage: String = "", nextStep: String = "") -> CoachNote {
+        CoachNote(momentum: momentum, leverage: leverage, nextStep: nextStep)
+    }
+
+    @Test func minimalEffortYieldsNoBullets() {
+        // 4-second blurts get no "to improve" feedback — punishing a
+        // user for not really starting is the wrong vibe.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Pace ran fast."),
+            feedbackCategories: [FeedbackCategory(dimension: "Pace", rating: .couldImprove, note: "")],
+            aiFeedback: nil,
+            transcriptText: "um",
+            effectiveFillerCount: 4,
+            effectiveDuration: 3,
+            transcriptWordCount: 2,
+            isMinimalEffort: true,
+            customFillerWords: []
+        )
+        #expect(bullets.isEmpty)
+    }
+
+    @Test func cleanRepWithNoLeverageYieldsNoBullets() {
+        // A genuinely clean rep produces no bullets — no fake "to
+        // improve" placeholder, no padding. The card hides itself.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: ""),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .good, note: ""),
+                FeedbackCategory(dimension: "Structure", rating: .good, note: "")
+            ],
+            aiFeedback: nil,
+            transcriptText: "Clear and calm and on point.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 35,
+            transcriptWordCount: 80,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(bullets.isEmpty)
+    }
+
+    @Test func leverageBulletCarriesNextStepEvidence() {
+        // The leverage bullet's expandable evidence is the verdict
+        // engine's nextStep so the user can act on the read, not just
+        // see it.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(
+                leverage: "Pace ran a touch fast.",
+                nextStep: "Slow the first two sentences to set tempo."
+            ),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: "I think the most important thing is consistency over time.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 22,
+            transcriptWordCount: 40,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        guard let leverageBullet = bullets.first(where: { $0.id == "leverage" }),
+              let evidence = leverageBullet.evidence else {
+            #expect(Bool(false), "Leverage bullet must carry evidence")
+            return
+        }
+        switch evidence {
+        case .nextStep(let text):
+            #expect(text == "Slow the first two sentences to set tempo.")
+        default:
+            #expect(Bool(false), "Leverage evidence is the verdict engine's nextStep")
+        }
+    }
+
+    @Test func leverageBulletWithoutNextStepHasNoEvidence() {
+        // If nextStep is missing, the leverage bullet renders without a
+        // chevron — no expand affordance pointing at nothing.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Slightly off."),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: "A short cleanish rep.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 22,
+            transcriptWordCount: 40,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        let leverageBullet = bullets.first(where: { $0.id == "leverage" })
+        #expect(leverageBullet?.evidence == nil)
+    }
+
+    @Test func fillerBulletDoesNotFireBelowTwoCount() {
+        // One filler isn't worth surfacing — it's noise inside the
+        // session-to-session normal range. Stays silent at 1.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: "Um a clean rep mostly.",
+            effectiveFillerCount: 1,
+            effectiveDuration: 18,
+            transcriptWordCount: 30,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(!bullets.contains { $0.id == "filler" })
+    }
+
+    @Test func fillerBulletFiresAtTwoOrMore() {
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: "Um like you know um a few here.",
+            effectiveFillerCount: 3,
+            effectiveDuration: 18,
+            transcriptWordCount: 30,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        let fillerBullet = bullets.first { $0.id == "filler" }
+        #expect(fillerBullet != nil)
+        #expect(fillerBullet?.headline.contains("(3)") == true)
+    }
+
+    @Test func fillerBulletHeadlineUsesClusterFramingAtFivePlus() {
+        // The "clustered" framing reads as more honest at the high end
+        // — five+ feels like a pattern, not a stray.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: "Um um like you know um like uh I mean um.",
+            effectiveFillerCount: 7,
+            effectiveDuration: 18,
+            transcriptWordCount: 30,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        let fillerBullet = bullets.first { $0.id == "filler" }
+        #expect(fillerBullet?.headline.lowercased().contains("clustered") == true)
+    }
+
+    @Test func leverageDedupsAgainstCategoryByName() {
+        // When leverage mentions "structure" (case-insensitive), the
+        // Structure couldImprove category is suppressed — same point,
+        // two voices, would inflate the card under the 3-cap.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Your structure ran loose this rep."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Structure", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Depth", rating: .couldImprove, note: "")
+            ],
+            aiFeedback: nil,
+            transcriptText: "A reasonable length rep with some signal.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 22,
+            transcriptWordCount: 40,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(!bullets.contains { $0.id == "category-Structure" })
+        #expect(bullets.contains { $0.id == "category-Depth" })
+    }
+
+    @Test func categoryNeedsWorkCappedAtTwo() {
+        // Even with three couldImprove categories, only the first two
+        // pass through — keeps the card under the 3-cap with room for
+        // leverage at the top.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Close", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Depth", rating: .couldImprove, note: "")
+            ],
+            aiFeedback: nil,
+            transcriptText: "A reasonable length rep with some signal.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 22,
+            transcriptWordCount: 40,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        let categoryBullets = bullets.filter { $0.id.hasPrefix("category-") }
+        #expect(categoryBullets.count == 2)
+        #expect(categoryBullets.map(\.id) == ["category-Opening", "category-Close"])
+    }
+
+    @Test func paceFastFiresWhenAboveOneSeventyAndHeadroomExists() {
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            // 60 words / 20 seconds = 180 WPM
+            transcriptText: String(repeating: "one ", count: 60),
+            effectiveFillerCount: 0,
+            effectiveDuration: 20,
+            transcriptWordCount: 60,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        let paceBullet = bullets.first { $0.id == "pace-fast" }
+        #expect(paceBullet != nil)
+        #expect(paceBullet?.headline.contains("WPM") == true)
+    }
+
+    @Test func paceSlowFiresWhenBelowNinetyFive() {
+        // 20 words / 20 seconds = 60 WPM — below the slow band.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: String(repeating: "one ", count: 20),
+            effectiveFillerCount: 0,
+            effectiveDuration: 20,
+            transcriptWordCount: 20,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        let paceBullet = bullets.first { $0.id == "pace-slow" }
+        #expect(paceBullet != nil)
+    }
+
+    @Test func paceAnomalySuppressedWithoutHeadroom() {
+        // With leverage + 2 categories already populating, pace stays
+        // silent — the user needs ONE focus, not five.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Pace ran fast in the middle."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Depth", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Close", rating: .couldImprove, note: "")
+            ],
+            aiFeedback: nil,
+            transcriptText: String(repeating: "one ", count: 60),
+            effectiveFillerCount: 0,
+            effectiveDuration: 20,
+            transcriptWordCount: 60,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(!bullets.contains { $0.id.hasPrefix("pace-") })
+    }
+
+    @Test func paceAnomalyRequiresMinimumWordsAndDuration() {
+        // Below the 12-word / 10-second minimum the WPM read isn't
+        // stable enough to call. Stay silent rather than nag.
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(),
+            feedbackCategories: [],
+            aiFeedback: nil,
+            transcriptText: "ten quick words land here in this short stretch ok",
+            effectiveFillerCount: 0,
+            effectiveDuration: 5,
+            transcriptWordCount: 10,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(!bullets.contains { $0.id.hasPrefix("pace-") })
+    }
+
+    @Test func aiKeyImprovementLandsAtTailWhenHeadroomExists() {
+        let aiFeedback = AICoachFeedback(
+            strengths: [],
+            keyImprovement: "Sharpen the close — land your final point cleanly.",
+            suggestedDrill: "Try the 'Decisive Stop' drill on the next rep.",
+            revisedOpening: ""
+        )
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Solid but generic close."),
+            feedbackCategories: [],
+            aiFeedback: aiFeedback,
+            transcriptText: "A reasonable length rep with some signal.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 25,
+            transcriptWordCount: 50,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(bullets.contains { $0.id == "ai-improvement" })
+    }
+
+    @Test func aiKeyImprovementSuppressedWithoutHeadroom() {
+        // Leverage + 2 categories already saturate — AI doesn't push
+        // through the cap.
+        let aiFeedback = AICoachFeedback(
+            strengths: [],
+            keyImprovement: "Sharpen the close.",
+            suggestedDrill: "",
+            revisedOpening: ""
+        )
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Loose middle section."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Depth", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Close", rating: .couldImprove, note: "")
+            ],
+            aiFeedback: aiFeedback,
+            transcriptText: "A reasonable length rep with some signal.",
+            effectiveFillerCount: 0,
+            effectiveDuration: 22,
+            transcriptWordCount: 40,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(!bullets.contains { $0.id == "ai-improvement" })
+    }
+
+    @Test func totalBulletCeilingNeverExceedsThree() {
+        // Every signal source firing: leverage + filler + 2 categories +
+        // pace + AI. The final list must still land at exactly 3.
+        let aiFeedback = AICoachFeedback(
+            strengths: [],
+            keyImprovement: "Cleaner ending.",
+            suggestedDrill: "",
+            revisedOpening: ""
+        )
+        let bullets = WhatToImproveCard.computeBullets(
+            coachNote: note(leverage: "Mid-rep wobble."),
+            feedbackCategories: [
+                FeedbackCategory(dimension: "Opening", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Depth", rating: .couldImprove, note: ""),
+                FeedbackCategory(dimension: "Close", rating: .couldImprove, note: "")
+            ],
+            aiFeedback: aiFeedback,
+            transcriptText: "um like um you know um " + String(repeating: "one ", count: 60),
+            effectiveFillerCount: 5,
+            effectiveDuration: 20,
+            transcriptWordCount: 65,
+            isMinimalEffort: false,
+            customFillerWords: []
+        )
+        #expect(bullets.count == 3)
+    }
+}
+
+// MARK: - TalkToNoumCTACard — copy contract
+//
+// The CTA card lives at the bottom of the summary hero block. The pro
+// gate is wired through `isPremium`. These tests pin the brand-voice
+// rules (no "Let's", no exclamation, no emoji, sentence case) and the
+// pro/free divergence so a future copy tweak can't quietly drift into
+// dark-pattern territory or break the screenshot tour.
+
+@available(iOS 17.0, *)
+struct TalkToNoumCTACardCopyTests {
+
+    @Test func headlineIsInvariantAcrossPremiumState() {
+        // The moment is the same — premium status only changes what
+        // happens on tap, not the framing.
+        #expect(TalkToNoumCTACard.headlineCopy(isPremium: true)
+                == TalkToNoumCTACard.headlineCopy(isPremium: false))
+        #expect(TalkToNoumCTACard.headlineCopy(isPremium: true)
+                == "Talk to Noum about this rep.")
+    }
+
+    @Test func subCopyDivergesByPremiumState() {
+        // Pro users get the "this rep loaded" framing; free users get
+        // the membership pitch. The two must not collide.
+        let pro = TalkToNoumCTACard.subCopy(isPremium: true)
+        let free = TalkToNoumCTACard.subCopy(isPremium: false)
+        #expect(pro != free)
+        #expect(pro.lowercased().contains("quotes"))
+        #expect(free.lowercased().contains("pro"))
+    }
+
+    @Test func ctaCopyMatchesPremiumState() {
+        #expect(TalkToNoumCTACard.ctaCopy(isPremium: true) == "Open the thread")
+        #expect(TalkToNoumCTACard.ctaCopy(isPremium: false) == "Unlock with Pro")
+    }
+
+    @Test func brandVoiceRulesUpheld() {
+        // No exclamations, no "Let's", no emoji, no chirpy "great" /
+        // "awesome" copy. The coach voice contract — applies to every
+        // string the card emits.
+        let strings = [
+            TalkToNoumCTACard.headlineCopy(isPremium: true),
+            TalkToNoumCTACard.headlineCopy(isPremium: false),
+            TalkToNoumCTACard.subCopy(isPremium: true),
+            TalkToNoumCTACard.subCopy(isPremium: false),
+            TalkToNoumCTACard.ctaCopy(isPremium: true),
+            TalkToNoumCTACard.ctaCopy(isPremium: false),
+            TalkToNoumCTACard.accessibilityLabel(isPremium: true),
+            TalkToNoumCTACard.accessibilityLabel(isPremium: false)
+        ]
+        let banned = ["!", "Let's", "let's", "Let’s", "let’s", "awesome", "Awesome", "great!"]
+        for string in strings {
+            for token in banned {
+                #expect(!string.contains(token),
+                        "Brand-voice contract: '\(string)' must not contain '\(token)'")
+            }
+        }
+    }
+
+    @Test func accessibilityLabelCarriesLockSignalOnlyForFreeUsers() {
+        let proLabel = TalkToNoumCTACard.accessibilityLabel(isPremium: true)
+        let freeLabel = TalkToNoumCTACard.accessibilityLabel(isPremium: false)
+        #expect(!proLabel.lowercased().contains("locked"))
+        #expect(freeLabel.lowercased().contains("locked"))
+    }
+}

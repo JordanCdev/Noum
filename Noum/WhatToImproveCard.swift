@@ -48,13 +48,55 @@ struct WhatToImproveCard: View {
     }
 
     private var bullets: [Bullet] {
+        WhatToImproveCard.computeBullets(
+            coachNote: coachNote,
+            feedbackCategories: feedbackCategories,
+            aiFeedback: aiFeedback,
+            transcriptText: transcriptText,
+            effectiveFillerCount: effectiveFillerCount,
+            effectiveDuration: effectiveDuration,
+            transcriptWordCount: transcriptWordCount,
+            isMinimalEffort: isMinimalEffort,
+            customFillerWords: ClutchWordStore.shared.customFillerWords
+        )
+    }
+
+    /// Pure bullet selector. Extracted from the View body so the
+    /// design contract (leverage first, filler surfaces at ≥2, ≤ 2
+    /// dedup'd category needs-work entries, pace anomaly only with
+    /// headroom + band-out signal, AI improvement at tail, hard
+    /// 3-bullet ceiling) can be locked by unit tests without spinning
+    /// up SwiftUI. Custom filler words flow in as a parameter so the
+    /// suite doesn't have to mutate the `ClutchWordStore` singleton.
+    /// Tests in `WhatToImproveBulletSelectorTests` pin every branch.
+    static func computeBullets(
+        coachNote: CoachNote,
+        feedbackCategories: [FeedbackCategory],
+        aiFeedback: AICoachFeedback?,
+        transcriptText: String,
+        effectiveFillerCount: Int,
+        effectiveDuration: TimeInterval,
+        transcriptWordCount: Int,
+        isMinimalEffort: Bool,
+        customFillerWords: Set<String>
+    ) -> [Bullet] {
         guard !isMinimalEffort else { return [] }
+
+        let wpm: Int = {
+            guard effectiveDuration > 0 else { return 0 }
+            return Int((Double(transcriptWordCount) / effectiveDuration * 60).rounded())
+        }()
 
         var out: [Bullet] = []
 
         // 1) Leverage — the primary "what's holding you back" line.
         //    Already voice-shaped + sensitivity-aware via VerdictEngine.
         let leverage = coachNote.leverage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextStepEvidence: Evidence? = {
+            let next = coachNote.nextStep.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !next.isEmpty else { return nil }
+            return .nextStep(next)
+        }()
         if !leverage.isEmpty {
             out.append(
                 Bullet(
@@ -74,7 +116,7 @@ struct WhatToImproveCard: View {
         if effectiveFillerCount >= 2 {
             let breakdown = FillerWordDetector.breakdown(
                 in: transcriptText,
-                customWords: ClutchWordStore.shared.customFillerWords
+                customWords: customFillerWords
             )
             let topWords = Array(breakdown.topWords.prefix(3))
             let headline: String = {
@@ -169,15 +211,6 @@ struct WhatToImproveCard: View {
         }
 
         return Array(out.prefix(3))
-    }
-
-    /// The evidence row that hangs off the leverage bullet — surfaces
-    /// the verdict engine's `nextStep` so the user can act on it,
-    /// not just read it.
-    private var nextStepEvidence: Evidence? {
-        let next = coachNote.nextStep.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !next.isEmpty else { return nil }
-        return .nextStep(next)
     }
 
     var body: some View {
