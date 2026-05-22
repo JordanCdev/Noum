@@ -44,8 +44,10 @@ struct WhatYouDidWellCard: View {
     }
 
     /// Pure bullet selector. Extracted from the View body so the
-    /// design contract (momentum first, ≤ 2 category wins, ≤ 1
-    /// eloquence finding, AI strength only when there's headroom,
+    /// design contract (momentum first, first good category, eloquence
+    /// promoted above any second category because a detected rhetorical
+    /// move is concrete on-tape evidence while a second "felt solid"
+    /// is a restated impression, second good category, AI strength last,
     /// hard 3-bullet ceiling) can be locked by unit tests without
     /// spinning up a SwiftUI runtime. Tests in
     /// `WhatYouDidWellBulletSelectorTests` pin every branch.
@@ -80,28 +82,24 @@ struct WhatYouDidWellCard: View {
             )
         }
 
-        // 2) Per-dimension wins. Only `.good` ratings, because `.ok` is
-        //    actually a mild improvement signal — surfacing it as a win
-        //    would punish accuracy. Cap at two so we don't compete with
-        //    the momentum line.
-        let goodCategories = feedbackCategories.filter { $0.rating == .good }.prefix(2)
-        for category in goodCategories {
-            out.append(
-                Bullet(
-                    id: "category-\(category.dimension)",
-                    icon: "checkmark.circle.fill",
-                    iconTint: AppColor.positive,
-                    headline: "\(category.dimension) felt solid.",
-                    evidence: category.note.isEmpty
-                        ? nil
-                        : .text(category.note)
-                )
-            )
+        // Source data — only `.good` ratings count as wins, because
+        // `.ok` is actually a mild improvement signal and surfacing it
+        // as celebration would punish evaluator accuracy.
+        let goodCategories = Array(feedbackCategories.filter { $0.rating == .good }.prefix(2))
+
+        // 2) First per-dimension win. Always lands before eloquence so
+        //    the user sees the concrete dimension that worked before
+        //    the rhetorical device.
+        if let firstCategory = goodCategories.first {
+            out.append(bullet(forGoodCategory: firstCategory))
         }
 
-        // 3) Eloquence findings — rhetorical moves the engine caught.
-        //    Cap at one so the card stays under three bullets total
-        //    when the rep also has a momentum + category win.
+        // 3) Eloquence finding — promoted above a *second* good
+        //    category. A detected rhetorical move is verifiable on-tape
+        //    evidence (the engine caught an actual pattern in the
+        //    user's words); a second "felt solid" is the same kind of
+        //    impression already conveyed by the first one. Concrete
+        //    beats restated under the 3-cap.
         if let finding = eloquenceFindings.first {
             let snippet = finding.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
             out.append(
@@ -117,7 +115,15 @@ struct WhatYouDidWellCard: View {
             )
         }
 
-        // 4) AI strengths — only if we still have headroom (the bullets
+        // 4) Second per-dimension win — lower priority than the
+        //    eloquence finding above. Still useful when there's no
+        //    eloquence detected, so the second category gets a shot at
+        //    slot 3 in that path.
+        if goodCategories.count >= 2 {
+            out.append(bullet(forGoodCategory: goodCategories[1]))
+        }
+
+        // 5) AI strengths — only if we still have headroom (the bullets
         //    above didn't already saturate). Cap at 3 total bullets.
         if out.count < 3, let aiFeedback, let firstStrength = aiFeedback.strengths.first {
             let trimmed = firstStrength.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,6 +141,18 @@ struct WhatYouDidWellCard: View {
         }
 
         return Array(out.prefix(3))
+    }
+
+    private static func bullet(forGoodCategory category: FeedbackCategory) -> Bullet {
+        Bullet(
+            id: "category-\(category.dimension)",
+            icon: "checkmark.circle.fill",
+            iconTint: AppColor.positive,
+            headline: "\(category.dimension) felt solid.",
+            evidence: category.note.isEmpty
+                ? nil
+                : .text(category.note)
+        )
     }
 
     var body: some View {

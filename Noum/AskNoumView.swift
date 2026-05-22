@@ -617,6 +617,16 @@ struct AskNoumView: View {
     // MARK: - Input bar
 
     private var inputBar: some View {
+        VStack(spacing: 0) {
+            partialTranscriptPreview
+            inputBarRow
+        }
+        .background(.ultraThinMaterial)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: voiceInput.partialTranscript)
+    }
+
+    private var inputBarRow: some View {
         HStack(alignment: .bottom, spacing: Spacing.sm) {
             ZStack(alignment: .leading) {
                 if draft.isEmpty {
@@ -675,7 +685,54 @@ struct AskNoumView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(.ultraThinMaterial)
+    }
+
+    /// "I'm hearing…" preview above the input bar while voice capture
+    /// is active. Real-device confidence: without it, a long press on
+    /// a noisy environment looks like a dead mic — the user can't tell
+    /// whether the recognizer caught their first word. Surfaces the
+    /// live partial transcript from `AskNoumVoiceInput` so the user
+    /// sees their words appearing as they speak.
+    ///
+    /// Honest empty-state: while recording with no recognized text yet
+    /// we show a soft "Listening…" line, NOT a stale stuck preview.
+    /// The transcript replaces it as soon as the recognizer lands a
+    /// word. After release-to-send the preview hides — the final
+    /// transcript lands in the chat thread as a user turn (same path
+    /// as typed messages) and the preview's job is done.
+    ///
+    /// Visual register: small italic body text, brand-blue tint at
+    /// 75% opacity, brand-blue 10% backdrop. Same accent the mic
+    /// button uses so the user reads "this is the mic talking" not
+    /// "this is a new system message". Hidden via opacity + 0-height
+    /// frame collapse when idle so the input bar's resting layout
+    /// doesn't shift around when capture starts.
+    @ViewBuilder
+    private var partialTranscriptPreview: some View {
+        let isRecording = voiceInput.state == .recording
+        let trimmed = voiceInput.partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isRecording {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "waveform")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue.opacity(0.80))
+                    .padding(.top, 2)
+                    .symbolEffect(.variableColor.iterative, options: .repeating, isActive: !reduceMotion)
+                Text(trimmed.isEmpty ? "Listening\u{2026}" : trimmed)
+                    .font(Typography.body.italic())
+                    .foregroundStyle(AppColor.brandBlue.opacity(trimmed.isEmpty ? 0.55 : 0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(trimmed.isEmpty
+                                        ? "Listening for your voice"
+                                        : "Hearing: \(trimmed)")
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.brandBlue.opacity(0.08))
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
     }
 
     /// Placeholder in the text field flips slightly when voice is
