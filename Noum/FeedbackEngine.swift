@@ -447,7 +447,7 @@ enum VerdictEngine {
             let delta = sessionRate - baseline.fillerRate.value
             if delta < -0.5 {
                 additions.append(ConfidencePhrasing.frame(
-                    "filler rate dropped to \(String(format: "%.1f", sessionRate))/min — below your baseline of \(String(format: "%.1f", baseline.fillerRate.value))/min",
+                    "Filler rate dropped to \(String(format: "%.1f", sessionRate))/min — below your baseline of \(String(format: "%.1f", baseline.fillerRate.value))/min.",
                     confidence: confidence
                 ))
             }
