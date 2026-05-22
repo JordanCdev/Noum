@@ -1719,27 +1719,8 @@ struct TimedPracticeView: View {
     // MARK: - Celebration Overlay
 
     private var celebrationOverlay: some View {
-        ZStack {
-            // Burst of emoji particles
-            ForEach(0..<12, id: \.self) { i in
-                let angle = Double(i) * (360.0 / 12.0)
-                let radians = angle * .pi / 180
-                Text(["🎉", "✨", "🔥", "⭐️", "💪", "🏆"][i % 6])
-                    .font(.system(size: CGFloat.random(in: 20...32)))
-                    .offset(
-                        x: showCelebration ? cos(radians) * CGFloat.random(in: 100...160) : 0,
-                        y: showCelebration ? sin(radians) * CGFloat.random(in: 100...160) : 0
-                    )
-                    .opacity(showCelebration ? 0 : 1)
-                    .scaleEffect(showCelebration ? 0.3 : 1.0)
-                    .animation(
-                        .easeOut(duration: 1.4)
-                            .delay(Double(i) * 0.04),
-                        value: showCelebration
-                    )
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ConfettiLayer(active: showCelebration)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Haptics
