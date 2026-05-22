@@ -7479,3 +7479,283 @@ struct DevSeedCoachingProfileTests {
 }
 #endif
 
+// MARK: - CoachContextBuilder chip parser
+//
+// M17 deferred-test coverage. Locks the contract of
+// CoachContextBuilder.parseAndFilterChips and the brand-voice rules its
+// per-chip filter (passesChipFilter, private) enforces. The model returns
+// newline-separated text (NOT JSON), occasionally with list-marker prefixes,
+// numeric enumeration, or wrapping quotes — every transform survives a
+// regression hit here. passesChipFilter is exercised indirectly: any chip
+// the filter rejects gets dropped from the parser's output, so a single-line
+// input that fails to produce a count==1 batch proves the rejection branch.
+
+struct CoachContextBuilderChipParserTests {
+
+    // MARK: - parseAndFilterChips: happy path
+
+    @Test func returnsExactCountWhenAllLinesPass() {
+        let raw = """
+        How did that land?
+        What changed for you?
+        Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func truncatesToCountWhenMoreLinesSurvive() {
+        let raw = """
+        One step forward?
+        Two steps forward?
+        Three steps forward?
+        Four steps forward?
+        Five steps forward?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+        #expect(chips == ["One step forward?", "Two steps forward?", "Three steps forward?"])
+    }
+
+    @Test func trimsLeadingAndTrailingWhitespacePerLine() {
+        let raw = "   How did that land?   \n\t  What changed for you?  \t\n   Where next?   "
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsHyphenListMarkers() {
+        let raw = """
+        - How did that land?
+        - What changed for you?
+        - Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsAsteriskListMarkers() {
+        let raw = """
+        * How did that land?
+        * What changed for you?
+        * Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsBulletListMarkers() {
+        let raw = """
+        • How did that land?
+        • What changed for you?
+        • Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsRepeatedMixedListMarkers() {
+        // The while-loop strips successive list-marker chars (-, *, •) until
+        // a non-marker remains; verify that "- * • text" collapses to "text".
+        let raw = "-*• How did that land?"
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 1)
+        #expect(chips == ["How did that land?"])
+    }
+
+    @Test func stripsNumericEnumerationWithDot() {
+        let raw = """
+        1. How did that land?
+        2. What changed for you?
+        3. Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsNumericEnumerationWithParen() {
+        let raw = """
+        1) How did that land?
+        2) What changed for you?
+        3) Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsWrappingStraightQuotes() {
+        let raw = """
+        "How did that land?"
+        "What changed for you?"
+        "Where next?"
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func stripsWrappingSmartQuotes() {
+        // U+201C / U+201D — the parser handles both straight and curly pairs.
+        let raw = "\u{201C}How did that land?\u{201D}\n\u{201C}What changed for you?\u{201D}\n\u{201C}Where next?\u{201D}"
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    @Test func leavesMismatchedQuotesIntact() {
+        // Only the prefix-AND-suffix branch strips; a leading-only quote
+        // stays so we don't mangle quoted-phrase chips.
+        let raw = "\"Half a quote chip?"
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 1)
+        #expect(chips == ["\"Half a quote chip?"])
+    }
+
+    // MARK: - parseAndFilterChips: count-gating
+
+    @Test func returnsNilWhenFewerLinesThanRequested() {
+        // Two surviving chips can't satisfy count: 3.
+        let raw = """
+        How did that land?
+        What changed for you?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func returnsNilForEmptyInput() {
+        let chips = CoachContextBuilder.parseAndFilterChips("", count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func returnsNilForWhitespaceOnlyInput() {
+        let chips = CoachContextBuilder.parseAndFilterChips("   \n\t  \n   ", count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func returnsNilWhenAllChipsViolateBrandVoice() {
+        // Every line trips the exclamation ban — none survive the filter.
+        let raw = """
+        How did that land!
+        What changed for you!
+        Where next!
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+    }
+
+    @Test func mixesValidAndInvalidLinesAndCountsOnlyValid() {
+        // 3 valid + 2 invalid → still satisfies count: 3, picks the first 3
+        // survivors in source order.
+        let raw = """
+        How did that land?
+        Tell me more
+        What changed for you?
+        Let's keep going
+        Where next?
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == ["How did that land?", "What changed for you?", "Where next?"])
+    }
+
+    // MARK: - passesChipFilter (via parseAndFilterChips): brand-voice rejections
+
+    @Test func rejectsChipBelowMinLength() {
+        // 3 chars is below the 4-char floor — must drop.
+        let chips = CoachContextBuilder.parseAndFilterChips("Hey", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func acceptsChipAtMinLengthBoundary() {
+        // Exactly 4 chars — inside the inclusive 4...60 range.
+        let chips = CoachContextBuilder.parseAndFilterChips("Next", count: 1)
+        #expect(chips == ["Next"])
+    }
+
+    @Test func acceptsChipAtMaxLengthBoundary() {
+        // Exactly 60 chars — inside the inclusive 4...60 range.
+        let chip60 = String(repeating: "a", count: 60)
+        let chips = CoachContextBuilder.parseAndFilterChips(chip60, count: 1)
+        #expect(chips == [chip60])
+    }
+
+    @Test func rejectsChipAboveMaxLength() {
+        // 61 chars — outside the inclusive 4...60 range.
+        let chip61 = String(repeating: "a", count: 61)
+        let chips = CoachContextBuilder.parseAndFilterChips(chip61, count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithExclamation() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Big move ahead!", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithEmoji() {
+        // Sparkle emoji (U+2728) sits above the 0x238C scalar threshold and
+        // has isEmoji true, so it must be dropped.
+        let chips = CoachContextBuilder.parseAndFilterChips("Nice move \u{2728}", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipStartingWithLetsContraction() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Let's keep going?", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipStartingWithLetsNoApostrophe() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Lets keep going?", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithTellMeDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Tell me more about it", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithDescribeDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Describe the moment", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithExplainDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Explain the choice", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithDiscussDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Discuss the impact", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithElaborateDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Elaborate on it", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithShareDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Share more of it", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func rejectsChipWithTalkAboutDirective() {
+        let chips = CoachContextBuilder.parseAndFilterChips("Talk about it now", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func directiveCheckIsCaseInsensitive() {
+        // Lowercased before comparison — uppercase "TELL ME" must still drop.
+        let chips = CoachContextBuilder.parseAndFilterChips("TELL ME more", count: 1)
+        #expect(chips == nil)
+    }
+
+    @Test func directiveCheckOnlyAppliesAtChipStart() {
+        // "tell me" appears mid-chip, not as a prefix — the chip survives.
+        let chips = CoachContextBuilder.parseAndFilterChips("Would you tell me later?", count: 1)
+        #expect(chips == ["Would you tell me later?"])
+    }
+
+    @Test func acceptsLowAsciiSymbolsBelowEmojiThreshold() {
+        // The emoji guard ignores scalars <= 0x238C — the # symbol (U+0023)
+        // and ° (U+00B0) live below that cutoff and must pass.
+        let chips = CoachContextBuilder.parseAndFilterChips("Top #1 angle?", count: 1)
+        #expect(chips == ["Top #1 angle?"])
+    }
+}
+
+
