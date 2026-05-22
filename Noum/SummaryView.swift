@@ -517,7 +517,12 @@ struct SummaryView: View {
                             )
                             expandableDetailsSection
                         } else {
-                            // TIMED / OTHER MODES — score-first hierarchy
+                            // TIMED / OTHER MODES — score-first hierarchy.
+                            // The post-rep attention budget is small; only the
+                            // signals that fight for "what happened, what was
+                            // proven, what to do next" stay above the fold.
+                            // Everything analytical/secondary lives inside
+                            // `expandableDetailsSection` below.
                             HeroScoreCard(
                                 scoreValue: scoreValue,
                                 practiceTitle: practiceTitle,
@@ -545,29 +550,18 @@ struct SummaryView: View {
                                     // future analytics/animation cleanup.
                                 }
                             }
-                            CoachNoteCard(
-                                coachNote: coachNote,
-                                coachNoteRevealed: coachNoteRevealed
-                            )
+                            // AI debrief is the quote-anchored proof moment
+                            // (evidence chips lift the user's actual words).
+                            // Stays hero because it is the coach reading the
+                            // rep back in their own voice.
                             AISessionDebriefCard(
                                 session: sessionStore.sessions.first,
                                 recentSessions: Array(sessionStore.sessions.prefix(5))
                             )
-                            // Inline reflection prompt — replaces the old
-                            // full-screen sheet so the user isn't blocked
-                            // post-rep. Renders only when a prompt is
-                            // pending; auto-hides after submit/skip.
-                            DeferredCaptureInlineCard()
-                            EloquenceFindingsCard(findings: eloquenceFindings)
-                            if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
-                                PauseSummaryCard(metrics: pauseMetrics)
-                            }
-                            if let pitchMetrics = sessionStore.sessions.first?.pitchMetrics {
-                                PitchSummaryCard(metrics: pitchMetrics)
-                            }
-                            WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
-                            GrammarPolishCard(session: sessionStore.sessions.first)
-                            FillerBreakdownCard(transcriptText: transcriptText)
+                            CoachNoteCard(
+                                coachNote: coachNote,
+                                coachNoteRevealed: coachNoteRevealed
+                            )
                             YourNextMoveCard(
                                 drill: drillRecommendationV2,
                                 legacyDrill: drillRecommendation,
@@ -578,27 +572,6 @@ struct SummaryView: View {
                                     activeMiniDrill = drill
                                 },
                                 onStartDrill: onStartDrill
-                            )
-                            // Pro-gated rewrite card — preserves the user's
-                            // voice instead of producing AI-default coaching
-                            // text. Only renders when there's a clear
-                            // weakness category to act on AND the user is Pro.
-                            if let weakness = primaryWeakness, premium.isPremium {
-                                RewriteSuggestionCard(
-                                    transcript: transcriptText,
-                                    weakness: weakness
-                                )
-                            }
-                            BaselineComparisonCard(
-                                baseline: baselineStore.baseline,
-                                transcriptText: transcriptText,
-                                effectiveFillerCount: effectiveFillerCount,
-                                effectiveDuration: effectiveDuration,
-                                explicitMode: explicitMode,
-                                score: score,
-                                scoreValue: scoreValue,
-                                rating: ratingStore.rating,
-                                pressureLevel: recentSessions.first?.pressureLevel ?? .standard
                             )
                             expandableDetailsSection
                         }
@@ -750,9 +723,63 @@ struct SummaryView: View {
 
     private var expandableDetailsSection: some View {
         VStack(spacing: 12) {
-            // Session Details (collapsed by default)
+            // Session Details (collapsed by default).
+            //
+            // Holds the analytical pass: per-skill breakdowns (eloquence,
+            // pauses, pitch, word-choice, grammar, filler chips), baseline
+            // comparison, transcript, category grid, AI strong/weak
+            // moments, coach read (premium), video, and the deferred
+            // reflection prompt. None of these are wrong to see — they
+            // just shouldn't fight the coach's read, the score, and the
+            // next move for the user's first three seconds.
             DisclosureGroup(isExpanded: $showSecondaryDetails) {
                 VStack(spacing: 14) {
+                    // Inline reflection prompt — kept discoverable but
+                    // out of the hero block so it never interrupts the
+                    // coach's read. Self-hides when nothing is pending.
+                    if !isIMSummary {
+                        DeferredCaptureInlineCard()
+                    }
+
+                    // Speech-quality cards — each self-hides when there
+                    // isn't enough signal to read, so the disclosure
+                    // collapses to whatever the rep actually produced.
+                    if !isIMSummary {
+                        EloquenceFindingsCard(findings: eloquenceFindings)
+                        if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
+                            PauseSummaryCard(metrics: pauseMetrics)
+                        }
+                        if let pitchMetrics = sessionStore.sessions.first?.pitchMetrics {
+                            PitchSummaryCard(metrics: pitchMetrics)
+                        }
+                        WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
+                        GrammarPolishCard(session: sessionStore.sessions.first)
+                        FillerBreakdownCard(transcriptText: transcriptText)
+
+                        // Pro-gated rewrite card — preserves the user's
+                        // voice instead of producing AI-default coaching
+                        // text. Only renders when there's a clear
+                        // weakness category to act on AND the user is Pro.
+                        if let weakness = primaryWeakness, premium.isPremium {
+                            RewriteSuggestionCard(
+                                transcript: transcriptText,
+                                weakness: weakness
+                            )
+                        }
+
+                        BaselineComparisonCard(
+                            baseline: baselineStore.baseline,
+                            transcriptText: transcriptText,
+                            effectiveFillerCount: effectiveFillerCount,
+                            effectiveDuration: effectiveDuration,
+                            explicitMode: explicitMode,
+                            score: score,
+                            scoreValue: scoreValue,
+                            rating: ratingStore.rating,
+                            pressureLevel: recentSessions.first?.pressureLevel ?? .standard
+                        )
+                    }
+
                     // M14: transcript was nowhere on the summary — real-device
                     // feedback flagged "no where to see transcript". Lives
                     // here so it's discoverable without dominating the view.
