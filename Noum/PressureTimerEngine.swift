@@ -26,9 +26,9 @@ enum SuddenDeathDifficulty: String, Codable, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .easy:   return "Wider start window. Two fillers free per round."
+        case .easy:   return "Wider start window. More time per round."
         case .medium: return "Standard pressure. The default ramp."
-        case .hard:   return "Tight start window. Almost no filler tolerance."
+        case .hard:   return "Tight start window. Less time per round."
         }
     }
 
@@ -38,15 +38,6 @@ enum SuddenDeathDifficulty: String, Codable, CaseIterable, Identifiable {
         case .easy: return 1.4
         case .medium: return 1.0
         case .hard: return 0.7
-        }
-    }
-
-    /// Additive shift on `fillerTolerance` (clamped to ≥ 0).
-    var fillerToleranceShift: Int {
-        switch self {
-        case .easy: return 1
-        case .medium: return 0
-        case .hard: return -1
         }
     }
 
@@ -77,14 +68,15 @@ struct PressureRoundConfig: Equatable {
     let isFollowUp: Bool
 
     /// Builds config for a given round (1-indexed) at a given difficulty.
+    /// Filler tolerance is always 0 in Sudden Death — difficulty only controls
+    /// start window width and minimum word count.
     static func config(for round: Int, difficulty: SuddenDeathDifficulty = .medium) -> PressureRoundConfig {
         let base = baseConfig(for: round)
         let scaledWindow = max(2, base.startWindow * difficulty.startWindowFactor)
-        let scaledFillerTolerance = max(0, base.fillerTolerance + difficulty.fillerToleranceShift)
         return PressureRoundConfig(
             startWindow: scaledWindow,
             responseCap: base.responseCap,
-            fillerTolerance: scaledFillerTolerance,
+            fillerTolerance: 0,
             minimumWords: base.minimumWords,
             isFollowUp: base.isFollowUp
         )
@@ -176,7 +168,7 @@ extension RoundOutcome {
         switch self {
         case .survived: return "Survived"
         case .timeoutBeforeStart: return "Too Slow"
-        case .fillerOverload: return "Filler Spike"
+        case .fillerOverload: return "Filler — instant elimination"
         case .tooShort: return "Too Short"
         }
     }
@@ -354,6 +346,12 @@ final class PressureTimerEngine: ObservableObject {
     /// Whether the NPC is currently generating a follow-up.
     @Published private(set) var isGeneratingFollowUp: Bool = false
 
+    /// Set by `advanceToNextRound` when the round is ready to begin the user
+    /// waiting phase but the view should first finish any in-flight TTS readout.
+    /// The view observes this and calls `confirmBeginUserWaiting()` once TTS
+    /// has finished, which clears this and starts the actual start timer.
+    @Published private(set) var pendingUserWaitingRound: Int? = nil
+
     /// The transcript from the most recent user turn (for follow-up generation).
     @Published var lastUserTranscript: String = ""
 
@@ -422,6 +420,7 @@ final class PressureTimerEngine: ObservableObject {
         roundWordCounts = []
         roundMinimumWords = []
         promptHistory = []
+        pendingUserWaitingRound = nil
         print("[PressureEngine] Reset complete")
     }
 
@@ -488,16 +487,26 @@ final class PressureTimerEngine: ObservableObject {
                 // Round 4+ topic reset: pick a new random prompt
                 currentPromptText = PracticeTopics.random()
             }
-            // Display prompt, then advance
+            // Signal the view that this round is ready to begin the user waiting
+            // phase. The view will call confirmBeginUserWaiting() once TTS has
+            // finished reading the prompt so the card stays expanded mid-readout.
             Task {
                 let displayTime: TimeInterval = nextRound == 1 ? 2.5 : 2.0
                 try? await Task.sleep(for: .seconds(displayTime))
-                beginUserWaiting(round: nextRound)
+                pendingUserWaitingRound = nextRound
             }
         } else {
             // Follow-up: call Gemini or fallback
             generateFollowUp(round: nextRound)
         }
+    }
+
+    /// Called by the view once TTS has finished for the current NPC turn.
+    /// Clears `pendingUserWaitingRound` and starts the actual start-window timer.
+    func confirmBeginUserWaiting() {
+        guard let round = pendingUserWaitingRound else { return }
+        pendingUserWaitingRound = nil
+        beginUserWaiting(round: round)
     }
 
     private func generateFollowUp(round: Int) {
@@ -525,9 +534,10 @@ final class PressureTimerEngine: ObservableObject {
                 print("[PressureEngine] Follow-up generated for round \(round): \(followUp.prefix(50))...")
             }
 
-            // Brief display then start user turn
+            // Brief display, then signal the view to start the user waiting
+            // phase once TTS finishes the follow-up readout.
             try? await Task.sleep(for: .seconds(1.8))
-            beginUserWaiting(round: round)
+            pendingUserWaitingRound = round
         }
     }
 

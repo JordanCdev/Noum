@@ -54,6 +54,7 @@ struct SuddenDeathPracticeView: View {
     @State private var roundTranscript = ""
     @State private var hasDetectedSpeechThisRound = false
     @State private var evaluation: PracticeEvaluation?
+    @State private var wordThresholdHapticFired = false
 
     // MARK: - TTS (prompt readout)
     //
@@ -189,7 +190,18 @@ struct SuddenDeathPracticeView: View {
 
             // Update word count
             let words = trimmed.split { !$0.isLetter && !$0.isNumber }.count
+            let previousWords = engine.currentWordCount
             engine.currentWordCount = words
+
+            // Fire a single light haptic the moment the word count crosses
+            // the minimum threshold — confirms the safety net is cleared
+            // without interrupting the rep.
+            if !wordThresholdHapticFired,
+               words >= engine.roundConfig.minimumWords,
+               previousWords < engine.roundConfig.minimumWords {
+                wordThresholdHapticFired = true
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
         }
         .onChange(of: speechVM.pressureDrillFillerCount) { _, count in
             guard engine.isUserTurn else { return }
@@ -208,6 +220,15 @@ struct SuddenDeathPracticeView: View {
         }
         .onChange(of: engine.phase) { _, newPhase in
             handlePhaseChange(newPhase)
+        }
+        .onChange(of: engine.pendingUserWaitingRound) { _, pending in
+            guard pending != nil else { return }
+            // If TTS is still speaking, confirmBeginUserWaiting() will be called
+            // from the ttsDelegate.onFinish callback instead. If TTS has already
+            // finished (or was never started), unblock immediately.
+            if !isSpeakingPrompt {
+                engine.confirmBeginUserWaiting()
+            }
         }
         .onChange(of: engine.currentPromptText) { _, newText in
             // Follow-up prompts land asynchronously after the engine
@@ -515,8 +536,10 @@ struct SuddenDeathPracticeView: View {
 
             // Turn cards
             VStack(spacing: 12) {
-                // NPC / Prompt card
-                npcCard(round: round, expanded: !isUserTurn && roundOutcome == nil)
+                // NPC / Prompt card — stays expanded while TTS is reading aloud
+                // even if the phase has already moved to userTurnWaiting, so the
+                // user can read/hear the full prompt before the start timer opens.
+                npcCard(round: round, expanded: (!isUserTurn || isSpeakingPrompt) && roundOutcome == nil)
 
                 // User response card
                 userCard(round: round, expanded: isUserTurn)
@@ -826,6 +849,14 @@ struct SuddenDeathPracticeView: View {
                     .padding(.vertical, 4)
                 }
                 .frame(maxHeight: .infinity)
+
+                // Live word counter — only during active speaking, not waiting.
+                // Color shifts from secondary to primary as the user approaches
+                // the minimum threshold. A light haptic fires on the exact frame
+                // the threshold is crossed (see onChange(transcribedText)).
+                if case .userTurnActive = engine.phase {
+                    wordCounter
+                }
             } else {
                 if !roundTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(roundTranscript)
@@ -852,6 +883,28 @@ struct SuddenDeathPracticeView: View {
         .scaleEffect(expanded ? 1.0 : 0.92, anchor: .bottom)
         .opacity(expanded ? 1.0 : 0.5)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: expanded)
+    }
+
+    // MARK: Word Counter (live, during userTurnActive)
+
+    private var wordCounter: some View {
+        let words = engine.currentWordCount
+        let minimum = engine.roundConfig.minimumWords
+        let met = words >= minimum
+        let approaching = words >= max(0, minimum - 3)
+        let foreground: Color = met ? .primary : (approaching ? accentColor : .secondary)
+
+        return HStack(spacing: 4) {
+            Image(systemName: met ? "checkmark.circle" : "text.alignleft")
+                .font(.caption2.weight(.semibold))
+            Text("\(words)/\(minimum) words")
+                .font(.system(.caption, design: .rounded).weight(.medium).monospacedDigit())
+        }
+        .foregroundStyle(foreground)
+        .animation(.easeInOut(duration: 0.2), value: met)
+        .animation(.easeInOut(duration: 0.2), value: approaching)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityLabel("\(words) of \(minimum) words spoken")
     }
 
     // MARK: Round Outcome Card
@@ -993,6 +1046,7 @@ struct SuddenDeathPracticeView: View {
             roundTranscript = ""
             hasDetectedSpeechThisRound = false
             lastSpokenPromptText = ""
+            wordThresholdHapticFired = false
 
             // Animate typing dots
             startTypingAnimation()
@@ -1152,12 +1206,15 @@ struct SuddenDeathPracticeView: View {
             Task { @MainActor in
                 isSpeakingPrompt = false
                 deactivateTTSAudioSession()
+                // Unblock the user-waiting phase if the engine was holding for TTS.
+                engine.confirmBeginUserWaiting()
             }
         }
         ttsDelegate.onCancel = {
             Task { @MainActor in
                 isSpeakingPrompt = false
                 deactivateTTSAudioSession()
+                engine.confirmBeginUserWaiting()
             }
         }
     }
@@ -1223,7 +1280,10 @@ struct SuddenDeathPracticeView: View {
             // users without network still get spoken prompts.
             let didPlayCloud = await speaker.speakPrompt(prompt)
             if didPlayCloud {
-                await MainActor.run { isSpeakingPrompt = false }
+                await MainActor.run {
+                    isSpeakingPrompt = false
+                    engine.confirmBeginUserWaiting()
+                }
                 return
             }
             await MainActor.run {

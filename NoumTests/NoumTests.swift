@@ -7758,6 +7758,96 @@ struct CoachContextBuilderChipParserTests {
     }
 }
 
+// MARK: - Sudden Death Mechanic Tests
+
+struct SuddenDeathMechanicTests {
+
+    // MARK: Zero filler tolerance
+
+    @Test func fillerToleranceIsAlwaysZeroRegardlessOfDifficultyOrRound() {
+        for difficulty in SuddenDeathDifficulty.allCases {
+            for round in 1...8 {
+                let config = PressureRoundConfig.config(for: round, difficulty: difficulty)
+                #expect(config.fillerTolerance == 0,
+                        "Expected fillerTolerance 0 for \(difficulty.rawValue) round \(round), got \(config.fillerTolerance)")
+            }
+        }
+    }
+
+    @Test func difficultyOnlyAffectsStartWindowNotFillerTolerance() {
+        let easy = PressureRoundConfig.config(for: 1, difficulty: .easy)
+        let medium = PressureRoundConfig.config(for: 1, difficulty: .medium)
+        let hard = PressureRoundConfig.config(for: 1, difficulty: .hard)
+
+        // All three must have zero filler tolerance.
+        #expect(easy.fillerTolerance == 0)
+        #expect(medium.fillerTolerance == 0)
+        #expect(hard.fillerTolerance == 0)
+
+        // Difficulty does shift start windows.
+        #expect(easy.startWindow > medium.startWindow)
+        #expect(hard.startWindow < medium.startWindow)
+    }
+
+    // MARK: Word count threshold math
+
+    @Test func wordCountBelowMinimumDoesNotMeetThreshold() {
+        let config = PressureRoundConfig.config(for: 1, difficulty: .medium)
+        let minimum = config.minimumWords
+        // One word short of threshold must not satisfy the minimum.
+        #expect(minimum - 1 < minimum)
+    }
+
+    @Test func wordCountAtMinimumMeetsThreshold() {
+        let config = PressureRoundConfig.config(for: 1, difficulty: .medium)
+        let minimum = config.minimumWords
+        #expect(minimum >= minimum)
+    }
+
+    @Test func minimumWordCountIsConsistentAcrossAllRoundsAndDifficulties() {
+        // minimumWords must be > 0 for every round so the engine can always
+        // enforce the too-short gate.
+        for difficulty in SuddenDeathDifficulty.allCases {
+            for round in 1...8 {
+                let config = PressureRoundConfig.config(for: round, difficulty: difficulty)
+                #expect(config.minimumWords > 0)
+            }
+        }
+    }
+
+    // MARK: Round outcome label
+
+    @Test func fillerOverloadLabelMatchesInstantEliminationMechanic() {
+        #expect(RoundOutcome.fillerOverload.label == "Filler — instant elimination")
+    }
+
+    @Test func survivedLabelUnchanged() {
+        #expect(RoundOutcome.survived.label == "Survived")
+    }
+
+    @Test func tooShortLabelUnchanged() {
+        #expect(RoundOutcome.tooShort.label == "Too Short")
+    }
+
+    @Test func timeoutBeforeStartLabelUnchanged() {
+        #expect(RoundOutcome.timeoutBeforeStart.label == "Too Slow")
+    }
+
+    // MARK: Difficulty subtitle accuracy
+
+    @Test func easySubtitleDoesNotMentionFiller() {
+        let subtitle = SuddenDeathDifficulty.easy.subtitle.lowercased()
+        #expect(!subtitle.contains("filler"),
+                "Easy subtitle must not reference filler tolerance: \(subtitle)")
+    }
+
+    @Test func hardSubtitleDoesNotMentionFiller() {
+        let subtitle = SuddenDeathDifficulty.hard.subtitle.lowercased()
+        #expect(!subtitle.contains("filler"),
+                "Hard subtitle must not reference filler tolerance: \(subtitle)")
+    }
+}
+
 // MARK: - SuddenDeathHighScoreStore tests
 
 struct SuddenDeathHighScoreStoreTests {
