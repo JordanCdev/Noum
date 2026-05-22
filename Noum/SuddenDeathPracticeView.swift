@@ -2,8 +2,34 @@ import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
+#if canImport(AVFAudio)
+import AVFAudio
+#endif
 
 #if canImport(SwiftUI)
+
+// MARK: - TTS Delegate (mirrors TimedPracticeView's TTSDelegate)
+
+#if canImport(AVFAudio)
+/// Lightweight delegate that surfaces TTS finish/cancel callbacks back to
+/// the SwiftUI view so the speaker glyph can drop its "active" state.
+/// Kept private to this file — the surface area is identical to
+/// `TimedPracticeView`'s delegate but the two live in unrelated views so
+/// duplicating the few lines is cleaner than introducing a shared base
+/// class for a 20-line helper.
+private final class SuddenDeathTTSDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    var onFinish: (() -> Void)?
+    var onCancel: (() -> Void)?
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        onFinish?()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        onCancel?()
+    }
+}
+#endif
 
 // MARK: - Sudden Death Practice View
 
@@ -28,6 +54,51 @@ struct SuddenDeathPracticeView: View {
     @State private var roundTranscript = ""
     @State private var hasDetectedSpeechThisRound = false
     @State private var evaluation: PracticeEvaluation?
+
+    // MARK: - TTS (prompt readout)
+    //
+    // Mirrors `TimedPracticeView`'s TTS setup so the voice the user already
+    // hears in Timed practice is the same voice that reads Pressure-drill
+    // prompts. The cloud path goes through `IMMessageSpeaker.speakPrompt`
+    // (Google → OpenAI fallback) and falls through to an on-device
+    // `AVSpeechSynthesizer` when both providers are unavailable so offline
+    // users still get spoken prompts.
+    //
+    // Why auto-speak on the NPC turn instead of tap-to-hear (Timed's
+    // pattern): Sudden Death's pressure loop gives the user only a few
+    // seconds between prompt appearance and the start window opening.
+    // Tap-to-hear adds friction that conflicts with the mode's intent;
+    // a conversational NPC that speaks its prompt matches the
+    // user-flagged expectation ("read it aloud like Timed mode does")
+    // and parallels IMPracticeView's auto-speak on NPC turns.
+    #if canImport(AVFAudio)
+    private let ttsEngine = AVSpeechSynthesizer()
+    private let ttsDelegate = SuddenDeathTTSDelegate()
+    /// Best available English voice — prefer premium / enhanced quality
+    /// for warmth. Selection logic matches `TimedPracticeView`.
+    private let prewarmedVoice: AVSpeechSynthesisVoice? = {
+        let allVoices = AVSpeechSynthesisVoice.speechVoices()
+        let enVoices = allVoices.filter { $0.language.hasPrefix("en") }
+        if let premium = enVoices.first(where: { $0.quality == .premium }) {
+            return premium
+        }
+        if let enhanced = enVoices.first(where: { $0.quality == .enhanced }) {
+            return enhanced
+        }
+        return AVSpeechSynthesisVoice(language: "en-US")
+    }()
+    #endif
+    @State private var isSpeakingPrompt = false
+    @State private var ttsReady = false
+    /// The prompt text already spoken aloud in this round, so a
+    /// re-render of `npcCard` (transcript / filler updates) doesn't
+    /// re-trigger the readout mid-utterance.
+    @State private var lastSpokenPromptText: String = ""
+
+    /// User-configurable gate that already powers IM auto-speak. We
+    /// honour the same setting in Pressure mode so users who have
+    /// muted NPC voices everywhere stay muted here too.
+    @StateObject private var voicePlaybackSettings = IMVoicePlaybackSettingsManager.shared
 
     // Personal best stored in UserDefaults
     private static let personalBestKey = "pressureMode.personalBestRounds"
@@ -56,21 +127,14 @@ struct SuddenDeathPracticeView: View {
             content
                 .animation(.snappySpring, value: phaseGroup)
         }
-        .overlay(alignment: .top) {
-            // Real-time positive feedback — pulses when the engine catches
-            // a rhetorical move during a pressure round. styleGoal makes the
-            // chip subtext goal-aware (e.g. "toward your authoritative
-            // voice" when rule-of-three lands for an authoritative user).
-            // Hidden outside live phases so the setup/result screens stay
-            // calm.
-            if phaseGroup == .live {
-                LiveEloquenceHUD(
-                    speechVM: speechVM,
-                    styleGoal: coachingProfileStore.profile?.speakingStyleGoal
-                )
-                .padding(.top, 4)
-            }
-        }
+        // Note: `LiveEloquenceHUD` is intentionally NOT mounted here.
+        // The chip surface fires the moment a rhetorical move lands
+        // ("Rule of Three", "Anaphora", etc.) which broke rep
+        // concentration mid-flow in user testing — pressure mode is
+        // about staying in the response, not reading a notice about
+        // it. Rhetorical findings still surface in the post-session
+        // `EloquenceFindingsCard` driven by the same engine output, so
+        // the user gets credit without the intra-round interruption.
         .accessibilityIdentifier("suddenDeath.screen")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -145,6 +209,18 @@ struct SuddenDeathPracticeView: View {
         .onChange(of: engine.phase) { _, newPhase in
             handlePhaseChange(newPhase)
         }
+        .onChange(of: engine.currentPromptText) { _, newText in
+            // Follow-up prompts land asynchronously after the engine
+            // enters `.npcTurn`. When the text resolves, kick off the
+            // readout — `speakCurrentPromptIfReady` no-ops if the same
+            // prompt is already speaking so we don't double-trigger
+            // for round 1 (where `npcTurn` and the text both land at
+            // once).
+            guard !newText.isEmpty else { return }
+            if case .npcTurn = engine.phase {
+                speakCurrentPromptIfReady()
+            }
+        }
         .onDisappear {
             // Belt-and-braces: if the user taps back during a live
             // session, kill the activity instead of leaving it dangling
@@ -152,6 +228,9 @@ struct SuddenDeathPracticeView: View {
             // idempotent.
             liveActivityCoordinator?.end()
             liveActivityCoordinator = nil
+            // Same guard for TTS — never leave the synthesizer
+            // speaking after the screen is gone.
+            stopPromptReadout()
         }
     }
 
@@ -554,6 +633,14 @@ struct SuddenDeathPracticeView: View {
 
                 Spacer()
 
+                // Speaker glyph — visible whenever the prompt is the
+                // focal card. Tap = replay readout (cancel if already
+                // speaking). Matches the affordance Timed users see
+                // and reuses the same TTS path.
+                if expanded && !engine.isGeneratingFollowUp {
+                    speakerReplayButton
+                }
+
                 if expanded {
                     startTimerBadge
                 }
@@ -580,6 +667,17 @@ struct SuddenDeathPracticeView: View {
                     .lineLimit(expanded ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // Threshold hint — only shown on the expanded prompt card and
+            // only when we know what bar applies to the response (i.e.
+            // a real round, not the typing indicator). Tells the user
+            // exactly how many words they need to clear "Too short" so
+            // a short answer never feels like an unexplained failure.
+            // Reduce-motion users get the same content with no fade
+            // animation (handled by SwiftUI's environment).
+            if expanded && !engine.isGeneratingFollowUp {
+                thresholdHint
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(expanded ? Spacing.lg : Spacing.md)
@@ -594,6 +692,56 @@ struct SuddenDeathPracticeView: View {
         .scaleEffect(expanded ? 1.0 : 0.92, anchor: .top)
         .opacity(expanded ? 1.0 : 0.5)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: expanded)
+    }
+
+    /// Small unobtrusive capsule that surfaces this round's minimum-word
+    /// threshold. Sentence-case, no exclamation, neutral tint so it reads
+    /// as guidance, not pressure.
+    private var thresholdHint: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.alignleft")
+                .font(.caption2.weight(.semibold))
+            Text("Aim for \(engine.roundConfig.minimumWords)+ words")
+                .font(.caption.weight(.medium))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(Color.secondary.opacity(0.08))
+        )
+        .accessibilityLabel("Aim for at least \(engine.roundConfig.minimumWords) words to avoid a too short failure.")
+    }
+
+    /// Replay button for the prompt-read-aloud. Mirrors Timed's
+    /// "Tap to hear" affordance — same glyph, same `.variableColor`
+    /// pulse while speaking. Hidden when AVFAudio isn't available
+    /// (covers preview / non-iOS targets).
+    @ViewBuilder
+    private var speakerReplayButton: some View {
+        #if canImport(AVFAudio)
+        Button {
+            speakCurrentPrompt(force: true)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isSpeakingPrompt ? "speaker.wave.2.fill" : "speaker.wave.2")
+                    .font(.caption2.weight(.semibold))
+                    .symbolEffect(.variableColor.iterative, isActive: isSpeakingPrompt)
+            }
+            .foregroundStyle(accentColor.opacity(0.7))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(accentColor.opacity(0.10))
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(isSpeakingPrompt ? "Stop reading prompt" : "Read prompt aloud")
+        #else
+        EmptyView()
+        #endif
     }
 
     @State private var typingDotPhase: Int = 0
@@ -960,14 +1108,29 @@ struct SuddenDeathPracticeView: View {
             speechVM.resetCurrentSession()
             roundTranscript = ""
             hasDetectedSpeechThisRound = false
+            lastSpokenPromptText = ""
 
             // Animate typing dots
             startTypingAnimation()
+
+            // Auto-read the prompt the moment the NPC turn lands.
+            // Fires only when (a) the engine isn't still generating a
+            // follow-up — we'd be reading "" — and (b) the user
+            // hasn't muted IM voice playback. The actual readout is
+            // also dispatched again from onChange(currentPromptText)
+            // because follow-ups arrive asynchronously after this
+            // phase change.
+            speakCurrentPromptIfReady()
 
         case .userTurnWaiting:
             // Start recording for this round; cut soundscape if it's
             // still running so it doesn't compete with the user's voice.
             SoundscapeEngine.shared.stop()
+            // Kill any in-flight TTS so the mic isn't competing with
+            // the synthesizer when the start window opens. The
+            // synthesizer's `.duckOthers` audio session would dip the
+            // mic input otherwise.
+            stopPromptReadout()
             speechVM.prepareSession(mode: .suddenDeath)
             speechVM.pressureDrillPrompt = engine.currentPromptText
             speechVM.startRecording()
@@ -975,6 +1138,7 @@ struct SuddenDeathPracticeView: View {
         case .sessionComplete(let result):
             speechVM.stopRecording()
             SoundscapeEngine.shared.stop()
+            stopPromptReadout()
             finalizeSession(result: result)
 
         default:

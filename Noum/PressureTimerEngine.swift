@@ -212,6 +212,19 @@ struct PressureSessionResult: Equatable {
     let personalBest: Int  // previous best rounds survived
     var difficulty: SuddenDeathDifficulty = .medium
 
+    /// Word count recorded for each round in `roundOutcomes` (same order /
+    /// same length). Populated only for rounds where the user actually
+    /// got past the start window; rounds that timed out before speaking
+    /// record 0. Used by the result screen to surface the exact word
+    /// count behind a "Too short" failure instead of leaving the user
+    /// guessing what the threshold was.
+    var wordCountsByRound: [Int] = []
+
+    /// Per-round `minimumWords` threshold (matches `roundOutcomes` index).
+    /// Lets the round list show "5 words / needed 10" without needing the
+    /// view to reconstruct round configs.
+    var minimumWordsByRound: [Int] = []
+
     /// Behavior-mapped result label.
     var resultLabel: String {
         if roundsSurvived >= 6 && totalFillers == 0 {
@@ -361,6 +374,12 @@ final class PressureTimerEngine: ObservableObject {
     private var bestRoundWords: Int = 0
     private var totalDuration: TimeInterval = 0
 
+    // Per-round word counts + thresholds so the result screen can show
+    // the user the actual words they spoke vs. the bar they missed,
+    // instead of leaving "Too Short" as an unexplained verdict.
+    private var roundWordCounts: [Int] = []
+    private var roundMinimumWords: [Int] = []
+
     // Prompt history for context
     private var promptHistory: [(prompt: String, response: String)] = []
 
@@ -400,6 +419,8 @@ final class PressureTimerEngine: ObservableObject {
         totalWords = 0
         bestRoundWords = 0
         totalDuration = 0
+        roundWordCounts = []
+        roundMinimumWords = []
         promptHistory = []
         print("[PressureEngine] Reset complete")
     }
@@ -620,6 +641,13 @@ final class PressureTimerEngine: ObservableObject {
         responseLimitTask?.cancel()
         roundOutcomes.append(outcome)
 
+        // Record this round's word count + threshold for the result-screen
+        // breakdown. `currentWordCount` is 0 for start-timeout rounds
+        // (user never spoke), and reflects spoken-so-far for fillerOverload
+        // / tooShort.
+        roundWordCounts.append(currentWordCount)
+        roundMinimumWords.append(roundConfig.minimumWords)
+
         if outcome != .survived {
             totalDuration += Date().timeIntervalSince(roundStartDate ?? Date())
         }
@@ -664,7 +692,9 @@ final class PressureTimerEngine: ObservableObject {
             totalWords: totalWords,
             bestRoundWords: bestRoundWords,
             personalBest: previousBestRounds,
-            difficulty: difficulty
+            difficulty: difficulty,
+            wordCountsByRound: roundWordCounts,
+            minimumWordsByRound: roundMinimumWords
         )
     }
 
