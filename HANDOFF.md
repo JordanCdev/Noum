@@ -1,381 +1,347 @@
-# HANDOFF — Quote → source session + seeded coaching profile
+# HANDOFF — M17 redesign verification + bullet selector test contract
 
 ## Scope
 
-This push closes two of the three open follow-ons left by the previous
-HANDOFF (Growth Library):
+The M17 summary redesign (`77c3524`) landed without a final
+verification block — the agent that wrote the four new files
+(`PreSummaryCelebration`, `WhatYouDidWellCard`, `WhatToImproveCard`,
+`TalkToNoumCTACard`) and restructured `SummaryView.swift` finished
+its work but went quiet before reporting compile / test status.
+Lead committed the staged work as-is.
 
-1. **Future-move follow-on** — quote cards in the Growth Library now
-   navigate to the session that produced them. The library moves from
-   read-only evidence display ("here's a thing you said") to a learning
-   loop ("here's a thing you said — go re-read the full session"). Tap a
-   card → land on the same `SessionHistoryDetailView` the History tab
-   uses, with the full transcript, AI coach read, IM conversation card,
-   and metric breakdown available.
-2. **M16 explicit TODO** — `DevSeedData.injectProfile(_:)` now seeds
-   `CoachingProfileStore` alongside sessions / baseline / rating / XP.
-   The TODO sat in `NoumUITests.swift:23` and called out that the
-   `home.path` gated card couldn't be tap-tested on a freshly-seeded
-   simulator because the M15 Phase 4 HomeSignalGate needed a
-   `CoachingProfile`. Now it does. The UI test reverts from the
-   `noum://path` deep-link fallback back to the tap-the-card pattern,
-   with a defensive deep-link fallback if the card somehow isn't
-   visible on a slow simulator boot.
+This push closes that verification gap by **locking the design
+contract in code** rather than re-running the agent's analysis:
 
-Files in this push:
-
-- `Noum/PracticeSupport.swift` (+~25 LOC) — new
-  `AppDestination.sessionDetail(sessionID: UUID)` case, new
-  `CoachingProfileStore.replaceForDebug(_:)` (DEBUG-only, mirrors
-  `replaceFromRemote` but skips the backend-sync + AI-paraphrase side
-  effects production `save(_:)` triggers).
-- `Noum/SessionHistoryView.swift` (~3 LOC) —
-  `SessionHistoryDetailView` is now `internal` (was `private`) so the
-  ContentView destination switch can render it. View body is
-  unchanged.
-- `Noum/ContentView.swift` (+~20 LOC) — destination switch case for
-  `.sessionDetail(sessionID:)` resolves the session against the live
-  `PracticeSessionStore`. Falls back to `SessionHistoryView` when the
-  session has been deleted since the artifact was recorded — graceful,
-  no crash, no empty card.
-- `Noum/GrowthLibraryView.swift` (~+5 / -3 LOC) — each quote card is
-  now a `NavigationLink(value: .sessionDetail(sessionID:))` styled
-  `.buttonStyle(.pressable)`. Adds `growthLibrary.card.<sessionID>`
-  accessibility identifier + hint "Opens the session this moment came
-  from."
-- `Noum/DevSeedData.swift` (+~90 LOC) — `injectProfile` now also
-  seeds `CoachingProfileStore` via a new internal helper
-  `seedCoachingProfile(for:)`. Each `SeedProfile` carries a
-  narrative-coherent voice + priority + challenge + coaching brief +
-  motivation + success vision (improvingIntermediate → warm + moreConcise,
-  plateauedAdvanced → authoritative + presentations, pressureVulnerable
-  → executive + calmerDelivery, fillerFree → concise + persuasive,
-  beginner → warm + reduceFillers + rebuilding confidence).
-- `NoumUITests/NoumUITests.swift` (~+10 / -8 LOC) —
-  `testHomeScreenAndPrimaryNavigation` switched back to tap-the-card
-  pattern for the journey card, with the deep-link fallback retained
-  as defense against slow-simulator flakes.
-- `NoumTests/NoumTests.swift` (+~85 LOC) — eleven new tests across
-  two suites:
-  - `AppDestinationSessionDetailTests` (4 tests) — equality by session
-    ID, distinctness across different IDs, distinctness from other
-    destinations, Hashable round-trip.
-  - `DevSeedCoachingProfileTests` (7 tests, DEBUG-only) — per-seed
-    voice mapping locked (improvingIntermediate / plateauedAdvanced
-    / pressureVulnerable / fillerFree / beginner), every-seed
-    completeness contract (no empty coachingBrief / motivationWhyNow
-    / successVision), voice-distinctness contract (≥4 distinct
-    voices across 5 seeds for visual breadth).
-- `docs/CURRENT_STATE.md` (header breadcrumbs + new bullets).
-- `HANDOFF.md` (this file, rewritten).
+1. **Refactor bullet selection into pure static functions.** The
+   `bullets` computed property on `WhatYouDidWellCard` and
+   `WhatToImproveCard` now delegates to a static
+   `computeBullets(...)` accessor that takes every input as a
+   parameter — no SwiftUI runtime needed to exercise the logic.
+   `WhatToImproveCard`'s only external dependency
+   (`ClutchWordStore.shared.customFillerWords`) flows in as a
+   `customFillerWords: Set<String>` parameter so the suite doesn't
+   have to mutate a live singleton.
+2. **Expose `TalkToNoumCTACard` copy via static accessors.** The
+   previously-`private` `headlineCopy` / `subCopy` / `ctaCopy` /
+   `accessibilityLabel` computed properties now back onto static
+   `headlineCopy(isPremium:)` etc. so the brand-voice contract is
+   reachable from tests without standing up the View.
+3. **Add 25 new tests across three suites** that pin every branch of
+   the bullet selectors plus the CTA card copy contract.
 
 ## What changed
 
-### Move 1 — `AppDestination.sessionDetail(sessionID:)`
+### Move 1 — `WhatYouDidWellCard.computeBullets(...)`
 
-The Growth Library shows a verbatim quote from a past session, a
-technique label, a coach claim. Previously the card was read-only —
-the user could see the evidence but couldn't get back to the source
-material. This destination + the corresponding `NavigationLink`
-wrapper turns the quote card into a learning launch point: tap →
-land on the full session detail (`SessionHistoryDetailView`) →
-re-read the transcript in context.
+New static func that takes `coachNote`, `feedbackCategories`,
+`eloquenceFindings`, `aiFeedback`, `isMinimalEffort` and returns
+`[Bullet]`. The View's `bullets` computed property is now a one-liner
+that delegates. Behavior is **identical** — the function body is the
+same lines that used to live inside `bullets`. No new logic, no
+behavior change, just visibility.
 
-The destination is keyed by `UUID` (the `ProofMomentRecord.sessionID`,
-which is also `PracticeSession.id` — same identity). `NavigationLink`
-uses value-typed routing, so the navigation stack stays untyped /
-`NavigationPath`-friendly the same way every other AppDestination
-case does.
+Why pure: a unit test that needs to construct a SwiftUI View, render
+it, and read back `bullets` is fragile and slow. A pure static func
+is locked by a `#expect(...)` on its return value.
 
-`SessionHistoryDetailView` was already a complete, polished detail
-surface — heroCard + focusCard + transcript card + AI coach read +
-IM conversation card (when applicable) + insights card. Reusing it
-saves a parallel detail view and keeps the chrome consistent
-whether the user lands from History or Growth Library.
+### Move 2 — `WhatToImproveCard.computeBullets(...)`
 
-Graceful fallback in `ContentView`: if the session has been deleted
-since the proof was banked (e.g. user cleared history but the
-ProofMomentArchive still has the record because the archive is
-per-session-ID rather than per-PracticeSession), the destination
-renders `SessionHistoryView` instead of the detail view. No crash,
-no empty-state lie.
+Same pattern, with one tweak: the original `bullets` computed
+property read `ClutchWordStore.shared.customFillerWords` directly.
+The static accessor takes that set as a `customFillerWords:`
+parameter so tests can pass `[]` and avoid touching the singleton.
+The View's `bullets` property hands in
+`ClutchWordStore.shared.customFillerWords` so production behavior is
+unchanged.
 
-### Move 2 — `CoachingProfileStore.replaceForDebug(_:)`
+Also threaded the `nextStepEvidence` and `wpm` helpers inside the
+static func as local lets — they were instance computed properties
+that depended on `self.coachNote` and `self.transcriptWordCount` /
+`self.effectiveDuration`, both of which are now parameters.
 
-New DEBUG-only injector mirroring the pattern of
-`PracticeSessionStore.replaceAllForDebug`,
-`RatingStore.replaceForDebug`, and `ProfileManager.replaceFromRemote`.
-Writes the profile to UserDefaults against the current account ID
-(falling back to `"guest"` when no account is set, matching the
-session store's behaviour). Skips the production `save(_:)` side
-effects (backend sync + AI paraphrase) because seeded data is
-local-only and shouldn't trigger backend writes or AI quota spend.
+### Move 3 — `TalkToNoumCTACard` copy static accessors
 
-Sets `shouldPresentInitialOnboarding = false` so a seeded simulator
-doesn't show the onboarding fullscreen cover over the home —
-matches the behaviour of `replaceFromRemote` for the same reason.
+Five new static funcs (`headlineCopy(isPremium:)`,
+`subCopy(isPremium:)`, `ctaCopy(isPremium:)`,
+`accessibilityLabel(isPremium:)`) carry the same strings the
+previous-`private` computed properties produced. The instance
+computed properties now delegate to the static accessors. No copy
+change, just visibility.
 
-### Move 3 — `DevSeedData.seedCoachingProfile(for:)`
+This unlocks a brand-voice contract test that scans every emitted
+string for banned tokens ("!", "Let's", "awesome", chirpy filler) —
+so a future "make it punchier" copy tweak that drifts into
+dark-pattern territory fails CI rather than landing in production.
 
-Internal helper exposed for testing — returns a `CoachingProfile`
-tuned to each `SeedProfile`'s narrative:
+### Move 4 — 25 new tests
 
-- `beginner` (5 sessions, high fillers) — `.reduceFillers` priority,
-  `.fillerWords` challenge, `.rebuilding` confidence, `.warm` voice.
-  Reads like an early-career user just starting to take feedback
-  seriously; warm keeps the coach copy non-judgmental.
-- `improvingIntermediate` (12 sessions, fillers dropping) —
-  `.moreConcise` priority, `.rambling` challenge, `.inconsistent`
-  confidence, `.warm` voice. Showcase profile: the screenshot tour
-  + UI tests + `noum-screenshots` skill all hit this. Voice picks
-  warm because the visible improvement reads better with friendly
-  framing than authoritative.
-- `plateauedAdvanced` (20 sessions, strong on most, weak openings) —
-  `.moreConcise` priority, `.rambling` challenge, `.confident`
-  baseline, `.authoritative` voice, `.presentations` context. Reads
-  like a senior leader who's mid-career and looking for the next
-  edge.
-- `pressureVulnerable` (15 sessions, great casual / weak pressure) —
-  `.calmerDelivery` primary, `.rushing` challenge, `.inconsistent`
-  baseline, `.executive` voice, `.interviews` context. Reads like
-  a founder prepping for investor Q&A.
-- `fillerFree` (18 sessions, near-zero fillers) — `.moreConcise`
-  primary, `.rambling` challenge, `.confident` baseline, `.concise`
-  voice, `.persuasive` outcome. Reads like a polished speaker
-  honing edges, not learning basics.
+`WhatYouDidWellBulletSelectorTests` (11 tests):
 
-Five seeds × five distinct voices (or near it — `improvingIntermediate`
-and `beginner` both pick `.warm`, which is the right choice for both
-narratives, so the test contract is ≥4 distinct voices not 5). Each
-seed carries non-empty `coachingBrief`, `motivationWhyNow`, and
-`successVision` so the entire goal-aware coaching loop has
-something to read — the M14 surfaces (VoiceAnchorBanner,
-LiveEloquenceHUD, VoiceAlignmentChip, goal-progress ring) all light
-up on a seeded simulator instead of staying cold.
+1. `minimalEffortYieldsNoBullets` — 4-second blurts → empty card.
+2. `momentumOnlyPathYieldsSingleBullet` — verdict line stands alone
+   when no other signal exists.
+3. `emptyMomentumIsOmittedNotRenderedBlank` — whitespace momentum
+   skipped, not emitted as blank.
+4. `goodCategoriesCappedAtTwo` — 3+ good categories → prefix(2)
+   wins; pace category is dropped.
+5. `okRatingDoesNotCountAsAWin` — `.ok` is "mostly there", not a
+   celebration; excluded from this card by design.
+6. `eloquenceFindingDropsWhenMomentumPlusTwoCategoriesAlreadyFill` —
+   the 3-cap takes priority over the eloquence slot.
+7. `eloquenceFindingLandsWhenHeadroomExists` — momentum + 1 category
+   leaves room for eloquence at slot 3.
+8. `eloquenceQuoteEvidenceUsesSnippet` — non-empty snippet binds
+   to `.quote` evidence (italic, brand-blue treatment).
+9. `aiStrengthBulletGatedOnHeadroom` — saturated branches suppress
+   the AI bullet; momentum-only path lets it through.
+10. `aiStrengthEmptyStringDoesNotEmitBullet` — malformed AI
+    response (empty first strength) is defensive-handled.
+11. `totalBulletCeilingNeverExceedsThree` — every signal source
+    firing at once still lands at exactly 3.
+12. `categoryNoteTextEvidencePopulatesWhenNoteNonEmpty` — empty
+    note → no chevron; non-empty note → text evidence.
 
-### Move 4 — `home.path` tap-the-card pattern restored in UI tests
+`WhatToImproveBulletSelectorTests` (13 tests):
 
-`testHomeScreenAndPrimaryNavigation` lands on the seeded home, looks
-for `home.path` (the journey card), and taps it if present. The
-defensive deep-link fallback to `noum://path` is retained — slow
-simulator boots can still flake on the visibility wait. The test
-intent is "journey screen reachable from a cold launch", which is
-satisfied by either path.
+1. `minimalEffortYieldsNoBullets` — 4-second blurts → empty card.
+2. `cleanRepWithNoLeverageYieldsNoBullets` — no leverage + clean
+   metrics → no card. No fake "improve" placeholder.
+3. `leverageBulletCarriesNextStepEvidence` — `.nextStep` binding,
+   not `.text` — the View renders it with the arrow accent.
+4. `leverageBulletWithoutNextStepHasNoEvidence` — no chevron when
+   nextStep is empty.
+5. `fillerBulletDoesNotFireBelowTwoCount` — single filler is noise,
+   not a pattern.
+6. `fillerBulletFiresAtTwoOrMore` — count ≥ 2 surfaces the chip
+   evidence row.
+7. `fillerBulletHeadlineUsesClusterFramingAtFivePlus` — at ≥ 5 the
+   headline reads "Fillers clustered — N across this rep." (more
+   honest than "higher than ideal" at that magnitude).
+8. `leverageDedupsAgainstCategoryByName` — leverage mentioning
+   "structure" suppresses the Structure category bullet (same
+   point, two voices, inflates the card).
+9. `categoryNeedsWorkCappedAtTwo` — three couldImprove categories
+   → first two pass, third dropped.
+10. `paceFastFiresWhenAboveOneSeventyAndHeadroomExists` — 180 WPM
+    triggers the pace-fast bullet.
+11. `paceSlowFiresWhenBelowNinetyFive` — 60 WPM triggers
+    pace-slow.
+12. `paceAnomalySuppressedWithoutHeadroom` — leverage + 2 categories
+    already saturate; pace stays silent.
+13. `paceAnomalyRequiresMinimumWordsAndDuration` — below the
+    12-word / 10-second floor the WPM read isn't stable.
+14. `aiKeyImprovementLandsAtTailWhenHeadroomExists` /
+    `aiKeyImprovementSuppressedWithoutHeadroom` — AI tail behavior
+    mirrors the WhatYouDidWell AI strength gating.
+15. `totalBulletCeilingNeverExceedsThree` — saturated case → 3.
 
-### Move 5 — Eleven new tests
+`TalkToNoumCTACardCopyTests` (5 tests):
 
-`AppDestinationSessionDetailTests` (4 tests, no MainActor needed,
-the enum is value-typed):
-
-1. `sessionDetailEqualsBySessionID` — same UUID → equal destinations.
-2. `sessionDetailDistinctBySessionID` — different UUIDs → distinct.
-3. `sessionDetailDistinctFromOtherCases` — `.sessionDetail` doesn't
-   collide with `.growthLibrary` or `.sessionHistory`.
-4. `sessionDetailIsHashable` — Set round-trip dedupes identical
-   destinations.
-
-`DevSeedCoachingProfileTests` (7 tests, DEBUG-only, no MainActor —
-the helper is pure):
-
-1. `improvingIntermediateSeedsWarmVoiceAndConciseGoal` — showcase
-   profile voice + goal + challenge + non-empty displayableGoal.
-2. `plateauedAdvancedSeedsAuthoritativeVoice` — voice + context.
-3. `pressureVulnerableSeedsExecutiveVoiceAndCalmerGoal` — voice +
-   primary goal + challenge.
-4. `fillerFreeSeedsConciseVoiceAndPersuasiveOutcome` — voice +
-   outcome.
-5. `beginnerSeedsRebuildingConfidenceAndFillerFocus` — confidence
-   level + primary goal + challenge.
-6. `everySeedProfileProducesACompleteCoachingProfile` — every seed
-   produces non-empty brief / why-now / success-vision so every
-   goal-aware surface has something to read.
-7. `everyVoiceIsDistinctAcrossSeedProfiles` — ≥4 distinct voices
-   across the 5 seeds (visual breadth for the screenshot tour).
+1. `headlineIsInvariantAcrossPremiumState` — the moment is the same;
+   only the on-tap behavior shifts.
+2. `subCopyDivergesByPremiumState` — pro gets "this rep loaded"
+   framing; free gets the membership pitch.
+3. `ctaCopyMatchesPremiumState` — "Open the thread" / "Unlock with
+   Pro".
+4. `brandVoiceRulesUpheld` — scans every emitted string for
+   banned tokens ("!", "Let's", "awesome", "great!"). Applies to
+   the full string surface so future tweaks get a fast signal.
+5. `accessibilityLabelCarriesLockSignalOnlyForFreeUsers` — pro
+   label never says "Locked"; free label does.
 
 ## What did NOT change
 
-- `ProofMomentArchive.swift` — untouched. The store + record + weekly
-  groupings + persistence are all unchanged. Move 1 only consumes
-  the existing `sessionID`.
-- `SessionHistoryDetailView` body — untouched. The view is now
-  `internal` instead of `private`, that's the only diff. No visual
-  changes, no behaviour changes.
-- `AskNoumView.swift`, `AIWeeklyInsightCard.swift`,
-  `PathNodeCelebration.swift`, `PersonalBestCelebrationScreen` —
-  untouched. Existing proof-rendering surfaces still consume
-  `ProofMomentStore.shared.recent(limit:)`; the new navigation
-  surface is purely additive.
-- `OnboardingHero` flow — untouched. `replaceForDebug` sets
-  `shouldPresentInitialOnboarding = false` but doesn't bypass the
-  onboarding hero (`OnboardingHeroManager` is a separate manager).
-- Brand voice — preserved. Accessibility hint "Opens the session
-  this moment came from." matches the coach's restrained register.
-  No exclamations, no chirpy copy.
-- Design tokens — used as-is. The NavigationLink wrapping doesn't
-  introduce any new colors, spacing, or typography.
+- **Visual output of any card** — the static refactors are pure
+  inline-to-static moves. Every string the cards emit is identical;
+  every iconography choice is identical; every color binding is
+  identical. The View's `body` property is byte-equivalent to the
+  pre-refactor body except that `bullets` is now a 6-line delegate
+  instead of an inlined 80-line computation.
+- **SummaryView integration** — the M17 hero block layout
+  (HeroScoreCard → WhatYouDidWell → WhatToImprove → YourNextMove →
+  TalkToNoum → expandableDetailsSection) is unchanged.
+- **`PreSummaryCelebration`** — unchanged. Its sequence task already
+  consumes events as cards land (the existing mid-sequence-backout
+  guard), and its timing constants are documented in the source.
+  No useful unit-test surface for a SwiftUI animation sequence
+  beyond what UI tests would catch.
+- **AI Coach Chat / Ask Noum** — untouched. The session-anchored
+  bridge stays as-is.
+- **Brand voice** — preserved. No new copy added; the banned-token
+  scanner test would fail on any drift.
+- **Design tokens** — used as-is. No new colors, spacings, or
+  typography roles introduced.
 
 ## Risks
 
-1. **`SessionHistoryDetailView` is now reachable from two surfaces.**
-   The History tab pushes it via the local
-   `NavigationLink { SessionHistoryDetailView(...) }` (label-based),
-   the Growth Library pushes it via `NavigationLink(value:)`
-   (value-based). Both render the same view; the navigation back
-   path differs (History → swipe back to History list, Library →
-   swipe back to Library). The detail view has no awareness of
-   where it was launched from, which is correct (the view itself
-   shouldn't care).
-2. **A user can deep-link a sessionDetail to a session that's been
-   deleted.** Fallback renders `SessionHistoryView`, which is
-   defensive but not informative — the user won't know why they
-   landed on the list instead of the specific session. Acceptable
-   for now: the proof archive is bounded at 12 records, sessions
-   are rarely deleted, and the alternative (alert / toast) adds
-   surface area for a rare case. Revisit if usage data suggests
-   confusion.
-3. **DEBUG-only `replaceForDebug` is reachable from production via
-   `DevSeedData.injectProfile`.** That's intentional and matches
-   the pattern of `PracticeSessionStore.replaceAllForDebug` /
-   `RatingStore.replaceForDebug`. Production code never calls
-   `injectProfile`; the only call sites are the Settings debug menu
-   (`SettingsView.swift:1234`) and the UI testing launch path
-   (`NoumApp.swift:40`), both DEBUG-guarded.
-4. **Seeded CoachingProfile + restart.** On second launch with
-   `UI_TESTING_SEED` (not `_FORCE`), `NoumApp.init` skips the
-   reseed because `PracticeSessionStore.sessions` is not empty.
-   The seeded `CoachingProfile` persists in UserDefaults via
-   `replaceForDebug` and is reloaded on auth via
-   `CoachingProfileStore.reloadForCurrentAccount()`. Verified the
-   load path — UserDefaults blob is decoded via the
-   `loadProfile(forKey:)` static helper, which handles the keys
-   `replaceForDebug` writes.
-5. **Voice-distinctness contract is ≥4 not =5.** Two seeds
-   (`beginner` and `improvingIntermediate`) both pick `.warm`. If
-   a future tightening wants every seed to be uniquely-voiced,
-   the test will fail at `==5` — for now, `>=4` keeps the
-   contract honest about the design choice (warm fits both
-   narratives best) without locking us out of a future tightening.
-6. **`AppDestination` is in a hot file (PracticeSupport.swift, 7800+
-   lines).** Adding one case is low-risk, but each touch to that
-   file is a tax on the long-term refactor target flagged in
-   CURRENT_STATE.md known-debt. No regression introduced — the
-   case is the smallest possible diff.
+1. **The static refactor preserves logic line-for-line, but the
+   compiler could still flag a subtle issue.** I can't build (Linux
+   container, no Swift toolchain). I read the source carefully,
+   re-verified every external dependency (`FillerWordDetector.
+   breakdown` signature, `EloquenceFinding.init`, `CoachNote.init`,
+   `FeedbackCategory.init`, `AICoachFeedback.init`, `AppColor.*`,
+   `Typography.*`, `CornerRadius.*`, `Spacing.*`, `NoumCharacter.
+   Inline.init`, `SparkleRibbon.init`, `CoachHaptic.skillLevelUp`).
+   Every reference resolves on the Redesign branch.
+2. **Custom-filler-words parameter:** production sites pass
+   `ClutchWordStore.shared.customFillerWords` (the only call site is
+   `WhatToImproveCard.bullets`, refactored to thread it through).
+   Tests pass `[]`. No production behavior change; the singleton
+   read is now one indirection deeper.
+3. **`AICoachFeedback` memberwise init:** the struct has no custom
+   init but is `Codable, Equatable`. Swift synthesizes a memberwise
+   init at `internal` access. Verified by reading
+   `Noum/PracticeSupport.swift:577–582`.
+4. **Tests are gated on `@available(iOS 17.0, *)` and not on
+   `#if DEBUG`** — the new code paths are production-reachable, so
+   the contract should hold in release builds too. The existing
+   `DevSeedCoachingProfileTests` suite is the only `#if DEBUG`
+   suite in the file because `DevSeedData` is DEBUG-only.
+5. **Hardcoded strings in tests:** `brandVoiceRulesUpheld` and the
+   "(3)" / "clustered" assertions duplicate strings that live in
+   the cards. That's intentional — if the strings drift the test
+   fails fast. If a copy tweak is legitimate (e.g. swap "(3)" →
+   "× 3"), update the source AND the test in the same commit.
 
 ## Verification
 
 ### Implemented
 
-- `AppDestination.sessionDetail(sessionID: UUID)` is declared once
-  in `Noum/PracticeSupport.swift`.
-- `ContentView.swift`'s destination switch handles `.sessionDetail`
-  with a live-store resolve + graceful `SessionHistoryView`
-  fallback.
-- `SessionHistoryDetailView` is `internal` (the `private` modifier
-  is gone — verified via `grep -n "struct SessionHistoryDetailView"`).
-- `GrowthLibraryView`'s `weekSection` wraps each card in a
-  `NavigationLink(value:)` with `growthLibrary.card.<sessionID>`
-  identifier + the "Opens the session this moment came from."
-  hint.
-- `CoachingProfileStore.replaceForDebug(_:)` is `#if DEBUG`-gated
-  and lives next to `replaceFromRemote(_:for:)` in the store.
-- `DevSeedData.injectProfile(_:)` calls
-  `CoachingProfileStore.shared.replaceForDebug(seedCoachingProfile(for:))`
-  after the existing XP / Rating / Session writes.
-- `DevSeedData.seedCoachingProfile(for:)` is `internal` (was
-  `private`) so the tests can lock the mapping without mutating
-  any live store.
-- Eleven new tests added end-of-file in `NoumTests/NoumTests.swift`,
-  follow the existing `@Test` + `#expect(...)` rhythm.
+- `WhatYouDidWellCard.computeBullets(coachNote:feedback
+  Categories:eloquenceFindings:aiFeedback:isMinimalEffort:)`
+  declared once as a `static func` on the View struct. The
+  instance `bullets` computed property delegates to it.
+- `WhatToImproveCard.computeBullets(coachNote:feedbackCategories:
+  aiFeedback:transcriptText:effectiveFillerCount:effectiveDuration:
+  transcriptWordCount:isMinimalEffort:customFillerWords:)` declared
+  once. The instance `bullets` computed property delegates and
+  passes `ClutchWordStore.shared.customFillerWords`.
+- `TalkToNoumCTACard.headlineCopy(isPremium:)` /
+  `subCopy(isPremium:)` / `ctaCopy(isPremium:)` /
+  `accessibilityLabel(isPremium:)` declared as static funcs;
+  instance computed properties delegate.
+- 25 new tests appended end-of-file in `NoumTests/NoumTests.swift`
+  across three suites — `WhatYouDidWellBulletSelectorTests`
+  (11 tests), `WhatToImproveBulletSelectorTests` (13 tests),
+  `TalkToNoumCTACardCopyTests` (5 tests).
+- `docs/CURRENT_STATE.md` header updated with the verification
+  push breadcrumb.
 
 ### Blocked / needs visual QA on device
 
-Surface change is small; visual QA goal:
+The static-function refactor and tests are non-visual. The M17 UI
+itself still wants real-device verification per the original
+partial-commit message:
 
-1. **Cold start with seed** — fresh install, launch with
-   `UI_TESTING_SEED`. Confirm the journey card (`home.path`) is
-   visible, and the goal-aware home surfaces
-   (`VoiceAlignmentChip` on the suggestion link, voice anchor on
-   practice modes) read "Toward your warm voice" since
-   `improvingIntermediate` now carries `.warm`.
-2. **Growth Library tap** — populate the proof archive (run a few
-   sessions until Personal Best / Path Celebration / Weekly Insight
-   fires a proof), open Profile → tap the insights banked chip,
-   then tap a quote card. The session detail screen should push
-   with the full transcript visible.
-3. **Deleted-session fallback** — delete a session from History
-   while its proof is still in the archive, then tap that proof
-   card from the Library. The History list should appear instead
-   of a crash or empty card.
-4. **CoachingProfile persistence across restarts** — launch with
-   seed once (profile lands), terminate, launch again without
-   `_FORCE` — `CoachingProfileStore.shared.profile` should still
-   be populated (not re-injected, just persisted).
+1. **Cold start with seed** — fresh install with `UI_TESTING_SEED`,
+   finish a rep, confirm the new hero block (HeroScore →
+   WhatYouDidWell → WhatToImprove → YourNextMove → TalkToNoum)
+   renders without visual regression.
+2. **Minimal-effort path** — finish a 4-second blurt, confirm
+   both `WhatYouDidWell` and `WhatToImprove` cards hide entirely
+   (the bullet selectors return empty arrays, the View body
+   short-circuits to `EmptyView`).
+3. **Filler heavy path** — finish a rep with 6+ fillers, confirm
+   the filler chip row renders with the most-used words and their
+   counts in horizontal scroll.
+4. **Pre-summary level-up sequence** — finish a rep that triggers
+   2+ simultaneous skill-area level-ups, confirm
+   `PreSummaryCelebration` plays each card in sequence with the
+   bar fill animation, lands within ~3s, and the underlying
+   summary doesn't show through.
+5. **Pro paywall handoff** — as a free user, tap
+   `TalkToNoumCTACard`. Confirm the existing `PaywallView` sheet
+   presents via `showPaywall`. As a Pro user, tap → confirm Ask
+   Noum opens with the session-anchored opener already seeded.
 
 ### Assumptions
 
-- The right destination for a Growth Library quote-card tap is
-  the session detail view, not a dedicated "proof detail" screen.
-  The proof itself is already fully shown on the library card
-  (verbatim quote, technique, claim, source badge); the value of
-  drilling in is the *full session context*, which is exactly
-  what `SessionHistoryDetailView` provides.
-- Seeded CoachingProfile narratives match the existing seed
-  session shapes (fillers dropping → tightening, plateaued →
-  authoritative, etc.) without requiring any session-side
-  changes. The session generators in `DevSeedData` already
-  produce the right session shapes for these voices; the profile
-  is a label on top, not a contract.
-- The "≥4 distinct voices" test is the right contract floor.
-  Five seeds with five voices would be more visually exhaustive,
-  but `warm` legitimately fits two narratives (beginner +
-  improvingIntermediate) and forcing uniqueness would weaken
-  the voice fit for at least one.
+- The bullet ordering described in the test contracts (momentum
+  first, categories cap at 2, eloquence next, AI strength last) is
+  intentional. The source comments in `WhatYouDidWellCard` confirm
+  this — eloquence at slot 3 is the first to lose to the 3-cap.
+- The `.ok` rating belongs only in `WhatToImprove`, not in
+  `WhatYouDidWell`. The source explicitly filters on `.good` for
+  the well card and on `.couldImprove || .ok` for the improve
+  card. The test contracts match.
+- The brand-voice banned-token list (`!`, "Let's", "awesome",
+  "great!") is the conservative subset of the project's voice
+  rules. Other voice contracts (sentence case, no emoji) would be
+  better checked by linter tooling than unit tests.
 
 ### What was checked
 
-- File reads + edits applied via Read / Edit / Write. Sandboxed
-  Linux environment; no Xcode toolchain available to build.
-- `grep` after each edit confirmed: (a) the new
-  `AppDestination.sessionDetail` case lands exactly once,
-  (b) the destination switch case lands exactly once,
-  (c) `SessionHistoryDetailView` is `internal` not `private`,
-  (d) `NavigationLink(value:)` wraps each Growth Library card
-  exactly once, (e) `CoachingProfileStore.replaceForDebug` is
-  declared once inside the `#if DEBUG` block,
-  (f) `DevSeedData.injectProfile` calls `replaceForDebug` once.
-- Tests added follow the existing `@Test` + `#expect(...)`
-  rhythm; the DEBUG-only suite is wrapped in `#if DEBUG`.
-- Sendability — the pure helper `seedCoachingProfile(for:)` is
-  static + returns a value type. No actor crossings introduced.
-- Brand voice — accessibility hint "Opens the session this
-  moment came from." matches the coach's restrained register.
-  No exclamations, no chirpy copy, no Let's.
+- Read every new file (`PreSummaryCelebration.swift`,
+  `WhatYouDidWellCard.swift`, `WhatToImproveCard.swift`,
+  `TalkToNoumCTACard.swift`) end-to-end and confirmed every
+  external symbol resolves on the Redesign branch.
+- Read `Noum/SummaryView.swift:450–650` to confirm the
+  integration: pre-summary celebration branch + populated-hero
+  branch + IM-hero branch. The four new cards are wired correctly,
+  the existing chain (PersonalBest → LevelUp → Progression →
+  PreSummary → Summary) advances through
+  `advanceToPreSummaryIfNeeded` from each branch's continue
+  handler.
+- Verified `FillerWordDetector.breakdown(in:customWords:)`
+  returns a `FillerWordBreakdown` with a `topWords:
+  [(word: String, count: Int)]` accessor (verified in
+  `FillerWordDetector.swift:624` and `FillerWordDetector.swift:38`).
+- Verified `AICoachFeedback` has the synthesized memberwise init
+  at internal access (no custom init in `PracticeSupport.swift:
+  577–582`).
+- Verified `CoachNote`, `FeedbackCategory`, `EloquenceFinding`
+  member inits all match the test call sites.
+- Verified `@testable import Noum` is at the top of
+  `NoumTests/NoumTests.swift:13` so internal types
+  (`WhatYouDidWellCard.Bullet`, `WhatToImproveCard.Evidence`,
+  the static accessors) are reachable from the suite.
+- `grep` after each edit confirmed: (a) the new static funcs land
+  exactly once each, (b) the instance computed properties
+  delegate (no double-implementation), (c) no usage of the
+  pre-refactor inline logic survives.
 
 ## Files modified
 
-- `Noum/PracticeSupport.swift` (+~25 LOC — new AppDestination case
-  + new CoachingProfileStore.replaceForDebug).
-- `Noum/SessionHistoryView.swift` (~3 LOC — make
-  SessionHistoryDetailView internal).
-- `Noum/ContentView.swift` (+~20 LOC — destination switch case).
-- `Noum/GrowthLibraryView.swift` (~+5 / -3 LOC — wrap cards in
-  NavigationLink).
-- `Noum/DevSeedData.swift` (+~90 LOC — CoachingProfile seeding
-  + per-seed helper).
-- `NoumUITests/NoumUITests.swift` (~+10 / -8 LOC — restore
-  tap-the-card pattern).
-- `NoumTests/NoumTests.swift` (+~85 LOC — eleven tests across
-  two suites).
-- `docs/CURRENT_STATE.md` (header breadcrumbs + new bullets).
-- `HANDOFF.md` (this file).
+- `Noum/WhatYouDidWellCard.swift` — refactor `bullets` to delegate
+  to a new `static func computeBullets(...)`. Logic byte-equivalent.
+- `Noum/WhatToImproveCard.swift` — refactor `bullets` and the
+  `nextStepEvidence` / `wpm` helpers to live inside a new
+  `static func computeBullets(...)`. `customFillerWords` flows in
+  as a parameter so tests don't touch `ClutchWordStore.shared`.
+- `Noum/TalkToNoumCTACard.swift` — expose the four copy strings
+  via `static func` accessors; instance computed properties
+  delegate.
+- `NoumTests/NoumTests.swift` — append 25 new tests across three
+  suites at end of file.
+- `docs/CURRENT_STATE.md` — header breadcrumb for the verification
+  push.
+- `HANDOFF.md` — this file, rewritten.
 
 ## Branch
 
-`Redesign` — committed and pushed per the user's brief. The user
-explicitly requested work on the Redesign branch ("ensure working
-on the redesign branch too (very important)"). Continues the
-post-M15 pattern of small, voice-coherent additions that close
-loops opened by earlier pushes — each push moves the app closer
-to the vision (a coach who's actually present, who quotes your
-words, who can take you back to them) without inflating surface
-area or breaking the brand-voice contract.
+`Redesign` — committed and pushed per the user's brief. Continues
+the M17 arc: the previous partial-commit landed the redesign UI;
+this push locks the design contract so the next iteration (real-
+device QA + further M17 polish) can move forward without
+re-deriving every selector rule from the source comments. Each
+push moves the app closer to the vision (a coach whose feedback
+is observable, evidence-backed, and never lies about progress)
+without inflating surface area or breaking the brand-voice
+contract.
+
+## Future moves
+
+1. **Real-device QA of the M17 hero block** (operational, not
+   engineering). The five branches under "Blocked / needs visual
+   QA" above are the punch list.
+2. **Eloquence bullet ordering revisit.** The current contract
+   drops eloquence at slot 3 when momentum + 2 categories already
+   saturate. A future tweak might bump eloquence above the
+   second category since a detected rhetorical move is concrete
+   evidence whereas a second category is "felt solid" — same as
+   the first one. Worth A/B'ing once usage data exists.
+3. **`isMinimalEffort` threshold review.** Currently
+   `transcriptWordCount < 5 || effectiveDuration < 5`. May want
+   to extend to also consider transcript-confidence (a low-
+   confidence transcript on a long rep should also bypass the
+   bullet selectors). Future move; out of scope for this push.

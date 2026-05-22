@@ -34,6 +34,28 @@ struct WhatYouDidWellCard: View {
     @State private var expandedBulletIDs: Set<String> = []
 
     private var bullets: [Bullet] {
+        WhatYouDidWellCard.computeBullets(
+            coachNote: coachNote,
+            feedbackCategories: feedbackCategories,
+            eloquenceFindings: eloquenceFindings,
+            aiFeedback: aiFeedback,
+            isMinimalEffort: isMinimalEffort
+        )
+    }
+
+    /// Pure bullet selector. Extracted from the View body so the
+    /// design contract (momentum first, ≤ 2 category wins, ≤ 1
+    /// eloquence finding, AI strength only when there's headroom,
+    /// hard 3-bullet ceiling) can be locked by unit tests without
+    /// spinning up a SwiftUI runtime. Tests in
+    /// `WhatYouDidWellBulletSelectorTests` pin every branch.
+    static func computeBullets(
+        coachNote: CoachNote,
+        feedbackCategories: [FeedbackCategory],
+        eloquenceFindings: [EloquenceFinding],
+        aiFeedback: AICoachFeedback?,
+        isMinimalEffort: Bool
+    ) -> [Bullet] {
         // Minimal-effort sessions don't earn observational praise; the
         // CoachNote logic already softens its momentum line, but to be
         // safe we hide the whole card on those reps so we never end up

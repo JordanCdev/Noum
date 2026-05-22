@@ -101,21 +101,32 @@ struct TalkToNoumCTACard: View {
 
     // MARK: - Copy
 
-    private var headlineCopy: String {
+    private var headlineCopy: String { Self.headlineCopy(isPremium: isPremium) }
+    private var subCopy: String { Self.subCopy(isPremium: isPremium) }
+    private var ctaCopy: String { Self.ctaCopy(isPremium: isPremium) }
+    private var accessibilityLabel: String { Self.accessibilityLabel(isPremium: isPremium) }
+
+    /// Copy contract — extracted to a static accessor so the brand-voice
+    /// rules (sentence case, no exclamation, no emoji, no "Let's", honest
+    /// upgrade signal not dark-pattern) can be locked by unit tests
+    /// without instantiating SwiftUI. The headline is invariant across
+    /// pro/free because the moment is shared; only the supporting copy
+    /// shifts.
+    static func headlineCopy(isPremium: Bool) -> String {
         "Talk to Noum about this rep."
     }
 
-    private var subCopy: String {
+    static func subCopy(isPremium: Bool) -> String {
         isPremium
             ? "Open the thread with this session in hand — quotes, pace, and the call already loaded."
             : "Pro members can open a coach thread about every rep, with quotes and metrics pre-loaded."
     }
 
-    private var ctaCopy: String {
+    static func ctaCopy(isPremium: Bool) -> String {
         isPremium ? "Open the thread" : "Unlock with Pro"
     }
 
-    private var accessibilityLabel: String {
+    static func accessibilityLabel(isPremium: Bool) -> String {
         if isPremium {
             return "Talk to Noum about this rep. Opens the coach thread with this session pre-loaded."
         }
