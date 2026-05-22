@@ -1,98 +1,96 @@
 import Foundation
 
-// MARK: - Grammar Feedback Service (M11)
+// MARK: - Grammar Feedback Service (M11 → M16)
 //
-// Light, post-session "polish notes" — surfaces objective grammar / English-
-// usage issues a coach would flag (subject-verb agreement, run-on sentences,
-// redundant phrasing, missing preposition, dangling modifier). Returns at
-// most three notes per session, each pinned to a real excerpt from the
-// transcript.
+// VISION future-milestone #7. The product framing is the whole product:
+// "risks feeling pedantic." We surface findings ONLY when they materially
+// affect clarity; we skip stylistic preferences entirely; we go silent
+// when nothing crosses the bar.
 //
-// Design rules — these are coaching invariants:
+// Coaching invariants (these are not negotiable):
 //
-// 1. Pro-gated. Free users never trigger this. Caller is expected to check
-//    `PremiumManager.shared.canViewCoachingInsights` before calling.
-// 2. Conservative. Speaking practice is conversational, not written prose.
-//    The model is instructed to skip stylistic preferences ("don't start a
-//    sentence with 'And'"), to skip filler ("um", "uh") since FillerWordDetector
-//    owns that surface, and to refuse anything below "this is clearly wrong
-//    in formal speech" confidence. When in doubt, return zero notes.
-// 3. Skips obviously-conversational sessions: very short reps (< 12 seconds
-//    or < 25 words), low transcript confidence (< 0.55), and sessions whose
-//    transcript looks like throat-clearing (≥30% filler ratio).
-// 4. Cached per session ID. Caller should treat the result as authoritative
-//    for the session — never re-call. The ProgressionCard / SummaryView are
-//    the only callers.
-// 5. Falls back to "no notes" rather than "AI fallback notes" when no
-//    provider is configured. We never invent grammar issues from a template,
-//    because we'd be wrong half the time on real speech.
+// 1. Pro-gated. Free users never trigger this. Caller pre-checks
+//    `PremiumManager.canViewCoachingInsights`; the service double-checks
+//    via the `isPro` parameter.
+// 2. Skip-first. Speech is conversational, not written prose. The rubric
+//    rejects sentence-end prepositions, split infinitives, Oxford-comma
+//    nits, "less vs fewer", "who vs whom", contractions, sentence length,
+//    and single-instance minor agreement. The model is told this verbatim.
+// 3. Threshold gate. After the model runs, we drop the result unless it
+//    contains at least one HIGH-IMPACT finding (confused subject that
+//    obscures meaning) OR ≥3 instances across the rep. Better silent than
+//    pedantic.
+// 4. Skips low-signal sessions: < 12 seconds, < 25 words, transcript
+//    confidence < 0.55, ≥30% filler ratio. Same rules as M11 — they were
+//    right then and they're right now.
+// 5. Cached per session ID inside the actor AND persisted on the session
+//    (M16: `PracticeSession.grammarFindings`). Re-asking the model for
+//    the same transcript wastes quota and risks drift.
+// 6. No template fallback. If no AI provider is configured, return nil
+//    and the card self-hides. A regex grammar nag would be wrong half
+//    the time on real speech.
+// 7. English-only. Non-English locales hide the card cleanly.
 
-enum GrammarNoteSeverity: String, Codable, Equatable {
-    case minor       // Stylistic — would polish but didn't break the sentence.
-    case moderate    // Reader/listener would notice. Worth fixing.
-    case material    // Clear error that changed meaning or broke grammar.
-}
+/// One persisted grammar finding pinned to a real excerpt from the user's
+/// transcript. This is the wire format stored on `PracticeSession` and
+/// rendered by `GrammarPolishCard`.
+struct GrammarFinding: Codable, Equatable, Identifiable {
+    /// What kind of clarity issue this is. We only ship categories whose
+    /// presence materially affects how a listener parses the sentence.
+    enum Pattern: String, Codable, Equatable {
+        case agreement       // subject/verb, pronoun/antecedent
+        case runOn           // ≥3 fused clauses in one breath
+        case pronounSwap     // mid-sentence "you" ↔ "one" ↔ "they"
+        case tenseShift      // verb tense changes inside a single thought
+        case repetition      // same 3+ word phrase used twice in close proximity
+        case other           // anything else the model judges high-impact
 
-enum GrammarNoteCategory: String, Codable, Equatable {
-    case agreement       // Subject/verb, pronoun/antecedent
-    case tense           // Tense shifts inside one clause
-    case runOn           // Two clauses fused without punctuation/conjunction
-    case fragment        // Missing subject or verb
-    case redundancy      // "ATM machine", "free gift", obvious doubles
-    case preposition     // Wrong / missing preposition
-    case modifier        // Dangling or misplaced modifier
-    case wordChoice      // Confused homonyms (their/there/they're, etc.)
-    case other           // Anything else the model spots
-
-    var label: String {
-        switch self {
-        case .agreement:    return "Agreement"
-        case .tense:        return "Tense"
-        case .runOn:        return "Run-on"
-        case .fragment:     return "Fragment"
-        case .redundancy:   return "Redundancy"
-        case .preposition:  return "Preposition"
-        case .modifier:     return "Modifier"
-        case .wordChoice:   return "Word choice"
-        case .other:        return "Polish"
+        var label: String {
+            switch self {
+            case .agreement:   return "Agreement"
+            case .runOn:       return "Run-on"
+            case .pronounSwap: return "Pronoun"
+            case .tenseShift:  return "Tense"
+            case .repetition:  return "Repetition"
+            case .other:       return "Clarity"
+            }
         }
     }
-}
 
-/// One concrete grammar note. The card surfaces these as a short list with
-/// the excerpt highlighted and the suggestion alongside.
-struct GrammarNote: Codable, Equatable, Identifiable {
-    var id: String { "\(category.rawValue):\(excerpt)" }
-    let category: GrammarNoteCategory
-    let severity: GrammarNoteSeverity
-    /// Short excerpt from the user's actual transcript (≤ 80 chars). Required
-    /// — every note must be pinned to real speech so the coach can show what
-    /// they're talking about.
+    /// Severity drives the threshold gate and the tint chip on the card.
+    /// `highImpact` alone is enough to surface a finding. `routine` only
+    /// surfaces when ≥3 of them stack up in one rep.
+    enum Severity: String, Codable, Equatable {
+        case highImpact   // confused subject, dropped agreement that obscures meaning
+        case routine      // pattern worth noting, but not a comprehension issue
+    }
+
+    var id: String { "\(pattern.rawValue):\(excerpt)" }
+    let pattern: Pattern
+    let severity: Severity
+    /// Verbatim substring of the transcript (≤ 80 chars). Required — every
+    /// finding pins to real speech the coach can show.
     let excerpt: String
-    /// One-line suggestion in the user's voice (≤ 90 chars). Imperative,
-    /// concrete, no chirpy filler.
-    let suggestion: String
-    /// One-line "why" in the user's voice (≤ 90 chars). Optional — the model
-    /// only includes it when the rule isn't obvious from the suggestion.
-    let rationale: String?
+    /// Coach voice. NEVER "incorrect", NEVER "wrong". Observational, e.g.
+    /// "could read clearer as 'the list is'" or "pattern: three pronoun
+    /// swaps in your closer". Sentence case, no exclamation marks, no emoji.
+    let note: String
 }
 
-/// Result of one grammar pass. `notes` empty means "looks clean" — show a
-/// soft positive in the card rather than hiding it. `aiBacked == false`
-/// means the service skipped or fell back; the card then shows nothing.
+/// Result of one grammar pass. `findings` empty means "ran successfully
+/// but nothing crossed the threshold" — the card self-hides on this case
+/// (silence is the right move, not a forced positive). `aiBacked == false`
+/// means the service skipped or fell back; card also self-hides.
 struct GrammarPolishResult: Codable, Equatable {
-    let notes: [GrammarNote]
+    let findings: [GrammarFinding]
     let aiBacked: Bool
     let generatedAt: Date
 
     static let empty = GrammarPolishResult(
-        notes: [],
+        findings: [],
         aiBacked: false,
         generatedAt: Date(timeIntervalSince1970: 0)
     )
-
-    /// True when the service ran successfully and the transcript was clean.
-    var isCleanRun: Bool { aiBacked && notes.isEmpty }
 }
 
 actor GrammarFeedbackService {
@@ -100,19 +98,23 @@ actor GrammarFeedbackService {
 
     private init() {}
 
-    /// Cache keyed by session ID. The result is authoritative for that
-    /// session — re-asking would just re-spend AI quota for the same input.
+    /// In-actor cache keyed by session ID. Belt-and-braces with the
+    /// per-session persistence on `PracticeSession.grammarFindings` —
+    /// callers that already have the session should prefer the persisted
+    /// field; this cache only matters for the freshly-completed rep.
     private var cache: [UUID: GrammarPolishResult] = [:]
 
     // MARK: - Public API
 
-    /// Run the grammar pass for the given session. Returns nil ONLY when the
-    /// session was skipped (too short, too noisy, free user). A successful
-    /// run with no issues returns `.empty` with `aiBacked == true`.
+    /// Run the grammar pass for the given session. Returns nil when the
+    /// session was skipped (too short, too noisy, free user, non-English
+    /// locale, no AI provider). A successful run that surfaces nothing
+    /// returns `.empty` with `aiBacked == true` — caller can persist the
+    /// empty array so we don't re-call on subsequent visits to the same
+    /// session.
     ///
-    /// Caller should pre-check `PremiumManager.canViewCoachingInsights`. The
-    /// service double-checks via the `isPro` parameter to keep the boundary
-    /// explicit.
+    /// Caller MUST pre-check `PremiumManager.canViewCoachingInsights`. The
+    /// service double-checks via `isPro` to keep the boundary explicit.
     func polish(
         sessionId: UUID,
         transcript: String,
@@ -124,10 +126,8 @@ actor GrammarFeedbackService {
     ) async -> GrammarPolishResult? {
         if let cached = cache[sessionId] { return cached }
         guard isPro else { return nil }
-        // M13: skip when the active practice locale isn't English. The
-        // grammar pass uses English-language conventions (subject-verb
-        // agreement, common confusables) — running it on a Spanish or
-        // French transcript would produce noise dressed up as coaching.
+        // M13: English-only — Spanish/French transcripts would produce
+        // English-rules feedback on non-English speech (noise, not coaching).
         guard await activeLocaleSupportsAI() else { return nil }
         guard shouldRun(
             transcript: transcript,
@@ -140,7 +140,7 @@ actor GrammarFeedbackService {
         guard let provider = await currentProvider(),
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider) else {
-            // No provider — never invent template "grammar issues".
+            // No provider — never invent template grammar findings.
             return nil
         }
 
@@ -182,8 +182,9 @@ actor GrammarFeedbackService {
 
     // MARK: - Skip rules
 
-    /// Decides whether the session is grammar-readable. Same rules tested
-    /// directly so the conservative behavior is locked.
+    /// Decides whether the session is grammar-readable. Lifted as a static
+    /// so the UI can mirror the check and hide the skeleton fast on
+    /// obviously-too-short reps, instead of flashing.
     static func shouldRun(
         transcript: String,
         duration: TimeInterval,
@@ -191,24 +192,18 @@ actor GrammarFeedbackService {
         fillerWordCount: Int,
         transcriptConfidence: Double?
     ) -> Bool {
-        // Too short — conversational fragments, not enough signal.
         guard duration >= 12 else { return false }
         guard wordCount >= 25 else { return false }
-        // Noisy transcript — provider had a bad time. Wrong to grade grammar.
         if let confidence = transcriptConfidence, confidence < 0.55 { return false }
-        // Throat-clearing — mostly fillers, no sentence structure to grade.
         if wordCount > 0 {
             let fillerRatio = Double(fillerWordCount) / Double(wordCount)
             if fillerRatio >= 0.30 { return false }
         }
-        // Empty / whitespace-only transcripts (defensive).
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         return true
     }
 
-    // Instance-level convenience used by `polish` callsites (keeps the
-    // call site readable while still honoring the static rule set).
     private func shouldRun(
         transcript: String,
         duration: TimeInterval,
@@ -232,7 +227,6 @@ actor GrammarFeedbackService {
         AISettingsManager.shared.activeProvider
     }
 
-    /// True when the active practice locale has AI surfaces enabled.
     @MainActor
     private func activeLocaleSupportsAI() -> Bool {
         LocaleSettingsManager.shared.current.aiSupported
@@ -247,40 +241,66 @@ actor GrammarFeedbackService {
     }
 
     // MARK: - Prompt construction
+    //
+    // The system prompt is the product. We bake the pedantic-avoidance
+    // rubric in verbatim and tell the model the threshold so it doesn't
+    // pad its output to look helpful.
 
     static let systemPrompt: String = """
-    You are a careful English-usage editor reviewing a single spoken-practice \
-    transcript. Your job is to surface up to THREE objective grammar / usage \
-    issues the speaker would want to clean up in formal speech — and ONLY those.
+    You are a speaking coach reviewing one spoken-practice transcript. Your job is to \
+    surface English-usage patterns that materially affect how a listener parses \
+    the speaker's meaning — and ONLY those. The bar is HIGH. Skip-first is the \
+    operating mode. If nothing crosses the bar, return an empty array.
 
-    Hard rules:
-    - SKIP filler words (um, uh, like, you know, so) — a separate system tracks those.
-    - SKIP stylistic preferences (sentence-initial 'And/But', contractions, sentence length).
-    - SKIP anything you are not confident is objectively wrong in formal English.
-    - SKIP politeness, content, opinion, accuracy, or whether the answer is "good".
-    - SKIP transcription artefacts (homophone confusion that's clearly the transcriber, \
-    not the speaker — flag only when the transcript text itself is what would be wrong if \
-    written down).
-    - The transcript is conversational speech. Be VERY conservative. If nothing clear is \
-    wrong, return an empty notes array.
+    SURFACE these (only when they materially affect clarity):
+    - Subject-verb agreement that obscures meaning (e.g. "the list of items are…" → "is")
+    - Run-on sentences with 3+ fused clauses in one breath
+    - Mid-sentence pronoun swaps ("when you start, one should…")
+    - Confused or mismatched verb tenses inside a single thought
+    - Same 3+ word phrase repeated twice in close proximity
 
-    Allowed categories: agreement, tense, runOn, fragment, redundancy, preposition, \
-    modifier, wordChoice, other.
+    SKIP these (would feel nagging — never include them):
+    - Missing Oxford commas
+    - Sentence-end prepositions ("the place I came from")
+    - Split infinitives ("to really understand")
+    - "Less vs fewer", "who vs whom", "which vs that"
+    - Single isolated minor agreement breaks (informal speech is fine)
+    - Contractions, sentence length, sentence-initial "And"/"But"
+    - Filler words (um, uh, like) — tracked by a separate system
+    - Politeness, content, opinion, accuracy, whether the answer is "good"
+    - Transcription artefacts (homophone confusion that's clearly the transcriber)
+    - Anything that's a stylistic preference, not a clarity issue
 
-    Severity:
-    - "material" — clearly wrong, a listener notices.
-    - "moderate" — bothers a careful listener.
-    - "minor" — would polish but tolerable.
+    THRESHOLD: only surface findings that meet ONE of:
+    - At least one finding has severity "highImpact" (confused subject that obscures \
+    meaning, or a tense/pronoun shift that breaks comprehension), OR
+    - At least 3 findings of any severity stack up in this single transcript.
 
-    Output strict JSON: { "notes": [ { "category": ..., "severity": ..., \
-    "excerpt": ..., "suggestion": ..., "rationale": ... } ] }
+    If you cannot meet the threshold, return {"findings": []}. Do NOT pad. Do NOT \
+    invent findings.
 
-    Each excerpt MUST be a verbatim substring of the transcript, ≤ 80 chars. \
-    Each suggestion ≤ 90 chars, imperative, in the user's voice, no chirpy \
-    filler ("Great job!"), no emoji, no exclamation marks. Rationale is \
-    optional — include only when the rule isn't obvious from the suggestion.
+    VOICE for the `note` field — this is critical:
+    - NEVER "incorrect" or "wrong" — observational only.
+    - Phrase as "could read clearer as <X>" or "pattern: <Y>".
+    - Coach voice: observational, not corrective. Sentence case. No emoji. \
+    No exclamation marks. ≤ 90 chars.
+    - Examples:
+      * agreement: "could read clearer as 'the list is' — singular subject"
+      * runOn: "three clauses fused — splitting at 'and then' lands cleaner"
+      * pronounSwap: "pattern: you → one mid-sentence; pick one and hold it"
+      * repetition: "phrase 'at the end of the day' lands twice in the closer"
 
-    If nothing meets the bar, return {"notes": []}.
+    ALLOWED pattern values: agreement, runOn, pronounSwap, tenseShift, repetition, other.
+    ALLOWED severity values: highImpact, routine.
+
+    Output strict JSON: { "findings": [ { "pattern": ..., "severity": ..., \
+    "excerpt": ..., "note": ... } ] }
+
+    Each `excerpt` MUST be a verbatim substring of the transcript (≤ 80 chars). \
+    Each `note` ≤ 90 chars, observational coach voice, no emoji, no exclamation marks.
+
+    Maximum 3 findings per transcript even when more meet the bar — pick the \
+    most clarity-affecting three. If zero meet the bar, return {"findings": []}.
     """
 
     private func requestBody(for provider: AIProvider, transcript: String) -> [String: Any] {
@@ -312,20 +332,24 @@ actor GrammarFeedbackService {
     }
 
     // MARK: - Response parsing
+    //
+    // We re-enforce the threshold on our side too: the model is told the
+    // rule but we don't trust it to obey under all prompts. If the model
+    // surfaces e.g. one routine-severity finding, we drop the whole result.
 
     func parse(data: Data, provider: AIProvider, transcript: String) -> GrammarPolishResult? {
         guard let raw = extractContent(from: data, provider: provider),
               let payload = decodeJSON(from: raw),
-              let rawNotes = payload["notes"] as? [[String: Any]] else { return nil }
+              let rawFindings = payload["findings"] as? [[String: Any]] else { return nil }
 
         let lowercaseTranscript = transcript.lowercased()
-        let notes: [GrammarNote] = rawNotes.compactMap { dict -> GrammarNote? in
+        let findings: [GrammarFinding] = rawFindings.compactMap { dict -> GrammarFinding? in
             guard
-                let categoryRaw = dict["category"] as? String,
+                let patternRaw = dict["pattern"] as? String,
                 let severityRaw = dict["severity"] as? String,
                 let excerpt = (dict["excerpt"] as? String)?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
-                let suggestion = (dict["suggestion"] as? String)?
+                let note = (dict["note"] as? String)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             else { return nil }
 
@@ -335,31 +359,42 @@ actor GrammarFeedbackService {
                   excerpt.count <= 80,
                   lowercaseTranscript.contains(excerpt.lowercased()) else { return nil }
 
-            guard let category = GrammarNoteCategory(rawValue: categoryRaw),
-                  let severity = GrammarNoteSeverity(rawValue: severityRaw) else { return nil }
-            guard !suggestion.isEmpty, suggestion.count <= 120 else { return nil }
+            guard let pattern = GrammarFinding.Pattern(rawValue: patternRaw),
+                  let severity = GrammarFinding.Severity(rawValue: severityRaw) else { return nil }
+            guard !note.isEmpty, note.count <= 120 else { return nil }
 
-            let rationale: String? = {
-                guard let raw = (dict["rationale"] as? String)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines),
-                      !raw.isEmpty,
-                      raw.count <= 120 else { return nil }
-                return raw
-            }()
+            // Voice guard: reject any note that uses the words "incorrect"
+            // or "wrong" — the model knows the rule but slips. A finding
+            // that calls the user wrong is worse than no finding.
+            let lowercaseNote = note.lowercased()
+            if lowercaseNote.contains("incorrect") || lowercaseNote.contains("wrong") {
+                return nil
+            }
 
-            return GrammarNote(
-                category: category,
+            return GrammarFinding(
+                pattern: pattern,
                 severity: severity,
                 excerpt: excerpt,
-                suggestion: suggestion,
-                rationale: rationale
+                note: note
+            )
+        }
+
+        // Re-enforce the threshold: at least one highImpact, OR ≥3 findings.
+        // If neither, drop the whole result and let the card stay silent.
+        let hasHighImpact = findings.contains { $0.severity == .highImpact }
+        let hasThreeOrMore = findings.count >= 3
+        guard hasHighImpact || hasThreeOrMore else {
+            return GrammarPolishResult(
+                findings: [],
+                aiBacked: true,
+                generatedAt: Date()
             )
         }
 
         // Cap at 3 — the card can't carry more without becoming a wall.
-        let capped = Array(notes.prefix(3))
+        let capped = Array(findings.prefix(3))
         return GrammarPolishResult(
-            notes: capped,
+            findings: capped,
             aiBacked: true,
             generatedAt: Date()
         )

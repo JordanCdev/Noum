@@ -603,6 +603,15 @@ struct PracticeSession: Identifiable, Codable {
     /// persisted sessions don't carry it and because some recording paths
     /// (paused-mid-rep, extremely short reps) won't produce reliable f0.
     var pitchMetrics: PitchMetrics? = nil
+    // NOTE: parallel teammate `pitch-intonation-v1` is also adding a field
+    // at the end of this struct. Merge order is mechanical — both fields
+    // co-exist without interaction.
+    /// Grammar findings for this session (M16). Optional because (a) older
+    /// sessions decode without it, (b) the grammar pass skips short / noisy /
+    /// non-English / non-Pro reps, and (c) the rubric is strict — most reps
+    /// produce nothing. Empty array means "ran and found nothing worth
+    /// surfacing"; nil means "didn't run".
+    var grammarFindings: [GrammarFinding]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -627,6 +636,7 @@ struct PracticeSession: Identifiable, Codable {
         case isRated
         case pauseMetrics
         case pitchMetrics
+        case grammarFindings
     }
 
     init(
@@ -651,7 +661,8 @@ struct PracticeSession: Identifiable, Codable {
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
         pauseMetrics: PauseMetrics? = nil,
-        pitchMetrics: PitchMetrics? = nil
+        pitchMetrics: PitchMetrics? = nil,
+        grammarFindings: [GrammarFinding]? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -675,6 +686,7 @@ struct PracticeSession: Identifiable, Codable {
         self.isRated = isRated
         self.pauseMetrics = pauseMetrics
         self.pitchMetrics = pitchMetrics
+        self.grammarFindings = grammarFindings
     }
 
     init(from decoder: Decoder) throws {
@@ -701,5 +713,6 @@ struct PracticeSession: Identifiable, Codable {
         isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
         pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
+        grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)
     }
 }

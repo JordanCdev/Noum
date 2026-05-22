@@ -2905,7 +2905,7 @@ struct PitchAnalyzerTests {
     }
 }
 
-// MARK: - Grammar Feedback Service (M11)
+// MARK: - Grammar Feedback Service (M11 → M16)
 
 struct GrammarFeedbackServiceTests {
 
@@ -2980,49 +2980,69 @@ struct GrammarFeedbackServiceTests {
 
     @Test func parseRejectsExcerptThatIsntInTranscript() async {
         // Excerpt the model returns must actually appear in the transcript;
-        // otherwise we drop the note (defensive against fabrication).
+        // otherwise we drop the finding (defensive against fabrication).
+        // One highImpact finding would normally pass the threshold; with
+        // the excerpt rejected, the rest must be empty.
         let transcript = "We launched the product on Tuesday."
         let payload: [String: Any] = [
             "choices": [[
                 "message": [
-                    "content": #"{"notes": [{"category": "agreement", "severity": "moderate", "excerpt": "the team are happy", "suggestion": "Use 'team is' for singular agreement.", "rationale": null}]}"#
+                    "content": #"{"findings": [{"pattern": "agreement", "severity": "highImpact", "excerpt": "the team are happy", "note": "could read clearer as 'team is'"}]}"#
                 ]
             ]]
         ]
         let data = try! JSONSerialization.data(withJSONObject: payload)
         let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
         #expect(parsed != nil)
-        #expect(parsed?.notes.isEmpty == true)
+        #expect(parsed?.findings.isEmpty == true)
         #expect(parsed?.aiBacked == true)
     }
 
-    @Test func parseAcceptsRealExcerpt() async {
+    @Test func parseAcceptsSingleHighImpactFinding() async {
+        // One highImpact finding meets the threshold on its own.
         let transcript = "The team are planning to ship faster this quarter."
         let payload: [String: Any] = [
             "choices": [[
                 "message": [
-                    "content": #"{"notes": [{"category": "agreement", "severity": "moderate", "excerpt": "team are planning", "suggestion": "Use 'team is planning' for collective subject.", "rationale": null}]}"#
+                    "content": #"{"findings": [{"pattern": "agreement", "severity": "highImpact", "excerpt": "team are planning", "note": "could read clearer as 'team is planning'"}]}"#
                 ]
             ]]
         ]
         let data = try! JSONSerialization.data(withJSONObject: payload)
         let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
         #expect(parsed != nil)
-        #expect(parsed?.notes.count == 1)
-        #expect(parsed?.notes.first?.category == .agreement)
-        #expect(parsed?.notes.first?.severity == .moderate)
-        #expect(parsed?.notes.first?.suggestion.contains("team is") == true)
+        #expect(parsed?.findings.count == 1)
+        #expect(parsed?.findings.first?.pattern == .agreement)
+        #expect(parsed?.findings.first?.severity == .highImpact)
+        #expect(parsed?.findings.first?.note.contains("could read clearer") == true)
     }
 
-    @Test func parseCapsAtThreeNotes() async {
-        let transcript = "The team are happy. The data shows interesting result. Their is room. Its been a long week."
-        // Four valid notes — service must cap at 3.
+    @Test func parseDropsSingleRoutineFinding() async {
+        // One routine-only finding does NOT meet the threshold. Silence is
+        // the right move — better silent than pedantic.
+        let transcript = "We launched the product on Tuesday and the team handled it well."
+        let payload: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "content": #"{"findings": [{"pattern": "repetition", "severity": "routine", "excerpt": "the team", "note": "phrase 'the team' lands twice"}]}"#
+                ]
+            ]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed != nil)
+        #expect(parsed?.findings.isEmpty == true)
+        #expect(parsed?.aiBacked == true)
+    }
+
+    @Test func parseAcceptsThreeRoutineFindings() async {
+        // Three routine findings clear the ≥3-instances arm of the threshold.
+        let transcript = "The team are happy. The data shows interesting result. We were planning the launch."
         let json = #"""
-        {"notes": [
-          {"category": "agreement", "severity": "moderate", "excerpt": "team are happy", "suggestion": "Use 'team is happy' for collective subject.", "rationale": null},
-          {"category": "agreement", "severity": "minor", "excerpt": "data shows interesting result", "suggestion": "Use 'results' (plural).", "rationale": null},
-          {"category": "wordChoice", "severity": "material", "excerpt": "Their is room", "suggestion": "Use 'There is' — possessive vs existential.", "rationale": null},
-          {"category": "wordChoice", "severity": "minor", "excerpt": "Its been a long week", "suggestion": "Use 'It's been' (contraction of 'it has').", "rationale": null}
+        {"findings": [
+          {"pattern": "agreement", "severity": "routine", "excerpt": "team are happy", "note": "could read clearer as 'team is happy'"},
+          {"pattern": "agreement", "severity": "routine", "excerpt": "data shows interesting result", "note": "could read clearer as 'results'"},
+          {"pattern": "repetition", "severity": "routine", "excerpt": "the launch", "note": "phrase lands twice in the closer"}
         ]}
         """#
         let payload: [String: Any] = [
@@ -3030,19 +3050,57 @@ struct GrammarFeedbackServiceTests {
         ]
         let data = try! JSONSerialization.data(withJSONObject: payload)
         let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
-        #expect(parsed?.notes.count == 3)
+        #expect(parsed?.findings.count == 3)
     }
 
-    @Test func parseAcceptsEmptyNotes() async {
+    @Test func parseCapsAtThreeFindings() async {
+        let transcript = "The team are happy. The data shows interesting result. We were planning the launch and shipping in time."
+        let json = #"""
+        {"findings": [
+          {"pattern": "agreement", "severity": "highImpact", "excerpt": "team are happy", "note": "could read clearer as 'team is happy'"},
+          {"pattern": "agreement", "severity": "routine", "excerpt": "data shows interesting result", "note": "could read clearer as 'results'"},
+          {"pattern": "runOn", "severity": "routine", "excerpt": "planning the launch and shipping in time", "note": "could split at 'and'"},
+          {"pattern": "repetition", "severity": "routine", "excerpt": "the team", "note": "lands twice"}
+        ]}
+        """#
+        let payload: [String: Any] = [
+            "choices": [["message": ["content": json]]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed?.findings.count == 3)
+    }
+
+    @Test func parseAcceptsEmptyFindings() async {
+        // Model honestly returns nothing — card self-hides on this case.
         let transcript = "We launched the product on Tuesday and the team handled it well."
         let payload: [String: Any] = [
-            "choices": [["message": ["content": #"{"notes": []}"#]]]
+            "choices": [["message": ["content": #"{"findings": []}"#]]]
         ]
         let data = try! JSONSerialization.data(withJSONObject: payload)
         let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
         #expect(parsed != nil)
-        #expect(parsed?.notes.isEmpty == true)
-        #expect(parsed?.isCleanRun == true)
+        #expect(parsed?.findings.isEmpty == true)
+        #expect(parsed?.aiBacked == true)
+    }
+
+    @Test func parseRejectsCorrectiveVoice() async {
+        // Voice guard: a finding that calls the user "wrong" or "incorrect"
+        // gets dropped — observational voice is non-negotiable. One
+        // highImpact finding with rejected voice should leave findings
+        // empty (and below threshold).
+        let transcript = "The team are planning to ship faster this quarter."
+        let payload: [String: Any] = [
+            "choices": [[
+                "message": [
+                    "content": #"{"findings": [{"pattern": "agreement", "severity": "highImpact", "excerpt": "team are planning", "note": "This is incorrect — use 'team is'."}]}"#
+                ]
+            ]]
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload)
+        let parsed = await GrammarFeedbackService.shared.parse(data: data, provider: .openAI, transcript: transcript)
+        #expect(parsed != nil)
+        #expect(parsed?.findings.isEmpty == true)
     }
 }
 

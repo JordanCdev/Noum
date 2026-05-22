@@ -1,22 +1,28 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-// MARK: - Grammar Polish Card (M11)
+// MARK: - Grammar Polish Card (M11 → M16)
 //
-// Pro-gated post-session card showing up to three concrete grammar / English-
-// usage notes from `GrammarFeedbackService`. Hides itself when:
-//   • The user is not Pro (gate handled at the call-site too — both belt
-//     and braces, since the service also rejects non-Pro callers).
+// Pro-gated post-session card. Surfaces up to three observational grammar
+// findings from `GrammarFeedbackService` — only when the rep meets a high
+// threshold for clarity-affecting patterns. Hides itself when:
+//   • The user is not Pro (gate handled at the call-site too — belt and
+//     braces, since the service also rejects non-Pro callers).
 //   • The session was skipped (too short, too noisy, throat-clearing).
-//   • No AI provider is configured. Template "polish notes" would be wrong
-//     half the time on real speech, so we simply don't show anything.
+//   • The active practice locale isn't English.
+//   • No AI provider is configured.
+//   • The model surfaced nothing that crossed the threshold.
 //
-// When the service runs and finds nothing, we DO render a soft positive
-// ("Looks clean") so the user sees that the pass happened — that's the
-// signal that grammar was reviewed, not that the feature is broken.
+// VISION future-milestone #7 framing: grammar feedback "risks feeling
+// pedantic". Silence is the right default — we do NOT render a soft
+// positive on the empty case. If the rubric finds nothing worth saying,
+// the card stays gone. The user already gets a session summary; what we
+// don't want is the feature constantly chirping "looks clean" on every
+// rep, because that becomes its own form of noise.
 //
-// Visual layout follows AISessionDebriefCard: micro header label, headline,
-// then a bullet list of notes with category chip + severity tint.
+// Visual layout matches the surrounding speech-quality cards
+// (EloquenceFindingsCard, PauseSummaryCard, etc.): micro header label,
+// observational note per finding with a small pattern chip + excerpt.
 
 @available(iOS 17.0, macOS 12.0, *)
 struct GrammarPolishCard: View {
@@ -36,9 +42,12 @@ struct GrammarPolishCard: View {
                 EmptyView()
             } else if isLoading && result == nil {
                 cardShell { skeleton }
-            } else if let result, result.aiBacked {
+            } else if let result, result.aiBacked, !result.findings.isEmpty {
                 cardShell { content(result: result) }
             } else {
+                // No findings worth surfacing → silent. Better silent than
+                // pedantic. The grammar pass did run; we just don't chirp
+                // about it.
                 EmptyView()
             }
         }
@@ -112,51 +121,38 @@ struct GrammarPolishCard: View {
 
     @ViewBuilder
     private func content(result: GrammarPolishResult) -> some View {
-        if result.notes.isEmpty {
-            Text("Looks clean — nothing to polish in this rep.")
-                .font(Typography.body)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
-            Text(headline(for: result))
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(result.notes) { note in
-                    noteRow(note)
-                }
+        Text(headline(for: result))
+            .font(Typography.headline)
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(result.findings) { finding in
+                findingRow(finding)
             }
         }
     }
 
-    private func noteRow(_ note: GrammarNote) -> some View {
+    private func findingRow(_ finding: GrammarFinding) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(note.category.label)
+                Text(finding.pattern.label)
                     .font(Typography.micro.weight(.semibold))
                     .textCase(.uppercase)
                     .tracking(0.6)
-                    .foregroundStyle(severityTint(note.severity))
+                    .foregroundStyle(severityTint(finding.severity))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(severityTint(note.severity).opacity(0.10), in: Capsule())
+                    .background(severityTint(finding.severity).opacity(0.10), in: Capsule())
                 Spacer()
             }
-            Text("\u{201C}\(note.excerpt)\u{201D}")
+            Text("\u{201C}\(finding.excerpt)\u{201D}")
                 .font(Typography.caption.italic())
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(note.suggestion)
+            Text(finding.note)
                 .font(Typography.body)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let rationale = note.rationale {
-                Text(rationale)
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
@@ -166,16 +162,17 @@ struct GrammarPolishCard: View {
     // MARK: - Helpers
 
     private func headline(for result: GrammarPolishResult) -> String {
-        let count = result.notes.count
-        if count == 1 { return "One thing to polish" }
-        return "\(count) things to polish"
+        // Observational, not corrective. We're surfacing patterns, not
+        // grading the user's English.
+        let count = result.findings.count
+        if count == 1 { return "One pattern worth noting" }
+        return "\(count) patterns worth noting"
     }
 
-    private func severityTint(_ severity: GrammarNoteSeverity) -> Color {
+    private func severityTint(_ severity: GrammarFinding.Severity) -> Color {
         switch severity {
-        case .material: return AppColor.caution
-        case .moderate: return .orange
-        case .minor:    return .secondary
+        case .highImpact: return AppColor.caution
+        case .routine:    return .secondary
         }
     }
 
@@ -193,6 +190,24 @@ struct GrammarPolishCard: View {
             }
             return
         }
+
+        // M16: if the session already has persisted grammar findings,
+        // use them directly. The grammar pass ran when the session was
+        // saved; re-asking the model would re-spend quota for the same
+        // input. An empty persisted array still means "ran and found
+        // nothing" — silence is the right move.
+        if let persisted = session.grammarFindings {
+            await MainActor.run {
+                result = GrammarPolishResult(
+                    findings: persisted,
+                    aiBacked: true,
+                    generatedAt: session.date
+                )
+                isLoading = false
+            }
+            return
+        }
+
         // Pre-check the skip rules so we hide the skeleton fast on
         // obviously-too-short reps, instead of flashing.
         let runnable = GrammarFeedbackService.shouldRun(
