@@ -1255,5 +1255,123 @@ struct SuddenDeathPracticeView: View {
         let payload = SummaryPayload(id: payloadId, mode: .suddenDeath)
         navigationPath.append(AppDestination.summary(payload))
     }
+
+    // MARK: - TTS (mirrors TimedPracticeView.speakPromptAloud pattern)
+
+    #if canImport(AVFAudio)
+    /// Wire AVSpeechSynthesizer delegate callbacks. Idempotent — safe to
+    /// call multiple times; `ttsEngine.delegate == nil` check at the call
+    /// site avoids redundant rewires.
+    private func configureTTSDelegate() {
+        ttsEngine.delegate = ttsDelegate
+        ttsDelegate.onFinish = {
+            Task { @MainActor in
+                isSpeakingPrompt = false
+                deactivateTTSAudioSession()
+            }
+        }
+        ttsDelegate.onCancel = {
+            Task { @MainActor in
+                isSpeakingPrompt = false
+                deactivateTTSAudioSession()
+            }
+        }
+    }
+
+    /// `.playback` + `.mixWithOthers + .duckOthers` so speech plays in
+    /// silent mode without fighting the speech recognizer's session.
+    private func activateTTSAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, options: [.mixWithOthers, .duckOthers])
+            try session.setActive(true)
+        } catch {
+            // Non-fatal — TTS may still work on some devices without
+            // explicit activation.
+        }
+    }
+
+    /// Release the session so the speech recognizer can reclaim it
+    /// without contention when the user-turn window opens.
+    private func deactivateTTSAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            // Non-fatal
+        }
+    }
+
+    /// Auto-speak guard. Fires from `.npcTurn` phase change and from the
+    /// async follow-up prompt arrival. Skips silently when:
+    ///   • user has muted NPC voice playback (IMVoicePlaybackSettings)
+    ///   • the prompt is empty (still generating)
+    ///   • the same prompt has already been spoken in this round
+    /// so a view re-render never re-triggers mid-utterance.
+    private func speakCurrentPromptIfReady() {
+        guard voicePlaybackSettings.isEnabled else { return }
+        let prompt = engine.currentPromptText
+        guard !prompt.isEmpty else { return }
+        guard prompt != lastSpokenPromptText else { return }
+        speakCurrentPrompt(force: false)
+    }
+
+    /// User-initiated speak (the replay button). `force == true` toggles
+    /// off mid-utterance so a second tap stops the readout instead of
+    /// queuing another.
+    private func speakCurrentPrompt(force: Bool) {
+        let prompt = engine.currentPromptText
+        guard !prompt.isEmpty else { return }
+
+        if isSpeakingPrompt || ttsEngine.isSpeaking {
+            if force {
+                stopPromptReadout()
+            }
+            return
+        }
+
+        isSpeakingPrompt = true
+        lastSpokenPromptText = prompt
+
+        let speaker = IMMessageSpeaker.shared
+        Task {
+            // Cloud TTS first (Google/OpenAI) for premium voice quality;
+            // on-device AVSpeechSynthesizer as the offline fallback so
+            // users without network still get spoken prompts.
+            let didPlayCloud = await speaker.speakPrompt(prompt)
+            if didPlayCloud {
+                await MainActor.run { isSpeakingPrompt = false }
+                return
+            }
+            await MainActor.run {
+                if ttsEngine.delegate == nil { configureTTSDelegate() }
+                activateTTSAudioSession()
+                let utterance = AVSpeechUtterance(string: prompt)
+                utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
+                utterance.pitchMultiplier = 0.98
+                utterance.preUtteranceDelay = 0.15
+                utterance.postUtteranceDelay = 0.3
+                utterance.voice = prewarmedVoice
+                ttsEngine.speak(utterance)
+            }
+        }
+    }
+
+    /// Stop any in-flight TTS + cloud audio. Called from
+    /// `.userTurnWaiting` (so the mic doesn't fight the synthesizer),
+    /// `.sessionComplete`, and `.onDisappear`.
+    private func stopPromptReadout() {
+        if ttsEngine.isSpeaking {
+            ttsEngine.stopSpeaking(at: .immediate)
+        }
+        IMMessageSpeaker.shared.stop()
+        isSpeakingPrompt = false
+    }
+    #else
+    // Stub-out the TTS surface when AVFAudio isn't available (preview /
+    // non-iOS targets) so the call sites still compile.
+    private func speakCurrentPromptIfReady() { }
+    private func speakCurrentPrompt(force: Bool) { }
+    private func stopPromptReadout() { }
+    #endif
 }
 #endif
