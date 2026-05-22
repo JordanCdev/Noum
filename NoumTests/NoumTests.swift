@@ -7130,3 +7130,132 @@ struct GrowthLibraryWeeklyGroupingTests {
     }
 }
 
+// MARK: - AppDestination.sessionDetail wiring
+//
+// The Growth Library quote cards push `.sessionDetail(sessionID:)` so the
+// user can tap a banked moment → land on the session that produced it.
+// Two contracts to lock:
+//   1. The case is Hashable + Equatable across identical UUIDs (so
+//      `NavigationLink(value:)` can dedupe taps and re-enter cleanly).
+//   2. Different session IDs produce distinct destinations (so the navi-
+//      gation stack doesn't collapse two cards onto the same screen).
+@available(iOS 17.0, *)
+struct AppDestinationSessionDetailTests {
+
+    @Test func sessionDetailEqualsBySessionID() {
+        let id = UUID()
+        let a: AppDestination = .sessionDetail(sessionID: id)
+        let b: AppDestination = .sessionDetail(sessionID: id)
+        #expect(a == b, "Same session ID must produce equal destinations")
+    }
+
+    @Test func sessionDetailDistinctBySessionID() {
+        let a: AppDestination = .sessionDetail(sessionID: UUID())
+        let b: AppDestination = .sessionDetail(sessionID: UUID())
+        #expect(a != b, "Different session IDs must produce distinct destinations")
+    }
+
+    @Test func sessionDetailDistinctFromOtherCases() {
+        // Sanity — the new case must not collide with the existing
+        // growthLibrary or sessionHistory destinations.
+        let detail: AppDestination = .sessionDetail(sessionID: UUID())
+        #expect(detail != .growthLibrary)
+        #expect(detail != .sessionHistory)
+    }
+
+    @Test func sessionDetailIsHashable() {
+        // NavigationPath stores destinations in a hashable container, so
+        // the case has to round-trip through a Set without crashing.
+        var set: Set<AppDestination> = []
+        let id = UUID()
+        set.insert(.sessionDetail(sessionID: id))
+        set.insert(.sessionDetail(sessionID: id))
+        #expect(set.count == 1, "Identical session-detail destinations must collapse in a Set")
+    }
+}
+
+#if DEBUG
+// MARK: - DevSeedData CoachingProfile seeding
+//
+// M16 follow-on — DevSeedData.injectProfile now seeds CoachingProfileStore
+// alongside sessions/baseline/rating/XP so HomeSignalGate's
+// `coachingProfileSet` branch lights up and UI tests can use the tap-the-
+// card pattern again on gated home cards. These tests lock the per-seed
+// voice mapping so a future "tighten the seed narrative" pass can't quietly
+// shuffle voice assignments out from under the screenshot tour. The pure
+// helper `DevSeedData.seedCoachingProfile(for:)` is tested directly so we
+// don't have to mutate any live stores.
+struct DevSeedCoachingProfileTests {
+
+    @Test func improvingIntermediateSeedsWarmVoiceAndConciseGoal() {
+        // The showcase profile (used by ScreenshotTour, UI tests, and the
+        // -DeepLink screenshot capture path). The voice and goal must
+        // match the narrative — fillers dropping → tightening up next,
+        // warm voice keeps the coach copy approachable.
+        let profile = DevSeedData.seedCoachingProfile(for: .improvingIntermediate)
+        #expect(profile.speakingStyleGoal == .warm)
+        #expect(profile.primaryGoal == .moreConcise)
+        #expect(profile.biggestChallenge == .rambling)
+        // displayableGoal falls back to the template until the AI
+        // paraphrase lands — must not be empty either way.
+        #expect(!profile.displayableGoal.isEmpty)
+    }
+
+    @Test func plateauedAdvancedSeedsAuthoritativeVoice() {
+        let profile = DevSeedData.seedCoachingProfile(for: .plateauedAdvanced)
+        #expect(profile.speakingStyleGoal == .authoritative)
+        #expect(profile.speakingContext == .presentations)
+    }
+
+    @Test func pressureVulnerableSeedsExecutiveVoiceAndCalmerGoal() {
+        let profile = DevSeedData.seedCoachingProfile(for: .pressureVulnerable)
+        #expect(profile.speakingStyleGoal == .executive)
+        #expect(profile.primaryGoal == .calmerDelivery)
+        #expect(profile.biggestChallenge == .rushing)
+    }
+
+    @Test func fillerFreeSeedsConciseVoiceAndPersuasiveOutcome() {
+        let profile = DevSeedData.seedCoachingProfile(for: .fillerFree)
+        #expect(profile.speakingStyleGoal == .concise)
+        #expect(profile.desiredOutcome == .persuasive)
+    }
+
+    @Test func beginnerSeedsRebuildingConfidenceAndFillerFocus() {
+        let profile = DevSeedData.seedCoachingProfile(for: .beginner)
+        #expect(profile.confidenceLevel == .rebuilding)
+        #expect(profile.primaryGoal == .reduceFillers)
+        #expect(profile.biggestChallenge == .fillerWords)
+    }
+
+    @Test func everySeedProfileProducesACompleteCoachingProfile() {
+        // Hard contract: HomeSignalGate's `coachingProfileSet` branch must
+        // light up for every seed profile, not just the showcase one. If
+        // a future refactor adds a new SeedProfile case, this test will
+        // fail until the new case carries a matching CoachingProfile —
+        // CaseIterable + exhaustive switch in seedCoachingProfile is the
+        // belt-and-braces compile-time guard, this is the runtime one.
+        for seedProfile in SeedProfile.allCases {
+            let profile = DevSeedData.seedCoachingProfile(for: seedProfile)
+            #expect(!profile.coachingBrief.isEmpty,
+                    "\(seedProfile) must seed a non-empty coachingBrief")
+            #expect(!profile.motivationWhyNow.isEmpty,
+                    "\(seedProfile) must seed a non-empty motivationWhyNow")
+            #expect(!profile.successVision.isEmpty,
+                    "\(seedProfile) must seed a non-empty successVision")
+        }
+    }
+
+    @Test func everyVoiceIsDistinctAcrossSeedProfiles() {
+        // The five seed profiles should each express a different voice so
+        // the screenshot tour and design audits can see every voice live
+        // on a single seed pass. Concise + warm + authoritative +
+        // executive + warm/etc — the contract: at least 4 distinct
+        // voices across the 5 seeds (mild duplication tolerated, full
+        // collapse not).
+        let voices = Set(SeedProfile.allCases.map { DevSeedData.seedCoachingProfile(for: $0).speakingStyleGoal })
+        #expect(voices.count >= 4,
+                "Seed profiles must cover at least 4 distinct voices for visual breadth, got: \(voices)")
+    }
+}
+#endif
+

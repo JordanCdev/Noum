@@ -28,6 +28,13 @@ enum AppDestination: Hashable {
     case pathJourney
     case askNoum
     case growthLibrary
+    /// Detail view for a single past session, addressable by session ID so
+    /// surfaces like the Growth Library can deep-link straight to "the
+    /// session that produced this proof" without going through the History
+    /// list. Falls back to the History list when the session has been
+    /// deleted or isn't in the store anymore — see `ContentView`'s
+    /// destination switch.
+    case sessionDetail(sessionID: UUID)
 }
 
 struct SummaryPayload: Identifiable, Hashable {
@@ -3213,6 +3220,27 @@ final class CoachingProfileStore: ObservableObject {
         }
         shouldPresentInitialOnboarding = false
     }
+
+    #if DEBUG
+    /// Debug-only injector for `DevSeedData`. Writes the profile against
+    /// the current account ID (Keychain) or the `"guest"` namespace when
+    /// no account is set, and refreshes the published `profile` so SwiftUI
+    /// surfaces gated on `coachingProfileStore.profile != nil` light up
+    /// immediately. Skips the backend sync + AI paraphrase side effects
+    /// the production `save(_:)` triggers — seeded data is local-only.
+    func replaceForDebug(_ profile: CoachingProfile?) {
+        let accountID = currentAccountID ?? "guest"
+        if let profile, let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
+            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
+        } else {
+            UserDefaults.standard.removeObject(forKey: profileKey(for: accountID))
+            UserDefaults.standard.removeObject(forKey: onboardingCompletionKey(for: accountID))
+        }
+        self.profile = profile
+        shouldPresentInitialOnboarding = false
+    }
+    #endif
 
     private func profileKey(for accountID: String) -> String {
         "\(profileKeyPrefix)\(accountID)"

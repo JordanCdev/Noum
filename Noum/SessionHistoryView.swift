@@ -571,7 +571,11 @@ private struct SparklineView: View {
     }
 }
 
-private struct SessionHistoryDetailView: View {
+/// Visible to surfaces outside SessionHistoryView (e.g. Growth Library's
+/// quote-card deep link) so the source-session detail can be pushed from
+/// anywhere. The view is otherwise unchanged — same heroCard, focusCard,
+/// transcript card, AI coach read, IM conversation card.
+struct SessionHistoryDetailView: View {
     let session: PracticeSession
     let insights: [String]
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared

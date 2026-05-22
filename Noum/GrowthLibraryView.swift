@@ -94,7 +94,12 @@ struct GrowthLibraryView: View {
                 .foregroundStyle(.secondary)
             VStack(spacing: Spacing.cardGap) {
                 ForEach(records) { record in
-                    proofCard(record: record)
+                    NavigationLink(value: AppDestination.sessionDetail(sessionID: record.sessionID)) {
+                        proofCard(record: record)
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("growthLibrary.card.\(record.sessionID.uuidString)")
+                    .accessibilityHint("Opens the session this moment came from.")
                 }
             }
         }

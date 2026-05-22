@@ -90,6 +90,106 @@ enum DevSeedData {
         // Without this, Profile and Settings show a brand-new user identity
         // on top of a seasoned session history — visually contradictory.
         ProfileManager.shared.replaceFromRemote(seedXP(for: profile))
+
+        // Seed a CoachingProfile aligned with the seed narrative. Without
+        // this, signal-gated home cards (Daily Challenge, VoiceMetrics,
+        // AIWeeklyInsight, Journey, AskNoum) and goal-aware surfaces
+        // (VoiceAlignmentChip, VoiceAnchorBanner, goal-progress ring) all
+        // stayed cold on a seeded simulator — the M15 Phase 4 home
+        // discipline gates couldn't tell a seeded user from a brand-new
+        // one. With this, UI tests can use tap-the-card patterns again on
+        // every gated surface, and the goal-aware coaching loop is
+        // visible end-to-end in the seeded screenshot tour.
+        CoachingProfileStore.shared.replaceForDebug(seedCoachingProfile(for: profile))
+    }
+
+    /// Voice + priority + challenge tuned to each seed narrative. The
+    /// seeded user should feel like a believable person mid-journey — not
+    /// a blank profile, not a generic "everything" voice. `internal` so
+    /// tests can lock the per-seed voice mapping without mutating any
+    /// live store.
+    static func seedCoachingProfile(for profile: SeedProfile) -> CoachingProfile {
+        switch profile {
+        case .beginner:
+            // First few reps, fillers are the visible problem. Warm voice
+            // matches the rebuilding-confidence tone; reduces shame
+            // signals on the seeded gated cards.
+            return CoachingProfile(
+                speakingContext: .work,
+                primaryGoal: .reduceFillers,
+                confidenceLevel: .rebuilding,
+                biggestChallenge: .fillerWords,
+                desiredOutcome: .composed,
+                speakingStyleGoal: .warm,
+                styleReference: "Sound steady when I open my mouth at standups.",
+                coachingBrief: "Cut the ums so my point lands first.",
+                motivationWhyNow: "Standups are getting more visible.",
+                successVision: "Sound like I know what I'm saying."
+            )
+        case .improvingIntermediate:
+            // The showcase profile. Fillers dropping → "be more concise"
+            // reads as the natural next ask. Warm voice keeps the coach
+            // copy across surfaces friendly rather than clipped.
+            return CoachingProfile(
+                speakingContext: .work,
+                primaryGoal: .moreConcise,
+                confidenceLevel: .inconsistent,
+                biggestChallenge: .rambling,
+                desiredOutcome: .composed,
+                speakingStyleGoal: .warm,
+                styleReference: "Brené Brown — warm but precise.",
+                coachingBrief: "Tighten my answers in cross-functional meetings.",
+                motivationWhyNow: "I'm getting more stakeholder facetime.",
+                successVision: "Land my point in one sentence."
+            )
+        case .plateauedAdvanced:
+            // Strong delivery, stuck on openings. Authoritative voice +
+            // executive presence — the user is mid-career, looking for
+            // the next edge.
+            return CoachingProfile(
+                speakingContext: .presentations,
+                primaryGoal: .moreConcise,
+                confidenceLevel: .confident,
+                biggestChallenge: .rambling,
+                desiredOutcome: .persuasive,
+                speakingStyleGoal: .authoritative,
+                styleReference: "Steve Jobs keynotes — clear, decisive openings.",
+                coachingBrief: "Sharpen the first 10 seconds of every talk.",
+                motivationWhyNow: "Speaking at a leadership offsite next month.",
+                successVision: "Open with a line that lands."
+            )
+        case .pressureVulnerable:
+            // Casual reps land, pressure reps blow up. Calmer-delivery
+            // primary goal + executive presence; the user is targeting
+            // boardroom composure, not warmth.
+            return CoachingProfile(
+                speakingContext: .interviews,
+                primaryGoal: .calmerDelivery,
+                confidenceLevel: .inconsistent,
+                biggestChallenge: .rushing,
+                desiredOutcome: .composed,
+                speakingStyleGoal: .executive,
+                styleReference: "Composed under fire — board updates, hard questions.",
+                coachingBrief: "Keep pace and pitch steady when stakes rise.",
+                motivationWhyNow: "Series B fundraise — investor Q&A coming up.",
+                successVision: "Sound the same calm whether the question is easy or hard."
+            )
+        case .fillerFree:
+            // Strong baseline across the board. Concise voice + persuasive
+            // outcome — the user is honing edge cases, not basics.
+            return CoachingProfile(
+                speakingContext: .presentations,
+                primaryGoal: .moreConcise,
+                confidenceLevel: .confident,
+                biggestChallenge: .rambling,
+                desiredOutcome: .persuasive,
+                speakingStyleGoal: .concise,
+                styleReference: "Tight, no wasted words — analyst-call register.",
+                coachingBrief: "Drop one more unnecessary word per sentence.",
+                motivationWhyNow: "Keynoting at a conference in eight weeks.",
+                successVision: "Every sentence pulls weight."
+            )
+        }
     }
 
     /// XP that matches the seed profile's narrative. 1000 XP = one level

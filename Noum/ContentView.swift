@@ -360,6 +360,26 @@ struct ContentView: View {
                     )
                 case .growthLibrary:
                     GrowthLibraryView()
+                case .sessionDetail(let sessionID):
+                    // Resolve the session against the live store. The
+                    // sessionDetail destination is deep-linked from the
+                    // Growth Library (and any future surface that wants to
+                    // open "the session behind this artifact"); if the
+                    // session has been deleted since the artifact was
+                    // recorded, fall back to the History list rather than
+                    // crashing or rendering an empty card.
+                    if let session = sessionStore.sessions.first(where: { $0.id == sessionID }) {
+                        SessionHistoryDetailView(
+                            session: session,
+                            insights: CoachingPlanner.sessionInsights(
+                                for: session,
+                                comparedTo: sessionStore.sessions,
+                                profile: coachingProfileStore.profile
+                            )
+                        )
+                    } else {
+                        SessionHistoryView(navigationPath: $navigationPath)
+                    }
                 }
             }
         }

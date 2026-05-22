@@ -14,18 +14,28 @@ final class NoumUITests: XCTestCase {
         app.terminate()
 
         // The journey card is gated by HomeSignalGate (path-node unlocked OR
-        // coaching profile set). DevSeedData.injectProfile(.improvingIntermediate)
-        // doesn't populate CoachingProfile, so on a freshly-erased simulator the
-        // card never renders and tap-by-id can't find it. Deep-link straight to
-        // the journey screen — same test intent (screen reachable from launch)
-        // without depending on simulator-leftover state.
-        //
-        // TODO: M16 — extend DevSeedData.injectProfile(.improvingIntermediate) to
-        // also seed CoachingProfileStore so gated-card tests can use the
-        // tap-the-card pattern again.
-        let pathApp = launchSeededAt("noum://path")
-        XCTAssertTrue(pathApp.descendants(matching: .any)["journey.screen"].waitForExistence(timeout: 5))
-        pathApp.terminate()
+        // coaching profile set). As of the Growth-Library push,
+        // DevSeedData.injectProfile(.improvingIntermediate) also seeds
+        // CoachingProfileStore — so on a seeded simulator the card renders
+        // and tap-by-id works again. Earlier sessions used a deep-link
+        // fallback (noum://path); restored to the tap-the-card pattern now
+        // that the seed covers the gate. Defensive fallback to the deep
+        // link if the card somehow isn't visible (slow simulator startup,
+        // scroll position), so the test still asserts the screen is
+        // reachable rather than hard-failing on a flake.
+        let pathApp = launchApp()
+        let pathCard = pathApp.descendants(matching: .any)["home.path"]
+        if pathCard.waitForExistence(timeout: 5) {
+            scrollUntilHittable(pathCard, in: pathApp)
+            pathCard.tap()
+            XCTAssertTrue(pathApp.descendants(matching: .any)["journey.screen"].waitForExistence(timeout: 5))
+            pathApp.terminate()
+        } else {
+            pathApp.terminate()
+            let fallbackApp = launchSeededAt("noum://path")
+            XCTAssertTrue(fallbackApp.descendants(matching: .any)["journey.screen"].waitForExistence(timeout: 5))
+            fallbackApp.terminate()
+        }
         // The old progressCard (which carried `home.rank`) was removed from
         // the home during the M14 consolidation — rank now lives on the
         // Profile tab. The Profile destination is exercised by tapping the
