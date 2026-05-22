@@ -178,6 +178,15 @@ final class ScreenshotTour: XCTestCase {
         attach(askApp, name: "25b-ask-noum")
         askApp.terminate()
 
+        // ----- GROWTH LIBRARY (M16 persistent proof archive) -----
+        // Append-only deep link, so we land on Home first then push the
+        // library onto an empty navigation stack. Capture before scrolling
+        // so the title + first proof card are framed.
+        let growthApp = launchSeededAt("noum://growth")
+        Thread.sleep(forTimeInterval: 1.5)
+        attach(growthApp, name: "25d-growth-library")
+        growthApp.terminate()
+
         // ----- FRIEND LEADERBOARD (via Profile → leaderboard NavigationLink) -----
         let leaderboardApp = launchSeededAt("noum://profile")
         Thread.sleep(forTimeInterval: 1.2)

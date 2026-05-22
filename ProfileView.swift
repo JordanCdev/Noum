@@ -599,24 +599,44 @@ struct ProfileView: View {
     private var insightsBankedChip: some View {
         let count = proofStore.records.count
         if count > 0 {
+            // M16 Growth Library entry: the chip itself is now the
+            // affordance into the persistent archive surface. Opens
+            // `noum://growth` so the existing DeepLinkRouter pathway
+            // owns the navigation push (no path-binding leak into
+            // Profile). Visual register stays ambient — the chip is
+            // still a chip, the chevron + button shape only appears
+            // when the library has something to show.
             let noun = count == 1 ? "insight" : "insights"
-            HStack(spacing: 6) {
-                Image(systemName: "quote.opening")
-                    .font(.caption2)
-                    .foregroundStyle(AppColor.pro)
-                Text("\(count) \(noun) banked")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                if let recency = mostRecentInsightRecency {
-                    Text("\u{00B7} Most recent: \(recency)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
+            Button {
+                if let url = URL(string: "noum://growth") {
+                    openURL(url)
                 }
-                Spacer(minLength: 0)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "quote.opening")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.pro)
+                    Text("\(count) \(noun) banked")
+                        .font(Typography.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let recency = mostRecentInsightRecency {
+                        Text("\u{00B7} Most recent: \(recency)")
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 4)
+            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(insightsAccessibilityLabel(count: count))
+            .accessibilityHint(Text("Opens the growth library."))
+            .accessibilityIdentifier("profile.growthLibrary.link")
         }
     }
 
