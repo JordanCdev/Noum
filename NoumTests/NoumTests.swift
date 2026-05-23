@@ -10726,5 +10726,70 @@ struct PracticeSessionIntentDecodingTests {
         let decoded = try JSONDecoder().decode(PracticeSession.self, from: data)
         #expect(decoded.intentFocus == .reduceFillers)
         #expect(decoded.intentLabel == "Cut fillers")
+// MARK: - M20 Paywall Feature Accuracy Tests
+
+@Suite("PaywallFeatureAccuracy")
+struct PaywallFeatureAccuracyTests {
+
+    // Verify that features listed as Pro-gated in PremiumManager are actually
+    // gated (not accidentally open to free users after a logic change).
+    @Test func proGatedFeaturesRequirePremium() {
+        let manager = PremiumManager.shared
+        // Snapshot without premium entitlement
+        let wasPremium = manager.isPremium
+        if wasPremium { manager.revokePremium() }
+        defer { if wasPremium { manager.upgradeToPremium() } }
+
+        #expect(!manager.canUseCoachMode, "Coach mode must require Pro")
+        #expect(!manager.canUseLiveTranscript, "Live transcript must require Pro")
+        #expect(!manager.canRecordVideo, "Video recording must require Pro")
+        #expect(!manager.canUseFillerTracking, "Filler tracking must require Pro")
+        #expect(!manager.canViewTrends, "Trend analytics must require Pro")
+        #expect(!manager.canUseAsyncChallenges, "Unlimited async challenges must require Pro")
+        #expect(!manager.canSaveTranscripts, "Saved transcripts must require Pro")
+        #expect(!manager.canUseVideoAnalysis, "AI video analysis must require Pro")
+    }
+
+    // Verify that free-tier features listed on the paywall are genuinely open.
+    @Test func freeFeaturesTrulyFreeForAll() {
+        let manager = PremiumManager.shared
+        let wasPremium = manager.isPremium
+        if wasPremium { manager.revokePremium() }
+        defer { if wasPremium { manager.upgradeToPremium() } }
+
+        #expect(manager.canUseClassicMode, "Classic mode must be free")
+        #expect(manager.canViewBasicScore, "Basic scoring must be free")
+        #expect(manager.canUseDailyChallenges, "Daily challenges must be free")
+        #expect(manager.canUseThinkingTime, "Thinking time must be free")
+    }
+
+    // Filler tracking is listed as a PRO feature on the paywall.
+    // It must NOT appear in canUseDailyChallenges-style open gates.
+    @Test func fillerTrackingIsNotFree() {
+        let manager = PremiumManager.shared
+        let wasPremium = manager.isPremium
+        if wasPremium { manager.revokePremium() }
+        defer { if wasPremium { manager.upgradeToPremium() } }
+
+        #expect(!manager.canUseFillerTracking,
+                "Filler tracking is gated Pro — it must not be free, matching the paywall listing")
+    }
+
+    // Video analysis credits are bounded at 5/month for Pro users.
+    @Test func videoAnalysisLimitIsEnforced() {
+        #expect(PremiumManager.monthlyVideoAnalysisLimit == 5,
+                "Paywall advertises 5 video analyses/month — limit constant must match")
+    }
+
+    // Free users get 1 async challenge slot; Pro users are unlimited.
+    @Test func asyncChallengeLimitEnforced() {
+        let manager = PremiumManager.shared
+        let wasPremium = manager.isPremium
+        if wasPremium { manager.revokePremium() }
+        defer { if wasPremium { manager.upgradeToPremium() } }
+
+        #expect(manager.asyncChallengeLimit == 1, "Free tier gets 1 async challenge slot")
+        manager.upgradeToPremium()
+        #expect(manager.asyncChallengeLimit == .max, "Pro tier gets unlimited async challenge slots")
     }
 }
