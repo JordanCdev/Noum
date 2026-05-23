@@ -591,6 +591,7 @@ class AuthManager: ObservableObject {
             BigMomentStore.shared.reloadForCurrentAccount()
             ForwardPlanStore.shared.reloadForCurrentAccount()
             SessionIntentStore.shared.reloadForCurrentAccount()
+            CoachLetterStore.shared.reloadForCurrentAccount()
             completion?()
         }
     }
@@ -605,6 +606,7 @@ class AuthManager: ObservableObject {
             BigMomentStore.shared.endSession()
             ForwardPlanStore.shared.endSession()
             SessionIntentStore.shared.endSession()
+            CoachLetterStore.shared.endSession()
         }
     }
 

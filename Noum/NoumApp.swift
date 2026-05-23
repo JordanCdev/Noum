@@ -127,6 +127,14 @@ struct NoumApp: App {
             if #available(iOS 17.0, *) {
                 SharedNoumStateMirror.refresh()
             }
+            // M22 — Monthly Coach Letter auto-fire. Idempotent (guards
+            // on day-of-month + prior-letter-exists + non-empty history).
+            // Safe to call on every scene activation.
+            if #available(iOS 17.0, *) {
+                Task { @MainActor in
+                    CoachLetterCoordinator.autoFireIfDue()
+                }
+            }
         }
         .onOpenURL { url in
             handleIncomingURL(url)
