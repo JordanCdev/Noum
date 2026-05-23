@@ -330,6 +330,9 @@ enum TrendFramingCopy {
             }
             return "Trending in the right direction."
         case .stable:
+            if sessionsInWindow <= 1 {
+                return "First read — not enough sessions yet to call a trend."
+            }
             return "Stable for \(sessionsInWindow) sessions."
         case .declining:
             if confidence == .high {

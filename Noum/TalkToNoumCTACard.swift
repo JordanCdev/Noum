@@ -3,40 +3,23 @@ import SwiftUI
 
 // MARK: - Talk To Noum CTA Card
 //
-// Hero-block bottom card. Always visible — the post-rep moment is the
-// highest-intent buying moment in the product, so the upgrade path
-// lives where the user has just felt the value.
+// Single-source Ask Noum CTA. Replaces the previous two-card setup
+// (this card + askCoachBridgeCard in the Details disclosure).
 //
 // Behavior:
-//   • Pro user → tap navigates to AskNoumView with the session-anchored
-//     opener already seeded (via `onAskNoumAboutRep` — the same bridge
-//     the askCoachBridgeCard in the Details disclosure already uses).
-//     The Details bridge stays as the discovery hook; this card is the
-//     hero CTA so non-expanders never miss the door.
-//   • Free user → tap presents the existing `PaywallView` via the
-//     `showPaywall` binding the host SummaryView already owns. We
-//     don't introduce a parallel sheet; one paywall presenter, one
-//     entry point.
+//   • Pro user → opens AskNoumView with session-anchored opener seeded.
+//   • Free user → presents PaywallView via the showPaywall binding the
+//     host SummaryView owns. One paywall presenter, one entry point.
 //
-// Visual register:
-//   • AppColor.pro gradient + 0.18-opacity stroke — same vocabulary
-//     the existing Pro preview card uses, so the upgrade hierarchy
-//     reads as one coherent surface across the screen.
-//   • NoumCharacter.Inline at .calm — the same coach speaker the
-//     askCoachBridgeCard uses, stitching this CTA to the thread it
-//     opens.
-//   • Lock glyph for free users — honest signal, not dark-pattern.
-//     The Pro register itself already says "premium"; the lock is a
-//     small clarifier, not the headline.
-//
-// Voice rules honored: sentence case, no exclamation, no emoji. The
-// pitch line names the value (`talk to your coach about every rep`)
-// without claiming the moon — we don't promise outcomes we can't
-// underwrite.
+// Voice-aware headline: shaped by the user's speakingStyleGoal so the
+// question reads in the same register the thread it opens will use.
+// Free users see a generic headline because the paywall interrupts
+// before they enter the thread.
 
 @available(iOS 17.0, *)
 struct TalkToNoumCTACard: View {
     let isPremium: Bool
+    let speakingStyleGoal: SpeakingStyleGoal?
     let onAskNoum: () -> Void
     let onUpgradePrompt: () -> Void
 
@@ -101,19 +84,25 @@ struct TalkToNoumCTACard: View {
 
     // MARK: - Copy
 
-    private var headlineCopy: String { Self.headlineCopy(isPremium: isPremium) }
+    private var headlineCopy: String { Self.headlineCopy(isPremium: isPremium, voice: speakingStyleGoal) }
     private var subCopy: String { Self.subCopy(isPremium: isPremium) }
     private var ctaCopy: String { Self.ctaCopy(isPremium: isPremium) }
-    private var accessibilityLabel: String { Self.accessibilityLabel(isPremium: isPremium) }
+    private var accessibilityLabel: String { Self.accessibilityLabel(isPremium: isPremium, voice: speakingStyleGoal) }
 
-    /// Copy contract — extracted to a static accessor so the brand-voice
-    /// rules (sentence case, no exclamation, no emoji, no "Let's", honest
-    /// upgrade signal not dark-pattern) can be locked by unit tests
-    /// without instantiating SwiftUI. The headline is invariant across
-    /// pro/free because the moment is shared; only the supporting copy
-    /// shifts.
-    static func headlineCopy(isPremium: Bool) -> String {
-        "Talk to Noum about this rep."
+    /// Copy contract — extracted to static accessors so brand-voice rules
+    /// (sentence case, no exclamation, no emoji, honest upgrade signal)
+    /// can be locked by unit tests without instantiating SwiftUI.
+    static func headlineCopy(isPremium: Bool, voice: SpeakingStyleGoal? = nil) -> String {
+        guard isPremium else { return "Want a coach's read on this rep?" }
+        switch voice {
+        case .authoritative: return "Want a verdict on this rep?"
+        case .warm: return "Want to talk through how this rep felt?"
+        case .concise: return "Want the one move from this rep?"
+        case .persuasive: return "Want the argument this rep makes?"
+        case .executive: return "Want a top-line read on this rep?"
+        case .storytelling: return "Want to place this rep in your arc?"
+        case .none: return "Want a coach's read on this rep?"
+        }
     }
 
     static func subCopy(isPremium: Bool) -> String {
@@ -126,11 +115,12 @@ struct TalkToNoumCTACard: View {
         isPremium ? "Open the thread" : "Unlock with Pro"
     }
 
-    static func accessibilityLabel(isPremium: Bool) -> String {
+    static func accessibilityLabel(isPremium: Bool, voice: SpeakingStyleGoal? = nil) -> String {
+        let headline = headlineCopy(isPremium: isPremium, voice: voice)
         if isPremium {
-            return "Talk to Noum about this rep. Opens the coach thread with this session pre-loaded."
+            return "Ask Noum. \(headline). Opens the coach thread with this rep already in hand."
         }
-        return "Talk to Noum about this rep. Locked. Pro members unlock the coach thread for every rep."
+        return "Ask Noum. \(headline). Locked — Pro members unlock the coach thread for every rep."
     }
 
     // MARK: - Lock chip
@@ -185,6 +175,7 @@ struct TalkToNoumCTACard: View {
 #Preview("Talk to Noum — Pro") {
     TalkToNoumCTACard(
         isPremium: true,
+        speakingStyleGoal: .authoritative,
         onAskNoum: { print("ask") },
         onUpgradePrompt: { print("upgrade") }
     )
@@ -196,6 +187,7 @@ struct TalkToNoumCTACard: View {
 #Preview("Talk to Noum — Free (locked)") {
     TalkToNoumCTACard(
         isPremium: false,
+        speakingStyleGoal: nil,
         onAskNoum: { print("ask") },
         onUpgradePrompt: { print("upgrade") }
     )

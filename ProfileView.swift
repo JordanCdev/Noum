@@ -191,6 +191,7 @@ struct ProfileView: View {
                 clusterHeader("Coaching")
                 coachingDirectionCard
                 speechPatternsCard
+                skillProgressPanel
                 activeChallengePanel
                 feedbackInboxCard
 
@@ -1199,6 +1200,19 @@ struct ProfileView: View {
             }
         }
         return aggregate.sorted { $0.value > $1.value }.map { (word: $0.key, count: $0.value) }
+    }
+
+    // MARK: - Skill Progress
+
+    @ViewBuilder
+    private var skillProgressPanel: some View {
+        let trends = TrendAnalyzer.analyze(snapshots: trendStore.snapshots)
+        if !trends.isEmpty {
+            SkillProgressView(
+                trends: trends,
+                drillHistory: DrillHistoryStore.shared.entries
+            )
+        }
     }
 
     // MARK: - Feedback Inbox
