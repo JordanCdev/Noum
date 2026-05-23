@@ -3160,6 +3160,14 @@ final class CoachingProfileStore: ObservableObject {
 
     func save(_ profile: CoachingProfile) {
         guard let accountID = currentAccountID else { return }
+        // Snapshot the prior voice BEFORE mutating self.profile so we
+        // can detect a voice change and trigger a retroactive regen of
+        // the most-recent PostRepCoachNote in the new voice. Initial
+        // capture (previousVoice == nil) does not trigger a regen
+        // because there's no rep history to regenerate against on a
+        // fresh account; the next finalize will produce the first note
+        // in the chosen voice naturally.
+        let previousVoice = self.profile?.speakingStyleGoal
         self.profile = profile
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
@@ -3168,6 +3176,12 @@ final class CoachingProfileStore: ObservableObject {
         shouldPresentInitialOnboarding = false
         syncProfileIfPossible(profile, accountID: accountID)
         paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
+
+        if let previousVoice, previousVoice != profile.speakingStyleGoal {
+            PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(
+                newVoice: profile.speakingStyleGoal
+            )
+        }
     }
 
     /// Single-shot AI paraphrase of the user's goal at capture time. Best-effort:
@@ -6233,6 +6247,98 @@ enum PracticeSessionFinalizer {
                 // Only replace when the upgrade is actually AI-backed
                 // — same-deterministic re-writes are no-ops but waste
                 // a published change.
+                if upgraded.isAIBacked {
+                    PostRepCoachNoteStore.shared.record(upgraded)
+                }
+            }
+        }
+    }
+
+    // MARK: - Voice-change retroactive read (M24 Track 1 future move)
+    //
+    // When the user changes their `speakingStyleGoal`, the most recent
+    // PostRepCoachNote is still written in the OLD voice. The persistent
+    // Ask Noum chat coach reads that note as "your current voice" via
+    // `CoachContextBuilder.userContext`'s LAST REP NOTE section — so
+    // until the user finishes another rep, the chat coach quotes a
+    // stale-voice note as if it were the live voice. This regen closes
+    // the gap: when the voice changes, the most recent note is rewritten
+    // immediately in the new voice. Same sessionID, so the store's
+    // dedupe-by-sessionID contract replaces the prior record rather
+    // than stacking.
+
+    /// Pure helper: build a `PostRepCoachNoteInput` for re-generating
+    /// the note that's already attached to a finalized session, in a
+    /// new voice. Session metrics carry through; baseline + BigMoment
+    /// come from the live stores at regen time (a baseline that's
+    /// evolved since the rep is the right read for "current voice on
+    /// past rep" — the deterministic priority chain is mostly
+    /// session-derived anyway). Exposed for tests.
+    nonisolated static func regenerationInput(
+        from session: PracticeSession,
+        newVoice: SpeakingStyleGoal?,
+        baseline: CommunicationBaseline,
+        bigMoment: BigMoment?,
+        bigMomentDaysUntil: Int?
+    ) -> PostRepCoachNoteInput {
+        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient
+            ? nil : baseline.fillerRate.value
+        let baselinePace: Double? = baseline.pace.confidence == .insufficient
+            ? nil : baseline.pace.value
+        return PostRepCoachNoteInput(
+            sessionID: session.id,
+            mode: session.mode,
+            score: session.score,
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            voice: newVoice,
+            intentLabel: session.intentLabel,
+            baselineFillerRate: baselineFillerRate,
+            baselinePaceWPM: baselinePace,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDaysUntil
+        )
+    }
+
+    /// Fired from `CoachingProfileStore.save(_:)` when the user changes
+    /// their voice. No-op when: no note has been recorded yet (cold
+    /// start), the latest note's voice already matches the new voice
+    /// (idempotent — onboarding "save" with no actual change), or the
+    /// originating session has been deleted from history since the
+    /// note was written (defensive — never invent a note for a session
+    /// that no longer exists).
+    @MainActor
+    static func regenerateMostRecentNoteIfVoiceChanged(newVoice: SpeakingStyleGoal?) {
+        guard let latest = PostRepCoachNoteStore.shared.latestNote() else { return }
+        guard latest.voice != newVoice else { return }
+        guard let session = PracticeSessionStore.shared.sessions
+            .first(where: { $0.id == latest.sessionID }) else { return }
+
+        let baseline = BaselineStore.shared.baseline
+        let bigMoment = BigMomentStore.shared.activeMoment
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.shared.daysUntil($0) }
+
+        let input = regenerationInput(
+            from: session,
+            newVoice: newVoice,
+            baseline: baseline,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDays
+        )
+
+        // Deterministic note lands synchronously so the Ask Noum chat
+        // coach reads the new-voice note on the very next reply rather
+        // than quoting the stale-voice line one more time.
+        let deterministic = PostRepCoachNoteService.deterministicNote(input: input)
+        PostRepCoachNoteStore.shared.record(deterministic)
+
+        // AI upgrade fires concurrently — same shape as the finalize
+        // path so the polished phrasing eventually lands once the
+        // model rewrites in the new voice.
+        Task { [input] in
+            let upgraded = await PostRepCoachNoteService.shared.generate(input: input)
+            await MainActor.run {
                 if upgraded.isAIBacked {
                     PostRepCoachNoteStore.shared.record(upgraded)
                 }

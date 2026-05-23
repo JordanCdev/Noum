@@ -11,6 +11,7 @@ struct SessionHistoryView: View {
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
     @State private var selectedModeFilter: PracticeMode? = nil
     @State private var sessionToDelete: PracticeSession?
     @State private var showTrends = false
@@ -148,6 +149,21 @@ struct SessionHistoryView: View {
                         // --- Mode Filter ---
                         modeFilterChips
                             .padding(.bottom, 12)
+
+                        // --- Sudden Death history breakdown ---
+                        // Surfaces the per-difficulty track record (best,
+                        // avg, clean) on the Sudden Death filter so the
+                        // engine's honest data lives in the History
+                        // surface, not only on the per-run Result screen.
+                        // Self-hides on cold start (no SD runs yet) and
+                        // when any other filter is selected.
+                        if selectedModeFilter == .suddenDeath {
+                            SuddenDeathHistoryBreakdownCard(
+                                runs: suddenDeathRunHistoryStore.runs
+                            )
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.bottom, 16)
+                        }
 
                         // --- Section Header ---
                         // Sentence-case cardTitle + hairline divider. Reads as

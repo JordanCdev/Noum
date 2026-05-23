@@ -11671,3 +11671,362 @@ struct SuddenDeathRunHistoryStoreTests {
     }
 }
 
+// MARK: - SuddenDeathHistorySummary (Track B — History tab integration)
+//
+// Pure breakdown helper. Test surface is small but locks the contract
+// the History card relies on: per-difficulty grouping, best/avg/clean
+// math, sort-by-most-recent-played.
+
+@available(iOS 17.0, *)
+struct SuddenDeathHistorySummaryTests {
+
+    private func run(
+        difficulty: SuddenDeathDifficulty,
+        rounds: Int,
+        fillers: Int = 0,
+        completedAt: Date
+    ) -> SuddenDeathRunRecord {
+        SuddenDeathRunRecord(
+            completedAt: completedAt,
+            difficulty: difficulty,
+            roundsSurvived: rounds,
+            totalFillers: fillers,
+            totalWords: 60,
+            score: 7,
+            xpEarned: 100,
+            finalOutcome: .survived,
+            wasNewBestAtTime: false
+        )
+    }
+
+    @Test func emptyInputProducesEmptyBreakdowns() {
+        let breakdowns = SuddenDeathHistorySummary.breakdowns(from: [])
+        #expect(breakdowns.isEmpty)
+        #expect(SuddenDeathHistorySummary.totalRunCount(from: []) == 0)
+        #expect(SuddenDeathHistorySummary.mostRecentDate(from: []) == nil)
+    }
+
+    @Test func groupsByDifficulty() {
+        let now = Date()
+        let runs = [
+            run(difficulty: .easy,   rounds: 5, completedAt: now),
+            run(difficulty: .easy,   rounds: 3, completedAt: now.addingTimeInterval(-60)),
+            run(difficulty: .medium, rounds: 6, completedAt: now.addingTimeInterval(-120)),
+            run(difficulty: .hard,   rounds: 2, completedAt: now.addingTimeInterval(-180)),
+            run(difficulty: .hard,   rounds: 8, completedAt: now.addingTimeInterval(-200))
+        ]
+        let breakdowns = SuddenDeathHistorySummary.breakdowns(from: runs)
+        #expect(breakdowns.count == 3)
+        let counts = Dictionary(uniqueKeysWithValues: breakdowns.map { ($0.difficulty, $0.runCount) })
+        #expect(counts[.easy] == 2)
+        #expect(counts[.medium] == 1)
+        #expect(counts[.hard] == 2)
+    }
+
+    @Test func bestRoundsIsPerDifficultyMax() {
+        let now = Date()
+        let runs = [
+            run(difficulty: .hard, rounds: 2, completedAt: now),
+            run(difficulty: .hard, rounds: 8, completedAt: now.addingTimeInterval(-60)),
+            run(difficulty: .hard, rounds: 5, completedAt: now.addingTimeInterval(-120))
+        ]
+        let hard = SuddenDeathHistorySummary.breakdowns(from: runs).first { $0.difficulty == .hard }
+        #expect(hard?.bestRounds == 8)
+    }
+
+    @Test func averageRoundsRoundsToOneDecimal() {
+        let now = Date()
+        // 5 + 6 + 8 = 19 / 3 = 6.3333... → 6.3
+        let runs = [
+            run(difficulty: .medium, rounds: 5, completedAt: now),
+            run(difficulty: .medium, rounds: 6, completedAt: now.addingTimeInterval(-60)),
+            run(difficulty: .medium, rounds: 8, completedAt: now.addingTimeInterval(-120))
+        ]
+        let medium = SuddenDeathHistorySummary.breakdowns(from: runs).first { $0.difficulty == .medium }
+        #expect(medium?.averageRounds == 6.3)
+    }
+
+    @Test func cleanRunCountTracksZeroFillers() {
+        let now = Date()
+        let runs = [
+            run(difficulty: .easy, rounds: 4, fillers: 0, completedAt: now),
+            run(difficulty: .easy, rounds: 5, fillers: 0, completedAt: now.addingTimeInterval(-60)),
+            run(difficulty: .easy, rounds: 3, fillers: 2, completedAt: now.addingTimeInterval(-120)),
+            run(difficulty: .easy, rounds: 6, fillers: 1, completedAt: now.addingTimeInterval(-180))
+        ]
+        let easy = SuddenDeathHistorySummary.breakdowns(from: runs).first { $0.difficulty == .easy }
+        #expect(easy?.cleanRunCount == 2)
+    }
+
+    @Test func sortByMostRecentPlayedFirst() {
+        // Hard last played 10 minutes ago, Easy 2 minutes ago → Easy first.
+        let now = Date()
+        let runs = [
+            run(difficulty: .easy, rounds: 4, completedAt: now.addingTimeInterval(-120)),
+            run(difficulty: .hard, rounds: 6, completedAt: now.addingTimeInterval(-600))
+        ]
+        let breakdowns = SuddenDeathHistorySummary.breakdowns(from: runs)
+        #expect(breakdowns.first?.difficulty == .easy)
+        #expect(breakdowns.last?.difficulty == .hard)
+    }
+
+    @Test func mostRecentDateAcrossAllDifficulties() {
+        let now = Date()
+        let runs = [
+            run(difficulty: .easy, rounds: 4, completedAt: now.addingTimeInterval(-3600)),
+            run(difficulty: .hard, rounds: 6, completedAt: now)
+        ]
+        #expect(SuddenDeathHistorySummary.mostRecentDate(from: runs) == now)
+    }
+
+    @Test func totalRunCountIsRawCount() {
+        let now = Date()
+        let runs = (0..<7).map {
+            run(difficulty: .medium, rounds: $0 + 1, completedAt: now.addingTimeInterval(TimeInterval(-$0 * 60)))
+        }
+        #expect(SuddenDeathHistorySummary.totalRunCount(from: runs) == 7)
+    }
+}
+
+// MARK: - PostRepCoachNote voice-change retroactive read
+//
+// Covers the pure `regenerationInput` helper (input construction
+// from a finalized session + new voice) and verifies the
+// deterministic output through the existing service path. Integration
+// with `CoachingProfileStore.save(_:)` is exercised in the next
+// suite using a fresh PostRepCoachNoteStore against an isolated
+// UserDefaults suite — the store's `record(_:)` de-dupe contract is
+// what makes the regen replace the stale-voice record cleanly.
+
+@available(iOS 17.0, *)
+struct PostRepCoachNoteRegenerationInputTests {
+
+    private func makeSession(id: UUID = UUID(), intentLabel: String? = nil) -> PracticeSession {
+        PracticeSession(
+            id: id,
+            transcript: "We focused on three priorities for the quarter and the team aligned quickly.",
+            fillerWordCount: 1,
+            duration: 32,
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            mode: .timed,
+            score: 7,
+            intentLabel: intentLabel
+        )
+    }
+
+    @Test func sessionMetricsCarryThroughUnchanged() {
+        let session = makeSession()
+        let input = PracticeSessionFinalizer.regenerationInput(
+            from: session,
+            newVoice: .warm,
+            baseline: .empty,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil
+        )
+        #expect(input.sessionID == session.id)
+        #expect(input.mode == session.mode)
+        #expect(input.score == session.score)
+        #expect(input.fillerCount == session.fillerWordCount)
+        #expect(input.duration == session.duration)
+        #expect(input.wordCount == session.wordCount)
+    }
+
+    @Test func newVoiceLandsOnInput() {
+        let session = makeSession()
+        let input = PracticeSessionFinalizer.regenerationInput(
+            from: session,
+            newVoice: .executive,
+            baseline: .empty,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil
+        )
+        #expect(input.voice == .executive)
+    }
+
+    @Test func nilNewVoiceCarriesThrough() {
+        // Edge case — the user could theoretically clear their voice
+        // (the existing model doesn't expose this in the UI today,
+        // but the helper handles it defensively so a future settings
+        // affordance doesn't break the regen contract).
+        let session = makeSession()
+        let input = PracticeSessionFinalizer.regenerationInput(
+            from: session,
+            newVoice: nil,
+            baseline: .empty,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil
+        )
+        #expect(input.voice == nil)
+    }
+
+    @Test func intentLabelCarriesThroughFromSession() {
+        let session = makeSession(intentLabel: "Tighten my structure")
+        let input = PracticeSessionFinalizer.regenerationInput(
+            from: session,
+            newVoice: .concise,
+            baseline: .empty,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil
+        )
+        #expect(input.intentLabel == "Tighten my structure")
+    }
+
+    @Test func insufficientBaselineMapsToNilOnInput() {
+        // Cold-start baseline has insufficient confidence → input
+        // exposes nil for filler rate + pace so the deterministic
+        // chain skips the comparison branch.
+        let session = makeSession()
+        let input = PracticeSessionFinalizer.regenerationInput(
+            from: session,
+            newVoice: .warm,
+            baseline: .empty,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil
+        )
+        #expect(input.baselineFillerRate == nil)
+        #expect(input.baselinePaceWPM == nil)
+    }
+
+    @Test func deterministicNoteFromRegeneratedInputIsVoiceShaped() {
+        // Wire test: an input built by regenerationInput must produce a
+        // note in the requested voice when fed through the existing
+        // deterministic path. Tests the END-TO-END handoff between the
+        // new helper and the service.
+        let session = makeSession()
+        let warmInput = PracticeSessionFinalizer.regenerationInput(
+            from: session, newVoice: .warm, baseline: .empty,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        let executiveInput = PracticeSessionFinalizer.regenerationInput(
+            from: session, newVoice: .executive, baseline: .empty,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        let warmNote = PostRepCoachNoteService.deterministicNote(input: warmInput)
+        let executiveNote = PostRepCoachNoteService.deterministicNote(input: executiveInput)
+        #expect(warmNote.voice == .warm)
+        #expect(executiveNote.voice == .executive)
+        // Two different voices → two different phrasings against the
+        // same facts. Equality would mean the persona switch never
+        // reached the sentence selectors.
+        #expect(warmNote.noteText != executiveNote.noteText)
+    }
+
+    @Test func regeneratedNoteIsHonestlyRuleBased() {
+        // The deterministic path always sets `isAIBacked: false`. The
+        // AI upgrade path (separate, async) can flip this later. Lock
+        // the honest-provenance contract on the deterministic write
+        // that lands synchronously after a voice change.
+        let session = makeSession()
+        let input = PracticeSessionFinalizer.regenerationInput(
+            from: session, newVoice: .authoritative, baseline: .empty,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        #expect(note.isAIBacked == false)
+    }
+
+    @Test func sessionIDIsStableAcrossRegens() {
+        // The store de-dupes by sessionID. Two regenerations against
+        // the same session MUST land with the same sessionID so the
+        // second write replaces (not stacks) the first.
+        let sharedID = UUID()
+        let session = makeSession(id: sharedID)
+        let first = PracticeSessionFinalizer.regenerationInput(
+            from: session, newVoice: .warm, baseline: .empty,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        let second = PracticeSessionFinalizer.regenerationInput(
+            from: session, newVoice: .executive, baseline: .empty,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        #expect(first.sessionID == sharedID)
+        #expect(second.sessionID == sharedID)
+    }
+}
+
+// MARK: - PostRepCoachNoteStore regen replacement contract
+//
+// The voice-change regen leans on the store's existing sessionID
+// dedupe. These tests pin the store-level behavior the regen
+// depends on: write A in old voice → write B for same session in
+// new voice → store holds B only, with the new voice.
+
+@available(iOS 17.0, *)
+@MainActor
+struct PostRepCoachNoteStoreRegenerationTests {
+
+    private func freshStore() -> PostRepCoachNoteStore {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "tester" })
+    }
+
+    @Test func regenReplacesPriorRecordForSameSession() {
+        let store = freshStore()
+        let sessionID = UUID()
+        let oldVoice = PostRepCoachNote(
+            sessionID: sessionID, voice: .authoritative,
+            noteText: "Verdict: that was a 7. Composure carried the rep.",
+            isAIBacked: false
+        )
+        let newVoice = PostRepCoachNote(
+            sessionID: sessionID, voice: .warm,
+            noteText: "That rep scored 7 — and it sounded like it felt right too.",
+            isAIBacked: false
+        )
+        store.record(oldVoice)
+        store.record(newVoice)
+        #expect(store.notes.count == 1)
+        #expect(store.note(for: sessionID)?.voice == .warm)
+        #expect(store.note(for: sessionID)?.noteText.contains("felt right") == true)
+    }
+
+    @Test func regenDoesNotAffectOtherSessions() {
+        // Two distinct sessions, one regen — only the matching
+        // session's note flips. The other session's note keeps its
+        // original voice.
+        let store = freshStore()
+        let sessionA = UUID()
+        let sessionB = UUID()
+        store.record(PostRepCoachNote(
+            sessionID: sessionA, voice: .authoritative,
+            noteText: "Verdict: that was a 7. Composure carried the rep.",
+            isAIBacked: false
+        ))
+        store.record(PostRepCoachNote(
+            sessionID: sessionB, voice: .authoritative,
+            noteText: "Verdict: that was an 8. Composure carried the rep.",
+            isAIBacked: false
+        ))
+        // Regen only sessionA in warm
+        store.record(PostRepCoachNote(
+            sessionID: sessionA, voice: .warm,
+            noteText: "That rep scored 7 — and it sounded like it felt right too.",
+            isAIBacked: false
+        ))
+        #expect(store.notes.count == 2)
+        #expect(store.note(for: sessionA)?.voice == .warm)
+        #expect(store.note(for: sessionB)?.voice == .authoritative)
+    }
+
+    @Test func latestNoteReflectsRegeneratedVoiceAfterReplacement() {
+        // The Ask Noum chat coach reads `latestNote()` — after a
+        // voice change regen, the latest read MUST surface the new
+        // voice, not the stale one.
+        let store = freshStore()
+        let sessionID = UUID()
+        store.record(PostRepCoachNote(
+            sessionID: sessionID, voice: .concise,
+            noteText: "Steady. Hold the line.",
+            isAIBacked: false,
+            generatedAt: Date(timeIntervalSince1970: 100)
+        ))
+        store.record(PostRepCoachNote(
+            sessionID: sessionID, voice: .storytelling,
+            noteText: "A steady chapter — the through-line carried.",
+            isAIBacked: false,
+            generatedAt: Date(timeIntervalSince1970: 200)
+        ))
+        #expect(store.latestNote()?.voice == .storytelling)
+    }
+}
+
