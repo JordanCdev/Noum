@@ -129,7 +129,9 @@ struct CoachingPlanCard: View {
     // MARK: - Pre-prompt state (≥3 sessions, no plan yet)
 
     private var promptCard: some View {
-        Button(action: onTap) {
+        Button {
+            onTap()
+        } label: {
             VStack(alignment: .leading, spacing: 8) {
                 eyebrow("YOUR PROGRAM")
                 Text("A four-week coach plan, written for you.")
@@ -141,9 +143,9 @@ struct CoachingPlanCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Spacing.md)
-            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                     .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
             )
         }
@@ -158,7 +160,9 @@ struct CoachingPlanCard: View {
         if let week = plan.currentWeek() {
             let target = week.sessionTarget
             let fraction = target > 0 ? min(1.0, Double(completed) / Double(target)) : 0
-            Button(action: onTap) {
+            Button {
+                onTap()
+            } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         eyebrow("WEEK \(week.weekIndex) OF 4")
@@ -186,9 +190,9 @@ struct CoachingPlanCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.md)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
+                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
                         .stroke(AppColor.pro.opacity(isStale ? 0.35 : 0.18), lineWidth: 1)
                 )
             }

@@ -48,7 +48,6 @@ struct AskNoumView: View {
     // → stop and send. The view reads `state` + `unavailableReason` to
     // drive UI, and calls `toggle()` from the button action.
     @StateObject private var voiceInput = AskNoumVoiceInput()
-    @StateObject private var bigMomentStore = BigMomentStore.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
