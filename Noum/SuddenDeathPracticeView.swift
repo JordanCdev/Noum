@@ -41,6 +41,13 @@ struct SuddenDeathPracticeView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var engine = PressureTimerEngine()
+    // M21: Session Intent prompt — sheet-driven, one-shot per
+    // entry-to-setup. Same wiring as TimedPracticeView so the chip
+    // options stay coherent across modes.
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
+    @StateObject private var sessionIntentStore = SessionIntentStore.shared
+    @State private var showIntentPrompt: Bool = false
+    @State private var intentPromptShownThisVisit: Bool = false
 
     /// Live Activity coordinator. Lazily initialised on first use because
     /// we need access to `engine` and `speechVM` which are
@@ -164,6 +171,29 @@ struct SuddenDeathPracticeView: View {
         } message: {
             Text("Your progress in this run will be lost.")
         }
+        .sheet(isPresented: $showIntentPrompt) {
+            // M21: declared focus prompt — same component as Timed so
+            // the user sees one coherent surface across modes.
+            SessionIntentPromptView(
+                options: SessionIntentEngine.options(
+                    forwardPlan: forwardPlanStore.activePlan,
+                    trendFocus: TrendAnalyzer.primaryFocus(
+                        trends: TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots),
+                        currentSessionSnapshot: nil,
+                        recentDrills: DrillHistoryStore.shared.entries,
+                        styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                    ),
+                    profile: coachingProfileStore.profile
+                ),
+                onSelect: { intent in
+                    sessionIntentStore.setPending(intent)
+                },
+                onSkip: {
+                    sessionIntentStore.clearPending()
+                }
+            )
+            .presentationDetents([.medium])
+        }
         .task {
             speechVM.prepareForInteractiveUse()
 
@@ -173,6 +203,12 @@ struct SuddenDeathPracticeView: View {
             // skips the setup tap; the user's settings still apply.
             if engine.phase == .setup, PracticeModeQuickStart.consume(for: .suddenDeath) {
                 beginSession()
+            } else if engine.phase == .setup, !intentPromptShownThisVisit,
+                      sessionIntentStore.pendingIntent == nil {
+                // M21: surface the focus prompt at most once per visit.
+                // Skipped on Quick Start (the user already committed).
+                intentPromptShownThisVisit = true
+                showIntentPrompt = true
             }
         }
         .onChange(of: speechVM.transcribedText) { _, newText in
@@ -252,6 +288,9 @@ struct SuddenDeathPracticeView: View {
             // Same guard for TTS — never leave the synthesizer
             // speaking after the screen is gone.
             stopPromptReadout()
+            // M21: drop any pending intent that wasn't consumed by a
+            // finalize so the next mode entry starts clean.
+            sessionIntentStore.clearPending()
         }
     }
 

@@ -638,6 +638,17 @@ struct PracticeSession: Identifiable, Codable {
     /// produce nothing. Empty array means "ran and found nothing worth
     /// surfacing"; nil means "didn't run".
     var grammarFindings: [GrammarFinding]? = nil
+    /// M21: the coaching priority the user declared they were focusing on
+    /// before this rep started, if any. Nil for sessions where the user
+    /// dismissed the intent prompt or for older persisted sessions. Drives
+    /// the "You aimed for this" chip on the summary cards + the "Intent
+    /// declared" line in the Ask Noum context block.
+    var intentFocus: CoachingPriority? = nil
+    /// M21: the user-visible chip label that matched the declared intent
+    /// (e.g. "Cut fillers", "Tighten structure"). Persisted alongside
+    /// `intentFocus` so the coach can quote the exact label back at the
+    /// user rather than paraphrasing.
+    var intentLabel: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -663,6 +674,8 @@ struct PracticeSession: Identifiable, Codable {
         case pauseMetrics
         case pitchMetrics
         case grammarFindings
+        case intentFocus
+        case intentLabel
     }
 
     init(
@@ -688,7 +701,9 @@ struct PracticeSession: Identifiable, Codable {
         isRated: Bool = false,
         pauseMetrics: PauseMetrics? = nil,
         pitchMetrics: PitchMetrics? = nil,
-        grammarFindings: [GrammarFinding]? = nil
+        grammarFindings: [GrammarFinding]? = nil,
+        intentFocus: CoachingPriority? = nil,
+        intentLabel: String? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -713,6 +728,8 @@ struct PracticeSession: Identifiable, Codable {
         self.pauseMetrics = pauseMetrics
         self.pitchMetrics = pitchMetrics
         self.grammarFindings = grammarFindings
+        self.intentFocus = intentFocus
+        self.intentLabel = intentLabel
     }
 
     init(from decoder: Decoder) throws {
@@ -740,5 +757,7 @@ struct PracticeSession: Identifiable, Codable {
         pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
         pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
         grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)
+        intentFocus = try container.decodeIfPresent(CoachingPriority.self, forKey: .intentFocus)
+        intentLabel = try container.decodeIfPresent(String.self, forKey: .intentLabel)
     }
 }

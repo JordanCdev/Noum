@@ -323,7 +323,12 @@ enum CoachContextBuilder {
         lines.append("- Current streak: \(currentStreak) day\(currentStreak == 1 ? "" : "s").")
         lines.append("- Reps this week: \(weeklyReps).")
 
-        // RECENT — last 3 sessions, so the coach can quote actual numbers
+        // RECENT — last 3 sessions, so the coach can quote actual numbers.
+        // M21: when a session carried a declared intent (the user tapped a
+        // chip on the SessionIntent prompt before the rep), append a quiet
+        // "Intent: <label>" tail so the coach can quote it back ("you came
+        // in wanting to tighten structure — here's what I saw"). Sessions
+        // without intent get no tail; older persisted reps decode with nil.
         let recent = Array(sessions.sorted { $0.date > $1.date }.prefix(3))
         if !recent.isEmpty {
             lines.append("")
@@ -334,7 +339,14 @@ enum CoachContextBuilder {
                 let fillers = "\(s.fillerWordCount) filler\(s.fillerWordCount == 1 ? "" : "s")"
                 let duration = "\(Int(s.duration.rounded()))s"
                 let day = recentDayLabel(for: s.date)
-                lines.append("- \(day) · \(mode): \(score), \(fillers), \(duration).")
+                let intentTail: String = {
+                    if let label = s.intentLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !label.isEmpty {
+                        return " · Intent: \(label)"
+                    }
+                    return ""
+                }()
+                lines.append("- \(day) · \(mode): \(score), \(fillers), \(duration)\(intentTail).")
             }
         }
 

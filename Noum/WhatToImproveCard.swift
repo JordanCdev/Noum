@@ -38,6 +38,10 @@ struct WhatToImproveCard: View {
     let effectiveDuration: TimeInterval
     let transcriptWordCount: Int
     let isMinimalEffort: Bool
+    /// M21: the user's declared focus for this rep, if any. When a
+    /// bullet aligns, an "You aimed for this" chip renders beneath
+    /// the headline.
+    var intentFocus: CoachingPriority? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedBulletIDs: Set<String> = []
@@ -268,12 +272,18 @@ struct WhatToImproveCard: View {
                         .frame(width: 18, alignment: .center)
                         .padding(.top, 2)
 
-                    Text(bullet.headline)
-                        .font(Typography.body)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(bullet.headline)
+                            .font(Typography.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.leading)
+                        if let intent = intentFocus,
+                           SessionIntentMatcher.aligns(bulletID: bullet.id, with: intent) {
+                            intentMatchChip
+                        }
+                    }
 
                     if canExpand {
                         Image(systemName: "chevron.down")
@@ -295,6 +305,26 @@ struct WhatToImproveCard: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+    }
+
+    /// M21: quiet "You aimed for this" pill aligned with the matching
+    /// improvement bullet. Uses the caution palette so the chip reads
+    /// as "you flagged this, here's the verdict" rather than as a win.
+    private var intentMatchChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "scope")
+                .font(.caption2.weight(.bold))
+            Text("You aimed for this")
+                .font(Typography.micro.weight(.semibold))
+                .textCase(.uppercase)
+                .tracking(0.5)
+        }
+        .foregroundStyle(AppColor.caution)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(AppColor.caution.opacity(0.12), in: Capsule())
+        .accessibilityLabel("You aimed for this in this rep.")
+        .accessibilityIdentifier("summary.intentMatchChip")
     }
 
     @ViewBuilder

@@ -521,6 +521,8 @@ class AuthManager: ObservableObject {
             "bigMomentArchive.\(accountID)",
             // M20: Forward Plan (4-week coach program)
             "forwardPlan.\(accountID)",
+            // M21: Session Intent — bounded history of declared focuses
+            "sessionIntent.history.\(accountID)",
         ]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)
@@ -588,6 +590,7 @@ class AuthManager: ObservableObject {
             RecommendationLearningStore.shared.reloadForCurrentAccount()
             BigMomentStore.shared.reloadForCurrentAccount()
             ForwardPlanStore.shared.reloadForCurrentAccount()
+            SessionIntentStore.shared.reloadForCurrentAccount()
             completion?()
         }
     }
@@ -601,6 +604,7 @@ class AuthManager: ObservableObject {
             IMRelationshipStore.shared.endSession()
             BigMomentStore.shared.endSession()
             ForwardPlanStore.shared.endSession()
+            SessionIntentStore.shared.endSession()
         }
     }
 

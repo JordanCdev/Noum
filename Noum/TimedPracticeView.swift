@@ -561,6 +561,14 @@ struct TimedPracticeView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var premium = PremiumManager.shared
+    // M21: Session Intent prompt — sheet-driven, one-shot per
+    // entry-to-setup. `forwardPlanStore` + `sessionIntentStore` are
+    // observed so the chip options refresh when the user regenerates
+    // their plan without leaving Timed.
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
+    @StateObject private var sessionIntentStore = SessionIntentStore.shared
+    @State private var showIntentPrompt: Bool = false
+    @State private var intentPromptShownThisVisit: Bool = false
 
     // Session state
     @AppStorage("timedPractice.selectedTheme") private var selectedThemeRaw: String = PromptTheme.all.rawValue
@@ -714,6 +722,30 @@ struct TimedPracticeView: View {
             Text("Your current session will be lost.")
         }
         .accessibilityIdentifier("timedPractice.screen")
+        .sheet(isPresented: $showIntentPrompt) {
+            // M21: declared focus prompt. Sheet is shown at most once per
+            // visit to the setup phase. Dismissing without selecting drops
+            // cleanly — the rep finalizes with `intentFocus: nil`.
+            SessionIntentPromptView(
+                options: SessionIntentEngine.options(
+                    forwardPlan: forwardPlanStore.activePlan,
+                    trendFocus: TrendAnalyzer.primaryFocus(
+                        trends: TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots),
+                        currentSessionSnapshot: nil,
+                        recentDrills: DrillHistoryStore.shared.entries,
+                        styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                    ),
+                    profile: coachingProfileStore.profile
+                ),
+                onSelect: { intent in
+                    sessionIntentStore.setPending(intent)
+                },
+                onSkip: {
+                    sessionIntentStore.clearPending()
+                }
+            )
+            .presentationDetents([.medium])
+        }
         .task {
             // Batch initial setup into a single Task so SwiftUI
             // processes the state changes in one transaction.
@@ -757,9 +789,23 @@ struct TimedPracticeView: View {
             // not their preferences.
             if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
                 beginSession()
+            } else if phase == .setup, !intentPromptShownThisVisit,
+                      sessionIntentStore.pendingIntent == nil {
+                // M21: surface the focus prompt at most once per visit.
+                // Skipped on Quick Start (the user already committed to
+                // launching) and on returns from a started rep (the
+                // pending intent has already been consumed or the user
+                // already declined this visit).
+                intentPromptShownThisVisit = true
+                showIntentPrompt = true
             }
         }
-        .onDisappear { cleanup() }
+        .onDisappear {
+            cleanup()
+            // M21: drop any pending intent that wasn't consumed by a
+            // finalize — keeps the next mode entry clean.
+            sessionIntentStore.clearPending()
+        }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }

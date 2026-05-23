@@ -577,7 +577,8 @@ struct SummaryView: View {
                                 feedbackCategories: feedbackCategories,
                                 eloquenceFindings: eloquenceFindings,
                                 aiFeedback: aiFeedback,
-                                isMinimalEffort: isMinimalEffort
+                                isMinimalEffort: isMinimalEffort,
+                                intentFocus: sessionStore.sessions.first?.intentFocus
                             )
                             WhatToImproveCard(
                                 coachNote: coachNote,
@@ -587,7 +588,8 @@ struct SummaryView: View {
                                 effectiveFillerCount: effectiveFillerCount,
                                 effectiveDuration: effectiveDuration,
                                 transcriptWordCount: transcriptWordCount,
-                                isMinimalEffort: isMinimalEffort
+                                isMinimalEffort: isMinimalEffort,
+                                intentFocus: sessionStore.sessions.first?.intentFocus
                             )
                             YourNextMoveCard(
                                 drill: drillRecommendationV2,

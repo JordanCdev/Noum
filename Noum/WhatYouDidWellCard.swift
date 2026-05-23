@@ -29,6 +29,11 @@ struct WhatYouDidWellCard: View {
     let eloquenceFindings: [EloquenceFinding]
     let aiFeedback: AICoachFeedback?
     let isMinimalEffort: Bool
+    /// M21: the user's declared focus for this rep, if any. When a
+    /// bullet aligns with this priority, an "You aimed for this" chip
+    /// renders next to the headline. Nil for sessions where no intent
+    /// was declared — the chip silently doesn't render.
+    var intentFocus: CoachingPriority? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedBulletIDs: Set<String> = []
@@ -210,12 +215,18 @@ struct WhatYouDidWellCard: View {
                         .frame(width: 18, alignment: .center)
                         .padding(.top, 2)
 
-                    Text(bullet.headline)
-                        .font(Typography.body)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(bullet.headline)
+                            .font(Typography.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.leading)
+                        if let intent = intentFocus,
+                           SessionIntentMatcher.aligns(bulletID: bullet.id, with: intent) {
+                            intentMatchChip
+                        }
+                    }
 
                     if canExpand {
                         Image(systemName: "chevron.down")
@@ -237,6 +248,27 @@ struct WhatYouDidWellCard: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+    }
+
+    /// M21: quiet "You aimed for this" pill that lands beneath a
+    /// bullet's headline when the bullet aligns with the user's
+    /// declared intent. Restrained chrome (no border, small caps) so
+    /// it reads as a coaching note, not a reward badge.
+    private var intentMatchChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "scope")
+                .font(.caption2.weight(.bold))
+            Text("You aimed for this")
+                .font(Typography.micro.weight(.semibold))
+                .textCase(.uppercase)
+                .tracking(0.5)
+        }
+        .foregroundStyle(AppColor.positive)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(AppColor.positive.opacity(0.10), in: Capsule())
+        .accessibilityLabel("You aimed for this in this rep.")
+        .accessibilityIdentifier("summary.intentMatchChip")
     }
 
     @ViewBuilder

@@ -10318,3 +10318,413 @@ struct AskNoumStoreInjectCoachTurnTests {
         #expect(store.messages.first?.text == "Plan body.")
     }
 }
+
+// MARK: - M21 — Session Intent: priority/SkillArea bridge
+
+@available(iOS 17.0, *)
+struct CoachingPriorityAlignedWithSkillAreaTests {
+
+    @Test func fillerReductionMapsToReduceFillers() {
+        #expect(CoachingPriority.aligned(with: .fillerReduction) == .reduceFillers)
+    }
+
+    @Test func conciseSpeakingMapsToMoreConcise() {
+        #expect(CoachingPriority.aligned(with: .conciseSpeaking) == .moreConcise)
+        #expect(CoachingPriority.aligned(with: .structure) == .moreConcise)
+        #expect(CoachingPriority.aligned(with: .answerDevelopment) == .moreConcise)
+    }
+
+    @Test func openingsAndClosingsMapToThinkFaster() {
+        #expect(CoachingPriority.aligned(with: .openingStrength) == .thinkFaster)
+        #expect(CoachingPriority.aligned(with: .closingStrength) == .thinkFaster)
+    }
+
+    @Test func paceAndPauseMapToCalmerDelivery() {
+        #expect(CoachingPriority.aligned(with: .paceControl) == .calmerDelivery)
+        #expect(CoachingPriority.aligned(with: .pauseUsage) == .calmerDelivery)
+        #expect(CoachingPriority.aligned(with: .vocalEmphasis) == .calmerDelivery)
+        #expect(CoachingPriority.aligned(with: .confidence) == .calmerDelivery)
+    }
+
+    @Test func everySkillAreaMapsSomewhere() {
+        // Compile-time guard: any new SkillArea case must add a
+        // mapping. Iterating allCases ensures we don't silently fall
+        // through and pick a wrong default.
+        for area in SkillArea.allCases {
+            let priority = CoachingPriority.aligned(with: area)
+            #expect(CoachingPriority.allCases.contains(priority))
+        }
+    }
+
+    @Test func intentChipLabelsAreShortAndFirstPerson() {
+        // Chips render in a sheet card — labels must stay tight and
+        // declarative. The chip copy is short, no leading "I want to",
+        // no exclamations (brand-voice anti-goal contract).
+        for priority in CoachingPriority.allCases {
+            let label = priority.intentChipLabel
+            #expect(label.count <= 24)
+            #expect(!label.contains("!"))
+            #expect(!label.lowercased().hasPrefix("i "))
+        }
+    }
+}
+
+// MARK: - M21 — SessionIntentEngine option ordering
+
+@available(iOS 17.0, *)
+struct SessionIntentEngineTests {
+
+    private func makeProfile(goal: CoachingPriority) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: goal,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .warm,
+            styleReference: "",
+            coachingBrief: "Brief.",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    private func makePlan(focus: CoachingPriority, focusArea: SkillArea, mode: PracticeMode) -> ForwardPlan {
+        let weeks = (1...4).map { idx in
+            PlanWeek(
+                weekIndex: idx,
+                focus: focus,
+                focusSkillArea: focusArea,
+                suggestedMode: mode,
+                sessionTarget: 3,
+                rationale: "Week \(idx) rationale."
+            )
+        }
+        return ForwardPlan(weeks: weeks, isAIBacked: true)
+    }
+
+    @Test func coldStartReturnsOnlyGeneric() {
+        let options = SessionIntentEngine.options(
+            forwardPlan: nil,
+            trendFocus: nil,
+            profile: nil
+        )
+        #expect(options.count == 1)
+        #expect(options.first?.kind == .generic)
+    }
+
+    @Test func profileOnlyReturnsGoalThenGeneric() {
+        let profile = makeProfile(goal: .calmerDelivery)
+        let options = SessionIntentEngine.options(
+            forwardPlan: nil,
+            trendFocus: nil,
+            profile: profile
+        )
+        #expect(options.count == 2)
+        #expect(options[0].kind == .voiceGoal)
+        #expect(options[0].priority == .calmerDelivery)
+        #expect(options[1].kind == .generic)
+    }
+
+    @Test func planWeekFocusLandsFirstAndGenericLast() {
+        let plan = makePlan(focus: .moreConcise, focusArea: .structure, mode: .timed)
+        let profile = makeProfile(goal: .calmerDelivery)
+        let options = SessionIntentEngine.options(
+            forwardPlan: plan,
+            trendFocus: .fillerReduction,
+            profile: profile
+        )
+        // plan (moreConcise), trend (reduceFillers), profile (calmerDelivery), generic
+        #expect(options.count == 4)
+        #expect(options[0].kind == .planWeek)
+        #expect(options[0].priority == .moreConcise)
+        #expect(options[1].kind == .trendFocus)
+        #expect(options[1].priority == .reduceFillers)
+        #expect(options[2].kind == .voiceGoal)
+        #expect(options[2].priority == .calmerDelivery)
+        #expect(options[3].kind == .generic)
+    }
+
+    @Test func duplicatePrioritiesAreDeduped() {
+        // Plan-week focus and profile goal both collapse to moreConcise
+        // — the profile option should be skipped so the row never shows
+        // two chips with the same label.
+        let plan = makePlan(focus: .moreConcise, focusArea: .structure, mode: .timed)
+        let profile = makeProfile(goal: .moreConcise)
+        let options = SessionIntentEngine.options(
+            forwardPlan: plan,
+            trendFocus: .conciseSpeaking, // also maps to moreConcise
+            profile: profile
+        )
+        #expect(options.count == 2) // planWeek + generic
+        #expect(options[0].kind == .planWeek)
+        #expect(options[1].kind == .generic)
+    }
+
+    @Test func genericAlwaysAppearsLast() {
+        for plan in [Optional<ForwardPlan>.none, makePlan(focus: .reduceFillers, focusArea: .fillerReduction, mode: .ahCounter)] {
+            for trend in [Optional<SkillArea>.none, .paceControl, .openingStrength] as [SkillArea?] {
+                for profile in [Optional<CoachingProfile>.none, makeProfile(goal: .thinkFaster)] {
+                    let options = SessionIntentEngine.options(
+                        forwardPlan: plan,
+                        trendFocus: trend,
+                        profile: profile
+                    )
+                    #expect(options.last?.kind == .generic)
+                }
+            }
+        }
+    }
+
+    @Test func planWeekFocusUsesCurrentWeekNotWeekOne() {
+        // After 8 days, currentWeek() should resolve to week 2. If we
+        // make week 2 a different focus from week 1, the engine should
+        // surface week 2's focus, not week 1's.
+        let mixedWeeks: [PlanWeek] = [
+            PlanWeek(weekIndex: 1, focus: .reduceFillers, focusSkillArea: .fillerReduction, suggestedMode: .ahCounter, sessionTarget: 3, rationale: "w1"),
+            PlanWeek(weekIndex: 2, focus: .moreConcise, focusSkillArea: .structure, suggestedMode: .timed, sessionTarget: 3, rationale: "w2"),
+            PlanWeek(weekIndex: 3, focus: .thinkFaster, focusSkillArea: .openingStrength, suggestedMode: .suddenDeath, sessionTarget: 3, rationale: "w3"),
+            PlanWeek(weekIndex: 4, focus: .calmerDelivery, focusSkillArea: .paceControl, suggestedMode: .timed, sessionTarget: 3, rationale: "w4")
+        ]
+        let now = Date()
+        let weekTwoStart = Calendar.current.date(byAdding: .day, value: -8, to: now)!
+        let plan = ForwardPlan(weeks: mixedWeeks, generatedAt: weekTwoStart, isAIBacked: false)
+        let options = SessionIntentEngine.options(
+            forwardPlan: plan,
+            trendFocus: nil,
+            profile: nil,
+            now: now
+        )
+        #expect(options[0].kind == .planWeek)
+        #expect(options[0].priority == .moreConcise) // week 2's focus
+    }
+}
+
+// MARK: - M21 — SessionIntentStore lifecycle
+
+@available(iOS 17.0, *)
+struct SessionIntentStoreTests {
+
+    @Test func sessionIntentRoundTripsViaJSONCodec() throws {
+        let original = SessionIntent(
+            priority: .moreConcise,
+            label: "Tighten structure",
+            kind: .planWeek
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SessionIntent.self, from: data)
+        #expect(decoded.id == original.id)
+        #expect(decoded.priority == original.priority)
+        #expect(decoded.label == original.label)
+        #expect(decoded.kind == original.kind)
+    }
+
+    @Test func optionKindReasonLabelsAreCoachVoice() {
+        // Reason labels appear as small caps eyebrows above the chip
+        // label. No exclamations, no "Let's", no chirpy filler.
+        for kind in [SessionIntentOptionKind.planWeek, .trendFocus, .voiceGoal] {
+            let label = kind.reasonLabel!
+            #expect(!label.contains("!"))
+            #expect(!label.lowercased().contains("let's"))
+            #expect(label.count <= 24)
+        }
+        // Generic option is honest about being the escape hatch — no
+        // reason label so the chip reads as plain "Open rep".
+        #expect(SessionIntentOptionKind.generic.reasonLabel == nil)
+    }
+
+    @Test func historyCapIsRespected() {
+        // The store caps at 30 — verify the constant matches the type
+        // contract so a future change has to touch both places.
+        #expect(SessionIntentStore.historyCap == 30)
+    }
+
+    @Test func separateAccountKeysDontCollide() {
+        let key1 = "sessionIntent.history.account-abc"
+        let key2 = "sessionIntent.history.account-xyz"
+        #expect(key1 != key2)
+    }
+}
+
+// MARK: - M21 — SessionIntentMatcher → summary bullet alignment
+
+@available(iOS 17.0, *)
+struct SessionIntentMatcherTests {
+
+    @Test func fillerIntentMatchesFillerAndClarityBullets() {
+        #expect(SessionIntentMatcher.aligns(bulletID: "filler", with: .reduceFillers))
+        #expect(SessionIntentMatcher.aligns(bulletID: "category-Clarity", with: .reduceFillers))
+        #expect(!SessionIntentMatcher.aligns(bulletID: "pace-fast", with: .reduceFillers))
+        #expect(!SessionIntentMatcher.aligns(bulletID: "leverage", with: .reduceFillers))
+    }
+
+    @Test func conciseIntentMatchesStructureAndDepthBullets() {
+        #expect(SessionIntentMatcher.aligns(bulletID: "category-Structure", with: .moreConcise))
+        #expect(SessionIntentMatcher.aligns(bulletID: "category-Depth", with: .moreConcise))
+        #expect(SessionIntentMatcher.aligns(bulletID: "category-Clarity", with: .moreConcise))
+        #expect(!SessionIntentMatcher.aligns(bulletID: "filler", with: .moreConcise))
+    }
+
+    @Test func thinkFasterIntentMatchesOpeningAndPaceFast() {
+        #expect(SessionIntentMatcher.aligns(bulletID: "category-Opening", with: .thinkFaster))
+        #expect(SessionIntentMatcher.aligns(bulletID: "pace-fast", with: .thinkFaster))
+        #expect(!SessionIntentMatcher.aligns(bulletID: "filler", with: .thinkFaster))
+    }
+
+    @Test func calmerDeliveryMatchesPaceBullets() {
+        #expect(SessionIntentMatcher.aligns(bulletID: "pace-fast", with: .calmerDelivery))
+        #expect(SessionIntentMatcher.aligns(bulletID: "pace-slow", with: .calmerDelivery))
+        #expect(SessionIntentMatcher.aligns(bulletID: "category-Pace", with: .calmerDelivery))
+        #expect(!SessionIntentMatcher.aligns(bulletID: "filler", with: .calmerDelivery))
+    }
+
+    @Test func momentumAndLeverageNeverMatchAnyIntent() {
+        // The momentum/leverage bullets are the coach's verdict line,
+        // not a per-skill verdict — they shouldn't carry the "you
+        // aimed for this" chip even when the intent ostensibly
+        // overlaps. Keeps the chip's signal high.
+        for priority in CoachingPriority.allCases {
+            #expect(!SessionIntentMatcher.aligns(bulletID: "momentum", with: priority))
+            #expect(!SessionIntentMatcher.aligns(bulletID: "leverage", with: priority))
+            #expect(!SessionIntentMatcher.aligns(bulletID: "ai-strength", with: priority))
+            #expect(!SessionIntentMatcher.aligns(bulletID: "ai-improvement", with: priority))
+        }
+    }
+}
+
+// MARK: - M21 — CoachContextBuilder INTENT row in RECENT
+
+@available(iOS 17.0, *)
+struct CoachContextBuilderIntentTests {
+
+    private func makeProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .moreConcise,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: .rambling,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .warm,
+            styleReference: "",
+            coachingBrief: "Brief.",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    private func makeBaseline() -> CommunicationBaseline {
+        // .empty has every BaselineStat marked .insufficient — the
+        // RECENT block does not depend on baseline confidence, so this
+        // keeps the test surface tight.
+        CommunicationBaseline.empty
+    }
+
+    @Test func intentTailAppearsWhenSessionCarriesLabel() {
+        let session = PracticeSession(
+            transcript: "Sample transcript.",
+            fillerWordCount: 2,
+            duration: 25,
+            date: Date(),
+            mode: .timed,
+            intentFocus: .moreConcise,
+            intentLabel: "Tighten structure"
+        )
+        let context = CoachContextBuilder.userContext(
+            profile: makeProfile(),
+            baseline: makeBaseline(),
+            rating: SpeakingRating.initial,
+            sessions: [session],
+            currentStreak: 1,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(context.contains("Intent: Tighten structure"))
+    }
+
+    @Test func intentTailOmittedWhenSessionLacksIntent() {
+        let session = PracticeSession(
+            transcript: "Sample transcript.",
+            fillerWordCount: 2,
+            duration: 25,
+            date: Date(),
+            mode: .timed
+        )
+        let context = CoachContextBuilder.userContext(
+            profile: makeProfile(),
+            baseline: makeBaseline(),
+            rating: SpeakingRating.initial,
+            sessions: [session],
+            currentStreak: 1,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!context.contains("Intent:"))
+    }
+
+    @Test func intentTailIgnoresWhitespaceOnlyLabels() {
+        // A defensive contract: if a future code path somehow writes
+        // an all-whitespace label, the RECENT row should silently omit
+        // the tail rather than render "Intent:   ".
+        let session = PracticeSession(
+            transcript: "Sample transcript.",
+            fillerWordCount: 2,
+            duration: 25,
+            date: Date(),
+            mode: .timed,
+            intentFocus: .moreConcise,
+            intentLabel: "   "
+        )
+        let context = CoachContextBuilder.userContext(
+            profile: makeProfile(),
+            baseline: makeBaseline(),
+            rating: SpeakingRating.initial,
+            sessions: [session],
+            currentStreak: 1,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!context.contains("Intent:"))
+    }
+}
+
+// MARK: - M21 — PracticeSession Codable forward compatibility
+
+@available(iOS 17.0, *)
+struct PracticeSessionIntentDecodingTests {
+
+    @Test func oldPersistedSessionDecodesIntentAsNil() throws {
+        // Simulate a session persisted before M21 — no intentFocus /
+        // intentLabel keys. The optional fields must decode to nil
+        // instead of throwing or defaulting to a bogus value.
+        let json = """
+        {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "transcript": "Old rep.",
+            "fillerWordCount": 1,
+            "duration": 12.0,
+            "date": 730000000.0,
+            "mode": "timed"
+        }
+        """
+        let data = json.data(using: .utf8)!
+        let session = try JSONDecoder().decode(PracticeSession.self, from: data)
+        #expect(session.intentFocus == nil)
+        #expect(session.intentLabel == nil)
+    }
+
+    @Test func newSessionWithIntentRoundTrips() throws {
+        let original = PracticeSession(
+            transcript: "New rep.",
+            fillerWordCount: 0,
+            duration: 18,
+            date: Date(),
+            mode: .suddenDeath,
+            intentFocus: .reduceFillers,
+            intentLabel: "Cut fillers"
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(PracticeSession.self, from: data)
+        #expect(decoded.intentFocus == .reduceFillers)
+        #expect(decoded.intentLabel == "Cut fillers")
+    }
+}

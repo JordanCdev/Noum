@@ -5652,6 +5652,12 @@ struct PracticeSessionDraft {
     let isRated: Bool
     let pauseMetrics: PauseMetrics?
     let pitchMetrics: PitchMetrics?
+    /// M21: the declared focus the user committed to before the rep,
+    /// when they tapped a chip in the SessionIntent prompt. Threaded
+    /// through `append(_:)` → `PracticeSession.intentFocus` so the
+    /// summary cards and Ask Noum can reference it.
+    let intentFocus: CoachingPriority?
+    let intentLabel: String?
 
     init(
         transcript: String,
@@ -5665,7 +5671,9 @@ struct PracticeSessionDraft {
         pressureLevel: PressureLevel = .standard,
         isRated: Bool = false,
         pauseMetrics: PauseMetrics? = nil,
-        pitchMetrics: PitchMetrics? = nil
+        pitchMetrics: PitchMetrics? = nil,
+        intentFocus: CoachingPriority? = nil,
+        intentLabel: String? = nil
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -5679,6 +5687,8 @@ struct PracticeSessionDraft {
         self.isRated = isRated
         self.pauseMetrics = pauseMetrics
         self.pitchMetrics = pitchMetrics
+        self.intentFocus = intentFocus
+        self.intentLabel = intentLabel
     }
 }
 
@@ -5746,7 +5756,9 @@ final class PracticeSessionStore: ObservableObject {
             pressureLevel: draft.pressureLevel,
             isRated: draft.isRated,
             pauseMetrics: draft.pauseMetrics,
-            pitchMetrics: draft.pitchMetrics
+            pitchMetrics: draft.pitchMetrics,
+            intentFocus: draft.intentFocus,
+            intentLabel: draft.intentLabel
         )
         sessions.insert(session, at: 0)
         persist()
@@ -6101,7 +6113,40 @@ enum PracticeSessionFinalizer {
         draft: PracticeSessionDraft,
         annotation: PracticeSessionAnnotation = .empty
     ) -> PracticeSession {
-        let session = store.append(draft)
+        // M21: consume any pending SessionIntent before appending so the
+        // session row carries the user's declared focus from the start.
+        // Mutating the draft inline keeps every call site (Timed, Sudden
+        // Death, Ah-Counter, drill mini-runs) untouched; the intent
+        // landing is a single-source decision here.
+        let intent = SessionIntentStore.shared.pendingIntent
+        let intentAwareDraft: PracticeSessionDraft = {
+            // Preserve any caller-supplied intent (tests can pass one
+            // directly); only inject from the store when the draft has
+            // none of its own.
+            if draft.intentFocus != nil { return draft }
+            guard let intent else { return draft }
+            return PracticeSessionDraft(
+                transcript: draft.transcript,
+                fillerWordCount: draft.fillerWordCount,
+                duration: draft.duration,
+                date: draft.date,
+                mode: draft.mode,
+                imDetails: draft.imDetails,
+                transcriptConfidence: draft.transcriptConfidence,
+                transcriptionProvider: draft.transcriptionProvider,
+                pressureLevel: draft.pressureLevel,
+                isRated: draft.isRated,
+                pauseMetrics: draft.pauseMetrics,
+                pitchMetrics: draft.pitchMetrics,
+                intentFocus: intent.priority,
+                intentLabel: intent.label
+            )
+        }()
+        let session = store.append(intentAwareDraft)
+        // Link the pending intent to the session and drop it from
+        // pending state — single-rep lifecycle, no leakage to the next
+        // rep if the user goes straight back into another session.
+        SessionIntentStore.shared.consume(sessionID: session.id)
         if annotation != .empty {
             store.annotate(sessionID: session.id, annotation: annotation)
         }
