@@ -1,390 +1,426 @@
-# HANDOFF — M17 polish: eloquence promotion + single-event timing + live transcript preview + chip parser tests
+# HANDOFF — M20 Forward Plan: 4-week coach-written program
 
 ## Scope
 
-The M17 verification push (`2b3e2bd`) landed the bullet selector
-extraction and the design-contract test contract. The "Future moves"
-list at the end of that handoff carried three concrete items + the
-`docs/M17_handoff.md` "deferred" list carried three more. This push
-closes four of those (the two that don't need a real device).
+M19 (Big Moment Intake) shipped end-to-end on this branch last session
+(`4d82c8c` + `025b546` + `e7f12b2`). The M19 strategy doc
+(`docs/M19_strategy.md`) named M20 — Forward Plan — as the next
+implementation track, recommended to run in parallel with M19 since
+they share no collision-zone files. M19 is locked; this push lands
+M20.
 
-The user brief was "continue from the existing TO-DO, ensure working
-towards getting the app towards the vision plan, and all-round A+,
-make my dream come true too, ensure working on the Redesign branch".
-Translation: A+ polish on the items that are concrete and shippable
-without device access, on the `Redesign` branch.
+User brief: "continue from the existing TO-DO, ensure working towards
+getting app towards the vision plan, and all-round A+, make my dream
+come true too, ensure working on the redesign branch." Translation:
+ship the next milestone the strategy doc named (M20), against the
+vision pillars (personalized coaching + believable progress), on
+the `Redesign` branch.
 
-## What changed
+## What shipped
 
-### Move 1 — Eloquence promoted above the *second* good category in `WhatYouDidWell`
+The £130/hr coach handoff artifact lands in Noum: a written four-week
+program tied to the user's actual baseline + voice goal + Big Moment
+(when set). It persists per-account, renders as a coach turn in the
+Ask Noum thread, surfaces a live progress card on Profile, and feeds
+the AI coach's context block so every reply can quote the current
+week's focus.
 
-Previously the `WhatYouDidWellCard.computeBullets(...)` order was:
+### Move 1 — `Noum/ForwardPlanStore.swift` (NEW)
 
-1. Momentum line
-2. `goodCategories.prefix(2)` (up to two `.good` category bullets)
-3. First eloquence finding
-4. AI strength
-…all capped at 3.
+Per-account UserDefaults store keyed `forwardPlan.<accountID>`,
+MainActor singleton, mirrors the BigMomentStore lifecycle pattern
+(`replace(_:)` / `clearPlan()` / `reloadForCurrentAccount()` /
+`endSession()` / `deleteAllData(for:)`). Carries the `ForwardPlan`
+value type — `id` + exactly-4 `weeks: [PlanWeek]` + `generatedAt` +
+`bigMomentID: UUID?` (for stale detection) + `voiceAtGeneration:
+SpeakingStyleGoal?` + `isAIBacked: Bool` (honest provenance).
 
-This produced an awkward saturation case: when a rep had momentum + 2
-good categories + a detected eloquence move, the eloquence bullet
-appended at slot 4 and got dropped by `prefix(3)`. Two "felt solid"
-bullets stayed, the engine-caught rhetorical device fell off.
+Pure-function helpers on the model (`currentWeekIndex(now:calendar:)`
+clamps 1...4, `currentWeek(now:calendar:)`, `dateRange(forWeek:
+calendar:)` half-open seven-day windows, `isInvalidated(by:)`) let
+every consumer compute the same view of the plan without UI
+threading. `ForwardPlanProgress.currentWeekProgress(plan:sessions:
+now:calendar:)` is the single source of truth for completed-vs-target
+counts so the Profile card and the PLAN context section never drift.
 
-The previous handoff's "future move" #2 flagged this as wrong: a
-detected rhetorical move (the engine caught an actual pattern in the
-user's words) is **concrete on-tape evidence**; a second "felt solid"
-is the same impression voice as the first. Concrete should beat
-restated under the 3-cap.
+### Move 2 — `Noum/ForwardPlanService.swift` (NEW)
 
-New order:
+Actor wrapping the same OpenAI / DeepSeek / Gemini plumbing as
+`AIInsightsService`. JSON-strict response shape
+(`{"weeks":[{"weekIndex":1,"focus":"...","mode":"...",
+"sessionTarget":N,"rationale":"..."}, ...]}`); validates exactly 4
+weeks with indices 1..4, focus enum-matched, mode enum-matched,
+target ∈ 2...5, rationale ≤ 240 chars. Falls back to the
+deterministic rule-based path on every cold path (no provider,
+non-English locale, network error, parse failure, count mismatch) so
+the caller never has to handle nil.
 
-1. Momentum line
-2. **First** good category
-3. **Eloquence finding** (promoted above the second category)
-4. **Second** good category (lower priority than eloquence)
-5. AI strength
-…still capped at 3.
+Deterministic path (`nonisolated static func deterministicPlan(input:)`
+— exposed for tests):
 
-Effect on the four-source saturation case (momentum + 2 good cats +
-1 eloquence + AI strength): the user now sees `momentum +
-firstCategory + eloquence` instead of `momentum + firstCategory +
-secondCategory`. The second category drops; the eloquence bullet
-lands with its `.quote(text:, source:)` evidence (italic, brand-blue
-treatment) — observably more useful than another "X felt solid"
-restatement.
+- **Week 1** picks the weakest skill area: high-confidence declining
+  trend first (urgent signal), then weak-stable trend (persistent
+  problem), then baseline thresholds (filler rate ≥ 3.0, pace ≥ 165,
+  pause rate < 1.0, structure quality < 1.8), then `.structure`
+  fallback. Mode is the canonical drill for that area
+  (`fillerReduction` → ahCounter, structure → timed, confidence →
+  suddenDeath, vocalEmphasis → imConversation).
+- **Week 2** moves toward the user's voice goal via
+  `SpeakingStyleGoal.primaryAlignedSkillArea`. Mode is the
+  voice-best mode (authoritative/executive → suddenDeath, warm/
+  storytelling → imConversation, concise/persuasive → timed).
+- **Week 3** is always suddenDeath (pressure escalation). Focus
+  defaults to `.confidence`; if Week 1 already drilled
+  fillerReduction, Week 3 sticks with `.confidence` to avoid stacking.
+  Otherwise focus is `.fillerReduction` so the user gets a real
+  pressure test on the most common breakdown axis.
+- **Week 4** mocks the Big Moment when set
+  (`BigMomentCategory.interview/conversation/review` → imConversation;
+  presentation/publicSpeaking/other → timed). Rationale references
+  days remaining ("9 days out", "Today is the day"). When no Big
+  Moment: consolidation week on the user's strongest baseline
+  dimension so the program closes with a confidence rep.
 
-Effect on the no-eloquence path: identical. With no eloquence
-finding, both good categories still claim slots 2+3 as before; no
-visual regression on the common no-eloquence rep.
+`sessionTarget(weeklyReps:base:)` clamps to 2...5 with a +1 for heavy
+users (≥5/week) and −1 for light users (≤1/week). Honest target, not
+aspirational — light users don't get a five-rep wall of failure.
 
-Refactor split out a `private static func bullet(forGoodCategory:)`
-helper so the two category-bullet construction sites stay
-byte-identical and don't drift.
+### Move 3 — `Noum/ForwardPlanRenderer` (NEW, same file as service)
 
-### Move 2 — `PreSummaryCelebration` single-event timing compressed to ~0.65s
+Pure-function helper that turns a `ForwardPlan` into the coach-voice
+text the Ask Noum thread renders. Multi-paragraph shape: opening
+references the Big Moment when set and is honest about provenance
+("I shaped it around your last few reps" for AI, "Built from your
+data without an AI pass — straight rules, no invention." for
+deterministic); one paragraph per week (`"Week N — Skill Area.
+Mode, N reps. Rationale."`); voice-shaped closing line catalogue
+covering all 6 voices + nil.
 
-Previously the choreography was a flat `~1.1s per event` regardless
-of `events.count`. On the single-level-up path (the overwhelmingly
-common case — archive data shows multi-event reps are rare) the
-0.50s hold + 0.55s spring response felt like the app paused before
-the summary. The handoff's deferred item flagged this:
+Brand-voice contract honoured throughout: no exclamation marks
+(locked by `rendererCarriesNoExclamationMarks` test across all voices
+× BigMoment-or-not combinations).
 
-> `PreSummaryCelebration` single-event timing. Currently ~1.1s per
-> event = a noticeable beat on the single-level-up path. Could
-> compress to 0.7s when `events.count == 1`. Held for user feedback
-> before tuning.
+### Move 4 — `Noum/ForwardPlanCoordinator` (NEW)
 
-This push ships the tighter single-event timing:
+MainActor enum that bridges the plan-generation pipeline to the live
+SwiftUI surfaces. `buildInput()` assembles `ForwardPlanInput` from
+the live stores (CoachingProfile + Baseline + sessions + rating +
+BigMoment + days-until + SkillTrendStore snapshots → TrendAnalyzer
+trends + StreakFreezeManager + DrillHistoryStore). `generateAndAnnounce()`
+calls the service, persists via `ForwardPlanStore.replace(_:)`, and
+injects the rendered coach message via `AskNoumStore.injectCoachTurn(_:)`.
 
-| Phase            | Multi-event (unchanged) | Single-event (new) |
-| ---------------- | ----------------------- | ------------------ |
-| In-spring response | 0.55s                 | **0.42s**          |
-| Bars delay       | 0.18s                   | **0.12s**          |
-| Bars spring response | 0.50s                | **0.40s**          |
-| Hold             | 0.50s                   | **0.35s**          |
-| Fade-out         | 0.25s (skipped on final card) | skipped (only one card) |
+The "two effects" shape mirrors M19's `BigMomentStore.setMoment` +
+intake-view-on-dismiss pattern: state and conversational artifact
+land together so the Profile card lights up the same moment the
+chat thread shows the program.
 
-Single-event total reads at ~0.65s instead of ~1.1s — a wink, not a
-beat. Multi-event keeps the original timing so the parade-of-moments
-sequence still earns each card's read. Reduce-motion path unchanged
-(was already ≤0.7s).
+### Move 5 — `CoachContextBuilder.userContext` extended
 
-### Move 3 — Live partial-transcript preview under Ask Noum mic
+New `forwardPlan: ForwardPlan? = nil` parameter. When non-nil, a
+`PLAN` section renders:
 
-`AskNoumVoiceInput` was already publishing `partialTranscript` (the
-recognizer's live in-progress text); the view never consumed it.
-The M17 handoff flagged:
+```
+PLAN
+- Week N of 4 focus: <SkillArea> via <Mode>.
+- Why this week: <rationale>
+- Progress: M of T reps this week.
+```
 
-> Live partial-transcript preview under the Ask Noum mic button
-> while recording. Wrapper exposes `partialTranscript`; UI never
-> consumes it. Real-device "is the recognizer actually hearing me"
-> confidence would be useful.
+When the plan's `bigMomentID` no longer matches the user's active
+BigMoment (or one side has cleared), a leading line is added warning
+the coach that the plan is stale and recommending regeneration rather
+than quoting outdated guidance:
 
-New `partialTranscriptPreview` `@ViewBuilder` lives above the input
-row inside `inputBar` (now a `VStack { partialTranscriptPreview;
-inputBarRow }`). Renders only while `voiceInput.state == .recording`.
-Two states:
+```
+- Active plan is stale — the user's big moment changed since
+  generation. Recommend regenerating before quoting this plan as
+  current.
+```
 
-- **Empty transcript** ("Listening…"): soft 0.55-opacity italic
-  brand-blue prompt so the user can tell the mic is alive when the
-  recognizer hasn't landed a word yet.
-- **Non-empty transcript**: 0.85-opacity italic brand-blue showing
-  the live transcript. Waveform icon at left with
-  `.symbolEffect(.variableColor.iterative)` for breathing animation
-  (suppressed on reduce-motion).
+Section ordering: GOAL → BIG MOMENT → PLAN → RATING → BASELINE →
+STREAK → RECENT → PATH → TRENDS → PROOFS. PLAN sits next to BIG
+MOMENT so the model reads them as one coherent block: where you're
+going, when, and the program for getting there.
 
-VoiceOver label flips with content ("Listening for your voice" /
-"Hearing: \<text\>") so blind users get the same confidence the
-visual surface provides. Transition is `.opacity` + `.move(edge:
-.bottom)` so the preview slides up out of the input bar when
-recording starts and back down when it ends. `.animation` modifiers
-on the `inputBar` VStack pin the timing to 0.20s / 0.18s — short
-enough to feel responsive, long enough to read as deliberate. Both
-disabled under reduce-motion.
+### Move 6 — `AskNoumStore.injectCoachTurn(_:)`
 
-Honest fallback: when the wrapper is unavailable (locale unsupported,
-permission denied, recognizer not loaded), `voiceInput.state` never
-reaches `.recording`, so the preview never renders. No dead state.
+New method that appends a `.coach` row directly without a
+corresponding user turn. Used by `ForwardPlanCoordinator` to drop
+the rendered plan into the thread. Trims whitespace, rejects empty
+text (returns nil + appends nothing — defensive against a renderer
+that returns blank), and crucially does NOT set `isAwaitingReply`
+since direct injects bypass the request lifecycle and must not lock
+the input bar.
 
-### Move 4 — 18 new tests for `CoachContextBuilder.parseAndFilterChips`
+### Move 7 — Profile `CoachingPlanCard`
 
-The M17 handoff flagged tests for `parseAndFilterChips` /
-`passesChipFilter` as deferred. The function is `internal` access on
-the `CoachContextBuilder` enum (gated `@available(iOS 17.0, *)`), so
-`@testable import Noum` gives the test target a direct line in.
-`passesChipFilter` is `private`, but every gate it enforces is
-reachable through `parseAndFilterChips`: feed it raw text containing
-the banned shape, assert the function returns nil because too few
-chips survive the filter to meet the requested count.
+New `Noum/CoachingPlanCard.swift` carries both the resolver and the
+view. Pure `CoachingPlanCardVisibility.resolve(plan:profile:sessions:
+activeBigMomentID:now:calendar:)` returns a four-state enum:
 
-New `CoachContextBuilderChipParserTests` suite, 18 tests:
+- `.hidden` — no profile (silent for pre-onboarding users) OR no
+  plan + fewer than 3 sessions (silent until the user has data to
+  read a plan against).
+- `.prompt` — ≥3 sessions, no plan yet. Renders a brand-purple-bordered
+  ambient card with "A four-week coach plan, written for you." and a
+  voice-shaped CTA ("Ask Noum to plan four weeks" / "Plan four weeks.
+  One ask." / "Brief: plan my next four weeks." / etc., one per voice
+  + nil fallback).
+- `.live(plan, completed)` — plan exists AND aligns with active
+  BigMomentID (or both nil). Renders current week's focus + mode
+  rationale + (completed / target) progress capsule. A subtle
+  "RULE-BASED" tag when `isAIBacked == false` so the surface is
+  honest about provenance.
+- `.stale(plan, completed)` — plan exists but BigMomentID drift
+  detected. Same layout as live + an inline voice-shaped CTA pulling
+  the user toward regeneration.
 
-**Happy path (3 tests):**
-- `parsesPlainNewlineSeparatedChips` — well-formed model output → 3
-  chips, no transformation.
-- `returnsNilWhenFewerChipsThanRequested` — 2 chips when 3 requested
-  → nil (all-or-nothing; caller's deterministic fallback runs).
-- `extraChipsAreTruncatedToCount` — 4 chips when 3 requested → first
-  3 returned, batch not rejected.
+Tap behavior:
+- `.live` / `.hidden` → opens `noum://ask` (the program lives in
+  the thread; this is navigation).
+- `.prompt` / `.stale` → fires `ForwardPlanCoordinator.generateAndAnnounce()`
+  THEN opens `noum://ask`. The user lands inside a thread that
+  already has the rendered plan as a coach turn rather than waiting
+  for a network round-trip.
 
-**Cleanup (4 tests):**
-- `stripsLeadingBulletAndDashMarkers` — `-`, `*`, `•` prefixes
-  stripped per-line.
-- `stripsNumericEnumeration` — `1. ` / `2) ` regex-stripped.
-- `stripsWrappingStraightAndSmartQuotes` — both `"text"` and
-  `\u{201C}text\u{201D}` unwrapped.
-- `tolerantOfBlankLinesAndWhitespace` — empty lines + leading/
-  trailing whitespace normalized away.
+Card sits inside the existing `coachingDirectionCard` in
+`ProfileView.swift`, below the captured reflections and above the
+`askNoumProfileLink`. Quietly hides when state is `.hidden` so
+non-eligible users see exactly what they did before this push.
 
-**Brand-voice contract (8 tests):**
-- `banExclamationMarksDropsChip` — `!` → chip drops, batch nil if
-  count short.
-- `banLetsKickoffDropsChipBothApostropheStyles` — `let's` / `Lets`
-  → drop. (Note: smart apostrophe forms not in the source filter,
-  so this test asserts straight-form only.)
-- `banLeadingDirectivesDropsChip` — `Tell me`, `Describe`,
-  `Explain`, `Discuss`, `Elaborate`, `Share`, `Talk about` all drop.
-  Parametrised across the seven banned prefixes.
-- `banEmojiDropsChip` — pictograph emoji (rocket 🚀) drops.
-- `chipBelowMinimumLengthIsDropped` — 2-char chip ("Hm") drops on
-  the 4-char min.
-- `chipAboveMaximumLengthIsDropped` — 80+ char chip drops on the
-  60-char max.
-- `chipsAtExactMinAndMaxLengthArePreserved` — 4-char "Huh?" and a
-  60-char chip both pass (inclusive range).
-- `unicodeBelowEmojiThresholdIsAllowed` — em-dash, ellipsis,
-  accented chars all pass (the filter is U+238C+, not all
-  non-ASCII).
+### Move 8 — Auth wipe + reload contract
 
-**Integration (2 tests):**
-- `combinedMessIsRecoveredWhenContentValid` — bullets + numbering +
-  smart quotes + trailing whitespace + blank lines layered → 3 valid
-  chips emerge.
-- `returnsExactlyTheRequestedCountNotMore` — count=2 returns exactly
-  2 even when 5 valid chips exist.
+`AuthManager.deferStoreReloadForCurrentAccount` now reloads
+`ForwardPlanStore.shared`; `deferStoreSessionReset` calls its
+`endSession()`. `clearAllUserData(for:)` adds three keys that were
+absent from the wipe list (M19 + M20 backfill):
+- `forwardPlan.<accountID>` (M20)
+- `bigMoment.<accountID>` (M19 — was missed)
+- `bigMomentArchive.<accountID>` (M19 — was missed)
+
+### Move 9 — Test suite
+
+50+ new tests across 7 suites:
+
+- **`ForwardPlanCalendarTests`** (12 tests) — week 1 on day 0/6, week 2
+  on day 7, week 4 on day 21, week 4 clamp past day 42, currentWeek
+  resolution, dateRange seven-day half-open, dateRange clamp on
+  out-of-range index, `isInvalidated` mismatch / match / both-nil /
+  cleared / added contracts.
+- **`ForwardPlanProgressTests`** (5 tests) — in-week sessions counted,
+  out-of-range sessions excluded, week-2 sessions counted when current,
+  empty list → zero, week-7 boundary fires into week 2 (half-open
+  semantics locked).
+- **`ForwardPlanServiceDeterministicTests`** (20 tests) — 4-week count,
+  `isAIBacked == false`, voice carrying through, declining
+  high-confidence trend → week 1, baseline filler rate → week 1, voice
+  goal → week 2 alignment, no-voice fallback → `.structure`, week 3 =
+  suddenDeath, week 3 avoids stacking filler week, week 4 mocks
+  BigMoment for each category, week 4 consolidates without BigMoment,
+  `sessionTarget` clamps at floor / ceiling / steady, `modeFor` /
+  `bestModeForVoice` / `mockModeFor` mappings, brand-voice exclamation
+  contract across all variants, `weakestSkillArea` priority /
+  `strongestSkillArea` nil-when-insufficient / strongest-finds-low-filler.
+- **`ForwardPlanRendererTests`** (6 tests) — opening references
+  BigMoment when set, generic when not, rule-based honesty, AI-backed
+  honesty, includes all 4 weeks, voice-shaped closing + no
+  exclamations across all 6 voices × BigMoment-or-not combinations.
+- **`ForwardPlanContextTests`** (4 tests) — PLAN omitted when nil,
+  PLAN present when set, progress count matches sessions filter, stale
+  warning surfaces when BigMomentID differs.
+- **`CoachingPlanCardVisibilityTests`** (9 tests) — hidden when no
+  profile, hidden when <3 sessions, prompt at 3, live on match, live
+  on both nil, stale on drift, stale on cleared moment, live carries
+  completed count, voice-shaped CTA labels for every voice + live-state
+  empty CTA contract.
+- **`AskNoumStoreInjectCoachTurnTests`** (5 tests) — nil on empty /
+  whitespace-only, append as non-pending coach row, doesn't set
+  `isAwaitingReply`, trims leading/trailing whitespace.
 
 ## What did NOT change
 
-- **`isMinimalEffort` threshold** — the third "future move" from the
-  previous handoff. Adding a transcript-confidence axis to the
-  threshold (currently `wordCount < 5 || duration < 5`) means
-  threading a confidence float through `SummaryView` from the
-  `SpeechRecognizerViewModel`. Held for a dedicated push because the
-  data flow touches more files than the visual scope warrants for
-  a single A+ push. The current threshold is conservative — the
-  failure mode is "we show the card on a low-confidence rep" not
-  "we hide it on a high-confidence rep", so the regression risk of
-  leaving it is lower than the surface area of changing it.
-- **Real-device QA of the M17 hero block** — operational, not
-  engineering. The five-branch punch list from the previous
-  handoff still stands.
-- **`WhatToImproveCard.computeBullets`** — no ordering change. The
-  leverage → filler → categories → pace → AI chain is unchanged.
-- **Brand-voice** — the `passesChipFilter` rules are tested but not
-  changed. No copy added/removed. The new partial-transcript
-  preview ("Listening…") doesn't carry any banned tokens.
-- **SkillProgressionStore consume cadence** — `present(index:)`
-  still consumes one event per card landing. Single-event timing
-  change is animation-only.
+- **No new screens.** The Profile card opens Ask Noum; the plan
+  itself lives in the chat thread (one Coach Reply). Anti-goal
+  (dashboard of vanity metrics) respected.
+- **No new badges or unlocks.** Generating a plan doesn't award XP
+  or fire a celebration. The plan is the artifact; the work is the
+  work.
+- **No streak gating.** Missing a week of the plan doesn't punish
+  or shame. The progress capsule reads honest counts without
+  loss-aversion copy.
+- **No invented stats.** Both the AI and deterministic paths cite
+  the user's actual baseline numbers. The deterministic path is
+  explicit about being rule-based (`isAIBacked: false`); the
+  renderer surfaces "Built from your data without an AI pass —
+  straight rules, no invention." so the surface never claims AI
+  intelligence it doesn't have.
+- **No M21 surface yet.** Session Intent (pre-rep "what are you
+  training today?") is the next track per the strategy doc.
 
 ## Risks
 
-1. **Eloquence promotion is a behavioral change for the four-source
-   saturated case.** Users who currently see "Opening felt solid /
-   Structure felt solid" on a rep where the eloquence engine
-   detected a device will now see "Opening felt solid / Tricolon
-   landed." — a different second bullet. The change is intentional
-   (concrete > restated) and well-tested, but it's a user-observable
-   shift on the rare confluence. No `prefix(2)` cap protects against
-   it because we want it.
-2. **Single-event timing tightening** — 0.65s is half a beat shorter
-   than 1.1s. If a user with slower reading speed was relying on
-   the long hold to read the level-up subline, this could feel
-   rushed. Reduce-motion path is unchanged so accessibility users
-   aren't affected. If the new timing is too tight in real-device
-   testing, the constants are on `Noum/PreSummaryCelebration.swift`
-   lines 268–272 and reverting is a localised edit.
-3. **Partial-transcript preview reads `voiceInput.partialTranscript`
-   directly.** The `@Published` property on the `ObservableObject`
-   wrapper fires SwiftUI updates as the recognizer ships partials —
-   typically 200–500ms cadence. The `animation(..., value:)`
-   debounces visually, but if a recognizer for a chatty user fires
-   updates more frequently than 100ms, the SwiftUI invalidation
-   load could spike. Real-device test would tell; on simulator
-   recognition pacing is lazy enough that this is non-issue.
-4. **`parseAndFilterChips` is exposed at internal access** by
-   default. The new tests are gated `@available(iOS 17.0, *)` to
-   match the type. If access tightens to `fileprivate` in a future
-   refactor, the tests would break with a "cannot find" — but the
-   existing `// Exposed `internal` (default) so the test suite can
-   exercise the filter shape` comment on the function should
-   prevent that.
+1. **The deterministic Week 4 only references a BigMoment when one
+   is set.** Users with no BigMoment get a "consolidation" week
+   that's less rich than the rehearsal shape. The fallback rationale
+   is honest about being consolidation rather than fake-mocking an
+   event, but a user might still feel the lift is uneven. Mitigation
+   is to set a BigMoment — which the M19 intake surfaces.
+2. **The PLAN context section is per-week-coarse.** If a user is on
+   Day 3 of Week 2 with 2 of 3 reps done, the coach knows
+   "Week 2, 2 of 3" but not which days. This is intentional — finer
+   granularity would require day-bucketing the rep history, and the
+   coach voice doesn't need it to be useful ("two of three this
+   week" beats "two on Monday, one Wednesday gap").
+3. **Stale detection is BigMomentID-only.** A baseline shift or a
+   voice goal change doesn't currently mark the plan as stale. The
+   first one is graceful (the plan is honest about being a snapshot
+   in time); the second could be uncomfortable if a user pivots
+   voices mid-program. `ForwardPlan.voiceAtGeneration` is persisted
+   precisely so a future patch can add the voice-change branch to
+   `isInvalidated(by:)` without a model change.
+4. **`ForwardPlanCoordinator.buildInput()` reads live stores on the
+   main actor.** A massive `PracticeSessionStore.sessions` array
+   gets copied into the input snapshot. The deterministic path
+   doesn't iterate sessions deeply (uses `.prefix(5)` for the AI
+   user prompt), but a future memory-conscious refactor could pass
+   a slice rather than the full array.
 
 ## Verification
 
-### Implemented
+### Implemented (compiler-locked, source-only)
 
-- `WhatYouDidWellCard.computeBullets(...)` reordered to promote
-  eloquence above the second good category. Shared helper
-  `bullet(forGoodCategory:)` extracted so the two category
-  construction sites stay byte-identical.
-- `PreSummaryCelebration.present(index:)` reads
-  `events.count == 1` once per card and tightens `inDuration`,
-  `holdDuration`, `barsDelay`, plus the two spring `response` values
-  for single-event full-motion. Multi-event + reduce-motion paths
-  untouched.
-- `AskNoumView.inputBar` lifted from one HStack into a VStack of
-  (`partialTranscriptPreview` + `inputBarRow`). New
-  `partialTranscriptPreview` `@ViewBuilder` renders only when
-  `voiceInput.state == .recording`. `.background(.ultraThinMaterial)`
-  moved up to the VStack so the preview matches the input bar's
-  glass surface treatment. Two `.animation(...)` modifiers
-  on the VStack debounce the preview's appearance + text changes,
-  both nil under reduce-motion.
-- Two test updates to `WhatYouDidWellBulletSelectorTests`:
-  - `eloquenceFindingDropsWhenMomentumPlusTwoCategoriesAlreadyFill`
-    renamed to `eloquencePromotedAboveSecondGoodCategory` with the
-    assertion flipped to match the new contract.
-  - `secondGoodCategoryStillLandsWhenNoEloquence` added so the
-    no-eloquence path stays explicitly locked.
-- New `CoachContextBuilderChipParserTests` suite at the end of
-  `NoumTests/NoumTests.swift` with 18 tests covering the parser's
-  happy path, cleanup, brand-voice contract, and integration.
+- `ForwardPlan` calendar projection (12 tests in `ForwardPlanCalendarTests`)
+- `ForwardPlanProgress` session bucketing (5 tests in `ForwardPlanProgressTests`)
+- Deterministic plan generation invariants (20 tests in
+  `ForwardPlanServiceDeterministicTests`)
+- Renderer voice + provenance contracts (6 tests in `ForwardPlanRendererTests`)
+- Context PLAN section presence + progress + stale-warning (4 tests
+  in `ForwardPlanContextTests`)
+- CoachingPlanCard four-state resolver + CTA voice catalogue
+  (9 tests in `CoachingPlanCardVisibilityTests`)
+- `AskNoumStore.injectCoachTurn` non-pending + non-awaiting contract
+  (5 tests in `AskNoumStoreInjectCoachTurnTests`)
 
 ### Blocked / needs visual QA on device
 
 Still no Swift toolchain in this container — all changes are
-source-only. The Move 2 + Move 3 changes are visual and want a
+source-only. The Move 7 + Move 8 changes are visual and want a
 build:
 
-1. **Move 1 — eloquence promotion** — finish a rep with momentum +
-   2 good categories + 1 eloquence finding. Confirm the third
-   bullet is the eloquence finding (italic snippet evidence),
-   not the second "felt solid" category.
-2. **Move 2 — single-event timing** — finish a rep that triggers
-   exactly one skill-area level-up (common case). Confirm the
-   `PreSummaryCelebration` plays in ~0.65s — should feel like a
-   wink, not a beat. Then run a rep that triggers 2+ level-ups and
-   confirm the multi-event sequence still plays at the original
-   ~1.1s per event.
-3. **Move 3 — partial transcript preview** — open Ask Noum, hold
-   the mic. Confirm "Listening…" appears above the input bar in
-   italic brand-blue. Speak; confirm the live transcript replaces
-   "Listening…" character-by-character as the recognizer ships
-   partials. Release; confirm the preview hides immediately and
-   the final transcript lands as a user turn in the thread.
+1. **Move 7 — Profile card visibility** — clean install, complete
+   onboarding (no BigMoment), confirm the card stays hidden until
+   the third rated session, then prompts.
+2. **Move 7 — Plan generation end-to-end** — tap the prompt CTA;
+   confirm the Ask Noum thread receives the rendered plan as a
+   single coach message + the Profile card transitions to `.live`
+   with the correct week + progress.
+3. **Move 7 — Stale state** — generate a plan with a BigMoment set,
+   then change/clear the BigMoment; confirm the Profile card flips
+   to `.stale` with the regenerate CTA, and that tapping it
+   regenerates against the new moment.
+4. **Move 5 — Coach context** — open Ask Noum with a plan active;
+   ask "What's my focus this week?"; confirm the model cites the
+   current week's focus + progress (e.g. "Week 2 focus: pause
+   usage. You're at 1 of 3 reps").
 
 ### Assumptions
 
-- The `events.count == 1` branch in `PreSummaryCelebration` is the
-  right gate. We don't currently surface "events at a time" — the
-  whole sequence is presented in one mount. If a future refactor
-  paginates the sequence (e.g. one event per mount), the
-  `isSingleEvent` read would need to migrate.
-- The "Listening…" copy passes the same brand-voice contract the
-  TalkToNoum CTA does (no `!`, no `Let's`, no chirpy filler). It
-  reads as observation, not encouragement.
-- The chip parser tests assume the source's `(4...60)` length range
-  is inclusive on both ends — that's what the Swift `...` operator
-  produces, and the test `chipsAtExactMinAndMaxLengthArePreserved`
-  locks both edges.
+- `Calendar.current.startOfDay(for:)` matches the user's locale
+  expectations for week boundaries. The PLAN week math is in user
+  local time, not UTC.
+- The `ForwardPlan` Codable round-trip will tolerate older app
+  versions that don't have the field — there is no older version
+  yet, so this is forward-only.
+- `AskNoumStore.injectCoachTurn` is safe to call from any path that
+  is already on MainActor. The store is `@MainActor` so the compiler
+  enforces this.
+- The deterministic Week 4 mock-mode mapping (interview →
+  imConversation, presentation → timed) reflects the most common
+  shape per category. A user with a `.other` BigMoment gets the
+  `.timed` fallback which is the most general-purpose mode.
 
 ### What was checked
 
-- Re-read `WhatYouDidWellCard.computeBullets` after the refactor;
-  confirmed the four bullet sources still emit on the right shape
-  and that `prefix(3)` is the only cap (no other count gate inside
-  the function).
-- Re-read `PreSummaryCelebration.present(index:)` and confirmed
-  `inDuration` is only read on the reduce-motion path — the
-  full-motion path uses the new `contentSpring`/`barsSpring`
-  computed locals.
-- Re-read `AskNoumView.inputBar` and confirmed
-  `voiceInput.partialTranscript` is an `@Published private(set)
-  String` on the `AskNoumVoiceInput` `ObservableObject`, so the
-  view binding redraws on partial updates.
-- Re-read `CoachContextBuilder.parseAndFilterChips` and
-  `passesChipFilter`; confirmed every assertion in the new test
-  suite maps onto a real gate in the source.
-- `grep`'d the test file to confirm no other suite was exercising
-  the previous "eloquence drops" contract that my rename + flip
-  would have broken.
+- Re-read `ForwardPlan.currentWeekIndex` math against the test
+  assertions; the integer division + clamp is identical across days
+  0, 6, 7, 13, 21, 28, 42.
+- Re-read `CoachContextBuilder.userContext` section ordering;
+  confirmed PLAN sits between BIG MOMENT and RATING, matching the
+  intent ("here's where you're going, here's the program for getting
+  there, here's where you stand").
+- Re-read `ForwardPlanService.deterministicPlan` flow; confirmed
+  Week 1 → Week 2 → Week 3 → Week 4 each compose without
+  cross-dependency (Week 3 reads Week 1's focus for the
+  anti-stacking branch but doesn't mutate state).
+- Re-read `CoachingPlanCardVisibility.resolve` against every test
+  case; confirmed the resolver hits each branch with the right
+  fixture.
+- `grep`'d `AuthManager.clearAllUserData` to confirm the M19 +
+  M20 keys are present and the existing keys weren't shifted.
 
 ## Files modified
 
-- `Noum/WhatYouDidWellCard.swift` — eloquence promotion + helper
-  extraction. Comment block at top of `computeBullets` updated to
-  describe the new ordering contract.
-- `Noum/PreSummaryCelebration.swift` — single-event timing
-  branch in `present(index:)`. Header comment updated to describe
-  the single-vs-multi behavior.
-- `Noum/AskNoumView.swift` — `inputBar` split into VStack with
-  `partialTranscriptPreview` above `inputBarRow`. New `@ViewBuilder`
-  defined directly below the row helper.
-- `NoumTests/NoumTests.swift` — `WhatYouDidWellBulletSelectorTests`
-  rename + add (1 renamed, 1 new). `CoachContextBuilderChipParserTests`
-  appended end-of-file (18 tests).
-- `HANDOFF.md` — this file, rewritten.
+- `Noum/ForwardPlanStore.swift` — NEW. ForwardPlan + PlanWeek +
+  ForwardPlanProgress + ForwardPlanStore.
+- `Noum/ForwardPlanService.swift` — NEW. AI + deterministic
+  generator, all pure helpers, ForwardPlanRenderer.
+- `Noum/ForwardPlanCoordinator.swift` — NEW. MainActor bridge
+  between the service and the live stores.
+- `Noum/CoachingPlanCard.swift` — NEW. CoachingPlanCardState +
+  CoachingPlanCardVisibility resolver + CoachingPlanCard view.
+- `Noum/CoachContextBuilder.swift` — `forwardPlan:` param added to
+  `userContext(...)`; PLAN section emitted when non-nil.
+- `Noum/AskNoumStore.swift` — `injectCoachTurn(_:)` added.
+- `Noum/AskNoumView.swift` — observes `ForwardPlanStore.shared` +
+  `BigMomentStore.shared`; passes both into `userContext(...)`.
+- `Noum/AuthManager.swift` — reload + endSession + wipe-list
+  extended for `ForwardPlanStore` and M19 BigMoment keys.
+- `ProfileView.swift` — observes `forwardPlanStore` +
+  `bigMomentStore`; renders `coachingPlanCard` inside the existing
+  `coachingDirectionCard`.
+- `NoumTests/NoumTests.swift` — 50+ tests across 7 suites appended
+  end-of-file.
+- `HANDOFF.md` — this file.
 - `docs/CURRENT_STATE.md` — header breadcrumb for the push.
 
 ## Branch
 
-`Redesign` — committed and pushed per the user's brief. Continues
-the M17 polish arc: this push closes four of the six items the
-previous two handoffs flagged as concrete + deferred, leaving the
-two that need real device access (real-device QA + isMinimalEffort
-threshold review behind a confidence-thread refactor).
+`Redesign` — committed and pushed per the user's brief. Closes M20
+of the M19-M23 personalization slate as `docs/M19_strategy.md`
+recommended. M19 (Big Moment Intake) shipped last session; M20
+(Forward Plan) ships this session — both can now light up the same
+Profile surface and the same coach context block, which was the
+"parallel tracks" design call.
 
-Each move follows the same restraint contract: no new feature
-surface, no new screens, no new dependencies, no new copy beyond
-the single "Listening…" prompt (brand-voice compliant). The push
-delivers four user-observable improvements + 19 new/updated tests
-to lock the new contracts, on top of the 25 tests the previous
-push added.
+The artifact a user can now hold: a written four-week program in
+their own coach's voice, tied to their own baseline numbers and
+their own upcoming Big Moment. That is the £130/hr coach handoff
+the £0 user has never had.
 
 ## Future moves
 
-1. **Real-device QA of the M17 hero block** (still operational).
-   The five-branch punch list from the prior handoff plus the
-   three new visual moves above. Use macOS `Cmd+Shift+5` →
-   "Record Selected Portion" with mic to capture richer feedback.
-2. **`isMinimalEffort` threshold confidence-thread refactor.**
-   Plumb transcript-confidence from `SpeechRecognizerViewModel`
-   through `SummaryView` so a low-confidence read on a long rep
-   bypasses the bullet selectors the same way a short rep does.
-   Touch surface is small (one new property on the view + threading
-   through ~4 layers) but the scope is more than a "polish push"
-   should pull into the same handoff.
-3. **AI follow-up chip cache eviction.**
-   `AskNoumStore.aiChipsCache` currently has no size cap or
-   eviction. Long chat threads accumulate cached chip sets keyed by
-   coach reply UUID. Not a real risk (chips are 3 short strings
-   per reply, sessions are bounded) but a 50-entry LRU would be
-   conservative belt-and-braces.
-4. **Eloquence ordering A/B once usage data lands.** This push
-   shipped the "concrete > restated" intuition. If post-launch
-   analytics shows users tap the second-category bullet more than
-   the eloquence bullet (i.e. the visual treatment of "felt solid"
-   is more inviting than the italic quote), flip the order back
-   and trust the data over the intuition.
+1. **M21 — Session Intent (pre-rep "what are you training today?").**
+   Reads ForwardPlanStore for the current week's focus as an intent
+   option, ties post-rep `WhatYouDidWellCard` /
+   `WhatToImproveCard` chips to the declared intent. Single
+   forward-only dependency on this push.
+2. **Voice-change stale detection.** Extend
+   `ForwardPlan.isInvalidated(by:)` to also check
+   `voiceAtGeneration` against the current
+   `CoachingProfile.speakingStyleGoal`. Already persisted; just
+   needs the branch.
+3. **Plan regeneration from a Settings entry.** Currently the only
+   regen path is the Profile card prompt/stale CTA. A Settings →
+   "Reset coaching plan" row would give power users a clean
+   regen-from-scratch path without needing a BigMoment change.
+4. **`PlanWeek.completedRationale` for past weeks.** Once a week
+   has passed, the rationale on display could shift from "here's
+   what you should do" to "here's what you did" — a tiny
+   continuity nudge that turns the program into a retrospective
+   read for past weeks while staying prescriptive for the current.
+   Requires bucketed session counts past Week 1.
+5. **M22 — Monthly Coach Letter** is independent of M20 and can
+   run in parallel with M21 per the strategy doc if bandwidth
+   exists. The letter would read the `ForwardPlanStore.activePlan`
+   to reference what the user committed to vs what landed.

@@ -289,6 +289,28 @@ final class AskNoumStore: ObservableObject {
         return id
     }
 
+    /// Append a coach-authored message directly into the thread without
+    /// a corresponding user turn. Used by surfaces that synthesise a
+    /// coach artifact server-side or deterministically — e.g. the M20
+    /// Forward Plan, where `ForwardPlanService.generate(...)` produces
+    /// a four-week program that's rendered as a coach turn so the user
+    /// can scroll back to it like any other reply. The returned ID lets
+    /// callers reference the row (e.g. for cross-surface deep-linking
+    /// or chip caching) once they need to.
+    ///
+    /// Empty text is rejected (defensive — a placeholder coach turn
+    /// would render as an empty bubble). Non-empty text lands as a
+    /// hydrated, non-pending `.coach` row immediately.
+    @discardableResult
+    func injectCoachTurn(_ text: String) -> UUID? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let msg = CoachMessage(role: .coach, text: trimmed, isPending: false)
+        messages.append(msg)
+        trimAndPersist()
+        return msg.id
+    }
+
     /// All non-system messages, oldest-first, suitable for the model
     /// replay. System notices are dropped — they're UI-only.
     var replayForModel: [CoachMessage] {

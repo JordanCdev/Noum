@@ -32,6 +32,8 @@ struct ProfileView: View {
     @State private var selectedFeedbackRequest: StoredFeedbackRequest?
     @StateObject private var league = LeagueManager.shared
     @StateObject private var proofStore = ProofMomentStore.shared
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
+    @StateObject private var bigMomentStore = BigMomentStore.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -837,6 +839,14 @@ struct ProfileView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            // M20: Forward Plan surface — quietly hidden until the user
+            // has ≥3 sessions (no plan to read on cold-start data), then
+            // promotes a pre-prompt CTA, then renders the live week +
+            // progress once a plan exists. The card itself is a button
+            // → Ask Noum so the program lives in the chat thread where
+            // the user can scroll back to the full 4-week breakdown.
+            coachingPlanCard
+
             // M14: third Ask Noum entry point — Profile sits where the
             // user reads their goal + progress + reflections, so the
             // contextual "talk to your coach about this" handoff lives
@@ -851,6 +861,45 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    /// M20: Forward Plan card inside the Coaching Direction card. Pure
+    /// resolver decides which state to render — see
+    /// `CoachingPlanCardVisibility` for the four-state contract.
+    ///
+    /// Tap behavior depends on state:
+    ///   • `.prompt` / `.stale` → trigger plan generation, then open
+    ///     Ask Noum. The generation injects a coach-voice rendering of
+    ///     the plan as a fresh coach turn so the user lands inside an
+    ///     already-written program rather than waiting for a reply.
+    ///   • `.live` → just open Ask Noum (the program is already in the
+    ///     thread; the user is navigating back to it).
+    private var coachingPlanCard: some View {
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: forwardPlanStore.activePlan,
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
+            activeBigMomentID: bigMomentStore.activeMoment?.id
+        )
+        return CoachingPlanCard(
+            state: state,
+            voice: coachingProfileStore.profile?.speakingStyleGoal,
+            onTap: {
+                let triggersGeneration: Bool
+                switch state {
+                case .prompt, .stale: triggersGeneration = true
+                case .live, .hidden:  triggersGeneration = false
+                }
+                if triggersGeneration {
+                    Task {
+                        await ForwardPlanCoordinator.generateAndAnnounce()
+                    }
+                }
+                if let url = URL(string: "noum://ask") {
+                    openURL(url)
+                }
+            }
+        )
     }
 
     /// Restrained voice-shaped Ask Noum handoff inside the Coaching

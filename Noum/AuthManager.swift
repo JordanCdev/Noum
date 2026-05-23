@@ -516,6 +516,11 @@ class AuthManager: ObservableObject {
             "noum.notifications.weeklyDigestEnabled.\(accountID)",
             // M14: peak-glow cursor (Home-only post-session celebration).
             "speakingRating.lastShownWeekPeak.\(accountID)",
+            // M19: Big Moment intake + archive of past moments
+            "bigMoment.\(accountID)",
+            "bigMomentArchive.\(accountID)",
+            // M20: Forward Plan (4-week coach program)
+            "forwardPlan.\(accountID)",
         ]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)
@@ -582,6 +587,7 @@ class AuthManager: ObservableObject {
             IMRelationshipStore.shared.reloadForCurrentAccount()
             RecommendationLearningStore.shared.reloadForCurrentAccount()
             BigMomentStore.shared.reloadForCurrentAccount()
+            ForwardPlanStore.shared.reloadForCurrentAccount()
             completion?()
         }
     }
@@ -594,6 +600,7 @@ class AuthManager: ObservableObject {
             ProfileManager.shared.endSession()
             IMRelationshipStore.shared.endSession()
             BigMomentStore.shared.endSession()
+            ForwardPlanStore.shared.endSession()
         }
     }
 

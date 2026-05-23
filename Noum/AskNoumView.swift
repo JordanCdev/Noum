@@ -35,6 +35,8 @@ struct AskNoumView: View {
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
     @StateObject private var proofStore = ProofMomentStore.shared
+    @StateObject private var bigMomentStore = BigMomentStore.shared
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
 
     @State private var draft: String = ""
     @State private var didLandFirstAppear = false
@@ -911,7 +913,9 @@ struct AskNoumView: View {
             currentStreak: streakFreezeManager.currentStreak,
             pathStatus: pathProgress.currentNode,
             pathGatingPhrase: pathProgress.currentNodeGatingPhrase,
-            recentProofs: proofStore.recent(limit: 3)
+            recentProofs: proofStore.recent(limit: 3),
+            bigMoment: bigMomentStore.activeMoment,
+            forwardPlan: forwardPlanStore.activePlan
         )
         let history = await MainActor.run { store.replayForModel }
         let outcome = await AICoachChatService.shared.reply(

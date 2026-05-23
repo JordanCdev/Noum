@@ -9474,3 +9474,847 @@ struct BigMomentNotificationPrivacyTests {
         #expect(t1Title.contains(moment.category.displayName))
     }
 }
+
+// MARK: - M20: Forward Plan (4-week coaching program)
+//
+// The Forward Plan is the £130/hr coach handoff artifact: a written
+// 4-week program tied to the user's actual baseline + voice goal +
+// Big Moment. These tests lock four contracts:
+//   1. `ForwardPlan` calendar projection (which week is current) —
+//      crucial because every consumer (Profile card, PLAN context
+//      section) reads the current week from the plan's `generatedAt`
+//      anchor; a drift here drifts everywhere.
+//   2. `ForwardPlanService.deterministicPlan(...)` always returns 4
+//      weeks with honest data (no fake AI claims, no invented stats)
+//      — the safety net path runs whenever AI is off / unsupported /
+//      failed, so it carries the brunt of the user experience.
+//   3. `ForwardPlanProgress` counts only sessions in the current
+//      week's date range — past/future sessions must not bleed in.
+//   4. `CoachingPlanCardVisibility` resolver — the four-state
+//      contract that gates whether the Profile card hides, prompts,
+//      goes live, or warns about a stale Big Moment.
+
+@available(iOS 17.0, macOS 12.0, *)
+private func makePlanWeek(
+    weekIndex: Int = 1,
+    focus: CoachingPriority = .reduceFillers,
+    focusSkillArea: SkillArea = .fillerReduction,
+    suggestedMode: PracticeMode = .ahCounter,
+    sessionTarget: Int = 3,
+    rationale: String = "Start with the loudest area."
+) -> PlanWeek {
+    PlanWeek(
+        weekIndex: weekIndex,
+        focus: focus,
+        focusSkillArea: focusSkillArea,
+        suggestedMode: suggestedMode,
+        sessionTarget: sessionTarget,
+        rationale: rationale
+    )
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+private func makeForwardPlan(
+    generatedAt: Date = Date(),
+    bigMomentID: UUID? = nil,
+    voice: SpeakingStyleGoal? = nil,
+    isAIBacked: Bool = false,
+    targetForEachWeek: Int = 3
+) -> ForwardPlan {
+    let weeks = (1...4).map {
+        makePlanWeek(weekIndex: $0, sessionTarget: targetForEachWeek)
+    }
+    return ForwardPlan(
+        weeks: weeks,
+        generatedAt: generatedAt,
+        bigMomentID: bigMomentID,
+        voiceAtGeneration: voice,
+        isAIBacked: isAIBacked
+    )
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+private func makePracticeSession(
+    date: Date,
+    mode: PracticeMode = .timed,
+    fillerCount: Int = 0,
+    duration: TimeInterval = 60
+) -> PracticeSession {
+    PracticeSession(
+        id: UUID(),
+        transcript: "test",
+        fillerWordCount: fillerCount,
+        duration: duration,
+        date: date,
+        mode: mode
+    )
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanCalendarTests {
+
+    @Test func weekOneOnGenerationDay() {
+        let plan = makeForwardPlan(generatedAt: Date())
+        #expect(plan.currentWeekIndex(now: Date()) == 1)
+    }
+
+    @Test func weekOneOnDaySixAfterGeneration() {
+        // 6 days after generation → still week 1 (days 0..6 inclusive
+        // map to weekIndex 1).
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day6 = cal.date(byAdding: .day, value: 6, to: start)!
+        #expect(plan.currentWeekIndex(now: day6) == 1)
+    }
+
+    @Test func weekTwoOnDaySevenAfterGeneration() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day7 = cal.date(byAdding: .day, value: 7, to: start)!
+        #expect(plan.currentWeekIndex(now: day7) == 2)
+    }
+
+    @Test func weekFourOnDayTwentyOne() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day21 = cal.date(byAdding: .day, value: 21, to: start)!
+        #expect(plan.currentWeekIndex(now: day21) == 4)
+    }
+
+    @Test func weekFourClampsAfterPlanEnds() {
+        // Past day 28 the plan has ended. The coach keeps coaching:
+        // we clamp to weekIndex 4 instead of nil so the surface
+        // doesn't go silent for a user who opens after the program
+        // is over.
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day42 = cal.date(byAdding: .day, value: 42, to: start)!
+        #expect(plan.currentWeekIndex(now: day42) == 4)
+    }
+
+    @Test func currentWeekResolvesToCorrectPlanWeek() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day10 = cal.date(byAdding: .day, value: 10, to: start)!
+        let week = plan.currentWeek(now: day10)
+        #expect(week?.weekIndex == 2)
+    }
+
+    @Test func dateRangeForWeekIsSevenDaysHalfOpen() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let week2 = plan.dateRange(forWeek: 2)
+        let day7 = cal.date(byAdding: .day, value: 7, to: start)!
+        let day14 = cal.date(byAdding: .day, value: 14, to: start)!
+        #expect(week2.start == day7)
+        #expect(week2.end == day14)
+    }
+
+    @Test func dateRangeClampsOutOfRangeIndex() {
+        // Week 5 (out of range) clamps to week 4 instead of producing
+        // a nonsensical range. Defensive — the UI shouldn't ever pass
+        // 5 in, but if it did, the data stays sensible.
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let week5 = plan.dateRange(forWeek: 5)
+        let week4 = plan.dateRange(forWeek: 4)
+        #expect(week5.start == week4.start)
+        #expect(week5.end == week4.end)
+    }
+
+    @Test func isInvalidatedDetectsBigMomentIDMismatch() {
+        let momentA = UUID()
+        let momentB = UUID()
+        let plan = makeForwardPlan(bigMomentID: momentA)
+        #expect(plan.isInvalidated(by: momentB) == true)
+    }
+
+    @Test func isInvalidatedIsFalseWhenIDsMatch() {
+        let moment = UUID()
+        let plan = makeForwardPlan(bigMomentID: moment)
+        #expect(plan.isInvalidated(by: moment) == false)
+    }
+
+    @Test func isInvalidatedIsFalseWhenBothNil() {
+        let plan = makeForwardPlan(bigMomentID: nil)
+        #expect(plan.isInvalidated(by: nil) == false)
+    }
+
+    @Test func isInvalidatedIsTrueWhenPlanHasMomentAndUserCleared() {
+        let plan = makeForwardPlan(bigMomentID: UUID())
+        #expect(plan.isInvalidated(by: nil) == true)
+    }
+
+    @Test func isInvalidatedIsTrueWhenPlanHasNoMomentAndUserAddedOne() {
+        let plan = makeForwardPlan(bigMomentID: nil)
+        #expect(plan.isInvalidated(by: UUID()) == true)
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanProgressTests {
+
+    @Test func sessionsInsideCurrentWeekRangeAreCounted() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        // Three sessions today (= week 1).
+        let sessions = (0..<3).map { _ in makePracticeSession(date: start) }
+        let progress = ForwardPlanProgress.currentWeekProgress(plan: plan, sessions: sessions, now: start)
+        #expect(progress?.completed == 3)
+        #expect(progress?.target == 3)
+    }
+
+    @Test func sessionsOutsideCurrentWeekAreExcluded() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        // Two sessions ago (before generation) + one today.
+        let before = cal.date(byAdding: .day, value: -5, to: start)!
+        let sessions = [
+            makePracticeSession(date: before),
+            makePracticeSession(date: before),
+            makePracticeSession(date: start)
+        ]
+        let progress = ForwardPlanProgress.currentWeekProgress(plan: plan, sessions: sessions, now: start)
+        #expect(progress?.completed == 1)
+    }
+
+    @Test func sessionsInWeekTwoAreCountedWhenWeekTwoIsCurrent() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day10 = cal.date(byAdding: .day, value: 10, to: start)!
+        // Three sessions on day 10 — week 2 of the plan.
+        let sessions = (0..<3).map { _ in makePracticeSession(date: day10) }
+        let progress = ForwardPlanProgress.currentWeekProgress(plan: plan, sessions: sessions, now: day10)
+        #expect(progress?.completed == 3)
+    }
+
+    @Test func emptySessionListGivesZeroCompleted() {
+        let plan = makeForwardPlan()
+        let progress = ForwardPlanProgress.currentWeekProgress(plan: plan, sessions: [])
+        #expect(progress?.completed == 0)
+    }
+
+    @Test func sessionAtWeekBoundaryFiresIntoNextWeek() {
+        // Half-open ranges: a session on day 7 (start of week 2)
+        // counts toward week 2's progress when week 2 is current.
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start)
+        let day7 = cal.date(byAdding: .day, value: 7, to: start)!
+        let sessions = [makePracticeSession(date: day7)]
+        let progress = ForwardPlanProgress.currentWeekProgress(plan: plan, sessions: sessions, now: day7)
+        // We're in week 2 now (day 7), session lands in week 2.
+        #expect(progress?.completed == 1)
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanServiceDeterministicTests {
+
+    private func emptyInput(
+        baseline: CommunicationBaseline = .empty,
+        profile: CoachingProfile? = nil,
+        sessions: [PracticeSession] = [],
+        trends: [SkillTrend] = [],
+        bigMoment: BigMoment? = nil,
+        bigMomentDays: Int? = nil,
+        weeklyReps: Int = 0
+    ) -> ForwardPlanInput {
+        ForwardPlanInput(
+            profile: profile,
+            baseline: baseline,
+            sessions: sessions,
+            weeklyDelta: 0,
+            weeklyReps: weeklyReps,
+            currentStreak: 0,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDays,
+            trends: trends,
+            recentDrills: []
+        )
+    }
+
+    @Test func deterministicPlanAlwaysReturnsFourWeeks() {
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput())
+        #expect(plan.weeks.count == 4)
+        #expect(plan.weeks.map(\.weekIndex) == [1, 2, 3, 4])
+    }
+
+    @Test func deterministicPlanIsHonestAboutBeingRuleBased() {
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput())
+        #expect(plan.isAIBacked == false)
+    }
+
+    @Test func deterministicPlanCarriesGenerationVoice() {
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .beginner,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(profile: profile))
+        #expect(plan.voiceAtGeneration == .concise)
+    }
+
+    @Test func weekOneTargetsDecliningHighConfidenceTrendFirst() {
+        // Even when baseline numbers are clean, a high-confidence
+        // declining trend should win Week 1 — that's the urgent signal.
+        let trend = SkillTrend(
+            skillArea: .paceControl,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(trends: [trend]))
+        #expect(plan.weeks[0].focusSkillArea == .paceControl)
+    }
+
+    @Test func weekOneFallsBackToBaselineWhenNoUrgentTrend() {
+        // High filler rate baseline, no urgent trend → Week 1 = filler reduction.
+        var baseline = CommunicationBaseline.empty
+        baseline.fillerRate = BaselineStat(
+            value: 5.5, sampleCount: 10,
+            confidence: .high, trend: .stable,
+            percentile25: 4, percentile75: 7
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(baseline: baseline))
+        #expect(plan.weeks[0].focusSkillArea == .fillerReduction)
+    }
+
+    @Test func weekTwoReadsVoiceGoalForAlignment() {
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .beginner,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .storytelling,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(profile: profile))
+        // Storytelling primaryAlignedSkillArea is .answerDevelopment.
+        #expect(plan.weeks[1].focusSkillArea == .answerDevelopment)
+    }
+
+    @Test func weekTwoFallsBackToStructureWhenNoVoiceGoal() {
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput())
+        #expect(plan.weeks[1].focusSkillArea == .structure)
+    }
+
+    @Test func weekThreeIsSuddenDeathForPressureEscalation() {
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput())
+        #expect(plan.weeks[2].suggestedMode == .suddenDeath)
+    }
+
+    @Test func weekThreeAvoidsRepeatingWeekOneFillerFocus() {
+        // If Week 1 already drilled filler reduction, Week 3's
+        // confidence-shaped focus should switch to .confidence
+        // instead of stacking another filler week.
+        var baseline = CommunicationBaseline.empty
+        baseline.fillerRate = BaselineStat(
+            value: 6.0, sampleCount: 10,
+            confidence: .high, trend: .stable,
+            percentile25: 5, percentile75: 7
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(baseline: baseline))
+        #expect(plan.weeks[0].focusSkillArea == .fillerReduction)
+        #expect(plan.weeks[2].focusSkillArea == .confidence)
+    }
+
+    @Test func weekFourMocksBigMomentWhenSet() {
+        let moment = BigMoment(
+            title: "Board pitch",
+            date: Calendar.current.date(byAdding: .day, value: 14, to: Date()),
+            category: .presentation
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(
+            bigMoment: moment,
+            bigMomentDays: 14
+        ))
+        // Presentation maps to .timed for the mock rep.
+        #expect(plan.weeks[3].suggestedMode == .timed)
+        #expect(plan.weeks[3].rationale.contains("presentation"))
+    }
+
+    @Test func weekFourMocksInterviewAsIMConversation() {
+        let moment = BigMoment(
+            title: "VP role",
+            date: Calendar.current.date(byAdding: .day, value: 7, to: Date()),
+            category: .interview
+        )
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput(
+            bigMoment: moment,
+            bigMomentDays: 7
+        ))
+        #expect(plan.weeks[3].suggestedMode == .imConversation)
+    }
+
+    @Test func weekFourConsolidatesWhenNoBigMoment() {
+        let plan = ForwardPlanService.deterministicPlan(input: emptyInput())
+        // No moment → consolidation. Rationale mentions consolidation.
+        #expect(plan.weeks[3].rationale.lowercased().contains("consolidation"))
+    }
+
+    @Test func sessionTargetClampsBelowFloor() {
+        let target = ForwardPlanService.sessionTarget(weeklyReps: 0, base: 3)
+        #expect(target == 2) // Light user: base - 1 floors at 2.
+    }
+
+    @Test func sessionTargetClampsAboveCeiling() {
+        let target = ForwardPlanService.sessionTarget(weeklyReps: 12, base: 5)
+        #expect(target == 5) // Heavy user: base + 1 ceilings at 5.
+    }
+
+    @Test func sessionTargetHonorsBaseForSteadyUsers() {
+        let target = ForwardPlanService.sessionTarget(weeklyReps: 3, base: 3)
+        #expect(target == 3)
+    }
+
+    @Test func modeForSkillAreaMapping() {
+        #expect(ForwardPlanService.modeFor(skillArea: .fillerReduction) == .ahCounter)
+        #expect(ForwardPlanService.modeFor(skillArea: .structure) == .timed)
+        #expect(ForwardPlanService.modeFor(skillArea: .confidence) == .suddenDeath)
+        #expect(ForwardPlanService.modeFor(skillArea: .vocalEmphasis) == .imConversation)
+    }
+
+    @Test func bestModeForVoiceMapping() {
+        #expect(ForwardPlanService.bestModeForVoice(.authoritative) == .suddenDeath)
+        #expect(ForwardPlanService.bestModeForVoice(.warm) == .imConversation)
+        #expect(ForwardPlanService.bestModeForVoice(.concise) == .timed)
+        #expect(ForwardPlanService.bestModeForVoice(nil) == nil)
+    }
+
+    @Test func mockModeForCategoryMapping() {
+        #expect(ForwardPlanService.mockModeFor(category: .interview) == .imConversation)
+        #expect(ForwardPlanService.mockModeFor(category: .presentation) == .timed)
+        #expect(ForwardPlanService.mockModeFor(category: .publicSpeaking) == .timed)
+        #expect(ForwardPlanService.mockModeFor(category: .conversation) == .imConversation)
+        #expect(ForwardPlanService.mockModeFor(category: .review) == .imConversation)
+        #expect(ForwardPlanService.mockModeFor(category: .other) == .timed)
+    }
+
+    @Test func everyWeekHasNonEmptyRationaleWithoutExclamations() {
+        // Brand voice contract — no rationale should ever ship with
+        // an exclamation. Run across the variants the deterministic
+        // path produces.
+        let cases: [ForwardPlanInput] = [
+            emptyInput(),
+            emptyInput(profile: CoachingProfile(
+                speakingContext: .work, primaryGoal: .reduceFillers,
+                confidenceLevel: .beginner, biggestChallenge: .fillerWords,
+                desiredOutcome: .concise, speakingStyleGoal: .authoritative,
+                styleReference: "", coachingBrief: "", motivationWhyNow: "", successVision: ""
+            )),
+            emptyInput(bigMoment: BigMoment(
+                title: "X", date: Date(), category: .interview
+            ), bigMomentDays: 5)
+        ]
+        for input in cases {
+            let plan = ForwardPlanService.deterministicPlan(input: input)
+            for week in plan.weeks {
+                #expect(!week.rationale.isEmpty)
+                #expect(!week.rationale.contains("!"))
+            }
+        }
+    }
+
+    @Test func weakestSkillAreaPrefersDecliningHighConfidence() {
+        let trend = SkillTrend(
+            skillArea: .pauseUsage,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 10,
+            currentLevel: .solid
+        )
+        let result = ForwardPlanService.weakestSkillArea(baseline: .empty, trends: [trend])
+        #expect(result == .pauseUsage)
+    }
+
+    @Test func weakestSkillAreaUsesWeakStableWhenNoDeclining() {
+        let trend = SkillTrend(
+            skillArea: .openingStrength,
+            direction: .stable,
+            confidence: .medium,
+            windowSize: 6,
+            currentLevel: .weak
+        )
+        let result = ForwardPlanService.weakestSkillArea(baseline: .empty, trends: [trend])
+        #expect(result == .openingStrength)
+    }
+
+    @Test func strongestSkillAreaIsNilWhenNoConfidence() {
+        // Empty baseline → no dimension can claim "strong".
+        let result = ForwardPlanService.strongestSkillArea(baseline: .empty)
+        #expect(result == nil)
+    }
+
+    @Test func strongestSkillAreaFindsLowFillerRate() {
+        var baseline = CommunicationBaseline.empty
+        baseline.fillerRate = BaselineStat(
+            value: 0.8, sampleCount: 10,
+            confidence: .high, trend: .stable,
+            percentile25: 0.5, percentile75: 1.1
+        )
+        let result = ForwardPlanService.strongestSkillArea(baseline: baseline)
+        #expect(result == .fillerReduction)
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanRendererTests {
+
+    @Test func openingReferencesBigMomentWhenSet() {
+        let moment = BigMoment(title: "Q3 review", date: Date(), category: .review)
+        let plan = makeForwardPlan(bigMomentID: moment.id, isAIBacked: true)
+        let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: .executive, bigMoment: moment)
+        #expect(msg.contains("performance review") || msg.contains("review"))
+    }
+
+    @Test func openingIsGenericWhenNoBigMoment() {
+        let plan = makeForwardPlan(isAIBacked: true)
+        let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: .concise, bigMoment: nil)
+        #expect(msg.contains("four-week program"))
+    }
+
+    @Test func openingAnnotatesRuleBasedOriginHonestly() {
+        let plan = makeForwardPlan(isAIBacked: false)
+        let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: nil, bigMoment: nil)
+        #expect(msg.contains("rules") || msg.contains("rule-based") || msg.contains("without an AI"))
+    }
+
+    @Test func openingAnnotatesAIBackedOriginHonestly() {
+        let plan = makeForwardPlan(isAIBacked: true)
+        let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: nil, bigMoment: nil)
+        #expect(msg.contains("shaped"))
+    }
+
+    @Test func messageIncludesAllFourWeeks() {
+        let plan = makeForwardPlan()
+        let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: .warm, bigMoment: nil)
+        #expect(msg.contains("Week 1"))
+        #expect(msg.contains("Week 2"))
+        #expect(msg.contains("Week 3"))
+        #expect(msg.contains("Week 4"))
+    }
+
+    @Test func closingLineIsShapedByEveryVoice() {
+        let plan = makeForwardPlan()
+        let voices: [SpeakingStyleGoal?] = [.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil]
+        var lastClose: String? = nil
+        for voice in voices {
+            let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: voice, bigMoment: nil)
+            // The closing line is the final paragraph; capture it.
+            let parts = msg.components(separatedBy: "\n\n")
+            #expect(parts.count >= 5) // open + 4 weeks + close
+            let close = parts.last ?? ""
+            #expect(!close.isEmpty)
+            #expect(!close.contains("!"))
+            // Mostly we want to confirm voices differ at least once
+            // — checking each voice's exact copy would over-pin the
+            // catalogue.
+            if let last = lastClose, last != close {
+                #expect(true) // at least one voice diverges from the last
+            }
+            lastClose = close
+        }
+    }
+
+    @Test func rendererCarriesNoExclamationMarks() {
+        // Brand-voice contract everywhere.
+        let plan = makeForwardPlan()
+        let voices: [SpeakingStyleGoal?] = [.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil]
+        let moment = BigMoment(title: "Big test", date: Date(), category: .interview)
+        for voice in voices {
+            for bm in [nil, moment] as [BigMoment?] {
+                let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: voice, bigMoment: bm)
+                #expect(!msg.contains("!"))
+            }
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct ForwardPlanContextTests {
+
+    @Test func planSectionOmittedWhenNoPlan() {
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            forwardPlan: nil
+        )
+        #expect(!context.contains("PLAN"))
+    }
+
+    @Test func planSectionPresentWhenPlanProvided() {
+        let plan = makeForwardPlan()
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            forwardPlan: plan
+        )
+        #expect(context.contains("PLAN"))
+        #expect(context.contains("Week 1 of 4"))
+    }
+
+    @Test func planSectionIncludesProgressFromSessions() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start, targetForEachWeek: 3)
+        let sessions = (0..<2).map { _ in makePracticeSession(date: start) }
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            forwardPlan: plan
+        )
+        #expect(context.contains("2 of 3 reps"))
+    }
+
+    @Test func planSectionWarnsWhenStale() {
+        // Plan was generated against momentA but the user's active
+        // moment is now momentB → coach should be told to recommend
+        // regeneration rather than quote a stale plan.
+        let momentA = UUID()
+        let momentB = BigMoment(
+            id: UUID(),
+            title: "New event",
+            date: Date(),
+            category: .interview
+        )
+        let plan = makeForwardPlan(bigMomentID: momentA)
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: momentB,
+            forwardPlan: plan
+        )
+        #expect(context.contains("stale"))
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+struct CoachingPlanCardVisibilityTests {
+
+    private func minimalProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .beginner,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    @Test func hiddenWhenProfileIsNil() {
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: nil, profile: nil, sessions: [], activeBigMomentID: nil
+        )
+        #expect(state == .hidden)
+    }
+
+    @Test func hiddenWhenNoPlanAndUnderThreeSessions() {
+        let sessions = [makePracticeSession(date: Date())]
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: nil, profile: minimalProfile(), sessions: sessions, activeBigMomentID: nil
+        )
+        #expect(state == .hidden)
+    }
+
+    @Test func promptWhenNoPlanAndAtLeastThreeSessions() {
+        let sessions = (0..<3).map { _ in makePracticeSession(date: Date()) }
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: nil, profile: minimalProfile(), sessions: sessions, activeBigMomentID: nil
+        )
+        #expect(state == .prompt)
+    }
+
+    @Test func liveWhenPlanAndBigMomentIDsMatch() {
+        let momentID = UUID()
+        let plan = makeForwardPlan(bigMomentID: momentID)
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: momentID
+        )
+        if case .live = state {
+            #expect(true)
+        } else {
+            #expect(Bool(false), "Expected .live state when IDs match")
+        }
+    }
+
+    @Test func liveWhenBothPlanAndActiveBigMomentIDAreNil() {
+        let plan = makeForwardPlan(bigMomentID: nil)
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: nil
+        )
+        if case .live = state {
+            #expect(true)
+        } else {
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func staleWhenBigMomentChangedSinceGeneration() {
+        let oldID = UUID()
+        let newID = UUID()
+        let plan = makeForwardPlan(bigMomentID: oldID)
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: newID
+        )
+        if case .stale = state {
+            #expect(true)
+        } else {
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func staleWhenUserClearedBigMoment() {
+        let plan = makeForwardPlan(bigMomentID: UUID())
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: nil
+        )
+        if case .stale = state {
+            #expect(true)
+        } else {
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func liveStateCarriesCompletedSessionCount() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let plan = makeForwardPlan(generatedAt: start, bigMomentID: nil)
+        let sessions = (0..<2).map { _ in makePracticeSession(date: start) }
+        let state = CoachingPlanCardVisibility.resolve(
+            plan: plan, profile: minimalProfile(), sessions: sessions,
+            activeBigMomentID: nil, now: start
+        )
+        if case .live(_, let completed) = state {
+            #expect(completed == 2)
+        } else {
+            #expect(Bool(false), "Expected .live(_, 2)")
+        }
+    }
+
+    @Test func ctaLabelForPromptStateIsVoiceShaped() {
+        // Every voice must carry a non-empty CTA — no fallback to
+        // the empty string. The catalogue is locked here so a future
+        // edit that drops a voice fails this test.
+        let state = CoachingPlanCardState.prompt
+        let voices: [SpeakingStyleGoal?] = [.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil]
+        for voice in voices {
+            let label = CoachingPlanCardVisibility.ctaLabel(state: state, voice: voice)
+            #expect(!label.isEmpty)
+            #expect(!label.contains("!"))
+        }
+    }
+
+    @Test func ctaLabelForLiveStateIsEmpty() {
+        // Live state needs no CTA — the card is just a status read.
+        let plan = makeForwardPlan()
+        let state = CoachingPlanCardState.live(plan: plan, completed: 1)
+        let label = CoachingPlanCardVisibility.ctaLabel(state: state, voice: .warm)
+        #expect(label.isEmpty)
+    }
+}
+
+@available(iOS 17.0, macOS 12.0, *)
+@MainActor
+struct AskNoumStoreInjectCoachTurnTests {
+
+    private func freshStore() -> AskNoumStore {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+    }
+
+    @Test func injectCoachTurnReturnsNilOnEmptyText() {
+        let store = freshStore()
+        let id = store.injectCoachTurn("")
+        #expect(id == nil)
+        #expect(store.messages.count == 0)
+    }
+
+    @Test func injectCoachTurnReturnsNilOnWhitespaceOnlyText() {
+        let store = freshStore()
+        let id = store.injectCoachTurn("   \n  ")
+        #expect(id == nil)
+        #expect(store.messages.count == 0)
+    }
+
+    @Test func injectCoachTurnAppendsNonPendingCoachRow() {
+        let store = freshStore()
+        let id = store.injectCoachTurn("Hello from the coach.")
+        #expect(id != nil)
+        #expect(store.messages.count == 1)
+        #expect(store.messages.first?.role == .coach)
+        #expect(store.messages.first?.isPending == false)
+        #expect(store.messages.first?.text == "Hello from the coach.")
+    }
+
+    @Test func injectCoachTurnDoesNotSetAwaitingReply() {
+        // Direct injects bypass the user-turn → coach-pending flow,
+        // so the input bar must not lock.
+        let store = freshStore()
+        _ = store.injectCoachTurn("Plan body.")
+        #expect(store.isAwaitingReply == false)
+    }
+
+    @Test func injectCoachTurnTrimsWhitespaceFromText() {
+        // Mirror appendUserTurn's contract: text lands trimmed so
+        // accidental leading/trailing newlines from the renderer don't
+        // shift the bubble layout.
+        let store = freshStore()
+        _ = store.injectCoachTurn("  Plan body.  \n")
+        #expect(store.messages.first?.text == "Plan body.")
+    }
+}

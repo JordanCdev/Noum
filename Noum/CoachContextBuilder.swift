@@ -168,6 +168,10 @@ enum CoachContextBuilder {
     ///
     /// Sections:
     ///   • GOAL — voice + onboarding goal text (if set)
+    ///   • BIG MOMENT — upcoming high-stakes event (if active + ≤60 days)
+    ///   • PLAN — current week of the active 4-week forward plan, with
+    ///     progress + stale-warning when the plan no longer aligns with
+    ///     the BigMoment that shaped it. Omitted when no plan exists.
     ///   • RATING — overall + week peak + weekly delta
     ///   • BASELINE — most-stable numbers (fillers/min, pace, pause rate)
     ///   • STREAK — current streak + reps this week
@@ -188,7 +192,8 @@ enum CoachContextBuilder {
         pathStatus: PathNodeStatus?,
         pathGatingPhrase: String?,
         recentProofs: [ProofMomentRecord] = [],
-        bigMoment: BigMoment? = nil
+        bigMoment: BigMoment? = nil,
+        forwardPlan: ForwardPlan? = nil
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -236,6 +241,27 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("BIG MOMENT")
             lines.append("- Preparing for: \(moment.title) (\(moment.category.displayName)). \(days) day\(days == 1 ? "" : "s") away.")
+        }
+
+        // PLAN — current week of the active forward plan + completed-vs-target
+        // for the current week. Lets the coach say "your plan says X this week
+        // and you're at 2 of 3 reps" without the user having to ask. Stale
+        // plans (BigMomentID mismatch) are surfaced as a warning so the model
+        // can suggest regeneration instead of quoting a plan no longer aligned
+        // with the user's reality.
+        if let plan = forwardPlan, let week = plan.currentWeek() {
+            lines.append("")
+            lines.append("PLAN")
+            let isStale = plan.isInvalidated(by: bigMoment?.id)
+            if isStale {
+                lines.append("- Active plan is stale — the user's big moment changed since generation. Recommend regenerating before quoting this plan as current.")
+            }
+            lines.append("- Week \(week.weekIndex) of 4 focus: \(week.focusSkillArea.displayName) via \(week.suggestedMode.displayLabel).")
+            lines.append("- Why this week: \(week.rationale)")
+            let progress = ForwardPlanProgress.currentWeekProgress(plan: plan, sessions: sessions)
+            if let progress {
+                lines.append("- Progress: \(progress.completed) of \(progress.target) rep\(progress.target == 1 ? "" : "s") this week.")
+            }
         }
 
         // RATING — overall + week peak + weekly delta + derived confidence
