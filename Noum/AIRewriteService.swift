@@ -71,9 +71,16 @@ actor AIRewriteService {
     /// Returns nil if no provider is configured, the call fails, the
     /// content filter rejects the output, or the rewrite drifts too
     /// far from the user's original voice.
+    ///
+    /// `voice` (optional) injects the per-voice register clause so the
+    /// rewrite drifts toward the user's voice goal while still anchored
+    /// to their actual vocabulary signals. nil = no voice context (the
+    /// rewrite still preserves the user's voice via VoiceSignals; the
+    /// voice register only colours register, not vocabulary).
     func rewrite(
         transcript: String,
-        weakness: Weakness
+        weakness: Weakness,
+        voice: SpeakingStyleGoal? = nil
     ) async -> Rewrite? {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 40 else { return nil }
@@ -101,7 +108,7 @@ actor AIRewriteService {
                     "model": provider.model,
                     "temperature": 0.5,  // lower than prompt-gen — we want fidelity, not creativity
                     "messages": [
-                        ["role": "system", "content": Self.systemPrompt(for: weakness)],
+                        ["role": "system", "content": Self.systemPrompt(for: weakness, voice: voice)],
                         ["role": "user", "content": userPrompt]
                     ]
                 ]
@@ -109,7 +116,7 @@ actor AIRewriteService {
             case .gemini:
                 request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
                 let body: [String: Any] = [
-                    "systemInstruction": ["parts": [["text": Self.systemPrompt(for: weakness)]]],
+                    "systemInstruction": ["parts": [["text": Self.systemPrompt(for: weakness, voice: voice)]]],
                     "contents": [["parts": [["text": userPrompt]]]],
                     "generationConfig": ["temperature": 0.5]
                 ]
@@ -130,18 +137,48 @@ actor AIRewriteService {
 
     // MARK: - Prompts
 
-    private static func systemPrompt(for weakness: Weakness) -> String {
-        """
-        You are a speaking coach who rewrites a small slice of a user's transcript to fix a specific weakness — without making them sound like a different person. The user's existing voice is the asset; you protect it.
+    /// Exposed `static` + `internal` so the test suite can assert that
+    /// the voice register clause is present per voice.
+    static func systemPrompt(for weakness: Weakness, voice: SpeakingStyleGoal?) -> String {
+        let voiceRegister = voiceRegisterClause(for: voice)
+        return """
+        You are a speaking coach who rewrites a small slice of a user's transcript to fix a specific weakness — without making them sound like a different person. The user's existing voice is the asset; you protect it. The user is also training a specific voice goal — you nudge the rewrite toward that goal while keeping their vocabulary intact.
+
+        \(voiceRegister)
 
         Hard rules:
         1. Use the user's own words. Pull from the vocabulary the user actually used in their transcript. Do not introduce jargon, buzzwords, or corporate phrasing the user did not use ("leverage", "ecosystem", "stakeholder", "value-add", "strategic", "synergy", "actionable", "disrupt", "robust", "scalable").
         2. Match their cadence. Stay within ±25% of the user's average sentence length. If they speak in short sentences, you write short sentences.
         3. Match their formality. If they use contractions, you use contractions. If they use casual fillers like "kind of", you can keep them where they actually help.
         4. Fix only the targeted slice. Do not rewrite the whole rep. Do not generalise the topic. Stay on the exact subject the user was talking about.
-        5. \(weakness.fixInstruction)
-        6. Output ONLY the rewritten slice. No preface, no explanation, no quotes. Plain text. 8-26 words maximum.
+        5. Voice nudge takes second place to vocabulary fidelity. The voice register colours how you arrange the words, never which words you use.
+        6. \(weakness.fixInstruction)
+        7. Output ONLY the rewritten slice. No preface, no explanation, no quotes. Plain text. 8-26 words maximum.
         """
+    }
+
+    /// Per-voice register line for the rewrite system prompt. Mirrors the
+    /// authoritative=verdict, warm=mentor, concise=clipped, persuasive=
+    /// premise→evidence, executive=chief-of-staff, storytelling=arcs pattern
+    /// in `CoachContextBuilder`. The rewrite moves *toward* the user's voice
+    /// goal — never overshoots into a different person.
+    static func voiceRegisterClause(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative:
+            return "Voice the user is training: authoritative. Rewrite leans declarative — no hedging, no rising endings."
+        case .warm:
+            return "Voice the user is training: warm. Rewrite keeps a felt, human edge — soft warmth, not saccharine."
+        case .concise:
+            return "Voice the user is training: concise. Rewrite cuts filler, favours short sentences, skips preamble."
+        case .persuasive:
+            return "Voice the user is training: persuasive. Rewrite arranges premise → evidence → point."
+        case .executive:
+            return "Voice the user is training: executive. Rewrite leads with the top line, then one short support."
+        case .storytelling:
+            return "Voice the user is training: storytelling. Rewrite shapes the slice with scene, move, meaning."
+        case .none:
+            return "Voice the user is training: not set. Rewrite stays calm and direct."
+        }
     }
 
     private func buildUserPrompt(transcript: String, weakness: Weakness, signals: VoiceSignals) -> String {

@@ -196,7 +196,8 @@ enum CoachContextBuilder {
         recentProofs: [ProofMomentRecord] = [],
         bigMoment: BigMoment? = nil,
         forwardPlan: ForwardPlan? = nil,
-        latestRepNote: PostRepCoachNote? = nil
+        latestRepNote: PostRepCoachNote? = nil,
+        trends: [SkillTrend] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -229,6 +230,17 @@ enum CoachContextBuilder {
             lines.append("- Their stated biggest challenge: \(challengeLabel)")
             // desiredOutcome — register-matching signal.
             lines.append("- Desired outcome: \(profile.desiredOutcome.title.lowercased())")
+            // speakingContext — where they expect to use this voice.
+            // Lets the coach anchor moves to the real-world surface ("you
+            // train for interviews — that's where this rep lands").
+            lines.append("- Where they want to use this: \(profile.speakingContext.title.lowercased())")
+            // styleReference — "I want to sound like X." Free-text quote
+            // when set. Coach can frame feedback against the reference
+            // ("that opener was the opposite of what Obama would do").
+            let reference = profile.styleReference.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reference.isEmpty {
+                lines.append("- Style reference (who they want to sound like): \(reference)")
+            }
         } else {
             lines.append("")
             lines.append("GOAL")
@@ -381,8 +393,15 @@ enum CoachContextBuilder {
             }
         }
 
-        // TRENDS — what's working + what's not
-        if !baseline.topStrengths.isEmpty || !baseline.persistentBlockers.isEmpty {
+        // TRENDS — what's working + what's not. Combines baseline rollups
+        // (strengths / blockers as short noun labels) with TrendAnalyzer
+        // direction outputs (per-skill movement). Direction lines let the
+        // coach cite "filler rate declining for 3 weeks" or "pause usage
+        // resolved" without re-running the analyzer. Omitted entirely
+        // when no signal is non-empty so the section never reads as a
+        // hollow heading.
+        let directionLines = trendDirectionLines(trends: trends)
+        if !baseline.topStrengths.isEmpty || !baseline.persistentBlockers.isEmpty || !directionLines.isEmpty {
             lines.append("")
             lines.append("TRENDS")
             if !baseline.topStrengths.isEmpty {
@@ -392,6 +411,9 @@ enum CoachContextBuilder {
             if !baseline.persistentBlockers.isEmpty {
                 let b = baseline.persistentBlockers.prefix(3).joined(separator: ", ")
                 lines.append("- Persistent blockers: \(b).")
+            }
+            for line in directionLines {
+                lines.append("- \(line)")
             }
         }
 
@@ -1098,6 +1120,42 @@ enum CoachContextBuilder {
         if avg >= 7.5 { return "confident" }
         if avg <= 5.0 { return "rebuilding" }
         return "developing"
+    }
+
+    /// Per-skill direction lines built from `TrendAnalyzer` output. Only
+    /// high-signal trends survive — low-confidence reads are dropped so
+    /// the coach never quotes a "declining" signal that's actually noise.
+    /// Hard cap at 4 lines so the section stays scannable. Lines are
+    /// pre-formatted noun phrases the caller dashes into TRENDS.
+    static func trendDirectionLines(trends: [SkillTrend]) -> [String] {
+        let interesting: [TrendDirection] = [.improving, .declining, .newIssue, .resolved]
+        let filtered = trends.filter { trend in
+            interesting.contains(trend.direction) && trend.confidence != .low
+        }
+        // Priority order: declining / newIssue first (urgent), then resolved
+        // / improving (motivating). Within a band, higher confidence first.
+        let urgencyOrder: [TrendDirection] = [.declining, .newIssue, .resolved, .improving]
+        let sorted = filtered.sorted { a, b in
+            let ai = urgencyOrder.firstIndex(of: a.direction) ?? urgencyOrder.count
+            let bi = urgencyOrder.firstIndex(of: b.direction) ?? urgencyOrder.count
+            if ai != bi { return ai < bi }
+            return a.confidence == .high && b.confidence != .high
+        }
+        return sorted.prefix(4).map { trend in
+            let area = trend.skillArea.displayName.lowercased()
+            let phrase: String
+            switch trend.direction {
+            case .declining: phrase = "\(area) declining"
+            case .improving: phrase = "\(area) improving"
+            case .newIssue:  phrase = "\(area) just became an issue"
+            case .resolved:  phrase = "\(area) resolved"
+            case .stable:    phrase = "\(area) stable"
+            }
+            if let delta = trend.recentDelta, !delta.isEmpty {
+                return "\(phrase) (\(delta))"
+            }
+            return phrase
+        }
     }
 
     /// Short coach-readable label for a `SpeakingChallenge`.

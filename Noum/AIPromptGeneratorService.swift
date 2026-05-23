@@ -123,16 +123,23 @@ actor AIPromptGeneratorService {
     // MARK: - Prompts
 
     private static let systemPrompt = """
-    You write one impromptu speaking-practice prompt for a public-speaking \
-    coaching app. The user will speak for 30–60 seconds answering it. \
-    Output ONLY the prompt — no preface, no quotes, no JSON, no enumeration. \
-    Single sentence ending with a question mark. 8–22 words. Concrete, \
-    answerable, opinion-inviting. Avoid: corporate jargon, marketing tone, \
-    politics, religion, identity targeting, anything requiring specialised \
-    knowledge. No second-person directives ("Tell me about…", "Describe…"). \
-    Frame as a question the user is asked, e.g. "What is the most overrated \
-    skill in your industry?" or "When should a leader admit they don't \
-    have an answer?". Bias toward the goal + weakness in the input. \
+    You are writing a practice prompt for someone training a specific \
+    speaking voice and working on a specific weakness — surfaced in the \
+    user message as voice + weakest dimension. The user will speak for \
+    30–60 seconds answering your prompt. Output ONLY the prompt — no \
+    preface, no quotes, no JSON, no enumeration. Single sentence ending \
+    with a question mark. 8–22 words. Concrete, answerable, \
+    opinion-inviting. Avoid: corporate jargon, marketing tone, politics, \
+    religion, identity targeting, anything requiring specialised \
+    knowledge. No second-person directives ("Tell me about…", \
+    "Describe…"). Frame as a question the user is asked, e.g. "What is \
+    the most overrated skill in your industry?" or "When should a leader \
+    admit they don't have an answer?". \
+    Match the user's voice register. A user training authoritative gets \
+    a verdict-shaped question; warm gets a felt-experience question; \
+    concise gets a clipped question; persuasive gets a premise-evidence \
+    question; executive gets a top-line question; storytelling gets a \
+    scene-shaped question. Same shape, different register. \
     When recent prompts are listed, avoid near-clones — pick a different \
     angle, subject, or framing rather than paraphrasing.
     """
@@ -158,6 +165,17 @@ actor AIPromptGeneratorService {
         recentPromptTexts: [String]
     ) -> String {
         var lines: [String] = []
+        // Lead with the voice + weakness frame — the system prompt
+        // references this directly ("training [voice], currently
+        // weakest at [dimension]").
+        let voice = profile.speakingStyleGoal.title.lowercased()
+        let weakLabel = (weakestDimension?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        if let weak = weakLabel {
+            lines.append("You are writing a practice prompt for someone training \(voice), currently weakest at \(weak.lowercased()).")
+        } else {
+            lines.append("You are writing a practice prompt for someone training \(voice).")
+        }
+        lines.append("")
         lines.append("Goal: \(profile.primaryGoal.title)")
         lines.append("Style aim: \(profile.speakingStyleGoal.title)")
         lines.append("Speaking context: \(profile.speakingContext.title)")

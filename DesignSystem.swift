@@ -410,30 +410,32 @@ struct MilestoneCelebrationOverlay: View {
                         .foregroundStyle(.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                 }
-
-                Button {
-                    dismissCelebration()
-                } label: {
-                    Text("Continue")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(tint)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, Spacing.sm)
-                        .background(.white, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .padding(.top, 8)
+                // M25: Continue button removed. The celebration is a
+                // moment the user reads, not a screen they navigate.
+                // Auto-dismiss after 5s lands on summary without an
+                // interaction tax; tap-to-dismiss-anywhere stays so a
+                // user who wants to move on faster still can.
             }
             .padding(32)
             .scaleEffect(appeared ? 1.0 : 0.7)
             .opacity(appeared ? 1.0 : 0)
         }
         .opacity(dismissed ? 0 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture { dismissCelebration() }
         .onAppear {
             withAnimation(.bouncySpring) { appeared = true }
 #if canImport(UIKit)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
 #endif
+            // Auto-advance to summary after 5s. Cancelled implicitly if
+            // the user taps to dismiss earlier (the second call into
+            // dismissCelebration is idempotent — `dismissed` already
+            // true on the second pass).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                guard !dismissed else { return }
+                dismissCelebration()
+            }
         }
     }
 

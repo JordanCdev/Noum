@@ -12030,3 +12030,798 @@ struct PostRepCoachNoteStoreRegenerationTests {
     }
 }
 
+// MARK: - M25 Stream 4 — celebration timing
+
+/// Locks the read-time constants used by `PreSummaryCelebration`.
+/// The hold durations sit in `holdDuration(isSingleEvent:reduceMotion:)`
+/// so the timing branches are testable without driving the View.
+@available(iOS 17.0, *)
+@MainActor
+struct M25CelebrationTimingTests {
+
+    @Test func singleEventFullMotionHoldsLongEnoughToRead() {
+        let hold = PreSummaryCelebration.holdDuration(isSingleEvent: true, reduceMotion: false)
+        #expect(hold == 2.80, "single-event hold must stay at the M25 read-time of 2.80s")
+    }
+
+    @Test func multiEventFullMotionHoldsPerCard() {
+        let hold = PreSummaryCelebration.holdDuration(isSingleEvent: false, reduceMotion: false)
+        #expect(hold == 1.20, "multi-event per-card hold must stay at the M25 value of 1.20s")
+    }
+
+    @Test func reduceMotionSingleEventHoldIsAccessible() {
+        let hold = PreSummaryCelebration.holdDuration(isSingleEvent: true, reduceMotion: true)
+        #expect(hold == 0.90, "reduce-motion single hold must stay at the M25 value of 0.90s")
+    }
+
+    @Test func reduceMotionMultiEventStaysProportional() {
+        let hold = PreSummaryCelebration.holdDuration(isSingleEvent: false, reduceMotion: true)
+        #expect(hold == 0.50, "reduce-motion multi-event hold stays at ~0.50s per card")
+    }
+
+    @Test func reduceMotionAlwaysShorterOrEqualThanFullMotion() {
+        // Vestibular path must never out-hold the full-motion path.
+        let singleFull = PreSummaryCelebration.holdDuration(isSingleEvent: true, reduceMotion: false)
+        let singleReduced = PreSummaryCelebration.holdDuration(isSingleEvent: true, reduceMotion: true)
+        let multiFull = PreSummaryCelebration.holdDuration(isSingleEvent: false, reduceMotion: false)
+        let multiReduced = PreSummaryCelebration.holdDuration(isSingleEvent: false, reduceMotion: true)
+        #expect(singleReduced <= singleFull)
+        #expect(multiReduced <= multiFull)
+    }
+}
+
+// MARK: - M25 Stream 4 — shareable card history + friends
+
+@available(iOS 17.0, *)
+@MainActor
+struct M25ShareableCardTests {
+
+    private func makeSession(score: Int?, id: UUID = UUID()) -> PracticeSession {
+        var s = PracticeSession(
+            transcript: "Internal speech that must never appear on the share card.",
+            fillerWordCount: 0,
+            duration: 30,
+            date: Date(),
+            mode: .timed,
+            pressureLevel: .standard
+        )
+        s.id = id
+        s.score = score
+        return s
+    }
+
+    @Test func recentScoresReturnsFiveWhenFiveExist() {
+        let store = PracticeSessionStore.shared
+        // Snapshot + restore so we don't pollute other tests that may
+        // assume an empty store.
+        let snapshot = store.sessions
+        defer { setSessions(snapshot, on: store) }
+
+        let current = makeSession(score: 9)
+        // Seed store newest-first (matches production insert order).
+        let seeded: [PracticeSession] = [
+            current,
+            makeSession(score: 8),
+            makeSession(score: 6),
+            makeSession(score: 7),
+            makeSession(score: 5)
+        ]
+        setSessions(seeded, on: store)
+
+        let scores = ShareableSessionCard.recentScores(forSession: current)
+        #expect(scores.count == 5)
+        #expect(scores.last == 9, "current session must be the trailing entry")
+        #expect(scores.first == 5, "oldest entry comes first")
+    }
+
+    @Test func recentScoresAppendsCurrentWhenNotInStore() {
+        let store = PracticeSessionStore.shared
+        let snapshot = store.sessions
+        defer { setSessions(snapshot, on: store) }
+
+        setSessions([
+            makeSession(score: 6),
+            makeSession(score: 7)
+        ], on: store)
+        let current = makeSession(score: 9)
+        let scores = ShareableSessionCard.recentScores(forSession: current)
+        #expect(scores.last == 9, "share path must include the in-flight rep even before persistence")
+        #expect(scores.count <= 5)
+    }
+
+    @Test func friendsSectionEmptyHidesByReturningEmptyArray() {
+        // When the friends list is empty, the helper returns [] so the
+        // section never renders. The view checks `friendsPeak.isEmpty`.
+        let manager = FriendsManager.shared
+        let snapshot = manager.friends
+        defer { restoreFriends(snapshot, manager: manager) }
+        for friend in snapshot { manager.removeFriend(id: friend.id) }
+        let friends = ShareableSessionCard.topFriendsPeak()
+        #expect(friends.isEmpty)
+    }
+
+    @Test func friendsSectionExcludesFriendsWithUnknownPeak() {
+        // A friend with no synced peak rating is a "—" in the friends
+        // section — we'd rather hide them than print noise.
+        let manager = FriendsManager.shared
+        let snapshot = manager.friends
+        defer { restoreFriends(snapshot, manager: manager) }
+        for friend in snapshot { manager.removeFriend(id: friend.id) }
+
+        manager.addFriend(NoumFriend(
+            id: UUID(),
+            displayName: "Synced Friend",
+            addedAt: Date(),
+            addedVia: .manual,
+            lastKnownPeakRating: 700
+        ))
+        manager.addFriend(NoumFriend(
+            id: UUID(),
+            displayName: "Awaiting Sync",
+            addedAt: Date(),
+            addedVia: .manual,
+            lastKnownPeakRating: nil
+        ))
+        let friends = ShareableSessionCard.topFriendsPeak()
+        #expect(friends.count == 1)
+        #expect(friends.first?.displayName == "Synced Friend")
+    }
+
+    @Test func friendsSectionRanksByPeakAndCapsAtThree() {
+        let manager = FriendsManager.shared
+        let snapshot = manager.friends
+        defer { restoreFriends(snapshot, manager: manager) }
+        for friend in snapshot { manager.removeFriend(id: friend.id) }
+
+        let peaks = [560, 820, 690, 740, 610]
+        for (i, peak) in peaks.enumerated() {
+            manager.addFriend(NoumFriend(
+                id: UUID(),
+                displayName: "Friend \(i)",
+                addedAt: Date(),
+                addedVia: .manual,
+                lastKnownPeakRating: peak
+            ))
+        }
+        let friends = ShareableSessionCard.topFriendsPeak()
+        #expect(friends.count == 3)
+        #expect(friends[0].peakRating == 820)
+        #expect(friends[1].peakRating == 740)
+        #expect(friends[2].peakRating == 690)
+    }
+
+    @Test func friendPeakModelCarriesNoTranscriptOrFillerFields() {
+        // Privacy posture: the model that feeds the card must expose
+        // name + initials + peak rating only. Any new field added here
+        // ships to the share image.
+        let mirror = Mirror(reflecting: ShareableSessionCard.FriendPeak(
+            id: UUID(),
+            displayName: "Sam",
+            initials: "S",
+            peakRating: 700
+        ))
+        let labels = mirror.children.compactMap { $0.label }
+        #expect(Set(labels) == Set(["id", "displayName", "initials", "peakRating"]))
+    }
+
+    @Test func recentScoresHelperReadsOnlyScores() {
+        // The helper must return Int, not anything carrying transcript
+        // text. Type check is the static guarantee — assert the value
+        // type explicitly so a future refactor that widens the shape
+        // breaks loudly.
+        let store = PracticeSessionStore.shared
+        let snapshot = store.sessions
+        defer { setSessions(snapshot, on: store) }
+        let current = makeSession(score: 9)
+        setSessions([current], on: store)
+        let scores: [Int] = ShareableSessionCard.recentScores(forSession: current)
+        #expect(scores == [9])
+    }
+
+    // MARK: - Test helpers
+
+    /// Replace the store's sessions array via the remote-replace API,
+    /// which is the only public bulk-setter the store exposes. The
+    /// `sorted by date desc` inside `replaceFromRemote` means we seed
+    /// the input with strictly increasing dates so the resulting
+    /// newest-first order matches the desired order.
+    private func setSessions(_ sessions: [PracticeSession], on store: PracticeSessionStore) {
+        // sessions input here is in production order (newest-first).
+        // Re-stamp dates strictly descending so replaceFromRemote keeps
+        // that order through its internal sort.
+        let now = Date()
+        let stamped: [PracticeSession] = sessions.enumerated().map { index, session in
+            var copy = session
+            copy.date = now.addingTimeInterval(-Double(index))
+            return copy
+        }
+        store.replaceFromRemote(stamped)
+    }
+
+    private func restoreFriends(_ snapshot: [NoumFriend], manager: FriendsManager) {
+        for friend in manager.friends { manager.removeFriend(id: friend.id) }
+        for friend in snapshot { manager.addFriend(friend) }
+    }
+}
+
+// MARK: - M25 Stream 2 — IM stack overhaul
+//
+// Two test surfaces:
+//   1. `M25IMMessageSpeakerGenerationTests` — exercises the generation-token
+//      guard on `IMMessageSpeaker` deterministically. Verifies that a stale
+//      token is rejected after speak() / stop() advances the counter — the
+//      exact predicate the production playback paths use before
+//      `playAudioData`. No network, no audio.
+//   2. `M25NPCSystemPromptTests` — asserts that each voice variant of
+//      `AINPCChatService.buildSystemPrompt` produces a prompt containing
+//      the voice-specific testing-for clause, and that the user's
+//      coaching profile + big moment + userContext block reach the
+//      prompt. Pure-function — no provider.
+
+#if canImport(AVFAudio)
+@MainActor
+struct M25IMMessageSpeakerGenerationTests {
+
+    /// Calling `advanceGenerationForTesting()` returns a value strictly
+    /// greater than the previous one and is reflected in
+    /// `currentGeneration`. This is the same `&+= 1` step `speak()` and
+    /// `stop()` use, exercised without spawning a real network task.
+    @Test func advanceMovesCurrentGenerationForward() {
+        let speaker = IMMessageSpeaker.shared
+        let before = speaker.currentGeneration
+        let after = speaker.advanceGenerationForTesting()
+        #expect(after > before)
+        #expect(speaker.currentGeneration == after)
+    }
+
+    /// The generation captured at the start of a speak() Task is the
+    /// predicate that gates `playAudioData`. After ANY subsequent
+    /// advance (speak again, or stop), that captured token must no
+    /// longer be current — otherwise the stale audio would play.
+    @Test func capturedGenerationStaleAfterSubsequentAdvance() {
+        let speaker = IMMessageSpeaker.shared
+        let captured = speaker.advanceGenerationForTesting()
+        #expect(speaker.isGenerationStillCurrent(captured))
+        _ = speaker.advanceGenerationForTesting()
+        #expect(!speaker.isGenerationStillCurrent(captured))
+    }
+
+    /// Multiple rapid advances (the rapid-rounds bug pattern) all
+    /// invalidate earlier tokens. Round 1's captured token is stale
+    /// after round 2's advance and stays stale after round 3's. The
+    /// production race fix relies on this monotonic-by-construction
+    /// behavior, not on the magnitude of the gap.
+    @Test func staleTokenStaysStaleAfterRepeatedAdvances() {
+        let speaker = IMMessageSpeaker.shared
+        let roundOne = speaker.advanceGenerationForTesting()
+        _ = speaker.advanceGenerationForTesting() // round 2
+        _ = speaker.advanceGenerationForTesting() // round 3
+        #expect(!speaker.isGenerationStillCurrent(roundOne))
+    }
+
+    /// A live `speak(...)` call advances the generation. Even though
+    /// the playback Task itself may never run a real fetch in the test
+    /// environment (no API keys), the synchronous bump happens on the
+    /// main actor before the Task is scheduled — so the captured-before
+    /// invariant the production fix depends on is observable here.
+    @Test func liveSpeakAdvancesGeneration() {
+        let speaker = IMMessageSpeaker.shared
+        let before = speaker.currentGeneration
+        speaker.speak("hello", setup: IMConversationSetup(scenario: .workUpdate, targetTone: .confident))
+        #expect(speaker.currentGeneration > before)
+        // Tear down the spawned task immediately so the test does not
+        // leak an in-flight URLSession request.
+        speaker.stop()
+    }
+
+    /// `stop()` also advances the generation — this is what closes the
+    /// other half of the race window where a fetch had landed and was
+    /// about to play but the user has since pressed stop or moved on.
+    @Test func stopAdvancesGeneration() {
+        let speaker = IMMessageSpeaker.shared
+        let before = speaker.currentGeneration
+        speaker.stop()
+        #expect(speaker.currentGeneration > before)
+    }
+}
+#endif
+
+struct M25NPCSystemPromptTests {
+
+    private func setup(_ scenario: IMConversationScenario = .workUpdate) -> IMConversationSetup {
+        IMConversationSetup(scenario: scenario, targetTone: .confident)
+    }
+
+    private func profile(voice: SpeakingStyleGoal,
+                         challenge: SpeakingChallenge = .fillerWords,
+                         successVision: String = "") -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: challenge,
+            desiredOutcome: .concise,
+            speakingStyleGoal: voice,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: successVision,
+            paraphrasedGoal: nil,
+            bigMomentID: nil
+        )
+    }
+
+    // MARK: Per-voice testing-for clause
+
+    /// Authoritative trainees should see the hedging-watch clause —
+    /// the calibration that distinguishes their NPC pressure from
+    /// the warm-trainee NPC pressure.
+    @Test func authoritativeVoicePromptContainsHedgingClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .authoritative),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for hedging"))
+    }
+
+    @Test func warmVoicePromptContainsEmotionalDrynessClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .warm),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for emotional dryness"))
+    }
+
+    @Test func conciseVoicePromptContainsDriftClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .concise),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for drift"))
+    }
+
+    @Test func persuasiveVoicePromptContainsUnsupportedClaimsClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .persuasive),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for unsupported claims"))
+    }
+
+    @Test func executiveVoicePromptContainsWarmthFillerClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .executive),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for warmth-filler"))
+    }
+
+    @Test func storytellingVoicePromptContainsThinScenesClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .storytelling),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for thin scenes"))
+    }
+
+    /// Cold start (no profile) gets the even-handed clause so the NPC
+    /// does not invent a calibration that wasn't earned.
+    @Test func nilProfileFallsBackToEvenHandedClause() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: nil,
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("Watch for whichever pattern surfaces first"))
+    }
+
+    // MARK: Coaching-context injection
+
+    /// The NPC system prompt must reference the scenario persona by name
+    /// so the model commits to staying in character.
+    @Test func promptContainsPersonaName() {
+        for scenario in IMConversationScenario.allCases {
+            let prompt = AINPCChatService.buildSystemPrompt(
+                setup: IMConversationSetup(scenario: scenario, targetTone: .confident),
+                profile: nil,
+                bigMoment: nil,
+                userContextBlock: nil
+            )
+            #expect(prompt.contains(scenario.personaName),
+                    "Expected prompt to reference persona \(scenario.personaName) for scenario \(scenario.rawValue)")
+        }
+    }
+
+    /// `biggestChallenge` is one of the previously-dormant intake fields
+    /// the audit flagged. It now lands in the NPC prompt so the persona
+    /// can subtly press on the user's stated weakness.
+    @Test func promptSurfacesBiggestChallenge() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .authoritative, challenge: .freezing),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains("freezing under pressure"))
+    }
+
+    /// `successVision` was the most-dormant field per audit; surfacing
+    /// it in the NPC prompt is the proof that the rebuild actually
+    /// closes the gap.
+    @Test func promptSurfacesSuccessVisionWhenSet() {
+        let vision = "I want to feel calm in my next performance review."
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .warm, successVision: vision),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(prompt.contains(vision))
+    }
+
+    /// Empty success vision must NOT produce a bare "Their vision of
+    /// success: " line — that would surface a placeholder to the model.
+    @Test func promptOmitsSuccessVisionWhenEmpty() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .warm, successVision: ""),
+            bigMoment: nil,
+            userContextBlock: nil
+        )
+        #expect(!prompt.contains("Their vision of success:"))
+    }
+
+    /// The userContext block — when supplied — is included verbatim so
+    /// the NPC sees the same coaching snapshot AICoachChatService does.
+    @Test func promptIncludesUserContextBlockVerbatim() {
+        let block = "=== USER CONTEXT (read carefully) ===\nGOAL\n- Voice: Concise — wants to sound crisp."
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .concise),
+            bigMoment: nil,
+            userContextBlock: block
+        )
+        #expect(prompt.contains(block))
+    }
+
+    /// Whitespace-only userContext block is dropped — defensive against
+    /// callers that pass an empty rendered context.
+    @Test func promptOmitsWhitespaceOnlyUserContextBlock() {
+        let prompt = AINPCChatService.buildSystemPrompt(
+            setup: setup(),
+            profile: profile(voice: .concise),
+            bigMoment: nil,
+            userContextBlock: "   \n\n   "
+        )
+        #expect(!prompt.contains("=== USER CONTEXT"))
+    }
+
+    /// Brand-voice contract: the NPC prompt itself must not contain
+    /// exclamation marks. The persona may still produce them under
+    /// model variance, but the instructions never sanction it.
+    @Test func promptContainsNoExclamationMarks() {
+        for voice in SpeakingStyleGoal.allCases {
+            let prompt = AINPCChatService.buildSystemPrompt(
+                setup: setup(),
+                profile: profile(voice: voice),
+                bigMoment: nil,
+                userContextBlock: nil
+            )
+            #expect(!prompt.contains("!"),
+                    "Prompt for voice \(voice.rawValue) must not contain exclamation marks")
+        }
+    }
+}
+
+// MARK: - M25 Stream 1 — Personalization context
+
+/// Verifies the dormant onboarding fields the audit flagged
+/// (`speakingContext`, `styleReference`) and TrendAnalyzer direction
+/// outputs reach `CoachContextBuilder.userContext`. Two contracts the
+/// audit calls out:
+///   • Non-empty field → visible in context.
+///   • Empty field → omitted cleanly (no hollow heading, no "n/a").
+@available(iOS 17.0, *)
+struct M25PersonalizationContextTests {
+
+    private func profile(
+        speakingContext: SpeakingContext = .interviews,
+        styleReference: String = "",
+        successVision: String = "",
+        biggestChallenge: SpeakingChallenge = .freezing
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: speakingContext,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: biggestChallenge,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .authoritative,
+            styleReference: styleReference,
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: successVision
+        )
+    }
+
+    private func context(
+        profile: CoachingProfile?,
+        trends: [SkillTrend] = []
+    ) -> String {
+        CoachContextBuilder.userContext(
+            profile: profile,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            forwardPlan: nil,
+            latestRepNote: nil,
+            trends: trends
+        )
+    }
+
+    // MARK: speakingContext
+
+    @Test func speakingContextSurfacedWhenSet() {
+        let ctx = context(profile: profile(speakingContext: .interviews))
+        #expect(ctx.contains("interviews"))
+    }
+
+    @Test func speakingContextDoesNotProduceEmptyHeadingWhenProfileNil() {
+        let ctx = context(profile: nil)
+        #expect(!ctx.contains("Where they want to use this"))
+    }
+
+    // MARK: styleReference
+
+    @Test func styleReferenceSurfacedWhenSet() {
+        let ctx = context(profile: profile(styleReference: "Obama"))
+        #expect(ctx.contains("Obama"))
+        #expect(ctx.contains("Style reference"))
+    }
+
+    @Test func styleReferenceOmittedWhenEmpty() {
+        let ctx = context(profile: profile(styleReference: ""))
+        #expect(!ctx.contains("Style reference"))
+    }
+
+    @Test func styleReferenceWhitespaceOnlyOmits() {
+        let ctx = context(profile: profile(styleReference: "   "))
+        #expect(!ctx.contains("Style reference"))
+    }
+
+    // MARK: trend direction outputs in TRENDS section
+
+    @Test func decliningTrendSurfacesInContext() {
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing,
+            recentDelta: "2 more fillers vs prior"
+        )
+        let ctx = context(profile: profile(), trends: [trend])
+        #expect(ctx.contains("TRENDS"))
+        #expect(ctx.contains("filler words declining"))
+        #expect(ctx.contains("2 more fillers vs prior"))
+    }
+
+    @Test func improvingTrendSurfacesInContext() {
+        let trend = SkillTrend(
+            skillArea: .pauseUsage,
+            direction: .improving,
+            confidence: .medium,
+            windowSize: 5,
+            currentLevel: .solid
+        )
+        let ctx = context(profile: profile(), trends: [trend])
+        #expect(ctx.contains("pauses improving"))
+    }
+
+    @Test func lowConfidenceTrendDropped() {
+        // The audit warns against fake certainty from small samples —
+        // low-confidence direction reads are noise and must not surface.
+        let noisy = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .low,
+            windowSize: 2,
+            currentLevel: .developing
+        )
+        let ctx = context(profile: profile(), trends: [noisy])
+        #expect(!ctx.contains("declining"))
+    }
+
+    @Test func stableTrendDropped() {
+        // "Stable" carries no coaching signal — the section should
+        // omit it so the model focuses on movement.
+        let stable = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .solid
+        )
+        let ctx = context(profile: profile(), trends: [stable])
+        // TRENDS section may still appear from baseline strengths/blockers
+        // on a richer fixture, but the stable direction line itself must
+        // never render in this minimal context.
+        #expect(!ctx.contains("filler words stable"))
+    }
+
+    @Test func emptyTrendsDoesNotCreateHollowTrendsSection() {
+        let ctx = context(profile: profile(), trends: [])
+        // baseline is .empty so no topStrengths/persistentBlockers either —
+        // TRENDS heading should not appear at all.
+        #expect(!ctx.contains("TRENDS"))
+    }
+
+    @Test func trendDirectionLinesCapAtFour() {
+        // Avoid crowding the system prompt. The helper hard-caps at 4 so
+        // even five interesting trends only contribute four lines.
+        let trends: [SkillTrend] = [
+            SkillTrend(skillArea: .fillerReduction, direction: .declining, confidence: .high, windowSize: 8, currentLevel: .developing),
+            SkillTrend(skillArea: .pauseUsage,      direction: .declining, confidence: .high, windowSize: 8, currentLevel: .developing),
+            SkillTrend(skillArea: .paceControl,     direction: .newIssue,  confidence: .high, windowSize: 8, currentLevel: .developing),
+            SkillTrend(skillArea: .structure,       direction: .resolved,  confidence: .high, windowSize: 8, currentLevel: .solid),
+            SkillTrend(skillArea: .confidence,      direction: .improving, confidence: .high, windowSize: 8, currentLevel: .solid)
+        ]
+        let lines = CoachContextBuilder.trendDirectionLines(trends: trends)
+        #expect(lines.count == 4)
+    }
+}
+
+// MARK: - M25 Stream 1 — Voice register in AI service prompts
+
+/// Verifies the per-voice register clause threads into the four AI
+/// service system prompts the audit flagged as voice-agnostic:
+/// Insights, PromptGenerator, Rewrite, ForwardPlan. Each is asserted
+/// with a deterministic per-voice substring so a future refactor can't
+/// silently strip the register without failing this suite.
+@available(iOS 17.0, *)
+struct M25PersonalizationVoicePromptTests {
+
+    // MARK: Insights
+
+    @Test func insightsSystemPromptCarriesVoiceRegisterForEveryVoice() {
+        for voice in SpeakingStyleGoal.allCases {
+            let prompt = AIInsightsService.systemPrompt(for: .weeklyNarrative, voice: voice)
+            #expect(prompt.contains("Register:"),
+                    "Insights prompt for \(voice.rawValue) must carry a Register clause")
+        }
+    }
+
+    @Test func insightsRegisterClauseVariesByVoice() {
+        let authoritative = AIInsightsService.registerClause(for: .authoritative)
+        let warm = AIInsightsService.registerClause(for: .warm)
+        let concise = AIInsightsService.registerClause(for: .concise)
+        let persuasive = AIInsightsService.registerClause(for: .persuasive)
+        let executive = AIInsightsService.registerClause(for: .executive)
+        let storytelling = AIInsightsService.registerClause(for: .storytelling)
+        #expect(authoritative.contains("verdict"))
+        #expect(warm.contains("mentor") || warm.contains("warmth"))
+        #expect(concise.contains("clipped") || concise.contains("tight"))
+        #expect(persuasive.contains("evidence") || persuasive.contains("reasoning"))
+        #expect(executive.contains("top-line") || executive.contains("verdict") || executive.contains("chief-of-staff"))
+        #expect(storytelling.contains("arc") || storytelling.contains("narrative") || storytelling.contains("chapter"))
+    }
+
+    @Test func insightsRegisterClauseColdStartReadsCalm() {
+        let none = AIInsightsService.registerClause(for: nil)
+        #expect(none.contains("calm") || none.contains("direct"))
+    }
+
+    // MARK: PromptGenerator
+
+    @Test func promptGeneratorSystemPromptCarriesVoiceFrame() {
+        // The system prompt is voice-agnostic at the system level (the
+        // voice is passed via the user message), but the system prompt
+        // must reference per-voice shape so the model knows to differ.
+        let system = AIPromptGeneratorService.systemPromptForTesting
+        #expect(system.contains("training") && system.contains("voice"),
+                "PromptGenerator system prompt must reference voice training")
+        #expect(system.contains("authoritative") || system.contains("warm"),
+                "PromptGenerator system prompt must enumerate voice shapes")
+    }
+
+    @Test func promptGeneratorUserPromptCarriesVoiceAndDimensionLead() {
+        for voice in SpeakingStyleGoal.allCases {
+            let profile = CoachingProfile(
+                speakingContext: .interviews,
+                primaryGoal: .reduceFillers,
+                confidenceLevel: .rebuilding,
+                biggestChallenge: .freezing,
+                desiredOutcome: .persuasive,
+                speakingStyleGoal: voice,
+                styleReference: "",
+                coachingBrief: "",
+                motivationWhyNow: "",
+                successVision: ""
+            )
+            let body = AIPromptGeneratorService.buildUserPrompt(
+                profile: profile,
+                weakestDimension: "filler control",
+                recentPromptTexts: []
+            )
+            #expect(body.contains("training \(voice.title.lowercased())"),
+                    "User prompt for voice \(voice.rawValue) must lead with 'training [voice]'")
+            #expect(body.contains("filler control"),
+                    "User prompt for voice \(voice.rawValue) must surface weakest dimension")
+        }
+    }
+
+    // MARK: Rewrite
+
+    @Test func rewriteSystemPromptCarriesVoiceRegisterForEveryVoice() {
+        for voice in SpeakingStyleGoal.allCases {
+            let prompt = AIRewriteService.systemPrompt(for: .opening, voice: voice)
+            #expect(prompt.contains("Voice the user is training"),
+                    "Rewrite prompt for \(voice.rawValue) must carry voice context")
+        }
+    }
+
+    @Test func rewriteVoiceRegisterClauseVariesByVoice() {
+        let authoritative = AIRewriteService.voiceRegisterClause(for: .authoritative)
+        let warm = AIRewriteService.voiceRegisterClause(for: .warm)
+        let concise = AIRewriteService.voiceRegisterClause(for: .concise)
+        #expect(authoritative.contains("authoritative"))
+        #expect(warm.contains("warm"))
+        #expect(concise.contains("concise"))
+    }
+
+    @Test func rewriteSystemPromptPreservesVocabularyFidelityClause() {
+        // Vocabulary fidelity is the founding constraint of the rewrite
+        // service ("don't want them to learn how to speak like chatgpt").
+        // The voice register clause must not displace it.
+        let prompt = AIRewriteService.systemPrompt(for: .opening, voice: .authoritative)
+        #expect(prompt.contains("Use the user's own words"))
+        #expect(prompt.contains("Voice nudge takes second place"))
+    }
+
+    // MARK: ForwardPlan
+
+    @Test func forwardPlanSystemPromptCarriesVoiceRegisterForEveryVoice() {
+        for voice in SpeakingStyleGoal.allCases {
+            let prompt = ForwardPlanService.systemPrompt(for: voice)
+            #expect(prompt.contains("Register:"),
+                    "ForwardPlan prompt for \(voice.rawValue) must carry a Register clause")
+        }
+    }
+
+    @Test func forwardPlanVoiceRegisterClauseVariesByVoice() {
+        let authoritative = ForwardPlanService.voiceRegisterClause(for: .authoritative)
+        let executive = ForwardPlanService.voiceRegisterClause(for: .executive)
+        let storytelling = ForwardPlanService.voiceRegisterClause(for: .storytelling)
+        #expect(authoritative.contains("verdict"))
+        #expect(executive.contains("top line") || executive.contains("chief-of-staff"))
+        #expect(storytelling.contains("chapter") || storytelling.contains("narrative"))
+    }
+
+    @Test func forwardPlanSystemPromptKeepsJSONShapeContract() {
+        // Bumping voice register must not displace the JSON shape
+        // contract — the parser depends on it.
+        let prompt = ForwardPlanService.systemPrompt(for: .warm)
+        #expect(prompt.contains("strict JSON"))
+        #expect(prompt.contains("weekIndex"))
+        #expect(prompt.contains("Exactly 4 weeks"))
+    }
+}
+

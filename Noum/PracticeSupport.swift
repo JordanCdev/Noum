@@ -3692,6 +3692,40 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     private var warmedKeys: Set<String> = []
     private var hasPrewarmedDefaultConnection = false
 
+    // M25: monotonic generation counter for speak() invocations. Each
+    // speak() increments this and captures the new value locally before
+    // spawning the playback Task. Before audio actually plays we re-read
+    // currentGeneration and bail if it moved — meaning a later speak()
+    // (or stop()) has invalidated this in-flight request.
+    //
+    // Why: this single guard fixes BOTH the bug where round 1's audio
+    // replays in round 2+ (an old fetch lands after stop() and plays
+    // anyway) AND the text/audio drift bug (visible text matches the
+    // latest reply.message but the audio still belongs to the previous
+    // one because its fetch landed later). One source of truth — the
+    // generation token — collapses both races.
+    //
+    // Exposed `internal` (not `private`) so the M25 race-fix tests can
+    // verify advancement contracts without a network provider.
+    internal private(set) var currentGeneration: UInt64 = 0
+
+    /// Test seam: returns true when the supplied generation matches the
+    /// current one (i.e. the in-flight request is still valid). This is
+    /// the exact predicate the production playback paths use before
+    /// calling `playAudioData`. Deterministic, no network.
+    internal func isGenerationStillCurrent(_ generation: UInt64) -> Bool {
+        generation == currentGeneration
+    }
+
+    /// Test seam: increments the generation counter the way `speak()`
+    /// does and returns the new value, without doing any network or
+    /// audio work. Lets the M25 tests exercise the token guard
+    /// deterministically.
+    internal func advanceGenerationForTesting() -> UInt64 {
+        currentGeneration &+= 1
+        return currentGeneration
+    }
+
     override private init() {
         super.init()
     }
@@ -3700,6 +3734,8 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         stop()
+        currentGeneration &+= 1
+        let myGeneration = currentGeneration
         speechTask = Task { [weak self] in
             guard let self else { return }
             let candidateEngines = candidateEngines(for: setup)
@@ -3711,8 +3747,12 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 return
             }
             for (index, engine) in candidateEngines.enumerated() {
+                // Generation gate before each engine attempt — a later
+                // speak() or stop() in the meantime invalidates this
+                // whole fallback chain too, not just the current request.
+                guard myGeneration == self.currentGeneration else { return }
                 playbackSettings.recordPlaybackAttempt(resolvedEngine: engine)
-                if await play(trimmed, using: engine, setup: setup) {
+                if await play(trimmed, using: engine, setup: setup, generation: myGeneration) {
                     playbackSettings.recordPlaybackSuccess(resolvedEngine: engine)
                     return
                 }
@@ -3724,6 +3764,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                     )
                 }
             }
+            // Final guard: don't record a stale failure if we've already
+            // been invalidated by a newer speak().
+            guard myGeneration == self.currentGeneration else { return }
             playbackSettings.recordPlaybackFailure(
                 resolvedEngine: selectedEngine,
                 reason: lastFailureReason ?? "Provider playback did not return playable audio."
@@ -3800,13 +3843,19 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     private func playPrompt(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+        // Prompt readout shares the M25 generation token so a new speak()
+        // arriving mid-readout invalidates the in-flight prompt fetch the
+        // same way it invalidates a stale message fetch. The prompt path
+        // doesn't increment the token itself; it threads the current
+        // value through so the same `playAudioData` guard applies.
+        let generation = currentGeneration
         switch engine {
         case .openAI:
             return await playPromptWithOpenAI(text)
         case .googleCloud:
-            return await playWithGoogleCloud(text, setup: setup)
+            return await playWithGoogleCloud(text, setup: setup, generation: generation)
         case .backend:
-            return await playWithBackend(text, setup: setup)
+            return await playWithBackend(text, setup: setup, generation: generation)
         case .auto:
             return false
         }
@@ -3849,6 +3898,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
     }
 
     func stop() {
+        // Why: bumping the generation invalidates any in-flight playback
+        // request whose Task body has already passed the network fetch
+        // but not yet hit playAudioData. The Task.cancel() below catches
+        // pre-fetch and during-fetch cases via URLSession's cancellation;
+        // the generation token catches the post-fetch, pre-play window
+        // that was the root cause of stale-audio replay in M25.
+        currentGeneration &+= 1
         speechTask?.cancel()
         speechTask = nil
         audioPlayer?.stop()
@@ -3892,14 +3948,14 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         return engines
     }
 
-    private func play(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+    private func play(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         switch engine {
         case .backend:
-            return await playWithBackend(text, setup: setup)
+            return await playWithBackend(text, setup: setup, generation: generation)
         case .googleCloud:
-            return await playWithGoogleCloud(text, setup: setup)
+            return await playWithGoogleCloud(text, setup: setup, generation: generation)
         case .openAI:
-            return await playWithOpenAI(text, setup: setup)
+            return await playWithOpenAI(text, setup: setup, generation: generation)
         case .auto:
             return false
         }
@@ -3958,7 +4014,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
     }
 
-    private func playWithBackend(_ text: String, setup: IMConversationSetup) async -> Bool {
+    private func playWithBackend(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         guard let request = backendRequest(for: text, setup: setup) else { return false }
 
         do {
@@ -3969,6 +4025,12 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 lastFailureReason = "Backend TTS request failed."
                 return false
             }
+
+            // Why: generation gate before any audio actually plays — a
+            // newer speak() (or a stop()) since this fetch began means
+            // this audio belongs to a stale text. Drop it silently so
+            // round-1 audio never replays over round-2 text.
+            guard generation == currentGeneration else { return false }
 
             if let mimeType = http.value(forHTTPHeaderField: "Content-Type"),
                mimeType.contains("audio"),
@@ -3981,6 +4043,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 lastFailureReason = "Backend TTS returned invalid audio."
                 return false
             }
+            guard generation == currentGeneration else { return false }
             return playAudioData(audioData)
         } catch {
             lastFailureReason = "Backend TTS error: \(error.localizedDescription)"
@@ -4110,7 +4173,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func playWithGoogleCloud(_ text: String, setup: IMConversationSetup) async -> Bool {
+    private func playWithGoogleCloud(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         guard let request = googleCloudRequest(for: text, setup: setup) else {
             lastFailureReason = "Google Cloud TTS key or access token is missing."
             return false
@@ -4136,6 +4199,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 return false
             }
 
+            // Why: see speak() — generation gate stops stale audio from a
+            // since-superseded request from being played over fresh text.
+            guard generation == currentGeneration else { return false }
             return playAudioData(audioData)
         } catch {
             lastFailureReason = "Google Cloud TTS error: \(error.localizedDescription)"
@@ -4163,7 +4229,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func playWithOpenAI(_ text: String, setup: IMConversationSetup) async -> Bool {
+    private func playWithOpenAI(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         guard let request = openAIRequest(for: text, setup: setup) else {
             lastFailureReason = "OpenAI TTS credentials are missing."
             return false
@@ -4178,6 +4244,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 return false
             }
 
+            // Why: see speak() — generation gate. This is the canonical
+            // race-fix path: an in-flight openAIRequest from round N can
+            // finish AFTER round N+1's speak() has started; without this
+            // guard playAudioData(data) would play N's audio over N+1's
+            // visible text. Bailing here keeps spoken audio aligned with
+            // the latest reply.message the user sees.
+            guard generation == currentGeneration else { return false }
             return playAudioData(data)
         } catch {
             lastFailureReason = "OpenAI TTS error: \(error.localizedDescription)"
@@ -6218,6 +6291,24 @@ enum PracticeSessionFinalizer {
         let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient ? nil : baseline.fillerRate.value
         let baselinePace: Double? = baseline.pace.confidence == .insufficient ? nil : baseline.pace.value
 
+        // Pull the recents + proofs the AI needs to write a continuity-aware
+        // note ("third time you've leaned on…") rather than a stat dashboard.
+        let allSessions = PracticeSessionStore.shared.sessions
+        let recentSummaries: [String] = allSessions
+            .filter { $0.id != session.id }
+            .prefix(3)
+            .map { rep in
+                var parts: [String] = [rep.mode.displayLabel]
+                if let s = rep.score { parts.append("score \(s)/10") }
+                parts.append("\(rep.fillerWordCount) filler\(rep.fillerWordCount == 1 ? "" : "s")")
+                parts.append("\(Int(rep.duration.rounded()))s")
+                return parts.joined(separator: ", ")
+            }
+        let recentProofs: [String] = ProofMomentStore.shared
+            .recent(limit: 2)
+            .map { $0.proof.quote }
+            .filter { !$0.isEmpty }
+
         let input = PostRepCoachNoteInput(
             sessionID: session.id,
             mode: session.mode,
@@ -6230,7 +6321,10 @@ enum PracticeSessionFinalizer {
             baselineFillerRate: baselineFillerRate,
             baselinePaceWPM: baselinePace,
             bigMoment: bigMoment,
-            bigMomentDaysUntil: bigMomentDays
+            bigMomentDaysUntil: bigMomentDays,
+            transcript: session.transcript,
+            recentSessionSummaries: recentSummaries,
+            recentProofQuotes: recentProofs
         )
 
         // Deterministic note lands synchronously so the Summary
@@ -6279,7 +6373,9 @@ enum PracticeSessionFinalizer {
         newVoice: SpeakingStyleGoal?,
         baseline: CommunicationBaseline,
         bigMoment: BigMoment?,
-        bigMomentDaysUntil: Int?
+        bigMomentDaysUntil: Int?,
+        recentSessionSummaries: [String] = [],
+        recentProofQuotes: [String] = []
     ) -> PostRepCoachNoteInput {
         let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient
             ? nil : baseline.fillerRate.value
@@ -6297,7 +6393,10 @@ enum PracticeSessionFinalizer {
             baselineFillerRate: baselineFillerRate,
             baselinePaceWPM: baselinePace,
             bigMoment: bigMoment,
-            bigMomentDaysUntil: bigMomentDaysUntil
+            bigMomentDaysUntil: bigMomentDaysUntil,
+            transcript: session.transcript,
+            recentSessionSummaries: recentSessionSummaries,
+            recentProofQuotes: recentProofQuotes
         )
     }
 

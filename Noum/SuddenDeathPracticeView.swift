@@ -1311,8 +1311,15 @@ struct SuddenDeathPracticeView: View {
         guard voicePlaybackSettings.isEnabled else { return }
         let prompt = engine.currentPromptText
         guard !prompt.isEmpty else { return }
-        // Skip when we already spoke THIS round's prompt verbatim.
-        if lastSpokenForRound == round && prompt == lastSpokenPromptText { return }
+        // M25 fix — guard on text alone. The old "round + text" AND-guard
+        // missed the round-2 stale-text case: when `.npcTurn(2)` fired
+        // before the async round-2 prompt arrived, `engine.currentPromptText`
+        // still held round 1's text, but `lastSpokenForRound` (1) ≠ round
+        // (2), so the AND-guard fell through and replayed round 1's audio.
+        // Text-only guard refuses to re-speak the same prompt regardless of
+        // which round claims to own it; the natural onChange(currentPromptText)
+        // path fires the real new prompt when it actually arrives async.
+        if prompt == lastSpokenPromptText { return }
         speakCurrentPrompt(force: false, round: round)
     }
 

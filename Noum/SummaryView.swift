@@ -595,7 +595,11 @@ struct SummaryView: View {
                             // is populated on the first paint cycle.
                             if let sessionID = sessionStore.sessions.first?.id,
                                let coachNote = postRepCoachNoteStore.note(for: sessionID) {
-                                CoachReadCard(note: coachNote)
+                                CoachReadCard(
+                                    note: coachNote,
+                                    session: sessionStore.sessions.first,
+                                    recentSessions: Array(sessionStore.sessions.prefix(5))
+                                )
                             }
                             // Observational hero block — replaces the
                             // previous 5-card stack (SkillLevelUp loop +
@@ -812,24 +816,11 @@ struct SummaryView: View {
                         DeferredCaptureInlineCard()
                     }
 
-                    // M24 Track 2 dedupe — the templated
-                    // `CoachNoteCard` (momentum + leverage + nextStep)
-                    // restated what's now in the four hero coach-voice
-                    // surfaces: `CoachReadCard` (the read itself),
-                    // `WhatYouDidWellCard` (momentum), `WhatToImprove-`
-                    // `Card` (leverage), and `YourNextMoveCard` (next
-                    // step). Reading the same three points twice on
-                    // the same screen blurred whose voice was talking.
-                    // The AI-backed `AISessionDebriefCard` stays — it
-                    // sources a different read (post-hoc AI insight,
-                    // not the templated mid-rep coach note) so it
-                    // adds genuine depth rather than duplicating.
-                    if !isIMSummary {
-                        AISessionDebriefCard(
-                            session: sessionStore.sessions.first,
-                            recentSessions: Array(sessionStore.sessions.prefix(5))
-                        )
-                    }
+                    // M25: AISessionDebriefCard removed as a standalone
+                    // surface — its content (post-hoc AI insight) now
+                    // folds into the hero CoachReadCard's "Deep analysis"
+                    // tap-to-reveal. One coach voice card, one source
+                    // of truth.
 
                     // Speech-quality cards — each self-hides when there
                     // isn't enough signal to read, so the disclosure
@@ -844,7 +835,11 @@ struct SummaryView: View {
                         }
                         WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
                         GrammarPolishCard(session: sessionStore.sessions.first)
-                        FillerBreakdownCard(transcriptText: transcriptText)
+                        // M25: FillerBreakdownCard dropped — its top-6 chips
+                        // duplicated the top-3 chips WhatToImproveCard already
+                        // surfaces in its filler bullet, and the "fillers tend
+                        // to cluster at transitions" coaching note now lives
+                        // in CoachReadCard's voice-shaped read.
 
                         // Pro-gated rewrite card — preserves the user's
                         // voice instead of producing AI-default coaching
@@ -857,40 +852,35 @@ struct SummaryView: View {
                             )
                         }
 
-                        BaselineComparisonCard(
-                            baseline: baselineStore.baseline,
-                            transcriptText: transcriptText,
-                            effectiveFillerCount: effectiveFillerCount,
-                            effectiveDuration: effectiveDuration,
-                            explicitMode: explicitMode,
-                            score: score,
-                            scoreValue: scoreValue,
-                            rating: ratingStore.rating,
-                            pressureLevel: recentSessions.first?.pressureLevel ?? .standard
-                        )
+                        // M25: BaselineComparisonCard dropped here —
+                        // its data (rating, peak, strengths, baseline
+                        // pace/fillers) lives in Profile and the Trends
+                        // chart. Reading it on every summary blurred the
+                        // signal of THIS rep's read.
                     }
 
-                    // M14: transcript was nowhere on the summary — real-device
-                    // feedback flagged "no where to see transcript". Lives
-                    // here so it's discoverable without dominating the view.
-                    if !transcriptText.isEmpty {
-                        transcriptDetailCard
-                    }
+                    // M25: transcriptDetailCard dropped — transcript is
+                    // available via the recording playback (Pro) and
+                    // history detail view. Surfacing the raw paragraph
+                    // on every summary added a heavy block users
+                    // skimmed past. Privacy posture also benefits.
 
-                    // Category grid
-                    if !feedbackCategories.isEmpty {
-                        categoryGrid
-                    }
+                    // M25: categoryGrid dropped — the 7-dimension chip
+                    // grid restated what WhatToImproveCard already
+                    // distilled into a coach-voice bullet. The grid
+                    // read as a dashboard, not a coach.
 
-                    // AI Moments
-                    if !strongMoments.isEmpty || !weakMoments.isEmpty {
-                        aiMomentsContent
-                    }
+                    // M25: aiMomentsContent dropped — strong/weak moment
+                    // lists overlapped with WhatYouDidWellCard +
+                    // WhatToImproveCard. The hero cards carry the same
+                    // arc in voice; the lists were the dashboard echo.
 
-                    // Coach Read (premium)
-                    if premium.canViewCoachingInsights {
-                        coachReadCard
-                    }
+                    // M25: Pro `coachReadCard` (strengths + key improvement)
+                    // dropped — it was the third coach-voice surface on the
+                    // same screen (after CoachReadCard at hero and
+                    // AISessionDebriefCard inside this disclosure). Its data
+                    // is already represented by WhatYouDidWellCard +
+                    // WhatToImproveCard above the fold.
 
                     // Video playback
                     if recordingURL != nil {

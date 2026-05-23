@@ -1294,6 +1294,12 @@ struct IMPracticeView: View {
     private func speakIfEnabled(_ text: String) {
 #if canImport(AVFAudio)
         guard imVoicePlaybackSettings.isEnabled else { return }
+        // Why: each call here is one speak() — IMMessageSpeaker.speak()
+        // increments its internal generation token and bumps any in-flight
+        // playback Task out of contention before playAudioData fires. So
+        // turn-N text + turn-N audio stay paired even when the user races
+        // through replies. The conversation loop above intentionally does
+        // not need to coordinate stop/start itself.
         messageSpeaker.speak(
             text,
             setup: IMConversationSetup(scenario: resolvedScenario, targetTone: resolvedTargetTone)

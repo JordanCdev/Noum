@@ -198,7 +198,11 @@ struct RewriteSuggestionCard: View {
         guard rewrite == nil, !isLoading else { return }
         isLoading = true
         didFail = false
-        let result = await AIRewriteService.shared.rewrite(transcript: transcript, weakness: weakness)
+        // Voice from the live profile so the rewrite nudges toward the
+        // user's voice goal while still anchored to their vocabulary.
+        // Read off the main actor since CoachingProfileStore is main-isolated.
+        let voice = await MainActor.run { CoachingProfileStore.shared.profile?.speakingStyleGoal }
+        let result = await AIRewriteService.shared.rewrite(transcript: transcript, weakness: weakness, voice: voice)
         await MainActor.run {
             isLoading = false
             if let result {

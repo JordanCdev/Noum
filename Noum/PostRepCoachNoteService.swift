@@ -46,6 +46,54 @@ struct PostRepCoachNoteInput {
     let baselinePaceWPM: Double?        // average WPM, nil when insufficient data
     let bigMoment: BigMoment?
     let bigMomentDaysUntil: Int?
+    /// What the user actually said in this rep. Empty when the rep didn't
+    /// produce a transcript (silence, IM mode pre-finalize). When present,
+    /// the AI path is required to reference a specific phrase or moment
+    /// rather than restate the stats above.
+    let transcript: String
+    /// Short descriptors of the last few sessions (mode, score, key signal)
+    /// so the AI can write "this rep" vs "the last few" continuity copy.
+    /// Empty for first-rep users; deterministic fallback handles that case.
+    let recentSessionSummaries: [String]
+    /// Verbatim quotes from the user's banked Proof Moments — past reps
+    /// where the coach caught something worth remembering. Lets the AI
+    /// say "three weeks ago you said X" instead of generic motivational
+    /// framing. Empty for cold-start users.
+    let recentProofQuotes: [String]
+
+    init(
+        sessionID: UUID,
+        mode: PracticeMode,
+        score: Int?,
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        voice: SpeakingStyleGoal?,
+        intentLabel: String?,
+        baselineFillerRate: Double?,
+        baselinePaceWPM: Double?,
+        bigMoment: BigMoment?,
+        bigMomentDaysUntil: Int?,
+        transcript: String = "",
+        recentSessionSummaries: [String] = [],
+        recentProofQuotes: [String] = []
+    ) {
+        self.sessionID = sessionID
+        self.mode = mode
+        self.score = score
+        self.fillerCount = fillerCount
+        self.duration = duration
+        self.wordCount = wordCount
+        self.voice = voice
+        self.intentLabel = intentLabel
+        self.baselineFillerRate = baselineFillerRate
+        self.baselinePaceWPM = baselinePaceWPM
+        self.bigMoment = bigMoment
+        self.bigMomentDaysUntil = bigMomentDaysUntil
+        self.transcript = transcript
+        self.recentSessionSummaries = recentSessionSummaries
+        self.recentProofQuotes = recentProofQuotes
+    }
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -441,25 +489,59 @@ actor PostRepCoachNoteService {
         if let moment = input.bigMoment, let days = input.bigMomentDaysUntil {
             lines.append("Upcoming big moment: \(moment.category.rawValue), \(days) day(s) out")
         }
+        // What they actually said. The transcript is the spine — quoting
+        // a real phrase is what separates "coach who heard you" from
+        // "dashboard reading numbers." Capped so the prompt stays bounded.
+        let trimmedTranscript = Self.collapseWhitespace(in: input.transcript)
+        if !trimmedTranscript.isEmpty {
+            lines.append("")
+            lines.append("THIS REP — TRANSCRIPT (quote a specific phrase when you respond):")
+            lines.append(Self.truncate(trimmedTranscript, max: 900))
+        }
+        if !input.recentSessionSummaries.isEmpty {
+            lines.append("")
+            lines.append("RECENT REPS (reference for continuity, never invent):")
+            for summary in input.recentSessionSummaries.prefix(3) {
+                lines.append("- \(summary)")
+            }
+        }
+        if !input.recentProofQuotes.isEmpty {
+            lines.append("")
+            lines.append("BANKED PROOFS (past moments worth referencing):")
+            for quote in input.recentProofQuotes.prefix(2) {
+                lines.append("- \"\(Self.truncate(quote, max: 140))\"")
+            }
+        }
         return lines.joined(separator: "\n")
     }
 
     private func systemPrompt(persona: CoachPersona) -> String {
         return """
-        You are a senior speaking coach writing a 2-sentence note to your \
-        client right after a practice rep. Voice register: \
+        You are a senior £130/hr speaking coach writing a 2-sentence note \
+        to your client immediately after their practice rep. Voice register: \
         \(persona.signatureTone)
 
+        What makes a good note (in priority order):
+        1. Reference a SPECIFIC moment from THEIR TRANSCRIPT below — a \
+        phrase they used, a structural choice, an opener, an ending. \
+        Quote it in their words when possible.
+        2. Connect this rep to prior sessions or banked proofs when that \
+        adds genuine continuity — "this is the second time you've leaned \
+        on…", "the pause game from last week showed up again here." \
+        Never invent past behavior.
+        3. Stats (score, filler count, duration) are CONTEXT, not the \
+        point. If you can write the note without quoting a stat, do. \
+        Stat-restating reads as a dashboard, not a coach.
+
         Hard rules:
-        - Exactly 2 sentences. Total length ≤ 180 characters.
+        - Exactly 2 sentences. Total length ≤ 200 characters.
         - No exclamation marks. No chirpy filler ("Awesome", "Great job", \
         "Let's"). No emoji.
-        - Cite at least one concrete fact from the input — a score, a \
-        filler count, a pace number, a duration. Never invent stats.
-        - Never punish-shame a low score. If a number dropped, acknowledge \
-        it factually and name a small next move.
-        - Output STRICT JSON: {"note": "..."} — nothing else. The note \
-        field carries the two sentences.
+        - Never invent stats, quotes, or past behavior. Only reference what \
+        the input actually contains.
+        - Never punish-shame. If a number dropped, name it factually and \
+        anchor a small next move.
+        - Output STRICT JSON: {"note": "..."} — nothing else.
         """
     }
 

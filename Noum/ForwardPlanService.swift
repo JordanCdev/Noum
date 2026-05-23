@@ -335,13 +335,19 @@ actor ForwardPlanService {
     // MARK: - AI request / parse
 
     private func requestBody(for provider: AIProvider, input: ForwardPlanInput) -> [String: Any] {
-        let system = systemPrompt
+        let system = Self.systemPrompt(for: input.profile?.speakingStyleGoal)
         let user = userPrompt(input: input)
+        // Token budget — four week-objects with ≤200-char rationale each
+        // plus JSON scaffolding fits in ~600 tokens. The earlier unbounded
+        // shape risked silent truncation around week 4, where the parser
+        // would reject the partial payload and silently drop to the
+        // deterministic fallback even though the AI was alive.
         switch provider {
         case .openAI, .deepSeek:
             return [
                 "model": provider.model,
                 "temperature": 0.5,
+                "max_tokens": 600,
                 "response_format": ["type": "json_object"],
                 "messages": [
                     ["role": "system", "content": system],
@@ -354,6 +360,7 @@ actor ForwardPlanService {
                 "contents": [["parts": [["text": user]]]],
                 "generationConfig": [
                     "temperature": 0.5,
+                    "maxOutputTokens": 600,
                     "responseMimeType": "application/json"
                 ]
             ]
@@ -362,27 +369,58 @@ actor ForwardPlanService {
         }
     }
 
-    private let systemPrompt: String = """
-    You are Noum — the user's personal speaking coach. The user has \
-    asked for a 4-week practice program. Produce a concrete plan tied \
-    to their actual baseline numbers + voice goal + Big Moment (if set).
+    /// Exposed `static` + `internal` so the test suite can assert the
+    /// per-voice register clause without standing up the actor.
+    static func systemPrompt(for voice: SpeakingStyleGoal?) -> String {
+        let voiceRegister = voiceRegisterClause(for: voice)
+        return """
+        You are Noum — the user's personal speaking coach. The user has \
+        asked for a 4-week practice program. Produce a concrete plan tied \
+        to their actual baseline numbers + voice goal + Big Moment (if set).
 
-    Hard rules (every output must clear all of these):
-    - Output strict JSON: {"weeks":[{"weekIndex":1,"focus":"...", \
-    "mode":"...","sessionTarget":N,"rationale":"..."}, ...]}.
-    - Exactly 4 weeks, weekIndex 1..4.
-    - `focus` is one of: reduceFillers, moreConcise, thinkFaster, \
-    calmerDelivery.
-    - `mode` is one of: timed, suddenDeath, ahCounter, imConversation.
-    - `sessionTarget` is an integer 2..5.
-    - `rationale` is ≤ 200 chars, second-person, sentence case, no \
-    exclamation marks, no emoji, no "Let's", no chirpy filler. Cite \
-    the user's actual data when relevant.
-    - Week 1 names the weakest area. Week 2 moves toward the user's \
-    voice goal. Week 3 introduces pressure. Week 4 mocks the Big \
-    Moment when set; consolidation when not.
-    - No invented stats. If you don't have a number, don't claim a number.
-    """
+        \(voiceRegister)
+
+        Hard rules (every output must clear all of these):
+        - Output strict JSON: {"weeks":[{"weekIndex":1,"focus":"...", \
+        "mode":"...","sessionTarget":N,"rationale":"..."}, ...]}.
+        - Exactly 4 weeks, weekIndex 1..4.
+        - `focus` is one of: reduceFillers, moreConcise, thinkFaster, \
+        calmerDelivery.
+        - `mode` is one of: timed, suddenDeath, ahCounter, imConversation.
+        - `sessionTarget` is an integer 2..5.
+        - `rationale` is ≤ 200 chars, second-person, sentence case, no \
+        exclamation marks, no emoji, no "Let's", no chirpy filler. Cite \
+        the user's actual data when relevant. The rationale should read \
+        in the user's voice register.
+        - Week 1 names the weakest area. Week 2 moves toward the user's \
+        voice goal. Week 3 introduces pressure. Week 4 mocks the Big \
+        Moment when set; consolidation when not.
+        - No invented stats. If you don't have a number, don't claim a number.
+        """
+    }
+
+    /// Per-voice register clause. Same authoritative=verdict, warm=mentor,
+    /// concise=clipped, persuasive=premise→evidence, executive=chief-of-staff,
+    /// storytelling=arcs pattern as the live coach. Shapes how the plan's
+    /// rationale reads — same plan, different register.
+    static func voiceRegisterClause(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative:
+            return "Register: a steady, considered verdict. Rationale sentences are declarative — the user is training authority."
+        case .warm:
+            return "Register: a trusted mentor. Rationale notices small wins — the user is training warmth."
+        case .concise:
+            return "Register: clipped and useful. Rationale lands in one tight idea — the user is training conciseness."
+        case .persuasive:
+            return "Register: premise → evidence → recommendation. Rationale shows the reasoning — the user is training persuasion."
+        case .executive:
+            return "Register: chief-of-staff briefing a principal. Rationale leads with the top line — the user is training executive presence."
+        case .storytelling:
+            return "Register: a narrative coach. Rationale frames each week as a chapter — the user is training storytelling."
+        case .none:
+            return "Register: calm and direct. No voice has been set yet — favour specifics over generalities."
+        }
+    }
 
     private func userPrompt(input: ForwardPlanInput) -> String {
         var lines: [String] = []

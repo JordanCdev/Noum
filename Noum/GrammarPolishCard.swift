@@ -36,18 +36,14 @@ struct GrammarPolishCard: View {
 
     var body: some View {
         Group {
-            if !premium.isPremium {
-                EmptyView()
-            } else if skipped {
-                EmptyView()
-            } else if isLoading && result == nil {
-                cardShell { skeleton }
-            } else if let result, result.aiBacked, !result.findings.isEmpty {
+            // M25: render only when we have real findings. The skeleton
+            // path used to flash for 1–2s before silent-vanishing on
+            // ~70% of weak-signal reps; that's UI jank, not depth. The
+            // grammar pass still runs in `.task` below; the card simply
+            // joins the layout once findings exist.
+            if let result, result.aiBacked, !result.findings.isEmpty {
                 cardShell { content(result: result) }
             } else {
-                // No findings worth surfacing → silent. Better silent than
-                // pedantic. The grammar pass did run; we just don't chirp
-                // about it.
                 EmptyView()
             }
         }

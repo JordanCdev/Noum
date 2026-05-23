@@ -74,6 +74,16 @@ struct AIInsightInput {
     /// Normalized 0–1 distance from the user's coaching goal (from
     /// CommunicationBaseline.distanceFromGoal). nil if no goal is set.
     let goalDistance: Double?
+    /// Voice the user is training. Drives the per-voice register added
+    /// to the system prompt — same authoritative/warm/concise/persuasive/
+    /// executive/storytelling switch the live coach uses. nil = cold
+    /// start; caller supplies it from CoachingProfileStore.profile.
+    var voice: SpeakingStyleGoal? = nil
+    /// Verbatim quotes from the user's banked Proof Moments — past reps
+    /// where the coach caught something worth remembering. Lets the AI
+    /// reference real growth ("three weeks ago you said X") instead of
+    /// generic week-over-week framing. Empty for cold-start users.
+    var recentProofQuotes: [String] = []
     /// Sessions to focus on inside the prompt — usually the last 3–5.
     /// Trimmed by the caller so the prompt stays small.
     var focusSessions: [PracticeSession] {
@@ -126,8 +136,16 @@ actor AIInsightsService {
 
         do {
             let prompt = userPrompt(from: input)
-            let body = requestBody(for: provider, prompt: prompt, system: systemPrompt(for: input.kind))
-            var request = URLRequest(url: endpoint)
+            let body = requestBody(for: provider, prompt: prompt, system: Self.systemPrompt(for: input.kind, voice: input.voice))
+            // Gemini insights run on the stronger 2.5-pro model. Inputs
+            // are short and the JSON shape is fixed, so the latency hit
+            // (well inside the 14s timeout) buys sharper diagnosis on
+            // the surface that already drives the weekly digest card.
+            let geminiInsightsModel = "gemini-2.5-pro"
+            var request = URLRequest(url: insightsEndpoint(
+                for: provider,
+                geminiModelOverride: geminiInsightsModel
+            ) ?? endpoint)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 14
@@ -187,10 +205,13 @@ actor AIInsightsService {
 
     // MARK: - Prompt construction
 
-    private func systemPrompt(for kind: AIInsightKind) -> String {
+    /// Exposed `static` + `internal` so the test suite can assert the
+    /// per-voice register clause without standing up the actor.
+    static func systemPrompt(for kind: AIInsightKind, voice: SpeakingStyleGoal?) -> String {
         // Voice rules pulled directly from .claude/skills/noum-design:
         // direct, second-person, imperative-leaning, never chirpy, no emoji,
         // no exclamation marks. Always tied to concrete numbers.
+        let voiceRegister = registerClause(for: voice)
         let common = """
         You are a senior speaking coach. Voice: direct, warm, and specific. \
         You speak in second person, address the user as "you", and never \
@@ -198,6 +219,7 @@ actor AIInsightsService {
         exclamation marks. Sentences land in 18 words or fewer. Reference \
         the user's actual numbers — never invent statistics. If a number \
         isn't given, don't claim a number.
+        \(voiceRegister)
         Output strict JSON with keys: headline (≤ 8 words), body \
         (≤ 80 words, 1 paragraph), evidence (array of 1-3 short strings, \
         each ≤ 60 chars, citing real numbers from the input), action \
@@ -208,10 +230,43 @@ actor AIInsightsService {
         case .weeklyNarrative:
             return common + "\nThe goal is a one-paragraph narrative summary of the user's last 7 days of speaking practice. If a user goal is provided, open with one sentence connecting the week's trend to that goal."
         case .sessionDebrief:
-            return common + "\nThe goal is a coaching read of one specific session. If a user goal is provided, your first sentence MUST connect this session to that goal — e.g. 'You said you wanted to X — this session moved toward/away from that because…'. Then name what concretely changed."
+            return common + "\nThe goal is a coaching read of one specific session. PRIORITY: when the transcript is provided, your headline OR body MUST reference a SPECIFIC phrase or moment from the user's actual words — quote them, paraphrase them, name what they did structurally. Stats are context, not the read. If a user goal is provided, connect the session to it in plain language. Banked proofs (if listed) let you say 'this is the second time…' or 'last week you also…' — only when genuinely true. Never invent past behavior."
         case .patternBreak:
             return common + "\nA pattern just shifted. Surface what changed and whether it was good or bad. If a user goal is provided, frame the shift in terms of that goal."
         }
+    }
+
+    /// Per-voice register line. Matches the authoritative=verdict, warm=mentor,
+    /// concise=clipped, persuasive=premise→evidence, executive=chief-of-staff,
+    /// storytelling=arcs pattern from `CoachContextBuilder.systemPrompt`. The
+    /// model uses this to shape the headline / body register on top of the
+    /// shared JSON contract — same advice, different voice.
+    static func registerClause(for voice: SpeakingStyleGoal?) -> String {
+        switch voice {
+        case .authoritative:
+            return "Register: a steady, considered verdict. Declarative sentences. Confident. No hedging. The user is training authority — your insight reads like one."
+        case .warm:
+            return "Register: a trusted mentor. Soft warmth — not saccharine. Notice small wins. The user is training warmth — your insight reads like a felt observation, not a metric report."
+        case .concise:
+            return "Register: clipped and useful. One idea. Short sentences. No throat-clearing. The user is training conciseness — your insight reads tight."
+        case .persuasive:
+            return "Register: premise, evidence, recommendation — in that order. Show the reasoning briefly. The user is training persuasion — your insight reads structured."
+        case .executive:
+            return "Register: chief-of-staff briefing a busy principal. Top-line first. Calm, decisive. The user is training executive presence — your insight leads with the verdict."
+        case .storytelling:
+            return "Register: a narrative coach. Frame the week as a chapter. Quote the user's growth as an arc, not a metric. The user is training storytelling — your insight reads with shape."
+        case .none:
+            return "Register: calm and direct. No voice has been set yet — favour specifics over generalities."
+        }
+    }
+
+    /// Optional model override for Gemini insights. Returns nil for non-
+    /// Gemini providers (caller falls back to the provider's default
+    /// endpoint). Gemini's endpoint URL embeds the model name, so the
+    /// override is wired here rather than in the request body.
+    private func insightsEndpoint(for provider: AIProvider, geminiModelOverride: String) -> URL? {
+        guard provider == .gemini else { return nil }
+        return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(geminiModelOverride):generateContent")
     }
 
     private func userPrompt(from input: AIInsightInput) -> String {
@@ -248,15 +303,48 @@ actor AIInsightsService {
                 lines.append("  \(idx + 1). \(session.mode.displayLabel) | score \(scoreText) | duration \(durText) | fillers \(session.fillerWordCount)")
             }
         }
+
+        // For session debrief, surface the actual transcript so the AI
+        // can quote / reference what the user said. Without this the
+        // model can only restate metrics — which is exactly the
+        // "dashboard, not a coach" output users complained about.
+        if input.kind == .sessionDebrief,
+           let mostRecent = input.focusSessions.first,
+           !mostRecent.transcript.isEmpty {
+            lines.append("")
+            lines.append("TRANSCRIPT OF THIS REP (quote a specific phrase in your read):")
+            let trimmed = mostRecent.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            let capped = trimmed.count > 900
+                ? String(trimmed.prefix(899)) + "…"
+                : trimmed
+            lines.append(capped)
+        }
+
+        if !input.recentProofQuotes.isEmpty {
+            lines.append("")
+            lines.append("BANKED PROOFS (reference for continuity, never invent):")
+            for quote in input.recentProofQuotes.prefix(2) {
+                let capped = quote.count > 140
+                    ? String(quote.prefix(139)) + "…"
+                    : quote
+                lines.append("- \"\(capped)\"")
+            }
+        }
         return lines.joined(separator: "\n")
     }
 
     private func requestBody(for provider: AIProvider, prompt: String, system: String) -> [String: Any] {
+        // Token budget — headline + ~80-word body + 3 evidence bullets +
+        // action sentence comfortably fits in ~320 tokens. The earlier
+        // unbounded shape risked silent truncation on the JSON close
+        // brace, which caused the parser to reject otherwise-valid
+        // insights and drop to the template fallback.
         switch provider {
         case .openAI, .deepSeek:
             return [
                 "model": provider.model,
                 "temperature": 0.5,
+                "max_tokens": 320,
                 "response_format": ["type": "json_object"],
                 "messages": [
                     ["role": "system", "content": system],
@@ -269,6 +357,7 @@ actor AIInsightsService {
                 "contents": [["parts": [["text": prompt]]]],
                 "generationConfig": [
                     "temperature": 0.5,
+                    "maxOutputTokens": 320,
                     "responseMimeType": "application/json"
                 ]
             ]

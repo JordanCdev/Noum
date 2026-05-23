@@ -53,6 +53,10 @@ struct PreSummaryCelebration: View {
     /// Bars fill from previous → new once the card has settled.
     @State private var barsAdvanced: Bool = false
     @State private var sequenceTask: Task<Void, Never>?
+    /// Continuation released by a tap so the in-flight hold can wake
+    /// early. Single-shot per event — set when the hold begins, resumed
+    /// (and cleared) on tap or natural completion.
+    @State private var holdContinuation: CheckedContinuation<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -73,12 +77,17 @@ struct PreSummaryCelebration: View {
                     .padding(.bottom, Spacing.lg)
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { advanceFromTap() }
         .onAppear(perform: start)
         .onDisappear {
             sequenceTask?.cancel()
             sequenceTask = nil
+            resumeHoldIfWaiting()
         }
         .accessibilityIdentifier("preSummary.celebration")
+        .accessibilityElement(children: .contain)
+        .accessibilityHint("Tap to continue")
     }
 
     // MARK: - Backdrop
@@ -263,19 +272,23 @@ struct PreSummaryCelebration: View {
 
         // Reduce-motion path: shorter beats, no spring.
         // Single-event full-motion path: the user isn't waiting on a
-        // "next" frame, so the hold + in-spring tightens. Keeps the
-        // common case from feeling like the app paused before the
-        // summary. Multi-event keeps the longer hold so each card
-        // earns its read before the next one lands.
+        // "next" frame, so the in-spring tightens but the hold runs
+        // long enough that the user can actually read the card. The
+        // tap-to-continue affordance lets impatient users skip without
+        // forcing everyone else to race. Multi-event keeps a longer
+        // per-card hold so each card earns its read before the next
+        // one lands.
         let isSingleEvent = events.count == 1
         let inDuration: Double = reduceMotion ? 0.20 : (isSingleEvent ? 0.30 : 0.35)
-        // M24 fix — single-event hold bumped 0.35s → 1.80s so the user can
-        // actually read the level-up card. Total visible time = in (~0.42)
-        // + barsDelay (~0.12) + hold (1.80) + out (0.25 next card or
-        // indefinite final) = ~2.6s, which matches typical celebration
-        // read-times in iOS HIG. Multi-event keeps 0.50s per card because
-        // the cards parade together — total stack visibility stays calm.
-        let holdDuration: Double = reduceMotion ? 0.40 : (isSingleEvent ? 1.80 : 0.50)
+        // M25 fix — single-event hold 1.80 → 2.80s, multi 0.50 → 1.20s,
+        // reduce-motion single 0.40 → 0.90s. The card carries skill
+        // name + headline + level bars + subline; sub-second holds
+        // flashed past before the user could parse them. Tap-to-continue
+        // is the escape valve for users who've already read it.
+        let holdDuration: Double = Self.holdDuration(
+            isSingleEvent: isSingleEvent,
+            reduceMotion: reduceMotion
+        )
         let outDuration: Double = reduceMotion ? 0.20 : 0.25
         let barsDelay: Double = reduceMotion ? 0.0 : (isSingleEvent ? 0.12 : 0.18)
 
@@ -306,8 +319,11 @@ struct PreSummaryCelebration: View {
             barsAdvanced = true
         }
 
-        // Hold so the user can read the card
-        try? await Task.sleep(for: .seconds(holdDuration))
+        // Hold so the user can read the card. The hold races a real
+        // sleep against a tap-driven continuation — whichever finishes
+        // first wakes us. Tap path resolves immediately; timer path
+        // resolves at `holdDuration`.
+        await holdWithTapEscape(seconds: holdDuration)
         if Task.isCancelled { return }
 
         // Fade out — only when there's another card behind it; the
@@ -318,6 +334,45 @@ struct PreSummaryCelebration: View {
             }
             try? await Task.sleep(for: .seconds(outDuration))
         }
+    }
+
+    /// Suspend until either the timer elapses or a tap resumes the
+    /// stored continuation. The continuation is single-shot per event;
+    /// whichever resumes it first wins and the other is ignored.
+    private func holdWithTapEscape(seconds: Double) async {
+        await withCheckedContinuation { continuation in
+            holdContinuation = continuation
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(seconds))
+                resumeHoldIfWaiting()
+            }
+        }
+    }
+
+    /// Resume the in-flight hold (from a tap or from natural timeout)
+    /// and clear the slot so subsequent events get a fresh continuation.
+    private func resumeHoldIfWaiting() {
+        guard let continuation = holdContinuation else { return }
+        holdContinuation = nil
+        continuation.resume()
+    }
+
+    /// Tap-anywhere advances. If the hold is in flight, resume it so
+    /// the current event collapses early. If we're between events (no
+    /// active continuation) the next event is already presenting via
+    /// the sequence task — tap is a no-op in that gap.
+    private func advanceFromTap() {
+        resumeHoldIfWaiting()
+    }
+
+    /// Exposed for tests — the canonical hold duration table. Keeping it
+    /// in one place means the timing tests can lock the values without
+    /// re-deriving the branches.
+    static func holdDuration(isSingleEvent: Bool, reduceMotion: Bool) -> Double {
+        if reduceMotion {
+            return isSingleEvent ? 0.90 : 0.50
+        }
+        return isSingleEvent ? 2.80 : 1.20
     }
 }
 
