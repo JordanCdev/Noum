@@ -140,33 +140,39 @@ final class AskNoumVoiceInput: ObservableObject {
         #endif
     }
 
-    // MARK: - Press lifecycle
+    // MARK: - Tap-to-toggle lifecycle
 
-    /// Called on press-down (`DragGesture.onChanged` first event). Kicks
-    /// permission requests if needed, then starts the recognition task.
-    /// Idempotent — extra calls while already `.recording` are no-ops.
-    func beginPress() {
-        guard state == .idle else { return }
-        Task { @MainActor in
-            await requestPermissionsIfNeeded()
-            guard unavailableReason == nil else { return }
-            startRecognition()
+    /// Primary entry point: tap once to start recording, tap again to stop
+    /// and send. Replaces the old hold-to-talk press / release / drag-cancel
+    /// model. Idempotent — a tap while `.processing` is a no-op so a
+    /// double-tap during finalisation doesn't race the recognizer callback.
+    func toggle() {
+        switch state {
+        case .idle:
+            Task { @MainActor in
+                await requestPermissionsIfNeeded()
+                guard unavailableReason == nil else { return }
+                startRecognition()
+            }
+        case .recording:
+            stopAndSend()
+        case .processing:
+            break // wait for finalisation; the UI shows .processing state
         }
     }
 
-    /// Called on press-up inside the button bounds. Finalises the
-    /// recognition and routes the trimmed transcript through
-    /// `onFinalTranscript`. Empty / tiny utterances are dropped silently.
-    func endPressAndSend() {
+    /// Finalise the recognition and route the trimmed transcript through
+    /// `onFinalTranscript`. Called internally from `toggle()` when the
+    /// user taps to stop. Also callable from `runReply` via the Send
+    /// button tap while recording is active.
+    func stopAndSend() {
         #if canImport(Speech)
         guard state == .recording else { return }
         state = .processing
-        // Tell the recognizer the audio stream is done; the task will
-        // finalise and fire its callback one more time with `isFinal`.
         request?.endAudio()
         stopAudioEngine()
         // Defensive timeout — if the recognizer hangs on finalisation,
-        // we surface whatever partial we have and reset.
+        // surface whatever partial we have and reset.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if state == .processing {
@@ -177,10 +183,10 @@ final class AskNoumVoiceInput: ObservableObject {
         #endif
     }
 
-    /// Called on press-up *outside* the button bounds (user dragged
-    /// off to cancel). Drops the captured audio entirely; nothing
-    /// reaches the chat thread.
-    func cancelPress() {
+    /// Cancel an in-progress recording entirely. Nothing reaches the chat
+    /// thread. Exposed for cases where the view needs to clean up (e.g.
+    /// view disappears while recording).
+    func cancelRecording() {
         #if canImport(Speech)
         task?.cancel()
         stopAudioEngine()
@@ -191,6 +197,25 @@ final class AskNoumVoiceInput: ObservableObject {
         maxDurationTimer?.cancel()
         maxDurationTimer = nil
         state = .idle
+    }
+
+    // MARK: - Legacy press lifecycle (kept for internal use only)
+
+    func beginPress() {
+        guard state == .idle else { return }
+        Task { @MainActor in
+            await requestPermissionsIfNeeded()
+            guard unavailableReason == nil else { return }
+            startRecognition()
+        }
+    }
+
+    func endPressAndSend() {
+        stopAndSend()
+    }
+
+    func cancelPress() {
+        cancelRecording()
     }
 
     // MARK: - Permission + lifecycle internals

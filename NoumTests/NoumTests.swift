@@ -10791,5 +10791,115 @@ struct PaywallFeatureAccuracyTests {
         #expect(manager.asyncChallengeLimit == 1, "Free tier gets 1 async challenge slot")
         manager.upgradeToPremium()
         #expect(manager.asyncChallengeLimit == .max, "Pro tier gets unlimited async challenge slots")
+// MARK: - Test helpers
+
+extension CommunicationBaseline {
+    func withBlockers(_ blockers: [String]) -> CommunicationBaseline {
+        var copy = self
+        copy.persistentBlockers = blockers
+        return copy
+    }
+}
+
+// MARK: - M20 Ask Noum chip filter tests
+
+@Suite("AskNoumChipFilterTests")
+struct AskNoumChipFilterTests {
+
+    @Test func parseAndFilterStripsMarkersAndPassesCleanChips() {
+        let raw = "- What's my target pace?\n* How do I lock it?\n1. Any drift to watch?"
+        let result = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(result?.count == 3)
+        #expect(result?.allSatisfy { !$0.hasPrefix("-") && !$0.hasPrefix("*") } == true)
+    }
+
+    @Test func parseAndFilterRejectsExclamationMark() {
+        let raw = "Nice work!\nWhat's the move?\nHow long?"
+        let result = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        // "Nice work!" fails the filter — fewer than 3 survive → nil
+        #expect(result == nil)
+    }
+
+    @Test func parseAndFilterRejectsLeadingLets() {
+        let raw = "Let's try this drill\nWhat's the move?\nHow long?"
+        let result = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(result == nil)
+    }
+
+    @Test func parseAndFilterReturnsNilWhenFewerThanCountSurvive() {
+        let raw = "OK\nHow long?"  // "OK" is too short (2 chars < 4) + only 2 chips
+        let result = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(result == nil)
+    }
+
+    @Test func starterPromptsWithBigMomentLeadsWithEventChip() {
+        let moment = BigMoment(
+            title: "Board presentation",
+            date: Calendar.current.date(byAdding: .day, value: 5, to: Date()),
+            category: .presentation
+        )
+        let emptyBaseline = CommunicationBaseline.empty
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: moment,
+            baseline: emptyBaseline,
+            voice: .authoritative
+        )
+        #expect(chips.count <= 3)
+        #expect(chips.first?.contains("presentation") == true || chips.first?.contains("open") == true)
+    }
+
+    @Test func starterPromptsWithoutSignalsFallsBackToVoiceCatalog() {
+        let emptyBaseline = CommunicationBaseline.empty
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: nil,
+            baseline: emptyBaseline,
+            voice: .concise
+        )
+        let catalog = CoachContextBuilder.starterPrompts(for: .concise)
+        #expect(chips.count <= 3)
+        // All returned chips should appear in the catalog when no signals exist
+        #expect(chips.allSatisfy { catalog.contains($0) })
+    }
+
+    @Test func starterPromptsBlockerSignalInjectsWeaknessChip() {
+        let baseline = CommunicationBaseline.empty.withBlockers(["pace"])
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: nil,
+            baseline: baseline,
+            voice: .warm
+        )
+        #expect(chips.count <= 3)
+        let hasBlockerChip = chips.contains { $0.lowercased().contains("pace") }
+        #expect(hasBlockerChip)
+    }
+
+    @Test func starterPromptsCapAt3() {
+        let moment = BigMoment(
+            title: "Interview",
+            date: Calendar.current.date(byAdding: .day, value: 3, to: Date()),
+            category: .interview
+        )
+        let baseline = CommunicationBaseline.empty.withBlockers(["fillers"])
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: moment,
+            baseline: baseline,
+            voice: .persuasive
+        )
+        #expect(chips.count == 3)
+    }
+
+    @Test func starterPromptsChipsAllUnder60Chars() {
+        let moment = BigMoment(
+            title: "My annual performance review with the entire executive committee",
+            date: Calendar.current.date(byAdding: .day, value: 10, to: Date()),
+            category: .review
+        )
+        let baseline = CommunicationBaseline.empty.withBlockers(["hedging rate"])
+        let chips = CoachContextBuilder.starterPrompts(
+            bigMoment: moment,
+            baseline: baseline,
+            voice: .executive
+        )
+        #expect(chips.allSatisfy { $0.count <= 60 })
     }
 }

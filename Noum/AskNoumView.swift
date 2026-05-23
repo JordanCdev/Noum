@@ -43,22 +43,12 @@ struct AskNoumView: View {
     @FocusState private var inputFocused: Bool
 
     // Voice input wrapper — shipped in `AskNoumVoiceInput.swift`. Single
-    // instance per view so the press / release / cancel lifecycle owns
-    // the audio engine + recognition task. The view never modifies it
-    // directly; it only reads `state` + `unavailableReason` to drive UI,
-    // and calls the press lifecycle methods from the gesture.
+    // instance per view so the tap-to-toggle lifecycle owns the audio
+    // engine + recognition task. Tap once → start recording; tap again
+    // → stop and send. The view reads `state` + `unavailableReason` to
+    // drive UI, and calls `toggle()` from the button action.
     @StateObject private var voiceInput = AskNoumVoiceInput()
-    /// Tracks whether the user's finger is still inside the mic button
-    /// hit-area during a press. Flips false the moment the drag crosses
-    /// outside the button bounds; release with this flag false → cancel
-    /// (no transcript dispatched), release with it true → finalise + send.
-    @State private var voicePressInsideBounds: Bool = true
-    /// True between drag-start and drag-end so we can render an outer
-    /// glow ring without depending on the wrapper's `state` (which only
-    /// flips after permissions resolve — there's a brief sub-200ms gap
-    /// on first ever press where the button needs to feel like it has
-    /// engaged immediately).
-    @State private var voicePressActive: Bool = false
+    @StateObject private var bigMomentStore = BigMomentStore.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -140,14 +130,13 @@ struct AskNoumView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            // Wire the voice-input transcript callback. The wrapper
-            // fires this exactly once per successful utterance with the
-            // trimmed final text. Routing through `send(...)` makes a
-            // spoken turn indistinguishable from a typed one downstream
-            // — the store, model call, and chip path don't know which
-            // input modality produced the message.
+            // Wire the voice-input transcript callback. Transcript lands
+            // in the draft text field so the user can review (and edit)
+            // before tapping Send. This makes tap-to-toggle feel like
+            // dictation, not auto-fire — user owns the send action.
             voiceInput.onFinalTranscript = { transcript in
-                send(transcript)
+                draft = transcript
+                inputFocused = true
             }
             // Pick up any cross-surface inject (e.g. Summary's "Talk to
             // your coach about this rep" bridge dropped a seed message
@@ -267,7 +256,11 @@ struct AskNoumView: View {
                 .padding(.top, Spacing.xs)
 
             VStack(spacing: Spacing.sm) {
-                ForEach(CoachContextBuilder.starterPrompts(for: voice), id: \.self) { prompt in
+                ForEach(CoachContextBuilder.starterPrompts(
+                    bigMoment: bigMomentStore.activeMoment,
+                    baseline: baselineStore.baseline,
+                    voice: voice
+                ), id: \.self) { prompt in
                     Button {
                         send(prompt)
                     } label: {
@@ -737,53 +730,25 @@ struct AskNoumView: View {
         }
     }
 
-    /// Placeholder in the text field flips slightly when voice is
-    /// available — the affordance hint "or hold the mic" only reads
-    /// honestly on devices/locales where the mic is actually rendered.
     private var textFieldPlaceholder: String {
         if voiceInput.isAvailable {
-            return "Message Noum, or hold the mic\u{2026}"
+            return "Message Noum, or tap the mic\u{2026}"
         }
         return "Message Noum\u{2026}"
     }
 
-    // MARK: - Mic button (press-to-talk)
+    // MARK: - Mic button (tap-to-toggle)
     //
-    // Big premium push-to-talk surface, additive to the typed input. The
-    // gesture model uses a single `DragGesture(minimumDistance: 0)` so
-    // press-down → press-up → drag-off-and-release all funnel through
-    // one closure — matches the way `AskNoumVoiceInput` expects to be
-    // driven (`beginPress` / `endPressAndSend` / `cancelPress`).
-    //
-    // Visual register:
-    //   • 64pt visible circular touchpoint inside a 72pt hit area (the
-    //     transparent outer ring guarantees the ≥44pt accessibility
-    //     floor with margin). Larger than the 44pt send button next to
-    //     it because voice is the premium primary path — the size
-    //     hierarchy signals which is the lead affordance.
-    //   • Soft brand-blue gradient fill at rest. Mic icon (mic.fill) —
-    //     no illustration, no character glyph, per brand rule. Distinct
-    //     register from the send button (brand-blue, not pro-purple) so
-    //     the two CTAs read as separate paths, not two flavours of one.
-    //   • Recording state: outer halo ring at brand-blue/40%, subtle
-    //     scale up to 1.08 via spring. Reduce-motion swaps the scale
-    //     for a flat opacity ring (no springs, no glow pulse) so
-    //     motion-sensitive users still see a clear state change.
-    //
-    // Why brand-blue and not pro-purple: the pro register is the chat
-    // surface's accent color (header eyebrow, coach card glow, send
-    // button). Painting the mic in the same purple would visually merge
-    // it with the send button. Brand-blue is the app's other primary
-    // accent — used everywhere from the path/journey cards to mode
-    // chrome — so the mic reads as an established surface affordance
-    // rather than a competing CTA.
+    // Tap once → starts recording (halo + waveform pulse).
+    // Tap again → stops recording, delivers transcript to the text field,
+    //             user can review then tap Send — OR the Send button
+    //             itself also stops-and-sends if tapped while recording.
+    // No drag-to-cancel: dropped in favour of simplicity. Users can
+    // clear the draft text field if they want to discard.
     private var micButton: some View {
-        let isRecording = voiceInput.state == .recording || voicePressActive
+        let isRecording = voiceInput.state == .recording
         let isProcessing = voiceInput.state == .processing
         return ZStack {
-            // Outer halo — only renders during recording. Reduce-motion
-            // gets a flat ring at the resting size; everyone else gets
-            // a soft scale-up spring + tinted glow.
             if isRecording {
                 Circle()
                     .fill(AppColor.brandBlue.opacity(0.18))
@@ -807,89 +772,57 @@ struct AskNoumView: View {
                 .shadow(color: AppColor.brandBlue.opacity(isRecording ? 0.35 : 0.18),
                         radius: isRecording ? 10 : 6,
                         x: 0, y: 3)
-            Image(systemName: isProcessing ? "waveform" : "mic.fill")
+            Image(systemName: isProcessing ? "waveform" : (isRecording ? "stop.fill" : "mic.fill"))
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.white)
                 .symbolEffect(.pulse, options: .repeating, isActive: isProcessing && !reduceMotion)
         }
-        .frame(width: 72, height: 72) // ≥44pt accessibility floor with margin
+        .frame(width: 72, height: 72)
         .contentShape(Circle())
         .animation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.72), value: isRecording)
-        .gesture(micPressGesture)
+        .onTapGesture {
+            CoachHaptic.selectionTap()
+            voiceInput.toggle()
+        }
         .accessibilityLabel(micAccessibilityLabel)
         .accessibilityAddTraits(.isButton)
-        // Pending replies disable typed send + Enter; the mic follows
-        // the same rule so two utterances can't race the model.
         .opacity(store.isAwaitingReply ? 0.45 : 1.0)
         .allowsHitTesting(!store.isAwaitingReply)
     }
 
-    /// Single drag gesture covers press / drag-off / release. Using
-    /// `DragGesture(minimumDistance: 0)` instead of a `LongPressGesture`
-    /// so the press registers instantly (no delay before recording
-    /// starts) and the same closure can compare the live touch location
-    /// against the button's frame to decide "still inside" vs "dragged
-    /// off to cancel". A separate `LongPressGesture` couldn't read the
-    /// current finger position, which kills the drag-to-cancel affordance.
-    private var micPressGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .onChanged { value in
-                if !voicePressActive {
-                    // First event in the gesture sequence — treat as press-down.
-                    voicePressActive = true
-                    voicePressInsideBounds = true
-                    CoachHaptic.selectionTap()
-                    voiceInput.beginPress()
-                }
-                // Track whether the finger has dragged outside the 72pt
-                // touchpoint. Generous radius (40pt from center) so the
-                // user has to *deliberately* move off — small jitter
-                // during a press doesn't accidentally cancel the turn.
-                let dx = value.location.x - 36
-                let dy = value.location.y - 36
-                let distance = sqrt(dx * dx + dy * dy)
-                voicePressInsideBounds = distance <= 40
-            }
-            .onEnded { _ in
-                voicePressActive = false
-                if voicePressInsideBounds {
-                    CoachHaptic.drillSuccess()
-                    voiceInput.endPressAndSend()
-                } else {
-                    // Dragged off → cancel. No haptic celebration
-                    // because no turn was sent; a soft incomplete tap
-                    // tells the user the action was intentionally
-                    // dropped rather than "did my press register?"
-                    CoachHaptic.drillIncomplete()
-                    voiceInput.cancelPress()
-                }
-                voicePressInsideBounds = true
-            }
-    }
-
-    /// VoiceOver label flips with state so a blind user knows whether
-    /// the next release will send or cancel. "Hold to talk" reads as
-    /// an instruction at rest; "Recording, release to send" confirms
-    /// the engagement while the wrapper is capturing.
     private var micAccessibilityLabel: String {
         switch voiceInput.state {
         case .idle:
-            return "Hold to talk to Noum"
+            return "Tap to record your message"
         case .recording:
-            return voicePressInsideBounds ? "Recording, release to send" : "Recording, release outside to cancel"
+            return "Recording — tap to stop and send"
         case .processing:
             return "Processing your message"
         }
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Send is active when there's draft text OR when recording is live
+        // (tapping Send while recording stops and sends the current transcript).
+        (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+         || voiceInput.state == .recording)
         && !store.isAwaitingReply
     }
 
     // MARK: - Send + scroll
 
     private func trySend() {
+        // If recording is active, stop-and-send: the transcript will land
+        // in `draft` via `onFinalTranscript`, then we forward it.
+        if voiceInput.state == .recording {
+            voiceInput.stopAndSend()
+            // Transcript arrival is async (recognizer callback); the user
+            // will see the draft populate then can tap Send a second time,
+            // OR we wait for the transcript here. Since `onFinalTranscript`
+            // sets `draft`, the next user-tap of Send picks it up naturally.
+            // This keeps the code path simple without racing the recognizer.
+            return
+        }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !store.isAwaitingReply else { return }
         draft = ""

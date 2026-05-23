@@ -50,9 +50,11 @@ enum CoachContextBuilder {
         statement, you say so plainly. Weak evidence = softer language.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
-        - Stay under four short paragraphs. No headers. No bullet lists \
-        unless the user explicitly asks for one. Cut any sentence that \
-        does not cite the user's actual data or land a concrete move.
+        - Reply length: 2–4 sentences max. Lead with the specific insight. \
+        Save the full breakdown for if the user asks a follow-up. Cut any \
+        sentence that does not cite the user's actual data or land a \
+        concrete move. No headers. No bullet lists unless the user \
+        explicitly asks for one.
 
         Intelligence floor (this is what separates you from a generic \
         chatbot — every reply must clear it):
@@ -507,6 +509,63 @@ enum CoachContextBuilder {
             ]
         }
         return voice + common
+    }
+
+    // MARK: - Data-grounded starter prompts
+    //
+    // Signal priority (first match wins, cap 3 chips at ≤60 chars each):
+    //   1. BigMoment active → prep-for-event chips anchored to category
+    //   2. Persistent blockers from baseline → targeted weakness chip
+    //   3. Generic voice-default fallback
+    //
+    // This overload is what the view calls. The old `starterPrompts(for:)`
+    // remains as the deterministic catalog for tests and the AI chip fallback.
+    static func starterPrompts(
+        bigMoment: BigMoment?,
+        baseline: CommunicationBaseline,
+        voice: SpeakingStyleGoal?
+    ) -> [String] {
+        var chips: [String] = []
+
+        // Signal 1 — BigMoment. If a moment is active and within 60 days,
+        // lead with two prompts anchored to the event.
+        if let moment = bigMoment {
+            let daysUntil = BigMomentStore.shared.daysUntil(moment)
+            if let days = daysUntil, days >= 0 && days <= 60 {
+                let categoryLabel = moment.category.displayName
+                chips.append("How should I open my \(categoryLabel)?")
+                if days <= 14 {
+                    chips.append("Give me a drill for the next \(days) day\(days == 1 ? "" : "s").")
+                } else {
+                    chips.append("Help me prep for my \(categoryLabel).")
+                }
+            }
+        }
+
+        // Signal 2 — weakest blocker from baseline. One chip max so it
+        // doesn't crowd out the BigMoment prompts.
+        if chips.count < 3,
+           let blocker = baseline.persistentBlockers.first,
+           !blocker.isEmpty {
+            let blockerChip = "Why does my \(blocker.lowercased()) keep slipping?"
+            if blockerChip.count <= 60 {
+                chips.append(blockerChip)
+            } else {
+                chips.append("What's holding back my \(blocker.lowercased())?")
+            }
+        }
+
+        // Fill remaining slots (up to 3 total) from the deterministic
+        // voice-catalog, skipping any that are already present.
+        let catalog = starterPrompts(for: voice)
+        for prompt in catalog {
+            if chips.count >= 3 { break }
+            if !chips.contains(prompt) {
+                chips.append(prompt)
+            }
+        }
+
+        return Array(chips.prefix(3))
     }
 
     // MARK: - Follow-up suggestions (post-reply)
