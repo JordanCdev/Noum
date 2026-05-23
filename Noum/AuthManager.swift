@@ -525,6 +525,8 @@ class AuthManager: ObservableObject {
             "sessionIntent.history.\(accountID)",
             // M24: Post-rep coach note — bounded history of coach reads
             "postRepCoachNote.\(accountID)",
+            // M24 Track 3: Sudden Death run history — bounded per-account
+            "suddenDeath.runHistory.\(accountID)",
         ]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)
@@ -595,6 +597,7 @@ class AuthManager: ObservableObject {
             SessionIntentStore.shared.reloadForCurrentAccount()
             CoachLetterStore.shared.reloadForCurrentAccount()
             PostRepCoachNoteStore.shared.reloadForCurrentAccount()
+            SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
             completion?()
         }
     }
@@ -611,6 +614,7 @@ class AuthManager: ObservableObject {
             SessionIntentStore.shared.endSession()
             CoachLetterStore.shared.endSession()
             PostRepCoachNoteStore.shared.endSession()
+            SuddenDeathRunHistoryStore.shared.endSession()
         }
     }
 

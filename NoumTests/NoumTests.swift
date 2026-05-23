@@ -11428,3 +11428,246 @@ struct CoachContextLastRepNoteTests {
     }
 }
 
+// MARK: - M24 Track 3 — SuddenDeathRunHistoryStore
+//
+// Per-account, bounded persistence for completed Sudden Death runs.
+// Same testable-init pattern as PostRepCoachNoteStore — a custom
+// UserDefaults suite + account-ID provider closure means we never
+// touch KeychainHelper or the live shared singleton, so suites can
+// run in parallel without state bleed.
+//
+// Contract being locked here:
+//   - Record + fetch round-trip preserves every field
+//   - De-dupe on `id` (idempotent against double-mount)
+//   - Capacity caps at the documented value, evicting oldest by
+//     `completedAt`
+//   - `recentRuns(difficulty:limit:)` filters AND honors the limit
+//   - Per-account key isolation — two stores against the same suite
+//     but different account IDs never see each other's runs
+//   - Lifecycle (reload, endSession, deleteAllData) behaves the same
+//     way the rest of the per-account stores do
+//   - RoundOutcome encode/decode round-trips every case
+
+@available(iOS 17.0, *)
+@MainActor
+struct SuddenDeathRunHistoryStoreTests {
+
+    private func freshStore() -> SuddenDeathRunHistoryStore {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "tester" })
+    }
+
+    private func sampleRun(
+        difficulty: SuddenDeathDifficulty = .medium,
+        rounds: Int = 4,
+        completedAt: Date = Date(),
+        wasNewBest: Bool = false
+    ) -> SuddenDeathRunRecord {
+        SuddenDeathRunRecord(
+            completedAt: completedAt,
+            difficulty: difficulty,
+            roundsSurvived: rounds,
+            totalFillers: 1,
+            totalWords: 80,
+            score: 7,
+            xpEarned: 120,
+            finalOutcome: .survived,
+            wasNewBestAtTime: wasNewBest
+        )
+    }
+
+    @Test @MainActor func recordAndFetchRoundTrip() {
+        let store = freshStore()
+        let run = sampleRun(difficulty: .hard, rounds: 6, wasNewBest: true)
+        store.record(run)
+        let fetched = store.recentRuns(difficulty: .hard)
+        #expect(fetched.count == 1)
+        #expect(fetched.first?.id == run.id)
+        #expect(fetched.first?.roundsSurvived == 6)
+        #expect(fetched.first?.wasNewBestAtTime == true)
+    }
+
+    @Test @MainActor func recordDedupesOnID() {
+        // Same record id recorded twice replaces rather than stacks —
+        // guards against a fast double-mount of the result view firing
+        // recordRun twice.
+        let store = freshStore()
+        let id = UUID()
+        let first = SuddenDeathRunRecord(
+            id: id, completedAt: Date(timeIntervalSince1970: 100),
+            difficulty: .medium, roundsSurvived: 3, totalFillers: 2,
+            totalWords: 40, score: 5, xpEarned: 60,
+            finalOutcome: .fillerOverload, wasNewBestAtTime: false
+        )
+        let second = SuddenDeathRunRecord(
+            id: id, completedAt: Date(timeIntervalSince1970: 200),
+            difficulty: .medium, roundsSurvived: 3, totalFillers: 2,
+            totalWords: 40, score: 5, xpEarned: 60,
+            finalOutcome: .fillerOverload, wasNewBestAtTime: false
+        )
+        store.record(first)
+        store.record(second)
+        #expect(store.runs.count == 1)
+        // Newer completedAt wins on the replace.
+        #expect(store.runs.first?.completedAt == Date(timeIntervalSince1970: 200))
+    }
+
+    @Test @MainActor func capacityEvictsOldestByCompletedAt() {
+        let store = freshStore()
+        let cap = SuddenDeathRunHistoryStore.capacity
+        for offset in 0..<(cap + 5) {
+            let run = SuddenDeathRunRecord(
+                completedAt: Date(timeIntervalSince1970: TimeInterval(offset)),
+                difficulty: .medium, roundsSurvived: offset, totalFillers: 0,
+                totalWords: 50, score: 6, xpEarned: 80,
+                finalOutcome: .survived, wasNewBestAtTime: false
+            )
+            store.record(run)
+        }
+        #expect(store.runs.count == cap)
+        // The 5 oldest rounds (0..4) should all be gone.
+        for i in 0..<5 {
+            #expect(!store.runs.contains { $0.roundsSurvived == i })
+        }
+        // The newest (cap+4) must be retained.
+        #expect(store.runs.contains { $0.roundsSurvived == cap + 4 })
+    }
+
+    @Test @MainActor func recentRunsFiltersByDifficulty() {
+        let store = freshStore()
+        let now = Date()
+        store.record(sampleRun(difficulty: .easy, rounds: 8, completedAt: now))
+        store.record(sampleRun(difficulty: .medium, rounds: 4, completedAt: now.addingTimeInterval(-100)))
+        store.record(sampleRun(difficulty: .hard, rounds: 2, completedAt: now.addingTimeInterval(-200)))
+        store.record(sampleRun(difficulty: .easy, rounds: 6, completedAt: now.addingTimeInterval(-300)))
+        let easy = store.recentRuns(difficulty: .easy)
+        #expect(easy.count == 2)
+        // Newest-first ordering preserved inside the difficulty filter.
+        #expect(easy.first?.roundsSurvived == 8)
+        #expect(easy.last?.roundsSurvived == 6)
+    }
+
+    @Test @MainActor func recentRunsHonorsLimit() {
+        let store = freshStore()
+        let now = Date()
+        for i in 0..<10 {
+            store.record(sampleRun(difficulty: .medium, rounds: i,
+                                   completedAt: now.addingTimeInterval(TimeInterval(i))))
+        }
+        let top5 = store.recentRuns(difficulty: .medium, limit: 5)
+        #expect(top5.count == 5)
+        // Newest-first: the first row should be the run with rounds=9.
+        #expect(top5.first?.roundsSurvived == 9)
+        // limit = nil returns everything.
+        let all = store.recentRuns(difficulty: .medium, limit: nil)
+        #expect(all.count == 10)
+    }
+
+    @Test @MainActor func recentRunsLimitLargerThanAvailableReturnsAll() {
+        let store = freshStore()
+        store.record(sampleRun(difficulty: .easy, rounds: 3))
+        store.record(sampleRun(difficulty: .easy, rounds: 5))
+        let runs = store.recentRuns(difficulty: .easy, limit: 100)
+        #expect(runs.count == 2)
+    }
+
+    @Test @MainActor func emptyHistoryReturnsEmpty() {
+        let store = freshStore()
+        #expect(store.recentRuns(difficulty: .hard).isEmpty)
+        #expect(store.recentRuns(difficulty: .medium, limit: 5).isEmpty)
+        #expect(store.allRuns.isEmpty)
+    }
+
+    @Test @MainActor func clearAllEmptiesStore() {
+        let store = freshStore()
+        store.record(sampleRun())
+        store.record(sampleRun())
+        #expect(store.runs.count == 2)
+        store.clearAll()
+        #expect(store.runs.isEmpty)
+    }
+
+    @Test @MainActor func deleteAllDataWipesByAccountID() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "alpha" })
+        store.record(sampleRun())
+        #expect(store.runs.count == 1)
+        store.deleteAllData(for: "alpha")
+        #expect(store.runs.isEmpty)
+    }
+
+    @Test @MainActor func perAccountKeyIsolation() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let alpha = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "alpha" })
+        let beta  = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "beta" })
+        alpha.record(sampleRun(rounds: 7))
+        #expect(alpha.runs.count == 1)
+        #expect(beta.runs.isEmpty)
+    }
+
+    @Test @MainActor func reloadReadsPersistedRuns() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let writer = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "shared" })
+        writer.record(sampleRun(difficulty: .hard, rounds: 9, wasNewBest: true))
+        let reader = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "shared" })
+        #expect(reader.runs.count == 1)
+        #expect(reader.runs.first?.roundsSurvived == 9)
+        #expect(reader.runs.first?.wasNewBestAtTime == true)
+    }
+
+    @Test @MainActor func endSessionClearsInMemoryWithoutErasingDisk() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "tester" })
+        store.record(sampleRun())
+        store.endSession()
+        #expect(store.runs.isEmpty)
+        let reloaded = SuddenDeathRunHistoryStore(defaults: suite, accountIDProvider: { "tester" })
+        #expect(reloaded.runs.count == 1)
+    }
+
+    @Test func roundOutcomeRoundTripsForEveryCase() throws {
+        // Encoder/decoder contract on RoundOutcome — the run record
+        // can't ship without this because every persisted record
+        // carries one.
+        let cases: [RoundOutcome] = [
+            .survived, .timeoutBeforeStart, .fillerOverload, .tooShort
+        ]
+        for outcome in cases {
+            let record = SuddenDeathRunRecord(
+                difficulty: .medium, roundsSurvived: 3, totalFillers: 0,
+                totalWords: 40, score: 5, xpEarned: 60,
+                finalOutcome: outcome, wasNewBestAtTime: false
+            )
+            let data = try JSONEncoder().encode(record)
+            let decoded = try JSONDecoder().decode(SuddenDeathRunRecord.self, from: data)
+            #expect(decoded.finalOutcome == outcome)
+        }
+    }
+
+    @Test func runRecordRoundTripsEveryField() throws {
+        // Field-by-field decode integrity — guards against a future
+        // CodingKeys oversight silently dropping a stat from the
+        // history list.
+        let id = UUID()
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let record = SuddenDeathRunRecord(
+            id: id, completedAt: date, difficulty: .hard,
+            roundsSurvived: 7, totalFillers: 3, totalWords: 142,
+            score: 8, xpEarned: 240, finalOutcome: .fillerOverload,
+            wasNewBestAtTime: true
+        )
+        let data = try JSONEncoder().encode(record)
+        let decoded = try JSONDecoder().decode(SuddenDeathRunRecord.self, from: data)
+        #expect(decoded.id == id)
+        #expect(decoded.completedAt == date)
+        #expect(decoded.difficulty == .hard)
+        #expect(decoded.roundsSurvived == 7)
+        #expect(decoded.totalFillers == 3)
+        #expect(decoded.totalWords == 142)
+        #expect(decoded.score == 8)
+        #expect(decoded.xpEarned == 240)
+        #expect(decoded.finalOutcome == .fillerOverload)
+        #expect(decoded.wasNewBestAtTime == true)
+    }
+}
+

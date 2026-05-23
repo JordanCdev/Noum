@@ -812,19 +812,22 @@ struct SummaryView: View {
                         DeferredCaptureInlineCard()
                     }
 
-                    // Demoted from hero in the M17 redesign — the
-                    // observational "What you did well / improve" cards
-                    // own the hero block now. AI debrief + the templated
-                    // CoachNote three-part read both still live here for
-                    // users who want the full coach voice on the rep.
+                    // M24 Track 2 dedupe — the templated
+                    // `CoachNoteCard` (momentum + leverage + nextStep)
+                    // restated what's now in the four hero coach-voice
+                    // surfaces: `CoachReadCard` (the read itself),
+                    // `WhatYouDidWellCard` (momentum), `WhatToImprove-`
+                    // `Card` (leverage), and `YourNextMoveCard` (next
+                    // step). Reading the same three points twice on
+                    // the same screen blurred whose voice was talking.
+                    // The AI-backed `AISessionDebriefCard` stays — it
+                    // sources a different read (post-hoc AI insight,
+                    // not the templated mid-rep coach note) so it
+                    // adds genuine depth rather than duplicating.
                     if !isIMSummary {
                         AISessionDebriefCard(
                             session: sessionStore.sessions.first,
                             recentSessions: Array(sessionStore.sessions.prefix(5))
-                        )
-                        CoachNoteCard(
-                            coachNote: coachNote,
-                            coachNoteRevealed: coachNoteRevealed
                         )
                     }
 

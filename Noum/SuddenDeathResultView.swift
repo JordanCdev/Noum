@@ -21,6 +21,7 @@ struct SuddenDeathResultView: View {
 
     let result: PressureSessionResult
     let highScoreStore: SuddenDeathHighScoreStore
+    @ObservedObject var runHistoryStore: SuddenDeathRunHistoryStore
     let onRetry: () -> Void
     let onSeeFullSummary: () -> Void
 
@@ -30,6 +31,11 @@ struct SuddenDeathResultView: View {
     @State private var displayedRounds: Int = 0
     // Controls share sheet presentation.
     @State private var showingShareSheet: Bool = false
+    // Stable record id for the run we just finished — pinned in
+    // `resolveHighScore` so the "Recent runs" list can anchor the
+    // current row visually even after the same store is re-read
+    // following a fast Go-Again.
+    @State private var currentRunID: UUID = UUID()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -78,6 +84,11 @@ struct SuddenDeathResultView: View {
                 if isNewHighScore { newBestBadge }
                 statsRow
                 roundBreakdown
+                SuddenDeathRecentRunsCard(
+                    currentRunID: currentRunID,
+                    runs: runHistoryStore.recentRuns(difficulty: result.difficulty, limit: 5),
+                    difficulty: result.difficulty
+                )
                 xpChip
             }
             .padding(.horizontal, Spacing.screenH)
@@ -256,12 +267,30 @@ struct SuddenDeathResultView: View {
         return "Too short — \(said) word\(said == 1 ? "" : "s") (needed \(needed))"
     }
 
-    /// Records the run in the high score store and kicks off the roll-up animation.
+    /// Records the run in the high score store, appends to the per-
+    /// account run history, and kicks off the roll-up animation.
     private func resolveHighScore() {
         isNewHighScore = highScoreStore.recordRun(
             roundsSurvived: result.roundsSurvived,
             difficulty: result.difficulty
         )
+        // Append the full run to history with the new-best flag
+        // snapshotted at recording time. Idempotent on the stable
+        // `currentRunID` State so a re-mount within the same lifecycle
+        // (Go Again, then back) doesn't double-record.
+        let record = SuddenDeathRunRecord(
+            id: currentRunID,
+            completedAt: Date(),
+            difficulty: result.difficulty,
+            roundsSurvived: result.roundsSurvived,
+            totalFillers: result.totalFillers,
+            totalWords: result.totalWords,
+            score: result.score,
+            xpEarned: result.xpEarned,
+            finalOutcome: result.finalOutcome,
+            wasNewBestAtTime: isNewHighScore
+        )
+        runHistoryStore.record(record)
         animateRoundCount()
     }
 

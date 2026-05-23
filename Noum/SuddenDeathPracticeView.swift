@@ -1008,6 +1008,7 @@ struct SuddenDeathPracticeView: View {
         SuddenDeathResultView(
             result: result,
             highScoreStore: .shared,
+            runHistoryStore: .shared,
             onRetry: { retrySession() },
             onSeeFullSummary: { pushSummary(result: result) }
         )
