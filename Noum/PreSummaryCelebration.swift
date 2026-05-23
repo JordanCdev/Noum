@@ -269,7 +269,13 @@ struct PreSummaryCelebration: View {
         // earns its read before the next one lands.
         let isSingleEvent = events.count == 1
         let inDuration: Double = reduceMotion ? 0.20 : (isSingleEvent ? 0.30 : 0.35)
-        let holdDuration: Double = reduceMotion ? 0.30 : (isSingleEvent ? 0.35 : 0.50)
+        // M24 fix — single-event hold bumped 0.35s → 1.80s so the user can
+        // actually read the level-up card. Total visible time = in (~0.42)
+        // + barsDelay (~0.12) + hold (1.80) + out (0.25 next card or
+        // indefinite final) = ~2.6s, which matches typical celebration
+        // read-times in iOS HIG. Multi-event keeps 0.50s per card because
+        // the cards parade together — total stack visibility stays calm.
+        let holdDuration: Double = reduceMotion ? 0.40 : (isSingleEvent ? 1.80 : 0.50)
         let outDuration: Double = reduceMotion ? 0.20 : 0.25
         let barsDelay: Double = reduceMotion ? 0.0 : (isSingleEvent ? 0.12 : 0.18)
 

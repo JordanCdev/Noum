@@ -102,6 +102,14 @@ struct SuddenDeathPracticeView: View {
     /// re-render of `npcCard` (transcript / filler updates) doesn't
     /// re-trigger the readout mid-utterance.
     @State private var lastSpokenPromptText: String = ""
+    /// The round number whose prompt was last spoken. M24 fix: pairs
+    /// with `lastSpokenPromptText` to gate audio replay. Without
+    /// round-tracking, round 2's `.npcTurn` entry would blank
+    /// `lastSpokenPromptText` and re-speak round 1's text (which is
+    /// still held in `engine.currentPromptText` until the async
+    /// follow-up generation completes). Round-tracking means we only
+    /// speak when EITHER the text changed OR the round changed.
+    @State private var lastSpokenForRound: Int? = nil
 
     /// User-configurable gate that already powers IM auto-speak. We
     /// honour the same setting in Pressure mode so users who have
@@ -274,8 +282,8 @@ struct SuddenDeathPracticeView: View {
             // for round 1 (where `npcTurn` and the text both land at
             // once).
             guard !newText.isEmpty else { return }
-            if case .npcTurn = engine.phase {
-                speakCurrentPromptIfReady()
+            if case .npcTurn(let round) = engine.phase {
+                speakCurrentPromptIfReady(round: round)
             }
         }
         .onDisappear {
@@ -1080,13 +1088,20 @@ struct SuddenDeathPracticeView: View {
             // never bleeds into the rep itself or the NPC's turn.
             SoundscapeEngine.shared.startPreferredMode()
 
-        case .npcTurn:
+        case .npcTurn(let round):
             // Reset transcript for new round
             speechVM.stopRecording()
             speechVM.resetCurrentSession()
             roundTranscript = ""
             hasDetectedSpeechThisRound = false
-            lastSpokenPromptText = ""
+            // M24 fix — do NOT blank lastSpokenPromptText here. On round 2+,
+            // engine.currentPromptText still holds the PREVIOUS round's
+            // text (the new one is generated async via isGeneratingFollowUp).
+            // Blanking the cache would let speakCurrentPromptIfReady fire
+            // again on the stale text and replay round 1's audio. Instead,
+            // we rely on lastSpokenForRound to invalidate per-round, and
+            // the natural text-change in onChange(currentPromptText) to
+            // detect the new prompt arrival.
             wordThresholdHapticFired = false
 
             // Animate typing dots
@@ -1099,7 +1114,7 @@ struct SuddenDeathPracticeView: View {
             // also dispatched again from onChange(currentPromptText)
             // because follow-ups arrive asynchronously after this
             // phase change.
-            speakCurrentPromptIfReady()
+            speakCurrentPromptIfReady(round: round)
 
         case .userTurnWaiting:
             // Start recording for this round; cut soundscape if it's
@@ -1287,20 +1302,24 @@ struct SuddenDeathPracticeView: View {
     /// async follow-up prompt arrival. Skips silently when:
     ///   • user has muted NPC voice playback (IMVoicePlaybackSettings)
     ///   • the prompt is empty (still generating)
-    ///   • the same prompt has already been spoken in this round
-    /// so a view re-render never re-triggers mid-utterance.
-    private func speakCurrentPromptIfReady() {
+    ///   • we've already spoken for this round AND the text is unchanged
+    ///     (M24 fix — round-tracking prevents replaying round 1's text
+    ///     when round 2's .npcTurn fires before the async follow-up text
+    ///     arrives)
+    private func speakCurrentPromptIfReady(round: Int) {
         guard voicePlaybackSettings.isEnabled else { return }
         let prompt = engine.currentPromptText
         guard !prompt.isEmpty else { return }
-        guard prompt != lastSpokenPromptText else { return }
-        speakCurrentPrompt(force: false)
+        // Skip when we already spoke THIS round's prompt verbatim.
+        if lastSpokenForRound == round && prompt == lastSpokenPromptText { return }
+        speakCurrentPrompt(force: false, round: round)
     }
 
     /// User-initiated speak (the replay button). `force == true` toggles
     /// off mid-utterance so a second tap stops the readout instead of
-    /// queuing another.
-    private func speakCurrentPrompt(force: Bool) {
+    /// queuing another. `round` is the round whose prompt is being
+    /// spoken; the replay button passes the current phase's round.
+    private func speakCurrentPrompt(force: Bool, round: Int? = nil) {
         let prompt = engine.currentPromptText
         guard !prompt.isEmpty else { return }
 
@@ -1313,6 +1332,15 @@ struct SuddenDeathPracticeView: View {
 
         isSpeakingPrompt = true
         lastSpokenPromptText = prompt
+        // Track per-round so subsequent .npcTurn entries don't re-speak
+        // stale text. Inferred from the live phase when not supplied.
+        if let round {
+            lastSpokenForRound = round
+        } else if case .npcTurn(let r) = engine.phase {
+            lastSpokenForRound = r
+        } else if case .userTurnWaiting(let r, _) = engine.phase {
+            lastSpokenForRound = r
+        }
 
         let speaker = IMMessageSpeaker.shared
         Task {
@@ -1364,8 +1392,8 @@ struct SuddenDeathPracticeView: View {
     #else
     // Stub-out the TTS surface when AVFAudio isn't available (preview /
     // non-iOS targets) so the call sites still compile.
-    private func speakCurrentPromptIfReady() { }
-    private func speakCurrentPrompt(force: Bool) { }
+    private func speakCurrentPromptIfReady(round: Int) { }
+    private func speakCurrentPrompt(force: Bool, round: Int? = nil) { }
     private func stopPromptReadout() { }
     #endif
 }
