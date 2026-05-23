@@ -195,7 +195,8 @@ enum CoachContextBuilder {
         pathGatingPhrase: String?,
         recentProofs: [ProofMomentRecord] = [],
         bigMoment: BigMoment? = nil,
-        forwardPlan: ForwardPlan? = nil
+        forwardPlan: ForwardPlan? = nil,
+        latestRepNote: PostRepCoachNote? = nil
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -350,6 +351,23 @@ enum CoachContextBuilder {
                 }()
                 lines.append("- \(day) · \(mode): \(score), \(fillers), \(duration)\(intentTail).")
             }
+        }
+
+        // LAST REP NOTE — the coach's own short read of the most-recent
+        // rep, persisted by `PostRepCoachNoteStore` after each session
+        // finalizes. Lets the chat coach build on its own earlier read
+        // instead of starting fresh every turn — when the user asks
+        // "what did you think of my last rep?", the coach can paraphrase
+        // or expand on this note rather than re-reading the metrics
+        // from scratch. Honest about provenance: when the note is
+        // rule-based (no AI provider was reachable), the model is told
+        // so it doesn't claim "I noticed X" about a deterministic
+        // template line.
+        if let note = latestRepNote {
+            lines.append("")
+            lines.append("LAST REP NOTE")
+            let provenance = note.isAIBacked ? "AI-generated" : "rule-based (template)"
+            lines.append("- Your read after the user's most-recent rep (\(provenance)): \"\(note.noteText)\"")
         }
 
         // PATH — where they are in their journey

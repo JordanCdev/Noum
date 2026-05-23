@@ -6180,7 +6180,64 @@ enum PracticeSessionFinalizer {
         // Evaluate achievements
         AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
 
+        // M24 Track 1 — drop a deterministic post-rep coach note in
+        // the store immediately so the Summary surface can render the
+        // coach's voice in the very same paint cycle as the verdict.
+        // The AI upgrade fires concurrently and replaces the
+        // deterministic record on completion (de-dupe by sessionID is
+        // enforced by `PostRepCoachNoteStore.record`).
+        Self.recordPostRepCoachNote(for: finalized)
+
         return finalized
+    }
+
+    /// Build a `PostRepCoachNoteInput` from the finalized session +
+    /// live stores, write the deterministic note immediately, then fire
+    /// the AI upgrade as a detached task. Pure boilerplate — keeps
+    /// `finalize` readable.
+    private static func recordPostRepCoachNote(for session: PracticeSession) {
+        let profile = CoachingProfileStore.shared.profile
+        let baseline = BaselineStore.shared.baseline
+        let bigMoment = BigMomentStore.shared.activeMoment
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.shared.daysUntil($0) }
+
+        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient ? nil : baseline.fillerRate.value
+        let baselinePace: Double? = baseline.pace.confidence == .insufficient ? nil : baseline.pace.value
+
+        let input = PostRepCoachNoteInput(
+            sessionID: session.id,
+            mode: session.mode,
+            score: session.score,
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            voice: profile?.speakingStyleGoal,
+            intentLabel: session.intentLabel,
+            baselineFillerRate: baselineFillerRate,
+            baselinePaceWPM: baselinePace,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDays
+        )
+
+        // Deterministic note lands synchronously so the Summary
+        // surface already has a coach voice to show on the first frame.
+        let deterministic = PostRepCoachNoteService.deterministicNote(input: input)
+        PostRepCoachNoteStore.shared.record(deterministic)
+
+        // AI upgrade fires concurrently. If the network is unreachable
+        // or the locale is non-English, `generate` returns the same
+        // deterministic note (no second write needed but harmless).
+        Task { [input] in
+            let upgraded = await PostRepCoachNoteService.shared.generate(input: input)
+            await MainActor.run {
+                // Only replace when the upgrade is actually AI-backed
+                // — same-deterministic re-writes are no-ops but waste
+                // a published change.
+                if upgraded.isAIBacked {
+                    PostRepCoachNoteStore.shared.record(upgraded)
+                }
+            }
+        }
     }
 }
 

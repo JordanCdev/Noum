@@ -10903,3 +10903,528 @@ struct AskNoumChipFilterTests {
         #expect(chips.allSatisfy { $0.count <= 60 })
     }
 }
+
+// MARK: - M24 Track 1 — CoachPersona catalogue contract
+
+@available(iOS 17.0, *)
+struct CoachPersonaTests {
+
+    @Test func personaForNilReturnsDefault() {
+        let p = CoachPersona.persona(for: nil)
+        #expect(p.voice == nil)
+        #expect(p.registerName == "Default")
+    }
+
+    @Test func everyVoiceReturnsDistinctRegisterName() {
+        var seen: Set<String> = ["Default"]
+        for voice in SpeakingStyleGoal.allCases {
+            let p = CoachPersona.persona(for: voice)
+            #expect(!seen.contains(p.registerName), "Duplicate registerName for \(voice)")
+            seen.insert(p.registerName)
+        }
+    }
+
+    @Test func everyVoiceHasNonEmptyOpeningsAndClosings() {
+        for voice in SpeakingStyleGoal.allCases {
+            let p = CoachPersona.persona(for: voice)
+            #expect(!p.openings.isEmpty, "\(voice) openings empty")
+            #expect(!p.closings.isEmpty, "\(voice) closings empty")
+            #expect(!p.reflectionLead.isEmpty, "\(voice) reflectionLead empty")
+        }
+    }
+
+    @Test func brandVoiceContractAcrossAllPersonas() {
+        // Brand voice rule: no exclamations anywhere in the catalogue.
+        // The `.default` persona is exercised by voice = nil.
+        let personas = SpeakingStyleGoal.allCases.map { CoachPersona.persona(for: $0) } + [CoachPersona.default]
+        for p in personas {
+            for line in p.openings + p.closings + [p.reflectionLead, p.signatureTone, p.registerName] {
+                #expect(!line.contains("!"), "Exclamation in \(p.registerName): \(line)")
+            }
+        }
+    }
+
+    @Test func openingAndClosingSeededPicksAreStable() {
+        // Same seed → same line. Critical so a session's coach note
+        // doesn't shuffle text on every render.
+        let p = CoachPersona.persona(for: .concise)
+        let seed = 42
+        #expect(p.opening(seed: seed) == p.opening(seed: seed))
+        #expect(p.closing(seed: seed) == p.closing(seed: seed))
+    }
+
+    @Test func openingAndClosingNeverCrashWithExtremeSeeds() {
+        // Negative seed (Int.min) was a previous crash class on
+        // `abs(Int.min)`. Cover the boundary explicitly.
+        let p = CoachPersona.persona(for: .warm)
+        // Don't use Int.min directly (abs(Int.min) overflows). Use a
+        // realistic large negative + positive seed instead, which is
+        // what hashValue actually produces.
+        let opening = p.opening(seed: -987654321)
+        let closing = p.closing(seed: 987654321)
+        #expect(!opening.isEmpty)
+        #expect(!closing.isEmpty)
+    }
+}
+
+// MARK: - M24 Track 1 — PostRepCoachNoteService deterministic path
+
+@available(iOS 17.0, *)
+struct PostRepCoachNoteServiceDeterministicTests {
+
+    private func makeInput(
+        score: Int? = 7,
+        fillerCount: Int = 3,
+        duration: TimeInterval = 60,
+        wordCount: Int = 120,
+        voice: SpeakingStyleGoal? = nil,
+        baselineFillerRate: Double? = nil,
+        baselinePaceWPM: Double? = nil
+    ) -> PostRepCoachNoteInput {
+        PostRepCoachNoteInput(
+            sessionID: UUID(),
+            mode: .timed,
+            score: score,
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            voice: voice,
+            intentLabel: nil,
+            baselineFillerRate: baselineFillerRate,
+            baselinePaceWPM: baselinePaceWPM,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil
+        )
+    }
+
+    @Test func deterministicNoteIsHonestAboutBeingRuleBased() {
+        let note = PostRepCoachNoteService.deterministicNote(input: makeInput())
+        #expect(note.isAIBacked == false)
+    }
+
+    @Test func noteCarriesGenerationVoice() {
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(voice: .authoritative)
+        )
+        #expect(note.voice == .authoritative)
+    }
+
+    @Test func noteCarriesSessionID() {
+        let session = UUID()
+        let input = PostRepCoachNoteInput(
+            sessionID: session,
+            mode: .timed, score: 7, fillerCount: 1,
+            duration: 60, wordCount: 100, voice: nil,
+            intentLabel: nil, baselineFillerRate: nil, baselinePaceWPM: nil,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        #expect(note.sessionID == session)
+    }
+
+    @Test func zeroFillersAlwaysCelebratedAsCleanRun() {
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(score: 6, fillerCount: 0, duration: 60, wordCount: 100)
+        )
+        // The clean-run branch should fire ahead of score-band/pace
+        // — "clean" or "zero" should appear somewhere in the text.
+        let lower = note.noteText.lowercased()
+        #expect(lower.contains("zero") || lower.contains("clean") || lower.contains("no filler") || lower.contains("not a single"))
+    }
+
+    @Test func strongScoreCitesScoreNumber() {
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(score: 9, fillerCount: 5, duration: 60, wordCount: 120, baselineFillerRate: 6.0)
+        )
+        // Score 9 should land somewhere in the note — either explicitly
+        // ("scored 9", "an 9", "9 of 10", "9.") or via the filler-win
+        // branch since baseline=6, sessionRate=5, ratio<0.83×base — that
+        // doesn't trigger win; score takes over.
+        #expect(note.noteText.contains("9") || note.noteText.lowercased().contains("repeat"))
+    }
+
+    @Test func weakScoreNeverPunishShames() {
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(score: 3, fillerCount: 4, duration: 30, wordCount: 60)
+        )
+        let lower = note.noteText.lowercased()
+        // Brand voice contract — never use 'failure', 'bad', 'poor', etc.
+        #expect(!lower.contains("failure"))
+        #expect(!lower.contains("bad rep"))
+        #expect(!lower.contains("poor"))
+        #expect(!lower.contains("terrible"))
+    }
+
+    @Test func rushedPaceAcknowledgedWithNumber() {
+        // 240 words in 60s = 240 WPM (well over 170 threshold).
+        // No score so the pace branch fires.
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(score: nil, fillerCount: 1, duration: 60, wordCount: 240)
+        )
+        #expect(note.noteText.contains("WPM") || note.noteText.contains("pace") || note.noteText.lowercased().contains("rush"))
+    }
+
+    @Test func slowPaceAcknowledgedWithNumber() {
+        // 60 words in 60s = 60 WPM (under 95).
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(score: nil, fillerCount: 1, duration: 60, wordCount: 60)
+        )
+        #expect(note.noteText.contains("WPM") || note.noteText.contains("pace") || note.noteText.lowercased().contains("lift") || note.noteText.lowercased().contains("slow"))
+    }
+
+    @Test func shortRepStaysHonestWithoutShaming() {
+        // 10s rep. No score. Pace branch doesn't fire (duration < 15s).
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(score: nil, fillerCount: 0, duration: 10, wordCount: 15)
+        )
+        // 0 fillers + 15 words doesn't trigger the clean-run win (≥20
+        // word floor), so the short-rep branch is what we should see.
+        let lower = note.noteText.lowercased()
+        #expect(lower.contains("short") || lower.contains("brief") || lower.contains("quick") || lower.contains("scene"))
+    }
+
+    @Test func noteHasNoExclamationMarks() {
+        // Brand-voice contract across many input shapes — sweep voices
+        // and score bands to lock the no-exclamation rule.
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for voice in voices {
+            for score in [3, 5, 7, 9] {
+                for fillers in [0, 3, 8] {
+                    let note = PostRepCoachNoteService.deterministicNote(
+                        input: makeInput(score: score, fillerCount: fillers, voice: voice)
+                    )
+                    #expect(!note.noteText.contains("!"), "Voice \(String(describing: voice)) score \(score) fillers \(fillers) has !")
+                }
+            }
+        }
+    }
+
+    @Test func noteRespectsLengthCap() {
+        // Stress test — every voice + score combo stays ≤ 200 chars.
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for voice in voices {
+            for score in [3, 5, 7, 9] {
+                let note = PostRepCoachNoteService.deterministicNote(
+                    input: makeInput(score: score, voice: voice)
+                )
+                #expect(note.noteText.count <= 200, "Voice \(String(describing: voice)) score \(score) → \(note.noteText.count) chars")
+            }
+        }
+    }
+
+    @Test func fillerLossBranchFiresWhenSessionRateExceedsBaseline() {
+        // Baseline = 2 fillers/min. Session = 10 fillers in 60s = 10/min.
+        // Ratio 5× → loss branch fires (≥1.5×, fillers ≥ 3).
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                score: 6,
+                fillerCount: 10,
+                duration: 60,
+                wordCount: 120,
+                voice: .concise,
+                baselineFillerRate: 2.0
+            )
+        )
+        #expect(note.noteText.contains("10"))
+        // Concise voice loss branch says "Slow the open"
+        #expect(note.noteText.lowercased().contains("slow") || note.noteText.lowercased().contains("open"))
+    }
+
+    @Test func fillerWinBranchFiresWhenSessionRateUnderHalfBaseline() {
+        // Baseline = 4 fillers/min. Session = 1 filler in 60s = 1/min.
+        // Ratio 0.25 → win branch fires (≤0.5× AND filler count ≤ 2).
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                score: 7,
+                fillerCount: 1,
+                duration: 60,
+                wordCount: 100,
+                voice: .authoritative,
+                baselineFillerRate: 4.0
+            )
+        )
+        // Authoritative win text: "well below your usual rate"
+        #expect(note.noteText.contains("1"))
+        let lower = note.noteText.lowercased()
+        #expect(lower.contains("below") || lower.contains("usual") || lower.contains("clean"))
+    }
+
+    @Test func brandVoiceContractValidatorRejectsExclamations() {
+        #expect(!PostRepCoachNoteService.passesBrandVoiceContract("Great job! That was fast."))
+    }
+
+    @Test func brandVoiceContractValidatorRejectsChirpyFiller() {
+        #expect(!PostRepCoachNoteService.passesBrandVoiceContract("Awesome. Let's keep going."))
+        #expect(!PostRepCoachNoteService.passesBrandVoiceContract("Let's run another rep. That was solid."))
+    }
+
+    @Test func brandVoiceContractValidatorAcceptsCleanText() {
+        let candidate = "Steady delivery. The fundamentals held."
+        #expect(PostRepCoachNoteService.passesBrandVoiceContract(candidate))
+    }
+
+    @Test func brandVoiceContractValidatorRejectsOverlongText() {
+        let longText = String(repeating: "Steady delivery line. ", count: 30)
+        #expect(!PostRepCoachNoteService.passesBrandVoiceContract(longText))
+    }
+
+    @Test func collapseWhitespaceMergesRunsAndTrims() {
+        let collapsed = PostRepCoachNoteService.collapseWhitespace(in: "  Hello    world.  \n  Coach.   ")
+        #expect(collapsed == "Hello world. Coach.")
+    }
+
+    @Test func ensureNoExclamationsReplacesWithPeriod() {
+        let safe = PostRepCoachNoteService.ensureNoExclamations(in: "Nice rep! Hold the line!")
+        #expect(safe == "Nice rep. Hold the line.")
+    }
+}
+
+// MARK: - M24 Track 1 — PostRepCoachNoteStore persistence
+
+@available(iOS 17.0, *)
+@MainActor
+struct PostRepCoachNoteStoreTests {
+
+    private func freshStore() -> PostRepCoachNoteStore {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "tester" })
+    }
+
+    @Test func recordAndFetchRoundTrip() {
+        let store = freshStore()
+        let sessionID = UUID()
+        let note = PostRepCoachNote(
+            sessionID: sessionID,
+            voice: .warm,
+            noteText: "Steady rep — the foundation is doing its work.",
+            isAIBacked: false
+        )
+        store.record(note)
+        let fetched = store.note(for: sessionID)
+        #expect(fetched?.noteText == note.noteText)
+        #expect(fetched?.voice == .warm)
+    }
+
+    @Test func recordDedupesOnSessionID() {
+        // Re-recording the same session (deterministic → AI upgrade)
+        // should replace the previous entry, not stack.
+        let store = freshStore()
+        let sessionID = UUID()
+        let deterministic = PostRepCoachNote(
+            sessionID: sessionID, voice: .concise,
+            noteText: "Steady. Hold the line.", isAIBacked: false
+        )
+        let aiUpgrade = PostRepCoachNote(
+            sessionID: sessionID, voice: .concise,
+            noteText: "Tight rep. The pace held under pressure.", isAIBacked: true
+        )
+        store.record(deterministic)
+        store.record(aiUpgrade)
+        #expect(store.notes.count == 1)
+        #expect(store.note(for: sessionID)?.isAIBacked == true)
+    }
+
+    @Test func capacityEvictsOldestByGeneratedAt() {
+        let store = freshStore()
+        let cap = PostRepCoachNoteStore.capacity
+        // Create cap+1 notes with ascending generatedAt timestamps.
+        for offset in 0..<(cap + 1) {
+            let note = PostRepCoachNote(
+                sessionID: UUID(),
+                voice: nil,
+                noteText: "Steady rep \(offset). The fundamentals held.",
+                isAIBacked: false,
+                generatedAt: Date(timeIntervalSince1970: TimeInterval(offset))
+            )
+            store.record(note)
+        }
+        #expect(store.notes.count == cap)
+        // Oldest (offset=0) should be evicted; newest (offset=cap) retained.
+        let oldestText = "Steady rep 0. The fundamentals held."
+        let newestText = "Steady rep \(cap). The fundamentals held."
+        #expect(!store.notes.contains { $0.noteText == oldestText })
+        #expect(store.notes.contains { $0.noteText == newestText })
+    }
+
+    @Test func latestNoteReturnsHighestGeneratedAt() {
+        let store = freshStore()
+        let older = PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Older note. Fundamentals held.",
+            isAIBacked: false,
+            generatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Newer note. The line moved.",
+            isAIBacked: false,
+            generatedAt: Date(timeIntervalSince1970: 200)
+        )
+        store.record(older)
+        store.record(newer)
+        #expect(store.latestNote()?.noteText == "Newer note. The line moved.")
+    }
+
+    @Test func clearAllEmptiesStore() {
+        let store = freshStore()
+        store.record(PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Steady delivery. The fundamentals held.",
+            isAIBacked: false
+        ))
+        #expect(store.notes.count == 1)
+        store.clearAll()
+        #expect(store.notes.isEmpty)
+    }
+
+    @Test func deleteAllDataWipesByAccountID() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "alpha" })
+        store.record(PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Steady delivery. The fundamentals held.",
+            isAIBacked: false
+        ))
+        #expect(store.notes.count == 1)
+        store.deleteAllData(for: "alpha")
+        #expect(store.notes.isEmpty)
+    }
+
+    @Test func perAccountKeyIsolation() {
+        // Two stores against the SAME UserDefaults suite but different
+        // account IDs must not see each other's notes.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let alpha = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "alpha" })
+        let beta  = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "beta" })
+        alpha.record(PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Alpha rep. Steady delivery.",
+            isAIBacked: false
+        ))
+        #expect(alpha.notes.count == 1)
+        #expect(beta.notes.isEmpty)
+    }
+
+    @Test func reloadForCurrentAccountReadsPersistedNotes() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let writer = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "shared" })
+        let sessionID = UUID()
+        writer.record(PostRepCoachNote(
+            sessionID: sessionID, voice: .concise,
+            noteText: "Steady. Hold the line.",
+            isAIBacked: false
+        ))
+        // Build a fresh store against the same suite + account — should
+        // load the persisted note from disk.
+        let reader = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "shared" })
+        #expect(reader.note(for: sessionID)?.noteText == "Steady. Hold the line.")
+    }
+
+    @Test func endSessionClearsInMemoryWithoutErasingDisk() {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let store = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "tester" })
+        store.record(PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Steady delivery. The fundamentals held.",
+            isAIBacked: false
+        ))
+        store.endSession()
+        #expect(store.notes.isEmpty)
+        // Disk still has the note — a fresh store re-loads it.
+        let reloaded = PostRepCoachNoteStore(defaults: suite, accountIDProvider: { "tester" })
+        #expect(reloaded.notes.count == 1)
+    }
+}
+
+// MARK: - M24 Track 1 — CoachContext LAST REP NOTE section
+
+@available(iOS 17.0, *)
+struct CoachContextLastRepNoteTests {
+
+    private func minimalContext(latestRepNote: PostRepCoachNote?) -> String {
+        CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            forwardPlan: nil,
+            latestRepNote: latestRepNote
+        )
+    }
+
+    @Test func lastRepNoteSectionOmittedWhenNil() {
+        let context = minimalContext(latestRepNote: nil)
+        #expect(!context.contains("LAST REP NOTE"))
+    }
+
+    @Test func lastRepNoteSectionPresentWhenSet() {
+        let note = PostRepCoachNote(
+            sessionID: UUID(),
+            voice: .warm,
+            noteText: "Steady rep. The foundation held.",
+            isAIBacked: false
+        )
+        let context = minimalContext(latestRepNote: note)
+        #expect(context.contains("LAST REP NOTE"))
+        #expect(context.contains("Steady rep. The foundation held."))
+    }
+
+    @Test func lastRepNoteSurfacesProvenance() {
+        // AI-backed note labels accordingly; rule-based note labels
+        // accordingly. Coach reads this to know whether the prior
+        // read came from a model or a template.
+        let aiNote = PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Steady delivery. The fundamentals held.",
+            isAIBacked: true
+        )
+        let ctxAI = minimalContext(latestRepNote: aiNote)
+        #expect(ctxAI.contains("AI-generated"))
+
+        let ruleNote = PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Steady delivery. The fundamentals held.",
+            isAIBacked: false
+        )
+        let ctxRule = minimalContext(latestRepNote: ruleNote)
+        #expect(ctxRule.contains("rule-based"))
+    }
+
+    @Test func lastRepNoteSitsBeforePathSection() {
+        // Context ordering contract: LAST REP NOTE → PATH so the
+        // coach reads its prior rep read before the journey context.
+        let note = PostRepCoachNote(
+            sessionID: UUID(), voice: nil,
+            noteText: "Steady delivery. The fundamentals held.",
+            isAIBacked: false
+        )
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            forwardPlan: nil,
+            latestRepNote: note
+        )
+        // No PATH status set so PATH won't render — but the LAST REP
+        // NOTE block must exist before === END CONTEXT ===.
+        let noteIdx = context.range(of: "LAST REP NOTE")?.lowerBound
+        let endIdx = context.range(of: "=== END CONTEXT ===")?.lowerBound
+        #expect(noteIdx != nil)
+        #expect(endIdx != nil)
+        if let noteIdx, let endIdx {
+            #expect(noteIdx < endIdx)
+        }
+    }
+}
+

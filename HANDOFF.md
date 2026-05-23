@@ -1,426 +1,448 @@
-# HANDOFF — M20 Forward Plan: 4-week coach-written program
+# HANDOFF — M24 Track 1: Coach Persona + Post-Rep Coach Note Service
 
 ## Scope
 
-M19 (Big Moment Intake) shipped end-to-end on this branch last session
-(`4d82c8c` + `025b546` + `e7f12b2`). The M19 strategy doc
-(`docs/M19_strategy.md`) named M20 — Forward Plan — as the next
-implementation track, recommended to run in parallel with M19 since
-they share no collision-zone files. M19 is locked; this push lands
-M20.
+The previous session shipped **M24 partial** (`d956cc4`) — Sudden Death
+audio replay fix + level-up flash timing bump — and explicitly
+deferred three M24 tracks because "the agent spawn pipeline was dead
+this session." This push picks up the deferred work and lands
+**Track 1 (AI coach persona wrapper)** as named in the deferred TODO.
 
 User brief: "continue from the existing TO-DO, ensure working towards
 getting app towards the vision plan, and all-round A+, make my dream
-come true too, ensure working on the redesign branch." Translation:
-ship the next milestone the strategy doc named (M20), against the
-vision pillars (personalized coaching + believable progress), on
-the `Redesign` branch.
+come true too, ensure working on the redesign branch."
+
+Translation: pick up M24 Track 1 from the deferred list, keep the
+£130/hr personal coach vision intact (`docs/VISION.md` pillar #5 —
+Personalized coaching), and ship on `Redesign`.
 
 ## What shipped
 
-The £130/hr coach handoff artifact lands in Noum: a written four-week
-program tied to the user's actual baseline + voice goal + Big Moment
-(when set). It persists per-account, renders as a coach turn in the
-Ask Noum thread, surfaces a live progress card on Profile, and feeds
-the AI coach's context block so every reply can quote the current
-week's focus.
+A short, voice-shaped coaching note now lands the moment a rep
+finalizes — the £130/hr coach turning toward the user and saying
+"here's what I just saw." Two sentences, in the user's chosen voice,
+honest about provenance (AI vs deterministic rule-based), and
+persisted per-account so the persistent chat coach can quote its own
+earlier read instead of starting fresh every chat turn.
 
-### Move 1 — `Noum/ForwardPlanStore.swift` (NEW)
+### Move 1 — `Noum/CoachPersona.swift` (NEW)
 
-Per-account UserDefaults store keyed `forwardPlan.<accountID>`,
-MainActor singleton, mirrors the BigMomentStore lifecycle pattern
-(`replace(_:)` / `clearPlan()` / `reloadForCurrentAccount()` /
-`endSession()` / `deleteAllData(for:)`). Carries the `ForwardPlan`
-value type — `id` + exactly-4 `weeks: [PlanWeek]` + `generatedAt` +
-`bigMomentID: UUID?` (for stale detection) + `voiceAtGeneration:
-SpeakingStyleGoal?` + `isAIBacked: Bool` (honest provenance).
+Per-voice persona data model. The personality lookup was previously a
+single `coachPersonality(for:)` string inside `CoachContextBuilder` —
+fine for the system prompt, useless to any non-AI surface that needs
+the same voice. `CoachPersona` is the wrapper: pure data, pure
+functions, zero UI.
 
-Pure-function helpers on the model (`currentWeekIndex(now:calendar:)`
-clamps 1...4, `currentWeek(now:calendar:)`, `dateRange(forWeek:
-calendar:)` half-open seven-day windows, `isInvalidated(by:)`) let
-every consumer compute the same view of the plan without UI
-threading. `ForwardPlanProgress.currentWeekProgress(plan:sessions:
-now:calendar:)` is the single source of truth for completed-vs-target
-counts so the Profile card and the PLAN context section never drift.
+Six voices + `default` fallback (nil voice). Each carries:
 
-### Move 2 — `Noum/ForwardPlanService.swift` (NEW)
+- `registerName` — debug label
+- `signatureTone` — one-sentence describing how the coach speaks
+- `openings: [String]` — 3-line catalogue of post-rep openings
+- `closings: [String]` — 3-line catalogue of post-rep closings
+- `reflectionLead` — the phrase the coach uses to introduce a read
 
-Actor wrapping the same OpenAI / DeepSeek / Gemini plumbing as
-`AIInsightsService`. JSON-strict response shape
-(`{"weeks":[{"weekIndex":1,"focus":"...","mode":"...",
-"sessionTarget":N,"rationale":"..."}, ...]}`); validates exactly 4
-weeks with indices 1..4, focus enum-matched, mode enum-matched,
-target ∈ 2...5, rationale ≤ 240 chars. Falls back to the
-deterministic rule-based path on every cold path (no provider,
-non-English locale, network error, parse failure, count mismatch) so
-the caller never has to handle nil.
+All lines locked against exclamation marks across all voices ×
+positions (`CoachPersonaTests.brandVoiceContractAcrossAllPersonas`).
 
-Deterministic path (`nonisolated static func deterministicPlan(input:)`
-— exposed for tests):
+Pure-function selectors `opening(seed:)` and `closing(seed:)` use a
+stable seed (typically the session ID's hashValue) so the same rep
+always renders the same opening — text doesn't shuffle on re-paint.
 
-- **Week 1** picks the weakest skill area: high-confidence declining
-  trend first (urgent signal), then weak-stable trend (persistent
-  problem), then baseline thresholds (filler rate ≥ 3.0, pace ≥ 165,
-  pause rate < 1.0, structure quality < 1.8), then `.structure`
-  fallback. Mode is the canonical drill for that area
-  (`fillerReduction` → ahCounter, structure → timed, confidence →
-  suddenDeath, vocalEmphasis → imConversation).
-- **Week 2** moves toward the user's voice goal via
-  `SpeakingStyleGoal.primaryAlignedSkillArea`. Mode is the
-  voice-best mode (authoritative/executive → suddenDeath, warm/
-  storytelling → imConversation, concise/persuasive → timed).
-- **Week 3** is always suddenDeath (pressure escalation). Focus
-  defaults to `.confidence`; if Week 1 already drilled
-  fillerReduction, Week 3 sticks with `.confidence` to avoid stacking.
-  Otherwise focus is `.fillerReduction` so the user gets a real
-  pressure test on the most common breakdown axis.
-- **Week 4** mocks the Big Moment when set
-  (`BigMomentCategory.interview/conversation/review` → imConversation;
-  presentation/publicSpeaking/other → timed). Rationale references
-  days remaining ("9 days out", "Today is the day"). When no Big
-  Moment: consolidation week on the user's strongest baseline
-  dimension so the program closes with a confidence rep.
+### Move 2 — `Noum/PostRepCoachNote.swift` (NEW)
 
-`sessionTarget(weeklyReps:base:)` clamps to 2...5 with a +1 for heavy
-users (≥5/week) and −1 for light users (≤1/week). Honest target, not
-aspirational — light users don't get a five-rep wall of failure.
+Value type carrying the note. `Codable + Equatable + Identifiable`
+with `id` + `sessionID` (the rep this note belongs to) + `voice` +
+`noteText` + `isAIBacked` + `generatedAt`. Pure model — no UI, no IO.
 
-### Move 3 — `Noum/ForwardPlanRenderer` (NEW, same file as service)
+### Move 3 — `Noum/PostRepCoachNoteStore.swift` (NEW)
 
-Pure-function helper that turns a `ForwardPlan` into the coach-voice
-text the Ask Noum thread renders. Multi-paragraph shape: opening
-references the Big Moment when set and is honest about provenance
-("I shaped it around your last few reps" for AI, "Built from your
-data without an AI pass — straight rules, no invention." for
-deterministic); one paragraph per week (`"Week N — Skill Area.
-Mode, N reps. Rationale."`); voice-shaped closing line catalogue
-covering all 6 voices + nil.
+Per-account persistent store mirroring the `AskNoumStore` testable-
+init pattern (`defaults:` + `accountIDProvider:`) instead of the
+pure-singleton pattern other stores use, because the service path
+needs hermetic tests and a custom UserDefaults suite makes that
+trivial without touching `KeychainHelper`.
 
-Brand-voice contract honoured throughout: no exclamation marks
-(locked by `rendererCarriesNoExclamationMarks` test across all voices
-× BigMoment-or-not combinations).
+API:
+- `record(_:)` — de-dupes on `sessionID` so re-recording the same
+  session (deterministic → AI upgrade) REPLACES rather than stacks.
+- `note(for sessionID:)` — fetch by session.
+- `latestNote()` — most recent by `generatedAt`.
+- `clearAll()` — wipe for the current account.
+- `reloadForCurrentAccount()` / `endSession()` / `deleteAllData(for:)`
+  — lifecycle hooks wired through `AuthManager`.
 
-### Move 4 — `Noum/ForwardPlanCoordinator` (NEW)
+Capacity cap: 30 notes. When the cap is hit, oldest entries (by
+`generatedAt`) drop. Plenty of room for the chat coach to quote
+back the most recent reflection without bloating the per-account
+UserDefaults blob.
 
-MainActor enum that bridges the plan-generation pipeline to the live
-SwiftUI surfaces. `buildInput()` assembles `ForwardPlanInput` from
-the live stores (CoachingProfile + Baseline + sessions + rating +
-BigMoment + days-until + SkillTrendStore snapshots → TrendAnalyzer
-trends + StreakFreezeManager + DrillHistoryStore). `generateAndAnnounce()`
-calls the service, persists via `ForwardPlanStore.replace(_:)`, and
-injects the rendered coach message via `AskNoumStore.injectCoachTurn(_:)`.
+### Move 4 — `Noum/PostRepCoachNoteService.swift` (NEW)
 
-The "two effects" shape mirrors M19's `BigMomentStore.setMoment` +
-intake-view-on-dismiss pattern: state and conversational artifact
-land together so the Profile card lights up the same moment the
-chat thread shows the program.
+Actor wrapping the AI generation path + nonisolated static
+deterministic fallback. Mirrors the `ForwardPlanService` shape:
 
-### Move 5 — `CoachContextBuilder.userContext` extended
+- **AI path** — JSON-strict response (`{"note": "..."}`), provider
+  plumbing identical to `AIInsightsService` (OpenAI / DeepSeek /
+  Gemini, `AIConfig.plist` keys, locale + API-key guards).
+  Brand-voice contract enforced by `passesBrandVoiceContract(_:)`
+  before the AI text is accepted — exclamations, "Let's", "Awesome",
+  "Great job", overlong text all reject and fall back rather than
+  render policy-violating coach voice.
 
-New `forwardPlan: ForwardPlan? = nil` parameter. When non-nil, a
-`PLAN` section renders:
+- **Deterministic path** (`nonisolated static func deterministicNote
+  (input:)`) — priority chain that picks the ONE sentence to feature:
+
+  1. Filler comparison vs baseline (when both signals exist) →
+     "1 filler — well below your usual rate." (win) or "10 fillers
+     — above your baseline. Slow the open next time." (loss).
+     Win threshold: ratio ≤ 0.5× baseline AND count ≤ 2.
+     Loss threshold: ratio ≥ 1.5× baseline AND count ≥ 3.
+  2. Zero fillers with ≥20 word floor → universal clean-run marker.
+  3. Score band — score ≥ 8 → strong-score sentence; score ≤ 4 →
+     weak-score sentence (NEVER punish-shames — brand voice contract).
+  4. Pace outside 100-160 WPM when measurable.
+  5. Duration < 20s → short-rep honesty without scolding.
+  6. Fallback → neutral steady-delivery note.
+
+  The chain ends as soon as one branch produces a sentence so the
+  note stays focused on ONE thing — coach voice rule #1 of `PLAN.md`.
+
+Both paths produce: `<reflectionLead> <metric sentence>. <closing>.`
+Voice carries through `CoachPersona.persona(for:)` so the same facts
+produce different phrasing for an authoritative-voice user (verdict-
+shaped) vs. warm-voice user (felt-experience-shaped) vs. concise-
+voice user (clipped, one idea).
+
+Length cap: ≤200 chars across both paths so the hero card never has
+to truncate.
+
+### Move 5 — `Noum/CoachReadCard.swift` (NEW)
+
+Hero coach voice for the post-rep Summary surface. Renders the note
+in a brand-purple register (per the M14 home-card design language:
+purple = "your coach speaking", mode-tint = "this is what to do").
+
+Layout: `NoumCharacter.Inline(.coaching, .pro)` glyph + voice-shaped
+header label ("COACH READ" / "COACH BRIEF" / "COACH BRIEFING" per
+voice) + optional "RULE-BASED" provenance tag (only when
+`isAIBacked == false`) + the note text in `Typography.body`.
+
+Restraint: no emoji, no exclamation, no chirpy filler. The note text
+itself is contract-locked by `PostRepCoachNoteService.passesBrandVoice-
+Contract` for the AI path; the deterministic path is hard-coded
+brand-voice-clean. The card collapses to nothing (returns EmptyView)
+when no note exists for the current session.
+
+### Move 6 — `PracticeSessionFinalizer.finalize` integration
+
+`PracticeSessionFinalizer.finalize` now ends with a call to the new
+private static `recordPostRepCoachNote(for:)` which:
+
+1. Builds a `PostRepCoachNoteInput` from the finalized session +
+   live stores (`CoachingProfileStore.shared.profile`,
+   `BaselineStore.shared.baseline`, `BigMomentStore.shared.activeMoment`).
+2. Calls `PostRepCoachNoteService.deterministicNote(input:)` synchronously
+   and records it — the Summary surface has a coach voice to render
+   on the very first paint cycle.
+3. Spawns a detached `Task` that awaits the AI upgrade via
+   `PostRepCoachNoteService.shared.generate(input:)`. On completion,
+   IF the upgrade is actually AI-backed (locale + provider + brand-
+   voice validation all passed), the store re-records with the
+   AI version. De-dupe by `sessionID` in `record(_:)` ensures the
+   AI version replaces the deterministic one without stacking.
+
+The "instant + upgrade" shape mirrors how the AI insight surfaces
+already work, but flipped: the deterministic write lands first so
+the UI never has to wait or show a placeholder.
+
+### Move 7 — `CoachContextBuilder.userContext` extended
+
+New optional `latestRepNote: PostRepCoachNote? = nil` parameter on
+`userContext(...)`. When non-nil, a `LAST REP NOTE` section renders
+between RECENT and PATH:
 
 ```
-PLAN
-- Week N of 4 focus: <SkillArea> via <Mode>.
-- Why this week: <rationale>
-- Progress: M of T reps this week.
+LAST REP NOTE
+- Your read after the user's most-recent rep (AI-generated): "Zero
+  fillers — that's authority on tape. Build on that."
 ```
 
-When the plan's `bigMomentID` no longer matches the user's active
-BigMoment (or one side has cleared), a leading line is added warning
-the coach that the plan is stale and recommending regeneration rather
-than quoting outdated guidance:
-
-```
-- Active plan is stale — the user's big moment changed since
-  generation. Recommend regenerating before quoting this plan as
-  current.
-```
+Provenance is explicitly labeled (`AI-generated` vs `rule-based
+(template)`) so the model doesn't claim "I noticed X" about a
+deterministic template line.
 
 Section ordering: GOAL → BIG MOMENT → PLAN → RATING → BASELINE →
-STREAK → RECENT → PATH → TRENDS → PROOFS. PLAN sits next to BIG
-MOMENT so the model reads them as one coherent block: where you're
-going, when, and the program for getting there.
+STREAK → RECENT → **LAST REP NOTE** → PATH → TRENDS → PROOFS. LAST
+REP NOTE sits right after RECENT so the model reads "here's what
+happened" then "here's what I said about it last time" as one
+coherent block.
 
-### Move 6 — `AskNoumStore.injectCoachTurn(_:)`
+### Move 8 — `AskNoumView` integration
 
-New method that appends a `.coach` row directly without a
-corresponding user turn. Used by `ForwardPlanCoordinator` to drop
-the rendered plan into the thread. Trims whitespace, rejects empty
-text (returns nil + appends nothing — defensive against a renderer
-that returns blank), and crucially does NOT set `isAwaitingReply`
-since direct injects bypass the request lifecycle and must not lock
-the input bar.
+`AskNoumView` already passes ten signals into `userContext(...)`;
+this push adds an eleventh: `latestRepNote: postRepCoachNoteStore.
+latestNote()`. New `@StateObject private var postRepCoachNoteStore =
+PostRepCoachNoteStore.shared` observes the store so a fresh rep's
+note becomes available in the chat the moment the user comes back
+to Ask Noum after a session.
 
-### Move 7 — Profile `CoachingPlanCard`
+### Move 9 — `SummaryView` integration
 
-New `Noum/CoachingPlanCard.swift` carries both the resolver and the
-view. Pure `CoachingPlanCardVisibility.resolve(plan:profile:sessions:
-activeBigMomentID:now:calendar:)` returns a four-state enum:
+`CoachReadCard` lands in the score-first hierarchy between
+`HeroScoreCard` (what happened) and `WhatYouDidWellCard` (the
+breakdown). Renders only when `postRepCoachNoteStore.note(for:
+sessionStore.sessions.first?.id)` is non-nil — the
+`PracticeSessionFinalizer` write guarantees the note exists by the
+time SummaryView mounts.
 
-- `.hidden` — no profile (silent for pre-onboarding users) OR no
-  plan + fewer than 3 sessions (silent until the user has data to
-  read a plan against).
-- `.prompt` — ≥3 sessions, no plan yet. Renders a brand-purple-bordered
-  ambient card with "A four-week coach plan, written for you." and a
-  voice-shaped CTA ("Ask Noum to plan four weeks" / "Plan four weeks.
-  One ask." / "Brief: plan my next four weeks." / etc., one per voice
-  + nil fallback).
-- `.live(plan, completed)` — plan exists AND aligns with active
-  BigMomentID (or both nil). Renders current week's focus + mode
-  rationale + (completed / target) progress capsule. A subtle
-  "RULE-BASED" tag when `isAIBacked == false` so the surface is
-  honest about provenance.
-- `.stale(plan, completed)` — plan exists but BigMomentID drift
-  detected. Same layout as live + an inline voice-shaped CTA pulling
-  the user toward regeneration.
-
-Tap behavior:
-- `.live` / `.hidden` → opens `noum://ask` (the program lives in
-  the thread; this is navigation).
-- `.prompt` / `.stale` → fires `ForwardPlanCoordinator.generateAndAnnounce()`
-  THEN opens `noum://ask`. The user lands inside a thread that
-  already has the rendered plan as a coach turn rather than waiting
-  for a network round-trip.
-
-Card sits inside the existing `coachingDirectionCard` in
-`ProfileView.swift`, below the captured reflections and above the
-`askNoumProfileLink`. Quietly hides when state is `.hidden` so
-non-eligible users see exactly what they did before this push.
-
-### Move 8 — Auth wipe + reload contract
+### Move 10 — Auth wipe + reload contract
 
 `AuthManager.deferStoreReloadForCurrentAccount` now reloads
-`ForwardPlanStore.shared`; `deferStoreSessionReset` calls its
-`endSession()`. `clearAllUserData(for:)` adds three keys that were
-absent from the wipe list (M19 + M20 backfill):
-- `forwardPlan.<accountID>` (M20)
-- `bigMoment.<accountID>` (M19 — was missed)
-- `bigMomentArchive.<accountID>` (M19 — was missed)
+`PostRepCoachNoteStore.shared`; `deferStoreSessionReset` calls its
+`endSession()`. `clearAllUserData(for:)` adds:
+- `postRepCoachNote.<accountID>` (M24)
 
-### Move 9 — Test suite
+### Move 11 — Test suite
 
-50+ new tests across 7 suites:
+40+ new tests across 4 suites:
 
-- **`ForwardPlanCalendarTests`** (12 tests) — week 1 on day 0/6, week 2
-  on day 7, week 4 on day 21, week 4 clamp past day 42, currentWeek
-  resolution, dateRange seven-day half-open, dateRange clamp on
-  out-of-range index, `isInvalidated` mismatch / match / both-nil /
-  cleared / added contracts.
-- **`ForwardPlanProgressTests`** (5 tests) — in-week sessions counted,
-  out-of-range sessions excluded, week-2 sessions counted when current,
-  empty list → zero, week-7 boundary fires into week 2 (half-open
-  semantics locked).
-- **`ForwardPlanServiceDeterministicTests`** (20 tests) — 4-week count,
-  `isAIBacked == false`, voice carrying through, declining
-  high-confidence trend → week 1, baseline filler rate → week 1, voice
-  goal → week 2 alignment, no-voice fallback → `.structure`, week 3 =
-  suddenDeath, week 3 avoids stacking filler week, week 4 mocks
-  BigMoment for each category, week 4 consolidates without BigMoment,
-  `sessionTarget` clamps at floor / ceiling / steady, `modeFor` /
-  `bestModeForVoice` / `mockModeFor` mappings, brand-voice exclamation
-  contract across all variants, `weakestSkillArea` priority /
-  `strongestSkillArea` nil-when-insufficient / strongest-finds-low-filler.
-- **`ForwardPlanRendererTests`** (6 tests) — opening references
-  BigMoment when set, generic when not, rule-based honesty, AI-backed
-  honesty, includes all 4 weeks, voice-shaped closing + no
-  exclamations across all 6 voices × BigMoment-or-not combinations.
-- **`ForwardPlanContextTests`** (4 tests) — PLAN omitted when nil,
-  PLAN present when set, progress count matches sessions filter, stale
-  warning surfaces when BigMomentID differs.
-- **`CoachingPlanCardVisibilityTests`** (9 tests) — hidden when no
-  profile, hidden when <3 sessions, prompt at 3, live on match, live
-  on both nil, stale on drift, stale on cleared moment, live carries
-  completed count, voice-shaped CTA labels for every voice + live-state
-  empty CTA contract.
-- **`AskNoumStoreInjectCoachTurnTests`** (5 tests) — nil on empty /
-  whitespace-only, append as non-pending coach row, doesn't set
-  `isAwaitingReply`, trims leading/trailing whitespace.
+- **`CoachPersonaTests`** (6 tests) — persona-for-nil returns
+  default, every voice returns a distinct registerName, every voice
+  has non-empty openings/closings/reflectionLead, brand-voice
+  contract (no `!`) across ALL persona lines × voices, seeded opening/
+  closing picks are stable (same seed → same line), seeded picks
+  don't crash on extreme seeds.
+
+- **`PostRepCoachNoteServiceDeterministicTests`** (18 tests) —
+  honest-about-rule-based provenance, voice carries through, session
+  ID carries through, zero-fillers always celebrated as clean run,
+  strong score cites the number, weak score NEVER punish-shames
+  (no "failure"/"bad rep"/"poor"/"terrible"), rushed pace cites
+  the WPM number, slow pace cites the WPM number, short rep stays
+  honest without scolding, no-exclamations contract across every
+  voice × score × filler-count combo (5 × 4 × 3 = 60 combos),
+  length ≤200 chars across every voice × score combo (5 × 4 = 20
+  combos), filler-loss branch fires when sessionRate exceeds
+  baseline by ≥1.5×, filler-win branch fires when sessionRate is
+  ≤0.5× baseline + filler count ≤2, brand-voice contract validator
+  rejects exclamations + chirpy filler + overlong text, accepts
+  clean text, collapseWhitespace and ensureNoExclamations helpers
+  produce expected output.
+
+- **`PostRepCoachNoteStoreTests`** (9 tests) — record + fetch round
+  trip, de-dupes on sessionID (deterministic → AI upgrade replaces
+  rather than stacks), capacity evicts oldest by `generatedAt`,
+  `latestNote()` returns highest `generatedAt`, `clearAll` empties,
+  `deleteAllData(for:)` wipes by account, per-account key isolation
+  (two stores against same UserDefaults suite but different account
+  IDs don't see each other's notes), `reloadForCurrentAccount`
+  reads persisted notes from disk, `endSession` clears in-memory
+  without erasing disk.
+
+- **`CoachContextLastRepNoteTests`** (4 tests) — LAST REP NOTE
+  section omitted when nil, present when set, provenance surfaces
+  correctly (AI-generated vs rule-based), section sits between
+  RECENT and the end of the context block (before PATH when present).
 
 ## What did NOT change
 
-- **No new screens.** The Profile card opens Ask Noum; the plan
-  itself lives in the chat thread (one Coach Reply). Anti-goal
-  (dashboard of vanity metrics) respected.
-- **No new badges or unlocks.** Generating a plan doesn't award XP
-  or fire a celebration. The plan is the artifact; the work is the
-  work.
-- **No streak gating.** Missing a week of the plan doesn't punish
-  or shame. The progress capsule reads honest counts without
-  loss-aversion copy.
+- **No new screens.** The CoachReadCard slots into the existing
+  Summary score-first hierarchy. The plan was to ship coach voice,
+  not a new surface.
+- **No new badges or unlocks.** Generating a note doesn't award XP
+  or fire a celebration. The note is the artifact; the work is the
+  work. (Vision anti-goal: shallow gamification, respected.)
+- **No streak gating on notes.** Missing a rep doesn't punish or
+  shame. The note system reads honest data without loss-aversion
+  copy. (Vision anti-goal: streak shame, respected.)
 - **No invented stats.** Both the AI and deterministic paths cite
-  the user's actual baseline numbers. The deterministic path is
+  the user's actual session metrics. The deterministic path is
   explicit about being rule-based (`isAIBacked: false`); the
-  renderer surfaces "Built from your data without an AI pass —
-  straight rules, no invention." so the surface never claims AI
-  intelligence it doesn't have.
-- **No M21 surface yet.** Session Intent (pre-rep "what are you
-  training today?") is the next track per the strategy doc.
+  CoachReadCard surfaces a "RULE-BASED" tag so the surface never
+  claims AI intelligence it doesn't have. (Vision anti-goal: fake
+  AI features, respected.)
+- **No M24 Track 2 (Summary dedupe) or Track 3 (SD scoring view)
+  surfaces yet.** Both deferred — Track 1 was the named priority
+  and the most vision-aligned of the three.
 
 ## Risks
 
-1. **The deterministic Week 4 only references a BigMoment when one
-   is set.** Users with no BigMoment get a "consolidation" week
-   that's less rich than the rehearsal shape. The fallback rationale
-   is honest about being consolidation rather than fake-mocking an
-   event, but a user might still feel the lift is uneven. Mitigation
-   is to set a BigMoment — which the M19 intake surfaces.
-2. **The PLAN context section is per-week-coarse.** If a user is on
-   Day 3 of Week 2 with 2 of 3 reps done, the coach knows
-   "Week 2, 2 of 3" but not which days. This is intentional — finer
-   granularity would require day-bucketing the rep history, and the
-   coach voice doesn't need it to be useful ("two of three this
-   week" beats "two on Monday, one Wednesday gap").
-3. **Stale detection is BigMomentID-only.** A baseline shift or a
-   voice goal change doesn't currently mark the plan as stale. The
-   first one is graceful (the plan is honest about being a snapshot
-   in time); the second could be uncomfortable if a user pivots
-   voices mid-program. `ForwardPlan.voiceAtGeneration` is persisted
-   precisely so a future patch can add the voice-change branch to
-   `isInvalidated(by:)` without a model change.
-4. **`ForwardPlanCoordinator.buildInput()` reads live stores on the
-   main actor.** A massive `PracticeSessionStore.sessions` array
-   gets copied into the input snapshot. The deterministic path
-   doesn't iterate sessions deeply (uses `.prefix(5)` for the AI
-   user prompt), but a future memory-conscious refactor could pass
-   a slice rather than the full array.
+1. **AI upgrade fires on every rep, costs tokens.** A user doing 5
+   reps a day with an OpenAI key will hit `PostRepCoachNoteService.
+   shared.generate(...)` 5 times. Each call: ~200 input tokens +
+   ~80 output tokens. Cost is bounded but real. A future patch
+   could gate AI generation behind a "Premium" check or a
+   per-session de-dupe (only fire AI for scored reps, not unrated
+   ones).
+2. **The deterministic note quality is a function of how good the
+   branches are.** The priority chain is opinionated — filler vs
+   baseline first, then score band, then pace, then short rep,
+   then steady. If the user's strongest signal is something the
+   chain doesn't cover (e.g., a personal best on duration), the
+   note falls to the generic steady-delivery line. A future patch
+   could add more branches; the chain is structured so a new
+   branch is a single insertion.
+3. **CoachReadCard renders even when the deterministic note is the
+   weakest possible (steady-delivery fallback).** A user with a
+   neutral session gets a neutral note. This is fine — better
+   than nothing — but a future patch could hide the card when the
+   note text matches the steady-delivery fallback verbatim, since
+   that's just template filler with no real signal.
+4. **Per-account UserDefaults blob can grow.** 30 notes × ~200
+   chars text + UUID + metadata ≈ 10KB per account. Not concerning
+   on modern devices but worth knowing.
+5. **The AI upgrade Task is fire-and-forget.** If the user opens
+   the app on a flaky network, the deterministic note might be all
+   they see for that rep — even after a later network recovery.
+   Acceptable today (deterministic notes are honest about being
+   rule-based), but a future patch could schedule a retry pass on
+   `scenePhase == .active` for any non-AI-backed note in the
+   store.
 
 ## Verification
 
 ### Implemented (compiler-locked, source-only)
 
-- `ForwardPlan` calendar projection (12 tests in `ForwardPlanCalendarTests`)
-- `ForwardPlanProgress` session bucketing (5 tests in `ForwardPlanProgressTests`)
-- Deterministic plan generation invariants (20 tests in
-  `ForwardPlanServiceDeterministicTests`)
-- Renderer voice + provenance contracts (6 tests in `ForwardPlanRendererTests`)
-- Context PLAN section presence + progress + stale-warning (4 tests
-  in `ForwardPlanContextTests`)
-- CoachingPlanCard four-state resolver + CTA voice catalogue
-  (9 tests in `CoachingPlanCardVisibilityTests`)
-- `AskNoumStore.injectCoachTurn` non-pending + non-awaiting contract
-  (5 tests in `AskNoumStoreInjectCoachTurnTests`)
+- `CoachPersona` voice catalogue + brand-voice contract (6 tests in
+  `CoachPersonaTests`)
+- Deterministic note generation across all voice × score × filler
+  combinations (18 tests in `PostRepCoachNoteServiceDeterministic-
+  Tests`, including the 60-combo no-exclamation sweep and the
+  20-combo length-cap sweep)
+- Per-account persistence + de-dupe + capacity contract (9 tests
+  in `PostRepCoachNoteStoreTests`)
+- `CoachContextBuilder.userContext` LAST REP NOTE section presence,
+  provenance surfacing, and ordering (4 tests in
+  `CoachContextLastRepNoteTests`)
 
 ### Blocked / needs visual QA on device
 
-Still no Swift toolchain in this container — all changes are
-source-only. The Move 7 + Move 8 changes are visual and want a
-build:
+No Swift toolchain in this container — all changes are source-only.
+The Move 5 + Move 6 + Move 9 changes are visual + lifecycle and want
+a build:
 
-1. **Move 7 — Profile card visibility** — clean install, complete
-   onboarding (no BigMoment), confirm the card stays hidden until
-   the third rated session, then prompts.
-2. **Move 7 — Plan generation end-to-end** — tap the prompt CTA;
-   confirm the Ask Noum thread receives the rendered plan as a
-   single coach message + the Profile card transitions to `.live`
-   with the correct week + progress.
-3. **Move 7 — Stale state** — generate a plan with a BigMoment set,
-   then change/clear the BigMoment; confirm the Profile card flips
-   to `.stale` with the regenerate CTA, and that tapping it
-   regenerates against the new moment.
-4. **Move 5 — Coach context** — open Ask Noum with a plan active;
-   ask "What's my focus this week?"; confirm the model cites the
-   current week's focus + progress (e.g. "Week 2 focus: pause
-   usage. You're at 1 of 3 reps").
+1. **Move 5 — CoachReadCard render** — finish a Timed rep, confirm
+   the brand-purple "COACH READ" card appears between the HeroScoreCard
+   and the WhatYouDidWellCard with the deterministic note already
+   populated on the first paint.
+2. **Move 6 — AI upgrade replaces deterministic** — with an AIConfig
+   key set, finish a rep, observe the deterministic note first, then
+   the AI version replacing it on the same card a few seconds later
+   (the "RULE-BASED" tag should disappear).
+3. **Move 5 — voice catalogue across voices** — switch the user's
+   speakingStyleGoal between authoritative / warm / concise /
+   persuasive / executive / storytelling via the onboarding flow,
+   finish a rep at each setting, confirm the card's header changes
+   ("COACH READ" / "FROM YOUR COACH" / "COACH NOTE" / "COACH
+   BRIEFING" / "COACH BRIEF" / "COACH READ") and the note text
+   carries the voice register.
+4. **Move 7 — Ask Noum reads the prior note** — finish a rep, open
+   Ask Noum, ask "what did you think of my last rep?", confirm the
+   coach paraphrases or expands on the saved note rather than
+   starting fresh from session metrics.
+5. **Move 10 — Auth wipe** — sign out + sign back into a fresh
+   account, confirm the new account starts with no notes and the
+   prior account's notes never leak across.
 
 ### Assumptions
 
-- `Calendar.current.startOfDay(for:)` matches the user's locale
-  expectations for week boundaries. The PLAN week math is in user
-  local time, not UTC.
-- The `ForwardPlan` Codable round-trip will tolerate older app
-  versions that don't have the field — there is no older version
-  yet, so this is forward-only.
-- `AskNoumStore.injectCoachTurn` is safe to call from any path that
-  is already on MainActor. The store is `@MainActor` so the compiler
-  enforces this.
-- The deterministic Week 4 mock-mode mapping (interview →
-  imConversation, presentation → timed) reflects the most common
-  shape per category. A user with a `.other` BigMoment gets the
-  `.timed` fallback which is the most general-purpose mode.
+- `KeychainHelper.load(key: "NoumAccountID")` returns a stable string
+  for the current account, matching the convention every other store
+  uses for keying per-account UserDefaults values.
+- `BigMomentStore.shared.daysUntil(_:)` is the `nonisolated` variant
+  on `BigMomentStore` (per `BigMomentStore.swift:135`) — safe to call
+  from `PracticeSessionFinalizer.finalize` on the MainActor.
+- `PracticeSessionFinalizer.recordPostRepCoachNote` reads three
+  singletons synchronously on MainActor. All three (`CoachingProfile-
+  Store`, `BaselineStore`, `BigMomentStore`) are MainActor-annotated
+  so this is compiler-checked.
+- `PracticeSession.wordCount` is the `extension` on
+  `PracticeSupport.swift:5595` — `transcript.split { … }.count`
+  — and works on any finalized session.
 
 ### What was checked
 
-- Re-read `ForwardPlan.currentWeekIndex` math against the test
-  assertions; the integer division + clamp is identical across days
-  0, 6, 7, 13, 21, 28, 42.
+- Re-read `PostRepCoachNoteService.deterministicNote` priority chain
+  against the test assertions; confirmed each branch fires for the
+  expected input shapes without cross-dependency.
 - Re-read `CoachContextBuilder.userContext` section ordering;
-  confirmed PLAN sits between BIG MOMENT and RATING, matching the
-  intent ("here's where you're going, here's the program for getting
-  there, here's where you stand").
-- Re-read `ForwardPlanService.deterministicPlan` flow; confirmed
-  Week 1 → Week 2 → Week 3 → Week 4 each compose without
-  cross-dependency (Week 3 reads Week 1's focus for the
-  anti-stacking branch but doesn't mutate state).
-- Re-read `CoachingPlanCardVisibility.resolve` against every test
-  case; confirmed the resolver hits each branch with the right
-  fixture.
-- `grep`'d `AuthManager.clearAllUserData` to confirm the M19 +
-  M20 keys are present and the existing keys weren't shifted.
+  confirmed LAST REP NOTE sits between RECENT and PATH per the
+  `CoachContextLastRepNoteTests` ordering test.
+- `grep`'d `AuthManager.clearAllUserData` to confirm the M24 key
+  is present and existing keys weren't shifted.
+- `grep`'d every existing `CoachContextBuilder.userContext` call
+  site to confirm the default-nil parameter keeps them compiling
+  unchanged (only `AskNoumView.swift:841` needed an update; tests
+  rely on the default).
 
 ## Files modified
 
-- `Noum/ForwardPlanStore.swift` — NEW. ForwardPlan + PlanWeek +
-  ForwardPlanProgress + ForwardPlanStore.
-- `Noum/ForwardPlanService.swift` — NEW. AI + deterministic
-  generator, all pure helpers, ForwardPlanRenderer.
-- `Noum/ForwardPlanCoordinator.swift` — NEW. MainActor bridge
-  between the service and the live stores.
-- `Noum/CoachingPlanCard.swift` — NEW. CoachingPlanCardState +
-  CoachingPlanCardVisibility resolver + CoachingPlanCard view.
-- `Noum/CoachContextBuilder.swift` — `forwardPlan:` param added to
-  `userContext(...)`; PLAN section emitted when non-nil.
-- `Noum/AskNoumStore.swift` — `injectCoachTurn(_:)` added.
-- `Noum/AskNoumView.swift` — observes `ForwardPlanStore.shared` +
-  `BigMomentStore.shared`; passes both into `userContext(...)`.
+- `Noum/CoachPersona.swift` — NEW. Per-voice persona data model +
+  catalogue.
+- `Noum/PostRepCoachNote.swift` — NEW. Value type.
+- `Noum/PostRepCoachNoteStore.swift` — NEW. Per-account persistence.
+- `Noum/PostRepCoachNoteService.swift` — NEW. Actor for AI +
+  deterministic generation.
+- `Noum/CoachReadCard.swift` — NEW. SwiftUI hero card.
+- `Noum/CoachContextBuilder.swift` — `latestRepNote:` param added
+  to `userContext(...)`; LAST REP NOTE section emitted when non-nil.
+- `Noum/PracticeSupport.swift` — `PracticeSessionFinalizer.finalize`
+  ends with `recordPostRepCoachNote(for:)`; new private static
+  helper assembles input + writes deterministic note synchronously
+  + spawns AI upgrade Task.
+- `Noum/AskNoumView.swift` — observes `PostRepCoachNoteStore.shared`;
+  threads `latestNote()` into `userContext(...)`.
 - `Noum/AuthManager.swift` — reload + endSession + wipe-list
-  extended for `ForwardPlanStore` and M19 BigMoment keys.
-- `ProfileView.swift` — observes `forwardPlanStore` +
-  `bigMomentStore`; renders `coachingPlanCard` inside the existing
-  `coachingDirectionCard`.
-- `NoumTests/NoumTests.swift` — 50+ tests across 7 suites appended
+  extended for `PostRepCoachNoteStore`.
+- `Noum/SummaryView.swift` — observes `postRepCoachNoteStore`;
+  renders `CoachReadCard` between `HeroScoreCard` and
+  `WhatYouDidWellCard`.
+- `NoumTests/NoumTests.swift` — 40+ tests across 4 suites appended
   end-of-file.
 - `HANDOFF.md` — this file.
-- `docs/CURRENT_STATE.md` — header breadcrumb for the push.
 
 ## Branch
 
-`Redesign` — committed and pushed per the user's brief. Closes M20
-of the M19-M23 personalization slate as `docs/M19_strategy.md`
-recommended. M19 (Big Moment Intake) shipped last session; M20
-(Forward Plan) ships this session — both can now light up the same
-Profile surface and the same coach context block, which was the
-"parallel tracks" design call.
+`Redesign` — committed and pushed per the user's brief.
 
-The artifact a user can now hold: a written four-week program in
-their own coach's voice, tied to their own baseline numbers and
-their own upcoming Big Moment. That is the £130/hr coach handoff
-the £0 user has never had.
+Closes M24 Track 1 of the M24 deferred slate. The remaining M24 tracks
+(Track 2 — Summary STILL-duplicated dedupe; Track 3 — Sudden Death
+scoring view with `SuddenDeathRunHistoryStore`) are still deferred and
+can run in parallel with each other in the next session if bandwidth
+exists.
+
+The artifact a user can now hold: a coaching note in their own coach's
+voice, tied to the rep they just finished, that the persistent chat
+coach builds on every time they come back. That is the closest the £0
+user has yet come to the £130/hr coach experience pillar #5 of
+`docs/VISION.md` (Personalized coaching) names as the north star.
 
 ## Future moves
 
-1. **M21 — Session Intent (pre-rep "what are you training today?").**
-   Reads ForwardPlanStore for the current week's focus as an intent
-   option, ties post-rep `WhatYouDidWellCard` /
-   `WhatToImproveCard` chips to the declared intent. Single
-   forward-only dependency on this push.
-2. **Voice-change stale detection.** Extend
-   `ForwardPlan.isInvalidated(by:)` to also check
-   `voiceAtGeneration` against the current
-   `CoachingProfile.speakingStyleGoal`. Already persisted; just
-   needs the branch.
-3. **Plan regeneration from a Settings entry.** Currently the only
-   regen path is the Profile card prompt/stale CTA. A Settings →
-   "Reset coaching plan" row would give power users a clean
-   regen-from-scratch path without needing a BigMoment change.
-4. **`PlanWeek.completedRationale` for past weeks.** Once a week
-   has passed, the rationale on display could shift from "here's
-   what you should do" to "here's what you did" — a tiny
-   continuity nudge that turns the program into a retrospective
-   read for past weeks while staying prescriptive for the current.
-   Requires bucketed session counts past Week 1.
-5. **M22 — Monthly Coach Letter** is independent of M20 and can
-   run in parallel with M21 per the strategy doc if bandwidth
-   exists. The letter would read the `ForwardPlanStore.activePlan`
-   to reference what the user committed to vs what landed.
+1. **M24 Track 2 — Summary STILL-duplicated dedupe.** Now that
+   `CoachReadCard` is the canonical coach voice on the Summary
+   surface, `AISessionDebriefCard` and `CoachNoteCard` inside the
+   expandable details section are increasingly redundant. A surgical
+   pass could collapse the deep variant into a single "Coach's
+   detailed read" section that expands on the hero note rather than
+   duplicating it.
+2. **M24 Track 3 — Sudden Death scoring view.** `SuddenDeathRun-
+   HistoryStore` + a "Previous Runs" section in `SuddenDeathResultView`
+   + friends scores via `FriendsManager` when present. Deferred per
+   the prior session's TODO.
+3. **AI generation gating.** Gate `PostRepCoachNoteService.generate`
+   AI path behind a Premium flag or a per-day rate limit so a heavy
+   user doesn't burn 30 AI calls a day on essentially the same
+   delivery pattern. The deterministic fallback is already always-on
+   so no user ever sees an empty card.
+4. **Retry pass for non-AI-backed notes.** Schedule a re-generation
+   pass on `scenePhase == .active` for any note in the store where
+   `isAIBacked == false` AND the network is reachable now AND the
+   user is in an AI-supported locale. Lets the AI upgrade arrive
+   late if the rep finished offline.
+5. **Voice-change retroactive read.** When the user changes their
+   `speakingStyleGoal`, queue a one-shot AI regeneration of the
+   most-recent note in the new voice so the Ask Noum chat coach
+   doesn't quote a prior-voice note as the user's current voice.
+   Honest to the user (the note would be stamped with a "regenerated
+   in new voice" provenance line).

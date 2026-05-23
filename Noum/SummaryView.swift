@@ -51,6 +51,7 @@ struct SummaryView: View {
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var skillProgression = SkillProgressionStore.shared
+    @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -584,6 +585,18 @@ struct SummaryView: View {
                                 xpEarned: xpEarned,
                                 celebrationVisible: celebrationVisible
                             )
+                            // M24 Track 1 — the coach turning toward the user
+                            // and saying "here's what I just saw" in their
+                            // chosen voice. Lands between the score (what
+                            // happened) and the wins/improvements (the
+                            // breakdown). Renders only when a note exists
+                            // for the most-recent session — `PracticeSession-
+                            // Finalizer` writes one immediately so the card
+                            // is populated on the first paint cycle.
+                            if let sessionID = sessionStore.sessions.first?.id,
+                               let coachNote = postRepCoachNoteStore.note(for: sessionID) {
+                                CoachReadCard(note: coachNote)
+                            }
                             // Observational hero block — replaces the
                             // previous 5-card stack (SkillLevelUp loop +
                             // AISessionDebrief + CoachNote + YourNextMove).

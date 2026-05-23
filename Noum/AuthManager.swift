@@ -523,6 +523,8 @@ class AuthManager: ObservableObject {
             "forwardPlan.\(accountID)",
             // M21: Session Intent — bounded history of declared focuses
             "sessionIntent.history.\(accountID)",
+            // M24: Post-rep coach note — bounded history of coach reads
+            "postRepCoachNote.\(accountID)",
         ]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)
@@ -592,6 +594,7 @@ class AuthManager: ObservableObject {
             ForwardPlanStore.shared.reloadForCurrentAccount()
             SessionIntentStore.shared.reloadForCurrentAccount()
             CoachLetterStore.shared.reloadForCurrentAccount()
+            PostRepCoachNoteStore.shared.reloadForCurrentAccount()
             completion?()
         }
     }
@@ -607,6 +610,7 @@ class AuthManager: ObservableObject {
             ForwardPlanStore.shared.endSession()
             SessionIntentStore.shared.endSession()
             CoachLetterStore.shared.endSession()
+            PostRepCoachNoteStore.shared.endSession()
         }
     }
 
