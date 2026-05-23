@@ -383,6 +383,8 @@ struct ContentView: View {
                     }
                 case .bigMomentIntake:
                     BigMomentIntakeView()
+                case .prepSession:
+                    PrepSessionView(navigationPath: $navigationPath)
                 }
             }
         }

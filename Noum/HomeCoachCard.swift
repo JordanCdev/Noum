@@ -100,6 +100,18 @@ struct HomeCoachCard: View {
             )
             .padding(.top, Spacing.xs)
 
+            // M23 — Prep Session entry. Surfaces when the user has an
+            // active BigMoment within 14 days. Sits ABOVE the Begin
+            // button so the prep CTA reads as the higher-priority next
+            // action — "your moment is close, this is what the coach
+            // would have you do." Standard mode rep stays as the
+            // secondary action below.
+            if let moment = bigMomentStore.activeMoment,
+               let days = bigMomentStore.daysUntil(moment),
+               days >= 0 && days <= 14 {
+                prepSessionCTA(moment: moment, days: days)
+            }
+
             // Begin button carries the mode name so the micro-label
             // "SUDDEN DEATH · ONE BREATH · ONE COMPLETE REP" row can go
             // away — three text rows became one button label.
@@ -412,6 +424,55 @@ struct HomeCoachCard: View {
             return why
         }
         return nil
+    }
+
+    /// M23 — Prep Session CTA. Brand-purple secondary action surfaced
+    /// in the coach card hero when an active BigMoment is within 14
+    /// days. Tapping pushes `AppDestination.prepSession`, where the
+    /// PrepSessionPlanner assembles a 3-rep rehearsal sequence
+    /// tailored to the moment's category.
+    @ViewBuilder
+    private func prepSessionCTA(moment: BigMoment, days: Int) -> some View {
+        Button {
+            navigationPath.append(AppDestination.prepSession)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: moment.category.sfSymbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppColor.pro)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Prepare for your \(moment.category.displayName)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("\(days) day\(days == 1 ? "" : "s") out · three-rep rehearsal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [AppColor.pro.opacity(0.14), AppColor.pro.opacity(0.06)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.top, Spacing.xs)
+        .accessibilityIdentifier("home.coachCard.prepSession")
+        .accessibilityLabel(Text("Prepare for your \(moment.category.displayName), \(days) day\(days == 1 ? "" : "s") away"))
     }
 
     /// Countdown copy for the Big Moment subtitle.

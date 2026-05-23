@@ -36,6 +36,12 @@ enum AppDestination: Hashable {
     /// destination switch.
     case sessionDetail(sessionID: UUID)
     case bigMomentIntake
+    /// M23 Situational Preparation Mode landing surface. Available when
+    /// the user has an active BigMoment within 14 days; the HomeCoachCard
+    /// surfaces a CTA that pushes here. The view assembles the
+    /// PrepSessionPlanner's plan and provides per-step launchers into
+    /// Timed, Sudden Death, and IM.
+    case prepSession
 }
 
 struct SummaryPayload: Identifiable, Hashable {
