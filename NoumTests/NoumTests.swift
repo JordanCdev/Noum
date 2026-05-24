@@ -13413,3 +13413,597 @@ struct AISettingsManagerPremiumConstantsTests {
     }
 }
 
+// MARK: - TimedHistorySummary
+//
+// Mode-specific stat surface for Timed — surfaces the user's
+// delivery track record on the History view's Timed filter. Tests
+// lock the math (mean score, best-rep tiebreak, in-zone count,
+// average WPM) and the trend windowing (7-day vs prior-7-day; trend
+// omitted when either window is empty). Mirrors the Ah-Counter
+// summary tests so a future regression that drifts one shape from
+// the other trips a test.
+
+@available(iOS 17.0, *)
+@MainActor
+struct TimedHistorySummaryTests {
+
+    private func session(
+        score: Int?,
+        transcript: String,
+        durationSeconds: TimeInterval,
+        date: Date,
+        mode: PracticeMode = .timed
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 0,
+            duration: durationSeconds,
+            date: date,
+            mode: mode,
+            score: score
+        )
+    }
+
+    /// Transcript long enough to land in the 130–160 WPM zone for a
+    /// 30-second rep — 70 words / 0.5 min = 140 WPM.
+    private let inZoneTranscript: String = String(
+        repeating: "word ",
+        count: 70
+    )
+
+    /// Transcript that produces ~200 WPM at 30s — clearly out of zone.
+    private let outOfZoneTranscript: String = String(
+        repeating: "word ",
+        count: 100
+    )
+
+    // MARK: - summarize: empty + filtering
+
+    @Test func emptyInputReturnsNil() {
+        #expect(TimedHistorySummary.summarize(sessions: []) == nil)
+    }
+
+    @Test func filtersOutNonTimedModes() {
+        let now = Date()
+        let sessions = [
+            session(score: 7, transcript: inZoneTranscript, durationSeconds: 30, date: now, mode: .ahCounter),
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: now, mode: .timed),
+            session(score: 6, transcript: inZoneTranscript, durationSeconds: 30, date: now, mode: .suddenDeath)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.runCount == 1)
+    }
+
+    @Test func nilWhenNoTimedSessions() {
+        let now = Date()
+        let sessions = [
+            session(score: 7, transcript: inZoneTranscript, durationSeconds: 30, date: now, mode: .ahCounter),
+            session(score: 6, transcript: inZoneTranscript, durationSeconds: 30, date: now, mode: .imConversation)
+        ]
+        #expect(TimedHistorySummary.summarize(sessions: sessions) == nil)
+    }
+
+    // MARK: - summarize: averages
+
+    @Test func averageScoreOnlyConsidersScoredReps() {
+        let now = Date()
+        let sessions = [
+            session(score: 9, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            session(score: nil, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            session(score: 7, transcript: inZoneTranscript, durationSeconds: 30, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        // Mean of [9, 7] = 8.0
+        #expect(stats?.averageScore == 8.0)
+        #expect(stats?.runCount == 3)
+    }
+
+    @Test func averageScoreNilWhenNoScoredReps() {
+        let now = Date()
+        let sessions = [
+            session(score: nil, transcript: inZoneTranscript, durationSeconds: 30, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.averageScore == nil)
+    }
+
+    @Test func averageScoreRoundedToOneDecimal() {
+        let now = Date()
+        let sessions = [
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            session(score: 9, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            session(score: 9, transcript: inZoneTranscript, durationSeconds: 30, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        // Mean = 26/3 = 8.6666… → 8.7
+        #expect(stats?.averageScore == 8.7)
+    }
+
+    // MARK: - summarize: best rep
+
+    @Test func bestRepIsHighestScore() {
+        let now = Date()
+        let highID = UUID()
+        let sessions = [
+            session(score: 6, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            PracticeSession(
+                id: highID,
+                transcript: inZoneTranscript,
+                fillerWordCount: 0,
+                duration: 30,
+                date: now,
+                mode: .timed,
+                score: 10
+            ),
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.best?.sessionID == highID)
+        #expect(stats?.best?.score == 10)
+    }
+
+    @Test func bestRepTiebreaksByMostRecentDate() {
+        let now = Date()
+        let olderID = UUID()
+        let newerID = UUID()
+        let sessions = [
+            PracticeSession(
+                id: olderID,
+                transcript: inZoneTranscript,
+                fillerWordCount: 0,
+                duration: 30,
+                date: now.addingTimeInterval(-3600),
+                mode: .timed,
+                score: 9
+            ),
+            PracticeSession(
+                id: newerID,
+                transcript: inZoneTranscript,
+                fillerWordCount: 0,
+                duration: 30,
+                date: now,
+                mode: .timed,
+                score: 9
+            )
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.best?.sessionID == newerID)
+    }
+
+    @Test func bestRepNilWhenNoScoredReps() {
+        let now = Date()
+        let sessions = [
+            session(score: nil, transcript: inZoneTranscript, durationSeconds: 30, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.best == nil)
+    }
+
+    // MARK: - summarize: average WPM + in-zone count
+
+    @Test func averageWPMMatchesComputedRate() {
+        let now = Date()
+        // 70 words / 30s = 140 WPM. Two identical reps → mean 140.
+        let sessions = [
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.averageWPM == 140)
+    }
+
+    @Test func averageWPMNilWhenNoMeasurablePace() {
+        let now = Date()
+        let sessions = [
+            session(score: 8, transcript: "", durationSeconds: 0, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.averageWPM == nil)
+    }
+
+    @Test func inZoneCountTracksWPMRange() {
+        let now = Date()
+        // 70 words / 30s = 140 WPM (in zone)
+        // 100 words / 30s = 200 WPM (out of zone, too fast)
+        // 70 words / 60s = 70 WPM (out of zone, too slow)
+        let slowTranscript = String(repeating: "word ", count: 70)
+        let sessions = [
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: now),
+            session(score: 8, transcript: outOfZoneTranscript, durationSeconds: 30, date: now),
+            session(score: 8, transcript: slowTranscript, durationSeconds: 60, date: now)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.inZoneRepCount == 1)
+        #expect(stats?.runCount == 3)
+    }
+
+    @Test func zoneBoundsLockedToConstants() {
+        // The in-zone counter must read the same range the
+        // breakdown card prints in its subtitle copy. Lock the
+        // constants to today's values so a drift trips a test.
+        #expect(TimedHistorySummary.zoneMinWPM == 130)
+        #expect(TimedHistorySummary.zoneMaxWPM == 160)
+    }
+
+    // MARK: - trend windowing
+
+    @Test func trendNilWhenRecentWindowEmpty() {
+        let now = Date()
+        let twoWeeksAgo = now.addingTimeInterval(-86400 * 13)
+        let sessions = [
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: twoWeeksAgo)
+        ]
+        let trend = TimedHistorySummary.trendComparison(
+            sessions: sessions,
+            now: now,
+            calendar: .current
+        )
+        #expect(trend == nil)
+    }
+
+    @Test func trendNilWhenPriorWindowEmpty() {
+        let now = Date()
+        let twoDaysAgo = now.addingTimeInterval(-86400 * 2)
+        let sessions = [
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: twoDaysAgo)
+        ]
+        let trend = TimedHistorySummary.trendComparison(
+            sessions: sessions,
+            now: now,
+            calendar: .current
+        )
+        #expect(trend == nil)
+    }
+
+    @Test func trendImprovingWhenRecentMeanHigher() {
+        let now = Date()
+        let recent = now.addingTimeInterval(-86400 * 2)
+        let prior = now.addingTimeInterval(-86400 * 10)
+        let sessions = [
+            session(score: 9, transcript: inZoneTranscript, durationSeconds: 30, date: recent),
+            session(score: 6, transcript: inZoneTranscript, durationSeconds: 30, date: prior)
+        ]
+        let trend = TimedHistorySummary.trendComparison(
+            sessions: sessions,
+            now: now,
+            calendar: .current
+        )
+        #expect(trend?.direction == .improving)
+    }
+
+    @Test func trendWorseningWhenRecentMeanLower() {
+        let now = Date()
+        let recent = now.addingTimeInterval(-86400 * 2)
+        let prior = now.addingTimeInterval(-86400 * 10)
+        let sessions = [
+            session(score: 5, transcript: inZoneTranscript, durationSeconds: 30, date: recent),
+            session(score: 9, transcript: inZoneTranscript, durationSeconds: 30, date: prior)
+        ]
+        let trend = TimedHistorySummary.trendComparison(
+            sessions: sessions,
+            now: now,
+            calendar: .current
+        )
+        #expect(trend?.direction == .worsening)
+    }
+
+    @Test func trendSteadyWhenDeltaWithinThreshold() {
+        let now = Date()
+        let recent = now.addingTimeInterval(-86400 * 2)
+        let prior = now.addingTimeInterval(-86400 * 10)
+        // 8 vs 8 → delta 0 → steady. Locks the steady-bucket.
+        let sessions = [
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: recent),
+            session(score: 8, transcript: inZoneTranscript, durationSeconds: 30, date: prior)
+        ]
+        let trend = TimedHistorySummary.trendComparison(
+            sessions: sessions,
+            now: now,
+            calendar: .current
+        )
+        #expect(trend?.direction == .steady)
+    }
+}
+
+// MARK: - IMHistorySummary
+//
+// Mode-specific stat surface for IM — per-scenario rollup of the
+// user's conversation track record. Tests lock the math (mean score,
+// best-score tiebreak, average trust/tension, per-scenario grouping)
+// and the defensive contracts (missing metadata excluded, mixed-mode
+// filtered out, scenarios without reps not surfaced).
+
+@available(iOS 17.0, *)
+@MainActor
+struct IMHistorySummaryTests {
+
+    private func makeIMSetup(scenario: IMConversationScenario, tone: IMTargetTone = .confident) -> IMConversationSetup {
+        IMConversationSetup(scenario: scenario, targetTone: tone)
+    }
+
+    private func makeFinalState(trust: Int, tension: Int, engagement: Int = 5) -> IMConversationState {
+        IMConversationState(
+            trust: trust,
+            engagement: engagement,
+            tension: tension,
+            beat: "Final."
+        )
+    }
+
+    private func session(
+        scenario: IMConversationScenario,
+        score: Int?,
+        trust: Int?,
+        tension: Int?,
+        date: Date = Date(),
+        mode: PracticeMode = .imConversation,
+        includeDetails: Bool = true
+    ) -> PracticeSession {
+        let details: IMConversationDetails?
+        if includeDetails {
+            let finalState: IMConversationState?
+            if let trust, let tension {
+                finalState = makeFinalState(trust: trust, tension: tension)
+            } else {
+                finalState = nil
+            }
+            details = IMConversationDetails(
+                setup: makeIMSetup(scenario: scenario),
+                turns: [],
+                actualTone: nil,
+                finalState: finalState,
+                outcome: nil,
+                relationshipSnapshot: nil,
+                contextSnapshot: nil
+            )
+        } else {
+            details = nil
+        }
+        return PracticeSession(
+            transcript: "x",
+            fillerWordCount: 0,
+            duration: 60,
+            date: date,
+            mode: mode,
+            imConversationDetails: details,
+            score: score
+        )
+    }
+
+    // MARK: - filtering + empty
+
+    @Test func emptyInputReturnsEmpty() {
+        #expect(IMHistorySummary.breakdowns(from: []).isEmpty)
+    }
+
+    @Test func filtersOutNonIMModes() {
+        let timedSession = PracticeSession(
+            transcript: "x", fillerWordCount: 0, duration: 60, date: Date(),
+            mode: .timed, score: 8
+        )
+        let imSession = session(scenario: .socialCatchUp, score: 8, trust: 6, tension: 4)
+        let result = IMHistorySummary.breakdowns(from: [timedSession, imSession])
+        #expect(result.count == 1)
+        #expect(result.first?.scenario == .socialCatchUp)
+    }
+
+    @Test func excludesIMSessionsWithoutDetails() {
+        let noDetails = session(scenario: .socialCatchUp, score: 8, trust: nil, tension: nil, includeDetails: false)
+        let withDetails = session(scenario: .socialCatchUp, score: 8, trust: 6, tension: 4)
+        let result = IMHistorySummary.breakdowns(from: [noDetails, withDetails])
+        #expect(result.count == 1)
+        #expect(result.first?.runCount == 1)
+    }
+
+    // MARK: - grouping
+
+    @Test func groupsByScenario() {
+        let sessions = [
+            session(scenario: .socialCatchUp, score: 8, trust: 6, tension: 4),
+            session(scenario: .workUpdate, score: 7, trust: 5, tension: 5),
+            session(scenario: .socialCatchUp, score: 9, trust: 7, tension: 3),
+            session(scenario: .networking, score: 6, trust: 4, tension: 5)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.count == 3)
+        let scenarios = Set(result.map(\.scenario))
+        #expect(scenarios == [.socialCatchUp, .workUpdate, .networking])
+    }
+
+    @Test func sortsByMostRecentlyPlayed() {
+        let now = Date()
+        let sessions = [
+            session(scenario: .workUpdate, score: 7, trust: 5, tension: 5, date: now.addingTimeInterval(-86400)),
+            session(scenario: .difficultConversation, score: 8, trust: 5, tension: 6, date: now),
+            session(scenario: .networking, score: 6, trust: 5, tension: 4, date: now.addingTimeInterval(-3600))
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.scenario == .difficultConversation)
+        #expect(result.last?.scenario == .workUpdate)
+    }
+
+    // MARK: - averages
+
+    @Test func averageScoreSkipsUnscoredReps() {
+        let sessions = [
+            session(scenario: .socialCatchUp, score: 8, trust: 6, tension: 4),
+            session(scenario: .socialCatchUp, score: nil, trust: 6, tension: 4),
+            session(scenario: .socialCatchUp, score: 10, trust: 7, tension: 3)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        // Mean of [8, 10] = 9.0
+        #expect(result.first?.averageScore == 9.0)
+        #expect(result.first?.runCount == 3)
+    }
+
+    @Test func averageScoreNilWhenNoScoredReps() {
+        let sessions = [
+            session(scenario: .socialCatchUp, score: nil, trust: 6, tension: 4)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.averageScore == nil)
+    }
+
+    @Test func averageFinalTrustAndTensionComputed() {
+        let sessions = [
+            session(scenario: .workUpdate, score: 8, trust: 6, tension: 4),
+            session(scenario: .workUpdate, score: 7, trust: 8, tension: 6)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.averageFinalTrust == 7.0)
+        #expect(result.first?.averageFinalTension == 5.0)
+    }
+
+    @Test func averageFinalTrustNilWhenNoFinalState() {
+        let sessions = [
+            session(scenario: .workUpdate, score: 8, trust: nil, tension: nil)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.averageFinalTrust == nil)
+        #expect(result.first?.averageFinalTension == nil)
+    }
+
+    // MARK: - best score
+
+    @Test func bestScoreIsHighest() {
+        let sessions = [
+            session(scenario: .networking, score: 6, trust: 5, tension: 5),
+            session(scenario: .networking, score: 9, trust: 5, tension: 5),
+            session(scenario: .networking, score: 7, trust: 5, tension: 5)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.bestScore == 9)
+    }
+
+    @Test func bestScoreTiebreaksByMostRecent() {
+        let now = Date()
+        let sessions = [
+            session(scenario: .networking, score: 9, trust: 5, tension: 5, date: now.addingTimeInterval(-3600)),
+            session(scenario: .networking, score: 9, trust: 5, tension: 5, date: now)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.bestScore == 9)
+        #expect(result.first?.bestScoreDate?.timeIntervalSince(now) == 0)
+    }
+
+    @Test func bestScoreNilWhenNoScoredReps() {
+        let sessions = [
+            session(scenario: .networking, score: nil, trust: 5, tension: 5)
+        ]
+        let result = IMHistorySummary.breakdowns(from: sessions)
+        #expect(result.first?.bestScore == nil)
+        #expect(result.first?.bestScoreDate == nil)
+    }
+
+    // MARK: - totals + most recent
+
+    @Test func totalRunCountReflectsIMSessionsOnly() {
+        let timedSession = PracticeSession(
+            transcript: "x", fillerWordCount: 0, duration: 60, date: Date(),
+            mode: .timed
+        )
+        let imSession = session(scenario: .socialCatchUp, score: 8, trust: 6, tension: 4)
+        let imNoDetails = session(scenario: .socialCatchUp, score: 8, trust: nil, tension: nil, includeDetails: false)
+        let total = IMHistorySummary.totalRunCount(from: [timedSession, imSession, imNoDetails])
+        #expect(total == 1)
+    }
+
+    @Test func mostRecentDateNilWhenNoIMSessions() {
+        let timedOnly = [
+            PracticeSession(
+                transcript: "x", fillerWordCount: 0, duration: 60, date: Date(),
+                mode: .timed
+            )
+        ]
+        #expect(IMHistorySummary.mostRecentDate(from: timedOnly) == nil)
+    }
+
+    @Test func mostRecentDateReturnsLatestIMSession() {
+        let now = Date()
+        let sessions = [
+            session(scenario: .socialCatchUp, score: 8, trust: 6, tension: 4, date: now.addingTimeInterval(-86400)),
+            session(scenario: .workUpdate, score: 7, trust: 5, tension: 5, date: now)
+        ]
+        let latest = IMHistorySummary.mostRecentDate(from: sessions)
+        #expect(latest?.timeIntervalSince(now) == 0)
+    }
+}
+
+// MARK: - CoachReadCard daily budget hint
+//
+// Locks the pure-function copy generator for the daily-cap hint that
+// appears beneath the post-rep coach note when the AI-backed voice
+// is participating AND remaining-today drops at or below 25% of the
+// cap. The threshold + copy shape both need to be stable so a future
+// regression that flips "0 remaining" to a chirpy "out for today!"
+// trips a test rather than landing in production.
+
+@available(iOS 17.0, *)
+@MainActor
+struct CoachReadCardDailyBudgetHintTests {
+
+    @Test func zeroRemainingHintMentionsRuleBased() {
+        let copy = CoachReadCard.dailyBudgetHintCopy(remaining: 0)
+        // Honest framing: the user gets a coach note either way, just
+        // rule-based when budget is exhausted. Copy must say so.
+        #expect(copy.contains("Rule-based"))
+        #expect(copy.contains("tomorrow"))
+    }
+
+    @Test func oneRemainingHintUsesSingularNoun() {
+        let copy = CoachReadCard.dailyBudgetHintCopy(remaining: 1)
+        #expect(copy.contains("1 AI coach note"))
+        // Must not pluralise on 1.
+        #expect(!copy.contains("notes"))
+    }
+
+    @Test func multipleRemainingUsesPluralNoun() {
+        let copy = CoachReadCard.dailyBudgetHintCopy(remaining: 3)
+        #expect(copy.contains("3 AI coach notes"))
+    }
+
+    @Test func negativeRemainingClampedToZero() {
+        // Defensive — should never happen (the rate limiter clamps
+        // remaining to max(0, cap - used)), but the copy generator
+        // must not crash or render a "-1" if it ever does.
+        let copy = CoachReadCard.dailyBudgetHintCopy(remaining: -5)
+        #expect(copy.contains("Rule-based"))
+    }
+
+    @Test func hintCopyHasNoExclamations() {
+        // Brand-voice contract — no chirpy filler on any budget axis.
+        for remaining in 0...10 {
+            let copy = CoachReadCard.dailyBudgetHintCopy(remaining: remaining)
+            #expect(!copy.contains("!"))
+        }
+    }
+
+    @Test func hintCopyHasNoUrgencyFraming() {
+        // The hint must read as a quiet "here's the read" caption,
+        // not "running out" / "hurry up" pressure copy.
+        let banned = ["running out", "hurry", "almost out", "left!", "Last"]
+        for remaining in 0...12 {
+            let copy = CoachReadCard.dailyBudgetHintCopy(remaining: remaining)
+            for phrase in banned {
+                #expect(!copy.contains(phrase))
+            }
+        }
+    }
+
+    @Test func thresholdIsBelowMonthlyHintThreshold() {
+        // The daily-cap threshold (0.75) is intentionally LOWER than
+        // the monthly-debrief threshold (0.90 — see
+        // AISettingsManager.usageAwarenessThreshold) because the
+        // daily cap is smaller, so the user notices it earlier in the
+        // day. Lock the inequality so a future "raise daily threshold
+        // to 0.9 for parity" change doesn't quietly land.
+        #expect(CoachReadCard.dailyBudgetHintThresholdRatio < AISettingsManager.usageAwarenessThreshold)
+    }
+
+    @Test func thresholdIsAboveHalfway() {
+        // Threshold must also be > 50% — surfacing the hint at every
+        // rep past the halfway point would just be noise.
+        #expect(CoachReadCard.dailyBudgetHintThresholdRatio > 0.5)
+    }
+}
+

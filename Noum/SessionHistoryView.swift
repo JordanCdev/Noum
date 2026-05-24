@@ -190,6 +190,41 @@ struct SessionHistoryView: View {
                             .padding(.bottom, 16)
                         }
 
+                        // --- Timed history breakdown ---
+                        // Per-mode track record for Timed. Surfaces average
+                        // score + in-zone count + average WPM + best rep
+                        // with a 7-day vs prior-7-day trend chip. Self-hides
+                        // on cold start. Tapping the "best rep" cell pushes
+                        // the session detail view.
+                        if selectedModeFilter == .timed {
+                            TimedHistoryBreakdownCard(
+                                sessions: filteredSessions,
+                                onSelectBestRep: { sessionID in
+                                    navigationPath.append(
+                                        AppDestination.sessionDetail(sessionID: sessionID)
+                                    )
+                                }
+                            )
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.bottom, 16)
+                        }
+
+                        // --- IM history breakdown ---
+                        // Per-scenario track record across the four built-in
+                        // IM setups. Reads from the conversation metadata
+                        // on each PracticeSession (no new store) so a user
+                        // who's been working "Difficult Conversation" can
+                        // see their trust + tension trend without leaving
+                        // History. Self-hides until at least one rep has
+                        // recorded scenario metadata.
+                        if selectedModeFilter == .imConversation {
+                            IMHistoryBreakdownCard(
+                                sessions: filteredSessions
+                            )
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.bottom, 16)
+                        }
+
                         // --- Section Header ---
                         // Sentence-case cardTitle + hairline divider. Reads as
                         // a premium app sentence, not a wireframe label.
