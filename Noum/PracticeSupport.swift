@@ -6320,6 +6320,15 @@ enum PracticeSessionFinalizer {
             .map { $0.proof.quote }
             .filter { !$0.isEmpty }
 
+        // Compute cross-session momentum signals so the deterministic
+        // note can reference trajectory (consecutive clean reps, filler
+        // trend, personal bests) rather than just today's numbers.
+        let momentum = MomentumComputer.compute(
+            currentSession: session,
+            allSessions: allSessions,
+            baselineFillerRate: baselineFillerRate
+        )
+
         let input = PostRepCoachNoteInput(
             sessionID: session.id,
             mode: session.mode,
@@ -6335,7 +6344,13 @@ enum PracticeSessionFinalizer {
             bigMomentDaysUntil: bigMomentDays,
             transcript: session.transcript,
             recentSessionSummaries: recentSummaries,
-            recentProofQuotes: recentProofs
+            recentProofQuotes: recentProofs,
+            consecutiveCleanReps: momentum.consecutiveCleanReps,
+            fillerTrendDirection: momentum.fillerTrendDirection,
+            scoreTrendDirection: momentum.scoreTrendDirection,
+            weeklyRepCount: momentum.weeklyRepCount,
+            isPersonalBest: momentum.isPersonalBest,
+            totalSessionCount: momentum.totalSessionCount
         )
 
         // Deterministic note lands synchronously so the Summary

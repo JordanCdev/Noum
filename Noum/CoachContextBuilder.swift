@@ -342,6 +342,52 @@ enum CoachContextBuilder {
         lines.append("- Current streak: \(currentStreak) day\(currentStreak == 1 ? "" : "s").")
         lines.append("- Reps this week: \(weeklyReps).")
 
+        // MOMENTUM — cross-session trajectory signals. Omitted entirely
+        // on cold start (< 5 sessions) to avoid overclaiming from thin
+        // data. Bounded at 4 lines so the context stays lean.
+        if sessions.count >= 5 {
+            let baselineRate: Double? = baseline.fillerRate.confidence == .insufficient
+                ? nil : baseline.fillerRate.value
+            let sorted = sessions.sorted { $0.date > $1.date }
+            var momentumLines: [String] = []
+
+            let cleanCount = MomentumComputer.consecutiveCleanReps(
+                sorted: sorted, baselineFillerRate: baselineRate
+            )
+            if cleanCount >= 2 {
+                momentumLines.append("- Consecutive clean reps: \(cleanCount).")
+            }
+            if sessions.count >= 6 {
+                if let fillerTrend = MomentumComputer.fillerTrend(sorted: sorted) {
+                    switch fillerTrend {
+                    case .improving:
+                        momentumLines.append("- Filler trend: improving over last 6 sessions.")
+                    case .declining:
+                        momentumLines.append("- Filler trend: increasing over last 6 sessions.")
+                    default: break
+                    }
+                }
+                if let scoreTrend = MomentumComputer.scoreTrend(sorted: sorted) {
+                    switch scoreTrend {
+                    case .improving:
+                        momentumLines.append("- Score trend: improving over last 6 sessions.")
+                    case .declining:
+                        momentumLines.append("- Score trend: declining over last 6 sessions.")
+                    default: break
+                    }
+                }
+            }
+            if weeklyReps >= 3 {
+                momentumLines.append("- Weekly rhythm: \(weeklyReps) reps this week.")
+            }
+
+            if !momentumLines.isEmpty {
+                lines.append("")
+                lines.append("MOMENTUM")
+                lines.append(contentsOf: momentumLines.prefix(4))
+            }
+        }
+
         let memoryLines: [String]
         if let coachMemory {
             memoryLines = coachMemoryLines(memory: coachMemory)

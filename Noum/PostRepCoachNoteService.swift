@@ -61,6 +61,32 @@ struct PostRepCoachNoteInput {
     /// framing. Empty for cold-start users.
     let recentProofQuotes: [String]
 
+    // MARK: - Momentum signals (cross-session trajectory)
+    //
+    // Added to make the deterministic note feel like a coach who tracks
+    // trajectory, not just this rep's metrics. Each field is computed by
+    // `MomentumComputer.compute(...)` and defaults to a safe zero/nil
+    // so every existing call site compiles unchanged.
+
+    /// How many consecutive recent reps had fillers at or below half the
+    /// baseline rate (i.e. "clean" reps). 0 when no streak or baseline
+    /// is insufficient.
+    let consecutiveCleanReps: Int
+    /// Direction of the filler rate across the last 6 sessions (last 3
+    /// vs prior 3). Nil when fewer than 6 sessions exist.
+    let fillerTrendDirection: TrendDirection?
+    /// Direction of scores across the last 6 scored sessions. Nil when
+    /// fewer than 6 scored sessions exist.
+    let scoreTrendDirection: TrendDirection?
+    /// Number of reps completed in the current ISO week.
+    let weeklyRepCount: Int
+    /// True when this session's score exceeds all prior same-mode scores
+    /// and there are at least 3 prior scored sessions in the same mode.
+    let isPersonalBest: Bool
+    /// Total number of sessions across all time. Guards against thin-data
+    /// overclaiming ("third clean rep" when the user has 3 total reps).
+    let totalSessionCount: Int
+
     init(
         sessionID: UUID,
         mode: PracticeMode,
@@ -76,7 +102,13 @@ struct PostRepCoachNoteInput {
         bigMomentDaysUntil: Int?,
         transcript: String = "",
         recentSessionSummaries: [String] = [],
-        recentProofQuotes: [String] = []
+        recentProofQuotes: [String] = [],
+        consecutiveCleanReps: Int = 0,
+        fillerTrendDirection: TrendDirection? = nil,
+        scoreTrendDirection: TrendDirection? = nil,
+        weeklyRepCount: Int = 0,
+        isPersonalBest: Bool = false,
+        totalSessionCount: Int = 0
     ) {
         self.sessionID = sessionID
         self.mode = mode
@@ -93,6 +125,162 @@ struct PostRepCoachNoteInput {
         self.transcript = transcript
         self.recentSessionSummaries = recentSessionSummaries
         self.recentProofQuotes = recentProofQuotes
+        self.consecutiveCleanReps = consecutiveCleanReps
+        self.fillerTrendDirection = fillerTrendDirection
+        self.scoreTrendDirection = scoreTrendDirection
+        self.weeklyRepCount = weeklyRepCount
+        self.isPersonalBest = isPersonalBest
+        self.totalSessionCount = totalSessionCount
+    }
+}
+
+// MARK: - MomentumSignals
+//
+// Pure data snapshot of cross-session trajectory signals. Computed once
+// at finalization time by `MomentumComputer` and projected into the
+// `PostRepCoachNoteInput` momentum fields. Keeps the computation
+// testable and the input struct construction straightforward.
+
+struct MomentumSignals {
+    let consecutiveCleanReps: Int
+    let fillerTrendDirection: TrendDirection?
+    let scoreTrendDirection: TrendDirection?
+    let weeklyRepCount: Int
+    let isPersonalBest: Bool
+    let totalSessionCount: Int
+}
+
+// MARK: - MomentumComputer
+//
+// Pure functions that derive momentum signals from session history.
+// No singletons, no I/O, no async — inputs in, signals out. Each
+// method is exposed at internal visibility for unit tests.
+
+enum MomentumComputer {
+
+    /// Compute all momentum signals from the finalized session + full
+    /// session history + baseline. Clock and calendar are injectable
+    /// for testing.
+    static func compute(
+        currentSession: PracticeSession,
+        allSessions: [PracticeSession],
+        baselineFillerRate: Double?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> MomentumSignals {
+        let sorted = allSessions.sorted { $0.date > $1.date }
+        return MomentumSignals(
+            consecutiveCleanReps: Self.consecutiveCleanReps(
+                sorted: sorted,
+                baselineFillerRate: baselineFillerRate
+            ),
+            fillerTrendDirection: Self.fillerTrend(sorted: sorted),
+            scoreTrendDirection: Self.scoreTrend(sorted: sorted),
+            weeklyRepCount: Self.weeklyRepCount(
+                sorted: sorted, now: now, calendar: calendar
+            ),
+            isPersonalBest: Self.isPersonalBest(
+                current: currentSession, allSessions: sorted
+            ),
+            totalSessionCount: sorted.count
+        )
+    }
+
+    // MARK: - Individual signal computations
+
+    /// Count consecutive recent reps where the filler rate is at or below
+    /// half the baseline (or ≤1 filler total). Stops at the first rep
+    /// that exceeds. Returns 0 when baseline is unavailable.
+    static func consecutiveCleanReps(
+        sorted: [PracticeSession],
+        baselineFillerRate: Double?
+    ) -> Int {
+        guard let baseRate = baselineFillerRate, baseRate > 0 else { return 0 }
+        var count = 0
+        for session in sorted {
+            let durationMinutes = max(session.duration / 60.0, 1.0 / 60.0)
+            let sessionRate = Double(session.fillerWordCount) / durationMinutes
+            let threshold = max(baseRate * 0.5, 0.5)
+            if sessionRate <= threshold || session.fillerWordCount <= 1 {
+                count += 1
+            } else {
+                break
+            }
+        }
+        return count
+    }
+
+    /// Filler rate direction: last 3 sessions vs prior 3. Nil when fewer
+    /// than 6 sessions exist. "Improving" = recent avg is ≤70% of prior.
+    static func fillerTrend(sorted: [PracticeSession]) -> TrendDirection? {
+        guard sorted.count >= 6 else { return nil }
+        let recent = sorted.prefix(3)
+        let prior = sorted.dropFirst(3).prefix(3)
+
+        func avgRate(_ sessions: some Collection<PracticeSession>) -> Double {
+            let rates = sessions.map { s -> Double in
+                let mins = max(s.duration / 60.0, 1.0 / 60.0)
+                return Double(s.fillerWordCount) / mins
+            }
+            guard !rates.isEmpty else { return 0 }
+            return rates.reduce(0, +) / Double(rates.count)
+        }
+
+        let recentAvg = avgRate(recent)
+        let priorAvg = avgRate(prior)
+        guard priorAvg > 0 else { return .stable }
+
+        if recentAvg <= priorAvg * 0.7 { return .improving }
+        if recentAvg >= priorAvg * 1.3 { return .declining }
+        return .stable
+    }
+
+    /// Score direction: last 3 scored sessions vs prior 3. Nil when fewer
+    /// than 6 scored sessions exist.
+    static func scoreTrend(sorted: [PracticeSession]) -> TrendDirection? {
+        let scored = sorted.filter { $0.score != nil }
+        guard scored.count >= 6 else { return nil }
+        let recent = scored.prefix(3).compactMap(\.score).map(Double.init)
+        let prior = scored.dropFirst(3).prefix(3).compactMap(\.score).map(Double.init)
+        guard !recent.isEmpty, !prior.isEmpty else { return nil }
+        let recentAvg = recent.reduce(0, +) / Double(recent.count)
+        let priorAvg = prior.reduce(0, +) / Double(prior.count)
+        if recentAvg >= priorAvg + 1.0 { return .improving }
+        if recentAvg <= priorAvg - 1.0 { return .declining }
+        return .stable
+    }
+
+    /// Reps completed in the current ISO week.
+    static func weeklyRepCount(
+        sorted: [PracticeSession],
+        now: Date,
+        calendar: Calendar
+    ) -> Int {
+        let currentWeek = calendar.dateComponents(
+            [.yearForWeekOfYear, .weekOfYear], from: now
+        )
+        return sorted.filter { session in
+            let sessionWeek = calendar.dateComponents(
+                [.yearForWeekOfYear, .weekOfYear], from: session.date
+            )
+            return sessionWeek.yearForWeekOfYear == currentWeek.yearForWeekOfYear
+                && sessionWeek.weekOfYear == currentWeek.weekOfYear
+        }.count
+    }
+
+    /// True when this session's score exceeds all prior same-mode scores
+    /// and there are at least 3 prior scored sessions in the same mode.
+    static func isPersonalBest(
+        current: PracticeSession,
+        allSessions: [PracticeSession]
+    ) -> Bool {
+        guard let currentScore = current.score else { return false }
+        let priorScores = allSessions
+            .filter { $0.id != current.id && $0.mode == current.mode }
+            .compactMap(\.score)
+        guard priorScores.count >= 3 else { return false }
+        guard let priorMax = priorScores.max() else { return false }
+        return currentScore > priorMax
     }
 }
 
@@ -193,13 +381,43 @@ actor PostRepCoachNoteService {
         let persona = CoachPersona.persona(for: input.voice)
         let seed = Int(input.sessionID.uuidString.hashValue)
         let lead = persona.reflectionLead
-        let closing = persona.closing(seed: seed)
+        let defaultClosing = persona.closing(seed: seed)
 
-        let metricSentence = metricSentence(for: input, persona: persona)
+        let metric = metricSentence(for: input, persona: persona)
 
-        // Compose: "<lead> <metric>. <closing>."
-        // Trim trailing punctuation defensively so we never double-period.
-        var text = "\(lead) \(metricSentence) \(closing)"
+        // Suffix priority: BigMoment > weekly rhythm > default closing.
+        // BigMoment anchors the user to their upcoming event; weekly rhythm
+        // reinforces cadence. Only one suffix fires.
+        let suffix: String = {
+            if let days = input.bigMomentDaysUntil,
+               let moment = input.bigMoment,
+               let bigSuffix = bigMomentSuffix(
+                   daysUntil: days,
+                   category: moment.category,
+                   persona: persona
+               ) {
+                return bigSuffix
+            }
+            if input.weeklyRepCount > 0,
+               let rhythmSuffix = weeklyRhythmSuffix(
+                   weeklyRepCount: input.weeklyRepCount,
+                   persona: persona
+               ) {
+                return rhythmSuffix
+            }
+            return defaultClosing
+        }()
+
+        // Compose: "<lead> <metric> <suffix>"
+        // Character budget check: if lead + metric + suffix exceeds 200,
+        // fall back to default closing to avoid truncating mid-thought.
+        var text: String
+        let candidate = "\(lead) \(metric) \(suffix)"
+        if candidate.count <= 200 || suffix == defaultClosing {
+            text = candidate
+        } else {
+            text = "\(lead) \(metric) \(defaultClosing)"
+        }
         text = collapseWhitespace(in: text)
         text = ensureNoExclamations(in: text)
         text = truncate(text, max: 200)
@@ -214,10 +432,35 @@ actor PostRepCoachNoteService {
 
     /// Priority chain that picks the one sentence to feature. Pure,
     /// exposed for tests.
+    ///
+    /// Momentum branches (0a–0c) sit above the per-rep metric branches
+    /// (1–6) because they carry multi-session evidence — the coach
+    /// quoting trajectory is higher-signal than quoting today's stats.
     nonisolated static func metricSentence(
         for input: PostRepCoachNoteInput,
         persona: CoachPersona
     ) -> String {
+        // 0a) Personal best — strongest momentum signal. Only fires when
+        // there are enough prior sessions to make "best" meaningful.
+        if input.isPersonalBest, input.totalSessionCount >= 5,
+           let score = input.score {
+            return personalBestSentence(score: score, persona: persona)
+        }
+
+        // 0b) Consecutive clean reps — the user is on a filler-free run.
+        // Requires totalSessionCount >= 5 to avoid "3 clean in a row"
+        // when the user has 3 total reps ever.
+        if input.consecutiveCleanReps >= 3, input.totalSessionCount >= 5 {
+            return consecutiveCleanSentence(count: input.consecutiveCleanReps, persona: persona)
+        }
+
+        // 0c) Filler trend improving — the rate is genuinely declining
+        // across the last 6 sessions. Lower priority than personal best
+        // and consecutive clean because it's a softer signal.
+        if input.fillerTrendDirection == .improving, input.totalSessionCount >= 6 {
+            return fillerTrendImprovingSentence(persona: persona)
+        }
+
         // 1) Filler comparison vs baseline (when both signals exist).
         if let baselineRate = input.baselineFillerRate,
            baselineRate > 0,
@@ -263,7 +506,14 @@ actor PostRepCoachNoteService {
             return shortRepSentence(persona: persona)
         }
 
-        // 6) Fallback — neutral steady-delivery note.
+        // 6) Transcript-anchored opener — quotes the user's own words
+        // rather than falling back to generic copy. Only fires when the
+        // transcript has a quotable opening phrase.
+        if let opener = extractOpener(from: input.transcript) {
+            return openerAnchoredSentence(opener: opener, persona: persona)
+        }
+
+        // 7) Fallback — neutral steady-delivery note.
         return steadyDeliverySentence(persona: persona)
     }
 
@@ -431,6 +681,194 @@ actor PostRepCoachNoteService {
         }
     }
 
+    // MARK: - Momentum sentences (cross-session trajectory)
+
+    nonisolated static func personalBestSentence(score: Int, persona: CoachPersona) -> String {
+        switch persona.voice {
+        case .authoritative:
+            return "New personal best — \(score) of 10. That's the benchmark now."
+        case .warm:
+            return "That \(score) is a new best for you — real evidence of the work."
+        case .concise:
+            return "Personal best. \(score). New floor."
+        case .persuasive:
+            return "Highest score yet — \(score). The case is getting sharper."
+        case .executive:
+            return "New personal best: \(score) of 10. This is your new standard."
+        case .storytelling:
+            return "A \(score) — your highest chapter yet. The arc is climbing."
+        case .none:
+            return "New personal best — \(score) of 10."
+        }
+    }
+
+    nonisolated static func consecutiveCleanSentence(count: Int, persona: CoachPersona) -> String {
+        switch persona.voice {
+        case .authoritative:
+            return "That's \(count) clean runs in a row. This is becoming your baseline."
+        case .warm:
+            return "\(count) clean reps running — something has genuinely shifted."
+        case .concise:
+            return "\(count) clean. Pattern, not accident."
+        case .persuasive:
+            return "\(count) consecutive clean reps — the evidence is compounding."
+        case .executive:
+            return "\(count) consecutive clean deliveries. This is the operating standard now."
+        case .storytelling:
+            return "\(count) clean runs in sequence — a through-line is forming."
+        case .none:
+            return "\(count) clean reps in a row — this is becoming consistent."
+        }
+    }
+
+    nonisolated static func fillerTrendImprovingSentence(persona: CoachPersona) -> String {
+        switch persona.voice {
+        case .authoritative:
+            return "Filler rate is genuinely declining — multiple sessions of evidence."
+        case .warm:
+            return "Your filler rate has been dropping across recent sessions — the work is landing."
+        case .concise:
+            return "Filler trend: down. Sustained."
+        case .persuasive:
+            return "Filler rate declining across sessions — the discipline is compounding."
+        case .executive:
+            return "Filler rate trending down over recent deliveries. Recommend maintaining pace."
+        case .storytelling:
+            return "The filler pattern is fading — your voice is finding its clean rhythm."
+        case .none:
+            return "Filler rate declining across recent sessions."
+        }
+    }
+
+    // MARK: - Suffix sentences (BigMoment, weekly rhythm, transcript opener)
+
+    /// BigMoment suffix replaces the standard closing when a big moment
+    /// is within 14 days. Keeps the user anchored to their upcoming event.
+    nonisolated static func bigMomentSuffix(
+        daysUntil: Int,
+        category: BigMomentCategory,
+        persona: CoachPersona
+    ) -> String? {
+        guard daysUntil <= 14, daysUntil >= 0 else { return nil }
+        let event = category.displayName
+        switch persona.voice {
+        case .authoritative:
+            return daysUntil == 0
+                ? "\(event.capitalized) is today — you're ready."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s") — hold that pace."
+        case .warm:
+            return daysUntil == 0
+                ? "Your \(event) is today — carry this with you."
+                : "Your \(event) is \(daysUntil) day\(daysUntil == 1 ? "" : "s") out — carry this."
+        case .concise:
+            return daysUntil == 0
+                ? "\(event.capitalized) today. Ready."
+                : "\(daysUntil) day\(daysUntil == 1 ? "" : "s"). Hold it."
+        case .persuasive:
+            return daysUntil == 0
+                ? "\(event.capitalized) is today — the preparation has landed."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s") — the reps are banking."
+        case .executive:
+            return daysUntil == 0
+                ? "\(event.capitalized) today. Prepared."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s"). Maintain."
+        case .storytelling:
+            return daysUntil == 0
+                ? "The \(event) is today — your arc is ready."
+                : "The \(event) is \(daysUntil) day\(daysUntil == 1 ? "" : "s") away — the rehearsal is doing its work."
+        case .none:
+            return daysUntil == 0
+                ? "\(event.capitalized) is today."
+                : "\(event.capitalized) in \(daysUntil) day\(daysUntil == 1 ? "" : "s")."
+        }
+    }
+
+    /// Weekly rhythm suffix fires at milestone rep counts (3, 5, 7) on
+    /// positive or neutral branches. Absent when BigMoment suffix fires.
+    nonisolated static func weeklyRhythmSuffix(
+        weeklyRepCount: Int,
+        persona: CoachPersona
+    ) -> String? {
+        guard [3, 5, 7].contains(weeklyRepCount) else { return nil }
+        switch persona.voice {
+        case .authoritative:
+            return weeklyRepCount == 3
+                ? "Third rep this week. The rhythm is set."
+                : "Rep \(weeklyRepCount) this week. The rhythm is doing its work."
+        case .warm:
+            return weeklyRepCount == 3
+                ? "Third one this week — the habit is settling in."
+                : "\(weeklyRepCount) reps this week — the rhythm is real."
+        case .concise:
+            return "\(weeklyRepCount) this week. Rhythm."
+        case .persuasive:
+            return "Rep \(weeklyRepCount) this week — consistency is the strongest argument."
+        case .executive:
+            return "\(weeklyRepCount) reps this week. Cadence is strong."
+        case .storytelling:
+            return "\(weeklyRepCount) chapters this week — the story keeps building."
+        case .none:
+            return "\(weeklyRepCount) reps this week."
+        }
+    }
+
+    /// Extract the user's opening phrase from their transcript. Returns
+    /// the first sentence (up to 60 chars). Nil when transcript is empty
+    /// or the opener is too short to quote meaningfully.
+    nonisolated static func extractOpener(from transcript: String) -> String? {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Find first sentence boundary (. ? — or 15 words, whichever is shorter)
+        let sentenceEnders: [Character] = [".", "?"]
+        var endIndex = trimmed.endIndex
+        for (i, char) in trimmed.enumerated() {
+            if sentenceEnders.contains(char) {
+                endIndex = trimmed.index(trimmed.startIndex, offsetBy: i + 1)
+                break
+            }
+        }
+
+        var opener = String(trimmed[trimmed.startIndex..<endIndex])
+        // Cap at 15 words
+        let words = opener.split(separator: " ")
+        if words.count > 15 {
+            opener = words.prefix(15).joined(separator: " ")
+        }
+        // Cap at 60 chars
+        if opener.count > 60 {
+            opener = String(opener.prefix(57)) + "..."
+        }
+        // Too short to quote meaningfully
+        guard opener.count >= 10 else { return nil }
+        return opener
+    }
+
+    /// Transcript-anchored opener sentence. Fires only on the
+    /// steady-delivery fallback, replacing generic copy with a quote.
+    nonisolated static func openerAnchoredSentence(
+        opener: String,
+        persona: CoachPersona
+    ) -> String {
+        let quoted = "'\(opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"")))"
+        switch persona.voice {
+        case .authoritative:
+            return "Your opener — \(quoted)' — landed clean."
+        case .warm:
+            return "You opened with \(quoted)' — it set the right tone."
+        case .concise:
+            return "Opener: \(quoted).' Landed."
+        case .persuasive:
+            return "The opener — \(quoted)' — set the premise well."
+        case .executive:
+            return "Opening with \(quoted)' — effective framing."
+        case .storytelling:
+            return "You opened with \(quoted)' — the first line drew the listener in."
+        case .none:
+            return "Your opener — \(quoted)' — landed well."
+        }
+    }
+
     // MARK: - Brand-voice contract
 
     /// Returns true when the candidate note text honors the brand voice
@@ -522,6 +960,33 @@ actor PostRepCoachNoteService {
                 lines.append("- \"\(Self.truncate(quote, max: 140))\"")
             }
         }
+
+        // Momentum signals — lets the AI reference trajectory, not just
+        // this rep's numbers. Only appended when meaningful signals exist.
+        var momentumLines: [String] = []
+        if input.consecutiveCleanReps >= 2, input.totalSessionCount >= 5 {
+            momentumLines.append("- \(input.consecutiveCleanReps) consecutive clean reps (fillers at or below half baseline).")
+        }
+        if input.isPersonalBest, input.totalSessionCount >= 5 {
+            if let score = input.score {
+                momentumLines.append("- This session was a personal best (score \(score)).")
+            }
+        }
+        if let fillerTrend = input.fillerTrendDirection, fillerTrend == .improving {
+            momentumLines.append("- Filler rate improving over last 6 sessions.")
+        }
+        if let scoreTrend = input.scoreTrendDirection, scoreTrend == .improving {
+            momentumLines.append("- Scores improving over last 6 sessions.")
+        }
+        if input.weeklyRepCount >= 2 {
+            momentumLines.append("- Reps this week: \(input.weeklyRepCount).")
+        }
+        if !momentumLines.isEmpty {
+            lines.append("")
+            lines.append("MOMENTUM (cross-session trajectory — reference when it adds coaching value):")
+            lines.append(contentsOf: momentumLines)
+        }
+
         return lines.joined(separator: "\n")
     }
 

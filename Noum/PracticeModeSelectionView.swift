@@ -235,7 +235,9 @@ struct PracticeModeSelectionView: View {
                 animateMode {
                     selectedMode = option.mode
                     crutchSelected = false
-                    expandedModes.insert(option.mode)
+                    // Collapse every other mode so the selected one stands
+                    // out and the list stays compact.
+                    expandedModes = [option.mode]
                 }
                 CoachHaptic.selectionTap()
             } label: {

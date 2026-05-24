@@ -89,6 +89,102 @@ struct CoachMemory: Codable, Equatable {
     var planWeekIndex: Int?
     var planFocus: SkillArea?
     var planMode: PracticeMode?
+
+    // Momentum — cross-session trajectory. Optional for backward compat
+    // (existing persisted memories decode without these keys).
+    var consecutiveCleanReps: Int?
+    var fillerTrendDirection: TrendDirection?
+    var weeklyRepCount: Int?
+    var isLatestSessionPersonalBest: Bool?
+
+    // Explicit memberwise init — required because the custom
+    // `init(from:)` below suppresses the synthesized one.
+    init(
+        updatedAt: Date,
+        lastSessionID: UUID? = nil,
+        evidenceCount: Int,
+        evidenceConfidence: BaselineConfidence,
+        voice: SpeakingStyleGoal? = nil,
+        statedGoalSummary: String? = nil,
+        currentLever: SkillArea? = nil,
+        currentLeverConfidence: TrendConfidence? = nil,
+        currentLeverBasis: String? = nil,
+        previousLever: SkillArea? = nil,
+        focusShiftedAt: Date? = nil,
+        goalFit: CoachMemoryGoalFit,
+        strengths: [String],
+        blockers: [String],
+        lastIntentLabel: String? = nil,
+        planWeekIndex: Int? = nil,
+        planFocus: SkillArea? = nil,
+        planMode: PracticeMode? = nil,
+        consecutiveCleanReps: Int? = nil,
+        fillerTrendDirection: TrendDirection? = nil,
+        weeklyRepCount: Int? = nil,
+        isLatestSessionPersonalBest: Bool? = nil
+    ) {
+        self.updatedAt = updatedAt
+        self.lastSessionID = lastSessionID
+        self.evidenceCount = evidenceCount
+        self.evidenceConfidence = evidenceConfidence
+        self.voice = voice
+        self.statedGoalSummary = statedGoalSummary
+        self.currentLever = currentLever
+        self.currentLeverConfidence = currentLeverConfidence
+        self.currentLeverBasis = currentLeverBasis
+        self.previousLever = previousLever
+        self.focusShiftedAt = focusShiftedAt
+        self.goalFit = goalFit
+        self.strengths = strengths
+        self.blockers = blockers
+        self.lastIntentLabel = lastIntentLabel
+        self.planWeekIndex = planWeekIndex
+        self.planFocus = planFocus
+        self.planMode = planMode
+        self.consecutiveCleanReps = consecutiveCleanReps
+        self.fillerTrendDirection = fillerTrendDirection
+        self.weeklyRepCount = weeklyRepCount
+        self.isLatestSessionPersonalBest = isLatestSessionPersonalBest
+    }
+
+    // Custom Decodable for backward compatibility — all momentum
+    // fields use decodeIfPresent so existing persisted data decodes
+    // without breaking.
+    enum CodingKeys: String, CodingKey {
+        case updatedAt, lastSessionID, evidenceCount, evidenceConfidence
+        case voice, statedGoalSummary, currentLever, currentLeverConfidence
+        case currentLeverBasis, previousLever, focusShiftedAt, goalFit
+        case strengths, blockers, lastIntentLabel
+        case planWeekIndex, planFocus, planMode
+        case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
+        case isLatestSessionPersonalBest
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        lastSessionID = try c.decodeIfPresent(UUID.self, forKey: .lastSessionID)
+        evidenceCount = try c.decode(Int.self, forKey: .evidenceCount)
+        evidenceConfidence = try c.decode(BaselineConfidence.self, forKey: .evidenceConfidence)
+        voice = try c.decodeIfPresent(SpeakingStyleGoal.self, forKey: .voice)
+        statedGoalSummary = try c.decodeIfPresent(String.self, forKey: .statedGoalSummary)
+        currentLever = try c.decodeIfPresent(SkillArea.self, forKey: .currentLever)
+        currentLeverConfidence = try c.decodeIfPresent(TrendConfidence.self, forKey: .currentLeverConfidence)
+        currentLeverBasis = try c.decodeIfPresent(String.self, forKey: .currentLeverBasis)
+        previousLever = try c.decodeIfPresent(SkillArea.self, forKey: .previousLever)
+        focusShiftedAt = try c.decodeIfPresent(Date.self, forKey: .focusShiftedAt)
+        goalFit = try c.decode(CoachMemoryGoalFit.self, forKey: .goalFit)
+        strengths = try c.decode([String].self, forKey: .strengths)
+        blockers = try c.decode([String].self, forKey: .blockers)
+        lastIntentLabel = try c.decodeIfPresent(String.self, forKey: .lastIntentLabel)
+        planWeekIndex = try c.decodeIfPresent(Int.self, forKey: .planWeekIndex)
+        planFocus = try c.decodeIfPresent(SkillArea.self, forKey: .planFocus)
+        planMode = try c.decodeIfPresent(PracticeMode.self, forKey: .planMode)
+        consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
+        fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
+        weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
+        isLatestSessionPersonalBest = try c.decodeIfPresent(Bool.self, forKey: .isLatestSessionPersonalBest)
+    }
 }
 
 enum CoachMemoryEngine {
@@ -137,7 +233,28 @@ enum CoachMemoryEngine {
 
         let currentWeek = forwardPlan?.currentWeek(now: now, calendar: calendar)
 
-        return CoachMemory(
+        // Momentum signals — computed from the same session list the rest
+        // of the memory reads. When sessions are thin (< 5), all momentum
+        // fields stay nil — safe defaults.
+        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient
+            ? nil : baseline.fillerRate.value
+        let sorted = sessions.sorted { $0.date > $1.date }
+        let momentumClean: Int? = sorted.count >= 5
+            ? MomentumComputer.consecutiveCleanReps(sorted: sorted, baselineFillerRate: baselineFillerRate)
+            : nil
+        let momentumFillerTrend: TrendDirection? = sorted.count >= 6
+            ? MomentumComputer.fillerTrend(sorted: sorted)
+            : nil
+        let momentumWeekly: Int? = MomentumComputer.weeklyRepCount(
+            sorted: sorted, now: now, calendar: calendar
+        )
+        let momentumPB: Bool? = {
+            guard let lastID = lastSessionID,
+                  let current = sorted.first(where: { $0.id == lastID }) else { return nil }
+            return MomentumComputer.isPersonalBest(current: current, allSessions: sorted)
+        }()
+
+        var memory = CoachMemory(
             updatedAt: now,
             lastSessionID: lastSessionID,
             evidenceCount: evidenceCount,
@@ -157,6 +274,11 @@ enum CoachMemoryEngine {
             planFocus: currentWeek?.focusSkillArea,
             planMode: currentWeek?.suggestedMode
         )
+        memory.consecutiveCleanReps = momentumClean
+        memory.fillerTrendDirection = momentumFillerTrend
+        memory.weeklyRepCount = momentumWeekly
+        memory.isLatestSessionPersonalBest = momentumPB
+        return memory
     }
 
     private struct LeverSelection {

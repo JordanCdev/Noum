@@ -162,7 +162,7 @@ struct HomeUtilityStrip: View {
                         .accessibilityHidden(true)
                 }
 
-                Text("Word: \(word.todaysEntry.word)")
+                Text("Word of the day: \(word.todaysEntry.word)")
                     .font(Typography.body)
                     .foregroundStyle(.primary)
                     .lineLimit(2)

@@ -419,7 +419,11 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if let unlockedNode = pendingPathCelebration {
+            // Guard: only show the path celebration when the user is on
+            // the home root — not inside SummaryView's progression chain.
+            // `pendingCelebrationNodeID` persists until consumed, so the
+            // overlay fires once the user navigates back from the summary.
+            if navigationPath.isEmpty, let unlockedNode = pendingPathCelebration {
                 PathNodeCelebration(
                     node: unlockedNode,
                     onDismiss: {
@@ -487,7 +491,20 @@ struct ContentView: View {
             consumeDeepLink(url)
         }
         .onChange(of: dailyGoal.pendingGoalCelebration) { _, isPending in
-            if isPending {
+            // Defer the daily goal celebration when the user is inside a
+            // pushed destination (e.g. SummaryView's progression screen).
+            // Showing it immediately stacks the overlay on top of the XP /
+            // level-up / personal-best chain — visual collision. The
+            // celebration fires once the user returns to the home root.
+            if isPending && navigationPath.isEmpty {
+                showDailyGoalCelebration = true
+            }
+        }
+        .onChange(of: navigationPath) { _, newPath in
+            // Deferred daily goal celebration: if the user was inside a
+            // pushed view when the goal triggered, show it now that
+            // they've returned to the home root.
+            if newPath.isEmpty && dailyGoal.pendingGoalCelebration && !showDailyGoalCelebration {
                 showDailyGoalCelebration = true
             }
         }
@@ -1029,6 +1046,12 @@ struct ContentView: View {
     /// surface. Brand-blue ambient wash + soft elevation give the card the
     /// "second hero" register, distinct from the Coach Card's Pro-purple
     /// without competing with it (blue = journey, purple = coach voice).
+    /// Tier-adaptive tint for the journey card. Falls back to brand blue
+    /// when the path is cleared (no current node).
+    private var journeyTint: Color {
+        pathProgress.currentNode?.node.tier.tint ?? AppColor.brandBlue
+    }
+
     private var journeyPreviewCard: some View {
         let status = pathProgress.currentNode
         let cleared = status == nil
@@ -1043,7 +1066,7 @@ struct ContentView: View {
                 // Header — micro-label on the left, chapter on the right.
                 HStack(alignment: .firstTextBaseline) {
                     Text("Your journey")
-                        .microLabel(AppColor.brandBlue)
+                        .microLabel(journeyTint)
                     Spacer(minLength: Spacing.xs)
                     Text("Chapter \u{00B7} \(chapterTitle)")
                         .font(Typography.caption)
@@ -1076,7 +1099,7 @@ struct ContentView: View {
                 if let status, status.progress > 0 && !status.isComplete {
                     ProgressView(value: status.progress)
                         .progressViewStyle(.linear)
-                        .tint(AppColor.brandBlue)
+                        .tint(journeyTint)
                         .padding(.top, Spacing.xxs)
                 }
 
@@ -1096,7 +1119,7 @@ struct ContentView: View {
                 .padding(.vertical, Spacing.sm)
                 .frame(maxWidth: .infinity)
                 .background(
-                    AppColor.brandBlue.gradient,
+                    journeyTint.gradient,
                     in: Capsule(style: .continuous)
                 )
                 .padding(.top, Spacing.xs)
@@ -1111,7 +1134,7 @@ struct ContentView: View {
         // Soft brand-blue elevation — mirrors the Coach Card's Pro-purple
         // shadow at the same intensity so the two heroes carry consistent
         // depth on the home canvas.
-        .shadow(color: AppColor.brandBlue.opacity(0.16), radius: 20, x: 0, y: 9)
+        .shadow(color: journeyTint.opacity(0.16), radius: 20, x: 0, y: 9)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.path")
         .accessibilityLabel(Text("\(titleLine). \(missionLine). \(gatingLine)"))
@@ -1259,6 +1282,7 @@ struct ContentView: View {
     @ViewBuilder
     private var journeyHeroBackground: some View {
         let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        let tint = journeyTint
         ZStack {
             shape.fill(AppColor.cardBackground)
 
@@ -1266,9 +1290,9 @@ struct ContentView: View {
                 shape.fill(
                     RadialGradient(
                         colors: [
-                            AppColor.brandBlue.opacity(0.45),
-                            AppColor.brandBlueLight.opacity(0.22),
-                            AppColor.brandBlue.opacity(0.04),
+                            tint.opacity(0.45),
+                            tint.opacity(0.28),
+                            tint.opacity(0.04),
                             Color.clear
                         ],
                         center: UnitPoint(x: 0.2, y: 0.0),
@@ -1287,9 +1311,9 @@ struct ContentView: View {
                     shape.fill(
                         RadialGradient(
                             colors: [
-                                AppColor.brandBlue.opacity(0.45),
-                                AppColor.brandBlueLight.opacity(0.22),
-                                AppColor.brandBlue.opacity(0.04),
+                                tint.opacity(0.45),
+                                tint.opacity(0.28),
+                                tint.opacity(0.04),
                                 Color.clear
                             ],
                             center: UnitPoint(x: centerX, y: centerY),
@@ -1305,9 +1329,9 @@ struct ContentView: View {
             shape.fill(.regularMaterial)
                 .opacity(0.30)
 
-            // Hairline border in brand-blue so the silhouette stays crisp
+            // Hairline border in tier tint so the silhouette stays crisp
             // against the home canvas.
-            shape.strokeBorder(AppColor.brandBlue.opacity(0.38), lineWidth: 1)
+            shape.strokeBorder(tint.opacity(0.38), lineWidth: 1)
         }
     }
 

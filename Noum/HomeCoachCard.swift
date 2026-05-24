@@ -332,6 +332,13 @@ struct HomeCoachCard: View {
             return "Start clean."
         }
 
+        // Consecutive clean reps — trajectory signal. "Three in a row"
+        // feels like a coach who notices patterns, not a dashboard.
+        let cleanRun = consecutiveCleanReps
+        if cleanRun >= 3, sessionStore.sessions.count >= 5 {
+            return cleanRun == 3 ? "Three in a row." : "\(cleanRun) clean."
+        }
+
         // Mission within reach — wins over tier-holding because the path
         // node is a concrete next action the user can complete this rep,
         // while "Hold {tier}" is a steady-state nudge. When the user is
@@ -407,6 +414,18 @@ struct HomeCoachCard: View {
         // punish-shames a regression.
         if missionWithinReach, let phrase = pathProgress.currentNodeGatingPhrase {
             return phrase
+        }
+
+        // Weekly rhythm milestone — fires at 3, 5, 7 reps per week.
+        // Reinforces cadence between mission and tier variants.
+        let weekReps = weeklyRepCount
+        if [3, 5, 7].contains(weekReps), sessionStore.sessions.count >= 5 {
+            switch weekReps {
+            case 3: return "Third rep this week — rhythm is building."
+            case 5: return "Five this week — strong rhythm."
+            case 7: return "Seven reps this week — serious commitment."
+            default: break
+            }
         }
 
         let blueprint = recommendationBlueprint
@@ -725,6 +744,44 @@ struct HomeCoachCard: View {
             input: input,
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
         )
+    }
+
+    // MARK: - Momentum helpers (inline, pure)
+
+    /// Consecutive recent reps with fillers at or below half the baseline.
+    /// Mirrors `MomentumComputer.consecutiveCleanReps` but computed
+    /// inline from the live stores so HomeCoachCard doesn't need a
+    /// separate momentum snapshot.
+    private var consecutiveCleanReps: Int {
+        let baseline = BaselineStore.shared.baseline
+        guard baseline.fillerRate.confidence != .insufficient,
+              let baseRate = Optional(baseline.fillerRate.value),
+              baseRate > 0 else { return 0 }
+        let sorted = sessionStore.sessions // already sorted newest-first
+        var count = 0
+        for session in sorted {
+            let mins = max(session.duration / 60.0, 1.0 / 60.0)
+            let rate = Double(session.fillerWordCount) / mins
+            let threshold = max(baseRate * 0.5, 0.5)
+            if rate <= threshold || session.fillerWordCount <= 1 {
+                count += 1
+            } else {
+                break
+            }
+        }
+        return count
+    }
+
+    /// Reps completed in the current ISO week.
+    private var weeklyRepCount: Int {
+        let cal = Calendar.current
+        let now = Date()
+        let currentWeek = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+        return sessionStore.sessions.filter { session in
+            let w = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: session.date)
+            return w.yearForWeekOfYear == currentWeek.yearForWeekOfYear
+                && w.weekOfYear == currentWeek.weekOfYear
+        }.count
     }
 
     private var daysSinceLastSession: Int {

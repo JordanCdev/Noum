@@ -12467,29 +12467,31 @@ struct PostRepCoachNoteStoreRegenerationTests {
 // MARK: - M25 Stream 4 — celebration timing
 
 /// Locks the read-time constants used by `PreSummaryCelebration`.
-/// The hold durations sit in `holdDuration(isSingleEvent:reduceMotion:)`
-/// so the timing branches are testable without driving the View.
+/// All cards now show on a single screen with staggered reveal, so the
+/// hold duration is for the whole screen (not per-card). The
+/// `holdDuration(isSingleEvent:reduceMotion:)` API is preserved for
+/// backward compat but returns the same value regardless of event count.
 @MainActor
 struct M25CelebrationTimingTests {
 
-    @Test func singleEventFullMotionHoldsLongEnoughToRead() {
+    @Test func fullMotionHoldsLongEnoughToReadAllCards() {
         let hold = PreSummaryCelebration.holdDuration(isSingleEvent: true, reduceMotion: false)
-        #expect(hold == 2.80, "single-event hold must stay at the M25 read-time of 2.80s")
+        #expect(hold == 5.0, "full-motion hold must give 5s for the user to read all cards")
     }
 
-    @Test func multiEventFullMotionHoldsPerCard() {
+    @Test func multiEventFullMotionSameHold() {
         let hold = PreSummaryCelebration.holdDuration(isSingleEvent: false, reduceMotion: false)
-        #expect(hold == 1.20, "multi-event per-card hold must stay at the M25 value of 1.20s")
+        #expect(hold == 5.0, "multi-event uses the same 5s hold since all cards are on one screen")
     }
 
-    @Test func reduceMotionSingleEventHoldIsAccessible() {
+    @Test func reduceMotionHoldIsAccessible() {
         let hold = PreSummaryCelebration.holdDuration(isSingleEvent: true, reduceMotion: true)
-        #expect(hold == 0.90, "reduce-motion single hold must stay at the M25 value of 0.90s")
+        #expect(hold == 3.0, "reduce-motion hold is 3s")
     }
 
-    @Test func reduceMotionMultiEventStaysProportional() {
+    @Test func reduceMotionMultiEventSameHold() {
         let hold = PreSummaryCelebration.holdDuration(isSingleEvent: false, reduceMotion: true)
-        #expect(hold == 0.50, "reduce-motion multi-event hold stays at ~0.50s per card")
+        #expect(hold == 3.0, "reduce-motion multi-event uses the same 3s hold")
     }
 
     @Test func reduceMotionAlwaysShorterOrEqualThanFullMotion() {

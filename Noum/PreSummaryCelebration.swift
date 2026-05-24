@@ -3,42 +3,26 @@ import SwiftUI
 
 // MARK: - Pre-Summary Celebration
 //
-// Full-screen sequenced reveal that plays each SkillLevelUpEvent one at a
-// time before the summary content lands. Replaces the previous inline
-// stack of SkillLevelUpCards inside the hero — verbal feedback from
-// real-device review flagged the stack as overwhelming and competing
-// with the score read.
+// Full-screen stacked reveal that shows all SkillLevelUpEvents on a
+// single screen with staggered card reveals before the summary content
+// lands. Each card appears with a slight delay after the previous one,
+// and once all cards are visible the view holds for 5 seconds (or until
+// tap) before advancing.
 //
-// Choreography (full-motion, multi-event):
-//   • Per event: ~1.1s total — 0.55s spring in, 0.50s hold, 0.25s fade out
-//   • Backdrop is the same purple-register radial used by
-//     `FirstRepCelebration` / `TierPromotionOverlay` so upward moments
-//     share one vocabulary.
-//   • Bars fill from previousLevel → newLevel with a spring on appear,
-//     mirroring the original `SkillLevelUpCard` treatment so the card
-//     itself reads as "the same celebration moved up the chain".
-//
-// Single-event tightening:
-//   • When there's only one event the user is staring at a card with
-//     no "next" frame to wait for — the long hold reads as a beat
-//     too long. Compress to ~0.65s total (0.42s spring in + 0.35s
-//     hold, no fade-out because there's nothing to fade *to*) so the
-//     single-level-up path reads as a wink, not a beat.
+// Choreography (full-motion):
+//   • "LEVELED UP" header fades in first.
+//   • Cards reveal one at a time with ~0.4s delay between each.
+//   • Bars fill from previousLevel → newLevel shortly after each card
+//     lands, with a staggered spring.
+//   • Once all cards are visible, a 5-second hold begins. Tap skips.
 //
 // Reduce-motion:
-//   • Spring collapses to a single fade (0.2s in, ~0.3s hold, 0.2s out).
-//   • Per-event duration shortens to ~0.7s so the sequence never
-//     overstays its welcome on the vestibular-sensitive path.
+//   • Springs collapse to simple fades.
+//   • Stagger delay shortens.
+//   • Hold shortens to 3 seconds.
 //
-// Zero-event safety: the manager that drives this should never present
-// it with an empty event list. As a belt-and-braces guard, an empty
-// list fires `onFinished` on appear so the parent transitions through
-// to the summary in a single frame.
-//
-// Total upper bound for the worst case (4 simultaneous level-ups) is
-// ~4.4s in full-motion / ~2.8s reduce-motion. Per the brief: ≤4s
-// target. In practice multiple level-ups in one rep are rare (we've
-// never seen >2 in archive data) so this lands well under.
+// Zero-event safety: an empty list fires `onFinished` on appear so the
+// parent transitions through to the summary in a single frame.
 
 @available(iOS 17.0, *)
 struct PreSummaryCelebration: View {
@@ -46,16 +30,15 @@ struct PreSummaryCelebration: View {
     let onFinished: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var currentIndex: Int = 0
-    /// Tracks whether the current event's content has animated in.
-    /// Toggles per event so the spring/fade plays on each new card.
-    @State private var contentVisible: Bool = false
-    /// Bars fill from previous → new once the card has settled.
-    @State private var barsAdvanced: Bool = false
+    /// Per-card visibility — staggered reveal drives each card's
+    /// opacity + scale. Indexed by position in `events`.
+    @State private var cardVisible: [Bool] = []
+    /// Per-card bar fill state — bars advance shortly after each card
+    /// appears. Indexed by position in `events`.
+    @State private var barsAdvanced: [Bool] = []
+    /// Header "LEVELED UP" visibility.
+    @State private var headerVisible: Bool = false
     @State private var sequenceTask: Task<Void, Never>?
-    /// Continuation released by a tap so the in-flight hold can wake
-    /// early. Single-shot per event — set when the hold begins, resumed
-    /// (and cleared) on tap or natural completion.
     @State private var holdContinuation: CheckedContinuation<Void, Never>?
 
     var body: some View {
@@ -63,17 +46,36 @@ struct PreSummaryCelebration: View {
             backdrop
                 .ignoresSafeArea()
 
-            if let event = currentEvent {
-                eventCard(event: event)
-                    .padding(.horizontal, Spacing.lg)
-                    .opacity(contentVisible ? 1 : 0)
-                    .scaleEffect(contentVisible ? 1.0 : 0.94)
-                    .transition(.opacity)
-            }
-
-            VStack {
+            VStack(spacing: Spacing.md) {
                 Spacer()
-                countLabel
+
+                // "LEVELED UP" header — anchors the moment before
+                // cards start revealing.
+                Text("LEVELED UP")
+                    .font(Typography.micro)
+                    .foregroundStyle(Color.white.opacity(0.70))
+                    .tracking(1.4)
+                    .opacity(headerVisible ? 1 : 0)
+
+                // All cards in a vertical stack — each with its own
+                // staggered visibility state.
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: Spacing.md) {
+                        ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                            eventCard(event: event, index: index)
+                                .opacity(cardOpacity(at: index))
+                                .scaleEffect(cardScale(at: index))
+                        }
+                    }
+                    .padding(.horizontal, Spacing.lg)
+                }
+
+                Spacer()
+
+                // Tap hint at bottom — gives the user an escape valve.
+                Text("Tap to continue")
+                    .font(Typography.caption)
+                    .foregroundStyle(Color.white.opacity(allCardsVisible ? 0.45 : 0))
                     .padding(.bottom, Spacing.lg)
             }
         }
@@ -88,6 +90,22 @@ struct PreSummaryCelebration: View {
         .accessibilityIdentifier("preSummary.celebration")
         .accessibilityElement(children: .contain)
         .accessibilityHint("Tap to continue")
+    }
+
+    // MARK: - Helpers
+
+    private func cardOpacity(at index: Int) -> Double {
+        guard index < cardVisible.count else { return 0 }
+        return cardVisible[index] ? 1 : 0
+    }
+
+    private func cardScale(at index: Int) -> CGFloat {
+        guard index < cardVisible.count else { return 0.94 }
+        return cardVisible[index] ? 1.0 : 0.94
+    }
+
+    private var allCardsVisible: Bool {
+        !cardVisible.isEmpty && cardVisible.allSatisfy { $0 }
     }
 
     // MARK: - Backdrop
@@ -111,51 +129,36 @@ struct PreSummaryCelebration: View {
     }
 
     // MARK: - Event card
-    //
-    // Uses the same visual register as the prior inline SkillLevelUpCard:
-    // brand-blue → pro gradient, sparkle ribbon, four-bar progression
-    // animation. Wrapped in a hero frame so it reads at full-screen
-    // weight, not as a tile.
 
     @ViewBuilder
-    private func eventCard(event: SkillLevelUpEvent) -> some View {
-        VStack(spacing: Spacing.md) {
-            // "LEVELED UP" label sits above the card to anchor the moment
-            // even before the card content reads. Same micro-label
-            // treatment Summary uses for section anchors.
-            Text("LEVELED UP")
-                .font(Typography.micro)
-                .foregroundStyle(Color.white.opacity(0.70))
-                .tracking(1.4)
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                cardHeader(event: event)
-                cardBars(event: event)
-                Text(event.subline)
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(Color.white.opacity(0.92))
-            }
-            .padding(Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [
-                        AppColor.brandBlue,
-                        AppColor.pro.opacity(0.92)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-            )
-            .overlay(alignment: .topTrailing) {
-                SparkleRibbon(tint: .white)
-                    .padding(.trailing, 14)
-                    .padding(.top, 14)
-                    .opacity(0.6)
-            }
-            .shadow(color: AppColor.pro.opacity(0.4), radius: 22, y: 10)
+    private func eventCard(event: SkillLevelUpEvent, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            cardHeader(event: event)
+            cardBars(event: event, index: index)
+            Text(event.subline)
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.92))
         }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppColor.brandBlue,
+                    AppColor.pro.opacity(0.92)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(alignment: .topTrailing) {
+            SparkleRibbon(tint: .white)
+                .padding(.trailing, 14)
+                .padding(.top, 14)
+                .opacity(0.6)
+        }
+        .shadow(color: AppColor.pro.opacity(0.4), radius: 22, y: 10)
         .accessibilityLabel("\(event.headline). \(event.subline).")
     }
 
@@ -187,10 +190,11 @@ struct PreSummaryCelebration: View {
     /// Four bars matching the SkillProgressView treatment (weak →
     /// developing → solid → strong). Fills from previous → new once the
     /// card lands.
-    private func cardBars(event: SkillLevelUpEvent) -> some View {
+    private func cardBars(event: SkillLevelUpEvent, index: Int) -> some View {
         let from = levelInt(event.previousLevel)
         let to = levelInt(event.newLevel)
-        let displayed = barsAdvanced ? to : from
+        let advanced = index < barsAdvanced.count && barsAdvanced[index]
+        let displayed = advanced ? to : from
         return HStack(spacing: 6) {
             ForEach(0..<4, id: \.self) { i in
                 Capsule()
@@ -211,134 +215,80 @@ struct PreSummaryCelebration: View {
         }
     }
 
-    // MARK: - Count label
-
-    /// Small "1 of 3" dot row at the bottom — discoverable progress
-    /// cue. Hidden when only one event so we don't add noise to the
-    /// common case.
-    @ViewBuilder
-    private var countLabel: some View {
-        if events.count > 1 {
-            HStack(spacing: 6) {
-                ForEach(events.indices, id: \.self) { i in
-                    Circle()
-                        .fill(i == currentIndex
-                              ? Color.white.opacity(0.85)
-                              : Color.white.opacity(0.25))
-                        .frame(width: 6, height: 6)
-                }
-            }
-            .accessibilityHidden(true)
-        }
-    }
-
     // MARK: - Sequence
-
-    private var currentEvent: SkillLevelUpEvent? {
-        guard currentIndex < events.count else { return nil }
-        return events[currentIndex]
-    }
 
     private func start() {
         guard !events.isEmpty else {
             onFinished()
             return
         }
+
+        // Initialize per-card state arrays.
+        cardVisible = Array(repeating: false, count: events.count)
+        barsAdvanced = Array(repeating: false, count: events.count)
+
+        // Consume all events immediately so a mid-sequence backout
+        // doesn't leave them queued for the next session.
+        for event in events {
+            SkillProgressionStore.shared.consume(event)
+        }
+
         sequenceTask?.cancel()
         sequenceTask = Task { @MainActor in
+            // 1. Header fades in.
+            let headerDuration: Double = reduceMotion ? 0.15 : 0.30
+            withAnimation(.easeOut(duration: headerDuration)) {
+                headerVisible = true
+            }
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.10 : 0.20))
+            if Task.isCancelled { return }
+
+            // 2. Cards reveal one at a time with stagger delay.
+            let staggerDelay: Double = reduceMotion ? 0.20 : 0.40
+            let barsDelay: Double = reduceMotion ? 0.05 : 0.15
+            let cardSpring: Animation = reduceMotion
+                ? .easeOut(duration: 0.20)
+                : .spring(response: 0.50, dampingFraction: 0.78)
+            let barsSpring: Animation = reduceMotion
+                ? .easeOut(duration: 0.20)
+                : .spring(response: 0.45, dampingFraction: 0.78)
+
             for index in events.indices {
                 if Task.isCancelled { return }
-                await present(index: index)
+
+                // Card slides in.
+                withAnimation(cardSpring) {
+                    cardVisible[index] = true
+                }
+                CoachHaptic.skillLevelUp()
+
+                // Bars fill shortly after the card lands.
+                try? await Task.sleep(for: .seconds(barsDelay))
+                if Task.isCancelled { return }
+                withAnimation(barsSpring) {
+                    barsAdvanced[index] = true
+                }
+
+                // Wait before revealing the next card (skip on last).
+                if index < events.count - 1 {
+                    try? await Task.sleep(for: .seconds(staggerDelay))
+                }
             }
+
             if Task.isCancelled { return }
+
+            // 3. All cards visible — hold for 5 seconds (3s reduce-motion),
+            //    tap escapes early.
+            let holdSeconds: Double = reduceMotion ? 3.0 : 5.0
+            await holdWithTapEscape(seconds: holdSeconds)
+            if Task.isCancelled { return }
+
             onFinished()
         }
     }
 
-    /// Plays one event: fade content in, advance bars, hold, fade out.
-    /// Consumes the event from the store as the card lands so backing
-    /// out mid-sequence doesn't leave them queued for the next session.
-    private func present(index: Int) async {
-        currentIndex = index
-        contentVisible = false
-        barsAdvanced = false
-
-        // Consume immediately so a mid-sequence backout (rare — there's
-        // no UI escape, but the system back gesture can still fire)
-        // doesn't leave the events pending for the next session's hero.
-        if index < events.count {
-            SkillProgressionStore.shared.consume(events[index])
-        }
-
-        // Reduce-motion path: shorter beats, no spring.
-        // Single-event full-motion path: the user isn't waiting on a
-        // "next" frame, so the in-spring tightens but the hold runs
-        // long enough that the user can actually read the card. The
-        // tap-to-continue affordance lets impatient users skip without
-        // forcing everyone else to race. Multi-event keeps a longer
-        // per-card hold so each card earns its read before the next
-        // one lands.
-        let isSingleEvent = events.count == 1
-        let inDuration: Double = reduceMotion ? 0.20 : (isSingleEvent ? 0.30 : 0.35)
-        // M25 fix — single-event hold 1.80 → 2.80s, multi 0.50 → 1.20s,
-        // reduce-motion single 0.40 → 0.90s. The card carries skill
-        // name + headline + level bars + subline; sub-second holds
-        // flashed past before the user could parse them. Tap-to-continue
-        // is the escape valve for users who've already read it.
-        let holdDuration: Double = Self.holdDuration(
-            isSingleEvent: isSingleEvent,
-            reduceMotion: reduceMotion
-        )
-        let outDuration: Double = reduceMotion ? 0.20 : 0.25
-        let barsDelay: Double = reduceMotion ? 0.0 : (isSingleEvent ? 0.12 : 0.18)
-
-        // Card slides in. Single-event full-motion uses a faster
-        // spring response so the in-feel reads as a wink. Multi-event
-        // keeps the gentler 0.55s spring so the sequence still feels
-        // like a deliberate parade of moments.
-        let contentSpring: Animation = isSingleEvent
-            ? .spring(response: 0.42, dampingFraction: 0.78)
-            : .spring(response: 0.55, dampingFraction: 0.78)
-        let barsSpring: Animation = isSingleEvent
-            ? .spring(response: 0.40, dampingFraction: 0.78)
-            : .spring(response: 0.5, dampingFraction: 0.78)
-        withAnimation(reduceMotion ? .easeOut(duration: inDuration)
-                                   : contentSpring) {
-            contentVisible = true
-        }
-        CoachHaptic.skillLevelUp()
-
-        // Bars advance shortly after the card lands so the fill reads
-        // as the consequence of the card arriving.
-        if barsDelay > 0 {
-            try? await Task.sleep(for: .seconds(barsDelay))
-        }
-        if Task.isCancelled { return }
-        withAnimation(reduceMotion ? .easeOut(duration: 0.25)
-                                   : barsSpring) {
-            barsAdvanced = true
-        }
-
-        // Hold so the user can read the card. The hold races a real
-        // sleep against a tap-driven continuation — whichever finishes
-        // first wakes us. Tap path resolves immediately; timer path
-        // resolves at `holdDuration`.
-        await holdWithTapEscape(seconds: holdDuration)
-        if Task.isCancelled { return }
-
-        // Fade out — only when there's another card behind it; the
-        // final event holds until the parent dismisses us.
-        if index < events.count - 1 {
-            withAnimation(.easeIn(duration: outDuration)) {
-                contentVisible = false
-            }
-            try? await Task.sleep(for: .seconds(outDuration))
-        }
-    }
-
     /// Suspend until either the timer elapses or a tap resumes the
-    /// stored continuation. The continuation is single-shot per event;
-    /// whichever resumes it first wins and the other is ignored.
+    /// stored continuation.
     private func holdWithTapEscape(seconds: Double) async {
         await withCheckedContinuation { continuation in
             holdContinuation = continuation
@@ -349,30 +299,20 @@ struct PreSummaryCelebration: View {
         }
     }
 
-    /// Resume the in-flight hold (from a tap or from natural timeout)
-    /// and clear the slot so subsequent events get a fresh continuation.
     private func resumeHoldIfWaiting() {
         guard let continuation = holdContinuation else { return }
         holdContinuation = nil
         continuation.resume()
     }
 
-    /// Tap-anywhere advances. If the hold is in flight, resume it so
-    /// the current event collapses early. If we're between events (no
-    /// active continuation) the next event is already presenting via
-    /// the sequence task — tap is a no-op in that gap.
     private func advanceFromTap() {
         resumeHoldIfWaiting()
     }
 
-    /// Exposed for tests — the canonical hold duration table. Keeping it
-    /// in one place means the timing tests can lock the values without
-    /// re-deriving the branches.
+    /// Exposed for tests — the canonical hold duration.
     static func holdDuration(isSingleEvent: Bool, reduceMotion: Bool) -> Double {
-        if reduceMotion {
-            return isSingleEvent ? 0.90 : 0.50
-        }
-        return isSingleEvent ? 2.80 : 1.20
+        if reduceMotion { return 3.0 }
+        return 5.0
     }
 }
 
