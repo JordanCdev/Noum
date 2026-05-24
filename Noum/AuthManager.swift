@@ -539,6 +539,10 @@ class AuthManager: ObservableObject {
         defaults.removeObject(forKey: "aiMonthlyAnalysisCount")
         defaults.removeObject(forKey: "aiMonthlyAnalysisMonth")
         defaults.removeObject(forKey: "hasAcknowledgedAIDisclosure.\(accountID)")
+        // AIRateLimiter day-bucketed counters — keys roll daily, so
+        // they're cleared via the store's own 30-day rolling sweep
+        // rather than enumerated by name here.
+        AIRateLimiter.shared.deleteAllData(for: accountID)
     }
 
     func supportReportPayload() -> String {
@@ -615,6 +619,7 @@ class AuthManager: ObservableObject {
             CoachLetterStore.shared.endSession()
             PostRepCoachNoteStore.shared.endSession()
             SuddenDeathRunHistoryStore.shared.endSession()
+            AIRateLimiter.shared.endSession()
         }
     }
 

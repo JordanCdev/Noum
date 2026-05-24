@@ -12825,3 +12825,334 @@ struct M25PersonalizationVoicePromptTests {
     }
 }
 
+// MARK: - AIRateLimiter
+//
+// Budget protection for the AI surfaces that fire on every rep + every
+// voice change. The deterministic fallback is always still available,
+// so a deny just means "rule-based note today" instead of "no note at
+// all." Locks the cap + debounce + day-rollover + premium-tier
+// contracts so a future refactor can't silently relax them and drift
+// the project's API spend.
+
+@available(iOS 17.0, *)
+@MainActor
+struct AIRateLimiterTests {
+
+    /// Mutable clock holder. The closure captured by the limiter
+    /// reads `clock.now`, so tests can advance the clock between
+    /// calls to walk past the debounce floor or roll the day key.
+    @MainActor
+    private final class Clock {
+        var now: Date = Date(timeIntervalSince1970: 1_700_000_000)
+        func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds) }
+    }
+
+    private func freshLimiter(
+        clock: Clock = Clock(),
+        premium: Bool = false,
+        account: String = "tester"
+    ) -> (AIRateLimiter, Clock) {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let limiter = AIRateLimiter(
+            defaults: suite,
+            accountIDProvider: { account },
+            now: { clock.now },
+            premiumProvider: { premium }
+        )
+        return (limiter, clock)
+    }
+
+    /// Advance just past the debounce floor between sequential calls
+    /// in tests that want to exercise the cap, not the debounce.
+    private static let step = AIRateLimiter.debounceSeconds + 0.1
+
+    @Test @MainActor func freeUserExhaustsAtFreeCap() {
+        let (limiter, clock) = freshLimiter(premium: false)
+        for _ in 0..<AIRateLimiter.freeDailyCap {
+            #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+            clock.advance(Self.step)
+        }
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == false)
+        #expect(limiter.remainingToday(kind: .postRepCoachNote) == 0)
+    }
+
+    @Test @MainActor func premiumUserGetsHigherCap() {
+        let (limiter, clock) = freshLimiter(premium: true)
+        for _ in 0..<AIRateLimiter.freeDailyCap {
+            _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+            clock.advance(Self.step)
+        }
+        // Past the free cap, premium should still have budget.
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+        #expect(AIRateLimiter.premiumDailyCap > AIRateLimiter.freeDailyCap)
+    }
+
+    @Test @MainActor func debounceFloorBlocksRapidBurst() {
+        // The voice-change regen path can fire AI requests in rapid
+        // succession if a user toggles voices fast in onboarding.
+        // The first one fires; the second one within the debounce
+        // window is denied.
+        let (limiter, clock) = freshLimiter()
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+        // Same instant — should be blocked by debounce floor.
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == false)
+        // Just inside the debounce window — still blocked.
+        clock.advance(AIRateLimiter.debounceSeconds - 0.1)
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == false)
+        // Past the debounce window — allowed again.
+        clock.advance(0.5)
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+    }
+
+    @Test @MainActor func dayRolloverResetsCounter() {
+        let (limiter, clock) = freshLimiter()
+        // Burn the free cap on day 1, spaced past the debounce floor.
+        for _ in 0..<AIRateLimiter.freeDailyCap {
+            #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+            clock.advance(Self.step)
+        }
+        // One more on day 1 — denied by cap (debounce already cleared).
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == false)
+        // Jump well past the calendar day boundary (+30h).
+        clock.advance(60 * 60 * 30)
+        // Day key should have rolled — allowed.
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+    }
+
+    @Test @MainActor func remainingTodayDecreasesWithUse() {
+        let (limiter, _) = freshLimiter(premium: false)
+        let cap = AIRateLimiter.freeDailyCap
+        #expect(limiter.remainingToday(kind: .postRepCoachNote) == cap)
+        _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        #expect(limiter.remainingToday(kind: .postRepCoachNote) == cap - 1)
+    }
+
+    @Test @MainActor func perAccountIsolation() {
+        // Two limiters against the same UserDefaults suite but
+        // different account IDs must not share counts.
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let clockA = Clock()
+        let clockB = Clock()
+        let alpha = AIRateLimiter(
+            defaults: suite, accountIDProvider: { "alpha" },
+            now: { clockA.now }, premiumProvider: { false }
+        )
+        let beta = AIRateLimiter(
+            defaults: suite, accountIDProvider: { "beta" },
+            now: { clockB.now }, premiumProvider: { false }
+        )
+        // Burn alpha's cap with proper time spacing.
+        for _ in 0..<AIRateLimiter.freeDailyCap {
+            _ = alpha.consumeIfAllowed(kind: .postRepCoachNote)
+            clockA.advance(Self.step)
+        }
+        #expect(alpha.remainingToday(kind: .postRepCoachNote) == 0)
+        // Beta should still have full headroom — counts don't bleed
+        // across accounts even though the UserDefaults suite is shared.
+        #expect(beta.remainingToday(kind: .postRepCoachNote) == AIRateLimiter.freeDailyCap)
+        #expect(beta.consumeIfAllowed(kind: .postRepCoachNote) == true)
+        // Alpha is still capped.
+        clockA.advance(Self.step)
+        #expect(alpha.consumeIfAllowed(kind: .postRepCoachNote) == false)
+    }
+
+    @Test @MainActor func deleteAllDataResetsAccountCounters() {
+        let (limiter, clock) = freshLimiter()
+        for _ in 0..<3 {
+            _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+            clock.advance(Self.step)
+        }
+        let preWipe = limiter.remainingToday(kind: .postRepCoachNote)
+        #expect(preWipe == AIRateLimiter.freeDailyCap - 3)
+        limiter.deleteAllData(for: "tester")
+        #expect(limiter.remainingToday(kind: .postRepCoachNote) == AIRateLimiter.freeDailyCap)
+    }
+
+    @Test @MainActor func endSessionClearsDebounceTimestamps() {
+        // End-of-session (sign-out) should not leave a debounce
+        // floor that would block the next signed-in user's first
+        // call. The day counts persist (they're per-account); only
+        // the in-memory debounce resets.
+        let (limiter, _) = freshLimiter()
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+        // Immediately after — debounce blocks.
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == false)
+        limiter.endSession()
+        // Debounce cleared — same clock value now allowed.
+        #expect(limiter.consumeIfAllowed(kind: .postRepCoachNote) == true)
+    }
+
+    @Test @MainActor func currentCapReflectsTier() {
+        let (free, _) = freshLimiter(premium: false)
+        let (premium, _) = freshLimiter(premium: true)
+        #expect(free.currentCap() == AIRateLimiter.freeDailyCap)
+        #expect(premium.currentCap() == AIRateLimiter.premiumDailyCap)
+    }
+}
+
+// MARK: - SuddenDeathHistoryExport
+//
+// Plain-text formatter for shared run history. Anti-goal-compliant:
+// never contains user transcripts (mirrors the leaderboard rule), only
+// engine-emitted outcome numbers. Tests lock the shape so a refactor
+// can't silently start leaking transcript content.
+
+@available(iOS 17.0, *)
+struct SuddenDeathHistoryExportTests {
+
+    private func run(
+        difficulty: SuddenDeathDifficulty,
+        rounds: Int = 4,
+        fillers: Int = 0,
+        score: Int = 7,
+        outcome: RoundOutcome = .survived,
+        wasNewBest: Bool = false,
+        date: Date = Date(timeIntervalSince1970: 1_700_000_000)
+    ) -> SuddenDeathRunRecord {
+        SuddenDeathRunRecord(
+            completedAt: date,
+            difficulty: difficulty,
+            roundsSurvived: rounds,
+            totalFillers: fillers,
+            totalWords: 60,
+            score: score,
+            xpEarned: 100,
+            finalOutcome: outcome,
+            wasNewBestAtTime: wasNewBest
+        )
+    }
+
+    // MARK: Empty paths
+
+    @Test func emptyFullExportSaysNoRunsYet() {
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: [])
+        #expect(text.contains("No runs yet"))
+        #expect(text.contains("Noum"))
+    }
+
+    @Test func emptyDifficultyExportSaysNoRunsAtThisDifficulty() {
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: [], difficulty: .hard)
+        #expect(text.contains("Hard"))
+        #expect(text.contains("No runs"))
+    }
+
+    @Test func emptyDifficultyExportAcrossMismatch() {
+        // Caller hands all runs in; we filter to the requested
+        // difficulty. If none match, treat as empty.
+        let text = SuddenDeathHistoryExport.formatPlainText(
+            runs: [run(difficulty: .easy)],
+            difficulty: .hard
+        )
+        #expect(text.contains("No runs at this difficulty"))
+    }
+
+    // MARK: Filtering + ordering
+
+    @Test func singleDifficultyExportFiltersOthers() {
+        let mixed = [
+            run(difficulty: .easy, rounds: 3, date: Date(timeIntervalSince1970: 1_700_000_000)),
+            run(difficulty: .medium, rounds: 5, date: Date(timeIntervalSince1970: 1_700_000_100)),
+            run(difficulty: .easy, rounds: 4, date: Date(timeIntervalSince1970: 1_700_000_200))
+        ]
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: mixed, difficulty: .easy)
+        #expect(text.contains("Easy"))
+        // Two easy runs included; medium row excluded.
+        let rowLines = text.split(separator: "\n").filter { $0.contains("|") && !$0.contains("Date") }
+        #expect(rowLines.count == 2)
+    }
+
+    @Test func sortsNewestFirstWithinDifficulty() {
+        let older = run(difficulty: .medium, rounds: 3, date: Date(timeIntervalSince1970: 1_700_000_000))
+        let newer = run(difficulty: .medium, rounds: 5, date: Date(timeIntervalSince1970: 1_700_000_500))
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: [older, newer], difficulty: .medium)
+        let lines = text.split(separator: "\n").map(String.init)
+        guard let newerIndex = lines.firstIndex(where: { $0.contains("| 5 |") }),
+              let olderIndex = lines.firstIndex(where: { $0.contains("| 3 |") }) else {
+            Issue.record("Could not locate run rows in export")
+            return
+        }
+        #expect(newerIndex < olderIndex)
+    }
+
+    // MARK: Header + row shape
+
+    @Test func headerRowMentionsAllColumns() {
+        let header = SuddenDeathHistoryExport.headerRow()
+        #expect(header.contains("Date"))
+        #expect(header.contains("Rounds"))
+        #expect(header.contains("Fillers"))
+        #expect(header.contains("Score"))
+        #expect(header.contains("Outcome"))
+    }
+
+    @Test func formattedRowIncludesAllFields() {
+        let r = run(difficulty: .hard, rounds: 7, fillers: 2, score: 8, outcome: .survived, wasNewBest: true)
+        let row = SuddenDeathHistoryExport.formatRow(r)
+        #expect(row.contains("| 7 |"))
+        #expect(row.contains("| 2 |"))
+        #expect(row.contains("8/10"))
+        #expect(row.contains("Survived"))
+        #expect(row.contains("best"))
+    }
+
+    @Test func failedOutcomesLabelHonestly() {
+        for outcome in [RoundOutcome.fillerOverload, .tooShort, .timeoutBeforeStart] {
+            let label = SuddenDeathHistoryExport.outcomeLabel(outcome)
+            #expect(!label.isEmpty)
+            #expect(label != "Survived")
+        }
+    }
+
+    // MARK: Full-history grouping
+
+    @Test func fullExportGroupsByDifficultyHeader() {
+        let runs = [
+            run(difficulty: .easy, rounds: 3),
+            run(difficulty: .medium, rounds: 5),
+            run(difficulty: .hard, rounds: 6)
+        ]
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: runs)
+        #expect(text.contains("--- Easy"))
+        #expect(text.contains("--- Medium"))
+        #expect(text.contains("--- Hard"))
+    }
+
+    @Test func fullExportTotalCountReflectsAllRuns() {
+        let runs = (0..<5).map { _ in run(difficulty: .easy) }
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: runs)
+        #expect(text.contains("5 total run"))
+    }
+
+    @Test func fullExportOrdersDifficultiesStably() {
+        // Easy first, then Medium, then Hard — regardless of insertion
+        // order. The stable order is what makes the artifact readable.
+        let runs = [
+            run(difficulty: .hard, rounds: 6),
+            run(difficulty: .easy, rounds: 3),
+            run(difficulty: .medium, rounds: 5)
+        ]
+        let text = SuddenDeathHistoryExport.formatPlainText(runs: runs)
+        guard let easyIndex = text.range(of: "--- Easy")?.lowerBound,
+              let mediumIndex = text.range(of: "--- Medium")?.lowerBound,
+              let hardIndex = text.range(of: "--- Hard")?.lowerBound else {
+            Issue.record("Missing difficulty header in full export")
+            return
+        }
+        #expect(easyIndex < mediumIndex)
+        #expect(mediumIndex < hardIndex)
+    }
+
+    @Test func exportNeverContainsTranscriptContent() {
+        // Anti-goal contract: the export must not contain any field
+        // that could carry user-authored text. SuddenDeathRunRecord
+        // doesn't carry a transcript today, so this guards against a
+        // future refactor that adds one and accidentally surfaces it.
+        let r = run(difficulty: .medium, rounds: 4)
+        let row = SuddenDeathHistoryExport.formatRow(r)
+        // The record has no transcript field; the row should not
+        // mention obvious transcript markers.
+        #expect(!row.lowercased().contains("transcript"))
+        #expect(!row.lowercased().contains("said"))
+    }
+}
+

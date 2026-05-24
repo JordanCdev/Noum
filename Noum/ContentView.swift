@@ -385,6 +385,8 @@ struct ContentView: View {
                     BigMomentIntakeView()
                 case .prepSession:
                     PrepSessionView(navigationPath: $navigationPath)
+                case .suddenDeathDifficultyDetail(let difficulty):
+                    SuddenDeathDifficultyRunsView(difficulty: difficulty)
                 }
             }
         }

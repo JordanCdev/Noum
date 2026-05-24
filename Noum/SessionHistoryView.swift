@@ -159,7 +159,12 @@ struct SessionHistoryView: View {
                         // when any other filter is selected.
                         if selectedModeFilter == .suddenDeath {
                             SuddenDeathHistoryBreakdownCard(
-                                runs: suddenDeathRunHistoryStore.runs
+                                runs: suddenDeathRunHistoryStore.runs,
+                                onSelectDifficulty: { difficulty in
+                                    navigationPath.append(
+                                        AppDestination.suddenDeathDifficultyDetail(difficulty: difficulty)
+                                    )
+                                }
                             )
                             .padding(.horizontal, Spacing.screenH)
                             .padding(.bottom, 16)

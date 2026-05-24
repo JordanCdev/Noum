@@ -121,6 +121,16 @@ actor PostRepCoachNoteService {
             return fallback
         }
 
+        // Rate-limit hidden polish-layer calls. Catches the burst
+        // path (multiple voice changes in onboarding → multiple
+        // regen requests) and the heavy-day path (a user grinding
+        // 15+ reps). On a deny, the deterministic fallback is
+        // already what the surface would have shown without an AI
+        // provider configured — silent, honest degradation.
+        guard await rateLimiterAllows() else {
+            return fallback
+        }
+
         do {
             let body = requestBody(for: provider, input: input)
             var request = URLRequest(url: endpoint)
@@ -634,6 +644,11 @@ actor PostRepCoachNoteService {
     @MainActor
     private func activeLocaleSupportsAI() -> Bool {
         LocaleSettingsManager.shared.current.aiSupported
+    }
+
+    @MainActor
+    private func rateLimiterAllows() -> Bool {
+        AIRateLimiter.shared.consumeIfAllowed(kind: .postRepCoachNote)
     }
 
     private func apiKey(for provider: AIProvider) -> String? {

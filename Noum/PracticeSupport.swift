@@ -42,6 +42,11 @@ enum AppDestination: Hashable {
     /// PrepSessionPlanner's plan and provides per-step launchers into
     /// Timed, Sudden Death, and IM.
     case prepSession
+    /// Per-difficulty drill-down for Sudden Death runs. Reached from
+    /// the breakdown card on `SessionHistoryView` when the user filters
+    /// to Sudden Death and taps a difficulty row. Renders the full run
+    /// list at that difficulty + a plain-text export affordance.
+    case suddenDeathDifficultyDetail(difficulty: SuddenDeathDifficulty)
 }
 
 struct SummaryPayload: Identifiable, Hashable {
