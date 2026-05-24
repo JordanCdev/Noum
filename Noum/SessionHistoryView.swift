@@ -170,6 +170,26 @@ struct SessionHistoryView: View {
                             .padding(.bottom, 16)
                         }
 
+                        // --- Ah-Counter history breakdown ---
+                        // Same shape as the SD breakdown, sourced from the
+                        // generic PracticeSession store (Ah-Counter doesn't
+                        // have an engine-specific run store; the filler-rate
+                        // signal lives on each PracticeSession row already).
+                        // Tapping the "cleanest rep" cell pushes the session
+                        // detail view — same destination as the row tap.
+                        if selectedModeFilter == .ahCounter {
+                            AhCounterHistoryBreakdownCard(
+                                sessions: filteredSessions,
+                                onSelectCleanestRep: { sessionID in
+                                    navigationPath.append(
+                                        AppDestination.sessionDetail(sessionID: sessionID)
+                                    )
+                                }
+                            )
+                            .padding(.horizontal, Spacing.screenH)
+                            .padding(.bottom, 16)
+                        }
+
                         // --- Section Header ---
                         // Sentence-case cardTitle + hairline divider. Reads as
                         // a premium app sentence, not a wireframe label.

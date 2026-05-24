@@ -13156,3 +13156,260 @@ struct SuddenDeathHistoryExportTests {
     }
 }
 
+// MARK: - AhCounterHistorySummary
+//
+// Mode-specific stat surface for Ah-Counter — surfaces the user's
+// filler-rate track record on the History view's Ah-Counter filter.
+// Tests lock the math (rate calc, averaging, cleanest-rep tiebreak)
+// and the trend windowing (7-day vs prior-7-day; trend omitted when
+// either window is empty).
+
+@available(iOS 17.0, *)
+@MainActor
+struct AhCounterHistorySummaryTests {
+
+    private func session(
+        fillers: Int,
+        durationSeconds: TimeInterval,
+        date: Date,
+        mode: PracticeMode = .ahCounter
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "x",
+            fillerWordCount: fillers,
+            duration: durationSeconds,
+            date: date,
+            mode: mode
+        )
+    }
+
+    // MARK: - ratePerMinute
+
+    @Test func rateZeroFillersIsZero() {
+        #expect(AhCounterHistorySummary.ratePerMinute(fillerCount: 0, durationSeconds: 60) == 0)
+    }
+
+    @Test func ratePerMinuteIsFillerCountWhenOneMinute() {
+        #expect(AhCounterHistorySummary.ratePerMinute(fillerCount: 5, durationSeconds: 60) == 5.0)
+    }
+
+    @Test func ratePerMinuteHalvesAtTwoMinutes() {
+        // 6 fillers / 2 minutes = 3/min
+        #expect(AhCounterHistorySummary.ratePerMinute(fillerCount: 6, durationSeconds: 120) == 3.0)
+    }
+
+    @Test func rateZeroDurationIsZero() {
+        // Defensive — divide-by-zero must never happen. Implementation
+        // returns 0 when duration ≤ 0, so a malformed session can't
+        // crash the summary.
+        #expect(AhCounterHistorySummary.ratePerMinute(fillerCount: 4, durationSeconds: 0) == 0)
+    }
+
+    // MARK: - summarize: empty + filtering
+
+    @Test func emptyInputReturnsNil() {
+        #expect(AhCounterHistorySummary.summarize(sessions: []) == nil)
+    }
+
+    @Test func filtersOutNonAhCounterModes() {
+        // A mixed-mode list with only one Ah-Counter rep should produce
+        // a summary with runCount == 1, not the full list.
+        let now = Date()
+        let sessions = [
+            session(fillers: 0, durationSeconds: 60, date: now, mode: .timed),
+            session(fillers: 2, durationSeconds: 60, date: now, mode: .ahCounter),
+            session(fillers: 0, durationSeconds: 60, date: now, mode: .suddenDeath)
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.runCount == 1)
+    }
+
+    @Test func nilWhenNoAhCounterSessions() {
+        // Mixed-mode input with zero Ah-Counter reps should produce
+        // nil, not an empty-state summary.
+        let now = Date()
+        let sessions = [
+            session(fillers: 0, durationSeconds: 60, date: now, mode: .timed),
+            session(fillers: 0, durationSeconds: 60, date: now, mode: .suddenDeath)
+        ]
+        #expect(AhCounterHistorySummary.summarize(sessions: sessions) == nil)
+    }
+
+    // MARK: - summarize: cleanest rep
+
+    @Test func cleanestRepIsLowestFillersPerMinute() {
+        let now = Date()
+        let sessions = [
+            // 4 fillers / 60s = 4.0/min
+            session(fillers: 4, durationSeconds: 60, date: now),
+            // 1 filler / 60s = 1.0/min  ← cleanest
+            session(fillers: 1, durationSeconds: 60, date: now.addingTimeInterval(-120)),
+            // 6 fillers / 60s = 6.0/min
+            session(fillers: 6, durationSeconds: 60, date: now.addingTimeInterval(-240))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.cleanest?.fillerCount == 1)
+        #expect(stats?.cleanest?.fillersPerMinute == 1.0)
+    }
+
+    @Test func cleanestRepTiebreaksByMostRecent() {
+        // Two reps at 0 fillers — the most recent one wins so the
+        // "Cleanest rep" cell reads "today" not "two weeks ago" when
+        // both qualify.
+        let now = Date()
+        let older = session(fillers: 0, durationSeconds: 60, date: now.addingTimeInterval(-86_400 * 7))
+        let newer = session(fillers: 0, durationSeconds: 60, date: now)
+        let stats = AhCounterHistorySummary.summarize(sessions: [older, newer])
+        #expect(stats?.cleanest?.sessionID == newer.id)
+    }
+
+    @Test func cleanestRepDropsZeroDurationSessions() {
+        // A zero-duration session can't have a meaningful rate; the
+        // summary should drop it from cleanest-rep consideration even
+        // when it has 0 fillers (which would otherwise tie for best).
+        let now = Date()
+        let invalid = session(fillers: 0, durationSeconds: 0, date: now)
+        let valid = session(fillers: 3, durationSeconds: 60, date: now.addingTimeInterval(-60))
+        let stats = AhCounterHistorySummary.summarize(sessions: [invalid, valid])
+        #expect(stats?.cleanest?.sessionID == valid.id)
+    }
+
+    // MARK: - summarize: averages
+
+    @Test func averageFillersPerMinuteRoundsToOneDecimal() {
+        let now = Date()
+        // 1/min + 2/min + 4/min = 7/3 = 2.333... → 2.3
+        let sessions = [
+            session(fillers: 1, durationSeconds: 60, date: now),
+            session(fillers: 2, durationSeconds: 60, date: now.addingTimeInterval(-60)),
+            session(fillers: 4, durationSeconds: 60, date: now.addingTimeInterval(-120))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.averageFillersPerMinute == 2.3)
+    }
+
+    @Test func averageFillersPerMinuteIsNilWhenAllZeroDuration() {
+        // Pathological input — every session has zero duration. The
+        // average should be nil (not 0), so the UI can omit the cell
+        // rather than render a misleading "0.0/min" headline.
+        let now = Date()
+        let sessions = [
+            session(fillers: 0, durationSeconds: 0, date: now),
+            session(fillers: 4, durationSeconds: 0, date: now.addingTimeInterval(-60))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.runCount == 2)
+        #expect(stats?.averageFillersPerMinute == nil)
+        #expect(stats?.cleanest == nil)
+    }
+
+    @Test func cleanRepCountTracksZeroFillers() {
+        let now = Date()
+        let sessions = [
+            session(fillers: 0, durationSeconds: 60, date: now),
+            session(fillers: 1, durationSeconds: 60, date: now.addingTimeInterval(-60)),
+            session(fillers: 0, durationSeconds: 60, date: now.addingTimeInterval(-120)),
+            session(fillers: 3, durationSeconds: 60, date: now.addingTimeInterval(-180))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.cleanRepCount == 2)
+    }
+
+    @Test func runCountReflectsFilteredAhCounterReps() {
+        let now = Date()
+        let sessions = [
+            session(fillers: 0, durationSeconds: 60, date: now),
+            session(fillers: 1, durationSeconds: 60, date: now.addingTimeInterval(-60)),
+            session(fillers: 2, durationSeconds: 60, date: now.addingTimeInterval(-120), mode: .timed)
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions)
+        #expect(stats?.runCount == 2)
+    }
+
+    // MARK: - trendComparison
+
+    @Test func trendNilWhenRecentWindowEmpty() {
+        // All sessions in the prior 7-day window — no recent reps to
+        // compare against. Trend should be nil so the UI omits it.
+        let now = Date()
+        let sessions = [
+            session(fillers: 2, durationSeconds: 60, date: now.addingTimeInterval(-86_400 * 10)),
+            session(fillers: 3, durationSeconds: 60, date: now.addingTimeInterval(-86_400 * 12))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.trend == nil)
+    }
+
+    @Test func trendNilWhenPriorWindowEmpty() {
+        // First-week user — all sessions in the recent 7-day window,
+        // nothing prior. Trend should be nil rather than fabricated.
+        let now = Date()
+        let sessions = [
+            session(fillers: 1, durationSeconds: 60, date: now),
+            session(fillers: 2, durationSeconds: 60, date: now.addingTimeInterval(-3600))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.trend == nil)
+    }
+
+    @Test func trendImprovingWhenRecentRateIsLower() {
+        // Prior week: 6/min. Recent week: 1/min. Delta < -0.5 → improving.
+        let now = Date()
+        let sessions = [
+            session(fillers: 1, durationSeconds: 60, date: now),
+            session(fillers: 6, durationSeconds: 60, date: now.addingTimeInterval(-86_400 * 10))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        let trend = stats?.trend
+        #expect(trend?.direction == .improving)
+        #expect((trend?.recentSevenDayRate ?? 0) < (trend?.priorSevenDayRate ?? 0))
+    }
+
+    @Test func trendWorseningWhenRecentRateIsHigher() {
+        // Prior week: 1/min. Recent week: 6/min. Delta > 0.5 → worsening.
+        let now = Date()
+        let sessions = [
+            session(fillers: 6, durationSeconds: 60, date: now),
+            session(fillers: 1, durationSeconds: 60, date: now.addingTimeInterval(-86_400 * 10))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.trend?.direction == .worsening)
+    }
+
+    @Test func trendSteadyWhenDeltaWithinThreshold() {
+        // Prior: 2/min. Recent: 2.2/min. |Δ| = 0.2 < 0.5 threshold → steady.
+        let now = Date()
+        let sessions = [
+            // Recent window: 2 fillers / 60s = 2/min, plus 3/120s = 1.5/min → mean 1.75
+            session(fillers: 2, durationSeconds: 60, date: now),
+            session(fillers: 3, durationSeconds: 120, date: now.addingTimeInterval(-3600)),
+            // Prior window: 2/60s = 2/min, 1.5/min → mean 1.75
+            session(fillers: 2, durationSeconds: 60, date: now.addingTimeInterval(-86_400 * 10)),
+            session(fillers: 3, durationSeconds: 120, date: now.addingTimeInterval(-86_400 * 11))
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.trend?.direction == .steady)
+    }
+}
+
+// MARK: - AISettings premium constants
+//
+// Locks the premium / free debrief caps so the Settings AI-usage card's
+// upgrade CTA can't quietly drift away from the runtime cap that
+// AISettingsManager.monthlyLimit reads.
+
+@available(iOS 17.0, *)
+@MainActor
+struct AISettingsManagerPremiumConstantsTests {
+
+    @Test func premiumDebriefLimitIsHigherThanFree() {
+        #expect(AISettingsManager.premiumMonthlyDebriefLimit > AISettingsManager.freeMonthlyDebriefLimit)
+    }
+
+    @Test func freeDebriefLimitIsPositive() {
+        // A zero free cap would block every AI debrief on free, which
+        // would conflict with the "try it before you buy" pillar.
+        #expect(AISettingsManager.freeMonthlyDebriefLimit > 0)
+    }
+}
+

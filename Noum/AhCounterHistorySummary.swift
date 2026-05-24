@@ -1,0 +1,190 @@
+import Foundation
+
+// MARK: - AhCounterHistorySummary
+//
+// Pure helper for summarizing Ah-Counter reps. Lives next to
+// `SuddenDeathHistorySummary` so the History surface has a consistent
+// shape across modes: filter to a mode → see a per-mode hero card
+// above the generic session rows.
+//
+// Ah-Counter is "the filler-eradication classic" — the only signal
+// that matters is how many fillers leaked through, normalised against
+// how long the user spoke. So the per-mode summary distils to four
+// numbers the user actually reads:
+//   • Total reps recorded in this mode
+//   • Cleanest rep (fewest fillers per minute, with the absolute
+//     filler count surfaced too — "0 fillers · 1:24" beats "0.0/min")
+//   • Average fillers per minute across all reps in the mode
+//   • Clean-rep count (zero fillers — the "clutch" wins)
+//   • 7-day vs prior-7-day delta — the honest direction signal
+//
+// The 7-day/prior-7-day comparison is the only "trend" the helper
+// computes — and only when both windows have at least one rep. No
+// invented direction copy when there isn't enough data to read one.
+//
+// Vision-aligned (docs/VISION.md pillar #4 — Believable progress):
+// the user sees their actual track record in their filler-fighting
+// mode, computed from the session records the engine wrote at
+// finalize time. No narrative. No coach voice. Numbers only.
+
+@available(iOS 17.0, *)
+struct AhCounterHistorySummaryStats: Equatable {
+    let runCount: Int
+    /// Mean of (fillerWordCount / durationMinutes) across reps. ≥ 0.
+    /// `nil` when no rep had a measurable duration (defensive — should
+    /// never happen in practice).
+    let averageFillersPerMinute: Double?
+    /// The rep with the lowest fillers-per-minute. `nil` on empty
+    /// input. When there's a multi-way tie, the most-recent qualifying
+    /// rep wins (user reads "today's clean rep" before "last month's
+    /// clean rep").
+    let cleanest: CleanestRep?
+    /// Number of reps with `fillerWordCount == 0`. The honest "clutch
+    /// win" tally — every zero-filler rep counts.
+    let cleanRepCount: Int
+    /// Per-minute filler rate over the most recent 7 calendar days,
+    /// and over the 7 days before that. Only set when BOTH windows
+    /// have ≥1 rep with measurable duration; otherwise both nil so
+    /// the surface omits the trend rather than fabricating it.
+    let trend: TrendComparison?
+
+    struct CleanestRep: Equatable {
+        let sessionID: UUID
+        let date: Date
+        let fillerCount: Int
+        let durationSeconds: TimeInterval
+        let fillersPerMinute: Double
+    }
+
+    struct TrendComparison: Equatable {
+        let recentSevenDayRate: Double
+        let priorSevenDayRate: Double
+
+        /// Positive when the recent window has a HIGHER filler rate
+        /// (worse), negative when lower (better). Zero when identical.
+        var deltaRate: Double { recentSevenDayRate - priorSevenDayRate }
+
+        /// "improving" / "worsening" / "steady" — used for the
+        /// caption copy. Bucketed against a 0.5-fillers-per-minute
+        /// threshold so a 0.1/min swing reads as steady rather than
+        /// movement (a 30-second rep with one filler shifts the rate
+        /// by ~2/min; the threshold filters that noise).
+        var direction: Direction {
+            if abs(deltaRate) < 0.5 { return .steady }
+            return deltaRate < 0 ? .improving : .worsening
+        }
+
+        enum Direction: Equatable {
+            case improving
+            case worsening
+            case steady
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+enum AhCounterHistorySummary {
+
+    /// Produce the summary stats from a list of `PracticeSession`
+    /// rows. Callers pass already-filtered Ah-Counter sessions;
+    /// defensive in any case — sessions whose `mode != .ahCounter` are
+    /// dropped silently so an upstream filter mistake produces an
+    /// empty result, not a misleading mixed-mode aggregate.
+    static func summarize(
+        sessions: [PracticeSession],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> AhCounterHistorySummaryStats? {
+        let ahCounterRuns = sessions.filter { $0.mode == .ahCounter }
+        guard !ahCounterRuns.isEmpty else { return nil }
+
+        // Cleanest rep: lowest fillers-per-minute, tiebreak by most
+        // recent date so the user reads their freshest clean rep first.
+        let withRate: [(PracticeSession, Double)] = ahCounterRuns.compactMap { session in
+            guard session.duration > 0 else { return nil }
+            let rate = ratePerMinute(fillerCount: session.fillerWordCount, durationSeconds: session.duration)
+            return (session, rate)
+        }
+        let cleanest = withRate
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                return lhs.0.date > rhs.0.date
+            }
+            .first
+            .map { (session, rate) in
+                AhCounterHistorySummaryStats.CleanestRep(
+                    sessionID: session.id,
+                    date: session.date,
+                    fillerCount: session.fillerWordCount,
+                    durationSeconds: session.duration,
+                    fillersPerMinute: rate
+                )
+            }
+
+        let averageFillersPerMinute: Double? = {
+            guard !withRate.isEmpty else { return nil }
+            let total = withRate.map(\.1).reduce(0, +)
+            let mean = total / Double(withRate.count)
+            return (mean * 10).rounded() / 10
+        }()
+
+        let cleanRepCount = ahCounterRuns.reduce(0) { $0 + ($1.fillerWordCount == 0 ? 1 : 0) }
+
+        let trend = trendComparison(
+            sessions: ahCounterRuns,
+            now: now,
+            calendar: calendar
+        )
+
+        return AhCounterHistorySummaryStats(
+            runCount: ahCounterRuns.count,
+            averageFillersPerMinute: averageFillersPerMinute,
+            cleanest: cleanest,
+            cleanRepCount: cleanRepCount,
+            trend: trend
+        )
+    }
+
+    /// Pure rate calculation — filler count divided by minutes of
+    /// recorded speech. Exposed for tests so the rate math itself can
+    /// be locked independent of the rest of the summary.
+    static func ratePerMinute(fillerCount: Int, durationSeconds: TimeInterval) -> Double {
+        guard durationSeconds > 0 else { return 0 }
+        let minutes = durationSeconds / 60.0
+        return Double(fillerCount) / minutes
+    }
+
+    // MARK: - Trend helpers (internal — exposed for tests)
+
+    /// 7-day vs prior 7-day mean filler-rate comparison. Both windows
+    /// must have ≥1 measurable rep — otherwise `nil` so the UI omits
+    /// the trend chip rather than rendering a single-point "direction."
+    static func trendComparison(
+        sessions: [PracticeSession],
+        now: Date,
+        calendar: Calendar
+    ) -> AhCounterHistorySummaryStats.TrendComparison? {
+        let recentWindowStart = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        let priorWindowStart = calendar.date(byAdding: .day, value: -14, to: now) ?? now
+        let recent = sessions.filter { $0.date >= recentWindowStart && $0.date <= now }
+        let prior = sessions.filter { $0.date >= priorWindowStart && $0.date < recentWindowStart }
+        guard !recent.isEmpty, !prior.isEmpty else { return nil }
+
+        let recentRate = meanRate(sessions: recent)
+        let priorRate = meanRate(sessions: prior)
+        guard let recentRate, let priorRate else { return nil }
+        return AhCounterHistorySummaryStats.TrendComparison(
+            recentSevenDayRate: recentRate,
+            priorSevenDayRate: priorRate
+        )
+    }
+
+    private static func meanRate(sessions: [PracticeSession]) -> Double? {
+        let rates: [Double] = sessions.compactMap { session in
+            guard session.duration > 0 else { return nil }
+            return ratePerMinute(fillerCount: session.fillerWordCount, durationSeconds: session.duration)
+        }
+        guard !rates.isEmpty else { return nil }
+        return rates.reduce(0, +) / Double(rates.count)
+    }
+}
