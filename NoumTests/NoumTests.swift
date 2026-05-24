@@ -7545,6 +7545,33 @@ struct AppDestinationSessionDetailTests {
         set.insert(.sessionDetail(sessionID: id))
         #expect(set.count == 1, "Identical session-detail destinations must collapse in a Set")
     }
+
+    @Test func imScenarioDetailEqualsByScenario() {
+        let a: AppDestination = .imScenarioDetail(scenario: .networking)
+        let b: AppDestination = .imScenarioDetail(scenario: .networking)
+        #expect(a == b)
+    }
+
+    @Test func imScenarioDetailDistinctByScenario() {
+        let a: AppDestination = .imScenarioDetail(scenario: .networking)
+        let b: AppDestination = .imScenarioDetail(scenario: .socialCatchUp)
+        #expect(a != b)
+    }
+
+    @Test func imScenarioDetailDistinctFromSuddenDeathDifficultyDetail() {
+        // The two per-mode drill-downs share the same shape on the
+        // History surface but must remain distinct destinations.
+        let im: AppDestination = .imScenarioDetail(scenario: .difficultConversation)
+        let sd: AppDestination = .suddenDeathDifficultyDetail(difficulty: .hard)
+        #expect(im != sd)
+    }
+
+    @Test func imScenarioDetailIsHashable() {
+        var set: Set<AppDestination> = []
+        set.insert(.imScenarioDetail(scenario: .workUpdate))
+        set.insert(.imScenarioDetail(scenario: .workUpdate))
+        #expect(set.count == 1)
+    }
 }
 
 #if DEBUG
@@ -13276,5 +13303,440 @@ struct M25PersonalizationVoicePromptTests {
         #expect(prompt.contains("strict JSON"))
         #expect(prompt.contains("weekIndex"))
         #expect(prompt.contains("Exactly 4 weeks"))
+    }
+}
+
+// MARK: - M24 deferred-slate (round 5) — best-this-week chips, WPM zone band, IM scenario detail
+
+// Locks the "this week" window contracts on the three per-mode summary
+// helpers + the IM export plain-text shape + the SD `bestThisWeek`
+// picker. Pure functions; no UI under test. Date math is built around
+// a fixed `now` so the tests don't drift with the wall clock.
+
+@available(iOS 17.0, *)
+struct TimedHistorySummaryBestThisWeekTests {
+
+    private let now: Date = {
+        // Fixed reference date so the test reads the same in every run.
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 24, hour: 12).date!
+    }()
+
+    private func session(daysAgo: Double, score: Int) -> PracticeSession {
+        PracticeSession(
+            transcript: "test rep",
+            fillerWordCount: 1,
+            duration: 30,
+            date: now.addingTimeInterval(-daysAgo * 86400),
+            mode: .timed,
+            score: score
+        )
+    }
+
+    @Test func bestIsThisWeekTrueWhenBestRepInsideLastSevenDays() {
+        let sessions = [
+            session(daysAgo: 2,  score: 9),
+            session(daysAgo: 12, score: 7)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.bestIsThisWeek == true)
+    }
+
+    @Test func bestIsThisWeekFalseWhenBestRepIsOlderThanSevenDays() {
+        let sessions = [
+            session(daysAgo: 1,  score: 6),
+            session(daysAgo: 10, score: 9)
+        ]
+        let stats = TimedHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.best?.score == 9)
+        #expect(stats?.bestIsThisWeek == false)
+    }
+
+    @Test func bestIsThisWeekFalseOnEmpty() {
+        let stats = TimedHistorySummary.summarize(sessions: [], now: now)
+        #expect(stats == nil)
+    }
+
+    @Test func isThisWeekBoundaryInclusiveAtNow() {
+        let date = now
+        #expect(TimedHistorySummary.isThisWeek(date: date, now: now) == true)
+    }
+
+    @Test func isThisWeekBoundaryInclusiveAtSevenDaysAgo() {
+        let boundary = Calendar.current.date(byAdding: .day, value: -7, to: now)!
+        #expect(TimedHistorySummary.isThisWeek(date: boundary, now: now) == true)
+    }
+
+    @Test func isThisWeekFalseJustOutsideWindow() {
+        // 7 days + 1 second ago — outside the inclusive boundary.
+        let outside = Calendar.current.date(byAdding: .day, value: -7, to: now)!
+            .addingTimeInterval(-1)
+        #expect(TimedHistorySummary.isThisWeek(date: outside, now: now) == false)
+    }
+
+    @Test func isThisWeekFalseForFutureDate() {
+        // Defensive: a future date (clock drift / test fixture mistake)
+        // must NOT read as "this week."
+        let future = now.addingTimeInterval(60)
+        #expect(TimedHistorySummary.isThisWeek(date: future, now: now) == false)
+    }
+}
+
+@available(iOS 17.0, *)
+struct AhCounterHistorySummaryThisWeekTests {
+
+    private let now: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 24, hour: 12).date!
+    }()
+
+    private func session(daysAgo: Double, fillers: Int, duration: TimeInterval = 60) -> PracticeSession {
+        PracticeSession(
+            transcript: "test rep \(fillers)",
+            fillerWordCount: fillers,
+            duration: duration,
+            date: now.addingTimeInterval(-daysAgo * 86400),
+            mode: .ahCounter
+        )
+    }
+
+    @Test func cleanestIsThisWeekTrueWhenCleanestInsideLastSevenDays() {
+        let sessions = [
+            session(daysAgo: 2,  fillers: 0),
+            session(daysAgo: 12, fillers: 5)
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.cleanestIsThisWeek == true)
+    }
+
+    @Test func cleanestIsThisWeekFalseWhenCleanestIsOlder() {
+        let sessions = [
+            session(daysAgo: 1,  fillers: 8),
+            session(daysAgo: 9,  fillers: 0)
+        ]
+        let stats = AhCounterHistorySummary.summarize(sessions: sessions, now: now)
+        #expect(stats?.cleanest?.fillerCount == 0)
+        #expect(stats?.cleanestIsThisWeek == false)
+    }
+
+    @Test func cleanestIsThisWeekFalseOnEmpty() {
+        let stats = AhCounterHistorySummary.summarize(sessions: [], now: now)
+        #expect(stats == nil)
+    }
+
+    @Test func isThisWeekBoundaryInclusiveAtNow() {
+        #expect(AhCounterHistorySummary.isThisWeek(date: now, now: now) == true)
+    }
+
+    @Test func isThisWeekBoundaryAlignsWithTimedHelper() {
+        // Both helpers must agree on the boundary — the History
+        // surface reads them side-by-side.
+        let boundary = Calendar.current.date(byAdding: .day, value: -7, to: now)!
+        #expect(AhCounterHistorySummary.isThisWeek(date: boundary, now: now)
+                == TimedHistorySummary.isThisWeek(date: boundary, now: now))
+        let outside = boundary.addingTimeInterval(-1)
+        #expect(AhCounterHistorySummary.isThisWeek(date: outside, now: now)
+                == TimedHistorySummary.isThisWeek(date: outside, now: now))
+    }
+}
+
+@available(iOS 17.0, *)
+struct SuddenDeathBestThisWeekTests {
+
+    private let now: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 24, hour: 12).date!
+    }()
+
+    private func run(
+        difficulty: SuddenDeathDifficulty,
+        rounds: Int,
+        daysAgo: Double
+    ) -> SuddenDeathRunRecord {
+        SuddenDeathRunRecord(
+            completedAt: now.addingTimeInterval(-daysAgo * 86400),
+            difficulty: difficulty,
+            roundsSurvived: rounds,
+            totalFillers: 0,
+            totalWords: 60,
+            score: 7,
+            xpEarned: 100,
+            finalOutcome: .survived,
+            wasNewBestAtTime: false
+        )
+    }
+
+    @Test func bestThisWeekNilOnEmpty() {
+        #expect(SuddenDeathHistorySummary.bestThisWeek(from: [], now: now) == nil)
+    }
+
+    @Test func bestThisWeekNilWhenAllRunsAreOlderThanSevenDays() {
+        let runs = [
+            run(difficulty: .easy, rounds: 5, daysAgo: 10),
+            run(difficulty: .hard, rounds: 8, daysAgo: 30)
+        ]
+        #expect(SuddenDeathHistorySummary.bestThisWeek(from: runs, now: now) == nil)
+    }
+
+    @Test func bestThisWeekPicksHighestRoundsInWindow() {
+        let runs = [
+            run(difficulty: .easy,   rounds: 4, daysAgo: 1),
+            run(difficulty: .medium, rounds: 7, daysAgo: 3),
+            run(difficulty: .hard,   rounds: 9, daysAgo: 12) // OUTSIDE window
+        ]
+        let best = SuddenDeathHistorySummary.bestThisWeek(from: runs, now: now)
+        #expect(best?.roundsSurvived == 7)
+        #expect(best?.difficulty == .medium)
+    }
+
+    @Test func bestThisWeekTiebreakByMostRecent() {
+        // Two runs tie on roundsSurvived inside the window — the more
+        // recent run wins so the user reads "today's best" before
+        // "Wednesday's best."
+        let runs = [
+            run(difficulty: .hard, rounds: 8, daysAgo: 1),
+            run(difficulty: .easy, rounds: 8, daysAgo: 5)
+        ]
+        let best = SuddenDeathHistorySummary.bestThisWeek(from: runs, now: now)
+        #expect(best?.difficulty == .hard)
+    }
+
+    @Test func bestThisWeekIncludesBoundaryAtSevenDaysAgo() {
+        // A run exactly 7 days ago lives ON the inclusive boundary —
+        // must be picked when nothing later beats it.
+        let runs = [run(difficulty: .medium, rounds: 6, daysAgo: 7)]
+        let best = SuddenDeathHistorySummary.bestThisWeek(from: runs, now: now)
+        #expect(best?.roundsSurvived == 6)
+    }
+}
+
+@available(iOS 17.0, *)
+struct IMBestThisWeekTests {
+
+    private let now: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 24, hour: 12).date!
+    }()
+
+    private func session(
+        scenario: IMConversationScenario,
+        score: Int?,
+        daysAgo: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: now.addingTimeInterval(-daysAgo * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: .confident),
+                turns: [],
+                actualTone: nil,
+                finalState: IMConversationState(trust: 7, engagement: 6, tension: 4, beat: "x"),
+                outcome: nil
+            ),
+            score: score
+        )
+    }
+
+    @Test func bestThisWeekNilWhenNoImSessions() {
+        #expect(IMHistorySummary.bestThisWeek(from: [], now: now) == nil)
+    }
+
+    @Test func bestThisWeekNilWhenNoScoredImSessionsInWindow() {
+        let sessions = [
+            session(scenario: .networking, score: nil, daysAgo: 2)
+        ]
+        #expect(IMHistorySummary.bestThisWeek(from: sessions, now: now) == nil)
+    }
+
+    @Test func bestThisWeekPicksHighestScoreInWindow() {
+        let sessions = [
+            session(scenario: .socialCatchUp,        score: 7, daysAgo: 1),
+            session(scenario: .difficultConversation, score: 9, daysAgo: 4),
+            session(scenario: .workUpdate,           score: 10, daysAgo: 11) // OUTSIDE window
+        ]
+        let best = IMHistorySummary.bestThisWeek(from: sessions, now: now)
+        #expect(best?.score == 9)
+        #expect(best?.scenario == .difficultConversation)
+    }
+
+    @Test func bestThisWeekTiebreakByMostRecent() {
+        let sessions = [
+            session(scenario: .networking,    score: 8, daysAgo: 1),
+            session(scenario: .socialCatchUp, score: 8, daysAgo: 6)
+        ]
+        let best = IMHistorySummary.bestThisWeek(from: sessions, now: now)
+        #expect(best?.scenario == .networking)
+    }
+
+    @Test func bestThisWeekIgnoresOtherModes() {
+        // A non-IM session with mode == .timed should NOT show up in
+        // the IM "best this week" picker even if it scored higher.
+        let sessions = [
+            session(scenario: .networking, score: 7, daysAgo: 1),
+            PracticeSession(
+                transcript: "timed rep",
+                fillerWordCount: 0,
+                duration: 30,
+                date: now.addingTimeInterval(-86400),
+                mode: .timed,
+                score: 10
+            )
+        ]
+        let best = IMHistorySummary.bestThisWeek(from: sessions, now: now)
+        #expect(best?.score == 7)
+        #expect(best?.scenario == .networking)
+    }
+}
+
+@available(iOS 17.0, *)
+struct IMHistoryExportTests {
+
+    private func session(
+        scenario: IMConversationScenario,
+        tone: IMTargetTone = .confident,
+        score: Int? = 8,
+        trust: Int = 7,
+        tension: Int = 4,
+        date: Date = Date()
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: date,
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: tone),
+                turns: [
+                    // A turn with the user's real text — proves the
+                    // export NEVER leaks transcript content into the
+                    // share string.
+                    IMConversationTurn(speaker: .user, text: "this is private transcript content"),
+                    IMConversationTurn(speaker: .npc, text: "and the npc reply")
+                ],
+                actualTone: nil,
+                finalState: IMConversationState(trust: trust, engagement: 6, tension: tension, beat: "the private beat"),
+                outcome: nil
+            ),
+            score: score
+        )
+    }
+
+    @Test func emptyInputReturnsHonestPlaceholder() {
+        let crossExport = IMHistoryExport.formatPlainText(sessions: [])
+        #expect(crossExport.contains("No reps yet"))
+
+        let scenarioExport = IMHistoryExport.formatPlainText(
+            sessions: [],
+            scenario: .networking
+        )
+        #expect(scenarioExport.contains("No reps in this scenario yet"))
+    }
+
+    @Test func crossScenarioExportNeverContainsTranscriptContent() {
+        let sessions = [
+            session(scenario: .networking),
+            session(scenario: .difficultConversation, score: 6, trust: 4, tension: 8)
+        ]
+        let export = IMHistoryExport.formatPlainText(sessions: sessions)
+        #expect(!export.contains("private transcript content"))
+        #expect(!export.contains("npc reply"))
+        #expect(!export.contains("private beat"))
+    }
+
+    @Test func scenarioFilteredExportOnlyIncludesRequestedScenario() {
+        let sessions = [
+            session(scenario: .networking, score: 9),
+            session(scenario: .difficultConversation, score: 5)
+        ]
+        let export = IMHistoryExport.formatPlainText(
+            sessions: sessions,
+            scenario: .networking
+        )
+        #expect(export.contains("Networking"))
+        #expect(!export.contains("Difficult Conversation"))
+        #expect(export.contains("9/10"))
+        #expect(!export.contains("5/10"))
+    }
+
+    @Test func headerRowShapeIsStable() {
+        // Column shape is a contract — downstream paste/share users
+        // depend on it. If columns change, this is intentional and the
+        // test should be updated; an accidental shift fails here.
+        #expect(IMHistoryExport.headerRow() == "Date | Score | Trust | Tension | Target tone")
+    }
+
+    @Test func unscoredRepRendersWithDashScore() {
+        let sessions = [session(scenario: .networking, score: nil)]
+        let row = IMHistoryExport.formatRow(sessions[0])
+        // "Date | — | 7/10 | 4/10 | Confident"
+        #expect(row.contains("| — |"))
+    }
+
+    @Test func crossScenarioExportFollowsStableOrder() {
+        // Social → Work → Difficult → Networking — the same order the
+        // scenario row sort uses for visual consistency across
+        // surfaces. Each scenario only appears once.
+        let sessions = [
+            session(scenario: .networking),
+            session(scenario: .socialCatchUp),
+            session(scenario: .difficultConversation),
+            session(scenario: .workUpdate)
+        ]
+        let export = IMHistoryExport.formatPlainText(sessions: sessions)
+        let socialIdx = export.range(of: "Social Catch-Up")?.lowerBound
+        let workIdx   = export.range(of: "Work Update")?.lowerBound
+        let diffIdx   = export.range(of: "Difficult Conversation")?.lowerBound
+        let netIdx    = export.range(of: "Networking")?.lowerBound
+
+        #expect(socialIdx != nil && workIdx != nil && diffIdx != nil && netIdx != nil)
+        if let s = socialIdx, let w = workIdx, let d = diffIdx, let n = netIdx {
+            #expect(s < w)
+            #expect(w < d)
+            #expect(d < n)
+        }
+    }
+}
+
+// MARK: - WPM zone band ratio + label contracts
+//
+// The zone band on `TimedHistoryBreakdownCard` is a visual restatement
+// of `inZoneRepCount / runCount`. The view itself isn't unit-tested
+// (SwiftUI rendering), but the underlying ratio + range constants are.
+
+@available(iOS 17.0, *)
+struct TimedHistoryZoneBandContractTests {
+
+    @Test func zoneRangeConstantsLockedToWPMEvaluatorTimedBand() {
+        // The card subtitle quotes the same band the engine uses to
+        // score Timed reps (130–160 WPM per WPMEvaluator). A future
+        // engine-side tweak should fail this contract on purpose.
+        #expect(TimedHistorySummary.zoneMinWPM == 130)
+        #expect(TimedHistorySummary.zoneMaxWPM == 160)
+        #expect(TimedHistorySummary.zoneMinWPM < TimedHistorySummary.zoneMaxWPM)
+    }
+
+    @Test func inZoneCountStaysBoundedByRunCount() {
+        // No run can be "in zone" more than once; the count cannot
+        // exceed the total. Belt-and-braces — locks the invariant the
+        // visual band depends on.
+        let now = Date()
+        let inZone = PracticeSession(
+            transcript: String(repeating: "word ", count: 70), // ~140 WPM at 30s
+            fillerWordCount: 0,
+            duration: 30,
+            date: now,
+            mode: .timed,
+            score: 8
+        )
+        let outOfZone = PracticeSession(
+            transcript: String(repeating: "word ", count: 30),
+            fillerWordCount: 0,
+            duration: 30,
+            date: now.addingTimeInterval(-3600),
+            mode: .timed,
+            score: 6
+        )
+        let stats = TimedHistorySummary.summarize(sessions: [inZone, outOfZone], now: now)
+        #expect(stats?.inZoneRepCount ?? 0 <= stats?.runCount ?? 0)
     }
 }

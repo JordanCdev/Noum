@@ -48,6 +48,12 @@ struct TimedHistorySummaryStats: Equatable {
     /// windows have ≥1 scored rep; otherwise nil so the surface omits
     /// the trend rather than fabricating it.
     let trend: TrendComparison?
+    /// `true` when `best.date` lands inside the current 7-day window
+    /// (`now - 7d` ≤ date ≤ `now`). Drives the "Peaked this week"
+    /// chip on the breakdown card — gives the user the "is my best
+    /// rep current or stale?" read in one glance. Independent of the
+    /// trend chip (which compares average score, not best-rep dates).
+    let bestIsThisWeek: Bool
 
     struct BestRep: Equatable {
         let sessionID: UUID
@@ -162,14 +168,33 @@ enum TimedHistorySummary {
             calendar: calendar
         )
 
+        let bestIsThisWeek = best.map { isThisWeek(date: $0.date, now: now, calendar: calendar) } ?? false
+
         return TimedHistorySummaryStats(
             runCount: timedRuns.count,
             averageScore: averageScore,
             best: best,
             averageWPM: averageWPM,
             inZoneRepCount: inZoneRepCount,
-            trend: trend
+            trend: trend,
+            bestIsThisWeek: bestIsThisWeek
         )
+    }
+
+    /// Pure 7-day window test, exposed for tests. A date counts as
+    /// "this week" when it lands inside the most-recent 7 days from
+    /// `now` (inclusive). Boundaries are read from the same calendar
+    /// the trend comparison uses so the two reads can never disagree
+    /// about which side of the window a rep lives on.
+    static func isThisWeek(
+        date: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let windowStart = calendar.date(byAdding: .day, value: -7, to: now) else {
+            return false
+        }
+        return date >= windowStart && date <= now
     }
 
     // MARK: - Trend helpers (internal — exposed for tests)

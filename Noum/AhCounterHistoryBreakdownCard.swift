@@ -178,11 +178,16 @@ struct AhCounterHistoryBreakdownCard: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Cleanest rep")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
+                HStack(spacing: 6) {
+                    Text("Cleanest rep")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    if stats?.cleanestIsThisWeek == true {
+                        thisWeekChip
+                    }
+                }
                 Text(cleanestSubtitle(cleanest))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -198,7 +203,7 @@ struct AhCounterHistoryBreakdownCard: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Cleanest rep: \(cleanestSubtitle(cleanest))")
+        .accessibilityLabel(cleanestRepAccessibilityLabel(cleanest))
 
         if let onSelectCleanestRep {
             Button {
@@ -223,6 +228,27 @@ struct AhCounterHistoryBreakdownCard: View {
         default: fillerCopy = "\(cleanest.fillerCount) fillers"
         }
         return "\(fillerCopy) · \(formatDuration(cleanest.durationSeconds)) · \(cleanest.date.formatted(.relative(presentation: .named)))"
+    }
+
+    private func cleanestRepAccessibilityLabel(_ cleanest: AhCounterHistorySummaryStats.CleanestRep) -> String {
+        if stats?.cleanestIsThisWeek == true {
+            return "Cleanest rep this week: \(cleanestSubtitle(cleanest))"
+        }
+        return "Cleanest rep: \(cleanestSubtitle(cleanest))"
+    }
+
+    /// Small "THIS WEEK" capsule next to the "Cleanest rep" label
+    /// when the cleanest rep was set inside the last 7 days. Same
+    /// shape as the Timed card's chip so the History surface reads
+    /// as one design language across modes.
+    private var thisWeekChip: some View {
+        Text("THIS WEEK")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(accent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(accent.opacity(0.12), in: Capsule())
+            .accessibilityHidden(true)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

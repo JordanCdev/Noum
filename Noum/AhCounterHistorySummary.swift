@@ -47,6 +47,12 @@ struct AhCounterHistorySummaryStats: Equatable {
     /// have ≥1 rep with measurable duration; otherwise both nil so
     /// the surface omits the trend rather than fabricating it.
     let trend: TrendComparison?
+    /// `true` when `cleanest.date` lands inside the current 7-day
+    /// window (`now - 7d` ≤ date ≤ `now`). Drives the "Cleanest this
+    /// week" chip on the breakdown card — gives the user the "is my
+    /// best rep current or stale?" read in one glance. Independent of
+    /// the trend chip (which compares average rate, not best-rep dates).
+    let cleanestIsThisWeek: Bool
 
     struct CleanestRep: Equatable {
         let sessionID: UUID
@@ -136,13 +142,31 @@ enum AhCounterHistorySummary {
             calendar: calendar
         )
 
+        let cleanestIsThisWeek = cleanest.map { isThisWeek(date: $0.date, now: now, calendar: calendar) } ?? false
+
         return AhCounterHistorySummaryStats(
             runCount: ahCounterRuns.count,
             averageFillersPerMinute: averageFillersPerMinute,
             cleanest: cleanest,
             cleanRepCount: cleanRepCount,
-            trend: trend
+            trend: trend,
+            cleanestIsThisWeek: cleanestIsThisWeek
         )
+    }
+
+    /// Pure 7-day window test, exposed for tests. A date counts as
+    /// "this week" when it lands inside the most-recent 7 days from
+    /// `now` (inclusive). Same shape as `TimedHistorySummary.isThisWeek`
+    /// so the two surfaces agree on the boundary.
+    static func isThisWeek(
+        date: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let windowStart = calendar.date(byAdding: .day, value: -7, to: now) else {
+            return false
+        }
+        return date >= windowStart && date <= now
     }
 
     /// Pure rate calculation — filler count divided by minutes of

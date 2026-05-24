@@ -87,7 +87,33 @@ struct IMHistoryBreakdownCard: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+            if let best = bestThisWeek {
+                bestThisWeekChip(scenario: best.scenario, score: best.score)
+            }
         }
+    }
+
+    private var bestThisWeek: (session: PracticeSession, scenario: IMConversationScenario, score: Int)? {
+        IMHistorySummary.bestThisWeek(from: sessions)
+    }
+
+    /// "BEST THIS WEEK · N/10 · <scenario>" capsule. Renders only when
+    /// at least one scored rep lives inside the 7-day window. Mirrors
+    /// the SD breakdown card's chip — same visual shape, same one-glance
+    /// "current peak" read across modes.
+    private func bestThisWeekChip(scenario: IMConversationScenario, score: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "trophy.fill")
+                .font(.caption2.weight(.bold))
+            Text("Best this week · \(score)/10 · \(scenario.title)")
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(accent)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(accent.opacity(0.12), in: Capsule())
+        .accessibilityLabel("Best this week: \(score) of 10 in \(scenario.title).")
+        .accessibilityIdentifier("history.im.bestThisWeek")
     }
 
     private var runCountLabel: String {

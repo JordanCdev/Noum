@@ -148,4 +148,35 @@ enum IMHistorySummary {
             .map(\.date)
             .max()
     }
+
+    /// "Best rep of the current 7-day window" — the highest-scoring
+    /// IM rep whose `date` lands inside the most-recent 7 days from
+    /// `now`. Tiebreak by most-recent date so the user reads "today's
+    /// best" before "Tuesday's best" when both tie at the same score.
+    /// Returns nil when no scored rep falls inside the window — the
+    /// breakdown card omits the chip rather than fabricating one.
+    /// Mirrors the shape of `SuddenDeathHistorySummary.bestThisWeek`
+    /// so SD + IM read as one design language on the History surface.
+    static func bestThisWeek(
+        from sessions: [PracticeSession],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> (session: PracticeSession, scenario: IMConversationScenario, score: Int)? {
+        guard let windowStart = calendar.date(byAdding: .day, value: -7, to: now) else {
+            return nil
+        }
+        let inWindow = sessions.compactMap { session -> (PracticeSession, IMConversationScenario, Int)? in
+            guard session.mode == .imConversation,
+                  let details = session.imConversationDetails,
+                  let score = session.score,
+                  session.date >= windowStart,
+                  session.date <= now else { return nil }
+            return (session, details.setup.scenario, score)
+        }
+        guard !inWindow.isEmpty else { return nil }
+        return inWindow.sorted { lhs, rhs in
+            if lhs.2 != rhs.2 { return lhs.2 > rhs.2 }
+            return lhs.0.date > rhs.0.date
+        }.first
+    }
 }
