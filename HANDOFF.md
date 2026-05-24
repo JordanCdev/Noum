@@ -1,20 +1,18 @@
-# HANDOFF — M24 deferred slate (round 5): IM scenario drill-down + WPM zone band + best-this-week chips
+# HANDOFF — M24 deferred slate (round 6): IMScenarioDetailView analytics + empty-state CTA
 
 ## Scope
 
-Round 4 (commit `1f3529f` / `8764476`) landed four moves from the prior
-"Future moves" list: Timed + IM history breakdown cards, the post-rep
-daily-cap hint on `CoachReadCard`, and the Profile-level SD share
-row. It explicitly forwarded six remaining items:
+Round 5 (commit `e701d21`) landed three moves from the prior "Future
+moves" list: the IM per-scenario drill-down view, the WPM zone band on
+the Timed breakdown card, and the best-this-week chips across all four
+per-mode breakdown cards. It explicitly forwarded six remaining items:
 
 1. Peer SD scores (blocked on `PublicProfileSnapshot` schema work)
 2. `coachNoteRevealed` cleanup (animation-chain risk)
-3. Rate-limiter live refresh (low priority — Settings is modal in
-   practice)
-4. IM per-scenario drill-down (natural next step now that the
-   breakdown card exists)
-5. WPM zone band visualization on `TimedHistoryBreakdownCard`
-6. Best-rep-of-the-week chip across all four per-mode breakdown cards
+3. Rate-limiter live refresh (low priority — Settings is modal)
+4. Tone-match accuracy chart on `IMScenarioDetailView`
+5. Trust/tension trace on `IMScenarioDetailView`
+6. Empty-state CTA on `IMScenarioDetailView`
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -22,260 +20,182 @@ plan, and all round A+, make my dream I had come true too, ensure
 working on the redesign branch too (very important)."
 
 Translation, this round: of the six items the prior HANDOFF
-forwarded, three are now closeable without device-only QA, without
-schema work, and without touching the animation chain — items 4, 5,
-and 6. This push closes them. The remaining three (peer SD scores,
+forwarded, three are now closeable in a single coherent push because
+they all land on the same view (`IMScenarioDetailView`) and reuse the
+same per-scenario data the drill-down already reads — items 4, 5, and
+6. This push closes them. The remaining three (peer SD scores,
 `coachNoteRevealed` cleanup, rate-limiter live refresh) stay deferred
-for the same reasons noted in round 4.
+for the same reasons noted in round 5.
 
 ## What shipped
 
-### Track 1 — IM per-scenario drill-down (#4 from prior HANDOFF)
+### Track 1 — Trust/tension trace sparkline (#5 from prior HANDOFF)
 
-The IM breakdown card was wired with an `onSelectScenario` callback
-shape in round 4 but the destination view didn't exist yet. This
-round delivers it as the parallel to `SuddenDeathDifficultyRunsView`
-so the History surface keeps one design language across modes: tap a
-per-mode row → land on the per-row drill-down.
+The IM per-scenario detail view already surfaced average trust + average
+tension as summary tiles, but a single mean across N reps couldn't show
+the user whether their relational delivery was trending up or down at
+this scenario. A two-line sparkline reads "you closed the last three
+networking chats with higher trust and lower tension than your first
+five" without the user having to scan numeric rows.
 
-#### Move 1 — `AppDestination.imScenarioDetail(scenario:)`
+#### Move 1 — New pure helper `IMHistorySummary.tracePoints(from:scenario:)`
 
-New case on `Noum/PracticeSupport.swift:AppDestination`. Mirrors the
-shape of the existing `suddenDeathDifficultyDetail(difficulty:)`
-case. Hashable, Equatable, NavigationPath-compatible — locked by four
-new `AppDestinationSessionDetailTests` cases (equality on same
-scenario, distinctness on different scenario, distinctness from the
-SD detail case, Set round-trip dedup).
+Lives in `Noum/IMHistorySummary.swift`. Returns
+`[IMScenarioTracePoint]` ordered oldest-to-newest so a Chart consumer
+reads left-to-right as time-moves-forward. Each point carries `id`,
+`date`, `trust`, `tension`. Defensive contracts (locked by
+`IMScenarioTracePointsTests`):
 
-#### Move 2 — `IMScenarioDetailView`
+- filters to `.imConversation` internally — an upstream filter
+  mistake produces an empty result, not a mixed-mode trace
+- ignores reps with `imConversationDetails == nil` or `finalState ==
+  nil` (can't plot a non-existent state)
+- drops cross-scenario reps so the caller can pass the whole
+  `PracticeSessionStore` and still get one scenario's trace
+- orders oldest → newest (chart `x` axis reads forward in time)
+- uses `IMConversationState.normalizedTrust` / `normalizedTension`
+  accessors so out-of-range engine output can never plot past the
+  visible 1–10 band
 
-New `Noum/IMScenarioDetailView.swift` (~290 LOC). Reached when the
-user filters History to IM Mode and taps a scenario row in the
-breakdown card. Layout mirrors `SuddenDeathDifficultyRunsView`:
+New nested type `IMHistorySummary.IMScenarioTracePoint` (Equatable,
+Identifiable, public surface).
 
-- Mode-tinted (Timed-IM purple-blue) summary header — scenario title
-  + scenario summary (one line) + rep count + three stat tiles (best
-  score, avg trust, avg tension).
-- Per-rep row list, newest-first. Each row carries: score (or "—"
-  for unscored reps), target-tone chip, absolute date/time stamp,
-  trust + tension chips at the trailing edge. Trophy icon next to
-  the top-scoring rep so the user reads "this is the peak in this
-  scenario" without scanning the numbers.
-- Tap a row → pushes the standard `sessionDetail(sessionID:)` route
-  so the user can drill into full transcript / coach read / IM
-  conversation card for any rep.
-- Trailing toolbar `ShareLink` exports the scenario history as
-  plain text via the new `IMHistoryExport.formatPlainText(sessions:
-  scenario:)` helper — same anti-goal contract as the SD export
-  (zero transcripts; only outcome numbers + scenario + target tone).
+#### Move 2 — `traceChartCard` view on `IMScenarioDetailView`
 
-Wired into `ContentView`'s `navigationDestination(for:)` switch.
-`SessionHistoryView` now passes `onSelectScenario:` through to the
-breakdown card, so a tap on any IM scenario row pushes the new
-destination — read-only callers (tests, previews) are unaffected
-because the callback is still optional.
+New `@ViewBuilder traceChartCard` renders beneath the summary header,
+in the same mode-tinted card-background register. Body:
 
-#### Move 3 — `IMHistoryExport` plain-text formatter
+- Header: `waveform.path.ecg` glyph (Timed-IM purple-blue) + "Trust
+  vs tension" title + rep-count caption
+- `Chart` block (gated by `#if canImport(Charts)`) plotting two
+  `LineMark` series (trust = teal, tension = orange) with matching
+  `PointMark` overlays so individual reps are addressable. Catmull-Rom
+  interpolation, `chartYScale(domain: 1...10)`, axis marks at 1/5/10
+  on the y axis + 3 auto-spaced labels on the x axis.
+- Legend strip: two color-dot legend entries + "oldest → newest"
+  caption so the user reads which side is the most recent rep
+- Self-hides when `tracePoints.count < 2` (a single point isn't a
+  trace; the card collapses entirely rather than rendering a
+  placeholder)
+- VoiceOver: the chart itself is `accessibilityHidden(true)`; the
+  outer VStack carries a single combined label ("Trust and tension
+  trace across N reps. Trust moved from X to Y; tension moved from X
+  to Y, on a 1-to-10 scale.") so the screen-reader read is one chunk
 
-New `Noum/IMHistoryExport.swift` (~120 LOC). Mirrors the shape of
-`SuddenDeathHistoryExport`:
+### Track 2 — Tone-match strip (#4 from prior HANDOFF)
 
-```swift
-enum IMHistoryExport {
-    static func formatPlainText(sessions:, scenario:) -> String
-    static func formatPlainText(sessions:) -> String
-    static func headerRow() -> String
-    static func formatRow(_ session:) -> String
-    static func isoDate(_ date:) -> String
-}
-```
+The deferred item asked for a tone-match accuracy chart across reps.
+Rather than a full chart (the per-rep tone-match is a boolean, not a
+continuous value), this push lands a more legible visual: a "last 5
+reps" chip strip + a ratio caption. The matcher reads the engine's
+free-form `actualTone` string against the user's committed
+`targetTone.title` via case-insensitive substring containment — the
+same shape the server-side evaluator uses when producing the
+`actualTone` readout, so the match rate is honest about what the
+engine observed.
 
-Honest-data contract — the anti-goal-compliant export rule from
-`docs/VISION.md` ("never publishes raw transcripts") applies to IM
-just as it does to SD. The IM mode is the richest source of
-transcript content in the app (full conversation turns, NPC replies,
-final-beat narrative), so the export rule is even more important
-here. Locked by `IMHistoryExportTests.crossScenarioExportNever-
-ContainsTranscriptContent` — fixtures inject sentences from the
-turns + finalState.beat into a session, the export string is then
-searched for those substrings and the test fails if any of them
-leak.
+#### Move 1 — New pure helpers `toneMatchStats(from:scenario:)` + `matches(targetTone:actualTone:)`
 
-### Track 2 — WPM zone band visualization on Timed (#5 from prior HANDOFF)
+Both live in `Noum/IMHistorySummary.swift`. `matches` is exposed as a
+pure static for testability — the matcher rule the chart strip relies
+on. `toneMatchStats` returns `IMScenarioToneMatchStats` carrying
+`evaluatedCount`, `matchCount`, `matchRate: Double?` (rounded to two
+decimals), and `lastFive: [LastFiveEntry]` (newest-first, bounded at
+5 so the strip reads as a quick recency cue not a deep history).
 
-The Timed breakdown card already surfaced an `inZoneRepCount`
-integer in the middle stat column. The deferred item flagged that
-"a tiny visual band ('12 of 30 reps in zone — 130–160 WPM') would
-carry the same data with more legibility."
+Defensive contracts (locked by `IMScenarioToneMatchStatsTests`):
 
-This round lands the band. New `zoneBand(for:)` `@ViewBuilder` on
-`TimedHistoryBreakdownCard` renders beneath the stat row:
+- filters to `.imConversation` internally
+- ignores reps where `actualTone == nil` or whitespace-only (the
+  evaluator didn't actually produce a reading — that's not a miss,
+  it's missing data, dropped from both numerator and denominator)
+- drops cross-scenario reps
+- `lastFive` is ordered newest-first so the visual strip's leftmost
+  chip reads as "the most recent rep"
+- `matchRate` is `nil` when `evaluatedCount == 0` (no honest
+  denominator → no fabricated zero percent)
+- case-insensitive substring containment — "warmly confident" matches
+  target `.confident`; the evaluator often qualifies the tone and a
+  strict equality matcher would over-report misses
+- empty / whitespace-only `actualTone` always non-matches at the
+  `matches(...)` level (belt-and-braces — the higher-level helper
+  filters those out before calling, but the test fixtures still
+  exercise the rule)
 
-```
-12 of 30 reps in zone                     130–160 WPM
-████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-```
+#### Move 2 — `toneMatchCard` view on `IMScenarioDetailView`
 
-- Caption line on the left: "N of M reps in zone" — same subtitle
-  copy across `inZoneRepCount` (1 / non-1 plural) and `runCount`.
-- Range label on the right: `<min>–<max> WPM` — reads from the
-  canonical `TimedHistorySummary.zoneMinWPM` / `zoneMaxWPM` constants
-  so a future zone shift can never produce stale labels.
-- 6pt mode-tinted progress bar: rounded rectangle on a 0.12-alpha
-  base, filled to `inZoneRepCount / runCount` at 0.85-alpha. Width
-  computed inside a `GeometryReader` so the visual ratio is
-  responsive to the card width, not hardcoded.
-- VoiceOver: the band itself is `accessibilityHidden(true)`; the
-  outer VStack carries a single combined label ("12 of 30 reps in
-  zone (130–160 WPM). 40 percent in zone.") so the screen-reader read
-  is one chunk, not two.
-- Self-hides when `runCount == 0` (defensive belt-and-braces — the
-  card body itself self-hides on cold start).
+New `toneMatchCard` private computed view, sits beneath the trace
+chart card (or beneath the summary header when the trace card
+self-hides). Body:
 
-Two `TimedHistoryZoneBandContractTests` lock the contract: range
-constants stay at 130/160 (matching `WPMEvaluator` Timed band), and
-`inZoneRepCount` cannot exceed `runCount` (the visual band ratio
-invariant).
+- Header: `target` glyph + "Tone match" title + ratio caption
+  ("3 of 5 matched")
+- "Last 5 reps" small-caps eyebrow + horizontal chip row of
+  checkmark / xmark circles, newest-first
+- Match chip: `checkmark.circle` tinted `AppColor.positive` (mode
+  neutral green) when matched, `xmark.circle` tinted `AppColor.caution`
+  when not. Both at 0.14-alpha background so the row reads as a
+  calm sequence, not a celebration/penalty
+- Self-hides when `evaluatedCount == 0` (no rep recorded an
+  `actualTone` yet — the card collapses)
+- VoiceOver: combined label ("Tone match: 3 of 5 reps matched the
+  target tone, 60 percent.")
 
-### Track 3 — Best-rep-of-the-week chips (#6 from prior HANDOFF)
+### Track 3 — Empty-state CTA (#6 from prior HANDOFF)
 
-The deferred item flagged: "Across all four per-mode breakdown
-cards, a 'this week's best' chip would tell the user 'you peaked
-today' or 'your peak is from 3 days ago' in one read." This round
-ships the underlying helpers AND the visual chips on all four cards
-— with two slightly different surface shapes because the per-mode
-cards have two slightly different layouts.
+The detail view's empty state previously read "Finish an IM rep in
+this scenario to start a track record." with no affordance to act on
+the empty state from inside the screen. This round adds a "Launch
+this scenario" button that pushes `AppDestination.imPractice(scenario:
+tone:)` with `tone: nil` so the IM practice view's own tone picker
+resolves it from the user's last preference — same behaviour the
+Quick Start CTA uses, so the launch path stays coherent across entry
+points.
 
-#### Move 1 — Pure helpers: `isThisWeek` + `bestThisWeek`
-
-Three new pure functions, one per summary module, all locked by
-their own test suites:
-
-```swift
-TimedHistorySummary.isThisWeek(date:now:calendar:) -> Bool
-AhCounterHistorySummary.isThisWeek(date:now:calendar:) -> Bool
-SuddenDeathHistorySummary.bestThisWeek(from:now:calendar:) -> SuddenDeathRunRecord?
-IMHistorySummary.bestThisWeek(from:now:calendar:) -> (session:, scenario:, score:)?
-```
-
-Defensive contracts (locked by tests):
-
-- "This week" is the inclusive 7-day window from `now`: `now - 7d`
-  ≤ date ≤ `now`. Both ends inclusive, boundary alignment between
-  the Timed and Ah-Counter helpers locked by an explicit cross-helper
-  agreement test (`isThisWeekBoundaryAlignsWithTimedHelper`).
-- Future dates (clock drift / fixture mistake) NEVER read as "this
-  week" — locked by `isThisWeekFalseForFutureDate`.
-- `bestThisWeek` picks the highest `roundsSurvived` (SD) or `score`
-  (IM) inside the window. Tiebreak by most-recent date so the user
-  reads "today's best" before "Tuesday's best" when both tie.
-- IM `bestThisWeek` ignores non-IM-mode sessions — a high-scoring
-  Timed rep can never appear in the IM "best this week" picker even
-  when it lives in the same `PracticeSessionStore`. Locked by
-  `bestThisWeekIgnoresOtherModes`.
-
-#### Move 2 — Surface on Timed + Ah-Counter cards: inline "THIS WEEK" chip
-
-`TimedHistorySummaryStats` gains `bestIsThisWeek: Bool`, computed
-from `best.date` against `now` via the new `isThisWeek` helper.
-`AhCounterHistorySummaryStats` gains `cleanestIsThisWeek: Bool`, same
-shape.
-
-Both breakdown cards (Timed + Ah-Counter) now render a small
-`THIS WEEK` capsule next to the "Best rep" / "Cleanest rep" eyebrow
-label when the flag is true:
-
-```
-TROPHY  BEST REP   ┃THIS WEEK┃
-        8/10 · 142 WPM · today
-```
-
-- Mode-tinted (Timed blue / Ah-Counter green), 0.12-alpha background,
-  bold caption2 typography — quieter than the trend chip above so it
-  reads as a status tag, not a celebration.
-- VoiceOver: the chip itself is hidden; the row's combined
-  accessibility label flips to "Best rep this week: 8/10 · 142 WPM ·
-  today" when the flag is true. Single read for screen-reader users.
-- Brand-voice contract: no exclamation, no "you peaked!" framing,
-  no urgency copy — just the time tag.
-
-#### Move 3 — Surface on Sudden Death + IM cards: header capsule
-
-SD and IM cards lay out rows by difficulty / scenario (not a single
-best-rep cell at the bottom), so the "this week" chip sits in the
-card header as a one-line summary capsule:
-
-```
-[SD card]
-  ⚡ Sudden Death history                          12 runs
-    Last run yesterday
-    ┃ trophy  Best this week · 8 rounds · Hard ┃
-
-[IM card]
-  💬 IM history                                    8 reps
-    Last rep yesterday
-    ┃ trophy  Best this week · 9/10 · Difficult Conversation ┃
-```
-
-- Renders only when at least one qualifying run lives inside the
-  7-day window. Cold-start users never see a fabricated chip.
-- Same mode-tinted register as the inline chips. Reads as the
-  card-level "current peak" summary the user can take in without
-  scanning the rows.
-- Accessibility identifiers `history.suddenDeath.bestThisWeek` and
-  `history.im.bestThisWeek` so future UI tests can address the chip
-  directly.
+Button surface: mode-tinted (Timed-IM purple-blue) Capsule with
+`play.circle.fill` glyph + "Launch this scenario" label. Accessibility
+identifier `history.im.scenario.launchCTA` for future UI test
+coverage; accessibility label "Launch <scenario title>".
 
 ### Vision alignment
 
-All three tracks land on the same axes as the round-4 push:
+All three tracks land on the same axes as the round-5 push:
 
-- **Pillar #3 — Conversational intelligence.** The IM drill-down is
-  the read the £130/hr human coach would give after reviewing the
-  last 10 reps at one scenario; a tap-through path to the per-rep
-  detail is the natural extension.
-- **Pillar #4 — Believable progress.** The "this week" chips answer
-  the "is my best rep current or stale?" question the user can't
-  read from the trend chip alone (trend compares averages, chips
-  compare peaks). The WPM zone band makes the "12 of 30" integer
-  legible as a ratio without leaking the evaluator's internal scoring.
-- **Anti-goals.** `IMHistoryExport` carries the same "zero
-  transcripts" anti-goal contract as the SD export, locked by test
-  fixtures that inject transcript content and assert it never leaks
-  into the share string.
+- **Pillar #3 — Conversational intelligence.** The trust/tension
+  trace + tone-match strip turn the per-scenario detail view from a
+  rep list into a per-scenario read — "your last three Difficult
+  Conversation reps recovered trust faster than your first five" is
+  the kind of insight a £130/hr human coach would surface after
+  pulling up the same data.
+- **Pillar #4 — Believable progress.** Both new cards self-hide on
+  insufficient data (trace: <2 reps with final state; tone match:
+  0 reps with `actualTone` recorded). No fabricated points; no
+  placeholder visuals. The honest empty state with a real launch CTA
+  closes the loop without padding it.
+- **Anti-goals.** The tone matcher reads from the engine's own
+  `actualTone` string, not an AI-interpreted reframe; the trace
+  reads `normalizedTrust` / `normalizedTension` directly, no
+  smoothing or invention. The empty-state CTA never auto-launches —
+  the user has to tap it.
 
 ## Files touched
 
-- **New:** `Noum/IMScenarioDetailView.swift` (~290 LOC)
-- **New:** `Noum/IMHistoryExport.swift` (~125 LOC)
-- **Modified:** `Noum/PracticeSupport.swift` (+5 LOC — new
-  `imScenarioDetail(scenario:)` AppDestination case)
-- **Modified:** `Noum/ContentView.swift` (+2 LOC — new case in the
-  navigationDestination switch)
-- **Modified:** `Noum/SessionHistoryView.swift` (+5 LOC —
-  `onSelectScenario` callback wired in the IM filter branch)
-- **Modified:** `Noum/TimedHistoryBreakdownCard.swift` (+~95 LOC —
-  `zoneBand(for:)` + `thisWeekChip` + accessibility helper)
-- **Modified:** `Noum/TimedHistorySummary.swift` (+~30 LOC —
-  `bestIsThisWeek` field + `isThisWeek` pure helper)
-- **Modified:** `Noum/AhCounterHistoryBreakdownCard.swift` (+~25 LOC
-  — `thisWeekChip` + accessibility helper)
-- **Modified:** `Noum/AhCounterHistorySummary.swift` (+~30 LOC —
-  `cleanestIsThisWeek` field + `isThisWeek` pure helper)
-- **Modified:** `Noum/SuddenDeathHistoryBreakdownCard.swift` (+~30 LOC
-  — header `bestThisWeekChip`)
-- **Modified:** `Noum/SuddenDeathHistorySummary.swift` (+~30 LOC —
-  `bestThisWeek` static picker)
-- **Modified:** `Noum/IMHistoryBreakdownCard.swift` (+~30 LOC —
-  header `bestThisWeekChip` + computed property)
-- **Modified:** `Noum/IMHistorySummary.swift` (+~35 LOC —
-  `bestThisWeek` static picker that returns a tuple)
-- **Modified:** `NoumTests/NoumTests.swift` (+~410 LOC — 7 new test
-  suites: `TimedHistorySummaryBestThisWeekTests`,
-  `AhCounterHistorySummaryThisWeekTests`,
-  `SuddenDeathBestThisWeekTests`, `IMBestThisWeekTests`,
-  `IMHistoryExportTests`, `TimedHistoryZoneBandContractTests`, plus
-  4 new cases on the existing `AppDestinationSessionDetailTests`)
+- **Modified:** `Noum/IMHistorySummary.swift` (+~110 LOC —
+  `IMScenarioTracePoint` + `tracePoints(from:scenario:)`,
+  `IMScenarioToneMatchStats` + `toneMatchStats(from:scenario:)`,
+  `matches(targetTone:actualTone:)`)
+- **Modified:** `Noum/IMScenarioDetailView.swift` (+~210 LOC —
+  `traceChartCard` + `traceChart` + legend helpers + accessibility
+  label, `toneMatchCard` + chip + ratio + accessibility label, empty-
+  state CTA button, `tracePoints` + `toneMatchStats` computed wraps)
+- **Modified:** `NoumTests/NoumTests.swift` (+~240 LOC — two new
+  test suites: `IMScenarioTracePointsTests` (6 cases: empty input,
+  scenario filter, ordering, drops reps without final state,
+  normalizer clamp, drops non-IM modes) + `IMScenarioToneMatchStatsTests`
+  (10 cases: empty input, nil actualTone exclusion, whitespace-only
+  exclusion, case insensitivity, substring containment, empty actual
+  never matches, scenario filter, last-five newest-first ordering,
+  rate rounding to two decimals, non-IM exclusion))
 - **Modified:** `HANDOFF.md` (this file)
 - **Modified:** `docs/CURRENT_STATE.md` (rolling summary)
 
@@ -283,42 +203,36 @@ All three tracks land on the same axes as the round-4 push:
 
 `Redesign` — committed and pushed per the user's brief.
 
-Closes three more of the deferred items from the M24 round-4
-HANDOFF (IM scenario drill-down, WPM zone band, best-this-week
-chips). The remaining three deferred items (peer SD scores,
+Closes three more of the deferred items from the M24 round-5
+HANDOFF (tone-match accuracy chart, trust/tension trace, empty-state
+CTA). The remaining three deferred items (peer SD scores,
 `coachNoteRevealed` cleanup, rate-limiter live refresh) stay
 deferred for the reasons noted in **Scope** above.
 
 The artifact a user can now hold:
 
-1. **They can drill from "Difficult Conversation: 5 reps · best
-   9/10" straight to the rep list.** Tap any scenario row in the IM
-   breakdown card → land on a per-scenario detail view with score,
-   target tone, trust + tension chips for every IM rep at that
-   scenario. Tap any row to open the full session detail. Share
-   the scenario's history as plain text — zero transcripts, only
-   the outcome numbers.
+1. **They can see their trust + tension arc at one scenario in one
+   glance.** Two-line sparkline beneath the summary header on
+   `IMScenarioDetailView`, oldest-to-newest, with mode-tinted card
+   chrome + legend dots + "oldest → newest" caption. Self-hides on
+   <2 reps with a recorded final state.
 
-2. **They can see at a glance how often they land inside the
-   Timed pace zone.** A 6pt mode-tinted band beneath the stat row
-   on `TimedHistoryBreakdownCard` fills to the ratio of in-zone
-   reps. "12 of 30 reps in zone — 130–160 WPM" reads in one
-   glance; the same data the integer column already showed, just
-   legible as a proportion.
+2. **They can see at a glance how often the evaluator read their
+   actual tone as matching the target tone.** A "last 5 reps" chip
+   row + "X of Y matched" ratio caption beneath the trace card.
+   Honest data — missing `actualTone` readings are dropped from
+   both numerator and denominator. Self-hides on cold start.
 
-3. **They can read "is my peak current or stale?" without
-   thinking.** A `THIS WEEK` capsule next to the "Best rep" /
-   "Cleanest rep" label on Timed + Ah-Counter cards fires when the
-   peak is inside the last 7 days. SD + IM cards carry the same
-   signal as a header capsule that names the difficulty / scenario
-   on the same line, because their card layouts don't surface a
-   single best-rep cell. Quiet visual register; honest fallback to
-   "no chip" when no rep is fresh enough.
+3. **They can launch the scenario from inside the empty state.**
+   Pill-shaped "Launch this scenario" CTA on the empty state pushes
+   `AppDestination.imPractice(scenario:tone:)` with tone nil so the
+   IM practice view's own picker resolves it from preference.
 
 All three moves are vision-aligned on the conversational-intelligence
-(#3) and believable-progress (#4) pillars of `docs/VISION.md`, with
-the IM export carrying the same anti-goal contract as the SD export
-(zero transcript content, locked by test).
+(#3) and believable-progress (#4) pillars of `docs/VISION.md`. The
+helpers carry the same honest-data contracts the SD + IM History
+breakdown cards already enforce: drop missing data rather than
+fabricate it; self-hide rather than render a placeholder.
 
 ## Future moves
 
@@ -335,22 +249,21 @@ remaining items carried forward:)
    AI-usage card AND the new CoachReadCard daily-budget hint
    refresh mid-view when a background rep finalizes and consumes
    budget. Low priority because Settings is modal in practice.
-4. **Tone-match accuracy chart on `IMScenarioDetailView`.** The
-   per-scenario detail view surfaces score + trust + tension at the
-   final beat, but doesn't yet plot tone-match accuracy across reps.
-   A `Chart` line (or sparkline) showing the user's evaluated-tone-
-   matches-target-tone ratio per rep would tell the user "you nail
-   warmth on Networking but miss it on Difficult Conversation" — a
-   read the rep list can't carry on its own.
-5. **Trust/tension trace on `IMScenarioDetailView`.** A two-line
-   sparkline plotting `finalState.normalizedTrust` and
-   `normalizedTension` across reps in this scenario, ordered by
-   date. Mirrors the SD per-difficulty drill-down's potential
-   "rounds-survived over time" trace. Pure visual; data is already
-   on each `PracticeSession`.
-6. **Empty-state CTA on `IMScenarioDetailView`.** Currently the
-   empty state reads "Finish an IM rep in this scenario to start a
-   track record." A "Launch this scenario" button that pushed
-   `AppDestination.imPractice(scenario:tone:)` would close the loop
-   so the user can act on the empty state from inside the screen.
-   Already wired in `AppDestination`; just a button + handler.
+4. **Tone-match trend chip on `IMHistoryBreakdownCard`.** Per-
+   scenario row could carry a small "tone match rate" chip ("4/5
+   matched" / "2/5 matched") so the History list reads the same
+   signal without having to drill in. Pure visual; data is already
+   on each `PracticeSession` and the matcher is now the pure helper
+   `IMHistorySummary.matches`.
+5. **Trust/tension trend chip on `IMScenarioDetailView` header.**
+   Compute the slope of the last-3 reps vs first-3 reps for trust +
+   tension and surface as a small "trust ↑" / "tension ↓" chip in
+   the summary header. The trace chart shows the shape; a chip would
+   carry the read in one glance.
+6. **Per-scenario drill recommendations.** When the tone-match rate
+   on a scenario is low (<40%) AND the user has 3+ evaluated reps,
+   the `RecommendationBiasEngine` could surface a "Drill the
+   <scenario> tone" recommendation that biases toward the
+   `voiceAlignment` skill area + auto-fills the scenario.
+   Closes the loop between the per-scenario read and the
+   recommendation surface.

@@ -1,5 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(Charts)
+import Charts
+#endif
 
 // MARK: - IMScenarioDetailView
 //
@@ -52,6 +55,17 @@ struct IMScenarioDetailView: View {
         }
     }
 
+    /// Trust + tension trace, oldest-first. Reads the same data the
+    /// summary stats compute over, just per-rep rather than averaged.
+    private var tracePoints: [IMHistorySummary.IMScenarioTracePoint] {
+        IMHistorySummary.tracePoints(from: sessionStore.sessions, scenario: scenario)
+    }
+
+    /// Per-scenario tone-match stats, including the last-five strip.
+    private var toneMatchStats: IMHistorySummary.IMScenarioToneMatchStats {
+        IMHistorySummary.toneMatchStats(from: sessionStore.sessions, scenario: scenario)
+    }
+
     private var exportText: String {
         IMHistoryExport.formatPlainText(sessions: sessionStore.sessions, scenario: scenario)
     }
@@ -70,6 +84,16 @@ struct IMScenarioDetailView: View {
                         summaryHeader
                             .padding(.horizontal, Spacing.screenH)
                             .padding(.top, 8)
+
+                        if tracePoints.count >= 2 {
+                            traceChartCard
+                                .padding(.horizontal, Spacing.screenH)
+                        }
+
+                        if toneMatchStats.evaluatedCount > 0 {
+                            toneMatchCard
+                                .padding(.horizontal, Spacing.screenH)
+                        }
 
                         repsList
                             .padding(.horizontal, Spacing.screenH)
@@ -97,8 +121,16 @@ struct IMScenarioDetailView: View {
 
     // MARK: - Empty state
 
+    /// Empty state — when the user lands here from the breakdown card
+    /// row tap but no rep has been recorded for this scenario yet
+    /// (rare in practice; only reachable if the user reaches this
+    /// route via deep-link or if every rep at this scenario has been
+    /// deleted from the History list). The CTA pushes
+    /// `imPractice(scenario:tone:)` with tone nil so the IM practice
+    /// view's own tone picker resolves it from the user's last
+    /// preference — same behaviour the Quick Start CTA uses.
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 36, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -110,8 +142,234 @@ struct IMScenarioDetailView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Spacing.lg)
+
+            Button {
+                navigationPath.append(
+                    AppDestination.imPractice(scenario: scenario, tone: nil)
+                )
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Launch this scenario")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(accent, in: Capsule())
+            }
+            .accessibilityIdentifier("history.im.scenario.launchCTA")
+            .accessibilityLabel("Launch \(scenario.title)")
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Trust / tension trace
+
+    /// Two-line sparkline plotting `finalState.normalizedTrust` and
+    /// `normalizedTension` across reps in this scenario, ordered by
+    /// date. Pure visual layer; the underlying data is already on
+    /// each `PracticeSession`. Renders only when at least 2 reps with
+    /// a recorded final state exist — a single point isn't a trace.
+    ///
+    /// Reduce-motion contract: the chart has no animation. Honest
+    /// data contract: every point is a real `finalState` from the
+    /// engine; no interpolation across missing data.
+    private var traceChartCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(accent)
+                Text("Trust vs tension")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("\(tracePoints.count) reps")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            #if canImport(Charts)
+            traceChart
+                .frame(height: 120)
+                .accessibilityHidden(true)
+            #endif
+
+            HStack(spacing: 14) {
+                traceLegendDot(color: .teal, label: "trust")
+                traceLegendDot(color: .orange, label: "tension")
+                Spacer()
+                Text("oldest → newest")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(Spacing.lg)
+        .background(cardBackground)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(traceChartAccessibilityLabel)
+    }
+
+    #if canImport(Charts)
+    @ViewBuilder
+    private var traceChart: some View {
+        Chart {
+            ForEach(tracePoints) { point in
+                LineMark(
+                    x: .value("Rep", point.date),
+                    y: .value("Trust", point.trust),
+                    series: .value("Series", "Trust")
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(Color.teal)
+                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+
+                PointMark(
+                    x: .value("Rep", point.date),
+                    y: .value("Trust", point.trust)
+                )
+                .symbolSize(28)
+                .foregroundStyle(Color.teal)
+            }
+            ForEach(tracePoints) { point in
+                LineMark(
+                    x: .value("Rep", point.date),
+                    y: .value("Tension", point.tension),
+                    series: .value("Series", "Tension")
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(Color.orange)
+                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+
+                PointMark(
+                    x: .value("Rep", point.date),
+                    y: .value("Tension", point.tension)
+                )
+                .symbolSize(28)
+                .foregroundStyle(Color.orange)
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                AxisGridLine().foregroundStyle(Color.black.opacity(0.05))
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(date, format: .dateTime.month(.abbreviated).day())
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [1, 5, 10]) { value in
+                AxisGridLine().foregroundStyle(Color.black.opacity(0.05))
+                AxisValueLabel {
+                    if let v = value.as(Int.self) {
+                        Text("\(v)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .chartYScale(domain: 1...10)
+    }
+    #endif
+
+    private func traceLegendDot(color: Color, label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var traceChartAccessibilityLabel: String {
+        guard let first = tracePoints.first, let last = tracePoints.last else {
+            return "Trust and tension trace, no data."
+        }
+        return "Trust and tension trace across \(tracePoints.count) reps. Trust moved from \(first.trust) to \(last.trust); tension moved from \(first.tension) to \(last.tension), on a 1-to-10 scale."
+    }
+
+    // MARK: - Tone-match strip
+
+    /// Per-scenario tone-match strip — a small chip row for the last
+    /// 5 reps that recorded an `actualTone` reading + a "matched X of
+    /// Y" ratio. The matcher is case-insensitive substring containment
+    /// of the target tone's title in the engine's `actualTone`
+    /// readout (e.g., target "Confident" matches an `actualTone` of
+    /// "warmly confident"). Honest data: a rep with `actualTone ==
+    /// nil` is excluded from the denominator — missing data isn't a
+    /// miss. Self-hides when `evaluatedCount == 0`.
+    private var toneMatchCard: some View {
+        let stats = toneMatchStats
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "target")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(accent)
+                Text("Tone match")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(toneMatchRatioLabel(stats: stats))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            if !stats.lastFive.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Last 5 reps")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    HStack(spacing: 6) {
+                        ForEach(stats.lastFive) { entry in
+                            toneMatchChip(matched: entry.matched)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .background(cardBackground)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(toneMatchAccessibilityLabel(stats: stats))
+    }
+
+    private func toneMatchChip(matched: Bool) -> some View {
+        Image(systemName: matched ? "checkmark" : "xmark")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(matched ? AppColor.positive : AppColor.caution)
+            .frame(width: 22, height: 22)
+            .background(
+                Circle().fill(
+                    (matched ? AppColor.positive : AppColor.caution).opacity(0.14)
+                )
+            )
+    }
+
+    private func toneMatchRatioLabel(stats: IMHistorySummary.IMScenarioToneMatchStats) -> String {
+        guard stats.evaluatedCount > 0 else { return "" }
+        return "\(stats.matchCount) of \(stats.evaluatedCount) matched"
+    }
+
+    private func toneMatchAccessibilityLabel(stats: IMHistorySummary.IMScenarioToneMatchStats) -> String {
+        guard stats.evaluatedCount > 0 else {
+            return "Tone match, no evaluated reps yet."
+        }
+        let rate = stats.matchRate.map { Int(($0 * 100).rounded()) } ?? 0
+        return "Tone match: \(stats.matchCount) of \(stats.evaluatedCount) reps matched the target tone, \(rate) percent."
     }
 
     // MARK: - Header

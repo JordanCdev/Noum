@@ -13740,3 +13740,267 @@ struct TimedHistoryZoneBandContractTests {
         #expect(stats?.inZoneRepCount ?? 0 <= stats?.runCount ?? 0)
     }
 }
+
+// MARK: - IMScenarioDetailView trust/tension trace + tone-match stats
+//
+// The detail view's two new analytical cards (trust/tension sparkline,
+// tone-match strip) read from pure helpers on `IMHistorySummary`. The
+// view itself is SwiftUI and not unit-tested; the helpers below carry
+// the math + filter contracts the view depends on.
+
+@available(iOS 17.0, *)
+struct IMScenarioTracePointsTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        trust: Int,
+        tension: Int,
+        daysOffset: Double,
+        hasFinalState: Bool = true
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: .confident),
+                turns: [],
+                actualTone: nil,
+                finalState: hasFinalState
+                    ? IMConversationState(trust: trust, engagement: 6, tension: tension, beat: "x")
+                    : nil,
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func tracePointsEmptyOnEmptyInput() {
+        let points = IMHistorySummary.tracePoints(from: [], scenario: .networking)
+        #expect(points.isEmpty)
+    }
+
+    @Test func tracePointsOnlyIncludesRequestedScenario() {
+        let sessions = [
+            imSession(scenario: .networking, trust: 7, tension: 4, daysOffset: -3),
+            imSession(scenario: .difficultConversation, trust: 4, tension: 8, daysOffset: -2),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -1)
+        ]
+        let points = IMHistorySummary.tracePoints(from: sessions, scenario: .networking)
+        #expect(points.count == 2)
+        #expect(points.allSatisfy { $0.trust >= 1 && $0.trust <= 10 })
+    }
+
+    @Test func tracePointsOrderedOldestToNewest() {
+        let sessions = [
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -1), // newest
+            imSession(scenario: .networking, trust: 6, tension: 6, daysOffset: -5), // oldest
+            imSession(scenario: .networking, trust: 7, tension: 7, daysOffset: -3)  // middle
+        ]
+        let points = IMHistorySummary.tracePoints(from: sessions, scenario: .networking)
+        #expect(points.count == 3)
+        // Oldest first; newest last.
+        #expect(points[0].trust == 6)
+        #expect(points[1].trust == 7)
+        #expect(points[2].trust == 5)
+    }
+
+    @Test func tracePointsDropsRepsWithoutFinalState() {
+        let sessions = [
+            imSession(scenario: .networking, trust: 7, tension: 4, daysOffset: -2),
+            imSession(scenario: .networking, trust: 0, tension: 0, daysOffset: -1, hasFinalState: false)
+        ]
+        let points = IMHistorySummary.tracePoints(from: sessions, scenario: .networking)
+        #expect(points.count == 1)
+        #expect(points.first?.trust == 7)
+    }
+
+    @Test func tracePointsClampsToNormalizedRange() {
+        // The engine's normalized accessors clamp 1...10. Even if a
+        // bad fixture stored 0 / 99, the trace point reads through
+        // the normalizer so the chart never plots out-of-band.
+        let session = PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate,
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: .networking, targetTone: .confident),
+                turns: [],
+                actualTone: nil,
+                finalState: IMConversationState(trust: 99, engagement: 6, tension: -5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+        let points = IMHistorySummary.tracePoints(from: [session], scenario: .networking)
+        #expect(points.first?.trust == 10)
+        #expect(points.first?.tension == 1)
+    }
+
+    @Test func tracePointsIgnoresNonIMSessions() {
+        // Defensive: an upstream filter mistake passes a Timed rep —
+        // the helper must drop it rather than coerce a state.
+        let sessions = [
+            imSession(scenario: .networking, trust: 7, tension: 4, daysOffset: -1),
+            PracticeSession(
+                transcript: "timed",
+                fillerWordCount: 0,
+                duration: 30,
+                date: baseDate,
+                mode: .timed,
+                score: 9
+            )
+        ]
+        let points = IMHistorySummary.tracePoints(from: sessions, scenario: .networking)
+        #expect(points.count == 1)
+    }
+}
+
+@available(iOS 17.0, *)
+struct IMScenarioToneMatchStatsTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func toneMatchStatsEmptyOnEmptyInput() {
+        let stats = IMHistorySummary.toneMatchStats(from: [], scenario: .networking)
+        #expect(stats.evaluatedCount == 0)
+        #expect(stats.matchCount == 0)
+        #expect(stats.matchRate == nil)
+        #expect(stats.lastFive.isEmpty)
+    }
+
+    @Test func toneMatchStatsIgnoresRepsWithoutActualTone() {
+        // A rep that didn't produce an `actualTone` reading is not a
+        // miss — it's missing data. Excluded from both numerator and
+        // denominator so the rate stays honest.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: nil, daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.evaluatedCount == 1)
+        #expect(stats.matchCount == 1)
+        #expect(stats.matchRate == 1.0)
+    }
+
+    @Test func toneMatchStatsIgnoresWhitespaceOnlyActualTone() {
+        // Whitespace-only `actualTone` is treated the same as nil —
+        // the evaluator didn't actually produce a reading.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "   ", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.evaluatedCount == 1)
+    }
+
+    @Test func toneMatchIsCaseInsensitive() {
+        #expect(IMHistorySummary.matches(targetTone: .confident, actualTone: "CONFIDENT"))
+        #expect(IMHistorySummary.matches(targetTone: .warm, actualTone: "very Warm and open"))
+        #expect(IMHistorySummary.matches(targetTone: .professional, actualTone: "Professional, clipped"))
+    }
+
+    @Test func toneMatchSubstringContainment() {
+        // The evaluator often qualifies the tone ("warmly confident",
+        // "a bit too concise"). Substring containment is the right
+        // rule so the matcher reads the tone the way a human coach
+        // would describe it.
+        #expect(IMHistorySummary.matches(targetTone: .confident, actualTone: "warmly confident"))
+        #expect(!IMHistorySummary.matches(targetTone: .warm, actualTone: "professional and clipped"))
+    }
+
+    @Test func toneMatchEmptyActualNeverMatches() {
+        #expect(!IMHistorySummary.matches(targetTone: .confident, actualTone: ""))
+        #expect(!IMHistorySummary.matches(targetTone: .confident, actualTone: "   "))
+    }
+
+    @Test func toneMatchStatsOnlyIncludesRequestedScenario() {
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -2)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.evaluatedCount == 1)
+        #expect(stats.matchCount == 1)
+    }
+
+    @Test func toneMatchStatsLastFiveOrderedNewestFirst() {
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -10),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -8),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.evaluatedCount == 6)
+        #expect(stats.matchCount == 4)
+        // 6 evaluated reps total → only the most recent 5 land in the
+        // strip; the oldest "shaky" entry should be excluded.
+        #expect(stats.lastFive.count == 5)
+        #expect(stats.lastFive.first?.matched == true)  // newest
+        #expect(stats.lastFive.allSatisfy { $0.id != sessions[0].id })  // oldest excluded
+    }
+
+    @Test func toneMatchStatsRateRounding() {
+        // 2 of 3 matches → 0.67 (rounded to two decimals).
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.matchRate == 0.67)
+    }
+
+    @Test func toneMatchStatsIgnoresNonIMSessions() {
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            PracticeSession(
+                transcript: "timed",
+                fillerWordCount: 0,
+                duration: 30,
+                date: baseDate,
+                mode: .timed,
+                score: 9
+            )
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.evaluatedCount == 1)
+        #expect(stats.matchCount == 1)
+    }
+}

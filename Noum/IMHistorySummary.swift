@@ -179,4 +179,143 @@ enum IMHistorySummary {
             return lhs.0.date > rhs.0.date
         }.first
     }
+
+    // MARK: - Per-scenario trace points (trust + tension sparkline)
+    //
+    // One point per rep in the scenario, ordered oldest-to-newest so a
+    // Chart consumer reads left-to-right as time-moves-forward. Only
+    // reps with a recorded `finalState` contribute — early-abandoned
+    // conversations have no relational state to plot. Used by
+    // `IMScenarioDetailView` to surface the per-scenario trust +
+    // tension trace beneath the summary header.
+    //
+    // Defensive contracts (locked by `IMScenarioTracePointsTests`):
+    //   • filters to `.imConversation` internally — an upstream filter
+    //     mistake produces an empty result, not a mixed-mode trace
+    //   • ignores reps with `imConversationDetails == nil` or
+    //     `finalState == nil` (can't plot a non-existent state)
+    //   • drops cross-scenario reps so the caller can pass the whole
+    //     `PracticeSessionStore` and still get one scenario's trace
+    //   • orders oldest → newest so chart `x` axis reads forward in time
+    //   • uses normalized 1–10 values via `IMConversationState.
+    //     normalizedTrust`/`normalizedTension` — out-of-range engine
+    //     output can never produce a chart point past the visible band
+    struct IMScenarioTracePoint: Equatable, Identifiable {
+        let id: UUID
+        let date: Date
+        let trust: Int
+        let tension: Int
+    }
+
+    static func tracePoints(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> [IMScenarioTracePoint] {
+        sessions
+            .compactMap { session -> IMScenarioTracePoint? in
+                guard session.mode == .imConversation,
+                      let details = session.imConversationDetails,
+                      details.setup.scenario == scenario,
+                      let final = details.finalState else { return nil }
+                return IMScenarioTracePoint(
+                    id: session.id,
+                    date: session.date,
+                    trust: final.normalizedTrust,
+                    tension: final.normalizedTension
+                )
+            }
+            .sorted { $0.date < $1.date }
+    }
+
+    // MARK: - Per-scenario tone-match stats
+    //
+    // Compares each rep's free-form `actualTone` (the post-rep
+    // evaluator's reading of how the user actually sounded) against
+    // the `targetTone` the user committed to at setup, and surfaces
+    // a per-scenario hit rate. The pure helper exists so the visual
+    // strip on `IMScenarioDetailView` and any test fixture read the
+    // same matcher; the matcher itself is also testable.
+    //
+    // Match logic: case-insensitive substring containment of the
+    // target tone's English title (e.g., "confident") inside the
+    // lowercased `actualTone` string. This is the same shape the
+    // server-side evaluator uses when producing the `actualTone`
+    // readout, so the match rate is honest about what the engine
+    // observed — not an interpretation the user has to read between.
+    //
+    // Defensive contracts (locked by `IMScenarioToneMatchStatsTests`):
+    //   • filters to `.imConversation` internally
+    //   • ignores reps where `actualTone == nil` (the evaluator didn't
+    //     produce a reading — that's not a miss, it's missing data)
+    //   • drops cross-scenario reps so callers can pass the whole
+    //     session list
+    //   • `lastFive` is ordered newest-first so the visual strip's
+    //     leftmost chip reads as "the most recent rep"
+    //   • `matchRate` is `nil` when `evaluatedCount == 0` (no honest
+    //     denominator → no fabricated zero percent)
+    struct IMScenarioToneMatchStats: Equatable {
+        let evaluatedCount: Int
+        let matchCount: Int
+        let matchRate: Double?
+        /// Newest-first; bounded at 5 so the strip reads as a quick
+        /// recency cue, not a deep history.
+        let lastFive: [LastFiveEntry]
+
+        struct LastFiveEntry: Equatable, Identifiable {
+            let id: UUID
+            let matched: Bool
+            let date: Date
+        }
+    }
+
+    static func toneMatchStats(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> IMScenarioToneMatchStats {
+        let evaluated: [(session: PracticeSession, target: IMTargetTone, actual: String)] = sessions
+            .compactMap { session in
+                guard session.mode == .imConversation,
+                      let details = session.imConversationDetails,
+                      details.setup.scenario == scenario,
+                      let actual = details.actualTone,
+                      !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+                return (session, details.setup.targetTone, actual)
+            }
+        let matches = evaluated.map { matches(targetTone: $0.target, actualTone: $0.actual) }
+        let matchCount = matches.filter { $0 }.count
+        let matchRate: Double? = evaluated.isEmpty
+            ? nil
+            : (Double(matchCount) / Double(evaluated.count) * 100).rounded() / 100
+
+        let recent = zip(evaluated, matches)
+            .sorted { $0.0.session.date > $1.0.session.date }
+            .prefix(5)
+            .map { pair in
+                IMScenarioToneMatchStats.LastFiveEntry(
+                    id: pair.0.session.id,
+                    matched: pair.1,
+                    date: pair.0.session.date
+                )
+            }
+
+        return IMScenarioToneMatchStats(
+            evaluatedCount: evaluated.count,
+            matchCount: matchCount,
+            matchRate: matchRate,
+            lastFive: Array(recent)
+        )
+    }
+
+    /// Exposed as a pure static for testability — the matcher rule the
+    /// chart strip relies on. Case-insensitive substring containment
+    /// of the target tone's English title in `actualTone`. Whitespace
+    /// is trimmed; empty `actualTone` is always a non-match (the test
+    /// fixtures exercise it, but the higher-level helper filters those
+    /// out first so the visual strip doesn't render a fabricated cell).
+    static func matches(targetTone: IMTargetTone, actualTone: String) -> Bool {
+        let trimmed = actualTone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.lowercased().contains(targetTone.title.lowercased())
+    }
 }
