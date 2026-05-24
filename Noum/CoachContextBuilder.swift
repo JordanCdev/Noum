@@ -60,8 +60,9 @@ enum CoachContextBuilder {
         chatbot — every reply must clear it):
         1. Quote at least one concrete fact from CONTEXT — a baseline \
            number (fillers/min, pace, score, hedging), a streak day count, \
-           a specific recent rep ("yesterday's Ah-Counter rep"), a path \
-           mission, or a verbatim PROOF quote. Generic advice without a \
+           a specific recent rep ("yesterday's Ah-Counter rep"), a COACH \
+           MEMORY hypothesis, a path mission, or a verbatim PROOF quote. \
+           Generic advice without a \
            cited fact reads as a GPT wrapper and fails this floor.
         2. Tie the answer to the user's chosen voice (the GOAL section). \
            A user training "authoritative" gets a verdict-shaped move; a \
@@ -177,6 +178,8 @@ enum CoachContextBuilder {
     ///   • RATING — overall + week peak + weekly delta
     ///   • BASELINE — most-stable numbers (fillers/min, pace, pause rate)
     ///   • STREAK — current streak + reps this week
+    ///   • COACH MEMORY — bounded working formulation: evidence depth,
+    ///     current lever, goal fit, and one preserve/watch signal.
     ///   • RECENT — last 3 sessions: mode, score, fillers, duration
     ///   • PATH — current node title + mission position
     ///   • TRENDS — strengths + persistent blockers
@@ -197,6 +200,7 @@ enum CoachContextBuilder {
         bigMoment: BigMoment? = nil,
         forwardPlan: ForwardPlan? = nil,
         latestRepNote: PostRepCoachNote? = nil,
+        coachMemory: CoachMemory? = nil,
         trends: [SkillTrend] = []
     ) -> String {
         var lines: [String] = []
@@ -337,6 +341,23 @@ enum CoachContextBuilder {
         let weeklyReps = sessions.filter { $0.date >= cutoff }.count
         lines.append("- Current streak: \(currentStreak) day\(currentStreak == 1 ? "" : "s").")
         lines.append("- Reps this week: \(weeklyReps).")
+
+        let memoryLines: [String]
+        if let coachMemory {
+            memoryLines = coachMemoryLines(memory: coachMemory)
+        } else {
+            memoryLines = coachMemoryLines(
+                profile: profile,
+                baseline: baseline,
+                sessions: sessions,
+                trends: trends
+            )
+        }
+        if !memoryLines.isEmpty {
+            lines.append("")
+            lines.append("COACH MEMORY")
+            lines.append(contentsOf: memoryLines)
+        }
 
         // RECENT — last 3 sessions, so the coach can quote actual numbers.
         // M21: when a session carried a declared intent (the user tapped a
@@ -671,19 +692,21 @@ enum CoachContextBuilder {
     static func detectFollowUpTopic(in reply: String) -> FollowUpTopic {
         let lower = reply.lowercased()
         // Order matters — we anchor on the FIRST detected topic. Drills
-        // and pauses are the most concrete coach recommendations, so
-        // they take priority over more general framings.
+        // are the most concrete coach recommendations. Explicit filler
+        // quotes ("um"/"uh") come before pause/silence language so a
+        // filler-reduction reply like "replace 'um' with silence" still
+        // opens the filler follow-up path.
         if lower.contains("drill") || lower.contains("exercise") || lower.contains("try this") {
             return .drillMentioned
+        }
+        if lower.contains("filler") || lower.contains("\"um") || lower.contains("\"uh") || lower.contains(" um ") || lower.contains(" uh ") {
+            return .fillerMentioned
         }
         if lower.contains("pause") || lower.contains("silence") || lower.contains("breath") {
             return .pauseMentioned
         }
         if lower.contains("pace") || lower.contains("wpm") || lower.contains("slow") || lower.contains("rush") {
             return .paceMentioned
-        }
-        if lower.contains("filler") || lower.contains("\"um") || lower.contains("\"uh") || lower.contains(" um ") || lower.contains(" uh ") {
-            return .fillerMentioned
         }
         if lower.contains("this week") || lower.contains("next week") || lower.contains("7 days") || lower.contains("seven days") {
             return .weeklyMentioned
@@ -1120,6 +1143,209 @@ enum CoachContextBuilder {
         if avg >= 7.5 { return "confident" }
         if avg <= 5.0 { return "rebuilding" }
         return "developing"
+    }
+
+    /// A compact "working formulation" for the coach. The rest of the
+    /// context gives the model facts; this section tells it how a human
+    /// coach would currently weight those facts: how much evidence exists,
+    /// what lever seems most useful, and how tightly that lever maps to the
+    /// user's stated voice goal. This stays bounded and evidence-labelled so
+    /// it cannot turn weak reads into fake certainty.
+    private static func coachMemoryLines(
+        profile: CoachingProfile?,
+        baseline: CommunicationBaseline,
+        sessions: [PracticeSession],
+        trends: [SkillTrend]
+    ) -> [String] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? .distantPast
+        let recentSessionCount = sessions.filter { $0.date >= cutoff }.count
+        let maxTrendWindow = trends.map(\.windowSize).max() ?? 0
+        let evidenceCount = [recentSessionCount, baseline.qualifyingSessionCount, maxTrendWindow].max() ?? 0
+        guard evidenceCount > 0 else { return [] }
+
+        let derivedConfidence = BaselineConfidence.from(sessionCount: evidenceCount)
+        let confidence = max(baseline.overallConfidence, derivedConfidence)
+        let signalNoun = evidenceCount == 1 ? "rep signal" : "rep signals"
+
+        var lines: [String] = [
+            "- Evidence depth: \(confidence.label) across \(evidenceCount) \(signalNoun); \(evidenceGuidance(for: confidence))."
+        ]
+
+        if let lever = currentCoachingLever(from: trends, profile: profile) {
+            let area = lever.skillArea.displayName
+            let evidence = memoryEvidencePhrase(for: lever)
+            lines.append("- Current coaching hypothesis: \(area) is the next lever (\(lever.confidence.rawValue) evidence: \(evidence)).")
+
+            if let voice = profile?.speakingStyleGoal {
+                let voiceLabel = voice.title.lowercased()
+                if voice.aligns(with: lever.skillArea) {
+                    lines.append("- Goal fit: \(area) directly supports the user's \(voiceLabel) voice.")
+                } else {
+                    lines.append("- Goal fit: \(area) is not the primary route to the user's \(voiceLabel) voice; explain why it matters before prescribing.")
+                }
+            }
+        } else if let blocker = baseline.persistentBlockers.first, !blocker.isEmpty {
+            lines.append("- Current coaching hypothesis: \(blocker) is the persistent blocker to check first; tie advice to baseline evidence.")
+        }
+
+        if let strength = baseline.topStrengths.first, !strength.isEmpty {
+            lines.append("- Preserve: \(strength).")
+        }
+        if let blocker = baseline.persistentBlockers.first, !blocker.isEmpty {
+            lines.append("- Watch: \(blocker).")
+        }
+
+        return Array(lines.prefix(5))
+    }
+
+    private static func coachMemoryLines(memory: CoachMemory) -> [String] {
+        let signalNoun = memory.evidenceCount == 1 ? "rep signal" : "rep signals"
+        var lines: [String] = [
+            "- Evidence depth: \(memory.evidenceConfidence.label) across \(memory.evidenceCount) \(signalNoun); \(evidenceGuidance(for: memory.evidenceConfidence))."
+        ]
+
+        if let goal = memory.statedGoalSummary, !goal.isEmpty {
+            lines.append("- Stated goal anchor: \(goal)")
+        }
+
+        if let currentLever = memory.currentLever {
+            let basis = memory.currentLeverBasis?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let evidence = basis.isEmpty ? "stored coach memory" : basis
+            if let confidence = memory.currentLeverConfidence {
+                lines.append("- Current coaching hypothesis: \(currentLever.displayName) is the next lever (\(confidence.rawValue) evidence: \(evidence)).")
+            } else {
+                lines.append("- Current coaching hypothesis: \(currentLever.displayName) is the next lever (\(evidence)).")
+            }
+
+            if let prior = memory.previousLever, prior != currentLever {
+                lines.append("- Focus shift: last read was \(prior.displayName); current read is \(currentLever.displayName).")
+            }
+
+            if let voice = memory.voice {
+                switch memory.goalFit {
+                case .aligned:
+                    lines.append("- Goal fit: \(currentLever.displayName) directly supports the user's \(voice.title.lowercased()) voice.")
+                case .offGoal:
+                    lines.append("- Goal fit: \(currentLever.displayName) is not the primary route to the user's \(voice.title.lowercased()) voice; explain why it matters before prescribing.")
+                case .noVoice, .noLever:
+                    break
+                }
+            }
+        }
+
+        if let planFocus = memory.planFocus,
+           let weekIndex = memory.planWeekIndex {
+            if let mode = memory.planMode {
+                lines.append("- Current plan: week \(weekIndex) trains \(planFocus.displayName) via \(mode.displayLabel).")
+            } else {
+                lines.append("- Current plan: week \(weekIndex) trains \(planFocus.displayName).")
+            }
+        }
+
+        if let intent = memory.lastIntentLabel, !intent.isEmpty {
+            lines.append("- Last declared rep focus: \(intent).")
+        }
+        if let strength = memory.strengths.first, !strength.isEmpty {
+            lines.append("- Preserve: \(strength).")
+        }
+        if let blocker = memory.blockers.first, !blocker.isEmpty {
+            lines.append("- Watch: \(blocker).")
+        }
+
+        return Array(lines.prefix(8))
+    }
+
+    private static func evidenceGuidance(for confidence: BaselineConfidence) -> String {
+        switch confidence {
+        case .insufficient:
+            return "treat this as a hypothesis, not a verdict"
+        case .tentative:
+            return "soften claims and ask one clarifying question when useful"
+        case .moderate:
+            return "name patterns carefully and tie prescriptions to evidence"
+        case .established, .stable:
+            return "name repeated patterns directly, but keep the next move specific"
+        }
+    }
+
+    private static func currentCoachingLever(
+        from trends: [SkillTrend],
+        profile: CoachingProfile?
+    ) -> SkillTrend? {
+        let scored = trends.compactMap { trend -> (trend: SkillTrend, score: Int)? in
+            let score = coachMemoryScore(for: trend, profile: profile)
+            guard score > 0 else { return nil }
+            return (trend, score)
+        }
+
+        return scored.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            if lhs.trend.windowSize != rhs.trend.windowSize {
+                return lhs.trend.windowSize > rhs.trend.windowSize
+            }
+            return lhs.trend.skillArea.displayName < rhs.trend.skillArea.displayName
+        }.first?.trend
+    }
+
+    private static func coachMemoryScore(for trend: SkillTrend, profile: CoachingProfile?) -> Int {
+        guard trend.confidence != .low,
+              trend.direction != .resolved,
+              trend.currentLevel != .strong else { return 0 }
+
+        var score: Int
+        switch trend.direction {
+        case .newIssue:
+            score = 100
+        case .declining:
+            score = 95
+        case .stable:
+            score = trend.currentLevel <= .developing ? 70 : 30
+        case .improving:
+            score = trend.currentLevel <= .developing ? 60 : 25
+        case .resolved:
+            score = 0
+        }
+
+        switch trend.currentLevel {
+        case .weak: score += 25
+        case .developing: score += 15
+        case .solid: score += 5
+        case .strong: break
+        }
+
+        switch trend.confidence {
+        case .high: score += 10
+        case .medium: score += 4
+        case .low: break
+        }
+
+        if profile?.speakingStyleGoal.aligns(with: trend.skillArea) == true {
+            score += 8
+        }
+
+        return score >= 50 ? score : 0
+    }
+
+    private static func memoryEvidencePhrase(for trend: SkillTrend) -> String {
+        let core: String
+        switch trend.direction {
+        case .declining:
+            core = "declining from the prior window"
+        case .newIssue:
+            core = "new issue in the recent window"
+        case .stable:
+            core = "stable at \(trend.currentLevel.rawValue)"
+        case .improving:
+            core = "improving but still \(trend.currentLevel.rawValue)"
+        case .resolved:
+            core = "recently resolved"
+        }
+
+        if let delta = trend.recentDelta?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !delta.isEmpty {
+            return "\(core); \(delta)"
+        }
+        return core
     }
 
     /// Per-skill direction lines built from `TrendAnalyzer` output. Only

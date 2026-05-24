@@ -1587,14 +1587,14 @@ struct DrillTargetAreaTests {
     }
 }
 
-// MARK: - Pressure Timer Engine Tests (auto-ramp, no difficulty selector)
+// MARK: - Pressure Timer Engine Tests (auto-ramp, zero filler tolerance)
 
 struct PressureRoundConfigTests {
 
     @Test func round1HasWidestWindows() {
         let config = PressureRoundConfig.config(for: 1)
         #expect(config.startWindow == 12, "Round 1 start window should be 12s. Got: \(config.startWindow)")
-        #expect(config.fillerTolerance == 3, "Round 1 should tolerate 3 fillers. Got: \(config.fillerTolerance)")
+        #expect(config.fillerTolerance == 0, "Sudden Death should tolerate no fillers. Got: \(config.fillerTolerance)")
         #expect(!config.isFollowUp, "Round 1 should be a fresh prompt, not a follow-up")
     }
 
@@ -1604,14 +1604,16 @@ struct PressureRoundConfigTests {
         let r5 = PressureRoundConfig.config(for: 5)
         #expect(r3.startWindow < r1.startWindow, "Round 3 start window should be shorter than round 1")
         #expect(r5.startWindow < r3.startWindow, "Round 5 start window should be shorter than round 3")
-        #expect(r5.fillerTolerance < r1.fillerTolerance, "Later rounds should tolerate fewer fillers")
+        #expect(r1.fillerTolerance == 0)
+        #expect(r3.fillerTolerance == 0)
+        #expect(r5.fillerTolerance == 0)
     }
 
     @Test func round4IsTopicReset() {
         let config = PressureRoundConfig.config(for: 4)
         #expect(!config.isFollowUp, "Round 4 should be a topic reset (not a follow-up)")
         #expect(config.startWindow == 6, "Round 4 start window should be 6s. Got: \(config.startWindow)")
-        #expect(config.fillerTolerance == 1, "Round 4 filler tolerance should be 1. Got: \(config.fillerTolerance)")
+        #expect(config.fillerTolerance == 0, "Sudden Death should stay zero-tolerance after reset. Got: \(config.fillerTolerance)")
     }
 
     @Test func round6PlusHasZeroFillerTolerance() {
@@ -2899,6 +2901,15 @@ struct WordOfTheDayCatalogTests {
         for entry in WordOfTheDayCatalog.entries {
             #expect(entry.promptSuggestion.hasSuffix("?"),
                     "prompt for \(entry.word) doesn't end with '?'")
+        }
+    }
+
+    @Test func promptsDoNotPreUseTodaysWord() {
+        for entry in WordOfTheDayCatalog.entries {
+            let promptTokens = Set(entry.promptSuggestion.lowercased().split { !$0.isLetter }.map(String.init))
+            let acceptedForms = Set(entry.acceptedForms.map { $0.lowercased() })
+            #expect(promptTokens.isDisjoint(with: acceptedForms),
+                    "prompt for \(entry.word) already contains the target word/form: \(entry.promptSuggestion)")
         }
     }
 }
@@ -5340,6 +5351,136 @@ struct CoachContextBuilderTests {
                 "Insufficient pace must not surface a value line")
     }
 
+    @Test func userContextOmitsCoachMemoryOnTrueColdStart() {
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+
+        #expect(!ctx.contains("COACH MEMORY"),
+                "Cold start should not create a hollow coach-memory section")
+    }
+
+    @Test func userContextAddsCoachMemoryWorkingReadFromTrends() {
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak,
+            recentDelta: "2 more fillers vs prior"
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [sampleSession(daysAgo: 1)],
+            currentStreak: 1,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            trends: [trend]
+        )
+
+        #expect(ctx.contains("COACH MEMORY"))
+        #expect(ctx.contains("Evidence depth: Forming across 8 rep signals"))
+        #expect(ctx.contains("Current coaching hypothesis: Filler Words is the next lever"))
+        #expect(ctx.contains("2 more fillers vs prior"))
+        #expect(ctx.contains("directly supports the user's concise and sharp voice"))
+    }
+
+    @Test func coachMemoryDoesNotPromoteLowConfidenceTrend() {
+        let trend = SkillTrend(
+            skillArea: .pauseUsage,
+            direction: .declining,
+            confidence: .low,
+            windowSize: 2,
+            currentLevel: .weak
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .storytelling),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [sampleSession(daysAgo: 0)],
+            currentStreak: 1,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            trends: [trend]
+        )
+
+        #expect(ctx.contains("COACH MEMORY"))
+        #expect(ctx.contains("treat this as a hypothesis, not a verdict"))
+        #expect(!ctx.contains("Current coaching hypothesis: Pause Usage is the next lever"))
+    }
+
+    @Test func coachMemoryFallsBackToPersistentBlockerAndStrength() {
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 12
+        baseline.topStrengths = ["Pace control"]
+        baseline.persistentBlockers = ["Opening strength"]
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .authoritative),
+            baseline: baseline,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+
+        #expect(ctx.contains("COACH MEMORY"))
+        #expect(ctx.contains("Opening strength is the persistent blocker"))
+        #expect(ctx.contains("Preserve: Pace control"))
+        #expect(ctx.contains("Watch: Opening strength"))
+    }
+
+    @Test func userContextUsesPersistentCoachMemoryWhenProvided() {
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            lastSessionID: UUID(),
+            evidenceCount: 10,
+            evidenceConfidence: .established,
+            voice: .storytelling,
+            statedGoalSummary: "Make technical updates feel more vivid.",
+            currentLever: .pauseUsage,
+            currentLeverConfidence: .high,
+            currentLeverBasis: "declining trend; pauses dropped",
+            previousLever: .fillerReduction,
+            focusShiftedAt: Date(),
+            goalFit: .aligned,
+            strengths: ["Filler discipline"],
+            blockers: ["Pause control"],
+            lastIntentLabel: "Make the point land",
+            planWeekIndex: 2,
+            planFocus: .pauseUsage,
+            planMode: .timed
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .storytelling),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("COACH MEMORY"))
+        #expect(ctx.contains("Stated goal anchor: Make technical updates feel more vivid."))
+        #expect(ctx.contains("Focus shift: last read was Filler Words; current read is Pauses."))
+        #expect(ctx.contains("Current plan: week 2 trains Pauses via Timed."))
+        #expect(ctx.contains("Last declared rep focus: Make the point land."))
+    }
+
     // MARK: - Starter prompts
 
     @Test func starterPromptsAreVoiceSpecific() {
@@ -5636,6 +5777,18 @@ struct CoachContextBuilderTests {
     }
 
     // MARK: - Helpers
+
+    private func sampleSession(daysAgo: Int) -> PracticeSession {
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return PracticeSession(
+            transcript: "We need to make the update clearer for the team.",
+            fillerWordCount: 3,
+            duration: 60,
+            date: date,
+            mode: .timed,
+            score: 6
+        )
+    }
 
     private func sampleProfile(voice: SpeakingStyleGoal) -> CoachingProfile {
         CoachingProfile(
@@ -8426,13 +8579,23 @@ struct WhatToImproveBulletSelectorTests {
 
 struct TalkToNoumCTACardCopyTests {
 
-    @Test func headlineIsInvariantAcrossPremiumState() {
-        // The moment is the same — premium status only changes what
-        // happens on tap, not the framing.
-        #expect(TalkToNoumCTACard.headlineCopy(isPremium: true)
-                == TalkToNoumCTACard.headlineCopy(isPremium: false))
-        #expect(TalkToNoumCTACard.headlineCopy(isPremium: true)
-                == "Talk to Noum about this rep.")
+    @Test func freeHeadlineStaysHonestAndUngatedDefaultMatches() {
+        // Free users hit the paywall before the thread opens, so the
+        // headline stays generic. A Pro user without a chosen voice sees
+        // the same calm default.
+        let free = TalkToNoumCTACard.headlineCopy(isPremium: false)
+        let proDefault = TalkToNoumCTACard.headlineCopy(isPremium: true, voice: nil)
+        #expect(free == "Want a coach's read on this rep?")
+        #expect(proDefault == free)
+    }
+
+    @Test func premiumHeadlinesAreVoiceShaped() {
+        let headlines = SpeakingStyleGoal.allCases.map {
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: $0)
+        }
+        #expect(Set(headlines).count == SpeakingStyleGoal.allCases.count)
+        #expect(headlines.contains("Want a verdict on this rep?"))
+        #expect(headlines.contains("Want to talk through how this rep felt?"))
     }
 
     @Test func subCopyDivergesByPremiumState() {
@@ -8457,6 +8620,12 @@ struct TalkToNoumCTACardCopyTests {
         let strings = [
             TalkToNoumCTACard.headlineCopy(isPremium: true),
             TalkToNoumCTACard.headlineCopy(isPremium: false),
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: .authoritative),
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: .warm),
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: .concise),
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: .persuasive),
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: .executive),
+            TalkToNoumCTACard.headlineCopy(isPremium: true, voice: .storytelling),
             TalkToNoumCTACard.subCopy(isPremium: true),
             TalkToNoumCTACard.subCopy(isPremium: false),
             TalkToNoumCTACard.ctaCopy(isPremium: true),
@@ -8934,7 +9103,6 @@ struct CoachContextBuilderChipParserExtendedTests {
 
 // MARK: - BigMomentStore Tests
 
-@available(iOS 17.0, *)
 struct BigMomentStoreTests {
 
     // MARK: - Persistence round-trip
@@ -8986,7 +9154,6 @@ struct BigMomentStoreTests {
 
 // MARK: - BigMomentDaysUntilTests
 
-@available(iOS 17.0, *)
 struct BigMomentDaysUntilTests {
 
     private func daysUntil(from referenceDate: Date, to targetDate: Date) -> Int? {
@@ -9026,7 +9193,6 @@ struct BigMomentDaysUntilTests {
 
 // MARK: - CoachingProfileBigMomentIDDecodingTests
 
-@available(iOS 17.0, *)
 struct CoachingProfileBigMomentIDDecodingTests {
 
     @Test func oldProfileWithoutBigMomentIDDecodesToNil() throws {
@@ -9070,6 +9236,9 @@ struct CoachingProfileBigMomentIDDecodingTests {
         let data = json.data(using: .utf8)!
         let profile = try JSONDecoder().decode(CoachingProfile.self, from: data)
         #expect(profile.bigMomentID == momentID)
+    }
+}
+
 // MARK: - M19 Coach Context: Big Moment section
 
 @Suite("CoachContextBuilderBigMomentTests")
@@ -9396,6 +9565,287 @@ struct PrimaryFocusMemoryTests {
     }
 }
 
+@Suite("CoachMemoryEngineTests")
+struct CoachMemoryEngineTests {
+
+    @Test func buildReturnsNilWithNoEvidence() {
+        let memory = CoachMemoryEngine.build(
+            profile: nil,
+            baseline: .empty,
+            sessions: [],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory == nil)
+    }
+
+    @Test func buildSelectsGoalAlignedTrendAsCurrentLever() {
+        let sessionID = UUID()
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 6
+        baseline.topStrengths = ["Pace control"]
+        baseline.persistentBlockers = ["Filler words"]
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak,
+            recentDelta: "2 more fillers vs prior"
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: baseline,
+            sessions: [session(id: sessionID, intentLabel: "Cut fillers")],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: sessionID,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.currentLever == .fillerReduction)
+        #expect(memory?.currentLeverConfidence == .high)
+        #expect(memory?.goalFit == .aligned)
+        #expect(memory?.evidenceConfidence == .moderate)
+        #expect(memory?.lastIntentLabel == "Cut fillers")
+        #expect(memory?.strengths == ["Pace control"])
+        #expect(memory?.blockers == ["Filler words"])
+    }
+
+    @Test func buildRecordsFocusShiftFromPreviousMemory() {
+        let previous = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            lastSessionID: UUID(),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            voice: .warm,
+            statedGoalSummary: nil,
+            currentLever: .paceControl,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "prior read",
+            previousLever: nil,
+            focusShiftedAt: nil,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            lastIntentLabel: nil,
+            planWeekIndex: nil,
+            planFocus: nil,
+            planMode: nil
+        )
+        let trend = SkillTrend(
+            skillArea: .answerDevelopment,
+            direction: .newIssue,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: previous,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.currentLever == .answerDevelopment)
+        #expect(memory?.previousLever == .paceControl)
+        #expect(memory?.focusShiftedAt == Date(timeIntervalSince1970: 1_000))
+        #expect(memory?.goalFit == .aligned)
+    }
+
+    @Test func lowConfidenceTrendFallsBackToVoiceGoal() {
+        let noisy = SkillTrend(
+            skillArea: .pauseUsage,
+            direction: .declining,
+            confidence: .low,
+            windowSize: 2,
+            currentLevel: .weak
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .authoritative),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [noisy],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.currentLever == .confidence)
+        #expect(memory?.currentLeverConfidence == nil)
+        #expect(memory?.currentLeverBasis?.contains("stated voice goal") == true)
+    }
+
+    @Test func buildCarriesCurrentForwardPlanWeek() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let plan = ForwardPlan(
+            weeks: [
+                PlanWeek(weekIndex: 1, focus: .reduceFillers, focusSkillArea: .fillerReduction, suggestedMode: .ahCounter, sessionTarget: 3, rationale: "Cut crutches."),
+                PlanWeek(weekIndex: 2, focus: .moreConcise, focusSkillArea: .structure, suggestedMode: .timed, sessionTarget: 3, rationale: "Shape the point."),
+                PlanWeek(weekIndex: 3, focus: .calmerDelivery, focusSkillArea: .pauseUsage, suggestedMode: .suddenDeath, sessionTarget: 2, rationale: "Hold pressure."),
+                PlanWeek(weekIndex: 4, focus: .thinkFaster, focusSkillArea: .confidence, suggestedMode: .imConversation, sessionTarget: 2, rationale: "Mock the room."),
+            ],
+            generatedAt: now,
+            isAIBacked: false
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: plan,
+            previous: nil,
+            lastSessionID: nil,
+            now: now
+        )
+
+        #expect(memory?.planWeekIndex == 1)
+        #expect(memory?.planFocus == .fillerReduction)
+        #expect(memory?.planMode == .ahCounter)
+    }
+
+    private func profile(voice: SpeakingStyleGoal) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: voice,
+            styleReference: "",
+            coachingBrief: "I want to brief senior stakeholders clearly.",
+            motivationWhyNow: "",
+            successVision: "",
+            paraphrasedGoal: "Brief senior stakeholders clearly."
+        )
+    }
+
+    private func session(id: UUID = UUID(), intentLabel: String? = nil) -> PracticeSession {
+        PracticeSession(
+            id: id,
+            transcript: "The update needs to be clear and calm.",
+            fillerWordCount: 2,
+            duration: 60,
+            date: Date(timeIntervalSince1970: 1_000),
+            mode: .timed,
+            score: 6,
+            intentLabel: intentLabel
+        )
+    }
+}
+
+@MainActor
+@Suite("CoachMemoryStoreTests")
+struct CoachMemoryStoreTests {
+
+    @Test func refreshPersistsAndReloadsForAccount() {
+        let suite = "coach-memory-store-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+        baseline.persistentBlockers = ["Opening strength"]
+
+        store.refresh(
+            profile: profile(voice: .authoritative),
+            baseline: baseline,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.currentLever == .openingStrength)
+        #expect(reloaded.currentMemory?.evidenceConfidence == .moderate)
+    }
+
+    @Test func deleteAllDataClearsOnlyMatchingAccount() {
+        let suite = "coach-memory-delete-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var activeID = "first"
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { activeID })
+
+        store.refresh(
+            profile: profile(voice: .concise),
+            baseline: baseline(count: 5),
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        activeID = "second"
+        let secondStore = CoachMemoryStore(defaults: defaults, accountIDProvider: { activeID })
+        secondStore.refresh(
+            profile: profile(voice: .warm),
+            baseline: baseline(count: 5),
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_100)
+        )
+
+        secondStore.deleteAllData(for: "first")
+        #expect(secondStore.currentMemory != nil)
+
+        activeID = "first"
+        store.reloadForCurrentAccount()
+        #expect(store.currentMemory == nil)
+    }
+
+    private func baseline(count: Int) -> CommunicationBaseline {
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = count
+        return baseline
+    }
+
+    private func profile(voice: SpeakingStyleGoal) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: voice,
+            styleReference: "",
+            coachingBrief: "I want to sound sharper.",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    private func session() -> PracticeSession {
+        PracticeSession(
+            transcript: "A short practice rep.",
+            fillerWordCount: 2,
+            duration: 60,
+            date: Date(timeIntervalSince1970: 1_000),
+            mode: .timed,
+            score: 6
+        )
+    }
+}
+
 // MARK: - M19 Big Moment Countdown Copy
 
 @Suite("BigMomentCountdownCopyTests")
@@ -9494,7 +9944,6 @@ struct BigMomentNotificationPrivacyTests {
 //      contract that gates whether the Profile card hides, prompts,
 //      goes live, or warns about a stale Big Moment.
 
-@available(iOS 17.0, macOS 12.0, *)
 private func makePlanWeek(
     weekIndex: Int = 1,
     focus: CoachingPriority = .reduceFillers,
@@ -9513,7 +9962,6 @@ private func makePlanWeek(
     )
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 private func makeForwardPlan(
     generatedAt: Date = Date(),
     bigMomentID: UUID? = nil,
@@ -9533,7 +9981,6 @@ private func makeForwardPlan(
     )
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 private func makePracticeSession(
     date: Date,
     mode: PracticeMode = .timed,
@@ -9550,7 +9997,6 @@ private func makePracticeSession(
     )
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 struct ForwardPlanCalendarTests {
 
     @Test func weekOneOnGenerationDay() {
@@ -9658,7 +10104,6 @@ struct ForwardPlanCalendarTests {
     }
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 struct ForwardPlanProgressTests {
 
     @Test func sessionsInsideCurrentWeekRangeAreCounted() {
@@ -9718,7 +10163,6 @@ struct ForwardPlanProgressTests {
     }
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 struct ForwardPlanServiceDeterministicTests {
 
     private func emptyInput(
@@ -9791,7 +10235,7 @@ struct ForwardPlanServiceDeterministicTests {
         var baseline = CommunicationBaseline.empty
         baseline.fillerRate = BaselineStat(
             value: 5.5, sampleCount: 10,
-            confidence: .high, trend: .stable,
+            confidence: .established, trend: .stable,
             percentile25: 4, percentile75: 7
         )
         let plan = ForwardPlanService.deterministicPlan(input: emptyInput(baseline: baseline))
@@ -9833,7 +10277,7 @@ struct ForwardPlanServiceDeterministicTests {
         var baseline = CommunicationBaseline.empty
         baseline.fillerRate = BaselineStat(
             value: 6.0, sampleCount: 10,
-            confidence: .high, trend: .stable,
+            confidence: .established, trend: .stable,
             percentile25: 5, percentile75: 7
         )
         let plan = ForwardPlanService.deterministicPlan(input: emptyInput(baseline: baseline))
@@ -9972,7 +10416,7 @@ struct ForwardPlanServiceDeterministicTests {
         var baseline = CommunicationBaseline.empty
         baseline.fillerRate = BaselineStat(
             value: 0.8, sampleCount: 10,
-            confidence: .high, trend: .stable,
+            confidence: .established, trend: .stable,
             percentile25: 0.5, percentile75: 1.1
         )
         let result = ForwardPlanService.strongestSkillArea(baseline: baseline)
@@ -9980,7 +10424,6 @@ struct ForwardPlanServiceDeterministicTests {
     }
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 struct ForwardPlanRendererTests {
 
     @Test func openingReferencesBigMomentWhenSet() {
@@ -10053,7 +10496,6 @@ struct ForwardPlanRendererTests {
     }
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 struct ForwardPlanContextTests {
 
     @Test func planSectionOmittedWhenNoPlan() {
@@ -10138,7 +10580,6 @@ struct ForwardPlanContextTests {
     }
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 struct CoachingPlanCardVisibilityTests {
 
     private func minimalProfile() -> CoachingProfile {
@@ -10268,7 +10709,6 @@ struct CoachingPlanCardVisibilityTests {
     }
 }
 
-@available(iOS 17.0, macOS 12.0, *)
 @MainActor
 struct AskNoumStoreInjectCoachTurnTests {
 
@@ -10321,7 +10761,6 @@ struct AskNoumStoreInjectCoachTurnTests {
 
 // MARK: - M21 — Session Intent: priority/SkillArea bridge
 
-@available(iOS 17.0, *)
 struct CoachingPriorityAlignedWithSkillAreaTests {
 
     @Test func fillerReductionMapsToReduceFillers() {
@@ -10371,7 +10810,6 @@ struct CoachingPriorityAlignedWithSkillAreaTests {
 
 // MARK: - M21 — SessionIntentEngine option ordering
 
-@available(iOS 17.0, *)
 struct SessionIntentEngineTests {
 
     private func makeProfile(goal: CoachingPriority) -> CoachingProfile {
@@ -10502,7 +10940,7 @@ struct SessionIntentEngineTests {
 
 // MARK: - M21 — SessionIntentStore lifecycle
 
-@available(iOS 17.0, *)
+@MainActor
 struct SessionIntentStoreTests {
 
     @Test func sessionIntentRoundTripsViaJSONCodec() throws {
@@ -10548,7 +10986,6 @@ struct SessionIntentStoreTests {
 
 // MARK: - M21 — SessionIntentMatcher → summary bullet alignment
 
-@available(iOS 17.0, *)
 struct SessionIntentMatcherTests {
 
     @Test func fillerIntentMatchesFillerAndClarityBullets() {
@@ -10594,7 +11031,6 @@ struct SessionIntentMatcherTests {
 
 // MARK: - M21 — CoachContextBuilder INTENT row in RECENT
 
-@available(iOS 17.0, *)
 struct CoachContextBuilderIntentTests {
 
     private func makeProfile() -> CoachingProfile {
@@ -10689,7 +11125,6 @@ struct CoachContextBuilderIntentTests {
 
 // MARK: - M21 — PracticeSession Codable forward compatibility
 
-@available(iOS 17.0, *)
 struct PracticeSessionIntentDecodingTests {
 
     @Test func oldPersistedSessionDecodesIntentAsNil() throws {
@@ -10726,9 +11161,13 @@ struct PracticeSessionIntentDecodingTests {
         let decoded = try JSONDecoder().decode(PracticeSession.self, from: data)
         #expect(decoded.intentFocus == .reduceFillers)
         #expect(decoded.intentLabel == "Cut fillers")
+    }
+}
+
 // MARK: - M20 Paywall Feature Accuracy Tests
 
 @Suite("PaywallFeatureAccuracy")
+@MainActor
 struct PaywallFeatureAccuracyTests {
 
     // Verify that features listed as Pro-gated in PremiumManager are actually
@@ -10791,6 +11230,9 @@ struct PaywallFeatureAccuracyTests {
         #expect(manager.asyncChallengeLimit == 1, "Free tier gets 1 async challenge slot")
         manager.upgradeToPremium()
         #expect(manager.asyncChallengeLimit == .max, "Pro tier gets unlimited async challenge slots")
+    }
+}
+
 // MARK: - Test helpers
 
 extension CommunicationBaseline {
@@ -10906,7 +11348,6 @@ struct AskNoumChipFilterTests {
 
 // MARK: - M24 Track 1 — CoachPersona catalogue contract
 
-@available(iOS 17.0, *)
 struct CoachPersonaTests {
 
     @Test func personaForNilReturnsDefault() {
@@ -10969,7 +11410,6 @@ struct CoachPersonaTests {
 
 // MARK: - M24 Track 1 — PostRepCoachNoteService deterministic path
 
-@available(iOS 17.0, *)
 struct PostRepCoachNoteServiceDeterministicTests {
 
     private func makeInput(
@@ -11181,7 +11621,6 @@ struct PostRepCoachNoteServiceDeterministicTests {
 
 // MARK: - M24 Track 1 — PostRepCoachNoteStore persistence
 
-@available(iOS 17.0, *)
 @MainActor
 struct PostRepCoachNoteStoreTests {
 
@@ -11338,7 +11777,6 @@ struct PostRepCoachNoteStoreTests {
 
 // MARK: - M24 Track 1 — CoachContext LAST REP NOTE section
 
-@available(iOS 17.0, *)
 struct CoachContextLastRepNoteTests {
 
     private func minimalContext(latestRepNote: PostRepCoachNote?) -> String {
@@ -11448,7 +11886,6 @@ struct CoachContextLastRepNoteTests {
 //     way the rest of the per-account stores do
 //   - RoundOutcome encode/decode round-trips every case
 
-@available(iOS 17.0, *)
 @MainActor
 struct SuddenDeathRunHistoryStoreTests {
 
@@ -11677,7 +12114,6 @@ struct SuddenDeathRunHistoryStoreTests {
 // the History card relies on: per-difficulty grouping, best/avg/clean
 // math, sort-by-most-recent-played.
 
-@available(iOS 17.0, *)
 struct SuddenDeathHistorySummaryTests {
 
     private func run(
@@ -11798,7 +12234,6 @@ struct SuddenDeathHistorySummaryTests {
 // UserDefaults suite — the store's `record(_:)` de-dupe contract is
 // what makes the regen replace the stale-voice record cleanly.
 
-@available(iOS 17.0, *)
 struct PostRepCoachNoteRegenerationInputTests {
 
     private func makeSession(id: UUID = UUID(), intentLabel: String? = nil) -> PracticeSession {
@@ -11951,7 +12386,6 @@ struct PostRepCoachNoteRegenerationInputTests {
 // depends on: write A in old voice → write B for same session in
 // new voice → store holds B only, with the new voice.
 
-@available(iOS 17.0, *)
 @MainActor
 struct PostRepCoachNoteStoreRegenerationTests {
 
@@ -12035,7 +12469,6 @@ struct PostRepCoachNoteStoreRegenerationTests {
 /// Locks the read-time constants used by `PreSummaryCelebration`.
 /// The hold durations sit in `holdDuration(isSingleEvent:reduceMotion:)`
 /// so the timing branches are testable without driving the View.
-@available(iOS 17.0, *)
 @MainActor
 struct M25CelebrationTimingTests {
 
@@ -12072,7 +12505,6 @@ struct M25CelebrationTimingTests {
 
 // MARK: - M25 Stream 4 — shareable card history + friends
 
-@available(iOS 17.0, *)
 @MainActor
 struct M25ShareableCardTests {
 
@@ -12231,9 +12663,33 @@ struct M25ShareableCardTests {
         // that order through its internal sort.
         let now = Date()
         let stamped: [PracticeSession] = sessions.enumerated().map { index, session in
-            var copy = session
-            copy.date = now.addingTimeInterval(-Double(index))
-            return copy
+            PracticeSession(
+                id: session.id,
+                transcript: session.transcript,
+                fillerWordCount: session.fillerWordCount,
+                duration: session.duration,
+                date: now.addingTimeInterval(-Double(index)),
+                mode: session.mode,
+                imConversationDetails: session.imConversationDetails,
+                score: session.score,
+                xpEarned: session.xpEarned,
+                headline: session.headline,
+                insights: session.insights,
+                coachSummary: session.coachSummary,
+                aiCoachFeedback: session.aiCoachFeedback,
+                prompt: session.prompt,
+                theme: session.theme,
+                drillResult: session.drillResult,
+                transcriptConfidence: session.transcriptConfidence,
+                transcriptionProvider: session.transcriptionProvider,
+                pressureLevel: session.pressureLevel,
+                isRated: session.isRated,
+                pauseMetrics: session.pauseMetrics,
+                pitchMetrics: session.pitchMetrics,
+                grammarFindings: session.grammarFindings,
+                intentFocus: session.intentFocus,
+                intentLabel: session.intentLabel
+            )
         }
         store.replaceFromRemote(stamped)
     }
@@ -12534,7 +12990,6 @@ struct M25NPCSystemPromptTests {
 /// audit calls out:
 ///   • Non-empty field → visible in context.
 ///   • Empty field → omitted cleanly (no hollow heading, no "n/a").
-@available(iOS 17.0, *)
 struct M25PersonalizationContextTests {
 
     private func profile(
@@ -12696,7 +13151,6 @@ struct M25PersonalizationContextTests {
 /// Insights, PromptGenerator, Rewrite, ForwardPlan. Each is asserted
 /// with a deterministic per-voice substring so a future refactor can't
 /// silently strip the register without failing this suite.
-@available(iOS 17.0, *)
 struct M25PersonalizationVoicePromptTests {
 
     // MARK: Insights
@@ -12824,4 +13278,3 @@ struct M25PersonalizationVoicePromptTests {
         #expect(prompt.contains("Exactly 4 weeks"))
     }
 }
-

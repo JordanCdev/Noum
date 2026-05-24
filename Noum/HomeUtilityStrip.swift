@@ -21,11 +21,10 @@ import SwiftUI
 // Taps:
 //   • Streak  → AppDestination.socialProfile (Profile holds the full streak
 //                detail surface).
-//   • Word    → seeds WordOfTheDayManager's suggested prompt into the
-//                shared UserDefaults key used by TimedPracticeView, then
-//                routes to AppDestination.timedPractice. This mirrors the
-//                tap behaviour in WordOfTheDayTile so the two entry points
-//                stay consistent.
+//   • Word    → seeds a neutral topic plus today's word into the shared
+//                UserDefaults keys used by TimedPracticeView, then routes
+//                to AppDestination.timedPractice. Timed shows the word as a
+//                separate cue so the prompt never does the usage for them.
 
 @available(iOS 17.0, macOS 12.0, *)
 struct HomeUtilityStrip: View {
@@ -183,14 +182,13 @@ struct HomeUtilityStrip: View {
             ? "Word of the day: \(word.todaysEntry.word). Used today."
             : "Word of the day: \(word.todaysEntry.word).")
         .accessibilityHint(word.hasUsedToday
-            ? "Already used today. Opens a timed rep using this word."
-            : "Opens a timed rep seeded with today's word.")
+            ? "Already used today. Opens a timed rep with this word as a separate cue."
+            : "Opens a timed rep with today's word as a separate cue.")
     }
 
-    /// Mirrors WordOfTheDayTile.tryIt() — seeds the shared UserDefaults
-    /// prompt keys that TimedPracticeView reads on launch, then pushes the
-    /// timed destination. Keeping this in lockstep with the tile means
-    /// both entry points feel identical to the user.
+    /// Seeds the shared UserDefaults prompt keys that TimedPracticeView
+    /// reads on launch, then pushes the timed destination. The prompt is
+    /// neutral; the word travels separately as an intentional constraint.
     private func openWordOfTheDay() {
         let entry = word.todaysEntry
         UserDefaults.standard.set(entry.promptSuggestion, forKey: "timedPractice.suggestedPrompt")

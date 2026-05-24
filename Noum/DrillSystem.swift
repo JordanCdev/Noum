@@ -197,8 +197,9 @@ extension SpeakingStyleGoal {
         case .storytelling:
             // Memorable shape: anaphora is the narrator's rhythm; diacope
             // returns to a phrase; epizeuxis lands a beat; alliteration
-            // makes a phrase stick.
-            return [.anaphora, .diacope, .epizeuxis, .alliteration]
+            // makes a phrase stick; polysyndeton builds cumulative narrative
+            // momentum without pretending it is concise.
+            return [.anaphora, .diacope, .epizeuxis, .alliteration, .polysyndeton]
         }
     }
 

@@ -235,6 +235,19 @@ enum SessionFinalizer {
         // queues a SkillLevelUpEvent that the summary inline-celebrates.
         // Downward crossings are stored silently — we never punish-shame.
         SkillProgressionStore.shared.record(trends: skillTrends)
+
+        // Persistent coach memory — the durable working read that Ask Noum
+        // carries between conversations. Updated after trend recording so
+        // the stored formulation can notice focus shifts from the latest rep.
+        CoachMemoryStore.shared.refresh(
+            profile: coachingProfileStore.profile,
+            baseline: BaselineStore.shared.baseline,
+            sessions: sessionStore.sessions,
+            trends: skillTrends,
+            forwardPlan: ForwardPlanStore.shared.activePlan,
+            lastSessionID: latestSessionID
+        )
+
         let milestone = detectMilestone(
             levelBefore: levelBefore,
             levelAfter: levelAfter,

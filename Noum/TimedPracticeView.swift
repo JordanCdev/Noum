@@ -573,6 +573,7 @@ struct TimedPracticeView: View {
     // Session state
     @AppStorage("timedPractice.selectedTheme") private var selectedThemeRaw: String = PromptTheme.all.rawValue
     @State private var question: String = ""
+    @State private var wordOfTheDayTarget: String?
     @State private var phase: TimedSessionPhase = .setup
     @State private var thinkingCountdown: Int = 15
     @State private var elapsedSeconds: Int = 0
@@ -751,14 +752,15 @@ struct TimedPracticeView: View {
             // processes the state changes in one transaction.
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
+            let seededPrompt = consumeSeededPrompt()
+            wordOfTheDayTarget = consumeSeededWord()
             if question.isEmpty {
                 // Word-of-the-day path — if home tile seeded a one-shot
-                // prompt, use it directly and clear the seed so subsequent
-                // sessions don't reuse the same word.
-                if let seeded = UserDefaults.standard.string(forKey: "timedPractice.suggestedPrompt"),
-                   !seeded.isEmpty {
+                // neutral prompt, use it directly. Today's word is carried
+                // separately as a cue so the topic never does the user's
+                // vocabulary work for them.
+                if let seeded = seededPrompt {
                     question = seeded
-                    UserDefaults.standard.removeObject(forKey: "timedPractice.suggestedPrompt")
                 } else {
                     question = await PracticeTopics.next(
                         profile: coachingProfileStore.profile,
@@ -851,6 +853,23 @@ struct TimedPracticeView: View {
         max(0, totalDuration - elapsedSeconds)
     }
 
+    private func consumeSeededPrompt() -> String? {
+        let defaults = UserDefaults.standard
+        defer { defaults.removeObject(forKey: "timedPractice.suggestedPrompt") }
+        return normalizedSeed(defaults.string(forKey: "timedPractice.suggestedPrompt"))
+    }
+
+    private func consumeSeededWord() -> String? {
+        let defaults = UserDefaults.standard
+        defer { defaults.removeObject(forKey: "timedPractice.suggestedWord") }
+        return normalizedSeed(defaults.string(forKey: "timedPractice.suggestedWord"))
+    }
+
+    private func normalizedSeed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func formattedTime(_ seconds: Int) -> String {
         let m = seconds / 60
         let s = seconds % 60
@@ -886,6 +905,10 @@ struct TimedPracticeView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
+
+                if let wordOfTheDayTarget {
+                    wordOfTheDaySetupCue(wordOfTheDayTarget)
+                }
 
                 // Mode selector
                 modeSelector
@@ -937,6 +960,89 @@ struct TimedPracticeView: View {
                         .stroke(Color.white.opacity(0.5), lineWidth: 1)
                 )
         }
+    }
+
+    private func wordOfTheDaySetupCue(_ word: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "textformat")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(width: 34, height: 34)
+                .background(AppColor.brandBlue.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("TODAY'S WORD")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .tracking(0.8)
+
+                Text(word)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("Use it if it earns its place.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's word: \(word). Use it if it earns its place.")
+    }
+
+    private func wordOfTheDayDarkCue(_ word: String) -> some View {
+        HStack(spacing: 8) {
+            Text("TODAY'S WORD")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white.opacity(0.45))
+                .tracking(0.8)
+            Text(word)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.84))
+            Text("Use it if it fits.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.45))
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.08), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's word: \(word). Use it if it fits.")
+    }
+
+    private func wordOfTheDayLightCue(_ word: String) -> some View {
+        HStack(spacing: 8) {
+            Text("TODAY'S WORD")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+            Text(word)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("Use it if it fits.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(AppColor.brandBlue.opacity(0.08), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's word: \(word). Use it if it fits.")
     }
 
     private var modeSelector: some View {
@@ -1149,6 +1255,10 @@ struct TimedPracticeView: View {
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
+
+                    if let wordOfTheDayTarget {
+                        wordOfTheDayDarkCue(wordOfTheDayTarget)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
@@ -1214,6 +1324,9 @@ struct TimedPracticeView: View {
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                if let wordOfTheDayTarget {
+                    wordOfTheDayLightCue(wordOfTheDayTarget)
+                }
                 Text("Starting soon...")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

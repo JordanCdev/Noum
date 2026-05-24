@@ -38,6 +38,7 @@ struct AskNoumView: View {
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
 
     @State private var draft: String = ""
     @State private var didLandFirstAppear = false
@@ -855,6 +856,7 @@ struct AskNoumView: View {
             bigMoment: bigMomentStore.activeMoment,
             forwardPlan: forwardPlanStore.activePlan,
             latestRepNote: postRepCoachNoteStore.latestNote(),
+            coachMemory: coachMemoryStore.currentMemory,
             trends: trends
         )
         let history = await MainActor.run { store.replayForModel }

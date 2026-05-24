@@ -525,6 +525,8 @@ class AuthManager: ObservableObject {
             "sessionIntent.history.\(accountID)",
             // M24: Post-rep coach note — bounded history of coach reads
             "postRepCoachNote.\(accountID)",
+            // M25: Coach memory — durable working formulation for Ask Noum
+            "coachMemory.\(accountID)",
             // M24 Track 3: Sudden Death run history — bounded per-account
             "suddenDeath.runHistory.\(accountID)",
         ]
@@ -597,6 +599,7 @@ class AuthManager: ObservableObject {
             SessionIntentStore.shared.reloadForCurrentAccount()
             CoachLetterStore.shared.reloadForCurrentAccount()
             PostRepCoachNoteStore.shared.reloadForCurrentAccount()
+            CoachMemoryStore.shared.reloadForCurrentAccount()
             SuddenDeathRunHistoryStore.shared.reloadForCurrentAccount()
             completion?()
         }
@@ -614,6 +617,7 @@ class AuthManager: ObservableObject {
             SessionIntentStore.shared.endSession()
             CoachLetterStore.shared.endSession()
             PostRepCoachNoteStore.shared.endSession()
+            CoachMemoryStore.shared.endSession()
             SuddenDeathRunHistoryStore.shared.endSession()
         }
     }
