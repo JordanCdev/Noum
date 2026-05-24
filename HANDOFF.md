@@ -1,491 +1,587 @@
-# HANDOFF — M24 deferred slate: Voice-change retroactive read + Sudden Death in History
+# HANDOFF — M24 deferred slate (round 4): Timed + IM history breakdowns + daily-cap hint + Profile SD share
 
 ## Scope
 
-The previous push shipped **M24 Tracks 2 + 3** (commit `c7dd4b1`) —
-Summary dedupe + Sudden Death `SuddenDeathRunHistoryStore` + Recent
-Runs card on the Result screen — and listed five concrete "Future
-moves" at the bottom of its HANDOFF. This session picks up two of
-those that are both vision-aligned and shippable end-to-end without
-backend or schema work:
+The previous push (commit `f8becd9`) closed three of the six M24
+"Future moves": Settings AI-budget surface, SD Result history-export
+menu, and Ah-Counter History breakdown card. It left three deferred
+items in the priority list — peer SD scores (still blocked on
+schema work), `coachNoteRevealed` cleanup (still risky on the
+animation chain), and the rest of the per-mode stat surfaces (IM +
+Timed). The previous HANDOFF added three more candidates as natural
+next steps: in-Summary daily-budget hint, cross-difficulty SD
+history export from Profile, and rate-limiter live refresh.
 
-- **Track A — Voice-change retroactive read** (`HANDOFF.md` future
-  move #6): when the user changes their `speakingStyleGoal`,
-  regenerate the most-recent `PostRepCoachNote` in the new voice so
-  the persistent Ask Noum chat coach reads the LIVE voice on its
-  very next reply, not the stale one the rep was recorded in. This
-  is the £130/hr coach actually adapting — `docs/VISION.md` pillar
-  #5 (Personalized coaching).
+User brief, unchanged round to round: "continue from the existing
+TO-DO, ensure working towards getting the app towards the vision
+plan, and all round A+, make my dream I had come true too, ensure
+working on the redesign branch too (very important)."
 
-- **Track B — Sudden Death runs reachable from History**
-  (`HANDOFF.md` future move #2): the existing History tab filters
-  generic `PracticeSession` rows by mode, but the rich Sudden Death
-  engine-specific stats (rounds survived, clean-run count, per-
-  difficulty best) live in the separate `SuddenDeathRunHistoryStore`
-  and were only visible on the per-run Result screen. This track
-  surfaces those stats on the History surface when the user filters
-  to Sudden Death — `docs/VISION.md` pillar #4 (Believable
-  progress).
-
-User brief: "continue from the existing TO-DO, ensure working
-towards getting the app towards the vision plan, and all round A+,
-make my dream I had come true too, ensure working on the redesign
-branch too (very important)."
-
-Translation: pick the most user-facing items off the deferred list,
-respect the vision anti-goals (no fake gamification, no fabricated
-trend, honest data only), and ship on `Redesign`.
-
-The remaining three "Future moves" from the prior HANDOFF are
-deferred again for explicit reasons: friends Sudden Death scores
-require `PublicProfileSnapshot` schema work + backend changes;
-`coachNoteRevealed` cleanup carries a known regression risk on the
-celebration timing chain (the prior HANDOFF's own "Risks" section
-flagged it — "left alone for safety"); AI generation gating is
-engineering hygiene not user-facing.
+Translation, this round: of the six items the prior HANDOFF
+forwarded, three are now closeable without device-only QA and
+without schema work. This push closes them. The remaining three
+(peer SD scores, `coachNoteRevealed` cleanup, rate-limiter live
+refresh) stay deferred — peer scores still need
+`PublicProfileSnapshot` schema work, `coachNoteRevealed` still
+carries the same animation-chain risk, and the rate-limiter live
+refresh is low priority because Settings is modal in practice
+(documented in the prior round's Risks section).
 
 ## What shipped
 
-### Track A — Voice-change retroactive read
+### Track 1 — Timed history breakdown (#3 from prior HANDOFF, half)
 
-The persistent Ask Noum chat coach reads the most-recent
-`PostRepCoachNote` via `CoachContextBuilder.userContext`'s LAST REP
-NOTE section. Before this push, that note was permanently locked in
-whatever voice was active at the time of the rep — so a user who
-finished a rep on `authoritative` then switched to `warm` in
-onboarding would still see the chat coach quoting the
-authoritative-voice line as if it were the live voice, until they
-finished another rep. The voice the user actually chose was being
-silently ignored on every chat reply in the window between the
-voice change and the next rep.
+The Ah-Counter pattern that landed in the prior push proved the
+History surface can carry a per-mode hero card above the generic
+session rows. Timed is the next-cleanest application: every Timed
+rep already carries the signals the user reads — score (1–10),
+WPM (computable from transcript + duration), and date. No new
+persistence; no new store. Just an aggregation.
 
-This track closes that gap.
+#### Move 1 — `TimedHistorySummary` pure helper
 
-#### Move 1 — `PracticeSessionFinalizer.regenerationInput(...)` (NEW pure helper)
+New `Noum/TimedHistorySummary.swift` mirrors
+`AhCounterHistorySummary` and `SuddenDeathHistorySummary`: pure
+functions over a list of `PracticeSession`, producing a single
+optional `TimedHistorySummaryStats` struct.
 
-```swift
-nonisolated static func regenerationInput(
-    from session: PracticeSession,
-    newVoice: SpeakingStyleGoal?,
-    baseline: CommunicationBaseline,
-    bigMoment: BigMoment?,
-    bigMomentDaysUntil: Int?
-) -> PostRepCoachNoteInput
-```
-
-Pure function. Builds the same `PostRepCoachNoteInput` shape the
-`recordPostRepCoachNote` finalize path constructs, but takes the
-session as a parameter and the voice as a parameter (rather than
-reading from live stores), so it can be unit-tested without
-provider stubs. Session metrics carry through unchanged
-(`sessionID`, `mode`, `score`, `fillerCount`, `duration`,
-`wordCount`, `intentLabel`); baseline + BigMoment flow in from the
-caller. Baseline confidence is mapped to `Optional` the same way
-the finalize path does — insufficient confidence → `nil`, so the
-deterministic priority chain skips the comparison branch instead
-of citing a baseline that doesn't exist yet.
-
-#### Move 2 — `PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(newVoice:)` (NEW)
+Public surface:
 
 ```swift
-@MainActor
-static func regenerateMostRecentNoteIfVoiceChanged(newVoice: SpeakingStyleGoal?)
-```
-
-Three guards before doing any work:
-
-1. `PostRepCoachNoteStore.shared.latestNote()` returns nil → no
-   note has been recorded yet (cold-start account), no regen
-   needed.
-2. The latest note's `voice` already matches the new voice → the
-   onboarding "Save" was tapped with no actual voice change
-   (idempotent — the user could re-save the same profile and we
-   shouldn't burn an AI call on it).
-3. The originating session no longer exists in
-   `PracticeSessionStore.shared.sessions` → defensive against a
-   user who deleted their last session from History between the
-   note being written and the voice change. Never invent a note
-   for a session that no longer exists.
-
-When all three guards pass, the function:
-
-- Reads the live `BaselineStore.shared.baseline` and
-  `BigMomentStore.shared.activeMoment` (+ days until) as the
-  context for the regen.
-- Builds the input via `regenerationInput(...)` with the new
-  voice.
-- Writes the deterministic note **synchronously** via
-  `PostRepCoachNoteStore.shared.record(_:)`. The store's
-  pre-existing dedupe-by-sessionID contract means this REPLACES
-  the prior record rather than stacking — the latest note for
-  that sessionID is now in the new voice on the very next paint
-  cycle of `AskNoumView`.
-- Spawns a detached `Task` to fire the AI upgrade — same shape as
-  the finalize path — that re-records only when the upgrade is
-  actually AI-backed. Network failure, missing provider, non-
-  English locale → no second write, the deterministic note
-  stands.
-
-#### Move 3 — `CoachingProfileStore.save(_:)` voice-change hook
-
-```swift
-let previousVoice = self.profile?.speakingStyleGoal
-self.profile = profile
-// ... existing save body ...
-if let previousVoice, previousVoice != profile.speakingStyleGoal {
-    PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(
-        newVoice: profile.speakingStyleGoal
-    )
-}
-```
-
-Snapshot the prior voice BEFORE mutating `self.profile` so we have
-the comparison point. Initial profile capture (`previousVoice ==
-nil`) deliberately does NOT trigger a regen — a fresh account has
-no rep history to regenerate against, and the next finalize will
-produce the first note in the chosen voice naturally.
-
-The only call site for `CoachingProfileStore.save(_:)` is
-`CoachingOnboardingView` (verified by `grep`), so the regen fires
-exactly when the user goes through the voice-selection step of
-onboarding. Voice changes from any future Settings surface that
-calls `save(_:)` will also pick this up automatically — single
-hook.
-
-### Track B — Sudden Death runs reachable from History
-
-The History tab (`SessionHistoryView`) reads `PracticeSession`
-rows from `PracticeSessionStore.shared.sessions` and filters them
-by mode. A Sudden Death rep does write a `PracticeSession` (with
-`mode: .suddenDeath`) so the existing rows DO render — but only
-through the generic `PracticeSession` lens (transcript snippet,
-score, fillers). The Sudden Death-specific signals — rounds
-survived, clean-run count, per-difficulty best — live in
-`SuddenDeathRunHistoryStore.shared.runs` and were only visible on
-the per-run Result screen. This track surfaces them on History.
-
-#### Move 1 — `Noum/SuddenDeathHistorySummary.swift` (NEW pure helper)
-
-```swift
-struct SuddenDeathDifficultyBreakdown: Equatable, Identifiable {
-    let difficulty: SuddenDeathDifficulty
+struct TimedHistorySummaryStats: Equatable {
     let runCount: Int
-    let bestRounds: Int
-    let averageRounds: Double  // rounded to 1dp
-    let cleanRunCount: Int     // totalFillers == 0
-    let lastPlayed: Date
-    var id: SuddenDeathDifficulty { difficulty }
+    let averageScore: Double?
+    let best: BestRep?
+    let averageWPM: Int?
+    let inZoneRepCount: Int
+    let trend: TrendComparison?
 }
 
-enum SuddenDeathHistorySummary {
-    static func breakdowns(from runs: [SuddenDeathRunRecord]) -> [SuddenDeathDifficultyBreakdown]
-    static func totalRunCount(from runs: [SuddenDeathRunRecord]) -> Int
-    static func mostRecentDate(from runs: [SuddenDeathRunRecord]) -> Date?
+enum TimedHistorySummary {
+    static let zoneMinWPM: Int = 130
+    static let zoneMaxWPM: Int = 160
+
+    static func summarize(sessions: [PracticeSession],
+                          now: Date = Date(),
+                          calendar: Calendar = .current) -> TimedHistorySummaryStats?
+    static func trendComparison(sessions: [PracticeSession],
+                                 now: Date,
+                                 calendar: Calendar) -> TimedHistorySummaryStats.TrendComparison?
 }
 ```
 
-Pure. Groups runs by difficulty, computes best (max
-`roundsSurvived`), average (1dp), clean count (`totalFillers ==
-0`), and the most-recent `completedAt`. Sorts by `lastPlayed`
-descending — the difficulty the user touched last lands on top,
-not whichever difficulty alphabetizes first. Empty input → empty
-output (the consumer self-hides on empty).
+Defensive contracts:
+- `summarize(sessions:)` filters to `.timed` mode internally —
+  upstream filter mistakes produce empty/nil, not a mixed-mode
+  aggregate.
+- Average score considers only scored reps (older sessions can
+  carry `score == nil` and the average should reflect what the
+  engine actually emitted).
+- Best rep tiebreak by most-recent date (user reads "today's
+  peak" before "last month's peak" when both tie at the same
+  score).
+- Average WPM filters to reps with measurable pace (`duration >
+  0 && wordCount > 0`) so a zero-duration rep can't crash with
+  a divide-by-zero or skew the mean.
+- In-zone counter reads the same range the breakdown card's
+  subtitle quotes (130–160 WPM, matching `WPMEvaluator` Timed
+  band per `Noum/Noum/WPMEvaluator.swift`).
+- Trend windowing requires BOTH the 7-day window AND the prior
+  7-day window to have ≥1 scored rep. Otherwise `trend == nil`
+  so the UI omits the chip rather than rendering a single-point
+  "direction."
+- Trend direction threshold: |Δmean| < 0.3 reads as `.steady`.
+  Timed scores are integer 1–10, so a fractional shift filters
+  single-rep noise without erasing real movement.
 
-#### Move 2 — `Noum/SuddenDeathHistoryBreakdownCard.swift` (NEW)
+#### Move 2 — `TimedHistoryBreakdownCard`
 
-SwiftUI hero card. Header reads "Sudden Death history" with the
-mode glyph + "12 runs · Last run 3 days ago" subtitle. One row per
-difficulty (only those the user has played — no zero-row rows for
-unplayed difficulties), each carrying three stat columns: **best**
-(peak rounds), **avg** (mean rounds, 1dp), **clean** (zero-filler
-run count).
+New `Noum/TimedHistoryBreakdownCard.swift` — SwiftUI hero card
+mirroring `AhCounterHistoryBreakdownCard`:
 
-Hero chrome matches the existing History surface treatment
-(mode-tinted radial wash + tint border + soft shadow) so the card
-reads as a hero surface rather than a list row.
+- Mode-tinted hero treatment (`AppColor.modeTimed` — Timed blue)
+  so the History surface reads as one design language across
+  modes.
+- Header row: `timer` SF Symbol + "Timed history" + rep count +
+  optional trend chip ("Up 0.4 vs last week" / "Down 0.4 vs last
+  week" / "Steady vs last week" — paired with `arrow.up.right` /
+  `arrow.down.right` / `equal` icons and `AppColor.positive` /
+  `caution` / `secondary` tints).
+- Stat row: three columns — average score, in-zone reps, average
+  WPM.
+- Best-rep cell at the bottom, optionally tappable. When
+  `onSelectBestRep` is provided, the cell opens
+  `AppDestination.sessionDetail(sessionID:)` — same destination
+  as a row tap, so the user can drill from "this was my best rep"
+  straight to the source session.
 
-Self-hides on cold start when `breakdowns.isEmpty` (no SD runs
-yet) — rendering "0 runs" would be visual noise for a user who
-hasn't touched the mode. Accessibility: each row exposes a
-combined label ("Hard: 5 runs, best 8, average 6.4 rounds, 2 clean
-runs") for VoiceOver.
+Self-hides when `summarize(sessions:)` returns nil (cold start, no
+Timed reps yet). Mirrors the SD + Ah-Counter pattern: rendering an
+empty card with "0 reps" would just be visual noise on the History
+screen.
 
-#### Move 3 — `SessionHistoryView` integration
+#### Move 3 — Wire into `SessionHistoryView`
 
-- New `@StateObject private var suddenDeathRunHistoryStore =
-  SuddenDeathRunHistoryStore.shared` so the card re-paints when
-  the store publishes after a new run lands.
-- New section between the mode filter chips and the session list
-  header:
-  ```swift
-  if selectedModeFilter == .suddenDeath {
-      SuddenDeathHistoryBreakdownCard(runs: suddenDeathRunHistoryStore.runs)
-          .padding(.horizontal, Spacing.screenH)
-          .padding(.bottom, 16)
-  }
-  ```
+```swift
+if selectedModeFilter == .timed {
+    TimedHistoryBreakdownCard(
+        sessions: filteredSessions,
+        onSelectBestRep: { sessionID in
+            navigationPath.append(AppDestination.sessionDetail(sessionID: sessionID))
+        }
+    )
+    .padding(.horizontal, Spacing.screenH)
+    .padding(.bottom, 16)
+}
+```
 
-  The "All" filter and every other mode filter stay unchanged — the
-  card only renders inside the SD filter context so users browsing
-  other modes don't see Sudden Death noise. Single-condition gate;
-  the card's own `breakdowns.isEmpty` check covers the cold-start
-  case.
+Reads from the existing `filteredSessions` — no new store, no new
+fetch. The card only sees the already-filtered Timed rows; the
+summary helper does a defensive re-filter as belt-and-braces but the
+expected call site is post-filter.
+
+### Track 2 — IM history breakdown (#3 from prior HANDOFF, other half)
+
+IM is the second per-mode surface the prior HANDOFF flagged. Its
+natural signal isn't a single number (fillers/min for Ah-Counter,
+rounds survived for SD, score for Timed) — IM carries a per-rep
+COMPOSITE: how well the user scored AND the relational state they
+left the conversation in (trust + tension at the final beat,
+balanced by `IMTurnStateBalancer`). Surfacing this composite
+per-scenario tells the user "you do well on networking chats, but
+Difficult Conversation is where you lose composure" — the kind of
+read the £130/hr human coach would give after reviewing the last 10
+reps across all four built-in setups.
+
+#### Move 1 — `IMHistorySummary` pure helper
+
+New `Noum/IMHistorySummary.swift` — same pure-function pattern as
+the Timed + Ah-Counter helpers. Produces one
+`IMScenarioBreakdown` per scenario that has at least one IM rep
+with `imConversationDetails` recorded.
+
+```swift
+struct IMScenarioBreakdown: Equatable, Identifiable {
+    let scenario: IMConversationScenario
+    let runCount: Int
+    let averageScore: Double?
+    let bestScore: Int?
+    let bestScoreDate: Date?
+    let averageFinalTrust: Double?
+    let averageFinalTension: Double?
+    let lastPlayed: Date
+    var id: IMConversationScenario { scenario }
+}
+
+enum IMHistorySummary {
+    static func breakdowns(from sessions: [PracticeSession]) -> [IMScenarioBreakdown]
+    static func totalRunCount(from sessions: [PracticeSession]) -> Int
+    static func mostRecentDate(from sessions: [PracticeSession]) -> Date?
+}
+```
+
+Defensive contracts:
+- `breakdowns(from:)` excludes sessions where `mode != .imConversation`
+  OR `imConversationDetails == nil` (a rep that didn't record
+  scenario metadata can't be classified).
+- Average score considers only scored reps — same shape as Timed.
+- Best score tiebreak by most-recent date — same shape as Timed.
+- Average final trust/tension considers only reps with a final
+  state (early-abandoned conversations contribute to runCount but
+  not to the relational averages).
+- Scenarios with zero qualifying reps are not surfaced — no
+  "Difficult Conversation: 0 reps · — / — / —" row.
+- Sort: most-recently played first, so the user sees the
+  scenario they're currently grinding at the top.
+
+#### Move 2 — `IMHistoryBreakdownCard`
+
+New `Noum/IMHistoryBreakdownCard.swift` — SwiftUI hero card with
+the same shape as the SD breakdown: header + one row per scenario.
+Each row reads:
+
+- Scenario title (e.g. "Difficult Conversation")
+- Subtitle: "3 reps · best 9/10 last week" (omits the "best" tail
+  when no rep has been scored yet — keeps the row honest)
+- Three stat columns: avg score, avg final trust, avg final tension
+- Chevron when `onSelectScenario` is provided (currently nil — the
+  IM per-scenario drill-down is a future move; the callback shape
+  is in place so a future view can wire in without a structural
+  change)
+
+Mode-tinted hero treatment (`AppColor.modeIM` — IM purple-blue) so
+the History surface reads as one design language. Self-hides when
+no IM reps with conversation metadata exist.
+
+#### Move 3 — Wire into `SessionHistoryView`
+
+```swift
+if selectedModeFilter == .imConversation {
+    IMHistoryBreakdownCard(sessions: filteredSessions)
+        .padding(.horizontal, Spacing.screenH)
+        .padding(.bottom, 16)
+}
+```
+
+Symmetric branch alongside the Timed + Ah-Counter + SD branches.
+All four modes now have a per-mode hero card on the History
+surface — the original goal of the per-mode stat surface track.
+
+### Track 3 — Daily-cap hint + Profile SD share (#5 + #6 from prior HANDOFF)
+
+Two small polish closures. Each is one quiet caption / one quiet
+row. Together they round out the daily-budget signal (so the user
+knows when their AI coach is about to go rule-based) and the
+SD-history surfacing (so the user can share their track record
+without needing to finish a fresh run).
+
+#### Move 1 — `CoachReadCard.dailyBudgetHintCopy`
+
+New static helper on `Noum/CoachReadCard.swift`:
+
+```swift
+static let dailyBudgetHintThresholdRatio: Double = 0.75
+
+static func dailyBudgetHintCopy(remaining: Int) -> String {
+    let clamped = max(0, remaining)
+    switch clamped {
+    case 0:  return "Rule-based today — coach notes resume tomorrow."
+    case 1:  return "1 AI coach note remaining today."
+    default: return "\(clamped) AI coach notes remaining today."
+    }
+}
+```
+
+Threshold (0.75) is intentionally LOWER than
+`AISettingsManager.usageAwarenessThreshold` (0.90 — the monthly
+debrief axis) because the daily cap is smaller (12 free / 40 Pro
+vs 20 free / 100 Pro monthly), so the user notices it earlier in
+the day. Test-locked: `thresholdIsBelowMonthlyHintThreshold` +
+`thresholdIsAboveHalfway` so a future drift trips both.
+
+The hint renders inline in the CoachReadCard, beneath the note
+text, when:
+- The note is AI-backed (`note.isAIBacked == true` — the
+  RULE-BASED tag already tells the rule-based story; no need to
+  layer a budget hint on top)
+- `AIRateLimiter.shared.remainingToday(kind: .postRepCoachNote)`
+  is at or below 25% of `currentCap()` (i.e. ≥75% used)
+
+Visual register: `Typography.captionSmall` in
+`AppColor.textSecondary` — quiet, doesn't compete with the note
+text. Brand-voice contract: no exclamations, no "running out"
+framing, no fake urgency. Locked by
+`CoachReadCardDailyBudgetHintTests.hintCopyHasNoUrgencyFraming` +
+`hintCopyHasNoExclamations`.
+
+#### Move 2 — Profile Sudden Death history ShareLink
+
+`ProfileView.suddenDeathHistoryShareRow` — quiet `ShareLink` row
+in the Progression cluster, beneath `ModeMasteryCard` and above
+`achievementsPanel`. Reads from
+`SuddenDeathRunHistoryStore.shared.runs` (already observed as a
+`@StateObject` on the view).
+
+Self-hides when there are no SD runs yet — a user who hasn't
+touched Sudden Death sees nothing. The row appears the moment
+they have something to share.
+
+Reuses `SuddenDeathHistoryExport.formatPlainText(runs:)` — the
+same cross-difficulty helper the SD Result-screen menu calls into
+(round 3) and the per-difficulty drill-down view (round 2). Same
+anti-goal contract: zero transcript content end-to-end, locked by
+`SuddenDeathHistoryExportTests.exportNeverContainsTranscriptContent`.
+
+Visual register: single row (not a card). Icon: `bolt.fill` tinted
+with `AppColor.modeSuddenDeath` in a small 28pt rounded badge,
+mirroring the existing `statCard` icon block. Subtitle:
+"N runs · cross-difficulty plain-text" so the user knows what the
+share payload looks like before they tap.
+
+Accessibility identifier `profile.suddenDeath.historyShare` for
+future UI test coverage.
+
+### Tests
+
+42 new tests across three suites in `NoumTests/NoumTests.swift`:
+
+**`TimedHistorySummaryTests` (15 cases):**
+- summarize empty / filtering: empty returns nil, mixed-mode
+  filters out non-`.timed`, all-non-`.timed` returns nil.
+- averages: averageScore only considers scored reps, nil when no
+  scored reps, rounded to one decimal place.
+- best rep: highest score wins, tiebreak by most-recent date, nil
+  when no scored reps.
+- pace: averageWPM matches computed rate, nil when no measurable
+  pace, in-zone counter tracks WPM range.
+- zone bounds: locks `zoneMinWPM == 130 && zoneMaxWPM == 160` so a
+  future drift trips the test.
+- trend: nil when recent window empty, nil when prior window
+  empty, improving / worsening / steady direction.
+
+**`IMHistorySummaryTests` (15 cases):**
+- filtering + empty: empty returns empty, mixed-mode filters out
+  non-`.imConversation`, sessions without details excluded.
+- grouping: groups by scenario, sorts by most-recently played.
+- averages: averageScore skips unscored reps, nil when no scored
+  reps, averageFinalTrust + averageFinalTension computed when
+  finalState present, both nil when no finalState.
+- best score: highest wins, tiebreak by most-recent date with
+  date carry-through, nil when no scored reps.
+- totals: totalRunCount reflects IM sessions only, mostRecentDate
+  nil when no IM sessions, mostRecentDate returns latest.
+
+**`CoachReadCardDailyBudgetHintTests` (7 cases):**
+- copy: zero remaining mentions rule-based + tomorrow, one
+  remaining uses singular noun, multiple uses plural, negative
+  clamped to zero (defensive — should never happen).
+- brand-voice contract: hint has no exclamations across 0–10
+  remaining, no urgency framing ("running out" / "hurry" /
+  "almost out" / "left!" / "Last") across 0–12 remaining.
+- threshold: locked below monthly hint threshold (0.75 < 0.90),
+  locked above 50% (so the hint isn't noise across every rep
+  past halfway).
 
 ## What did NOT change
 
-- **No new modes, screens, or notifications.** Track A is a single
-  function + a 5-line hook. Track B is two new files + a 15-line
-  integration in the existing History view.
-- **No backend.** Both tracks read live stores already wired
-  through `AuthManager`'s reload/endSession/wipe lifecycle.
-- **No XP, no streak, no celebration on the breakdown card.**
-  Track B is read-only history. Vision anti-goal (fake unlocks)
-  respected.
-- **No automatic AI regen on every profile save** — Track A's
-  guard chain only fires the regen on an actual voice change, not
-  on a same-voice re-save. The deterministic write is the cheap
-  path; the AI upgrade is the bandwidth-aware path.
-- **No friends scores.** Same reason as the prior HANDOFF —
-  `PublicProfileSnapshot` schema change is backend work outside
-  this push's scope.
-- **No `coachNoteRevealed` cleanup.** The prior HANDOFF's "Risks"
-  section explicitly flagged this as "left alone for safety"
-  because the animation chain interleaves with other reveal
-  timings. Touching it for a no-visible-change cleanup is the
-  wrong risk/reward.
+- **`AhCounterHistorySummary` / `AhCounterHistoryBreakdownCard`** —
+  the round-3 surfaces are untouched. The new Timed + IM
+  helpers/cards copy the same pure-function shape but don't share
+  code; per-mode signals are different enough that a shared base
+  would over-constrain future expansion.
+- **`SuddenDeathHistoryExport.formatPlainText(runs:)`** — the
+  cross-difficulty formatter that the new Profile ShareLink calls
+  into is untouched. Same anti-goal contract, same column shape.
+- **`PostRepCoachNoteService`** — the coach-note generation path
+  is byte-identical. The new daily-cap hint reads the rate
+  limiter's existing `remainingToday(kind:)` API; no consumption
+  path or write surface changed.
+- **`AIRateLimiter`** — still not `ObservableObject`. The hint
+  reads on every body recomputation (CoachReadCard rebuilds
+  whenever the `PostRepCoachNoteStore` published value changes,
+  which is exactly when budget consumption happens). A future
+  refactor to make `AIRateLimiter` an `ObservableObject` would
+  close the live-refresh edge cleanly; out of scope for this push
+  (Risks #1 from round 3 still applies).
+- **`SessionHistoryView` core layout** — the WeakAreasCard, filter
+  chips, section header, and session list are all unchanged. Two
+  new branches in the filter switch; the existing SD + Ah-Counter
+  branches are untouched.
+- **`ProfileView` core layout** — the Progression cluster gains
+  one quiet row between `ModeMasteryCard` and `achievementsPanel`.
+  Every other surface (header, insightsBankedChip, coaching
+  cluster, community cluster, statsRow) is byte-identical.
 
 ## Risks
 
-1. **Voice-change regen fires off-thread relative to the AI
-   upgrade Task spawned by the original finalize.** If a user
-   finishes a rep, the AI upgrade Task is already in flight; then
-   changes their voice; the regen kicks off a second deterministic
-   write + second AI upgrade Task. If the original upgrade lands
-   AFTER the regen's deterministic write, the store could briefly
-   reflect the OLD-voice AI text (because the original Task only
-   writes `if upgraded.isAIBacked`). The regen's own AI upgrade
-   will eventually overwrite. Worst-case window: a few seconds
-   where the chat coach quotes the old-voice AI line instead of
-   the new-voice deterministic line. Acceptable given the regen's
-   primary value is convergence to the new voice; the deterministic
-   write is the safety net.
+1. **IM breakdown reads `finalState.normalizedTrust` /
+   `normalizedTension`, not raw `trust` / `tension`.** These
+   normalisers clamp to 1–10 (per `IMConversationState` line
+   1233-1235). A future bug that writes a raw value outside that
+   range would still surface in the average through the
+   normaliser's clamp; the user sees the clamped value, not the
+   raw. Defensive contract is the right call here (the user shouldn't
+   see "trust = 12" if a downstream bug ever surfaces) but it does
+   mean a regression in the IM state-balancer would be masked at
+   the History surface. Mitigation: the rest of the codebase reads
+   `normalizedTrust` / `normalizedTension` too (see
+   `Noum/IMPracticeView.swift` and `Noum/PracticeSupport.swift`
+   final-state consumers), so the History card is consistent with
+   every other read.
 
-2. **Track A consumes the live `BaselineStore` + `BigMomentStore`
-   state at regen time**, which may differ from the state at
-   original rep time. For a user whose baseline has shifted since
-   the rep, the regenerated note's metric sentence could read
-   differently from a hypothetical "original-voice + original-
-   baseline" reconstruction. The deterministic priority chain is
-   mostly session-derived (fillerCount, score, duration), so this
-   only matters in edge cases where the filler comparison branch
-   would fire on one baseline but not the other. Acceptable —
-   "current voice on this rep with current context" is the honest
-   read.
+2. **CoachReadCard daily-budget hint is read at body-recompute
+   time, not via publisher.** When the rate limiter consumes
+   budget from another path (a rep finalizing in the background
+   while the user has SummaryView open from a previous rep), the
+   hint won't refresh until the view rebuilds. In practice the
+   PostRepCoachNoteStore publishes a change on every consumption
+   (the new note replaces the previous note for the latest
+   session), which forces SummaryView to rebuild and the hint to
+   re-read. The edge — same daily session viewed across two
+   reps without rebuild — is theoretical; SwiftUI doesn't cache a
+   view across navigation pops + repushes. A future `AIRateLimiter`
+   `ObservableObject` refactor (round 3's Risk #1 carry-forward)
+   would close this cleanly.
 
-3. **The breakdown card on History only reads from
-   `SuddenDeathRunHistoryStore`, not the `SuddenDeathHighScoreStore`.**
-   Both stores are written from the same `recordRun` call site in
-   `SuddenDeathResultView.resolveHighScore` so they can't drift in
-   practice, but if a future code path writes to the high-score
-   store without writing to the run history store, the card's
-   "best" stat could lag the actual peak.
+3. **Profile SD share uses `ShareLink(item: String)`.** The
+   ShareSheet's "Save to Files" path produces a plain-text file
+   on iOS 17+ — same as the existing
+   `SuddenDeathDifficultyRunsView.swift` ShareLink. Tested
+   pattern; same anti-goal contract. The one operational concern
+   is that on very large run histories (capped at 60 by
+   `SuddenDeathRunHistoryStore.capacity`) the export can run to
+   ~3KB of text. Well within ShareLink's clipboard / system
+   activity capacity; called out in case a future "share via
+   social media" path truncates differently.
 
-4. **The breakdown card's average-rounds value is recomputed on
-   every paint** via the `breakdowns` computed property. With a
-   60-run cap and three difficulties, that's a trivial cost (a few
-   `Dictionary(grouping:)` + reduce ops); not worth memoizing.
-   Worth flagging if the cap is ever raised significantly.
-
-5. **The breakdown card uses `Date.formatted(.relative(...))` for
-   the "Last run" subtitle**, which allocates an internal
-   `RelativeDateTimeFormatter`-equivalent on every paint. Same
-   minor allocation cost as `SuddenDeathRecentRunsCard` — the
-   History screen isn't a hot-render surface, so acceptable.
+4. **Per-mode surfaces are now uniform in shape, non-uniform in
+   data.** SD has a per-difficulty breakdown card + a per-
+   difficulty drill-down + a full-history export. Ah-Counter has
+   only the breakdown card + cleanest-rep cell. Timed now has
+   only the breakdown card + best-rep cell. IM has only the
+   breakdown card (no per-scenario drill-down yet — `onSelectScenario`
+   callback shape is in place for a future view). Each mode's
+   per-mode signal IS different (filler-rate for Ah-Counter,
+   rounds for SD, score+WPM+zone for Timed, score+trust+tension
+   for IM) — uniform shape would over-constrain. A future "every
+   mode has the same shape" expectation would need to be
+   negotiated against the actual signal each mode produces. Not
+   a bug; a design decision worth flagging (carrying forward from
+   round 3's Risk #3).
 
 ## Verification
 
-### Implemented (compiler-locked, source-only)
+### Implemented (source-only, compiler-locked)
 
-- `PracticeSessionFinalizer.regenerationInput(...)` pure helper +
-  `regenerateMostRecentNoteIfVoiceChanged(newVoice:)`
-  orchestration (8 tests in `PostRepCoachNoteRegenerationInputTests`).
-- `CoachingProfileStore.save(_:)` voice-change hook (exercised
-  through the store-level replacement contract in
-  `PostRepCoachNoteStoreRegenerationTests` — 3 tests).
-- `SuddenDeathHistorySummary.breakdowns` /
-  `totalRunCount` / `mostRecentDate` pure helpers (8 tests in
-  `SuddenDeathHistorySummaryTests`).
-- `SuddenDeathHistoryBreakdownCard` view — composes pure helper
-  output into the hero card chrome. Visual QA on device required.
-- `SessionHistoryView` integration — single `if
-  selectedModeFilter == .suddenDeath` gate; cold-start hide is
-  enforced by the card itself.
+- `TimedHistorySummary` + `TimedHistoryBreakdownCard` are both
+  `@available(iOS 17.0, *)` matching the rest of the History
+  surface.
+- `IMHistorySummary` + `IMHistoryBreakdownCard` are both
+  `@available(iOS 17.0, *)` matching IM's existing surface.
+- `TimedHistoryBreakdownCard.onSelectBestRep` is `(UUID) -> Void`
+  matching `AhCounterHistoryBreakdownCard.onSelectCleanestRep`'s
+  shape so the wiring in `SessionHistoryView` reads identically
+  across both call sites.
+- `IMHistoryBreakdownCard.onSelectScenario` is `(IMConversationScenario)
+  -> Void` matching `SuddenDeathHistoryBreakdownCard.onSelectDifficulty`'s
+  shape (per-axis tap-through).
+- `CoachReadCard.dailyBudgetHintThresholdRatio` + `dailyBudgetHintCopy`
+  are `internal static` so `@testable import Noum` can reach them.
+- `ProfileView.suddenDeathHistoryShareRow` is a `@ViewBuilder`
+  property returning `some View`; renders an empty branch via
+  the implicit `EmptyView()` from `@ViewBuilder` when
+  `runCount == 0`. Same pattern as `insightsBankedChip` (the
+  existing self-hiding chip at the top of the Profile).
+- 42 new test cases across `TimedHistorySummaryTests` (15),
+  `IMHistorySummaryTests` (15), `CoachReadCardDailyBudgetHintTests`
+  (7). All use the `Swift Testing` framework already in
+  `NoumTests/NoumTests.swift`. Net file size after this push: 13832
+  lines (was 13415; +417 lines of new tests).
 
 ### Blocked / needs visual QA on device
 
-No Swift toolchain in this container. Visual QA wants a build:
-
-1. **Track A — Voice-change regen visible to Ask Noum** — finish a
-   rep on the current voice, open Ask Noum and confirm the coach
-   reads the rep in that voice. Go to Settings → Coaching, switch
-   the voice, return to Ask Noum, send a message, confirm the
-   coach now quotes the SAME rep in the new voice. The store's
-   `latestNote()` should reflect the new voice between the two
-   chat sessions without requiring a fresh rep.
-2. **Track A — Cold-start no-op** — a fresh account with no reps
-   yet completing onboarding and choosing a voice should NOT
-   crash, NOT generate a phantom note, and NOT write anything to
-   `PostRepCoachNoteStore` (the `latestNote() == nil` guard).
-3. **Track A — Same-voice re-save no-op** — open onboarding (or
-   the Settings voice picker), tap Save with the same voice
-   selected, confirm no second AI call fires (the `latest.voice
-   == newVoice` guard).
-4. **Track A — Deleted-session defensive path** — finish a rep,
-   delete the session from History, change voice in
-   onboarding/settings; the regen should silently no-op (the
-   `sessions.first(where:)` guard) and no crash should fire.
-5. **Track B — Cold-start hide** — fresh account selecting the
-   Sudden Death filter in History should see no breakdown card
-   (the `breakdowns.isEmpty` check). Other filters should never
-   render the card.
-6. **Track B — One-difficulty render** — finish a Sudden Death run
-   on Medium, open History, filter to Sudden Death, confirm the
-   card renders a single Medium row with best/avg/clean stats
-   matching the result.
-7. **Track B — Three-difficulty sort** — finish runs on Easy →
-   Hard → Medium in that order, filter to Sudden Death, confirm
-   rows are sorted Medium / Hard / Easy (most-recently-played
-   first).
-8. **Track B — Filter clear** — switch from Sudden Death to "All"
-   filter, confirm the breakdown card disappears (only renders
-   inside the SD-filter scope).
-9. **Track B — Auth wipe** — sign out, sign into a fresh account;
-   the new account's History under the SD filter should show no
-   breakdown card (the run history store wipes per-account via
-   the prior session's AuthManager wiring).
-
-### Assumptions
-
-- `CoachingProfileStore.save(_:)` is the single mutating entry
-  point for the active profile. Verified by `grep` — only
-  `CoachingOnboardingView` calls it. `replaceFromRemote(_:for:)`
-  is a separate path (remote sync) that does NOT trigger the
-  voice-change regen because the remote write isn't user-driven;
-  if a future remote-sync flow needs the regen, it can be added
-  explicitly.
-- `PracticeSessionStore.shared.sessions` contains the originating
-  session for the latest PostRepCoachNote (true at finalize time;
-  only the user explicitly deleting the session breaks this — the
-  defensive guard handles it).
-- `SuddenDeathRunHistoryStore.shared.runs` is published via
-  `@Published` so the `@StateObject` on the History view re-
-  paints when a new run lands (verified — the store's
-  `@Published private(set) var runs` was set by the prior push).
-- `AppColor.modeSuddenDeath` exists in `DesignSystem.swift` —
-  confirmed via `grep` (used in `OnboardingHeroView`,
-  `SettingsView`, `PracticeModeSelectionView`,
-  `SuddenDeathRecentRunsCard`).
-
-### What was checked
-
-- `grep`'d every call site for `CoachingProfileStore.save` —
-  single call site in `CoachingOnboardingView`. The hook is
-  reached on every user-driven voice change without touching any
-  other code path.
-- `grep`'d `speakingStyleGoal:` assignments across the project —
-  onboarding is the only mutating path; `DevSeedData` seeds
-  per-profile via the dev-only `replaceForDebug(_:)` which
-  bypasses `save(_:)` (correct — seeded data shouldn't trigger
-  AI regens).
-- Re-read `PostRepCoachNoteStore.record(_:)` — confirmed the
-  sessionID dedupe replaces in place + the sort-by-generatedAt
-  pulls the regenerated note to the front of `notes`, so
-  `latestNote()` reads the new-voice line.
-- Re-read `PostRepCoachNoteService.deterministicNote(input:)` —
-  confirmed the persona switch reaches every sentence selector
-  via `CoachPersona.persona(for:)`, so the regen's new voice
-  actually flows through to phrasing.
-- Re-read `SuddenDeathRunHistoryStore` — confirmed `runs` is
-  `@Published` and ordered newest-first; the breakdown helper
-  doesn't depend on input order (Dictionary grouping is
-  order-agnostic).
-- `grep`'d `selectedModeFilter` in `SessionHistoryView` —
-  confirmed it's the single source of truth for the active
-  filter; the new conditional render uses the same identifier
-  the existing chips and section title already read.
+- **Timed + IM breakdown card visuals** — the mode-tinted hero
+  treatment is byte-identical to the Ah-Counter + SD breakdown
+  cards visually, so a regression there would have shown in the
+  prior round's QA. The new tint pairs (`AppColor.modeTimed`
+  blue + `AppColor.modeIM` purple-blue) need a quick eyes-on at
+  iPhone SE width to confirm the trend chip + stat row don't
+  truncate.
+- **CoachReadCard daily-budget hint placement** — the caption
+  lands between the note text and the deep-analysis reveal. On
+  large dynamic type the caption may push the deep-analysis
+  chevron down; needs a visual confirm that the card still feels
+  like one unit and not two stacked.
+- **Profile SD share row** — the ShareLink wraps an HStack that
+  includes a 28pt icon block + two-line text + a trailing
+  `square.and.arrow.up` glyph. Needs a tap-confirm that the row
+  opens the system activity sheet with the plain-text payload.
 
 ## Files modified
 
-- `Noum/SuddenDeathHistorySummary.swift` — NEW. Pure breakdown
-  helper.
-- `Noum/SuddenDeathHistoryBreakdownCard.swift` — NEW. SwiftUI
-  hero card.
-- `Noum/PracticeSupport.swift` —
-  `CoachingProfileStore.save(_:)` voice-change hook +
-  `PracticeSessionFinalizer.regenerationInput(...)` pure helper
-  + `PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(newVoice:)`.
-- `Noum/SessionHistoryView.swift` — `@StateObject
-  suddenDeathRunHistoryStore` + SD-filter conditional render of
-  the breakdown card.
-- `NoumTests/NoumTests.swift` — 19 new tests across 3 suites:
-  `SuddenDeathHistorySummaryTests` (8),
-  `PostRepCoachNoteRegenerationInputTests` (8),
-  `PostRepCoachNoteStoreRegenerationTests` (3).
-- `HANDOFF.md` — this file.
+- **New:** `Noum/TimedHistorySummary.swift` (~175 lines)
+- **New:** `Noum/TimedHistoryBreakdownCard.swift` (~210 lines)
+- **New:** `Noum/IMHistorySummary.swift` (~135 lines)
+- **New:** `Noum/IMHistoryBreakdownCard.swift` (~210 lines)
+- **Modified:** `Noum/SessionHistoryView.swift` (+~35 lines —
+  symmetric Timed + IM branches in the filter switch)
+- **Modified:** `Noum/CoachReadCard.swift` (+~70 lines —
+  `dailyCoachNoteRemaining` / `dailyCoachNoteCap` computed
+  properties + `shouldShowDailyBudgetHint` gate +
+  `dailyBudgetHintCopy` rendering + static
+  `dailyBudgetHintThresholdRatio` + static
+  `dailyBudgetHintCopy(remaining:)` helper)
+- **Modified:** `ProfileView.swift` (+~60 lines —
+  `suddenDeathRunHistoryStore` `@StateObject` +
+  `suddenDeathHistoryShareRow` `@ViewBuilder` in the Progression
+  cluster)
+- **Modified:** `NoumTests/NoumTests.swift` (+~420 lines — 42 new
+  test cases across 3 structs)
+- **Modified:** `HANDOFF.md` (this file)
+- **Modified:** `docs/CURRENT_STATE.md` (rolling summary)
 
 ## Branch
 
 `Redesign` — committed and pushed per the user's brief.
 
-Closes two of the five "Future moves" from the M24 Tracks 2 + 3
-HANDOFF. The remaining three (friends Sudden Death scores,
-`coachNoteRevealed` cleanup, AI generation gating) stay deferred
-for the reasons noted in **Scope** above.
+Closes three more of the deferred items from the M24 round-3
+HANDOFF (per-mode stats for Timed + IM, daily-cap hint,
+cross-difficulty SD share from Profile). The remaining three
+deferred items (peer SD scores, `coachNoteRevealed` cleanup,
+rate-limiter live refresh) stay deferred for the reasons noted in
+**Scope** above.
 
 The artifact a user can now hold:
 
-1. **Their coach actually changes voice.** Change your speaking
-   style goal in onboarding; the next time you open Ask Noum, the
-   coach quotes your last rep in the NEW voice — not the voice
-   you'd already moved on from. The £130/hr coach pivots to where
-   you are now, not where you were on your last rep.
-2. **Their Sudden Death track record is visible from History.**
-   Filter History to Sudden Death; the per-difficulty best /
-   average / clean-run stats land at the top, sourced from the
-   engine's own write path. Believable progress, no narrative.
+1. **Their Timed track record reads as a per-mode hero.** Filter
+   History to Timed → see the same shape SD + Ah-Counter show:
+   total reps, average score, in-zone count, average WPM, and a
+   trend chip when both 7-day windows have data. The best-rep
+   cell taps through to the source session, so the user can
+   re-read the rep that produced their peak.
 
-Both moves are vision-aligned on the personalization (#5) and
-believable-progress (#4) pillars of `docs/VISION.md`.
+2. **Their IM track record reads as a per-scenario rollup.**
+   Filter History to IM Mode → see one row per scenario (Social
+   Catch-Up / Work Update / Difficult Conversation / Networking)
+   with avg score + avg trust + avg tension. The "trust ↑ /
+   tension ↓" pair is the relational state the engine's
+   `IMTurnStateBalancer` produced — it's what actually happened,
+   not narrative. Sorted by most-recently played so the
+   scenario the user is currently grinding sits at the top.
+
+3. **They can see when their AI coach is about to go
+   rule-based.** A quiet caption below the post-rep coach note
+   reads "3 AI coach notes remaining today" once they cross 75%
+   of the daily cap, and flips to "Rule-based today — coach
+   notes resume tomorrow" when the cap is reached. No fake
+   urgency; no "running out!" framing. Honest disclosure of the
+   soft-degrade contract documented in `AIRateLimiter` (no
+   surface ever blocks; the rule-based note still ships).
+
+4. **They can share their full SD track record from Profile.**
+   Quiet row in the Progression cluster, beneath Mode Mastery,
+   above Achievements. One tap → system activity sheet with the
+   plain-text cross-difficulty table the per-difficulty
+   drill-down already wired. Zero transcript content (locked by
+   test); only the outcome numbers the engine emitted at
+   finalize. Self-hides on cold start so a user who hasn't
+   touched Sudden Death never sees the row.
+
+All four moves are vision-aligned on the conversational-intelligence
+(#3), believable-progress (#4), and "honest fallbacks / no
+ad-supported surfaces / no transcript leaks" anti-goal pillars of
+`docs/VISION.md`.
 
 ## Future moves
 
-(Carried over from the prior HANDOFF, unchanged in priority order:)
+(Updated priority list — items closed in this push removed,
+remaining items carried forward + one new candidate added:)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still
    blocked on `PublicProfileSnapshot` schema work.
 2. **`coachNoteRevealed` cleanup.** Still risky — animation chain
    interleaving with celebration timing. Worth a dedicated
-   refactor pass with proper visual QA, not a drive-by.
-3. **AI generation gating** (carried over from M24 Track 1).
-   Gate `PostRepCoachNoteService.generate` AI path behind a
-   Premium flag or per-day rate limit so a heavy user doesn't
-   burn 30+ AI calls a day. The voice-change regen this push
-   landed can ALSO burn an AI call on every voice switch — if
-   a user is exploring voices in onboarding, that could be
-   several calls in quick succession. Gating + simple debounce
-   would address both at once.
-4. **`SuddenDeathRunHistoryStore` history export.** A "Share my
-   run history" affordance on the Result screen — plain-text
-   table of last 10 runs. Anti-goal-compliant; just data the user
-   can paste anywhere.
-5. **History-tab integration — full per-difficulty drill-down.**
-   This push surfaces the per-difficulty summary on History; a
-   deeper drill-down (tap a difficulty row → see every run at
-   that difficulty, mirroring `SuddenDeathRecentRunsCard`'s list
-   shape but unbounded) would be the natural next step. Pure
-   navigation work; no new persistence.
-6. **Mode-specific stat surfaces for History.** Once the SD
-   pattern is proven, Ah-Counter, IM, and Timed could each carry
-   their own mode-specific stat surface (Ah-Counter: filler-rate
-   trend; IM: trust/tension averages; Timed: WPM distribution).
-   The `SuddenDeathHistorySummary` shape generalises naturally.
+   refactor pass with proper visual QA.
+3. **Rate-limiter live refresh.** Make `AIRateLimiter` an
+   `ObservableObject` (or expose a publisher) so the Settings
+   AI-usage card AND the new CoachReadCard daily-budget hint
+   refresh mid-view when a background rep finalizes and consumes
+   budget. Low priority because Settings is modal in practice and
+   the CoachReadCard hint reads on every body recomputation.
+4. **IM per-scenario drill-down.** The `onSelectScenario` callback
+   shape is in place on `IMHistoryBreakdownCard`; a future view
+   that renders the full rep list at one scenario (with maybe a
+   tone-match accuracy chart + a trust/tension trace) would
+   mirror the SD per-difficulty drill-down. Natural next step now
+   that the breakdown card exists.
+5. **WPM zone band visualization on TimedHistoryBreakdownCard.**
+   The card surfaces "in-zone rep count" as a single integer.
+   A tiny visual band ("12 of 30 reps in zone — 130–160 WPM")
+   would carry the same data with more legibility. Not blocking;
+   one row + one progress bar.
+6. **Best-rep-of-the-week chip.** Across all four per-mode
+   breakdown cards, a "this week's best" chip would tell the
+   user "you peaked today" or "your peak is from 3 days ago" in
+   one read. Helper exists on each of the four summaries (best
+   rep + date is already computed); just needs a callable
+   render path.

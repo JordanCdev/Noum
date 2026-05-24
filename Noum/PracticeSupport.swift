@@ -42,6 +42,11 @@ enum AppDestination: Hashable {
     /// PrepSessionPlanner's plan and provides per-step launchers into
     /// Timed, Sudden Death, and IM.
     case prepSession
+    /// Per-difficulty drill-down for Sudden Death runs. Reached from
+    /// the breakdown card on `SessionHistoryView` when the user filters
+    /// to Sudden Death and taps a difficulty row. Renders the full run
+    /// list at that difficulty + a plain-text export affordance.
+    case suddenDeathDifficultyDetail(difficulty: SuddenDeathDifficulty)
 }
 
 struct SummaryPayload: Identifiable, Hashable {
@@ -3441,8 +3446,14 @@ final class AISettingsManager: ObservableObject {
     // MARK: - Usage Tiers
     // Premium: generous 100/month — most active users won't hit this.
     // Free: 20/month — enough to experience value, encourages upgrade.
-    private static let premiumMonthlyLimit = 100
-    private static let freeMonthlyLimit = 20
+    // Exposed for the Settings AI-usage card so the upgrade CTA can
+    // honestly cite the Pro number rather than hard-code a stale
+    // duplicate. The runtime cap (used by `monthlyLimit`) still reads
+    // these same constants.
+    static let premiumMonthlyDebriefLimit: Int = 100
+    static let freeMonthlyDebriefLimit: Int = 20
+    private static let premiumMonthlyLimit = premiumMonthlyDebriefLimit
+    private static let freeMonthlyLimit = freeMonthlyDebriefLimit
 
     /// The threshold (as fraction of limit) at which we surface a gentle heads-up.
     /// Set at 90% so users get a soft nudge, not a wall.

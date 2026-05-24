@@ -27,10 +27,18 @@ import SwiftUI
 struct SuddenDeathHistoryBreakdownCard: View {
 
     let runs: [SuddenDeathRunRecord]
+    /// Tap handler for a difficulty row. When `nil`, rows render
+    /// read-only (no chevron, no button affordance). When provided,
+    /// each row becomes a button + chevron and invokes the handler
+    /// on tap. Existing read-only call sites (tests, previews) work
+    /// unchanged by omitting the argument.
+    var onSelectDifficulty: ((SuddenDeathDifficulty) -> Void)? = nil
 
     private var breakdowns: [SuddenDeathDifficultyBreakdown] {
         SuddenDeathHistorySummary.breakdowns(from: runs)
     }
+
+    private var isInteractive: Bool { onSelectDifficulty != nil }
 
     private var totalRuns: Int {
         SuddenDeathHistorySummary.totalRunCount(from: runs)
@@ -88,12 +96,31 @@ struct SuddenDeathHistoryBreakdownCard: View {
     private var rowsSection: some View {
         VStack(spacing: 0) {
             ForEach(Array(breakdowns.enumerated()), id: \.element.id) { index, breakdown in
-                breakdownRow(breakdown)
+                wrappedRow(breakdown)
                 if index < breakdowns.count - 1 {
                     Divider()
                         .padding(.vertical, 10)
                 }
             }
+        }
+    }
+
+    /// Wraps `breakdownRow` in a `Button` when an interactive handler
+    /// is supplied, so the row picks up `.pressable` press feedback
+    /// + voice-over button semantics. Stays as a plain row when no
+    /// handler is provided.
+    @ViewBuilder
+    private func wrappedRow(_ breakdown: SuddenDeathDifficultyBreakdown) -> some View {
+        if let onSelectDifficulty {
+            Button {
+                onSelectDifficulty(breakdown.difficulty)
+            } label: {
+                breakdownRow(breakdown)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("history.suddenDeath.row.\(breakdown.difficulty.rawValue)")
+        } else {
+            breakdownRow(breakdown)
         }
     }
 
@@ -112,9 +139,17 @@ struct SuddenDeathHistoryBreakdownCard: View {
             statColumn(value: "\(breakdown.bestRounds)", label: "best")
             statColumn(value: averageLabel(for: breakdown.averageRounds), label: "avg")
             statColumn(value: "\(breakdown.cleanRunCount)", label: "clean")
+            if isInteractive {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
         }
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: breakdown))
+        .accessibilityHint(isInteractive ? "Open the full run list at this difficulty." : "")
     }
 
     private func statColumn(value: String, label: String) -> some View {

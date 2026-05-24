@@ -45,6 +45,18 @@ struct CoachReadCard: View {
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    /// Read once at body recomputation time. The post-rep coach note
+    /// runs synchronously at finalize, so by the time SummaryView
+    /// mounts the consumption has happened and this read is fresh.
+    /// Re-rendered if the rate limiter is touched again (e.g. an AI
+    /// upgrade pass) since CoachReadCard is rebuilt whenever the
+    /// underlying note dedupes-replaces in PostRepCoachNoteStore.
+    private var dailyCoachNoteRemaining: Int {
+        AIRateLimiter.shared.remainingToday(kind: .postRepCoachNote)
+    }
+    private var dailyCoachNoteCap: Int {
+        AIRateLimiter.shared.currentCap()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -73,6 +85,23 @@ struct CoachReadCard: View {
                 .foregroundStyle(AppColor.textPrimary)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Daily-budget hint — only when the AI-backed coach voice
+            // is participating AND remaining-today is at or below 25%
+            // of cap. Mirrors AISettingsManager.isApproachingLimit's
+            // ≥90%-used pattern but on the daily-cap axis. Rendered as
+            // a quiet caption so the user has an honest read on "your
+            // coach is going rule-based after the next few reps today"
+            // before it actually happens. Skipped when the note is
+            // already rule-based (the RULE-BASED tag above already
+            // tells that story) and when budget is healthy.
+            if shouldShowDailyBudgetHint {
+                Text(dailyBudgetHintCopy)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.top, 2)
+                    .accessibilityLabel(dailyBudgetHintCopy)
+            }
 
             // M25: deep-analysis reveal — the post-hoc AI insight that
             // used to live in a separate AISessionDebriefCard now folds
@@ -250,6 +279,51 @@ struct CoachReadCard: View {
         case .executive: return "COACH BRIEF"
         case .storytelling: return "COACH READ"
         case .none: return "COACH NOTE"
+        }
+    }
+
+    // MARK: - Daily budget hint
+
+    /// Show the daily-budget hint when the AI-backed coach voice is
+    /// participating AND remaining-today is at or below
+    /// `dailyBudgetHintThresholdRatio` of the cap. The cap is the
+    /// active tier's cap (`AIRateLimiter.currentCap()` reads premium
+    /// vs free at call time), so a mid-day Pro upgrade widens the
+    /// budget without re-firing the hint.
+    private var shouldShowDailyBudgetHint: Bool {
+        guard note.isAIBacked else { return false }
+        let cap = dailyCoachNoteCap
+        guard cap > 0 else { return false }
+        let used = cap - dailyCoachNoteRemaining
+        let ratio = Double(used) / Double(cap)
+        return ratio >= CoachReadCard.dailyBudgetHintThresholdRatio
+    }
+
+    private var dailyBudgetHintCopy: String {
+        CoachReadCard.dailyBudgetHintCopy(remaining: dailyCoachNoteRemaining)
+    }
+
+    /// Threshold at which the daily-budget hint starts showing. Set
+    /// at 75% used (≥25% of the cap consumed below this triggers the
+    /// quiet caption) — mirrors the spirit of
+    /// `AISettingsManager.usageAwarenessThreshold` (0.9) but tuned
+    /// lower because the daily cap is smaller (12/40 vs 20/100
+    /// monthly) so the user notices the budget earlier in the day.
+    static let dailyBudgetHintThresholdRatio: Double = 0.75
+
+    /// Pure-function copy generator so the hint string can be locked
+    /// by tests. Brand-voice compliant: no exclamations, no
+    /// "running out" framing, no fake urgency. Tells the user what
+    /// the number is and what happens when it lands on 0.
+    static func dailyBudgetHintCopy(remaining: Int) -> String {
+        let clamped = max(0, remaining)
+        switch clamped {
+        case 0:
+            return "Rule-based today — coach notes resume tomorrow."
+        case 1:
+            return "1 AI coach note remaining today."
+        default:
+            return "\(clamped) AI coach notes remaining today."
         }
     }
 }

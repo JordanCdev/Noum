@@ -31,6 +31,11 @@ struct SuddenDeathResultView: View {
     @State private var displayedRounds: Int = 0
     // Controls share sheet presentation.
     @State private var showingShareSheet: Bool = false
+    // Which payload the share sheet should present — resolved when
+    // the user taps a Menu item, read by the sheet builder. Decoupling
+    // the kind from the presentation flag means the share sheet always
+    // reads a stable value rather than racing the menu close.
+    @State private var pendingShareKind: ShareKind = .thisRun
     // Stable record id for the run we just finished — pinned in
     // `resolveHighScore` so the "Recent runs" list can anchor the
     // current row visually even after the same store is re-read
@@ -72,6 +77,21 @@ struct SuddenDeathResultView: View {
         return "Survived \(rounds) round\(rounds == 1 ? "" : "s") in Noum Sudden Death (\(difficultyName))."
     }
 
+    /// Cross-difficulty plain-text dump of every Sudden Death run the
+    /// user has recorded. Built lazily from the same store the recent-
+    /// runs card reads from. Locked to zero transcript content by the
+    /// `SuddenDeathHistoryExportTests` suite — sharing this artifact
+    /// never leaks user-authored text, matching the leaderboard rule
+    /// from `docs/VISION.md`.
+    private var fullHistoryShareText: String {
+        SuddenDeathHistoryExport.formatPlainText(runs: runHistoryStore.runs)
+    }
+
+    /// Resolved Share-button payload. The menu binds this `State`
+    /// just-in-time on tap so the user picks "this run" vs "full
+    /// history" without the sheet flickering between values.
+    private enum ShareKind { case thisRun, fullHistory }
+
     // MARK: - Body
 
     var body: some View {
@@ -101,8 +121,18 @@ struct SuddenDeathResultView: View {
         }
         .onAppear { resolveHighScore() }
         .sheet(isPresented: $showingShareSheet) {
-            SuddenDeathShareSheet(text: shareText)
+            SuddenDeathShareSheet(text: resolvedShareText)
                 .ignoresSafeArea()
+        }
+    }
+
+    /// Picks the right payload at sheet-build time based on which
+    /// menu item the user just tapped. Defaults to the run brag —
+    /// the original behaviour before the menu landed.
+    private var resolvedShareText: String {
+        switch pendingShareKind {
+        case .thisRun:      return shareText
+        case .fullHistory:  return fullHistoryShareText
         }
     }
 
@@ -218,17 +248,7 @@ struct SuddenDeathResultView: View {
             .buttonStyle(.pressable)
 
             HStack(spacing: 20) {
-                Button {
-                    showingShareSheet = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Share")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(accentColor)
-                }
+                shareMenu
 
                 Button(action: onSeeFullSummary) {
                     Text("See Full Summary")
@@ -237,6 +257,55 @@ struct SuddenDeathResultView: View {
                 }
             }
             .padding(.top, 4)
+        }
+    }
+
+    /// Share affordance with two payloads — the social-friendly run
+    /// brag (the original behaviour) and the full plain-text history
+    /// the user can paste outside the app. Falls back to a plain Share
+    /// button (no menu) when the user has zero recorded runs aside
+    /// from this one, since "full history" would just duplicate "this
+    /// run" — restraint over redundant choice.
+    @ViewBuilder
+    private var shareMenu: some View {
+        let totalRecordedRuns = runHistoryStore.runs.count
+        let hasHistoryToShare = totalRecordedRuns > 1
+        let shareLabel = HStack(spacing: 6) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.subheadline.weight(.semibold))
+            Text("Share")
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundStyle(accentColor)
+
+        if hasHistoryToShare {
+            Menu {
+                Button {
+                    pendingShareKind = .thisRun
+                    showingShareSheet = true
+                } label: {
+                    Label("Share this run", systemImage: "bolt.fill")
+                }
+                Button {
+                    pendingShareKind = .fullHistory
+                    showingShareSheet = true
+                } label: {
+                    Label("Share full history (\(totalRecordedRuns) runs)", systemImage: "list.bullet.rectangle")
+                }
+            } label: {
+                shareLabel
+            }
+            .accessibilityIdentifier("suddenDeath.result.shareMenu")
+            .accessibilityHint("Share this run, or your full Sudden Death track record.")
+        } else {
+            Button {
+                pendingShareKind = .thisRun
+                showingShareSheet = true
+            } label: {
+                shareLabel
+            }
+            .accessibilityIdentifier("suddenDeath.result.shareButton")
+            .accessibilityHint("Share this run.")
         }
     }
 

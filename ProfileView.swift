@@ -34,6 +34,7 @@ struct ProfileView: View {
     @StateObject private var proofStore = ProofMomentStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     @StateObject private var bigMomentStore = BigMomentStore.shared
+    @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -186,6 +187,7 @@ struct ProfileView: View {
                 PeakRatingWallCard()
                 ProgressionChartsCard(sessionStore: sessionStore)
                 ModeMasteryCard()
+                suddenDeathHistoryShareRow
                 achievementsPanel
 
                 clusterHeader("Coaching")
@@ -629,6 +631,78 @@ struct ProfileView: View {
             .accessibilityLabel(insightsAccessibilityLabel(count: count))
             .accessibilityHint("Opens your growth library.")
             .accessibilityIdentifier("profile.insightsBanked.link")
+        }
+    }
+
+    // MARK: - Sudden Death history share
+    //
+    // Quiet ShareLink row in the Progression cluster. Surfaces the
+    // user's full Sudden Death track record as a plain-text snapshot
+    // they can paste anywhere — Notes, Messages, an email thread.
+    // Mirrors the SD Result-screen share affordance so the same
+    // helper (`SuddenDeathHistoryExport.formatPlainText(runs:)`)
+    // backs both surfaces; the user can reach the export from either
+    // post-rep or post-hoc.
+    //
+    // Self-hides when there are no SD runs yet (cold start), so a
+    // user who hasn't touched Sudden Death sees nothing — the row
+    // appears the moment they have something to share.
+    //
+    // Restraint: this is a single quiet row, not a card. The
+    // Achievements panel sits directly below as the visual hero of
+    // the section; this row is a small affordance that reads as a
+    // utility tail. Mirrors the "insightsBankedChip" pattern at the
+    // top of the screen.
+    //
+    // Anti-goal compliance: the export carries zero transcript
+    // content (locked by `SuddenDeathHistoryExportTests.exportNeverContainsTranscriptContent`).
+    @ViewBuilder
+    private var suddenDeathHistoryShareRow: some View {
+        let runCount = suddenDeathRunHistoryStore.runs.count
+        if runCount > 0 {
+            let runLabel = runCount == 1 ? "1 run" : "\(runCount) runs"
+            ShareLink(
+                item: SuddenDeathHistoryExport.formatPlainText(runs: suddenDeathRunHistoryStore.runs)
+            ) {
+                HStack(spacing: 10) {
+                    Image(systemName: "bolt.fill")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(AppColor.modeSuddenDeath)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            AppColor.modeSuddenDeath.opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Share Sudden Death history")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("\(runLabel) · cross-difficulty plain-text")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 10)
+                .background(
+                    AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Share Sudden Death history — \(runLabel)")
+            .accessibilityHint("Opens a share sheet with a plain-text snapshot of your full Sudden Death track record.")
+            .accessibilityIdentifier("profile.suddenDeath.historyShare")
         }
     }
 

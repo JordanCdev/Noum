@@ -33,6 +33,7 @@ struct SettingsView: View {
     @StateObject private var premium = PremiumManager.shared
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
+    @StateObject private var aiSettings = AISettingsManager.shared
 
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
     // AppStorage key read by ContentView; flipping this on shows every
@@ -108,6 +109,9 @@ struct SettingsView: View {
 
                     clusterHeader("Account")
                     section(label: "Subscription") { subscriptionCard }
+                    if aiUsageCardIsVisible {
+                        section(label: "AI usage") { aiUsageCard }
+                    }
                     section(label: "Privacy & data") { privacyCard }
                     section(label: "Sign-in") { accountCard }
 
@@ -910,6 +914,134 @@ struct SettingsView: View {
         #else
         debugMessage = "Subscription management is unavailable on this device."
         #endif
+    }
+
+    // MARK: - AI Usage Card
+    //
+    // Honest read-side surface for the two AI budgets that gate the coach
+    // surfaces. Surfaces only when an AI provider is actually configured —
+    // a user without API keys would just see "0 of 12 remaining" with no
+    // explanation, which would read as a broken state. The card itself
+    // explains the soft-degrade contract so a user on a heavy day knows
+    // why their coach went rule-based today and isn't asking "is the AI
+    // broken?"
+    //
+    // Two budgets shown:
+    //   • Per-rep coach notes — daily cap from `AIRateLimiter`. Resets
+    //     at midnight in the user's local calendar.
+    //   • Per-rep session debrief — monthly cap from `AISettingsManager`.
+    //     Resets on the first of the month.
+    //
+    // Vision-aligned (docs/VISION.md anti-goals): never blocks practice,
+    // never lies about a fallback. The user always gets a coach note;
+    // sometimes it's rule-based, and now they can see why.
+
+    private var aiUsageCardIsVisible: Bool {
+        aiSettings.activeProvider != nil
+    }
+
+    private var aiUsageCard: some View {
+        let rateLimiter = AIRateLimiter.shared
+        let coachNotesRemaining = rateLimiter.remainingToday(kind: .postRepCoachNote)
+        let coachNotesCap = rateLimiter.currentCap()
+        let coachNotesUsed = max(0, coachNotesCap - coachNotesRemaining)
+        let coachNotesHasReachedLimit = coachNotesRemaining == 0
+
+        let debriefRemaining = aiSettings.remainingAnalyses
+        let debriefCap = aiSettings.monthlyLimit
+        let debriefUsed = max(0, debriefCap - debriefRemaining)
+
+        return cardContainer(spacing: Spacing.md) {
+            Text("Your coach note keeps coming after every rep. When the AI polish layer hits its budget for the day, the coach reads rule-based for the rest of the day — same content shape, just less personalised wording.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            aiUsageRow(
+                title: "Coach notes today",
+                used: coachNotesUsed,
+                cap: coachNotesCap,
+                remaining: coachNotesRemaining,
+                reachedLimit: coachNotesHasReachedLimit,
+                resetCopy: "Resets at midnight",
+                accessibilityHint: "Daily budget for AI-polished coach notes."
+            )
+
+            Divider()
+
+            aiUsageRow(
+                title: "Session debriefs",
+                used: debriefUsed,
+                cap: debriefCap,
+                remaining: debriefRemaining,
+                reachedLimit: aiSettings.hasReachedLimit,
+                resetCopy: "Resets \(aiSettings.resetDateFormatted)",
+                accessibilityHint: "Monthly budget for AI session debriefs."
+            )
+
+            if !premium.isPremium {
+                Divider()
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "crown.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Pro gets \(AIRateLimiter.premiumDailyCap)/day · \(AISettingsManager.premiumMonthlyDebriefLimit)/month")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(AppColor.pro)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(.pressable)
+                .accessibilityHint("Opens the paywall to view subscription plans.")
+                .accessibilityIdentifier("settings.aiUsage.upgradeCTA")
+            }
+        }
+        .accessibilityIdentifier("settings.aiUsage.card")
+    }
+
+    /// Single AI budget row — left column is the title + reset copy,
+    /// right column is the headline "used / cap" tile in the tier
+    /// register. Reaches a calm minimum-info baseline so a user who
+    /// hasn't burned any budget yet sees "0 of 12 · resets at midnight"
+    /// — honest without pushing the user to do anything.
+    @ViewBuilder
+    private func aiUsageRow(
+        title: String,
+        used: Int,
+        cap: Int,
+        remaining: Int,
+        reachedLimit: Bool,
+        resetCopy: String,
+        accessibilityHint: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(resetCopy)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: Spacing.sm)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(used) of \(cap)")
+                    .font(.system(.subheadline, design: .rounded).weight(.bold))
+                    .foregroundStyle(reachedLimit ? AppColor.caution : .primary)
+                    .monospacedDigit()
+                Text(reachedLimit ? "Rule-based today" : "\(remaining) remaining")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(reachedLimit ? AppColor.caution : .secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(used) of \(cap) used. \(reachedLimit ? "Coach reads rule-based for the rest of the period." : "\(remaining) remaining.") \(resetCopy).")
+        .accessibilityHint(accessibilityHint)
     }
 
     // MARK: - Privacy Card
