@@ -48,6 +48,16 @@ struct SuddenDeathHistoryBreakdownCard: View {
         SuddenDeathHistorySummary.mostRecentDate(from: runs)
     }
 
+    /// Highest-round run inside the most-recent 7 days, when any. Used
+    /// to surface a "Best this week: N · <difficulty>" chip in the
+    /// card header so the user reads "your current peak" at a glance
+    /// without having to scan all three difficulty rows. Mirrors the
+    /// `bestIsThisWeek` / `cleanestIsThisWeek` chips on the Timed +
+    /// Ah-Counter cards.
+    private var bestThisWeek: SuddenDeathRunRecord? {
+        SuddenDeathHistorySummary.bestThisWeek(from: runs)
+    }
+
     private let accent = AppColor.modeSuddenDeath
 
     var body: some View {
@@ -84,7 +94,36 @@ struct SuddenDeathHistoryBreakdownCard: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+            if let best = bestThisWeek {
+                bestThisWeekChip(best)
+            }
         }
+    }
+
+    /// "BEST THIS WEEK · N · <difficulty>" capsule. Renders only when
+    /// at least one run lives inside the 7-day window. Visual register
+    /// matches the Timed/Ah-Counter "THIS WEEK" chip but carries the
+    /// data point (rounds + difficulty) on the same line because SD's
+    /// breakdown rows are per-difficulty — the chip is the only place
+    /// the user reads "current peak" at a glance without scanning.
+    private func bestThisWeekChip(_ run: SuddenDeathRunRecord) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "trophy.fill")
+                .font(.caption2.weight(.bold))
+            Text(bestThisWeekChipCopy(run))
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(accent)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(accent.opacity(0.12), in: Capsule())
+        .accessibilityLabel("Best this week: \(run.roundsSurvived) rounds at \(run.difficulty.title).")
+        .accessibilityIdentifier("history.suddenDeath.bestThisWeek")
+    }
+
+    private func bestThisWeekChipCopy(_ run: SuddenDeathRunRecord) -> String {
+        let unit = run.roundsSurvived == 1 ? "round" : "rounds"
+        return "Best this week · \(run.roundsSurvived) \(unit) · \(run.difficulty.title)"
     }
 
     private var runCountLabel: String {

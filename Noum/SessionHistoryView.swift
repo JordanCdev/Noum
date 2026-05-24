@@ -219,7 +219,12 @@ struct SessionHistoryView: View {
                         // recorded scenario metadata.
                         if selectedModeFilter == .imConversation {
                             IMHistoryBreakdownCard(
-                                sessions: filteredSessions
+                                sessions: filteredSessions,
+                                onSelectScenario: { scenario in
+                                    navigationPath.append(
+                                        AppDestination.imScenarioDetail(scenario: scenario)
+                                    )
+                                }
                             )
                             .padding(.horizontal, Spacing.screenH)
                             .padding(.bottom, 16)

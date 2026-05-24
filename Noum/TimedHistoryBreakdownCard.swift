@@ -46,6 +46,7 @@ struct TimedHistoryBreakdownCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 header(for: stats)
                 statRow(for: stats)
+                zoneBand(for: stats)
                 if let best = stats.best {
                     Divider()
                     bestRepRow(best)
@@ -56,6 +57,72 @@ struct TimedHistoryBreakdownCard: View {
             .shadow(color: accent.opacity(0.14), radius: 14, x: 0, y: 6)
             .accessibilityIdentifier("history.timed.breakdown")
         }
+    }
+
+    // MARK: - Zone band
+    //
+    // Visual restatement of the `inZoneRepCount / runCount` ratio
+    // beneath the stat row. The middle stat column already shows the
+    // raw integer — this surfaces the same data as a progress band so
+    // a user can see at a glance "12 of 30 reps inside zone." Self-
+    // hides when there are zero reps in zone AND zero total — defensive
+    // belt-and-braces (the card itself self-hides on cold start).
+    //
+    // Range copy reads from the canonical `TimedHistorySummary.zoneMin/
+    // MaxWPM` constants so a future zone shift can never produce stale
+    // labels.
+
+    @ViewBuilder
+    private func zoneBand(for stats: TimedHistorySummaryStats) -> some View {
+        if stats.runCount > 0 {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(zoneBandSubtitle(for: stats))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    Text(zoneBandRangeLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
+                GeometryReader { proxy in
+                    let ratio = zoneBandRatio(for: stats)
+                    let filledWidth = max(0, min(proxy.size.width, proxy.size.width * ratio))
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(accent.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(accent.opacity(0.85))
+                            .frame(width: filledWidth)
+                    }
+                }
+                .frame(height: 6)
+                .accessibilityHidden(true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(zoneBandAccessibilityLabel(for: stats))
+            .accessibilityIdentifier("history.timed.zoneBand")
+        }
+    }
+
+    private var zoneBandRangeLabel: String {
+        "\(TimedHistorySummary.zoneMinWPM)–\(TimedHistorySummary.zoneMaxWPM) WPM"
+    }
+
+    private func zoneBandSubtitle(for stats: TimedHistorySummaryStats) -> String {
+        let zoneRunUnit = stats.inZoneRepCount == 1 ? "rep" : "reps"
+        return "\(stats.inZoneRepCount) of \(stats.runCount) \(zoneRunUnit) in zone"
+    }
+
+    private func zoneBandRatio(for stats: TimedHistorySummaryStats) -> Double {
+        guard stats.runCount > 0 else { return 0 }
+        return min(1, max(0, Double(stats.inZoneRepCount) / Double(stats.runCount)))
+    }
+
+    private func zoneBandAccessibilityLabel(for stats: TimedHistorySummaryStats) -> String {
+        let percent = Int((zoneBandRatio(for: stats) * 100).rounded())
+        return "\(zoneBandSubtitle(for: stats)) (\(zoneBandRangeLabel)). \(percent) percent in zone."
     }
 
     // MARK: - Header
@@ -179,11 +246,16 @@ struct TimedHistoryBreakdownCard: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Best rep")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
+                HStack(spacing: 6) {
+                    Text("Best rep")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    if stats?.bestIsThisWeek == true {
+                        thisWeekChip
+                    }
+                }
                 Text(bestSubtitle(best))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -199,7 +271,7 @@ struct TimedHistoryBreakdownCard: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Best rep: \(bestSubtitle(best))")
+        .accessibilityLabel(bestRepAccessibilityLabel(best))
 
         if let onSelectBestRep {
             Button {
@@ -219,6 +291,28 @@ struct TimedHistoryBreakdownCard: View {
     private func bestSubtitle(_ best: TimedHistorySummaryStats.BestRep) -> String {
         let wpmCopy = best.wordsPerMinute > 0 ? "\(best.wordsPerMinute) WPM" : "pace not measured"
         return "\(best.score)/10 · \(wpmCopy) · \(best.date.formatted(.relative(presentation: .named)))"
+    }
+
+    private func bestRepAccessibilityLabel(_ best: TimedHistorySummaryStats.BestRep) -> String {
+        if stats?.bestIsThisWeek == true {
+            return "Best rep this week: \(bestSubtitle(best))"
+        }
+        return "Best rep: \(bestSubtitle(best))"
+    }
+
+    /// Small "THIS WEEK" capsule next to the "Best rep" label when the
+    /// best rep was set inside the last 7 days. Reads as a status tag,
+    /// not a celebration — keeps the visual register quiet enough that
+    /// it doesn't compete with the trend chip above. Brand-voice: no
+    /// exclamation, no "you peaked!" framing — just the time tag.
+    private var thisWeekChip: some View {
+        Text("THIS WEEK")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(accent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(accent.opacity(0.12), in: Capsule())
+            .accessibilityHidden(true)
     }
 
     private func formatDelta(_ value: Double) -> String {

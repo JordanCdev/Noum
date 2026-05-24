@@ -387,6 +387,8 @@ struct ContentView: View {
                     PrepSessionView(navigationPath: $navigationPath)
                 case .suddenDeathDifficultyDetail(let difficulty):
                     SuddenDeathDifficultyRunsView(difficulty: difficulty)
+                case .imScenarioDetail(let scenario):
+                    IMScenarioDetailView(scenario: scenario, navigationPath: $navigationPath)
                 }
             }
         }

@@ -47,6 +47,11 @@ enum AppDestination: Hashable {
     /// to Sudden Death and taps a difficulty row. Renders the full run
     /// list at that difficulty + a plain-text export affordance.
     case suddenDeathDifficultyDetail(difficulty: SuddenDeathDifficulty)
+    /// Per-scenario drill-down for IM Mode reps. Reached from the
+    /// IM history breakdown card when the user filters to IM Mode and
+    /// taps a scenario row. Mirrors `suddenDeathDifficultyDetail`:
+    /// renders the full rep list at that scenario + plain-text export.
+    case imScenarioDetail(scenario: IMConversationScenario)
 }
 
 struct SummaryPayload: Identifiable, Hashable {

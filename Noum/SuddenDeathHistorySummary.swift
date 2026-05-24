@@ -83,4 +83,31 @@ enum SuddenDeathHistorySummary {
     static func mostRecentDate(from runs: [SuddenDeathRunRecord]) -> Date? {
         runs.map(\.completedAt).max()
     }
+
+    /// "Best rep of the current 7-day window" — the highest
+    /// rounds-survived among runs whose `completedAt` lands inside
+    /// the most-recent 7 days from `now`. Tiebreak by most-recent
+    /// date so the user reads "today's best" before "Tuesday's best"
+    /// when both tie at the same round count. Returns nil when no
+    /// run falls inside the window. Mirrors the shape of the per-mode
+    /// `bestIsThisWeek` / `cleanestIsThisWeek` flags on the other
+    /// helpers — used by the SD breakdown card to surface a "Best
+    /// this week: N · <difficulty>" chip when there's a current peak.
+    static func bestThisWeek(
+        from runs: [SuddenDeathRunRecord],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> SuddenDeathRunRecord? {
+        guard let windowStart = calendar.date(byAdding: .day, value: -7, to: now) else {
+            return nil
+        }
+        let inWindow = runs.filter { $0.completedAt >= windowStart && $0.completedAt <= now }
+        guard !inWindow.isEmpty else { return nil }
+        return inWindow.sorted { lhs, rhs in
+            if lhs.roundsSurvived != rhs.roundsSurvived {
+                return lhs.roundsSurvived > rhs.roundsSurvived
+            }
+            return lhs.completedAt > rhs.completedAt
+        }.first
+    }
 }
