@@ -66,6 +66,15 @@ struct PracticeModeSelectionView: View {
     /// `ModeOption.recommendedReason` when nil (cold start, no
     /// session history).
     @State private var cachedRecommendedReason: String?
+    /// IM scenario + tone the recommendation prefills when the picker's
+    /// recommended mode is IM Conversation. Carries the tone-drill
+    /// scenario/tone when the engine surfaces a sub-40% tone-match
+    /// pattern (so tapping the IM tile drops straight into that drill),
+    /// otherwise the profile-aligned scenario/tone. `nil` when the
+    /// recommendation is not IM, so tapping the IM tile after a non-IM
+    /// recommendation stays a default (un-prefilled) rep.
+    @State private var cachedRecommendedScenario: IMConversationScenario?
+    @State private var cachedRecommendedTone: IMTargetTone?
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
@@ -872,9 +881,25 @@ struct PracticeModeSelectionView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: plan
+            plan: plan,
+            // Same signal source the Home surfaces use: when the user
+            // reliably misses the committed tone in one scenario (≥3
+            // evaluated reps, sub-40% hit rate) the engine biases to a
+            // one-tap re-rep of that exact scenario + tone. Guarded on
+            // availability so an offline IM mode falls back to the
+            // normal goal-based bias instead of recommending a mode that
+            // would just be re-routed to Timed.
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
         cachedRecommendedMode = blueprint.recommendedMode
+        // Prefill the IM tile only when the recommendation is actually
+        // IM — the engine leaves these nil for every other mode, so a
+        // non-IM recommendation can never leak a stale scenario/tone
+        // into the IM destination.
+        cachedRecommendedScenario = blueprint.recommendedScenario
+        cachedRecommendedTone = blueprint.recommendedTone
         // Prefer `whyNow` (the situational hook) over `whyMode` (the
         // mode-benefit), but fall back gracefully and ignore empty
         // strings so we never render a blank line.
@@ -893,7 +918,10 @@ struct PracticeModeSelectionView: View {
             return .ahCounterPractice
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                return .imPractice(scenario: nil, tone: nil)
+                // Honour the recommendation's prefilled scenario/tone so
+                // the one-tap drill the engine surfaced on Home is also
+                // offered here. Both nil for a default IM rep.
+                return .imPractice(scenario: cachedRecommendedScenario, tone: cachedRecommendedTone)
             } else {
                 return .timedPractice
             }

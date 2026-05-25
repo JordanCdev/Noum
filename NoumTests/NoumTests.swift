@@ -14932,6 +14932,94 @@ struct IMToneDrillSignalTests {
     }
 }
 
+// MARK: - Recommendation IM-destination prefill contract
+//
+// `PracticeModeSelectionView.appDestination(for: .imConversation)` and the
+// post-session "Looking ahead" read now build the IM destination from
+// `blueprint.recommendedScenario` / `recommendedTone`. That is only safe
+// because the engine populates those two fields *exactly when* the
+// recommended mode is IM, and leaves them nil for every other mode — so a
+// non-IM recommendation can never leak a stale scenario/tone into the IM
+// tile when the user taps it. These pin that invariant on the profile
+// path (the tone-signal path is locked above), since the destinations
+// depend on it directly.
+
+struct RecommendationIMDestinationPrefillTests {
+
+    private func profile(
+        context: SpeakingContext,
+        goal: CoachingPriority,
+        challenge: SpeakingChallenge,
+        style: SpeakingStyleGoal
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: context,
+            primaryGoal: goal,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: challenge,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: style,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    private func input() -> AIHomeRecommendationInput {
+        AIHomeRecommendationInput(
+            recentSessionSummary: "",
+            averageFillers: 0,
+            averageDuration: 0,
+            averageWordsPerMinute: 0,
+            fillerTrendDelta: 0,
+            durationTrendDelta: 0,
+            paceTrendDelta: 0,
+            averageWordCount: 0,
+            strongestMode: nil,
+            currentIdentity: "",
+            currentIdentityEvidence: "",
+            styleAlignmentScore: 0,
+            sessionStreak: 0,
+            daysSinceLastSession: 0,
+            preferredModeBias: "",
+            preferredToneBias: "",
+            preferredScenarioBias: "",
+            modeBenefitBias: ""
+        )
+    }
+
+    @Test func imRecommendationPopulatesScenarioAndTone() {
+        // calmer-delivery + rushing biases the engine to IM Conversation;
+        // a work context + warm voice resolve to a concrete scenario/tone.
+        // Both fields must be set so tapping the IM tile drops the user
+        // straight into that prefilled rep.
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile(context: .work, goal: .calmerDelivery, challenge: .rushing, style: .warm),
+            input: input(),
+            plan: nil
+        )
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.recommendedTone == .warm)
+    }
+
+    @Test func nonIMRecommendationLeavesScenarioAndToneNil() {
+        // reduce-fillers biases to Ah-Counter — a non-IM mode. The IM
+        // prefill fields MUST stay nil so tapping the IM tile after this
+        // recommendation launches a default (un-prefilled) IM rep, not a
+        // scenario carried over from an unrelated mode recommendation.
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile(context: .interviews, goal: .reduceFillers, challenge: .fillerWords, style: .warm),
+            input: input(),
+            plan: nil
+        )
+        #expect(blueprint.recommendedMode != .imConversation)
+        #expect(blueprint.recommendedScenario == nil)
+        #expect(blueprint.recommendedTone == nil)
+    }
+}
+
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
 //
 // The scenario header's two trend chips ("Trust ↑" / "Tension ↓") read
