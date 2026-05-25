@@ -5567,6 +5567,32 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words. (declining trend in recent reps)."))
     }
 
+    @Test func userContextSurfacesLastReflectionAsUserOwnedSignal() {
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            lastReflectionSummary: "it felt strong and in control"
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("Last reflection: the user said it felt strong and in control."))
+        #expect(ctx.contains("their own read, not a measured signal"))
+    }
+
     @Test func userContextSurfacesObservedInterventionResponseWithoutClaimingCausation() {
         let outcome = RecommendationOutcome(
             id: UUID(),
@@ -10134,7 +10160,38 @@ struct CoachMemoryEngineTests {
         #expect(decoded.workingHypothesis == nil)
         #expect(decoded.activeIntervention == nil)
         #expect(decoded.adaptationLog == nil)
+        #expect(decoded.lastReflectionSummary == nil)
         #expect(decoded.currentLever == .structure)
+    }
+
+    @Test func buildPopulatesLastReflectionFromLatestReflection() {
+        let reflection = SessionReflection(sessionID: UUID(), feeling: .nervous)
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            latestReflection: reflection,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.lastReflectionSummary == "nerves affected their delivery")
+    }
+
+    @Test func buildLeavesReflectionNilWithoutOne() {
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.lastReflectionSummary == nil)
     }
 
     @Test func buildAttachesFillerSuccessCriterionWithStatusFromFollowedReps() {
@@ -11596,6 +11653,53 @@ struct SessionIntentStoreTests {
         let key1 = "sessionIntent.history.account-abc"
         let key2 = "sessionIntent.history.account-xyz"
         #expect(key1 != key2)
+    }
+}
+
+// MARK: - Session Reflection — model + invariants
+
+@MainActor
+struct SessionReflectionTests {
+
+    @Test func reflectionRoundTripsViaJSONCodec() throws {
+        let original = SessionReflection(sessionID: UUID(), feeling: .heldBack, note: "rushed the close")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SessionReflection.self, from: data)
+        #expect(decoded.id == original.id)
+        #expect(decoded.sessionID == original.sessionID)
+        #expect(decoded.feeling == .heldBack)
+        #expect(decoded.note == "rushed the close")
+    }
+
+    @Test func feelingLabelsAreCoachVoice() {
+        for feeling in ReflectionFeeling.allCases {
+            #expect(!feeling.chipLabel.contains("!"))
+            #expect(feeling.chipLabel.count <= 24)
+            #expect(!feeling.coachClause.isEmpty)
+        }
+    }
+
+    @Test func coachClauseCompletesTheUserSaidPhrasing() {
+        #expect(ReflectionFeeling.strong.coachClause == "it felt strong and in control")
+        #expect(ReflectionFeeling.nervous.coachClause == "nerves affected their delivery")
+    }
+
+    @Test func coachClauseAppendsQuotedNoteWhenPresent() {
+        let reflection = SessionReflection(sessionID: UUID(), feeling: .notLikeMe, note: "too formal")
+        #expect(reflection.coachClause == "the answer didn't feel like them — \"too formal\"")
+    }
+
+    @Test func coachClauseOmitsBlankNote() {
+        let reflection = SessionReflection(sessionID: UUID(), feeling: .strong, note: "   ")
+        #expect(reflection.coachClause == "it felt strong and in control")
+    }
+
+    @Test func historyCapIsThirty() {
+        #expect(SessionReflectionStore.historyCap == 30)
+    }
+
+    @Test func accountKeysDontCollide() {
+        #expect("sessionReflection.history.account-abc" != "sessionReflection.history.account-xyz")
     }
 }
 

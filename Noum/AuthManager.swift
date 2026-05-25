@@ -523,6 +523,8 @@ class AuthManager: ObservableObject {
             "forwardPlan.\(accountID)",
             // M21: Session Intent — bounded history of declared focuses
             "sessionIntent.history.\(accountID)",
+            // Session Reflection — bounded history of post-rep felt experience
+            "sessionReflection.history.\(accountID)",
             // M24: Post-rep coach note — bounded history of coach reads
             "postRepCoachNote.\(accountID)",
             // M25: Coach memory — durable working formulation for Ask Noum
@@ -601,6 +603,7 @@ class AuthManager: ObservableObject {
             BigMomentStore.shared.reloadForCurrentAccount()
             ForwardPlanStore.shared.reloadForCurrentAccount()
             SessionIntentStore.shared.reloadForCurrentAccount()
+            SessionReflectionStore.shared.reloadForCurrentAccount()
             CoachLetterStore.shared.reloadForCurrentAccount()
             PostRepCoachNoteStore.shared.reloadForCurrentAccount()
             CoachMemoryStore.shared.reloadForCurrentAccount()
@@ -619,6 +622,7 @@ class AuthManager: ObservableObject {
             BigMomentStore.shared.endSession()
             ForwardPlanStore.shared.endSession()
             SessionIntentStore.shared.endSession()
+            SessionReflectionStore.shared.endSession()
             CoachLetterStore.shared.endSession()
             PostRepCoachNoteStore.shared.endSession()
             CoachMemoryStore.shared.endSession()

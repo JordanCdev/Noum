@@ -638,6 +638,9 @@ struct SummaryView: View {
                                 },
                                 onStartDrill: onStartDrill
                             )
+                            SessionReflectionInlineCard(
+                                sessionID: sessionStore.sessions.first?.id
+                            )
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,

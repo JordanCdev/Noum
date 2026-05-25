@@ -210,6 +210,12 @@ struct CoachMemory: Codable, Equatable {
     // decode without this key.
     var adaptationLog: [CoachCourseChange]?
 
+    // The user's most-recent self-reported reflection clause — the inner
+    // experience telemetry can't see ("nerves affected their delivery").
+    // Always the user's own report, never an inference. Optional for
+    // backward compat.
+    var lastReflectionSummary: String?
+
     // Momentum — cross-session trajectory. Optional for backward compat
     // (existing persisted memories decode without these keys).
     var consecutiveCleanReps: Int?
@@ -241,6 +247,7 @@ struct CoachMemory: Codable, Equatable {
         workingHypothesis: String? = nil,
         activeIntervention: CoachIntervention? = nil,
         adaptationLog: [CoachCourseChange]? = nil,
+        lastReflectionSummary: String? = nil,
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int? = nil,
@@ -267,6 +274,7 @@ struct CoachMemory: Codable, Equatable {
         self.workingHypothesis = workingHypothesis
         self.activeIntervention = activeIntervention
         self.adaptationLog = adaptationLog
+        self.lastReflectionSummary = lastReflectionSummary
         self.consecutiveCleanReps = consecutiveCleanReps
         self.fillerTrendDirection = fillerTrendDirection
         self.weeklyRepCount = weeklyRepCount
@@ -284,6 +292,7 @@ struct CoachMemory: Codable, Equatable {
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
         case adaptationLog
+        case lastReflectionSummary
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
     }
@@ -311,6 +320,7 @@ struct CoachMemory: Codable, Equatable {
         workingHypothesis = try c.decodeIfPresent(String.self, forKey: .workingHypothesis)
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
         adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
+        lastReflectionSummary = try c.decodeIfPresent(String.self, forKey: .lastReflectionSummary)
         consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
@@ -329,6 +339,7 @@ enum CoachMemoryEngine {
         lastSessionID: UUID?,
         pendingIntervention: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
+        latestReflection: SessionReflection? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> CoachMemory? {
@@ -432,6 +443,7 @@ enum CoachMemoryEngine {
             )
         )
         memory.adaptationLog = adaptationLog.isEmpty ? nil : adaptationLog
+        memory.lastReflectionSummary = latestReflection?.coachClause
         memory.consecutiveCleanReps = momentumClean
         memory.fillerTrendDirection = momentumFillerTrend
         memory.weeklyRepCount = momentumWeekly
@@ -871,6 +883,7 @@ final class CoachMemoryStore: ObservableObject {
         lastSessionID: UUID?,
         pendingIntervention: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
+        latestReflection: SessionReflection? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) {
@@ -884,9 +897,22 @@ final class CoachMemoryStore: ObservableObject {
             lastSessionID: lastSessionID,
             pendingIntervention: pendingIntervention,
             recommendationOutcomes: recommendationOutcomes,
+            latestReflection: latestReflection,
             now: now,
             calendar: calendar
         ) else { return }
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Update only the durable reflection clause on the current memory,
+    /// without a full rebuild. Called when the user reflects on the summary
+    /// screen (after `refresh` already ran at finalize) so Ask Noum's
+    /// context carries this rep's felt experience immediately.
+    func noteReflection(_ summary: String?) {
+        guard var memory = currentMemory else { return }
+        memory.lastReflectionSummary = summary
+        memory.updatedAt = Date()
         currentMemory = memory
         persist(memory)
     }

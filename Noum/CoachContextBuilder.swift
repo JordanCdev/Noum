@@ -1340,6 +1340,9 @@ enum CoachContextBuilder {
         if let intent = memory.lastIntentLabel, !intent.isEmpty {
             lines.append("- Last declared rep focus: \(intent).")
         }
+        if let reflection = memory.lastReflectionSummary, !reflection.isEmpty {
+            lines.append("- Last reflection: the user said \(reflection). This is their own read, not a measured signal — reference it, never contradict it.")
+        }
         if let strength = memory.strengths.first, !strength.isEmpty {
             lines.append("- Preserve: \(strength).")
         }
@@ -1347,7 +1350,7 @@ enum CoachContextBuilder {
             lines.append("- Watch: \(blocker).")
         }
 
-        return Array(lines.prefix(12))
+        return Array(lines.prefix(14))
     }
 
     /// Short, future-facing phrase for an intervention's review date so the

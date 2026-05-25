@@ -247,7 +247,8 @@ enum SessionFinalizer {
             forwardPlan: ForwardPlanStore.shared.activePlan,
             lastSessionID: latestSessionID,
             pendingIntervention: RecommendationLearningStore.shared.pendingExposure,
-            recommendationOutcomes: RecommendationLearningStore.shared.outcomes
+            recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
+            latestReflection: SessionReflectionStore.shared.latest
         )
 
         let milestone = detectMilestone(
