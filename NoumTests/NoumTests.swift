@@ -14930,6 +14930,106 @@ struct IMToneDrillSignalTests {
         #expect(blueprint.recommendedScenario == .difficultConversation)
         #expect(blueprint.recommendedTone == .calm)
     }
+
+    // The blueprint carries the prefill; this is the contract that turns
+    // it into a one-tap drill from *any* surface. The picker now resolves
+    // its IM destination through the same helper Home + the post-session
+    // suggestion use, so the tone-drill scenario + tone reach the rep the
+    // same way wherever the user starts it.
+    @Test func endToEndSignalFeedsImDrillDestination() {
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil,
+            imToneSignal: signal
+        )
+        let destination = RecommendationBiasEngine.practiceDestination(
+            for: blueprint.recommendedMode,
+            scenario: blueprint.recommendedScenario,
+            tone: blueprint.recommendedTone,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(scenario: .difficultConversation, tone: .calm))
+    }
+}
+
+// MARK: - RecommendationBiasEngine.practiceDestination (shared IM re-route)
+//
+// Every recommendation surface (Home coach card, the mode picker, the
+// post-session suggestion) now resolves its practice destination through
+// one pure helper. These tests lock the two things the surfaces depend
+// on: an IM recommendation carries its prefilled scenario + tone straight
+// into `.imPractice` (so a one-tap start lands in the exact drill), and an
+// IM recommendation falls back to Timed when IM mode is offline (so we
+// never push a mode that would just be bounced downstream). The non-IM
+// modes map straight through and ignore any scenario/tone.
+
+struct PracticeDestinationTests {
+
+    @Test func imAvailableCarriesScenarioAndTone() {
+        let destination = RecommendationBiasEngine.practiceDestination(
+            for: .imConversation,
+            scenario: .networking,
+            tone: .confident,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(scenario: .networking, tone: .confident))
+    }
+
+    @Test func imOfflineReroutesToTimedAndDropsPrefill() {
+        // IM offline → never push IM (it would just be re-routed
+        // downstream). Falls back to Timed; the scenario/tone are dropped
+        // because they're meaningless without the mode.
+        let destination = RecommendationBiasEngine.practiceDestination(
+            for: .imConversation,
+            scenario: .difficultConversation,
+            tone: .calm,
+            imAvailable: false
+        )
+        #expect(destination == .timedPractice)
+    }
+
+    @Test func imAvailableWithoutPrefillIsGenericImRep() {
+        // A generic IM pick (no tone-drill prefill) is unchanged: a blank
+        // IM rep, scenario + tone nil — the pre-existing behaviour.
+        let destination = RecommendationBiasEngine.practiceDestination(
+            for: .imConversation,
+            scenario: nil,
+            tone: nil,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func nonImModesIgnoreScenarioAndTone() {
+        // Scenario/tone are IM-only; a non-IM recommendation maps straight
+        // through regardless of any prefill and regardless of IM
+        // availability.
+        for available in [true, false] {
+            #expect(
+                RecommendationBiasEngine.practiceDestination(
+                    for: .timed, scenario: .networking, tone: .confident, imAvailable: available
+                ) == .timedPractice
+            )
+            #expect(
+                RecommendationBiasEngine.practiceDestination(
+                    for: .suddenDeath, scenario: .networking, tone: .confident, imAvailable: available
+                ) == .suddenDeathPractice
+            )
+            #expect(
+                RecommendationBiasEngine.practiceDestination(
+                    for: .ahCounter, scenario: .networking, tone: .confident, imAvailable: available
+                ) == .ahCounterPractice
+            )
+        }
+    }
 }
 
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
