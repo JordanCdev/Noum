@@ -1315,6 +1315,17 @@ enum CoachContextBuilder {
             let marker = intervention.target.map { " Success marker: \($0)." } ?? ""
             lines.append("- Active intervention: \(intervention.mode.displayLabel) for \(purpose).\(marker)")
             lines.append("- Intervention review: \(intervention.reviewStatus.contextLabel) \(intervention.reviewBasis)")
+            if let criterion = intervention.successCriterion {
+                let statusTail = intervention.criterionStatus.map { " — \($0.contextLabel)" } ?? ""
+                lines.append("- Success criterion: \(criterion.summary)\(statusTail).")
+            }
+            if let due = intervention.reviewDueAt {
+                lines.append("- Review cadence: revisit by \(caseReviewLabel(for: due)).")
+            }
+        }
+
+        if let change = memory.adaptationLog?.last {
+            lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
         }
 
         if let planFocus = memory.planFocus,
@@ -1336,7 +1347,21 @@ enum CoachContextBuilder {
             lines.append("- Watch: \(blocker).")
         }
 
-        return Array(lines.prefix(10))
+        return Array(lines.prefix(12))
+    }
+
+    /// Short, future-facing phrase for an intervention's review date so the
+    /// coach can say "revisit by tomorrow" rather than read out a timestamp.
+    private static func caseReviewLabel(for date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: now),
+            to: calendar.startOfDay(for: date)
+        ).day ?? 0
+        if days < 0 { return "now (review overdue)" }
+        if days == 0 { return "today" }
+        if days == 1 { return "tomorrow" }
+        return "in \(days) days"
     }
 
     private static func evidenceGuidance(for confidence: BaselineConfidence) -> String {

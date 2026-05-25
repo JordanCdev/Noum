@@ -5497,6 +5497,76 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("Last declared rep focus: Make the point land."))
     }
 
+    @Test func userContextSurfacesCaseSpineCriterionReviewAndCourseChange() {
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            lastSessionID: UUID(),
+            evidenceCount: 10,
+            evidenceConfidence: .established,
+            voice: .concise,
+            statedGoalSummary: "Brief stakeholders cleanly.",
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .high,
+            currentLeverBasis: "declining trend",
+            previousLever: nil,
+            focusShiftedAt: nil,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            lastIntentLabel: nil,
+            planWeekIndex: nil,
+            planFocus: nil,
+            planMode: nil,
+            workingHypothesis: nil,
+            activeIntervention: CoachIntervention(
+                title: "Cut the crutches",
+                focus: "filler control",
+                target: "Zero filler start",
+                mode: .ahCounter,
+                prescribedAt: Date(),
+                lastObservedAt: nil,
+                followedRepCount: 2,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .continueAndVerify,
+                reviewBasis: "associated with cleaner reps so far",
+                successCriterion: CoachSuccessCriterion(
+                    metric: .fillersPerRep,
+                    comparator: .atMost,
+                    threshold: 3,
+                    evaluationWindow: 2,
+                    summary: "3 or fewer fillers per rep across 2 reps"
+                ),
+                criterionStatus: .met,
+                reviewDueAt: Calendar.current.date(byAdding: .day, value: 2, to: Date())
+            ),
+            adaptationLog: [
+                CoachCourseChange(
+                    id: UUID(),
+                    changedAt: Date(),
+                    fromLever: .paceControl,
+                    toLever: .fillerReduction,
+                    reason: "Shifted focus from Pace to Filler Words.",
+                    evidenceBasis: "declining trend in recent reps"
+                )
+            ]
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("Success criterion: 3 or fewer fillers per rep across 2 reps — criterion currently met."))
+        #expect(ctx.contains("Review cadence: revisit by"))
+        #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words. (declining trend in recent reps)."))
+    }
+
     @Test func userContextSurfacesObservedInterventionResponseWithoutClaimingCausation() {
         let outcome = RecommendationOutcome(
             id: UUID(),
@@ -10063,7 +10133,131 @@ struct CoachMemoryEngineTests {
 
         #expect(decoded.workingHypothesis == nil)
         #expect(decoded.activeIntervention == nil)
+        #expect(decoded.adaptationLog == nil)
         #expect(decoded.currentLever == .structure)
+    }
+
+    @Test func buildAttachesFillerSuccessCriterionWithStatusFromFollowedReps() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let ahSessions = [
+            ahCounterSession(fillers: 1, at: 1_000),
+            ahCounterSession(fillers: 2, at: 900),
+            ahCounterSession(fillers: 5, at: 800),
+            ahCounterSession(fillers: 5, at: 700),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: ahSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+            ],
+            now: now
+        )
+
+        let criterion = memory?.activeIntervention?.successCriterion
+        #expect(criterion?.metric == .fillersPerRep)
+        #expect(criterion?.comparator == .atMost)
+        // Prior reps (5, 5) average 5; the bar is one better, so 4.
+        #expect(criterion?.threshold == 4)
+        // Recent reps (1, 2) average 1.5, within the bar.
+        #expect(memory?.activeIntervention?.criterionStatus == .met)
+        #expect(memory?.activeIntervention?.reviewDueAt != nil)
+    }
+
+    @Test func buildAppendsAdaptationLogEntryOnFocusShift() {
+        let previous = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: []
+        )
+        let trend = SkillTrend(
+            skillArea: .answerDevelopment,
+            direction: .newIssue,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: previous,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.adaptationLog?.count == 1)
+        #expect(memory?.adaptationLog?.last?.fromLever == .paceControl)
+        #expect(memory?.adaptationLog?.last?.toLever == .answerDevelopment)
+        #expect(memory?.adaptationLog?.last?.reason.contains("Shifted focus") == true)
+        #expect(memory?.adaptationLog?.last?.evidenceBasis.isEmpty == false)
+    }
+
+    @Test func buildCarriesAdaptationLogForwardWhenFocusHolds() {
+        let priorChange = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 800),
+            fromLever: .structure,
+            toLever: .answerDevelopment,
+            reason: "earlier shift",
+            evidenceBasis: "prior read"
+        )
+        let previous = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .answerDevelopment,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            adaptationLog: [priorChange]
+        )
+        let trend = SkillTrend(
+            skillArea: .answerDevelopment,
+            direction: .newIssue,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: previous,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.currentLever == .answerDevelopment)
+        #expect(memory?.adaptationLog?.count == 1)
+        #expect(memory?.adaptationLog?.last?.reason == "earlier shift")
+    }
+
+    private func ahCounterSession(fillers: Int, at time: TimeInterval) -> PracticeSession {
+        PracticeSession(
+            transcript: "rep",
+            fillerWordCount: fillers,
+            duration: 60,
+            date: Date(timeIntervalSince1970: time),
+            mode: .ahCounter,
+            score: 6
+        )
     }
 
     private func profile(voice: SpeakingStyleGoal) -> CoachingProfile {
@@ -10117,6 +10311,42 @@ struct CoachMemoryEngineTests {
             fillerDelta: fillerDelta,
             durationDelta: 0
         )
+    }
+}
+
+@Suite("CoachSuccessCriterionTests")
+struct CoachSuccessCriterionTests {
+    private func criterion(_ comparator: CoachCaseComparator, threshold: Double, window: Int = 2) -> CoachSuccessCriterion {
+        CoachSuccessCriterion(
+            metric: comparator == .atMost ? .fillersPerRep : .sessionScore,
+            comparator: comparator,
+            threshold: threshold,
+            evaluationWindow: window,
+            summary: "test"
+        )
+    }
+
+    @Test func pendingUntilWindowFilled() {
+        let c = criterion(.atMost, threshold: 3)
+        #expect(c.status(forFollowedValues: []) == .pending)
+        #expect(c.status(forFollowedValues: [1]) == .pending)
+    }
+
+    @Test func atMostMetWhenWindowAverageWithinThreshold() {
+        let c = criterion(.atMost, threshold: 3)
+        #expect(c.status(forFollowedValues: [2, 3, 9]) == .met)
+        #expect(c.status(forFollowedValues: [4, 4]) == .notYetMet)
+    }
+
+    @Test func atLeastMetWhenWindowAverageMeetsThreshold() {
+        let c = criterion(.atLeast, threshold: 7)
+        #expect(c.status(forFollowedValues: [8, 7]) == .met)
+        #expect(c.status(forFollowedValues: [6, 6, 10]) == .notYetMet)
+    }
+
+    @Test func zeroWindowStaysPending() {
+        let c = criterion(.atMost, threshold: 3, window: 0)
+        #expect(c.status(forFollowedValues: [1, 1]) == .pending)
     }
 }
 

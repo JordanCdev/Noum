@@ -93,9 +93,79 @@ enum CoachInterventionReviewStatus: String, Codable, Equatable {
     }
 }
 
+/// The measurable session metric a success criterion is judged against.
+/// Restricted to fields every `PracticeSession` carries so status can always
+/// be computed without a provider call or transcript re-analysis.
+enum CoachCaseMetric: String, Codable, Equatable {
+    case fillersPerRep
+    case sessionScore
+    case durationSeconds
+}
+
+enum CoachCaseComparator: String, Codable, Equatable {
+    case atMost
+    case atLeast
+}
+
+enum CoachCriterionStatus: String, Codable, Equatable {
+    case pending
+    case met
+    case notYetMet
+
+    var contextLabel: String {
+        switch self {
+        case .pending: return "not enough followed reps yet to judge"
+        case .met: return "criterion currently met"
+        case .notYetMet: return "criterion not yet met"
+        }
+    }
+}
+
+/// "What improvement looks like before the user starts" — the explicit,
+/// measurable bar a prescription is held to. Defined once when the
+/// intervention is prescribed and kept stable across rebuilds; only its
+/// `status` is recomputed from the user's followed reps.
+struct CoachSuccessCriterion: Codable, Equatable {
+    var metric: CoachCaseMetric
+    var comparator: CoachCaseComparator
+    var threshold: Double
+    var evaluationWindow: Int
+    var summary: String
+
+    /// Pure judgement: given the metric values from the most-recent
+    /// followed reps (newest first), decide met / not-yet-met / pending.
+    /// `pending` until at least `evaluationWindow` reps exist so the coach
+    /// never claims a verdict on thin evidence.
+    func status(forFollowedValues values: [Double]) -> CoachCriterionStatus {
+        guard values.count >= evaluationWindow, evaluationWindow > 0 else { return .pending }
+        let window = Array(values.prefix(evaluationWindow))
+        let average = window.reduce(0, +) / Double(window.count)
+        switch comparator {
+        case .atMost: return average <= threshold ? .met : .notYetMet
+        case .atLeast: return average >= threshold ? .met : .notYetMet
+        }
+    }
+}
+
+/// One recorded course-change in the coaching case — the "reason for changing
+/// course" a human coach states and remembers. Appended whenever the current
+/// lever shifts so the case carries an honest, revisable history rather than
+/// silently swapping focus.
+struct CoachCourseChange: Codable, Equatable, Identifiable {
+    var id: UUID
+    var changedAt: Date
+    var fromLever: SkillArea?
+    var toLever: SkillArea?
+    var reason: String
+    var evidenceBasis: String
+}
+
 /// The bounded intervention cycle carried in durable coach memory.
 /// RecommendationLearningStore remains the raw evidence owner; this record
 /// holds the coach's current prescription and review state for continuity.
+/// The case-spine fields (`successCriterion`, `criterionStatus`,
+/// `reviewDueAt`) are optional with nil defaults so memories persisted before
+/// the case file decode unchanged.
 struct CoachIntervention: Codable, Equatable {
     var title: String
     var focus: String?
@@ -107,6 +177,9 @@ struct CoachIntervention: Codable, Equatable {
     var minimumFollowedRepsForReview: Int
     var reviewStatus: CoachInterventionReviewStatus
     var reviewBasis: String
+    var successCriterion: CoachSuccessCriterion? = nil
+    var criterionStatus: CoachCriterionStatus? = nil
+    var reviewDueAt: Date? = nil
 }
 
 struct CoachMemory: Codable, Equatable {
@@ -130,6 +203,12 @@ struct CoachMemory: Codable, Equatable {
     var planMode: PracticeMode?
     var workingHypothesis: String?
     var activeIntervention: CoachIntervention?
+
+    // Adaptation history — the bounded record of explained course-changes
+    // (the "reason for changing course" the case formulation needs).
+    // Optional for backward compat; memories persisted before the case file
+    // decode without this key.
+    var adaptationLog: [CoachCourseChange]?
 
     // Momentum — cross-session trajectory. Optional for backward compat
     // (existing persisted memories decode without these keys).
@@ -161,6 +240,7 @@ struct CoachMemory: Codable, Equatable {
         planMode: PracticeMode? = nil,
         workingHypothesis: String? = nil,
         activeIntervention: CoachIntervention? = nil,
+        adaptationLog: [CoachCourseChange]? = nil,
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int? = nil,
@@ -186,6 +266,7 @@ struct CoachMemory: Codable, Equatable {
         self.planMode = planMode
         self.workingHypothesis = workingHypothesis
         self.activeIntervention = activeIntervention
+        self.adaptationLog = adaptationLog
         self.consecutiveCleanReps = consecutiveCleanReps
         self.fillerTrendDirection = fillerTrendDirection
         self.weeklyRepCount = weeklyRepCount
@@ -202,6 +283,7 @@ struct CoachMemory: Codable, Equatable {
         case strengths, blockers, lastIntentLabel
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
+        case adaptationLog
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
     }
@@ -228,6 +310,7 @@ struct CoachMemory: Codable, Equatable {
         planMode = try c.decodeIfPresent(PracticeMode.self, forKey: .planMode)
         workingHypothesis = try c.decodeIfPresent(String.self, forKey: .workingHypothesis)
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
+        adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
         consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
@@ -271,11 +354,23 @@ enum CoachMemoryEngine {
 
         let previousLever: SkillArea?
         let focusShiftedAt: Date?
+        var adaptationLog = previous?.adaptationLog ?? []
         if let prior = previous?.currentLever,
            let currentLever,
            prior != currentLever {
             previousLever = prior
             focusShiftedAt = now
+            adaptationLog.append(
+                CoachCourseChange(
+                    id: UUID(),
+                    changedAt: now,
+                    fromLever: prior,
+                    toLever: currentLever,
+                    reason: "Shifted focus from \(prior.displayName) to \(currentLever.displayName).",
+                    evidenceBasis: lever?.basis ?? "updated read across recent reps"
+                )
+            )
+            adaptationLog = Array(adaptationLog.suffix(8))
         } else {
             previousLever = previous?.previousLever
             focusShiftedAt = previous?.focusShiftedAt
@@ -329,9 +424,14 @@ enum CoachMemoryEngine {
             ),
             activeIntervention: activeIntervention(
                 pending: pendingIntervention,
-                outcomes: recommendationOutcomes
+                outcomes: recommendationOutcomes,
+                sessions: sessions,
+                previous: previous?.activeIntervention,
+                now: now,
+                calendar: calendar
             )
         )
+        memory.adaptationLog = adaptationLog.isEmpty ? nil : adaptationLog
         memory.consecutiveCleanReps = momentumClean
         memory.fillerTrendDirection = momentumFillerTrend
         memory.weeklyRepCount = momentumWeekly
@@ -465,7 +565,161 @@ enum CoachMemoryEngine {
         }
     }
 
+    private static let caseReviewCadenceDays = 3
+    private static let caseEvaluationWindow = 2
+
     private static func activeIntervention(
+        pending: RecommendationExposure?,
+        outcomes: [RecommendationOutcome],
+        sessions: [PracticeSession],
+        previous: CoachIntervention?,
+        now: Date,
+        calendar: Calendar
+    ) -> CoachIntervention? {
+        guard var intervention = baseIntervention(pending: pending, outcomes: outcomes) else {
+            return nil
+        }
+        enrichWithCase(&intervention, sessions: sessions, previous: previous, now: now, calendar: calendar)
+        return intervention
+    }
+
+    /// Attaches the case spine: a stable success criterion (carried forward
+    /// when the prescription is unchanged, so "what good looks like" is defined
+    /// once rather than re-derived each rebuild), the freshly-computed status
+    /// from followed reps, and an explicit review date.
+    private static func enrichWithCase(
+        _ intervention: inout CoachIntervention,
+        sessions: [PracticeSession],
+        previous: CoachIntervention?,
+        now: Date,
+        calendar: Calendar
+    ) {
+        let isSamePrescription = previous?.mode == intervention.mode
+            && boundedText(previous?.focus) == boundedText(intervention.focus)
+
+        let criterion: CoachSuccessCriterion
+        if isSamePrescription, let carried = previous?.successCriterion {
+            criterion = carried
+        } else {
+            criterion = buildSuccessCriterion(
+                mode: intervention.mode,
+                focus: intervention.focus,
+                title: intervention.title,
+                sessions: sessions,
+                now: now
+            )
+        }
+        intervention.successCriterion = criterion
+
+        let values = followedRepValues(
+            metric: criterion.metric,
+            mode: intervention.mode,
+            sessions: sessions,
+            now: now
+        )
+        intervention.criterionStatus = criterion.status(forFollowedValues: values)
+
+        if isSamePrescription, let carriedDue = previous?.reviewDueAt {
+            intervention.reviewDueAt = carriedDue
+        } else if let anchor = intervention.prescribedAt ?? intervention.lastObservedAt {
+            intervention.reviewDueAt = calendar.date(byAdding: .day, value: caseReviewCadenceDays, to: anchor)
+        }
+    }
+
+    private static func caseMetric(
+        mode: PracticeMode,
+        focus: String?,
+        title: String
+    ) -> (metric: CoachCaseMetric, comparator: CoachCaseComparator) {
+        let haystack = "\(focus ?? "") \(title)".lowercased()
+        if mode == .ahCounter || haystack.contains("filler") {
+            return (.fillersPerRep, .atMost)
+        }
+        return (.sessionScore, .atLeast)
+    }
+
+    private static func metricValue(
+        _ metric: CoachCaseMetric,
+        from session: PracticeSession
+    ) -> Double? {
+        switch metric {
+        case .fillersPerRep: return Double(session.fillerWordCount)
+        case .sessionScore: return session.score.map(Double.init)
+        case .durationSeconds: return session.duration
+        }
+    }
+
+    private static func followedRepValues(
+        metric: CoachCaseMetric,
+        mode: PracticeMode,
+        sessions: [PracticeSession],
+        now: Date,
+        limit: Int = 8
+    ) -> [Double] {
+        sessions
+            .filter { $0.mode == mode && $0.date <= now }
+            .sorted { $0.date > $1.date }
+            .prefix(limit)
+            .compactMap { metricValue(metric, from: $0) }
+    }
+
+    private static func buildSuccessCriterion(
+        mode: PracticeMode,
+        focus: String?,
+        title: String,
+        sessions: [PracticeSession],
+        now: Date
+    ) -> CoachSuccessCriterion {
+        let (metric, comparator) = caseMetric(mode: mode, focus: focus, title: title)
+        let window = caseEvaluationWindow
+        let values = followedRepValues(metric: metric, mode: mode, sessions: sessions, now: now)
+        // The pre-prescription baseline is everything older than the reps the
+        // criterion is judged against, so the bar is "beat where you were",
+        // not "beat the very reps being scored". Falls back to a sane default
+        // when history is too thin to anchor a number.
+        let priorValues = Array(values.dropFirst(window))
+        let priorAverage = priorValues.isEmpty
+            ? nil
+            : priorValues.reduce(0, +) / Double(priorValues.count)
+
+        let threshold: Double
+        switch metric {
+        case .fillersPerRep:
+            threshold = max(0, ((priorAverage ?? 3) - 1).rounded())
+        case .sessionScore:
+            threshold = min(10, ((priorAverage ?? 6) + 1).rounded())
+        case .durationSeconds:
+            threshold = (priorAverage ?? 45).rounded()
+        }
+
+        return CoachSuccessCriterion(
+            metric: metric,
+            comparator: comparator,
+            threshold: threshold,
+            evaluationWindow: window,
+            summary: criterionSummary(metric: metric, threshold: threshold, window: window)
+        )
+    }
+
+    private static func criterionSummary(
+        metric: CoachCaseMetric,
+        threshold: Double,
+        window: Int
+    ) -> String {
+        let count = Int(threshold)
+        let reps = window <= 1 ? "the next rep" : "\(window) reps"
+        switch metric {
+        case .fillersPerRep:
+            let fillers = count == 1 ? "filler" : "fillers"
+            return "\(count) or fewer \(fillers) per rep across \(reps)"
+        case .sessionScore:
+            return "score of \(count) or higher across \(reps)"
+        case .durationSeconds:
+            return "hold ~\(count)s of structured delivery across \(reps)"
+        }
+    }
+
+    private static func baseIntervention(
         pending: RecommendationExposure?,
         outcomes: [RecommendationOutcome]
     ) -> CoachIntervention? {
