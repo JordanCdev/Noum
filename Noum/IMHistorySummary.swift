@@ -401,4 +401,120 @@ enum IMHistorySummary {
             windowSize: window
         )
     }
+
+    // MARK: - Cross-scenario tone-drill signal
+    //
+    // Scans every scenario's tone-match stats and surfaces the single
+    // scenario where the user most reliably misses the tone they
+    // committed to — the highest-leverage place for the recommendation
+    // engine to prescribe a focused re-rep. This is the *act* half of
+    // the loop whose *read* half (the trust/tension + tone-match chips)
+    // already lives on the IM History list and scenario detail: the
+    // chips tell the user "your tone keeps slipping in Difficult
+    // Conversation"; this lets the coach card answer "so drill exactly
+    // that, with that tone, right now."
+    //
+    // Honest evidence bar (the only thing that makes this a coaching
+    // signal rather than noise): a scenario qualifies only with
+    // `evaluatedCount >= minEvaluatedReps` AND `matchRate <
+    // matchRateThreshold`. A low hit rate on one or two reps is not a
+    // pattern; an undefined rate (no evaluated reps) is not a miss.
+    // Returns nil when nothing clears the bar — the engine then falls
+    // back to its normal goal-based bias.
+    //
+    // Selection when several scenarios qualify: worst hit rate first
+    // (most coaching leverage), tiebreak by evaluatedCount (more
+    // evidence is more trustworthy), then by the most-recent evaluated
+    // rep (freshest read). `targetTone` is the tone the user committed
+    // to most often in that scenario's evaluated reps (tiebreak
+    // most-recent) — the exact target the drill should re-set.
+    //
+    // Defensive contracts (locked by `IMToneDrillSignalTests`):
+    //   • reuses `toneMatchStats` so it inherits the same
+    //     `.imConversation` filter, scenario filter, and
+    //     missing/whitespace-`actualTone` exclusion
+    //   • nil below the rep bar and at/above the rate threshold
+    //   • `targetTone` is computed over the same evaluated reps that
+    //     produced the hit rate, never a profile default
+    struct IMToneDrillCandidate: Equatable {
+        let signal: IMToneDrillSignal
+        let lastEvaluatedDate: Date
+    }
+
+    /// Hit rate (0.0–1.0) a scenario must fall *below* to read as a
+    /// tone gap worth drilling. 0.4 == "lands less than 40% of the
+    /// time." Shared with the test suite so the boundary is asserted.
+    static let toneDrillMatchRateThreshold = 0.4
+
+    /// Minimum evaluated (actual-tone-bearing) reps a scenario needs
+    /// before a low hit rate counts as a pattern rather than noise.
+    static let toneDrillMinEvaluatedReps = 3
+
+    static func toneDrillSignal(
+        from sessions: [PracticeSession],
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        minEvaluatedReps: Int = toneDrillMinEvaluatedReps
+    ) -> IMToneDrillSignal? {
+        let candidates: [IMToneDrillCandidate] = IMConversationScenario.allCases.compactMap { scenario in
+            let stats = toneMatchStats(from: sessions, scenario: scenario)
+            guard stats.evaluatedCount >= minEvaluatedReps,
+                  let rate = stats.matchRate,
+                  rate < matchRateThreshold,
+                  let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario)
+            else { return nil }
+            return IMToneDrillCandidate(
+                signal: IMToneDrillSignal(
+                    scenario: scenario,
+                    targetTone: dominant.tone,
+                    matchRate: rate,
+                    evaluatedCount: stats.evaluatedCount
+                ),
+                lastEvaluatedDate: dominant.lastDate
+            )
+        }
+
+        return candidates.sorted { lhs, rhs in
+            if lhs.signal.matchRate != rhs.signal.matchRate {
+                return lhs.signal.matchRate < rhs.signal.matchRate          // worst hit rate first
+            }
+            if lhs.signal.evaluatedCount != rhs.signal.evaluatedCount {
+                return lhs.signal.evaluatedCount > rhs.signal.evaluatedCount // more evidence first
+            }
+            return lhs.lastEvaluatedDate > rhs.lastEvaluatedDate            // freshest read first
+        }.first?.signal
+    }
+
+    /// The tone the user committed to most often among a scenario's
+    /// evaluated reps (those that produced a non-empty `actualTone`),
+    /// with the date of the most-recent rep that used it. Tiebreak on
+    /// count is the most-recent use, so a 2-2 split picks the tone the
+    /// user is reaching for *now*. Returns nil when no evaluated rep
+    /// exists — the caller already gates on `evaluatedCount`, so this
+    /// is belt-and-suspenders.
+    private static func dominantEvaluatedTone(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> (tone: IMTargetTone, lastDate: Date)? {
+        let evaluated: [(tone: IMTargetTone, date: Date)] = sessions.compactMap { session in
+            guard session.mode == .imConversation,
+                  let details = session.imConversationDetails,
+                  details.setup.scenario == scenario,
+                  let actual = details.actualTone,
+                  !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return (details.setup.targetTone, session.date)
+        }
+        guard !evaluated.isEmpty else { return nil }
+
+        let grouped = Dictionary(grouping: evaluated, by: { $0.tone })
+        let best = grouped.max { lhs, rhs in
+            if lhs.value.count != rhs.value.count { return lhs.value.count < rhs.value.count }
+            let lhsLatest = lhs.value.map(\.date).max() ?? .distantPast
+            let rhsLatest = rhs.value.map(\.date).max() ?? .distantPast
+            return lhsLatest < rhsLatest
+        }
+        guard let tone = best?.key,
+              let lastDate = best?.value.map(\.date).max() else { return nil }
+        return (tone, lastDate)
+    }
 }

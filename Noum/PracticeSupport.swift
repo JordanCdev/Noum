@@ -6948,6 +6948,21 @@ struct RecommendationBiasBlueprint {
     let suggestedTheme: PromptTheme
 }
 
+/// A scenario where the user reliably misses the IM tone they committed
+/// to at setup, surfaced as a focused, auto-fillable drill. Produced by
+/// `IMHistorySummary.toneDrillSignal(from:)` only when the evidence bar
+/// clears (≥ `toneDrillMinEvaluatedReps` evaluated reps AND a hit rate
+/// below `toneDrillMatchRateThreshold`), so a thin or random miss never
+/// fabricates a recommendation. `matchRate` is 0.0–1.0; `targetTone` is
+/// the tone the user committed to most in that scenario — the exact
+/// target the re-rep should re-set, not a generic profile default.
+struct IMToneDrillSignal: Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    let matchRate: Double
+    let evaluatedCount: Int
+}
+
 enum RecommendationBiasEngine {
     static let playbook: [PracticeModePlaybookEntry] = [
         .init(
@@ -6975,8 +6990,24 @@ enum RecommendationBiasEngine {
     static func blueprint(
         profile: CoachingProfile?,
         input: AIHomeRecommendationInput,
-        plan: CoachingPlan?
+        plan: CoachingPlan?,
+        imToneSignal: IMToneDrillSignal? = nil
     ) -> RecommendationBiasBlueprint {
+        // A scenario where the committed tone reliably misses is a
+        // concrete, evidence-backed intervention — the read side of
+        // this loop (the trust/tension + tone-match chips on IM
+        // History) is already surfaced, so the next coaching move is
+        // to *act* on it. When the caller hands up a signal it has
+        // already cleared the honest bar (≥3 evaluated reps, sub-40%
+        // hit rate), so it takes precedence over the generic
+        // goal-based bias and prescribes the exact scenario + tone to
+        // re-drill. The signal self-clears once the hit rate recovers,
+        // so this never gets stuck recommending a scenario the user
+        // has already fixed.
+        if let imToneSignal {
+            return toneDrillBlueprint(signal: imToneSignal)
+        }
+
         guard let profile else {
             let mode: PracticeMode = input.averageFillers >= 4 ? .ahCounter : (input.averageDuration < 20 ? .timed : .suddenDeath)
             return RecommendationBiasBlueprint(
@@ -7015,6 +7046,32 @@ enum RecommendationBiasEngine {
             whyNow: whyNow,
             suggestedTimedDifficulty: difficulty,
             suggestedTheme: theme
+        )
+    }
+
+    /// Builds the focused "drill this scenario's tone" recommendation
+    /// from a tone-drill signal. Biases to IM (the relevant skill area
+    /// for tone) and prefills the exact scenario + the tone the user
+    /// keeps missing, so the home CTA is a one-tap re-rep of the
+    /// weakest setup. Copy reports the *observed* hit rate — no AI
+    /// reframe, no shame; the amber read is informative, the fix is a
+    /// rep, not a lecture.
+    private static func toneDrillBlueprint(signal: IMToneDrillSignal) -> RecommendationBiasBlueprint {
+        let benefit = playbookEntry(for: .imConversation)
+        let scenario = signal.scenario.title
+        let tone = signal.targetTone.title
+        let pct = Int((signal.matchRate * 100).rounded())
+        return RecommendationBiasBlueprint(
+            recommendedMode: .imConversation,
+            recommendedTone: signal.targetTone,
+            recommendedScenario: signal.scenario,
+            focus: "\(scenario) tone",
+            target: "Land \(tone.lowercased()) in \(scenario)",
+            modeBenefit: benefit.benefit,
+            whyMode: "Your committed tone keeps slipping in this exact setup — drilling the same scenario is where it gets fixed.",
+            whyNow: "Across your last \(signal.evaluatedCount) \(scenario) reps your \(tone.lowercased()) tone landed only \(pct)% of the time. Re-run the same scenario and hold the tone end to end.",
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: .all
         )
     }
 

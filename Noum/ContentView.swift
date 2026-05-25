@@ -1772,7 +1772,10 @@ struct ContentView: View {
         return RecommendationBiasEngine.blueprint(
             profile: coachingProfileStore.profile,
             input: input,
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
     }
 

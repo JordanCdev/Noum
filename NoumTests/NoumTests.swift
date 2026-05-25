@@ -14691,6 +14691,247 @@ struct IMScenarioToneMatchStatsTests {
     }
 }
 
+// MARK: - Cross-scenario tone-drill signal → recommendation engine
+//
+// The read side of the IM loop (per-scenario trust/tension + tone-match
+// chips) is already surfaced on the History list and scenario detail.
+// `IMHistorySummary.toneDrillSignal` is the *act* half: it picks the one
+// scenario where the committed tone reliably misses, and
+// `RecommendationBiasEngine.blueprint(... imToneSignal:)` turns it into a
+// one-tap "drill this scenario's tone" recommendation that prefills the
+// exact scenario + tone. These tests lock the honest evidence bar (rep
+// count + sub-threshold rate), the worst-first selection, the dominant-
+// tone choice, and the engine override.
+
+struct IMToneDrillSignalTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    private func input() -> AIHomeRecommendationInput {
+        AIHomeRecommendationInput(
+            recentSessionSummary: "",
+            averageFillers: 0,
+            averageDuration: 0,
+            averageWordsPerMinute: 0,
+            fillerTrendDelta: 0,
+            durationTrendDelta: 0,
+            paceTrendDelta: 0,
+            averageWordCount: 0,
+            strongestMode: nil,
+            currentIdentity: "",
+            currentIdentityEvidence: "",
+            styleAlignmentScore: 0,
+            sessionStreak: 0,
+            daysSinceLastSession: 0,
+            preferredModeBias: "",
+            preferredToneBias: "",
+            preferredScenarioBias: "",
+            modeBenefitBias: ""
+        )
+    }
+
+    @Test func signalNilOnEmptyHistory() {
+        #expect(IMHistorySummary.toneDrillSignal(from: []) == nil)
+    }
+
+    @Test func signalNilBelowRepBar() {
+        // Two evaluated misses is a bad day, not a pattern — below the
+        // 3-rep bar the engine should not fabricate a drill.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed", daysOffset: -2)
+        ]
+        #expect(IMHistorySummary.toneDrillSignal(from: sessions) == nil)
+    }
+
+    @Test func signalNilWhenHitRateAtThreshold() {
+        // 2 of 5 == exactly 0.40. The contract is *strictly below* the
+        // threshold, so the boundary must not fire.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -5)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.matchRate == 0.4)
+        #expect(IMHistorySummary.toneDrillSignal(from: sessions) == nil)
+    }
+
+    @Test func signalFiresOnLowHitRateWithEnoughReps() {
+        // 1 of 4 == 0.25, four evaluated reps — clears both bars.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.scenario == .difficultConversation)
+        #expect(signal?.targetTone == .calm)
+        #expect(signal?.evaluatedCount == 4)
+        #expect(signal?.matchRate == 0.25)
+    }
+
+    @Test func signalPicksWorstScenario() {
+        // Two qualifying scenarios; the lower hit rate (more leverage)
+        // wins: networking 1/4 == 0.25 vs Work Update 0/4 == 0.0.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -4),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered", daysOffset: -5),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "rushed",    daysOffset: -6),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",     daysOffset: -7),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "tense",     daysOffset: -8)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.scenario == .workUpdate)
+        #expect(signal?.matchRate == 0.0)
+    }
+
+    @Test func signalTiebreakPrefersMoreEvidence() {
+        // Equal hit rate (both 0.25); the scenario with more evaluated
+        // reps is the more trustworthy read and wins the tiebreak:
+        // Social Catch-Up 2/8 vs Networking 1/4.
+        var sessions: [PracticeSession] = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -4)
+        ]
+        // Social Catch-Up: 2 matches, 6 misses == 2/8 == 0.25.
+        sessions.append(imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "warm", daysOffset: -10))
+        sessions.append(imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "warm", daysOffset: -11))
+        for offset in 12...17 {
+            sessions.append(imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "flat", daysOffset: -Double(offset)))
+        }
+        let socialStats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .socialCatchUp)
+        #expect(socialStats.matchRate == 0.25)
+        #expect(socialStats.evaluatedCount == 8)
+
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.scenario == .socialCatchUp)
+        #expect(signal?.evaluatedCount == 8)
+    }
+
+    @Test func signalTargetToneIsDominantCommittedTone() {
+        // A scenario practiced with two different committed tones; the
+        // drill should re-set the one the user reached for most (calm,
+        // 3 reps) — not the minority (assertive, 1 rep).
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .assertive, actualTone: "soft", daysOffset: -4)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.targetTone == .calm)
+        #expect(signal?.matchRate == 0.0)
+        #expect(signal?.evaluatedCount == 4)
+    }
+
+    @Test func signalIgnoresRepsWithoutActualTone() {
+        // Reps the evaluator never read (nil/blank actualTone) are
+        // missing data, not misses — they must not pad the rep count
+        // into clearing the bar on their own.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: nil, daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "  ", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed", daysOffset: -4)
+        ]
+        // Only 2 evaluated reps (the two non-blank) → below the rep bar.
+        #expect(IMHistorySummary.toneDrillSignal(from: sessions) == nil)
+    }
+
+    @Test func blueprintFromToneSignalPrescribesScenarioDrill() {
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 4
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil,
+            imToneSignal: signal
+        )
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.recommendedTone == .calm)
+        #expect(blueprint.focus == "Difficult Conversation tone")
+        #expect(blueprint.target.contains("calm"))
+        #expect(blueprint.target.contains("Difficult Conversation"))
+        // Copy reports the observed hit rate honestly — no reframe.
+        #expect(blueprint.whyNow.contains("25%"))
+        #expect(blueprint.whyNow.contains("Difficult Conversation"))
+        #expect(blueprint.whyNow.contains("4"))
+    }
+
+    @Test func blueprintWithoutSignalKeepsNormalBias() {
+        // No signal → the engine falls back to its goal/baseline bias.
+        // With a nil profile and a cold input it should NOT recommend an
+        // IM scenario drill — regression guard on the override.
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil
+        )
+        #expect(blueprint.recommendedMode == .timed)
+        #expect(blueprint.recommendedScenario == nil)
+    }
+
+    @Test func endToEndSignalFeedsImDrillBlueprint() {
+        // Full path: low-hit-rate history → signal → IM drill blueprint
+        // with the scenario + tone prefilled for a one-tap re-rep.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil,
+            imToneSignal: signal
+        )
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.recommendedTone == .calm)
+    }
+}
+
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
 //
 // The scenario header's two trend chips ("Trust ↑" / "Tension ↓") read
