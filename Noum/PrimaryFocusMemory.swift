@@ -70,6 +70,45 @@ enum CoachMemoryGoalFit: String, Codable, Equatable {
     case noLever
 }
 
+enum CoachInterventionReviewStatus: String, Codable, Equatable {
+    case awaitingAttempt
+    case formingEvidence
+    case continueAndVerify
+    case diagnoseBeforeRepeating
+    case adaptBeforeRepeating
+
+    var contextLabel: String {
+        switch self {
+        case .awaitingAttempt:
+            return "Awaiting a followed rep."
+        case .formingEvidence:
+            return "Evidence is forming."
+        case .continueAndVerify:
+            return "Continue and verify."
+        case .diagnoseBeforeRepeating:
+            return "Diagnose before repeating."
+        case .adaptBeforeRepeating:
+            return "Adapt before repeating."
+        }
+    }
+}
+
+/// The bounded intervention cycle carried in durable coach memory.
+/// RecommendationLearningStore remains the raw evidence owner; this record
+/// holds the coach's current prescription and review state for continuity.
+struct CoachIntervention: Codable, Equatable {
+    var title: String
+    var focus: String?
+    var target: String?
+    var mode: PracticeMode
+    var prescribedAt: Date?
+    var lastObservedAt: Date?
+    var followedRepCount: Int
+    var minimumFollowedRepsForReview: Int
+    var reviewStatus: CoachInterventionReviewStatus
+    var reviewBasis: String
+}
+
 struct CoachMemory: Codable, Equatable {
     var updatedAt: Date
     var lastSessionID: UUID?
@@ -89,6 +128,8 @@ struct CoachMemory: Codable, Equatable {
     var planWeekIndex: Int?
     var planFocus: SkillArea?
     var planMode: PracticeMode?
+    var workingHypothesis: String?
+    var activeIntervention: CoachIntervention?
 
     // Momentum — cross-session trajectory. Optional for backward compat
     // (existing persisted memories decode without these keys).
@@ -118,6 +159,8 @@ struct CoachMemory: Codable, Equatable {
         planWeekIndex: Int? = nil,
         planFocus: SkillArea? = nil,
         planMode: PracticeMode? = nil,
+        workingHypothesis: String? = nil,
+        activeIntervention: CoachIntervention? = nil,
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int? = nil,
@@ -141,6 +184,8 @@ struct CoachMemory: Codable, Equatable {
         self.planWeekIndex = planWeekIndex
         self.planFocus = planFocus
         self.planMode = planMode
+        self.workingHypothesis = workingHypothesis
+        self.activeIntervention = activeIntervention
         self.consecutiveCleanReps = consecutiveCleanReps
         self.fillerTrendDirection = fillerTrendDirection
         self.weeklyRepCount = weeklyRepCount
@@ -156,6 +201,7 @@ struct CoachMemory: Codable, Equatable {
         case currentLeverBasis, previousLever, focusShiftedAt, goalFit
         case strengths, blockers, lastIntentLabel
         case planWeekIndex, planFocus, planMode
+        case workingHypothesis, activeIntervention
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
     }
@@ -180,6 +226,8 @@ struct CoachMemory: Codable, Equatable {
         planWeekIndex = try c.decodeIfPresent(Int.self, forKey: .planWeekIndex)
         planFocus = try c.decodeIfPresent(SkillArea.self, forKey: .planFocus)
         planMode = try c.decodeIfPresent(PracticeMode.self, forKey: .planMode)
+        workingHypothesis = try c.decodeIfPresent(String.self, forKey: .workingHypothesis)
+        activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
         consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
@@ -196,6 +244,8 @@ enum CoachMemoryEngine {
         forwardPlan: ForwardPlan?,
         previous: CoachMemory?,
         lastSessionID: UUID?,
+        pendingIntervention: RecommendationExposure? = nil,
+        recommendationOutcomes: [RecommendationOutcome] = [],
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> CoachMemory? {
@@ -272,7 +322,15 @@ enum CoachMemoryEngine {
             lastIntentLabel: latestIntentLabel(from: sessions),
             planWeekIndex: currentWeek?.weekIndex,
             planFocus: currentWeek?.focusSkillArea,
-            planMode: currentWeek?.suggestedMode
+            planMode: currentWeek?.suggestedMode,
+            workingHypothesis: workingHypothesis(
+                lever: lever,
+                evidenceConfidence: evidenceConfidence
+            ),
+            activeIntervention: activeIntervention(
+                pending: pendingIntervention,
+                outcomes: recommendationOutcomes
+            )
         )
         memory.consecutiveCleanReps = momentumClean
         memory.fillerTrendDirection = momentumFillerTrend
@@ -394,6 +452,97 @@ enum CoachMemoryEngine {
         return core
     }
 
+    private static func workingHypothesis(
+        lever: LeverSelection?,
+        evidenceConfidence: BaselineConfidence
+    ) -> String? {
+        guard let lever else { return nil }
+        switch evidenceConfidence {
+        case .insufficient, .tentative:
+            return "\(lever.area.displayName) may be the highest-leverage focus because \(lever.basis); verify over more reps."
+        case .moderate, .established, .stable:
+            return "\(lever.area.displayName) appears to be the highest-leverage focus because \(lever.basis); keep checking against future reps."
+        }
+    }
+
+    private static func activeIntervention(
+        pending: RecommendationExposure?,
+        outcomes: [RecommendationOutcome]
+    ) -> CoachIntervention? {
+        if let pending {
+            return CoachIntervention(
+                title: boundedText(pending.title) ?? pending.mode.displayLabel,
+                focus: boundedText(pending.focus),
+                target: boundedText(pending.target),
+                mode: pending.mode,
+                prescribedAt: pending.shownAt,
+                lastObservedAt: nil,
+                followedRepCount: 0,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .awaitingAttempt,
+                reviewBasis: "Shown to the user; no followed rep has tested it yet."
+            )
+        }
+
+        guard let latest = outcomes.sorted(by: { $0.completedAt > $1.completedAt }).first else {
+            return nil
+        }
+
+        guard latest.followed else {
+            return CoachIntervention(
+                title: boundedText(latest.title) ?? latest.mode.displayLabel,
+                focus: boundedText(latest.focus),
+                target: boundedText(latest.target),
+                mode: latest.mode,
+                prescribedAt: nil,
+                lastObservedAt: latest.completedAt,
+                followedRepCount: 0,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .awaitingAttempt,
+                reviewBasis: "The completed rep used another mode; do not count it as intervention evidence."
+            )
+        }
+
+        let normalizedLatestFocus = boundedText(latest.focus, maximumLength: 80)
+        let summary = RecommendationResponseAnalyzer
+            .summarize(outcomes: outcomes, limit: 12)
+            .first {
+                $0.mode == latest.mode &&
+                boundedText($0.focus, maximumLength: 80) == normalizedLatestFocus
+            }
+        let followedRepCount = summary?.followedCount ?? 1
+        let status: CoachInterventionReviewStatus
+        switch summary?.assessment ?? .forming {
+        case .forming:
+            status = .formingEvidence
+        case .promising:
+            status = .continueAndVerify
+        case .mixed:
+            status = .diagnoseBeforeRepeating
+        case .needsAdjustment:
+            status = .adaptBeforeRepeating
+        }
+
+        return CoachIntervention(
+            title: boundedText(latest.title) ?? latest.mode.displayLabel,
+            focus: boundedText(latest.focus),
+            target: boundedText(latest.target),
+            mode: latest.mode,
+            prescribedAt: nil,
+            lastObservedAt: latest.completedAt,
+            followedRepCount: followedRepCount,
+            minimumFollowedRepsForReview: 2,
+            reviewStatus: status,
+            reviewBasis: (summary?.assessment ?? .forming).coachingGuidance
+        )
+    }
+
+    private static func boundedText(_ value: String?, maximumLength: Int = 120) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(maximumLength))
+    }
+
     private static func skillArea(fromBlocker blocker: String) -> SkillArea? {
         let normalized = blocker.lowercased()
         if normalized.contains("filler") { return .fillerReduction }
@@ -466,6 +615,8 @@ final class CoachMemoryStore: ObservableObject {
         trends: [SkillTrend],
         forwardPlan: ForwardPlan?,
         lastSessionID: UUID?,
+        pendingIntervention: RecommendationExposure? = nil,
+        recommendationOutcomes: [RecommendationOutcome] = [],
         now: Date = Date(),
         calendar: Calendar = .current
     ) {
@@ -477,6 +628,8 @@ final class CoachMemoryStore: ObservableObject {
             forwardPlan: forwardPlan,
             previous: currentMemory,
             lastSessionID: lastSessionID,
+            pendingIntervention: pendingIntervention,
+            recommendationOutcomes: recommendationOutcomes,
             now: now,
             calendar: calendar
         ) else { return }

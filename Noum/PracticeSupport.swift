@@ -6407,6 +6407,18 @@ enum PracticeSessionFinalizer {
         }
         let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
 
+        // Speech-backed modes record recommendation outcomes once their
+        // delayed evaluation annotates the captured rep. IM Conversation
+        // arrives here already evaluated, so it must enter the same
+        // intervention cycle here or prescribed conversation reps vanish
+        // from the coach's evidence.
+        if finalized.mode == .imConversation, annotation != .empty {
+            RecommendationLearningStore.shared.recordOutcome(
+                for: finalized,
+                previousSessions: store.sessions.filter { $0.id != finalized.id }
+            )
+        }
+
         // Analyze verbal habits before refreshing the baseline so clutch words are included immediately.
         ClutchWordStore.shared.analyzeSession(transcript: draft.transcript)
 

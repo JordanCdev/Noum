@@ -5460,7 +5460,20 @@ struct CoachContextBuilderTests {
             lastIntentLabel: "Make the point land",
             planWeekIndex: 2,
             planFocus: .pauseUsage,
-            planMode: .timed
+            planMode: .timed,
+            workingHypothesis: "Pauses may be the highest-leverage focus because pauses dropped; verify over more reps.",
+            activeIntervention: CoachIntervention(
+                title: "Make the ending land",
+                focus: "a decisive close",
+                target: "One clean final sentence",
+                mode: .timed,
+                prescribedAt: Date(),
+                lastObservedAt: Date(),
+                followedRepCount: 1,
+                minimumFollowedRepsForReview: 2,
+                reviewStatus: .formingEvidence,
+                reviewBasis: "one observation only; treat it as tentative"
+            )
         )
 
         let ctx = CoachContextBuilder.userContext(
@@ -5476,6 +5489,9 @@ struct CoachContextBuilderTests {
 
         #expect(ctx.contains("COACH MEMORY"))
         #expect(ctx.contains("Stated goal anchor: Make technical updates feel more vivid."))
+        #expect(ctx.contains("Working hypothesis (tentative): Pauses may be the highest-leverage focus"))
+        #expect(ctx.contains("Active intervention: Timed for a decisive close. Success marker: One clean final sentence."))
+        #expect(ctx.contains("Intervention review: Evidence is forming."))
         #expect(ctx.contains("Focus shift: last read was Filler Words; current read is Pauses."))
         #expect(ctx.contains("Current plan: week 2 trains Pauses via Timed."))
         #expect(ctx.contains("Last declared rep focus: Make the point land."))
@@ -5514,8 +5530,38 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("one observation only; treat it as tentative"))
     }
 
+    @Test func userContextMarksCurrentPrescriptionAsUntested() {
+        let pending = RecommendationExposure(
+            fingerprint: "timed-pending",
+            title: "Land the close",
+            focus: "a decisive close",
+            target: "One clean final sentence",
+            mode: .timed,
+            isAIBacked: true,
+            shownAt: Date(),
+            tappedAt: nil
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            pendingRecommendation: pending
+        )
+
+        #expect(ctx.contains("ACTIVE PRESCRIPTION (shown; awaiting a followed rep)"))
+        #expect(ctx.contains("prescribed but not tested"))
+        #expect(!ctx.contains("INTERVENTION RESPONSE"))
+    }
+
     @Test func systemPromptForbidsCausalClaimsFromInterventionResponse() {
         let prompt = CoachContextBuilder.systemPrompt(for: sampleProfile(voice: .warm))
+        #expect(prompt.contains("ACTIVE PRESCRIPTION"))
+        #expect(prompt.contains("intention only"))
         #expect(prompt.contains("observed association"))
         #expect(prompt.contains("never proof that a drill caused an outcome"))
         #expect(prompt.contains("do not prescribe it again unchanged"))
@@ -9891,6 +9937,135 @@ struct CoachMemoryEngineTests {
         #expect(memory?.planMode == .ahCounter)
     }
 
+    @Test func buildCarriesAnUnattemptedPrescriptionAsAwaitingEvidence() {
+        let pending = RecommendationExposure(
+            fingerprint: "timed-close",
+            title: "Land the close",
+            focus: "a decisive close",
+            target: "One clean final sentence",
+            mode: .timed,
+            isAIBacked: true,
+            shownAt: Date(timeIntervalSince1970: 950),
+            tappedAt: nil
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            pendingIntervention: pending,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.workingHypothesis?.contains("verify over more reps") == true)
+        #expect(memory?.activeIntervention?.reviewStatus == .awaitingAttempt)
+        #expect(memory?.activeIntervention?.followedRepCount == 0)
+        #expect(memory?.activeIntervention?.target == "One clean final sentence")
+    }
+
+    @Test func buildDoesNotCountAnUnfollowedPrescriptionAsFailure() {
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(
+                    mode: .suddenDeath,
+                    followed: false,
+                    completedAt: 1_000,
+                    scoreDelta: -2,
+                    fillerDelta: 3
+                )
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.activeIntervention?.reviewStatus == .awaitingAttempt)
+        #expect(memory?.activeIntervention?.followedRepCount == 0)
+        #expect(memory?.activeIntervention?.reviewBasis.contains("another mode") == true)
+    }
+
+    @Test func buildAsksForAdaptationAfterRepeatedAssociatedRegression() {
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, completedAt: 1_100, scoreDelta: -1, fillerDelta: 2),
+                interventionOutcome(mode: .timed, completedAt: 1_000, scoreDelta: -2, fillerDelta: 1)
+            ],
+            now: Date(timeIntervalSince1970: 1_100)
+        )
+
+        #expect(memory?.activeIntervention?.reviewStatus == .adaptBeforeRepeating)
+        #expect(memory?.activeIntervention?.followedRepCount == 2)
+        #expect(memory?.activeIntervention?.reviewBasis.contains("associated with worse results") == true)
+    }
+
+    @Test func caseFieldsDecodeMemoryPersistedBeforeCaseFile() throws {
+        struct LegacyMemory: Codable {
+            let updatedAt: Date
+            let lastSessionID: UUID?
+            let evidenceCount: Int
+            let evidenceConfidence: BaselineConfidence
+            let voice: SpeakingStyleGoal?
+            let statedGoalSummary: String?
+            let currentLever: SkillArea?
+            let currentLeverConfidence: TrendConfidence?
+            let currentLeverBasis: String?
+            let previousLever: SkillArea?
+            let focusShiftedAt: Date?
+            let goalFit: CoachMemoryGoalFit
+            let strengths: [String]
+            let blockers: [String]
+            let lastIntentLabel: String?
+            let planWeekIndex: Int?
+            let planFocus: SkillArea?
+            let planMode: PracticeMode?
+        }
+        let legacy = LegacyMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            lastSessionID: nil,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            voice: .concise,
+            statedGoalSummary: "Speak decisively.",
+            currentLever: .structure,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "stable at developing",
+            previousLever: nil,
+            focusShiftedAt: nil,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: ["Structure"],
+            lastIntentLabel: nil,
+            planWeekIndex: nil,
+            planFocus: nil,
+            planMode: nil
+        )
+
+        let decoded = try JSONDecoder().decode(
+            CoachMemory.self,
+            from: JSONEncoder().encode(legacy)
+        )
+
+        #expect(decoded.workingHypothesis == nil)
+        #expect(decoded.activeIntervention == nil)
+        #expect(decoded.currentLever == .structure)
+    }
+
     private func profile(voice: SpeakingStyleGoal) -> CoachingProfile {
         CoachingProfile(
             speakingContext: .work,
@@ -9919,6 +10094,30 @@ struct CoachMemoryEngineTests {
             intentLabel: intentLabel
         )
     }
+
+    private func interventionOutcome(
+        mode: PracticeMode,
+        followed: Bool = true,
+        completedAt: TimeInterval,
+        scoreDelta: Double,
+        fillerDelta: Double
+    ) -> RecommendationOutcome {
+        RecommendationOutcome(
+            id: UUID(),
+            fingerprint: "\(mode.rawValue)-case",
+            title: "Test prescription",
+            focus: "a decisive close",
+            target: "One clean final sentence",
+            mode: mode,
+            sessionID: UUID(),
+            followed: followed,
+            completedAt: Date(timeIntervalSince1970: completedAt),
+            scoreDelta: scoreDelta,
+            hasComparableScore: true,
+            fillerDelta: fillerDelta,
+            durationDelta: 0
+        )
+    }
 }
 
 @MainActor
@@ -9943,12 +10142,24 @@ struct CoachMemoryStoreTests {
             trends: [],
             forwardPlan: nil,
             lastSessionID: nil,
+            pendingIntervention: RecommendationExposure(
+                fingerprint: "timed-close",
+                title: "Land the close",
+                focus: "a decisive close",
+                target: "One clean final sentence",
+                mode: .timed,
+                isAIBacked: true,
+                shownAt: Date(timeIntervalSince1970: 900),
+                tappedAt: nil
+            ),
             now: Date(timeIntervalSince1970: 1_000)
         )
 
         let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
         #expect(reloaded.currentMemory?.currentLever == .openingStrength)
         #expect(reloaded.currentMemory?.evidenceConfidence == .moderate)
+        #expect(reloaded.currentMemory?.activeIntervention?.reviewStatus == .awaitingAttempt)
+        #expect(reloaded.currentMemory?.activeIntervention?.target == "One clean final sentence")
     }
 
     @Test func deleteAllDataClearsOnlyMatchingAccount() {
@@ -14155,7 +14366,6 @@ struct IMScenarioToneMatchStatsTests {
 // honest-data contracts (nil below 4 reps, non-overlapping windows,
 // flat below the 0.5 threshold).
 
-@available(iOS 17.0, *)
 struct IMScenarioRelationalTrendTests {
 
     private let baseDate: Date = {

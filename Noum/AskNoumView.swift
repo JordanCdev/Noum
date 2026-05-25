@@ -858,6 +858,7 @@ struct AskNoumView: View {
             forwardPlan: forwardPlanStore.activePlan,
             latestRepNote: postRepCoachNoteStore.latestNote(),
             coachMemory: coachMemoryStore.currentMemory,
+            pendingRecommendation: recommendationLearningStore.pendingExposure,
             recommendationOutcomes: recommendationLearningStore.outcomes,
             trends: trends
         )

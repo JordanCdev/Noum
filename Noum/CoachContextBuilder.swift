@@ -78,7 +78,8 @@ enum CoachContextBuilder {
            category. Do not restate the moment — use it as gravity. A \
            board pitch in 6 days gets a different drill than a job \
            interview in 30 days.
-        5. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
+        5. When ACTIVE PRESCRIPTION is present, it is an intention only: the user has not yet supplied a followed rep, so do not describe it as effective or ineffective.
+        6. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
            "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
 
         When the user asks "why did my score change" or any data-question, \
@@ -181,7 +182,9 @@ enum CoachContextBuilder {
     ///   • BASELINE — most-stable numbers (fillers/min, pace, pause rate)
     ///   • STREAK — current streak + reps this week
     ///   • COACH MEMORY — bounded working formulation: evidence depth,
-    ///     current lever, goal fit, and one preserve/watch signal.
+    ///     current lever, goal fit, active intervention, and review state.
+    ///   • ACTIVE PRESCRIPTION — the currently shown intervention when
+    ///     it has not yet been evaluated by a completed followed rep.
     ///   • INTERVENTION RESPONSE — whether previously prescribed modes
     ///     are associated with improved or worse subsequent reps.
     ///   • RECENT — last 3 sessions: mode, score, fillers, duration
@@ -205,6 +208,7 @@ enum CoachContextBuilder {
         forwardPlan: ForwardPlan? = nil,
         latestRepNote: PostRepCoachNote? = nil,
         coachMemory: CoachMemory? = nil,
+        pendingRecommendation: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
         trends: [SkillTrend] = []
     ) -> String {
@@ -395,7 +399,10 @@ enum CoachContextBuilder {
 
         let memoryLines: [String]
         if let coachMemory {
-            memoryLines = coachMemoryLines(memory: coachMemory)
+            memoryLines = coachMemoryLines(
+                memory: coachMemory,
+                includeActiveIntervention: pendingRecommendation == nil
+            )
         } else {
             memoryLines = coachMemoryLines(
                 profile: profile,
@@ -408,6 +415,13 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("COACH MEMORY")
             lines.append(contentsOf: memoryLines)
+        }
+
+        if let pendingRecommendation {
+            lines.append("")
+            lines.append("ACTIVE PRESCRIPTION (shown; awaiting a followed rep)")
+            lines.append("- \(pendingRecommendation.mode.displayLabel): \(pendingRecommendation.focus). Success marker: \(pendingRecommendation.target).")
+            lines.append("- This has been prescribed but not tested; do not claim it helped or failed.")
         }
 
         let interventionLines = RecommendationResponseAnalyzer.promptLines(from: recommendationOutcomes)
@@ -1256,7 +1270,10 @@ enum CoachContextBuilder {
         return Array(lines.prefix(5))
     }
 
-    private static func coachMemoryLines(memory: CoachMemory) -> [String] {
+    private static func coachMemoryLines(
+        memory: CoachMemory,
+        includeActiveIntervention: Bool
+    ) -> [String] {
         let signalNoun = memory.evidenceCount == 1 ? "rep signal" : "rep signals"
         var lines: [String] = [
             "- Evidence depth: \(memory.evidenceConfidence.label) across \(memory.evidenceCount) \(signalNoun); \(evidenceGuidance(for: memory.evidenceConfidence))."
@@ -1269,7 +1286,9 @@ enum CoachContextBuilder {
         if let currentLever = memory.currentLever {
             let basis = memory.currentLeverBasis?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let evidence = basis.isEmpty ? "stored coach memory" : basis
-            if let confidence = memory.currentLeverConfidence {
+            if let hypothesis = memory.workingHypothesis, !hypothesis.isEmpty {
+                lines.append("- Working hypothesis (tentative): \(hypothesis)")
+            } else if let confidence = memory.currentLeverConfidence {
                 lines.append("- Current coaching hypothesis: \(currentLever.displayName) is the next lever (\(confidence.rawValue) evidence: \(evidence)).")
             } else {
                 lines.append("- Current coaching hypothesis: \(currentLever.displayName) is the next lever (\(evidence)).")
@@ -1291,6 +1310,13 @@ enum CoachContextBuilder {
             }
         }
 
+        if includeActiveIntervention, let intervention = memory.activeIntervention {
+            let purpose = intervention.focus ?? intervention.title
+            let marker = intervention.target.map { " Success marker: \($0)." } ?? ""
+            lines.append("- Active intervention: \(intervention.mode.displayLabel) for \(purpose).\(marker)")
+            lines.append("- Intervention review: \(intervention.reviewStatus.contextLabel) \(intervention.reviewBasis)")
+        }
+
         if let planFocus = memory.planFocus,
            let weekIndex = memory.planWeekIndex {
             if let mode = memory.planMode {
@@ -1310,7 +1336,7 @@ enum CoachContextBuilder {
             lines.append("- Watch: \(blocker).")
         }
 
-        return Array(lines.prefix(8))
+        return Array(lines.prefix(10))
     }
 
     private static func evidenceGuidance(for confidence: BaselineConfidence) -> String {
