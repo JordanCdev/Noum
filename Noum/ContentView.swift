@@ -2104,20 +2104,12 @@ struct ContentView: View {
                 )
             }
         }
-        switch suggestion.mode {
-        case .timed:
-            return .timedPractice
-        case .suddenDeath:
-            return .suddenDeathPractice
-        case .ahCounter:
-            return .ahCounterPractice
-        case .imConversation:
-            if IMModeAvailability.isAvailable {
-                return .imPractice(scenario: suggestion.recommendedScenario, tone: suggestion.recommendedTone)
-            } else {
-                return .timedPractice
-            }
-        }
+        return RecommendationBiasEngine.practiceDestination(
+            for: suggestion.mode,
+            scenario: suggestion.recommendedScenario,
+            tone: suggestion.recommendedTone,
+            imAvailable: IMModeAvailability.isAvailable
+        )
     }
 
     private func normalizedSuggestion(_ suggestion: PracticeSuggestion) -> PracticeSuggestion {

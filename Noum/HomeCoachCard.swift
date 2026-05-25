@@ -592,23 +592,12 @@ struct HomeCoachCard: View {
     }
 
     private func destination(for mode: PracticeMode) -> AppDestination {
-        switch mode {
-        case .timed:
-            return .timedPractice
-        case .suddenDeath:
-            return .suddenDeathPractice
-        case .ahCounter:
-            return .ahCounterPractice
-        case .imConversation:
-            if IMModeAvailability.isAvailable {
-                return .imPractice(
-                    scenario: recommendationBlueprint.recommendedScenario,
-                    tone: recommendationBlueprint.recommendedTone
-                )
-            } else {
-                return .timedPractice
-            }
-        }
+        RecommendationBiasEngine.practiceDestination(
+            for: mode,
+            scenario: recommendationBlueprint.recommendedScenario,
+            tone: recommendationBlueprint.recommendedTone,
+            imAvailable: IMModeAvailability.isAvailable
+        )
     }
 
     // MARK: - Mood lifecycle

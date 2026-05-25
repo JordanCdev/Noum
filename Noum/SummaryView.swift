@@ -326,7 +326,16 @@ struct SummaryView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
+            // Mirror Home + the picker: a scenario the user keeps missing
+            // the committed tone on (≥3 evaluated reps, sub-40% hit rate)
+            // takes over the post-session "Looking ahead" read, so the
+            // next-rep nudge names the exact scenario + tone to re-drill
+            // instead of a generic mode. Availability-guarded so an
+            // offline IM mode falls back to the normal goal bias.
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
     }
 

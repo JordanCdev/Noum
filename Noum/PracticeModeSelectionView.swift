@@ -66,6 +66,15 @@ struct PracticeModeSelectionView: View {
     /// `ModeOption.recommendedReason` when nil (cold start, no
     /// session history).
     @State private var cachedRecommendedReason: String?
+    /// IM scenario + tone the recommendation prefills, cached from the
+    /// `RecommendationBiasEngine` blueprint so quick-starting the
+    /// recommended IM mode drops straight into the exact drill (e.g. the
+    /// tone-drill scenario the user keeps missing) rather than a blank
+    /// IM rep. Both nil unless the blueprint recommends IM with a
+    /// prefill — so non-IM recommendations and generic IM picks behave
+    /// exactly as before.
+    @State private var cachedRecommendedScenario: IMConversationScenario?
+    @State private var cachedRecommendedTone: IMTargetTone?
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
@@ -872,9 +881,19 @@ struct PracticeModeSelectionView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: plan
+            plan: plan,
+            // Mirror Home: when the user keeps missing a scenario's tone
+            // (≥3 evaluated reps, sub-40% hit rate) the picker recommends
+            // re-drilling that exact scenario. Availability-guarded so an
+            // offline IM mode falls back to the normal goal bias instead
+            // of recommending a mode that would just be re-routed.
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
         cachedRecommendedMode = blueprint.recommendedMode
+        cachedRecommendedScenario = blueprint.recommendedScenario
+        cachedRecommendedTone = blueprint.recommendedTone
         // Prefer `whyNow` (the situational hook) over `whyMode` (the
         // mode-benefit), but fall back gracefully and ignore empty
         // strings so we never render a blank line.
@@ -884,20 +903,12 @@ struct PracticeModeSelectionView: View {
     }
 
     private func appDestination(for mode: PracticeMode) -> AppDestination {
-        switch mode {
-        case .timed:
-            return .timedPractice
-        case .suddenDeath:
-            return .suddenDeathPractice
-        case .ahCounter:
-            return .ahCounterPractice
-        case .imConversation:
-            if IMModeAvailability.isAvailable {
-                return .imPractice(scenario: nil, tone: nil)
-            } else {
-                return .timedPractice
-            }
-        }
+        RecommendationBiasEngine.practiceDestination(
+            for: mode,
+            scenario: cachedRecommendedScenario,
+            tone: cachedRecommendedTone,
+            imAvailable: IMModeAvailability.isAvailable
+        )
     }
 
     // MARK: - Recent-session signals (feed RecommendationBiasEngine)

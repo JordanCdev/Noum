@@ -7075,6 +7075,32 @@ enum RecommendationBiasEngine {
         )
     }
 
+    /// Resolves the navigation destination for a recommended mode,
+    /// applying the IM-availability re-route every recommendation
+    /// surface shares. An IM recommendation carries its prefilled
+    /// `scenario` + `tone` straight into `.imPractice`, so a one-tap
+    /// start drops the user into the *exact* drill the coach
+    /// prescribed — the tone-drill scenario, not a blank IM rep. When
+    /// IM mode is offline the route falls back to Timed (and drops the
+    /// scenario/tone), so we never push a mode that would just be
+    /// bounced downstream. Pure and shared so Home, the picker, and the
+    /// post-session surfaces resolve the destination identically — the
+    /// drill is offered the same way wherever the user lands.
+    static func practiceDestination(
+        for mode: PracticeMode,
+        scenario: IMConversationScenario?,
+        tone: IMTargetTone?,
+        imAvailable: Bool
+    ) -> AppDestination {
+        switch mode {
+        case .timed:        return .timedPractice
+        case .suddenDeath:  return .suddenDeathPractice
+        case .ahCounter:    return .ahCounterPractice
+        case .imConversation:
+            return imAvailable ? .imPractice(scenario: scenario, tone: tone) : .timedPractice
+        }
+    }
+
     /// Maps a coaching goal to a suggested Timed difficulty.
     private static func suggestedTimedDifficulty(for profile: CoachingProfile) -> TimedPracticeDifficulty {
         switch profile.primaryGoal {
