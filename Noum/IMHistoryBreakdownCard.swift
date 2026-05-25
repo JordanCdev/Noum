@@ -164,6 +164,11 @@ struct IMHistoryBreakdownCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
+                let toneStats = toneMatchStats(for: breakdown.scenario)
+                if toneStats.evaluatedCount > 0 {
+                    toneMatchChip(stats: toneStats)
+                        .padding(.top, 1)
+                }
             }
             Spacer(minLength: 8)
             statColumn(value: scoreLabel(for: breakdown.averageScore), label: "avg")
@@ -179,6 +184,34 @@ struct IMHistoryBreakdownCard: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: breakdown))
+    }
+
+    /// Per-scenario tone-match stats, read from the same pure helper the
+    /// scenario drill-down uses so the list row and the detail view
+    /// never drift on the match rate.
+    private func toneMatchStats(for scenario: IMConversationScenario) -> IMHistorySummary.IMScenarioToneMatchStats {
+        IMHistorySummary.toneMatchStats(from: sessions, scenario: scenario)
+    }
+
+    /// Compact "Tone X/Y" chip beneath the row subtitle. Renders only
+    /// when the scenario has at least one rep with a recorded
+    /// `actualTone` (gated by the caller on `evaluatedCount > 0`), so a
+    /// scenario the evaluator never read a tone for shows no chip rather
+    /// than a fabricated zero. Calm mode-tinted capsule — it's data, not
+    /// a celebration or a penalty, matching the detail view's strip.
+    private func toneMatchChip(stats: IMHistorySummary.IMScenarioToneMatchStats) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "target")
+                .font(.caption2.weight(.bold))
+            Text("Tone \(stats.matchCount)/\(stats.evaluatedCount)")
+                .font(.caption2.weight(.semibold))
+                .monospacedDigit()
+        }
+        .foregroundStyle(accent)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(accent.opacity(0.12), in: Capsule())
+        .accessibilityHidden(true)
     }
 
     private func statColumn(value: String, label: String) -> some View {
@@ -230,7 +263,11 @@ struct IMHistoryBreakdownCard: View {
         let scoreCopy = breakdown.averageScore.map { String(format: "average score %.1f", $0) } ?? "no score yet"
         let trustCopy = breakdown.averageFinalTrust.map { String(format: "trust %.1f", $0) } ?? "no trust reading"
         let tensionCopy = breakdown.averageFinalTension.map { String(format: "tension %.1f", $0) } ?? "no tension reading"
-        return "\(breakdown.scenario.title): \(runCopy), \(scoreCopy), \(trustCopy), \(tensionCopy)"
+        let toneStats = toneMatchStats(for: breakdown.scenario)
+        let toneCopy = toneStats.evaluatedCount > 0
+            ? ", tone matched \(toneStats.matchCount) of \(toneStats.evaluatedCount) reps"
+            : ""
+        return "\(breakdown.scenario.title): \(runCopy), \(scoreCopy), \(trustCopy), \(tensionCopy)\(toneCopy)"
     }
 
     // MARK: - Background

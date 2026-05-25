@@ -66,6 +66,13 @@ struct IMScenarioDetailView: View {
         IMHistorySummary.toneMatchStats(from: sessionStore.sessions, scenario: scenario)
     }
 
+    /// Trust + tension trend (earliest vs latest window). `nil` below 4
+    /// reps with a recorded final state; the header chips self-hide
+    /// when nil or when both metrics read flat.
+    private var relationalTrend: IMHistorySummary.IMScenarioRelationalTrend? {
+        IMHistorySummary.relationalTrend(from: sessionStore.sessions, scenario: scenario)
+    }
+
     private var exportText: String {
         IMHistoryExport.formatPlainText(sessions: sessionStore.sessions, scenario: scenario)
     }
@@ -397,10 +404,66 @@ struct IMScenarioDetailView: View {
                 summaryStat(value: averageTrustLabel, label: "Avg trust")
                 summaryStat(value: averageTensionLabel, label: "Avg tension")
             }
+            if let trend = relationalTrend, trend.hasSignal {
+                HStack(spacing: 8) {
+                    trendChip(label: "Trust", movement: trend.trust, goodWhenUp: true)
+                    trendChip(label: "Tension", movement: trend.tension, goodWhenUp: false)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(relationalTrendAccessibilityLabel(trend))
+                .accessibilityIdentifier("history.im.scenario.trendChips")
+            }
         }
         .padding(Spacing.lg)
         .background(cardBackground)
         .shadow(color: accent.opacity(0.12), radius: 12, x: 0, y: 5)
+    }
+
+    /// One trend chip. Self-hides on a flat metric. Color reads the
+    /// *value judgment*: trust rising is good, tension falling is good,
+    /// so `goodWhenUp` flips the green/amber assignment per metric.
+    /// The arrow always shows the raw numeric direction so the chip is
+    /// honest about which way the line actually moved.
+    @ViewBuilder
+    private func trendChip(
+        label: String,
+        movement: IMHistorySummary.IMScenarioRelationalTrend.Movement,
+        goodWhenUp: Bool
+    ) -> some View {
+        if movement != .flat {
+            let isUp = movement == .up
+            let isGood = (isUp == goodWhenUp)
+            let tint = isGood ? AppColor.positive : AppColor.caution
+            HStack(spacing: 4) {
+                Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
+                    .font(.caption2.weight(.bold))
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12), in: Capsule())
+        }
+    }
+
+    private func relationalTrendAccessibilityLabel(
+        _ trend: IMHistorySummary.IMScenarioRelationalTrend
+    ) -> String {
+        var parts: [String] = []
+        switch trend.trust {
+        case .up: parts.append("trust trending up")
+        case .down: parts.append("trust trending down")
+        case .flat: break
+        }
+        switch trend.tension {
+        case .up: parts.append("tension trending up")
+        case .down: parts.append("tension trending down")
+        case .flat: break
+        }
+        guard !parts.isEmpty else { return "" }
+        return "Recent trend: " + parts.joined(separator: ", ")
+            + ", based on your earliest and latest \(trend.windowSize) reps."
     }
 
     private var bestScoreLabel: String {

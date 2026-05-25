@@ -318,4 +318,87 @@ enum IMHistorySummary {
         guard !trimmed.isEmpty else { return false }
         return trimmed.lowercased().contains(targetTone.title.lowercased())
     }
+
+    // MARK: - Per-scenario relational trend (trust + tension direction)
+    //
+    // Reduces the per-rep trace into a single one-glance read: across
+    // this scenario, is trust rising and tension falling, or the
+    // reverse? The trace chart shows the *shape*; this carries the
+    // *read* in two small chips on the scenario header.
+    //
+    // Method: compare the mean of the earliest `window` reps against
+    // the mean of the latest `window` reps, where `window =
+    // min(3, count / 2)`. That bound guarantees the two windows never
+    // overlap (2·window ≤ count for all counts), so the early stretch
+    // and the recent stretch are genuinely disjoint — no rep is
+    // double-counted on both sides of the comparison.
+    //
+    // `Movement` is the *raw numeric* direction of each metric (up /
+    // down / flat). The caller maps it to good/bad coloring knowing
+    // trust-up is good and tension-down is good — the helper stays
+    // honest about what the numbers did and leaves the value judgment
+    // to the view. A delta smaller than `relationalTrendThreshold`
+    // (0.5 on the 1–10 scale) reads as `.flat`: below that the line is
+    // noise, not a trend.
+    //
+    // Defensive contracts (locked by `IMScenarioRelationalTrendTests`):
+    //   • reuses `tracePoints(from:scenario:)` so it inherits the same
+    //     `.imConversation` filter, final-state requirement, scenario
+    //     filter, and oldest→newest ordering
+    //   • returns nil below 4 contributing reps — fewer than that can't
+    //     separate a "first stretch" from a "recent stretch" honestly
+    //   • the two averaging windows never overlap
+    //   • `.flat` when |delta| < 0.5 (per metric, independently)
+    struct IMScenarioRelationalTrend: Equatable {
+        enum Movement: Equatable { case up, down, flat }
+        let trust: Movement
+        let tension: Movement
+        /// Latest-window mean − earliest-window mean, rounded to 0.1.
+        let trustDelta: Double
+        let tensionDelta: Double
+        /// Reps averaged in each window (the `min(3, count / 2)` bound).
+        let windowSize: Int
+        /// True when at least one of trust / tension carries a non-flat
+        /// read — the header chips self-hide entirely when this is false.
+        var hasSignal: Bool { trust != .flat || tension != .flat }
+    }
+
+    /// Minimum mean delta (on the 1–10 scale) for a metric to read as a
+    /// trend rather than flat. Shared with the test suite so the
+    /// boundary is asserted, not guessed.
+    static let relationalTrendThreshold = 0.5
+
+    static func relationalTrend(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> IMScenarioRelationalTrend? {
+        let points = tracePoints(from: sessions, scenario: scenario)
+        guard points.count >= 4 else { return nil }
+
+        let window = min(3, points.count / 2)
+        let early = points.prefix(window)
+        let late = points.suffix(window)
+
+        let earlyTrust = Double(early.map(\.trust).reduce(0, +)) / Double(early.count)
+        let lateTrust = Double(late.map(\.trust).reduce(0, +)) / Double(late.count)
+        let earlyTension = Double(early.map(\.tension).reduce(0, +)) / Double(early.count)
+        let lateTension = Double(late.map(\.tension).reduce(0, +)) / Double(late.count)
+
+        let trustDelta = ((lateTrust - earlyTrust) * 10).rounded() / 10
+        let tensionDelta = ((lateTension - earlyTension) * 10).rounded() / 10
+
+        func movement(_ delta: Double) -> IMScenarioRelationalTrend.Movement {
+            if delta >= relationalTrendThreshold { return .up }
+            if delta <= -relationalTrendThreshold { return .down }
+            return .flat
+        }
+
+        return IMScenarioRelationalTrend(
+            trust: movement(trustDelta),
+            tension: movement(tensionDelta),
+            trustDelta: trustDelta,
+            tensionDelta: tensionDelta,
+            windowSize: window
+        )
+    }
 }

@@ -14006,3 +14006,201 @@ struct IMScenarioToneMatchStatsTests {
         #expect(stats.matchCount == 1)
     }
 }
+
+// MARK: - IMScenarioDetailView relational trend (trust/tension chips)
+//
+// The scenario header's two trend chips ("Trust ↑" / "Tension ↓") read
+// from `IMHistorySummary.relationalTrend`, which compares the earliest
+// vs latest window of the per-scenario trace. The view maps the raw
+// `Movement` to good/bad coloring; these tests lock the math + the
+// honest-data contracts (nil below 4 reps, non-overlapping windows,
+// flat below the 0.5 threshold).
+
+@available(iOS 17.0, *)
+struct IMScenarioRelationalTrendTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        trust: Int,
+        tension: Int,
+        daysOffset: Double,
+        hasFinalState: Bool = true
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: .confident),
+                turns: [],
+                actualTone: nil,
+                finalState: hasFinalState
+                    ? IMConversationState(trust: trust, engagement: 6, tension: tension, beat: "x")
+                    : nil,
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func relationalTrendNilOnEmptyInput() {
+        #expect(IMHistorySummary.relationalTrend(from: [], scenario: .networking) == nil)
+    }
+
+    @Test func relationalTrendNilBelowFourReps() {
+        // Three reps can't separate a "first stretch" from a "recent
+        // stretch" — the helper returns nil rather than fabricate a read.
+        let sessions = [
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -3),
+            imSession(scenario: .networking, trust: 5, tension: 6, daysOffset: -2),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.relationalTrend(from: sessions, scenario: .networking) == nil)
+    }
+
+    @Test func relationalTrendDetectsImprovement() {
+        // Oldest three: low trust, high tension. Newest three: high
+        // trust, low tension. → trust up, tension down (the good arc).
+        let sessions = [
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -6),
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -5),
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -4),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -3),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -2),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -1)
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend?.trust == .up)
+        #expect(trend?.tension == .down)
+        #expect(trend?.trustDelta == 5.0)
+        #expect(trend?.tensionDelta == -5.0)
+        #expect(trend?.windowSize == 3)
+        #expect(trend?.hasSignal == true)
+    }
+
+    @Test func relationalTrendDetectsRegression() {
+        // Reverse arc: trust falling, tension rising.
+        let sessions = [
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -6),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -5),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -4),
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -3),
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -2),
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -1)
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend?.trust == .down)
+        #expect(trend?.tension == .up)
+        #expect(trend?.hasSignal == true)
+    }
+
+    @Test func relationalTrendFlatWhenStable() {
+        // Four reps, no movement → both flat, hasSignal false. The
+        // helper still returns a (non-nil) struct: there's enough data,
+        // there's just no trend to show, so the header chips self-hide.
+        let sessions = [
+            imSession(scenario: .networking, trust: 6, tension: 5, daysOffset: -4),
+            imSession(scenario: .networking, trust: 6, tension: 5, daysOffset: -3),
+            imSession(scenario: .networking, trust: 6, tension: 5, daysOffset: -2),
+            imSession(scenario: .networking, trust: 6, tension: 5, daysOffset: -1)
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend != nil)
+        #expect(trend?.trust == .flat)
+        #expect(trend?.tension == .flat)
+        #expect(trend?.hasSignal == false)
+    }
+
+    @Test func relationalTrendFlatBelowThreshold() {
+        // Six reps, trust drifts up by only 0.3 (< 0.5 threshold) →
+        // flat. Earliest 3 trust = 5,5,5 (mean 5.0); latest 3 = 5,5,6
+        // (mean 5.33) → delta 0.3. Tension is constant → flat.
+        let sessions = [
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -6),
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -5),
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -4),
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -3),
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -2),
+            imSession(scenario: .networking, trust: 6, tension: 5, daysOffset: -1)
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend?.trustDelta == 0.3)
+        #expect(trend?.trust == .flat)
+        #expect(trend?.tension == .flat)
+        #expect(trend?.hasSignal == false)
+    }
+
+    @Test func relationalTrendWindowSizeForFourReps() {
+        // Four reps → window = min(3, 4/2) = 2. Earliest 2 vs latest 2,
+        // non-overlapping. Trust 4,4 → 7,7 = delta +3 (up).
+        let sessions = [
+            imSession(scenario: .networking, trust: 4, tension: 6, daysOffset: -4),
+            imSession(scenario: .networking, trust: 4, tension: 6, daysOffset: -3),
+            imSession(scenario: .networking, trust: 7, tension: 6, daysOffset: -2),
+            imSession(scenario: .networking, trust: 7, tension: 6, daysOffset: -1)
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend?.windowSize == 2)
+        #expect(trend?.trustDelta == 3.0)
+        #expect(trend?.trust == .up)
+        #expect(trend?.tension == .flat)
+    }
+
+    @Test func relationalTrendThresholdIsInclusive() {
+        // Delta of exactly 0.5 reads as a trend (>= boundary). Four reps,
+        // window 2: trust 5,5 → 5,6 (mean 5.0 → 5.5) = delta 0.5 → up.
+        let sessions = [
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -4),
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -3),
+            imSession(scenario: .networking, trust: 5, tension: 5, daysOffset: -2),
+            imSession(scenario: .networking, trust: 6, tension: 5, daysOffset: -1)
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend?.trustDelta == 0.5)
+        #expect(trend?.trust == .up)
+    }
+
+    @Test func relationalTrendIgnoresOtherScenariosAndModes() {
+        // Inherits the trace-point filter: only the requested scenario's
+        // IM reps with a final state contribute. The cross-scenario and
+        // Timed rows must not bleed into the window math.
+        let sessions = [
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -4),
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -3),
+            imSession(scenario: .difficultConversation, trust: 9, tension: 1, daysOffset: -3),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -2),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -1),
+            PracticeSession(
+                transcript: "timed",
+                fillerWordCount: 0,
+                duration: 30,
+                date: baseDate,
+                mode: .timed,
+                score: 9
+            )
+        ]
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .networking)
+        #expect(trend?.windowSize == 2)
+        #expect(trend?.trust == .up)
+        #expect(trend?.tension == .down)
+    }
+
+    @Test func relationalTrendDropsRepsWithoutFinalState() {
+        // A rep with no final state has no trust/tension to plot, so it
+        // can't contribute to the window. Four total, one stateless →
+        // three contributing → nil (below the 4-rep floor).
+        let sessions = [
+            imSession(scenario: .networking, trust: 3, tension: 8, daysOffset: -4),
+            imSession(scenario: .networking, trust: 5, tension: 6, daysOffset: -3),
+            imSession(scenario: .networking, trust: 0, tension: 0, daysOffset: -2, hasFinalState: false),
+            imSession(scenario: .networking, trust: 8, tension: 3, daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.relationalTrend(from: sessions, scenario: .networking) == nil)
+    }
+}
