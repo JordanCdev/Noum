@@ -1,213 +1,183 @@
-# HANDOFF — M24 deferred slate (round 7): per-scenario trust/tension trend chips + tone-match list chip
+# HANDOFF — M24 deferred slate (round 8): per-scenario tone-drill recommendation (diagnose → prescribe)
 
 ## Scope
 
-Round 6 (commit `4513e3d`) closed three of the six items the round-5
-HANDOFF forwarded — all on `IMScenarioDetailView` (trust/tension trace,
-tone-match strip, empty-state CTA). It forwarded an updated priority
-list of six "Future moves". Two of those — items 4 and 5 — are a tight,
-coherent pair: both take a per-scenario signal that is *already
-computed and tested* in `IMHistorySummary` and surface it as a small
-one-glance chip, one rung up the navigation tree from where the full
-read lives. This push closes them together.
+Round 7 (commit `4169a8e`) closed two more "Future moves" (per-scenario
+trust/tension trend chips on the detail header + a tone-match chip on
+the History list row). It forwarded a five-item priority list. This
+push takes **#1 — per-scenario drill recommendations**, the highest-
+leverage remaining item, because it's the one that closes a *coaching
+loop* rather than adding another read: the round-6/7 work made the
+per-scenario tone-match rate visible (diagnosis); this round turns that
+diagnosis into a prescription the user can act on in one tap.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
 plan, and all round A+, make my dream I had come true too, ensure
 working on the redesign branch too (very important)."
 
-Translation, this round:
+### Scoping decision (read this)
 
-- **#5 — Trust/tension trend chip on `IMScenarioDetailView` header.**
-  The round-6 trace *chart* shows the shape of the relational arc; a
-  user still has to read the curve. Two chips in the summary header
-  ("Trust ↑" / "Tension ↓") carry the read in one glance.
-- **#4 — Tone-match chip on `IMHistoryBreakdownCard`.** The round-6
-  tone-match strip lives one tap *inside* the scenario. A compact
-  "Tone X/Y" chip on the History list row lets the user read the same
-  signal without drilling in.
+The round-7 HANDOFF deferred #1 because the natural home looked like
+`RecommendationBiasEngine` in `PracticeSupport.swift`, which feeds
+**seven** consumer surfaces (`PracticeModeSelectionView`, `SummaryView`,
+`HomeCoachCard`, `PracticeTopics`, `ContentView`, `SummaryCards`) — a
+new trigger there wants a dedicated push with recommendation-surface QA,
+not a rider on a smaller change.
 
-Both reuse pure helpers that already exist and are already tested
-(`tracePoints`, `toneMatchStats`, `matches`), so the only new logic is
-one pure trend-reduction helper. The remaining four "Future moves"
-(peer SD scores, `coachNoteRevealed` cleanup, rate-limiter live
-refresh, per-scenario drill recommendations) stay deferred for the
-reasons in **Future moves** below.
+That risk is real, so this round lands the *same coaching outcome* on a
+**self-contained surface instead**: the `IMScenarioDetailView` drill-
+down. The prescription appears exactly where the user is already reading
+the diagnosis (the tone-match strip), reuses the launch path the
+empty-state CTA already uses (`AppDestination.imPractice(scenario:tone:)`),
+and touches **no** shared engine. It closes the diagnose→prescribe loop
+for the IM/tone case end-to-end without the 7-surface blast radius. The
+broader `RecommendationBiasEngine` integration (surfacing the same
+signal on Home / mode-selection) stays a dedicated future push — see
+**Future moves**.
+
+This is the PLAN.md §8.3 "data layer first" discipline: the decision is
+a pure, fully-tested helper; the view is a thin render of it.
 
 ## What shipped
 
-### Track 1 — Per-scenario relational trend helper (#5 data layer)
+### Track 1 — Pure decision helper (data layer)
 
-New pure helper `IMHistorySummary.relationalTrend(from:scenario:)` in
-`Noum/IMHistorySummary.swift`. It reduces the per-rep trust/tension
-trace into a single directional read by comparing the mean of the
-earliest `window` reps against the mean of the latest `window` reps,
-where `window = min(3, count / 2)`. That bound guarantees the two
-windows **never overlap** (2·window ≤ count for every count), so the
-"first stretch" and the "recent stretch" are genuinely disjoint — no
-rep is double-counted on both sides of the comparison.
+New pure helper `IMHistorySummary.toneDrillRecommendation(from:scenario:)`
+in `Noum/IMHistorySummary.swift`, returning a new nested value type
+`IMScenarioToneDrillRecommendation?`.
 
-New nested types:
+Evidence gate (mirrors VISION.md: "every recommendation must have
+evidence, an observable target, and an honest evidence threshold"):
 
-- `IMScenarioRelationalTrend` (Equatable): `trust` / `tension` of type
-  `Movement` (`.up` / `.down` / `.flat`), `trustDelta` / `tensionDelta`
-  (latest-window mean − earliest-window mean, rounded to 0.1),
-  `windowSize`, and a `hasSignal` convenience (`true` when at least one
-  metric is non-flat).
-- `Movement` is the **raw numeric** direction — the helper stays honest
-  about what the numbers did and leaves the good/bad value judgment to
-  the view (which knows trust-up is good, tension-down is good).
-- `relationalTrendThreshold = 0.5` — shared with the test suite so the
-  flat-vs-trend boundary is asserted, not guessed.
+- **≥ `toneDrillMinimumReps` (3)** reps in this scenario recorded an
+  `actualTone` reading — fewer can't establish a pattern, only a single
+  rep, and a coach doesn't prescribe off one rep.
+- **match rate < `toneDrillMatchRateCeiling` (40%)** — above that the
+  user lands the tone more than they miss it, so a nudge would be
+  nagging, not coaching. The ceiling is **exclusive**: exactly 40%
+  (e.g. 2 of 5) returns `nil`.
+- Both thresholds are `static let` constants shared with the test suite
+  so the boundary is asserted, not guessed.
 
-Defensive contracts (locked by `IMScenarioRelationalTrendTests`, 10
-cases):
+The rate read is the **same `toneMatchStats` value the visible strip
+displays** (the helper calls into it), so the prescription and the
+diagnosis it's based on can never disagree — including the two-decimal
+rounding (3 of 8 → 0.38, which is `< 0.40` → recommend).
 
-- reuses `tracePoints(from:scenario:)`, so it inherits the same
-  `.imConversation` filter, final-state requirement, scenario filter,
-  and oldest→newest ordering for free
-- returns `nil` below 4 contributing reps — fewer than that can't
-  separate a first stretch from a recent stretch honestly
-- the two averaging windows never overlap (the `min(3, count / 2)` bound)
-- `.flat` when |delta| < 0.5, per metric independently
-- a stable-but-sufficient history returns a non-nil struct with
-  `hasSignal == false` (enough data, no trend → header chips self-hide)
+The **prescribed tone** is the tone the user *aimed for and missed most
+often* in this scenario — the modal missed `targetTone`, tie-broken by
+the most-recent miss (so it tracks what they're fighting right now),
+with a final `rawValue` tiebreak for full determinism. It reuses the
+same `matches(targetTone:actualTone:)` matcher the strip uses, so a
+"miss" here means exactly what a non-matched chip means there. The coach
+drills the specific gap, not a scenario default guess.
 
-### Track 2 — Trend chips on `IMScenarioDetailView` header (#5 view layer)
+Brand-voice copy lives on the value type as pure computed properties
+(testable without a view):
 
-`Noum/IMScenarioDetailView.swift` summary header gains a chip row
-beneath the three stat tiles, rendered only when `relationalTrend` is
-non-nil *and* `hasSignal` is true:
+- `headline` — "Your <Tone> tone is the opportunity here" (frames the
+  gap as the next edge, never a weakness)
+- `body` — states the evidence, then prescribes one focused rep; the
+  match count is rendered as a warm phrase (`haven't matched it yet` /
+  `matched it once` / `matched it twice` / `matched it N times`) — data,
+  not a verdict, no punish-shame
+- `ctaLabel` — "Drill <Tone> tone"
 
-- `trendChip(label:movement:goodWhenUp:)` — `@ViewBuilder`, self-hides
-  on a flat metric. Arrow glyph (`arrow.up.right` / `arrow.down.right`)
-  shows the **raw** numeric direction; tint reads the **value
-  judgment** — `goodWhenUp` flips the green (`AppColor.positive`) /
-  amber (`AppColor.caution`) assignment so trust-up and tension-down
-  both read green, trust-down and tension-up both read amber.
-- Calm capsule register (0.12-alpha tint background) — matches the
-  tone-match strip; it's data, not a celebration or a penalty.
-- VoiceOver: the chip row carries one combined label ("Recent trend:
-  trust trending up, tension trending down, based on your earliest and
-  latest N reps.") via `relationalTrendAccessibilityLabel`. Accessibility
-  identifier `history.im.scenario.trendChips`.
+### Track 2 — Coach-nudge card (view layer)
 
-### Track 3 — Tone-match chip on `IMHistoryBreakdownCard` row (#4)
-
-`Noum/IMHistoryBreakdownCard.swift` row gains a compact "Tone X/Y" chip
-beneath the subtitle in the leading column, rendered only when the
-scenario has at least one rep with a recorded `actualTone`
-(`evaluatedCount > 0`):
-
-- `toneMatchStats(for:)` reads the same pure helper the scenario
-  drill-down uses, so the list row and the detail view never drift on
-  the match rate.
-- `toneMatchChip(stats:)` — `target` glyph + "Tone X/Y" in the
-  mode-tinted calm capsule register. Marked `accessibilityHidden(true)`
-  because the row's combined VoiceOver label already folds in the tone
-  read (", tone matched X of Y reps") — no double read.
-- A scenario the evaluator never produced a tone for shows **no chip**
-  rather than a fabricated "0/0" — honest cold-start behaviour, same
-  contract as the detail strip.
+`Noum/IMScenarioDetailView.swift` gains a `toneDrillCard(_:)`, rendered
+directly beneath the tone-match strip when `toneDrillRecommendation` is
+non-nil (so the user reads "3 of 8 matched" → "here's the rep that
+closes that"). Calm register: same mode-tinted `cardBackground` chrome
+as the trace + tone cards, a "COACH NUDGE" eyebrow, `scope` glyph, and
+an accent-capsule CTA identical in shape to the empty-state launch
+button. The CTA pushes `AppDestination.imPractice(scenario:tone:)` with
+**both** the scenario and the prescribed tone pre-filled — the user
+lands in exactly the rep the coach just named, zero setup friction.
+Accessibility id `history.im.scenario.toneDrillCTA`.
 
 ### Vision alignment
 
-Both moves land on the same axes as rounds 5 and 6:
-
-- **Pillar #3 — Conversational intelligence.** "Your last few
-  Difficult Conversation reps recovered trust faster and held tension
-  lower" is the read a £130/hr human coach gives after pulling up the
-  history. The trend chips put that read on the scenario header; the
-  tone-match list chip puts the tone-accuracy read on the History list
-  without a drill-in.
-- **Pillar #4 — Believable progress.** Every new surface self-hides on
-  insufficient or missing data: trend chips need ≥4 reps with a final
-  state *and* a non-flat signal; the tone chip needs ≥1 recorded
-  `actualTone`. No fabricated points, no placeholder visuals, no
-  fake-zero percentages.
-- **Anti-goals.** The trend helper reports the *raw* numeric movement
-  and reads `normalizedTrust`/`normalizedTension` directly — no
-  smoothing, no AI reframe. The tone chip reuses the engine's own
-  `actualTone` string via the already-tested substring matcher. No
-  punish-shame: a low tone-match or an amber trend chip is informative
-  data in a calm capsule, never a red failure state.
+- **Coach-parity loop (the north star).** VISION.md defines parity as
+  diagnose → formulate → prescribe → observe → adapt → transfer. The
+  round-6/7 tone-match surfaces did the *diagnose*; this round adds the
+  *prescribe* stage for the tone case: a reason ("matched it once across
+  3 reps"), a named observable target (the specific tone), and a one-tap
+  intervention. That's the exact shape the dev-instructions demand:
+  "prescribe a drill for a reason, name the observable target."
+- **Pillar #3 — Conversational intelligence.** "You keep aiming for Calm
+  in Difficult Conversation and landing it once in three — run it again
+  with Calm as the only thing to nail" is the move a £130/hr coach makes
+  after pulling the history.
+- **Pillar #4 — Believable progress.** The card self-hides until the
+  evidence bar is met. No prescription off one rep; no nag when the user
+  is already matching the tone. Honest cold-start: nothing renders.
+- **Anti-goals.** No fabricated data (every number is the engine's own
+  `actualTone` read through the existing matcher). No punish-shame (the
+  miss count is calm data in a mode-tinted card, never a red failure
+  state). No new AI surface — the decision is deterministic.
 
 ## Files touched
 
-- **Modified:** `Noum/IMHistorySummary.swift` (+~85 LOC —
-  `IMScenarioRelationalTrend` value type + `Movement` enum +
-  `relationalTrendThreshold` + `relationalTrend(from:scenario:)`)
-- **Modified:** `Noum/IMScenarioDetailView.swift` (+~55 LOC —
-  `relationalTrend` computed wrap, header chip row, `trendChip`
-  `@ViewBuilder`, `relationalTrendAccessibilityLabel`)
-- **Modified:** `Noum/IMHistoryBreakdownCard.swift` (+~30 LOC —
-  `toneMatchStats(for:)`, `toneMatchChip(stats:)`, chip in the leading
-  column gated on `evaluatedCount > 0`, tone read folded into the row's
-  combined accessibility label)
-- **Modified:** `NoumTests/NoumTests.swift` (+~205 LOC — new
-  `IMScenarioRelationalTrendTests` suite, 10 cases: nil on empty, nil
-  below 4 reps, detects improvement (trust ↑ / tension ↓), detects
-  regression, flat when stable, flat below 0.5 threshold, window size
-  for 4 reps, threshold inclusive at 0.5, ignores other scenarios +
-  Timed modes, drops reps without a final state)
+- **Modified:** `Noum/IMHistorySummary.swift` (+~95 LOC —
+  `IMScenarioToneDrillRecommendation` value type with computed copy +
+  `toneDrillMinimumReps` / `toneDrillMatchRateCeiling` constants +
+  `toneDrillRecommendation(from:scenario:)`)
+- **Modified:** `Noum/IMScenarioDetailView.swift` (+~60 LOC —
+  `toneDrillRecommendation` computed wrap, `toneDrillCard(_:)`, render
+  gate beneath the tone-match strip)
+- **Modified:** `NoumTests/NoumTests.swift` (+~250 LOC — new
+  `IMScenarioToneDrillRecommendationTests` suite, 15 cases: nil on
+  empty, nil below 3 reps, nil at 40% ceiling (exclusive), nil above
+  ceiling, recommends below ceiling with stats carried through, boundary
+  3-of-8 rounds to 0.38 → recommends, most-missed tone is modal, tie-
+  break by recency, ignores reps without `actualTone`, ignores cross-
+  scenario reps (and confirms the other scenario still recommends),
+  ignores non-IM modes, rate matches `toneMatchStats` exactly, copy has
+  no exclamations across all match counts, copy has no punish-shame
+  language, copy names the tone, match-phrase variants read naturally)
 - **Modified:** `HANDOFF.md` (this file)
 - **Modified:** `docs/CURRENT_STATE.md` (rolling summary)
 
 ## Branch
 
-`Redesign` — committed and pushed per the user's brief.
+`Redesign` — committed and pushed per the user's brief (via the
+working branch + a draft PR into `Redesign`).
 
-The artifact a user can now hold:
-
-1. **At a scenario, they read the relational arc in one glance.** Two
-   chips on the `IMScenarioDetailView` summary header — "Trust ↑" green,
-   "Tension ↓" green (or amber for the reverse) — sitting above the
-   trace chart that shows the underlying shape. Self-hides below 4 reps
-   or when both metrics are flat.
-
-2. **On the IM History list, they read tone accuracy per scenario
-   without drilling in.** A compact "Tone X/Y" chip on each
-   `IMHistoryBreakdownCard` row. Self-hides for any scenario with no
-   recorded `actualTone`.
-
-Both are vision-aligned on the conversational-intelligence (#3) and
-believable-progress (#4) pillars, and carry the same honest-data
-contracts the round-6 cards established: drop missing data rather than
-fabricate it; self-hide rather than render a placeholder.
+The artifact a user can now hold: at any IM scenario where they've been
+missing the tone they aim for (3+ reps, under 40% landed), the coach
+surfaces a calm, evidence-stated nudge and a one-tap drill that drops
+them into that exact scenario with the most-missed tone pre-selected —
+the diagnose→prescribe loop closed for the tone case.
 
 ## Future moves
 
-(Updated priority list — items 4 and 5 closed in this push removed;
-remaining items carried forward:)
+(Updated priority list — item #1 closed on a self-contained surface this
+round; the engine-wide variant carried forward:)
 
-1. **Per-scenario drill recommendations.** When the tone-match rate on
-   a scenario is low (<40%) AND the user has 3+ evaluated reps, the
-   `RecommendationBiasEngine` could surface a "Drill the <scenario>
-   tone" recommendation that biases toward the relevant skill area +
-   auto-fills the scenario. This closes the loop between the
-   per-scenario read (now visible at both the list and detail level
-   after this round) and the recommendation surface. Deferred because
-   `RecommendationBiasEngine` lives in `PracticeSupport.swift` and
-   feeds seven consumer surfaces (`PracticeModeSelectionView`,
-   `SummaryView`, `HomeCoachCard`, `PracticeTopics`, `ContentView`,
-   `SummaryCards`) — a new recommendation trigger wants a dedicated
-   push with the recommendation-surface QA, not a rider on a
-   chip-rendering change.
+1. **Per-scenario tone signal on `RecommendationBiasEngine`.** Now that
+   `toneDrillRecommendation` is a pure, tested helper, the same signal
+   could feed the *home / mode-selection* recommendation surfaces so a
+   user who never opens the IM History drill-down still gets nudged
+   toward their weakest scenario+tone. Still wants a dedicated push:
+   `RecommendationBiasEngine.blueprint(...)` feeds seven consumers and a
+   new trigger wants recommendation-surface QA, not a rider on a
+   render-only change. The decision layer is now done — this is the
+   wiring + QA half.
 2. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
    `PublicProfileSnapshot` schema work.
 3. **`coachNoteRevealed` cleanup.** Still risky — animation chain
-   interleaving with celebration timing. Worth a dedicated refactor
-   pass with proper visual QA.
+   interleaving with celebration timing. Worth a dedicated refactor pass
+   with proper visual QA.
 4. **Rate-limiter live refresh.** Make `AIRateLimiter` an
    `ObservableObject` (or expose a publisher) so the Settings AI-usage
-   card AND the `CoachReadCard` daily-budget hint refresh mid-view when
-   a background rep finalizes and consumes budget. Low priority because
+   card AND the `CoachReadCard` daily-budget hint refresh mid-view when a
+   background rep finalizes and consumes budget. Low priority because
    Settings is modal in practice.
-5. **Trust/tension trend chip on `IMHistoryBreakdownCard` row.** Now
-   that `relationalTrend` is a pure helper, the History list row could
-   carry the same directional chips the detail header now shows — the
-   list would read the relational arc per scenario without a drill-in,
-   the same way the tone chip landed this round. Deferred only to keep
-   the row from getting visually crowded; wants a quick layout QA pass
-   to confirm the row still reads at a glance with trend + tone chips
-   together.
+5. **Trust/tension trend chip on `IMHistoryBreakdownCard` row.** The
+   History list row could carry the same directional chips the detail
+   header now shows. Deferred only to keep the row from getting visually
+   crowded (it already gained a tone chip in round 7); wants a quick
+   layout QA pass to confirm the row still reads at a glance with trend +
+   tone chips together.

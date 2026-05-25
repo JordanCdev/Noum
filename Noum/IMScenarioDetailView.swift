@@ -73,6 +73,14 @@ struct IMScenarioDetailView: View {
         IMHistorySummary.relationalTrend(from: sessionStore.sessions, scenario: scenario)
     }
 
+    /// Evidence-gated tone-drill prescription. `nil` until the user has
+    /// 3+ tone-evaluated reps AND is landing the tone under 40% of the
+    /// time — so the nudge card self-hides until a drill is genuinely
+    /// warranted, never nags a user who's already matching the tone.
+    private var toneDrillRecommendation: IMHistorySummary.IMScenarioToneDrillRecommendation? {
+        IMHistorySummary.toneDrillRecommendation(from: sessionStore.sessions, scenario: scenario)
+    }
+
     private var exportText: String {
         IMHistoryExport.formatPlainText(sessions: sessionStore.sessions, scenario: scenario)
     }
@@ -99,6 +107,11 @@ struct IMScenarioDetailView: View {
 
                         if toneMatchStats.evaluatedCount > 0 {
                             toneMatchCard
+                                .padding(.horizontal, Spacing.screenH)
+                        }
+
+                        if let drill = toneDrillRecommendation {
+                            toneDrillCard(drill)
                                 .padding(.horizontal, Spacing.screenH)
                         }
 
@@ -377,6 +390,70 @@ struct IMScenarioDetailView: View {
         }
         let rate = stats.matchRate.map { Int(($0 * 100).rounded()) } ?? 0
         return "Tone match: \(stats.matchCount) of \(stats.evaluatedCount) reps matched the target tone, \(rate) percent."
+    }
+
+    // MARK: - Tone-drill nudge (diagnose → prescribe)
+
+    /// Coach nudge that closes the loop the tone-match strip opens: the
+    /// strip *diagnoses* a low tone-match rate; this card *prescribes*
+    /// one focused rep at the exact tone the user keeps missing. Renders
+    /// only when `IMHistorySummary.toneDrillRecommendation` clears the
+    /// evidence bar (3+ evaluated reps, sub-40% match rate). The CTA
+    /// pushes `imPractice(scenario:tone:)` with BOTH the scenario and
+    /// the prescribed tone pre-filled — the user lands in exactly the
+    /// rep the coach just named, no setup friction.
+    ///
+    /// Calm register: same mode-tinted card chrome as the trace + tone
+    /// cards. The headline frames the gap as an opportunity, the body
+    /// states the honest evidence without punish-shame — this is a
+    /// coach's prescription, not a red failure state.
+    private func toneDrillCard(_ rec: IMHistorySummary.IMScenarioToneDrillRecommendation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "scope")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(accent)
+                Text("Coach nudge")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(accent)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Spacer()
+            }
+
+            Text(rec.headline)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(rec.body)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                navigationPath.append(
+                    AppDestination.imPractice(scenario: rec.scenario, tone: rec.tone)
+                )
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                    Text(rec.ctaLabel)
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(accent, in: Capsule())
+            }
+            .accessibilityIdentifier("history.im.scenario.toneDrillCTA")
+            .accessibilityLabel(rec.ctaLabel)
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(cardBackground)
     }
 
     // MARK: - Header

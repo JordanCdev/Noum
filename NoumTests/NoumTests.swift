@@ -14553,3 +14553,264 @@ struct IMScenarioRelationalTrendTests {
         #expect(IMHistorySummary.relationalTrend(from: sessions, scenario: .networking) == nil)
     }
 }
+
+// MARK: - IMScenarioDetailView tone-drill recommendation (diagnose → prescribe)
+//
+// The tone-match strip diagnoses a low tone-match rate; the tone-drill
+// card prescribes one focused rep at the exact tone the user keeps
+// missing. These tests lock the evidence gate (3+ evaluated reps,
+// sub-40% match rate), the "most-missed tone" pick (modal, tie-break by
+// recency), the single-source-of-truth rate (reads the same
+// `toneMatchStats` the strip displays), and the brand-voice copy
+// contract (no exclamations, no punish-shame, names the tone).
+
+struct IMScenarioToneDrillRecommendationTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func nilOnEmptyInput() {
+        #expect(IMHistorySummary.toneDrillRecommendation(from: [], scenario: .networking) == nil)
+    }
+
+    @Test func nilBelowMinimumReps() {
+        // Two missed reps — a coach doesn't prescribe off a pattern of
+        // two. Below `toneDrillMinimumReps` → nil even though the rate
+        // is 0%.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .difficultConversation) == nil)
+    }
+
+    @Test func nilWhenRateAtCeiling() {
+        // 2 of 5 matched = exactly 0.40. The ceiling is exclusive
+        // (`< 0.40`), so the user landing it 40% of the time gets no
+        // nudge — that's a calibration boundary, not a miss.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        #expect(stats.matchRate == 0.40)
+        #expect(IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .networking) == nil)
+    }
+
+    @Test func nilWhenRateAboveCeiling() {
+        // 3 of 5 matched = 0.60 — the user already lands it more than
+        // they miss it. Nudging a drill here would be nagging.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .networking) == nil)
+    }
+
+    @Test func recommendsWhenRateBelowCeiling() {
+        // 1 of 3 matched = 0.33 (< 0.40), 3 evaluated reps → a real
+        // pattern under the bar. Recommend, carrying the stats through.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -1)
+        ]
+        let rec = IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .difficultConversation)
+        #expect(rec != nil)
+        #expect(rec?.scenario == .difficultConversation)
+        #expect(rec?.tone == .calm)
+        #expect(rec?.evaluatedCount == 3)
+        #expect(rec?.matchCount == 1)
+        #expect(rec?.matchRate == 0.33)
+    }
+
+    @Test func boundaryJustBelowCeilingRecommends() {
+        // 3 of 8 matched = 0.375 → rounds to 0.38 (< 0.40). The
+        // recommendation reads the same rounded rate the strip shows.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -8),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -7),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1)
+        ]
+        let rec = IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .networking)
+        #expect(rec?.matchRate == 0.38)
+        #expect(rec?.matchCount == 3)
+        #expect(rec?.evaluatedCount == 8)
+    }
+
+    @Test func recommendsTheMostMissedTone() {
+        // Three misses across two target tones: .calm missed twice,
+        // .warm missed once. The drill should prescribe .calm — the tone
+        // the user aims for and misses most often, not a scenario default.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .warm, actualTone: "cold", daysOffset: -1)
+        ]
+        let rec = IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .difficultConversation)
+        #expect(rec?.tone == .calm)
+    }
+
+    @Test func tieBreaksMostMissedToneByRecency() {
+        // Three distinct target tones, each missed once. Equal counts →
+        // the most-recent miss wins, so the drill tracks what the user
+        // is fighting right now (.professional, day -1).
+        let sessions = [
+            imSession(scenario: .workUpdate, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .workUpdate, targetTone: .warm, actualTone: "cold", daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "sloppy", daysOffset: -1)
+        ]
+        let rec = IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .workUpdate)
+        #expect(rec?.tone == .professional)
+    }
+
+    @Test func ignoresRepsWithoutActualTone() {
+        // A rep with no `actualTone` reading is missing data, not a miss.
+        // Two misses + one nil-tone rep → only 2 evaluated → below the
+        // minimum → nil. (Confirms the gate counts evaluated reps, not
+        // raw reps.)
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: nil, daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .difficultConversation) == nil)
+    }
+
+    @Test func ignoresCrossScenarioReps() {
+        // Only the requested scenario's reps feed the gate. A wall of
+        // missed Networking reps must not trigger a Difficult
+        // Conversation drill.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .difficultConversation) == nil)
+        // ...but the Networking scenario itself, read on its own, recommends.
+        #expect(IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .networking)?.tone == .confident)
+    }
+
+    @Test func ignoresNonIMSessions() {
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -1),
+            PracticeSession(
+                transcript: "timed",
+                fillerWordCount: 0,
+                duration: 30,
+                date: baseDate,
+                mode: .timed,
+                score: 9
+            )
+        ]
+        let rec = IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .difficultConversation)
+        #expect(rec?.evaluatedCount == 3)
+        #expect(rec?.tone == .calm)
+    }
+
+    @Test func rateMatchesToneMatchStats() {
+        // The prescription and the strip it's based on read off one
+        // source of truth — assert the rate/counts agree exactly.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1)
+        ]
+        let stats = IMHistorySummary.toneMatchStats(from: sessions, scenario: .networking)
+        let rec = IMHistorySummary.toneDrillRecommendation(from: sessions, scenario: .networking)
+        #expect(rec?.evaluatedCount == stats.evaluatedCount)
+        #expect(rec?.matchCount == stats.matchCount)
+        #expect(rec?.matchRate == stats.matchRate)
+    }
+
+    // MARK: - Copy contract
+
+    private func recommendation(matchCount: Int) -> IMHistorySummary.IMScenarioToneDrillRecommendation {
+        IMHistorySummary.IMScenarioToneDrillRecommendation(
+            scenario: .difficultConversation,
+            tone: .calm,
+            evaluatedCount: 5,
+            matchCount: matchCount,
+            matchRate: 0.2
+        )
+    }
+
+    @Test func copyHasNoExclamations() {
+        // Brand-voice contract: a coach prescribing a drill never shouts.
+        for count in 0...5 {
+            let rec = recommendation(matchCount: count)
+            #expect(!rec.headline.contains("!"))
+            #expect(!rec.body.contains("!"))
+            #expect(!rec.ctaLabel.contains("!"))
+        }
+    }
+
+    @Test func copyHasNoPunishShameLanguage() {
+        // Vision tone rule: frame the gap as an opportunity, never a
+        // failure. The body states the count as data, not a verdict.
+        let banned = ["failure", "failed", "bad", "poor", "terrible", "weak", "worst"]
+        for count in 0...5 {
+            let rec = recommendation(matchCount: count)
+            let lowered = (rec.headline + " " + rec.body + " " + rec.ctaLabel).lowercased()
+            for word in banned {
+                #expect(!lowered.contains(word))
+            }
+        }
+    }
+
+    @Test func copyNamesTheTone() {
+        let rec = recommendation(matchCount: 1)
+        #expect(rec.headline.contains("Calm"))
+        #expect(rec.body.contains("Calm"))
+        #expect(rec.ctaLabel.contains("Calm"))
+        #expect(rec.ctaLabel == "Drill Calm tone")
+    }
+
+    @Test func matchPhraseVariantsReadNaturally() {
+        // The body's count phrase reads warmly across the small-integer
+        // range a coach actually sees.
+        #expect(recommendation(matchCount: 0).body.contains("haven't matched it yet"))
+        #expect(recommendation(matchCount: 1).body.contains("matched it once"))
+        #expect(recommendation(matchCount: 2).body.contains("matched it twice"))
+        #expect(recommendation(matchCount: 4).body.contains("matched it 4 times"))
+    }
+}
