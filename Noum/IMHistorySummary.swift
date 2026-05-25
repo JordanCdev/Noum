@@ -401,4 +401,125 @@ enum IMHistorySummary {
             windowSize: window
         )
     }
+
+    // MARK: - Per-scenario tone-drill recommendation (diagnose → prescribe)
+    //
+    // The tone-match strip *diagnoses* — it tells the user how often
+    // their delivery landed the tone they aimed for in this scenario.
+    // This helper closes the next stage of the coaching loop
+    // (docs/VISION.md: diagnose → formulate → prescribe): when the
+    // user has a credible track record of missing a tone in a scenario,
+    // it prescribes one focused rep at the exact tone they keep missing.
+    //
+    // The recommendation is intentionally evidence-gated, mirroring the
+    // vision's rule that "every recommendation must have evidence, an
+    // observable target, and an honest evidence threshold":
+    //   • at least `toneDrillMinimumReps` (3) reps recorded an
+    //     `actualTone` reading — fewer can't establish a pattern, only
+    //     a single bad rep, and a coach doesn't prescribe off one rep
+    //   • the match rate is below `toneDrillMatchRateCeiling` (40%) —
+    //     above that the user is already landing it more than they miss
+    //     it, so nudging a drill would be nagging, not coaching
+    //
+    // The prescribed tone is the one the user *aimed for and missed
+    // most often* in this scenario (tie-break by the most-recent miss
+    // so it tracks what they're fighting right now), not a generic
+    // scenario default — the coach drills the specific gap, not a guess.
+    //
+    // Returns `nil` whenever the evidence bar isn't met, so the
+    // surface self-hides rather than manufacturing a prescription —
+    // the same honest-data contract as every other helper here.
+    struct IMScenarioToneDrillRecommendation: Equatable {
+        let scenario: IMConversationScenario
+        /// The tone to drill — the one aimed for and missed most often.
+        let tone: IMTargetTone
+        let evaluatedCount: Int
+        let matchCount: Int
+        /// 0…1 fraction, rounded to two decimals — the same value the
+        /// tone-match strip displays, so the prescription and the read
+        /// it's based on can never disagree.
+        let matchRate: Double
+
+        /// Opportunity-framed headline. Names the next edge, never a
+        /// weakness — vision tone rule: frame the gap as an
+        /// opportunity, not a failure.
+        var headline: String {
+            "Your \(tone.title) tone is the opportunity here"
+        }
+
+        /// States the evidence, then prescribes one focused rep. The
+        /// count is data, not a verdict — no punish-shame language.
+        var body: String {
+            "You aimed for a \(tone.title) tone across \(evaluatedCount) recent \(scenario.title) reps and \(matchPhrase). Run it back with \(tone.title) as the one thing to nail."
+        }
+
+        var ctaLabel: String {
+            "Drill \(tone.title) tone"
+        }
+
+        private var matchPhrase: String {
+            switch matchCount {
+            case 0: return "haven't matched it yet"
+            case 1: return "matched it once"
+            case 2: return "matched it twice"
+            default: return "matched it \(matchCount) times"
+            }
+        }
+    }
+
+    /// Minimum number of tone-evaluated reps before a tone-drill can be
+    /// recommended. Shared with the test suite so the threshold is
+    /// asserted, not guessed.
+    static let toneDrillMinimumReps = 3
+
+    /// Match rate (0…1) at or above which no drill is recommended — the
+    /// user is already landing the tone more than they miss it.
+    static let toneDrillMatchRateCeiling = 0.40
+
+    static func toneDrillRecommendation(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> IMScenarioToneDrillRecommendation? {
+        // Reuse the diagnostic helper so the prescription and the
+        // visible strip read off one source of truth for the rate.
+        let stats = toneMatchStats(from: sessions, scenario: scenario)
+        guard stats.evaluatedCount >= toneDrillMinimumReps,
+              let rate = stats.matchRate,
+              rate < toneDrillMatchRateCeiling else { return nil }
+
+        // Per-rep tones the user aimed for and missed — same filter +
+        // matcher the strip uses, so a "miss" here means exactly what a
+        // non-matched chip means there.
+        let missed: [(tone: IMTargetTone, date: Date)] = sessions.compactMap { session in
+            guard session.mode == .imConversation,
+                  let details = session.imConversationDetails,
+                  details.setup.scenario == scenario,
+                  let actual = details.actualTone,
+                  !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !matches(targetTone: details.setup.targetTone, actualTone: actual)
+            else { return nil }
+            return (details.setup.targetTone, session.date)
+        }
+        guard !missed.isEmpty else { return nil }
+
+        // Modal missed tone; tie-break by the most-recent miss, then by
+        // rawValue so the pick is fully deterministic on a perfect tie.
+        let grouped = Dictionary(grouping: missed, by: { $0.tone })
+        let pick = grouped.max { lhs, rhs in
+            if lhs.value.count != rhs.value.count { return lhs.value.count < rhs.value.count }
+            let lhsLatest = lhs.value.map(\.date).max() ?? .distantPast
+            let rhsLatest = rhs.value.map(\.date).max() ?? .distantPast
+            if lhsLatest != rhsLatest { return lhsLatest < rhsLatest }
+            return lhs.key.rawValue > rhs.key.rawValue
+        }
+        guard let tone = pick?.key else { return nil }
+
+        return IMScenarioToneDrillRecommendation(
+            scenario: scenario,
+            tone: tone,
+            evaluatedCount: stats.evaluatedCount,
+            matchCount: stats.matchCount,
+            matchRate: rate
+        )
+    }
 }
