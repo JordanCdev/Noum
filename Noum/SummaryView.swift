@@ -326,7 +326,15 @@ struct SummaryView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
+            // Lets the post-session "Looking ahead" read name the exact
+            // tone-drill the engine surfaces elsewhere: after a non-IM
+            // rep it points the user at the scenario whose committed
+            // tone keeps missing, in their own observed numbers. Guarded
+            // on availability so an offline IM mode never gets suggested.
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
     }
 
