@@ -282,13 +282,13 @@ enum IMHistorySummary {
                 else { return nil }
                 return (session, details.setup.targetTone, actual)
             }
-        let matches = evaluated.map { matches(targetTone: $0.target, actualTone: $0.actual) }
-        let matchCount = matches.filter { $0 }.count
+        let toneMatches = evaluated.map { matches(targetTone: $0.target, actualTone: $0.actual) }
+        let matchCount = toneMatches.filter { $0 }.count
         let matchRate: Double? = evaluated.isEmpty
             ? nil
             : (Double(matchCount) / Double(evaluated.count) * 100).rounded() / 100
 
-        let recent = zip(evaluated, matches)
+        let recent = zip(evaluated, toneMatches)
             .sorted { $0.0.session.date > $1.0.session.date }
             .prefix(5)
             .map { pair in

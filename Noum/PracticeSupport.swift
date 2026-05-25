@@ -6017,13 +6017,153 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
     let id: UUID
     let fingerprint: String
     let title: String
+    /// The coaching purpose shown when this mode was prescribed.
+    /// Optional so outcomes persisted before intervention-response
+    /// coaching continue to decode cleanly.
+    let focus: String?
+    let target: String?
     let mode: PracticeMode
     let sessionID: UUID
     let followed: Bool
     let completedAt: Date
     let scoreDelta: Double
+    /// True only when both this rep and earlier reps supplied scores.
+    /// Older outcomes decode as nil and are excluded from score claims.
+    let hasComparableScore: Bool?
     let fillerDelta: Double
     let durationDelta: Double
+}
+
+enum RecommendationResponseAssessment: Equatable {
+    case forming
+    case promising
+    case mixed
+    case needsAdjustment
+
+    var coachingGuidance: String {
+        switch self {
+        case .forming:
+            return "one observation only; treat it as tentative"
+        case .promising:
+            return "associated with improvement so far; continue and verify"
+        case .mixed:
+            return "results are mixed; diagnose before simply repeating it"
+        case .needsAdjustment:
+            return "associated with worse results so far; adapt before repeating it"
+        }
+    }
+}
+
+struct RecommendationResponseSummary: Equatable {
+    let mode: PracticeMode
+    let focus: String?
+    let followedCount: Int
+    let averageScoreDelta: Double?
+    let averageFillerDelta: Double
+    let assessment: RecommendationResponseAssessment
+}
+
+/// Bounded interpretation of the modes Noum prescribed and the user
+/// actually attempted. This is association, not causal attribution:
+/// the user may have faced a harder prompt or a different pressure level.
+enum RecommendationResponseAnalyzer {
+    private struct GroupKey: Hashable {
+        let mode: PracticeMode
+        let focus: String?
+    }
+
+    static func summarize(
+        outcomes: [RecommendationOutcome],
+        limit: Int = 2
+    ) -> [RecommendationResponseSummary] {
+        guard limit > 0 else { return [] }
+        let recentFollowed = outcomes
+            .filter(\.followed)
+            .sorted { $0.completedAt > $1.completedAt }
+            .prefix(12)
+
+        var grouped: [GroupKey: [RecommendationOutcome]] = [:]
+        for outcome in recentFollowed {
+            let focus = normalizedFocus(outcome.focus)
+            grouped[GroupKey(mode: outcome.mode, focus: focus), default: []].append(outcome)
+        }
+
+        return grouped.map { key, groupedOutcomes in
+            let averageFillerDelta = average(groupedOutcomes.map(\.fillerDelta))
+            let comparableScores = groupedOutcomes
+                .filter { $0.hasComparableScore == true }
+                .map(\.scoreDelta)
+            let averageScoreDelta = comparableScores.isEmpty ? nil : average(comparableScores)
+            return RecommendationResponseSummary(
+                mode: key.mode,
+                focus: key.focus,
+                followedCount: groupedOutcomes.count,
+                averageScoreDelta: averageScoreDelta,
+                averageFillerDelta: averageFillerDelta,
+                assessment: assessment(
+                    count: groupedOutcomes.count,
+                    averageScoreDelta: averageScoreDelta,
+                    averageFillerDelta: averageFillerDelta
+                )
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.followedCount != rhs.followedCount {
+                return lhs.followedCount > rhs.followedCount
+            }
+            return lhs.mode.displayLabel < rhs.mode.displayLabel
+        }
+        .prefix(limit)
+        .map { $0 }
+    }
+
+    static func promptLines(from outcomes: [RecommendationOutcome]) -> [String] {
+        summarize(outcomes: outcomes).map { summary in
+            let repNoun = summary.followedCount == 1 ? "rep" : "reps"
+            let focusClause = summary.focus.map { " for \($0)" } ?? ""
+            var metrics: [String] = []
+            if let scoreDelta = summary.averageScoreDelta {
+                metrics.append("score \(signed(scoreDelta))")
+            }
+            metrics.append("fillers \(signed(summary.averageFillerDelta))")
+            return "- \(summary.mode.displayLabel)\(focusClause), followed for \(summary.followedCount) \(repNoun): \(metrics.joined(separator: ", ")) vs preceding reps; \(summary.assessment.coachingGuidance)."
+        }
+    }
+
+    private static func assessment(
+        count: Int,
+        averageScoreDelta: Double?,
+        averageFillerDelta: Double
+    ) -> RecommendationResponseAssessment {
+        guard count >= 2 else { return .forming }
+        let scoreImproved = averageScoreDelta.map { $0 >= 0.5 } ?? false
+        let scoreWorsened = averageScoreDelta.map { $0 <= -0.5 } ?? false
+        let fillersImproved = averageFillerDelta <= -0.75
+        let fillersWorsened = averageFillerDelta >= 0.75
+
+        if (scoreImproved || fillersImproved), !scoreWorsened, !fillersWorsened {
+            return .promising
+        }
+        if (scoreWorsened || fillersWorsened), !scoreImproved, !fillersImproved {
+            return .needsAdjustment
+        }
+        return .mixed
+    }
+
+    private static func normalizedFocus(_ focus: String?) -> String? {
+        guard let trimmed = focus?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(80))
+    }
+
+    private static func average(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func signed(_ value: Double) -> String {
+        String(format: "%+.1f", value)
+    }
 }
 
 @MainActor
@@ -6093,9 +6233,12 @@ final class RecommendationLearningStore: ObservableObject {
         guard let pendingExposure else { return }
 
         let relevantHistory = previousSessions.isEmpty ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id } : previousSessions
-        let averageScore = relevantHistory.compactMap(\.score).isEmpty
-            ? Double(session.score ?? 0)
-            : Double(relevantHistory.compactMap(\.score).reduce(0, +)) / Double(relevantHistory.compactMap(\.score).count)
+        let priorScores = relevantHistory.compactMap(\.score)
+        let comparableScoreDelta: Double? = {
+            guard let score = session.score, !priorScores.isEmpty else { return nil }
+            let averageScore = Double(priorScores.reduce(0, +)) / Double(priorScores.count)
+            return Double(score) - averageScore
+        }()
         let averageFillers = relevantHistory.isEmpty
             ? Double(session.fillerWordCount)
             : Double(relevantHistory.map(\.fillerWordCount).reduce(0, +)) / Double(relevantHistory.count)
@@ -6107,11 +6250,14 @@ final class RecommendationLearningStore: ObservableObject {
             id: UUID(),
             fingerprint: pendingExposure.fingerprint,
             title: pendingExposure.title,
+            focus: pendingExposure.focus,
+            target: pendingExposure.target,
             mode: pendingExposure.mode,
             sessionID: session.id,
             followed: pendingExposure.mode == session.mode,
             completedAt: Date(),
-            scoreDelta: Double(session.score ?? 0) - averageScore,
+            scoreDelta: comparableScoreDelta ?? 0,
+            hasComparableScore: comparableScoreDelta != nil,
             fillerDelta: Double(session.fillerWordCount) - averageFillers,
             durationDelta: session.duration - averageDuration
         )

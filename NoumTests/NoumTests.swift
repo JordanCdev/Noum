@@ -5481,6 +5481,46 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("Last declared rep focus: Make the point land."))
     }
 
+    @Test func userContextSurfacesObservedInterventionResponseWithoutClaimingCausation() {
+        let outcome = RecommendationOutcome(
+            id: UUID(),
+            fingerprint: "timed-structure",
+            title: "Tighten structure",
+            focus: "a clearer close",
+            target: "One decisive final sentence",
+            mode: .timed,
+            sessionID: UUID(),
+            followed: true,
+            completedAt: Date(),
+            scoreDelta: 1.0,
+            hasComparableScore: true,
+            fillerDelta: -1.0,
+            durationDelta: 0
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recommendationOutcomes: [outcome]
+        )
+
+        #expect(ctx.contains("INTERVENTION RESPONSE (association only; never claim causation)"))
+        #expect(ctx.contains("Timed for a clearer close"))
+        #expect(ctx.contains("one observation only; treat it as tentative"))
+    }
+
+    @Test func systemPromptForbidsCausalClaimsFromInterventionResponse() {
+        let prompt = CoachContextBuilder.systemPrompt(for: sampleProfile(voice: .warm))
+        #expect(prompt.contains("observed association"))
+        #expect(prompt.contains("never proof that a drill caused an outcome"))
+        #expect(prompt.contains("do not prescribe it again unchanged"))
+    }
+
     // MARK: - Starter prompts
 
     @Test func starterPromptsAreVoiceSpecific() {
@@ -9592,6 +9632,113 @@ struct PrimaryFocusMemoryTests {
     }
 }
 
+@Suite("RecommendationResponseAnalyzerTests")
+struct RecommendationResponseAnalyzerTests {
+
+    @Test func ignoresRecommendationsTheUserDidNotFollow() {
+        let summaries = RecommendationResponseAnalyzer.summarize(outcomes: [
+            outcome(mode: .timed, followed: false, scoreDelta: -2, hasComparableScore: true, fillerDelta: 3)
+        ])
+
+        #expect(summaries.isEmpty)
+        #expect(RecommendationResponseAnalyzer.promptLines(from: []).isEmpty)
+    }
+
+    @Test func oneFollowedRepIsTentativeAndUnmeasuredScoreIsNotQuoted() {
+        let lines = RecommendationResponseAnalyzer.promptLines(from: [
+            outcome(mode: .timed, focus: "clearer close", scoreDelta: 0, hasComparableScore: false, fillerDelta: -2)
+        ])
+
+        #expect(lines.count == 1)
+        #expect(lines[0].contains("Timed for clearer close"))
+        #expect(!lines[0].contains("score"))
+        #expect(lines[0].contains("fillers -2.0"))
+        #expect(lines[0].contains("one observation only; treat it as tentative"))
+    }
+
+    @Test func repeatedMeasuredImprovementShowsPromise() {
+        let summaries = RecommendationResponseAnalyzer.summarize(outcomes: [
+            outcome(mode: .ahCounter, scoreDelta: 1, hasComparableScore: true, fillerDelta: -2),
+            outcome(mode: .ahCounter, scoreDelta: 0.5, hasComparableScore: true, fillerDelta: -1)
+        ])
+
+        #expect(summaries.first?.assessment == .promising)
+        #expect(summaries.first?.averageScoreDelta == 0.75)
+        #expect(summaries.first?.averageFillerDelta == -1.5)
+    }
+
+    @Test func repeatedRegressionAsksCoachToAdapt() {
+        let lines = RecommendationResponseAnalyzer.promptLines(from: [
+            outcome(mode: .suddenDeath, scoreDelta: -1, hasComparableScore: true, fillerDelta: 2),
+            outcome(mode: .suddenDeath, scoreDelta: -2, hasComparableScore: true, fillerDelta: 1)
+        ])
+
+        #expect(lines[0].contains("score -1.5"))
+        #expect(lines[0].contains("fillers +1.5"))
+        #expect(lines[0].contains("adapt before repeating it"))
+    }
+
+    @Test func newOptionalEvidenceFieldsDecodeOlderOutcomeRecords() throws {
+        struct LegacyOutcome: Codable {
+            let id: UUID
+            let fingerprint: String
+            let title: String
+            let mode: PracticeMode
+            let sessionID: UUID
+            let followed: Bool
+            let completedAt: Date
+            let scoreDelta: Double
+            let fillerDelta: Double
+            let durationDelta: Double
+        }
+        let legacy = LegacyOutcome(
+            id: UUID(),
+            fingerprint: "legacy",
+            title: "Legacy recommendation",
+            mode: .timed,
+            sessionID: UUID(),
+            followed: true,
+            completedAt: Date(timeIntervalSince1970: 1_000),
+            scoreDelta: 2,
+            fillerDelta: -1,
+            durationDelta: 2
+        )
+        let decoded = try JSONDecoder().decode(
+            RecommendationOutcome.self,
+            from: JSONEncoder().encode(legacy)
+        )
+
+        #expect(decoded.focus == nil)
+        #expect(decoded.target == nil)
+        #expect(decoded.hasComparableScore == nil)
+    }
+
+    private func outcome(
+        mode: PracticeMode,
+        focus: String? = nil,
+        followed: Bool = true,
+        scoreDelta: Double,
+        hasComparableScore: Bool,
+        fillerDelta: Double
+    ) -> RecommendationOutcome {
+        RecommendationOutcome(
+            id: UUID(),
+            fingerprint: "\(mode.rawValue)-test",
+            title: "Test prescription",
+            focus: focus,
+            target: nil,
+            mode: mode,
+            sessionID: UUID(),
+            followed: followed,
+            completedAt: Date(),
+            scoreDelta: scoreDelta,
+            hasComparableScore: hasComparableScore,
+            fillerDelta: fillerDelta,
+            durationDelta: 0
+        )
+    }
+}
+
 @Suite("CoachMemoryEngineTests")
 struct CoachMemoryEngineTests {
 
@@ -13315,7 +13462,6 @@ struct M25PersonalizationVoicePromptTests {
 // picker. Pure functions; no UI under test. Date math is built around
 // a fixed `now` so the tests don't drift with the wall clock.
 
-@available(iOS 17.0, *)
 struct TimedHistorySummaryBestThisWeekTests {
 
     private let now: Date = {
@@ -13383,7 +13529,6 @@ struct TimedHistorySummaryBestThisWeekTests {
     }
 }
 
-@available(iOS 17.0, *)
 struct AhCounterHistorySummaryThisWeekTests {
 
     private let now: Date = {
@@ -13440,7 +13585,6 @@ struct AhCounterHistorySummaryThisWeekTests {
     }
 }
 
-@available(iOS 17.0, *)
 struct SuddenDeathBestThisWeekTests {
 
     private let now: Date = {
@@ -13509,7 +13653,6 @@ struct SuddenDeathBestThisWeekTests {
     }
 }
 
-@available(iOS 17.0, *)
 struct IMBestThisWeekTests {
 
     private let now: Date = {
@@ -13589,7 +13732,6 @@ struct IMBestThisWeekTests {
     }
 }
 
-@available(iOS 17.0, *)
 struct IMHistoryExportTests {
 
     private func session(
@@ -13705,7 +13847,6 @@ struct IMHistoryExportTests {
 // of `inZoneRepCount / runCount`. The view itself isn't unit-tested
 // (SwiftUI rendering), but the underlying ratio + range constants are.
 
-@available(iOS 17.0, *)
 struct TimedHistoryZoneBandContractTests {
 
     @Test func zoneRangeConstantsLockedToWPMEvaluatorTimedBand() {
@@ -13750,7 +13891,6 @@ struct TimedHistoryZoneBandContractTests {
 // view itself is SwiftUI and not unit-tested; the helpers below carry
 // the math + filter contracts the view depends on.
 
-@available(iOS 17.0, *)
 struct IMScenarioTracePointsTests {
 
     private let baseDate: Date = {
@@ -13866,7 +14006,6 @@ struct IMScenarioTracePointsTests {
     }
 }
 
-@available(iOS 17.0, *)
 struct IMScenarioToneMatchStatsTests {
 
     private let baseDate: Date = {

@@ -7,6 +7,19 @@ Success means a user can look back after weeks of use and feel — and see —
 that they speak more clearly, with fewer fillers, and hold composure better
 in hard conversations.
 
+The destination is not an AI-assisted practice app. Noum exists to make the
+quality of an excellent personal communication and public-speaking coach
+accessible without requiring private-coaching prices or availability. The
+product target is parity with the repeatable, evidence-led work a human coach
+does: diagnose the individual, remember what matters, prescribe deliberate
+practice, observe response, revise the plan, and prepare the user for real
+moments where their communication matters.
+
+Noum must earn that claim. It may pursue human-coach replacement as the
+product ambition, but it must never imply parity from an LLM response, a
+single rep, or a feature checklist. Parity means durable user outcomes and
+coaching judgment that can be demonstrated over time.
+
 ## Product pillars
 
 1. **Filler-word reduction** — detect, distinguish semantic vs filler use,
@@ -17,6 +30,8 @@ in hard conversations.
 4. **Believable progress** — visible improvement across sessions, no fake
    gamification.
 5. **Personalized coaching** — adapts to the user's actual patterns over time.
+6. **Real-world transfer** — prepares for and learns from interviews,
+   presentations, conflict, leadership moments, and daily conversations.
 
 ## Honest assessment — where we are vs where we need to be
 
@@ -50,11 +65,33 @@ addressed in app code:
   capture is supplemented by post-rep AI debriefs (`AIInsightsService`)
   so the coach voice has a continuous read on what's changing.
 
-Where the product is now **underweight**:
+Where the product is now **underweight** for coach parity:
 
-- **Speech metrics stop at fillers + pace.** Pause length and word-
-  choice variety are the next-most-differentiating signals, and both
-  are partially scaffolded but not yet first-class session metrics.
+- **The coaching case is incomplete.** Durable memory, proof moments, trend
+  reads, forward plans, and observed response to followed recommendations
+  provide a meaningful base. They are not yet one explicit, revisable case
+  formulation with hypothesis, intervention, success criterion, review
+  cadence, and reason for changing course.
+- **Delivery sensing is not deep enough.** Fillers, pace, pauses, word choice,
+  rhetorical devices, and scenario state are useful signals, but professional
+  coaching also needs reliable prosody/intonation, pitch range, emphasis,
+  breathing, vocal energy, authority, tension, composure, structure, and
+  eventually opt-in presence signals.
+- **The user's inner experience is not yet deeply captured.** A human coach
+  asks what felt difficult, where confidence changed, what the user avoided,
+  what nerves did to their delivery, and whether a technically polished answer
+  actually felt like them. Noum needs brief reflective check-ins that become
+  durable context only with the user's participation.
+- **Deeper patterns remain hypotheses, not a coaching record.** The product
+  must be able to explore overexplaining, fear of disagreement, lack of
+  conviction, defensiveness, weak executive presence, timidity, evasion, or
+  emotional disconnection, while never labelling the user from telemetry or
+  a single AI reading.
+- **Transfer outside practice is barely measured.** A coach is valuable
+  because the interview, board update, pitch, difficult conversation,
+  networking meeting, date, leadership conversation, or speech goes better.
+  Noum needs outcome check-ins tied to real moments, including the user's read
+  of audience reaction, not only better in-app repetitions.
 - **Goal capture used to be a write-once event** — now goals shape
   every surface in the M14 coaching loop, including drill *selection*
   (a small `+10` priority bonus on goal-aligned trends inside
@@ -71,9 +108,9 @@ Where the product is now **underweight**:
   fillers + sustained duration, etc. Restraint matches the copy
   enrichments: 0 when no goal, 0 when delivery doesn't fit (no
   double-penalty layered on top of the existing dimension weights).
-  Score, copy, and drill are all goal-aware end-to-end.
-- **Daily-challenge tile is a single rolling status**, not a true
-  daily reset rhythm with claim moments and expiry pressure.
+  Score, copy, and drill are all goal-aware end-to-end. The next standard is
+  intervention-aware: did that prescribed work help this specific user's
+  stated goal, and what should the coach change next?
 - **Real-device QA gaps:** Live Activity can't be exercised on
   simulator, and `NoumWatch` is detached from the iOS scheme until
   the watchOS 26.2 simulator runtime is installed locally.
@@ -94,9 +131,72 @@ rather than two parallel tracks. The eloquence engine surfaces eleven
 rhetorical devices in the summary card + a brief in-session HUD, and
 awards XP per detection.
 
+The coach-memory track now includes durable working memory and bounded
+response-to-recommendation evidence for Ask Noum and AI-generated forward
+plans. That is the beginning of an adaptive coaching relationship, not the
+finish: Noum can observe that a prescribed mode is associated with progress
+or regression, but it does not yet maintain a complete coaching case or
+prove transfer into the user's real-world moments.
+
+## Coach-parity standard
+
+Noum is on-par with a strong human coach only when it can repeatedly deliver
+all of the following for an individual user:
+
+1. **Diagnosis** — establish a credible baseline and identify the user's
+   high-leverage communication pattern without overclaiming thin evidence.
+2. **Case formulation** — retain a concise, revisable understanding of the
+   user's goal, blockers, strengths, pressure triggers, subjective experience,
+   confidence and avoidance patterns, and upcoming moments. Deeper personal
+   patterns must be treated as hypotheses the user can confirm or reject.
+3. **Intervention** — prescribe a drill for a reason, name the observable
+   target, and define what improvement would look like before the user starts.
+4. **Adaptation** — compare response across multiple attempts and either
+   reinforce, vary, or replace the intervention with an explained rationale.
+5. **Perception** — assess not only words and fillers but vocal variety,
+   intonation, breathing, energy, pitch range, authority, tension, structure,
+   composure, and, when explicitly enabled, posture, eye contact, and visual
+   presence. It must help distinguish clear communication from speech that is
+   merely polished, evasive, timid, over-rehearsed, or emotionally detached.
+6. **Transfer** — connect training to real conversations, presentations,
+   interviews, pitches, conflict, leadership, dating, and networking, then
+   collect honest outcome/reflection and perceived audience-response evidence
+   after the event.
+7. **Validation** — demonstrate that recommendations and feedback are as
+   useful and trustworthy as professional-coach judgment on representative
+   sessions and longitudinal user outcomes.
+
+### Development instructions
+
+- Every coaching feature must strengthen at least one stage of the loop:
+  diagnose → formulate → prescribe → observe → adapt → transfer.
+- Prefer extending existing state owners (`CoachingProfileStore`,
+  `CoachMemoryStore`, `RecommendationLearningStore`, session history, and
+  forward-plan stores) over adding disconnected AI surfaces.
+- A generated reply is not personalization by itself. Coaching context that
+  matters over time must persist, be bounded, be inspectable, and be tested.
+- Every recommendation must have evidence, purpose, an observable target,
+  and an honest evidence threshold for changing the plan.
+- An intervention cycle must invite short reflection at the right moments:
+  what felt difficult, how confident the user felt, what they avoided, what
+  real situation is approaching, and what changed outside the app.
+- Inferred psychological or interpersonal patterns must be framed as coach
+  hypotheses, never facts or diagnoses; ask the user before persisting or
+  strengthening them.
+- Weak evidence must produce tentative language; repeated evidence can
+  strengthen intervention; association must never be described as causation.
+- Engagement, vocabulary, social, or cosmetic features must not displace
+  work that closes a coach-parity gap unless they are needed to ship or retain
+  enough usage to measure real improvement.
+
 ## Next milestone
 
 **Name:** _M14 — Open the loop: deploy Firestore rules + host privacy URL + ship to TestFlight._
+
+M14 is a launch gate, not a change in ambition. Shipping a stable build is
+necessary so the coach-parity work can be tested with real people, real
+practice history, and real upcoming moments; it does not mean the product is
+already equivalent to a professional coach.
 
 (M13 _UI localisation v1_ shipped: bundled `Localizable.xcstrings`
 catalog with curated Spanish + French translations for ~30 high-
@@ -147,94 +247,45 @@ existing build needs to be QA'd on real hardware before TestFlight.
 - New features. Engineering goal is to *stop adding* and *start
   shipping*.
 
-## Future milestones (rough order)
+## Strategic roadmap after M14
 
-(M14 — Open the loop — is the active "Next milestone" above.)
+M14 is the active operational milestone. After a stable TestFlight build,
+coach-parity work takes priority over optional retention and expansion
+features.
 
-(M12 _Multilingual v1_ shipped: `PracticeLocale` enum (en-US, es-ES,
-fr-FR) with BCP-47 codes, display names, and short labels.
-`LocaleSettingsManager` is a per-account `@MainActor` singleton with
-UserDefaults persistence keyed `noum.practiceLocale.<accountID>`.
-`FillerLexicon` carries per-locale filler-word sets — en-US matches
-the legacy `baseFillerWords` set so pre-M12 behavior is preserved.
-`FillerWordDetector.regexes(for:)` caches a built `RegexBundle` per
-locale via `NSCache`. `PracticeTopics` ships a curated Spanish and
-French pool (~24 prompts each across all 8 themes); `random()` and
-`prompts(for:)` honor the active locale automatically. The shuffle-
-deck dedup is keyed per (theme, locale) so switching languages
-doesn't reset progress through whichever pool the user was working
-through. `PracticeTopics.seeded(by:)` always reads English so async-
-challenge fairness is preserved across locales. `SpeechRecognizerView-
-Model` reads the active locale at session start and passes it through
-`TranscriptionConfig.languageCode`. `AWSTranscribeProvider` maps
-"en-US"/"es-ES"/"fr-FR" to the corresponding `LanguageCode` enum
-case; Deepgram and Google already pass the string through.
-`PracticeLocalePickerSheet` is the user-facing picker, reachable
-from Settings → "Practice language".)
+1. **Coaching case file + intervention cycle.** Turn existing profile,
+   memory, forward-plan, proof-moment, and recommendation-response data into
+   one durable coaching record: active hypothesis, chosen intervention,
+   observable target, success measure, evidence depth, review date, response,
+   reflection check-ins (difficulty, nerves, confidence, avoidance, and
+   off-app change), and next adjustment. Surface it coherently in Ask Noum,
+   post-rep feedback, and the next-practice recommendation.
+2. **Delivery intelligence.** Make pause quality, prosody/intonation,
+   pitch range, breathing, emphasis, vocal energy, authority/tension,
+   structure, confidence markers, and word-choice precision reliable session
+   evidence. Coach for the difference between clarity and over-polish,
+   avoidance, timidity, or emotional distance, with conservative thresholds
+   and user-visible explanations of what can and cannot be inferred.
+3. **Real-moment preparation and transfer.** Expand Big Moment into an
+   outcome loop: pre-event rehearsal plan, relevant scenario simulation,
+   post-event reflection/outcome capture, and a coach update based on what
+   happened outside the app, including the user's account of audience or
+   counterpart reaction across presentations, interviews, leadership,
+   pitches, conflict, networking, and personal conversations.
+4. **Presence coaching with consent.** Add opt-in visual and nonverbal reads
+   only once audio/text coaching is trustworthy: eye contact, posture,
+   gesture, facial energy, and camera rehearsal, with clear privacy controls,
+   no hidden analysis, and no claim that visual cues reveal inner motives.
+5. **Human-coach calibration.** Build a blinded evaluation set and
+   longitudinal pilot in which professional coaches rate diagnosis,
+   usefulness, fairness, drill choice, and adaptation. Do not market
+   replacement/parity until Noum can meet an explicit benchmark.
 
-**Honest gaps remaining for M12:**
-- All in-app coaching copy (summary cards, profile, settings, AI
-  feedback) stays English by design — only practice surfaces switch.
-  UI localisation is M13.
-- Grammar polish service still runs en-US-only when the user
-  practices in es-ES or fr-FR. Skip rules in `GrammarFeedbackService`
-  could gate this; not yet in scope.
-- Spanish + French pools ship at ~24 prompts each. Smaller than the
-  English 200+. Growing them is a copy job, not a code change.
-
-**Why this next:** with practice locales in place, native-speaker
-users still see English in Settings, Profile, Summary. UI
-localisation removes the last "this is an English app" friction
-point and is a copy-only effort against the existing surfaces.
-
-**Definition of done:**
-- `Localizable.strings` files for Spanish + French covering Settings,
-  Summary card headlines, Profile section labels.
-- AI prompts and grammar polish opt-in for non-English locales.
-- All hardcoded English strings in user-facing views move into
-  string catalogs.
-
-**Out of scope for this milestone:**
-- Right-to-left languages (Arabic / Hebrew) — separate effort.
-
-## Future milestones (rough order)
-
-1. **High-score & rivalry surface — peak-rating wall.** A "Best in
-   week", "Best ever", "Best in your friends" surface that creates the
-   loss-aversion / chase loop without faking ranks. Tied to the league
-   from M2. — _Why: completes the pull loop with public proof
-   of progress._
-2. **AI-driven topic prompts — recurrence-aware.** Pull from the
-   200-prompt pool 70% of the time, generate fresh ones via
-   `AINPCChatService` 30% of the time, biased by the user's goal,
-   weakest pattern, and recent prompt history (no repeats inside 14
-   days). — _Why: prompt staleness is a quiet retention killer once
-   users have seen the pool 2–3 times._
-3. **Daily-challenge rhythm v1.** Replace the single rolling tile with
-   a real daily reset (claim moment, expiry pressure, rotating set of
-   3 quick challenges). Feeds the league tier check at the same time. —
-   _Why: the current tile drives some pull but not the daily-open
-   rhythm a fully gamified coach can._
-5. **Word of the day — vocabulary stretch.** One curated word per day
-   tied to a 30s prompt that asks the user to use it naturally. Track
-   "used / not used" automatically. — _Why: small daily commitment
-   point that's distinct from "do a rep", giving lapsed users a tiny
-   reason to open the app even when they don't have time for a full
-   session._
-6. **Pitch / intonation v1.** Add a pitch track to the audio pipeline
-   (likely on-device DSP, `Accelerate` framework). Score monotone vs
-   varied delivery. Render alongside pace. — _Why: the missing third
-   leg of "how it sounds when you speak", and the most differentiating
-   metric vs. competitors who only count fillers._
-7. **Grammar / English-usage v1.** Light grammar feedback (subject-verb
-   agreement, run-on sentences, redundant phrasing) on the post-session
-   transcript. Probably an LLM pass with caching. — _Why: requested
-   feature; lower priority because it touches polish rather than core
-   skill, and risks feeling pedantic._
-8. **Multilingual v1 — start with Spanish, French, German.** Provider
-    locale becomes user-selectable; filler-word lexicon and prompt
-    pool ship per locale. — _Why: market expansion; not core to the
-    product story but a reasonable late-roadmap move._
+**Secondary backlog after parity-critical work:** recurrence-aware prompt
+variety, vocabulary stretch/Word of the Day as an optional user-led tool,
+additional rivalry surfaces, expanded localisation, and broader languages.
+These may support access or retention, but they are not substitutes for a
+coach who knows what the user needs and adjusts accordingly.
 
 ## Anti-goals
 

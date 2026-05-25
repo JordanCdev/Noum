@@ -78,6 +78,8 @@ enum CoachContextBuilder {
            category. Do not restate the moment — use it as gravity. A \
            board pitch in 6 days gets a different drill than a job \
            interview in 30 days.
+        5. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
+           "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -180,6 +182,8 @@ enum CoachContextBuilder {
     ///   • STREAK — current streak + reps this week
     ///   • COACH MEMORY — bounded working formulation: evidence depth,
     ///     current lever, goal fit, and one preserve/watch signal.
+    ///   • INTERVENTION RESPONSE — whether previously prescribed modes
+    ///     are associated with improved or worse subsequent reps.
     ///   • RECENT — last 3 sessions: mode, score, fillers, duration
     ///   • PATH — current node title + mission position
     ///   • TRENDS — strengths + persistent blockers
@@ -201,6 +205,7 @@ enum CoachContextBuilder {
         forwardPlan: ForwardPlan? = nil,
         latestRepNote: PostRepCoachNote? = nil,
         coachMemory: CoachMemory? = nil,
+        recommendationOutcomes: [RecommendationOutcome] = [],
         trends: [SkillTrend] = []
     ) -> String {
         var lines: [String] = []
@@ -403,6 +408,13 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("COACH MEMORY")
             lines.append(contentsOf: memoryLines)
+        }
+
+        let interventionLines = RecommendationResponseAnalyzer.promptLines(from: recommendationOutcomes)
+        if !interventionLines.isEmpty {
+            lines.append("")
+            lines.append("INTERVENTION RESPONSE (association only; never claim causation)")
+            lines.append(contentsOf: interventionLines)
         }
 
         // RECENT — last 3 sessions, so the coach can quote actual numbers.

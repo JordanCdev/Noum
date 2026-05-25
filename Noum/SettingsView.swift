@@ -1353,9 +1353,9 @@ struct SettingsView: View {
             }
 
             HStack(spacing: Spacing.xs) {
-                compactStat(title: "Score Δ", value: signedValue(averageScoreDelta))
-                compactStat(title: "Filler Δ", value: signedValue(averageFillerDelta))
-                compactStat(title: "Duration Δ", value: signedSeconds(averageDurationDelta))
+                compactStat(title: "Score Δ", value: averageScoreDelta.map { signedValue($0) } ?? "—")
+                compactStat(title: "Filler Δ", value: averageFillerDelta.map { signedValue($0) } ?? "—")
+                compactStat(title: "Duration Δ", value: averageDurationDelta.map { signedSeconds($0) } ?? "—")
             }
 
             HStack(spacing: Spacing.xs) {
@@ -1461,22 +1461,30 @@ struct SettingsView: View {
         return Double(followedRecommendationCount) / Double(recommendationLearningStore.outcomes.count)
     }
 
-    private var averageScoreDelta: Double {
-        averageMetric(for: \.scoreDelta)
+    private var averageScoreDelta: Double? {
+        let measured = followedOutcomes
+            .filter { $0.hasComparableScore == true }
+            .map(\.scoreDelta)
+        guard !measured.isEmpty else { return nil }
+        return measured.reduce(0, +) / Double(measured.count)
     }
 
-    private var averageFillerDelta: Double {
+    private var averageFillerDelta: Double? {
         averageMetric(for: \.fillerDelta)
     }
 
-    private var averageDurationDelta: Double {
+    private var averageDurationDelta: Double? {
         averageMetric(for: \.durationDelta)
     }
 
-    private func averageMetric(for keyPath: KeyPath<RecommendationOutcome, Double>) -> Double {
-        guard !recommendationLearningStore.outcomes.isEmpty else { return 0 }
-        let values = recommendationLearningStore.outcomes.map { $0[keyPath: keyPath] }
+    private func averageMetric(for keyPath: KeyPath<RecommendationOutcome, Double>) -> Double? {
+        guard !followedOutcomes.isEmpty else { return nil }
+        let values = followedOutcomes.map { $0[keyPath: keyPath] }
         return values.reduce(0, +) / Double(values.count)
+    }
+
+    private var followedOutcomes: [RecommendationOutcome] {
+        recommendationLearningStore.outcomes.filter(\.followed)
     }
 
     private func signedValue(_ value: Double) -> String {

@@ -28,6 +28,36 @@ struct ForwardPlanInput {
     let bigMomentDaysUntil: Int?
     let trends: [SkillTrend]
     let recentDrills: [DrillHistoryStore.Entry]
+    /// Recorded response to earlier prescribed modes. Raw ownership
+    /// remains in RecommendationLearningStore; the planner receives a
+    /// snapshot so an AI-created plan can adjust instead of repeating.
+    let recommendationOutcomes: [RecommendationOutcome]
+
+    init(
+        profile: CoachingProfile?,
+        baseline: CommunicationBaseline,
+        sessions: [PracticeSession],
+        weeklyDelta: Int,
+        weeklyReps: Int,
+        currentStreak: Int,
+        bigMoment: BigMoment?,
+        bigMomentDaysUntil: Int?,
+        trends: [SkillTrend],
+        recentDrills: [DrillHistoryStore.Entry],
+        recommendationOutcomes: [RecommendationOutcome] = []
+    ) {
+        self.profile = profile
+        self.baseline = baseline
+        self.sessions = sessions
+        self.weeklyDelta = weeklyDelta
+        self.weeklyReps = weeklyReps
+        self.currentStreak = currentStreak
+        self.bigMoment = bigMoment
+        self.bigMomentDaysUntil = bigMomentDaysUntil
+        self.trends = trends
+        self.recentDrills = recentDrills
+        self.recommendationOutcomes = recommendationOutcomes
+    }
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -395,6 +425,10 @@ actor ForwardPlanService {
         - Week 1 names the weakest area. Week 2 moves toward the user's \
         voice goal. Week 3 introduces pressure. Week 4 mocks the Big \
         Moment when set; consolidation when not.
+        - If OBSERVED RESPONSE says a previously prescribed mode should be \
+        adapted before repeating, do not repeat it unchanged without \
+        explaining a different purpose or adjustment in the rationale. \
+        Observed response is association, not proof of causation.
         - No invented stats. If you don't have a number, don't claim a number.
         """
     }
@@ -467,6 +501,11 @@ actor ForwardPlanService {
         if !recent.isEmpty {
             lines.append("Recent sessions (newest first):")
             lines.append(contentsOf: recent)
+        }
+        let responseLines = RecommendationResponseAnalyzer.promptLines(from: input.recommendationOutcomes)
+        if !responseLines.isEmpty {
+            lines.append("Observed response to earlier prescribed modes (association only):")
+            lines.append(contentsOf: responseLines)
         }
         lines.append("")
         lines.append("Produce exactly 4 weeks.")
