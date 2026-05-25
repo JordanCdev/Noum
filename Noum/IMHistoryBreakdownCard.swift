@@ -17,6 +17,14 @@ import SwiftUI
 // signal as Sudden Death's filler count: it's what actually
 // happened, not narrative.
 //
+// Beneath the stats, a chip row carries the one-glance reads that
+// otherwise live a tap deeper on `IMScenarioDetailView`: the
+// trust/tension *trend* (which way the relational arc moved across
+// reps) and the *tone-match* rate. Both reuse the detail view's pure,
+// already-tested helpers so the list and the drill-down never drift,
+// and both self-hide on insufficient data rather than fabricate a
+// reading.
+//
 // Self-hides when no IM reps with conversation metadata exist
 // (cold start). Mirrors SD + Ah-Counter card pattern: rendering "0
 // reps" on the History screen would just be noise.
@@ -152,38 +160,107 @@ struct IMHistoryBreakdownCard: View {
 
     @ViewBuilder
     private func breakdownRow(_ breakdown: IMScenarioBreakdown) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(breakdown.scenario.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                Text(rowSubtitle(for: breakdown))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                let toneStats = toneMatchStats(for: breakdown.scenario)
-                if toneStats.evaluatedCount > 0 {
-                    toneMatchChip(stats: toneStats)
-                        .padding(.top, 1)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(breakdown.scenario.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(rowSubtitle(for: breakdown))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                Spacer(minLength: 8)
+                statColumn(value: scoreLabel(for: breakdown.averageScore), label: "avg")
+                statColumn(value: stateLabel(for: breakdown.averageFinalTrust), label: "trust")
+                statColumn(value: stateLabel(for: breakdown.averageFinalTension), label: "tension")
+                if isInteractive {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 4)
                 }
             }
-            Spacer(minLength: 8)
-            statColumn(value: scoreLabel(for: breakdown.averageScore), label: "avg")
-            statColumn(value: stateLabel(for: breakdown.averageFinalTrust), label: "trust")
-            statColumn(value: stateLabel(for: breakdown.averageFinalTension), label: "tension")
-            if isInteractive {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
+            chipRow(for: breakdown.scenario)
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: breakdown))
+    }
+
+    /// Read-at-a-glance chip row beneath the row's stats: the
+    /// trust/tension trend chips (the relational arc direction, the
+    /// same read the scenario detail header carries) followed by the
+    /// tone-match chip. It lives on its own full-width line rather than
+    /// crammed into the title column, so up to three small capsules read
+    /// clearly side by side without clipping on narrow devices.
+    /// Self-hides entirely when the scenario has neither a non-flat
+    /// trend (needs ≥4 final-state reps with real movement) nor a
+    /// recorded tone — a cold-start scenario adds no empty strip.
+    @ViewBuilder
+    private func chipRow(for scenario: IMConversationScenario) -> some View {
+        let toneStats = toneMatchStats(for: scenario)
+        let trend = relationalTrend(for: scenario)
+        let showTone = toneStats.evaluatedCount > 0
+        let showTrend = trend?.hasSignal == true
+        if showTrend || showTone {
+            HStack(spacing: 6) {
+                if let trend, trend.hasSignal {
+                    trendChip(label: "Trust", movement: trend.trust, goodWhenUp: true)
+                    trendChip(label: "Tension", movement: trend.tension, goodWhenUp: false)
+                }
+                if showTone {
+                    toneMatchChip(stats: toneStats)
+                }
+            }
+            // The row's combined VoiceOver label already folds in both
+            // the trend and the tone read, so the visual chips are hidden
+            // from VoiceOver to avoid a double read.
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Per-scenario relational trend, read from the same pure helper the
+    /// scenario detail header uses so the list row and the detail view
+    /// never drift on the direction.
+    private func relationalTrend(
+        for scenario: IMConversationScenario
+    ) -> IMHistorySummary.IMScenarioRelationalTrend? {
+        IMHistorySummary.relationalTrend(from: sessions, scenario: scenario)
+    }
+
+    /// One trust/tension trend chip, mirroring `IMScenarioDetailView`'s
+    /// header chips exactly so the two surfaces never read differently.
+    /// Self-hides on a flat metric. The arrow shows the *raw* numeric
+    /// direction; the tint reads the *value judgment* — `goodWhenUp`
+    /// flips the green/amber assignment so trust-up and tension-down both
+    /// read green, the reverse amber. Calm capsule register: an amber
+    /// chip is informative data, not a punish-shame failure state.
+    @ViewBuilder
+    private func trendChip(
+        label: String,
+        movement: IMHistorySummary.IMScenarioRelationalTrend.Movement,
+        goodWhenUp: Bool
+    ) -> some View {
+        if movement != .flat {
+            let isUp = movement == .up
+            let isGood = (isUp == goodWhenUp)
+            let tint = isGood ? AppColor.positive : AppColor.caution
+            HStack(spacing: 4) {
+                Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
+                    .font(.caption2.weight(.bold))
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.12), in: Capsule())
+        }
     }
 
     /// Per-scenario tone-match stats, read from the same pure helper the
@@ -263,11 +340,34 @@ struct IMHistoryBreakdownCard: View {
         let scoreCopy = breakdown.averageScore.map { String(format: "average score %.1f", $0) } ?? "no score yet"
         let trustCopy = breakdown.averageFinalTrust.map { String(format: "trust %.1f", $0) } ?? "no trust reading"
         let tensionCopy = breakdown.averageFinalTension.map { String(format: "tension %.1f", $0) } ?? "no tension reading"
+        let trendCopy = relationalTrendCopy(for: breakdown.scenario)
         let toneStats = toneMatchStats(for: breakdown.scenario)
         let toneCopy = toneStats.evaluatedCount > 0
             ? ", tone matched \(toneStats.matchCount) of \(toneStats.evaluatedCount) reps"
             : ""
-        return "\(breakdown.scenario.title): \(runCopy), \(scoreCopy), \(trustCopy), \(tensionCopy)\(toneCopy)"
+        return "\(breakdown.scenario.title): \(runCopy), \(scoreCopy), \(trustCopy), \(tensionCopy)\(trendCopy)\(toneCopy)"
+    }
+
+    /// VoiceOver fragment for the relational trend, folded into the row's
+    /// combined label so the visual trend chips stay
+    /// `accessibilityHidden`. Empty when there's no non-flat signal
+    /// (fewer than 4 final-state reps, or a stable arc) so VoiceOver
+    /// never announces a trend the chips aren't showing.
+    private func relationalTrendCopy(for scenario: IMConversationScenario) -> String {
+        guard let trend = relationalTrend(for: scenario), trend.hasSignal else { return "" }
+        var parts: [String] = []
+        switch trend.trust {
+        case .up: parts.append("trust trending up")
+        case .down: parts.append("trust trending down")
+        case .flat: break
+        }
+        switch trend.tension {
+        case .up: parts.append("tension trending up")
+        case .down: parts.append("tension trending down")
+        case .flat: break
+        }
+        guard !parts.isEmpty else { return "" }
+        return ", " + parts.joined(separator: " and ")
     }
 
     // MARK: - Background

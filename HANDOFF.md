@@ -1,15 +1,18 @@
-# HANDOFF — M24 deferred slate (round 7): per-scenario trust/tension trend chips + tone-match list chip
+# HANDOFF — M24 deferred slate (round 8): trust/tension trend chips on the IM History list row
 
 ## Scope
 
-Round 6 (commit `4513e3d`) closed three of the six items the round-5
-HANDOFF forwarded — all on `IMScenarioDetailView` (trust/tension trace,
-tone-match strip, empty-state CTA). It forwarded an updated priority
-list of six "Future moves". Two of those — items 4 and 5 — are a tight,
-coherent pair: both take a per-scenario signal that is *already
-computed and tested* in `IMHistorySummary` and surface it as a small
-one-glance chip, one rung up the navigation tree from where the full
-read lives. This push closes them together.
+Round 7 (commit `5cd4132`) shipped the per-scenario `relationalTrend`
+pure helper and surfaced it as two directional chips on the
+`IMScenarioDetailView` header, plus a tone-match chip on the
+`IMHistoryBreakdownCard` row. It forwarded six "Future moves" and named
+the top one explicitly: now that `relationalTrend` is a pure, tested
+helper, the IM **History list row** could carry the same directional
+chips the detail header shows — "the list would read the relational arc
+per scenario without a drill-in." It was deferred only to keep the row
+from getting visually crowded, and it asked for "a quick layout QA pass
+to confirm the row still reads at a glance with trend + tone chips
+together." This push closes it.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -18,138 +21,120 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- **#5 — Trust/tension trend chip on `IMScenarioDetailView` header.**
-  The round-6 trace *chart* shows the shape of the relational arc; a
-  user still has to read the curve. Two chips in the summary header
-  ("Trust ↑" / "Tension ↓") carry the read in one glance.
-- **#4 — Tone-match chip on `IMHistoryBreakdownCard`.** The round-6
-  tone-match strip lives one tap *inside* the scenario. A compact
-  "Tone X/Y" chip on the History list row lets the user read the same
-  signal without drilling in.
+- **#5 — Trust/tension trend chips on the `IMHistoryBreakdownCard`
+  row.** Surface the round-7 `relationalTrend` read one rung up the
+  navigation tree, on the IM History list, so the user reads each
+  scenario's relational arc ("Trust ↑ / Tension ↓") without drilling
+  into the scenario.
 
-Both reuse pure helpers that already exist and are already tested
-(`tracePoints`, `toneMatchStats`, `matches`), so the only new logic is
-one pure trend-reduction helper. The remaining four "Future moves"
-(peer SD scores, `coachNoteRevealed` cleanup, rate-limiter live
-refresh, per-scenario drill recommendations) stay deferred for the
-reasons in **Future moves** below.
+The round-7 deferral reason was the only real risk, and it was a
+layout one. **I cannot run the iOS simulator in this environment (no
+Xcode / Swift toolchain on the build host), so I could not do the
+visual QA pass round 7 asked for.** Rather than ship a change that
+*might* crowd and hope it reads, I resolved the crowding **structurally**
+so it cannot clip regardless of device width — see Track 2.
+
+The remaining four "Future moves" stay deferred for the reasons in
+**Future moves** below.
 
 ## What shipped
 
-### Track 1 — Per-scenario relational trend helper (#5 data layer)
+### Track 1 — Trend chips read on the list row (reuse, no new data layer)
 
-New pure helper `IMHistorySummary.relationalTrend(from:scenario:)` in
-`Noum/IMHistorySummary.swift`. It reduces the per-rep trust/tension
-trace into a single directional read by comparing the mean of the
-earliest `window` reps against the mean of the latest `window` reps,
-where `window = min(3, count / 2)`. That bound guarantees the two
-windows **never overlap** (2·window ≤ count for every count), so the
-"first stretch" and the "recent stretch" are genuinely disjoint — no
-rep is double-counted on both sides of the comparison.
+`Noum/IMHistoryBreakdownCard.swift` now reads the existing pure helper
+`IMHistorySummary.relationalTrend(from:scenario:)` per row (new private
+wrap `relationalTrend(for:)`) and renders the same two trend chips the
+scenario detail header carries:
 
-New nested types:
+- `trendChip(label:movement:goodWhenUp:)` — `@ViewBuilder`, a verbatim
+  mirror of the `IMScenarioDetailView` chip so the two surfaces can
+  never read differently. Self-hides on a flat metric. Arrow glyph
+  (`arrow.up.right` / `arrow.down.right`) shows the **raw** numeric
+  direction; tint reads the **value judgment** — `goodWhenUp` flips the
+  green (`AppColor.positive`) / amber (`AppColor.caution`) assignment so
+  trust-up and tension-down both read green, the reverse amber.
+- No new data-layer code. The trend math, the `IMScenarioRelationalTrend`
+  value type, the `0.5` threshold, and the ≥4-rep / non-overlapping-window
+  contracts all landed in round 7 and are already locked by the 10-case
+  `IMScenarioRelationalTrendTests`. This round is the view layer plus an
+  integration test for the list-row gating (Track 3).
 
-- `IMScenarioRelationalTrend` (Equatable): `trust` / `tension` of type
-  `Movement` (`.up` / `.down` / `.flat`), `trustDelta` / `tensionDelta`
-  (latest-window mean − earliest-window mean, rounded to 0.1),
-  `windowSize`, and a `hasSignal` convenience (`true` when at least one
-  metric is non-flat).
-- `Movement` is the **raw numeric** direction — the helper stays honest
-  about what the numbers did and leaves the good/bad value judgment to
-  the view (which knows trust-up is good, tension-down is good).
-- `relationalTrendThreshold = 0.5` — shared with the test suite so the
-  flat-vs-trend boundary is asserted, not guessed.
+### Track 2 — Crowding resolved structurally (the round-7 layout-QA risk)
 
-Defensive contracts (locked by `IMScenarioRelationalTrendTests`, 10
-cases):
+Instead of cramming the trend chips next to the tone chip inside the
+row's narrow title column (where round 7 placed the tone chip, under the
+subtitle), `breakdownRow` is restructured into a `VStack`:
 
-- reuses `tracePoints(from:scenario:)`, so it inherits the same
-  `.imConversation` filter, final-state requirement, scenario filter,
-  and oldest→newest ordering for free
-- returns `nil` below 4 contributing reps — fewer than that can't
-  separate a first stretch from a recent stretch honestly
-- the two averaging windows never overlap (the `min(3, count / 2)` bound)
-- `.flat` when |delta| < 0.5, per metric independently
-- a stable-but-sufficient history returns a non-nil struct with
-  `hasSignal == false` (enough data, no trend → header chips self-hide)
+1. the existing main `HStack` (title + subtitle on the left, the three
+   stat columns `avg`/`trust`/`tension` and chevron on the right), then
+2. a new full-width `chipRow(for:)` beneath it.
 
-### Track 2 — Trend chips on `IMScenarioDetailView` header (#5 view layer)
+`chipRow` renders an `HStack` of the trend chips **plus** the round-7
+tone-match chip, on its own line with the whole card width to work
+with. Up to three small capsules ("↑ Trust", "↓ Tension", "Tone X/Y")
+read side-by-side without clipping even on the narrowest device — the
+constraint that made round 7 defer is gone by construction, not by
+hoping it fits. This also lifts the tone chip out of the cramped title
+column, a small improvement to the round-7 placement.
 
-`Noum/IMScenarioDetailView.swift` summary header gains a chip row
-beneath the three stat tiles, rendered only when `relationalTrend` is
-non-nil *and* `hasSignal` is true:
+`chipRow` self-hides entirely (returns nothing) when the scenario has
+**neither** a non-flat trend **nor** a recorded tone, so a cold-start
+scenario adds no empty strip and no extra vertical space.
 
-- `trendChip(label:movement:goodWhenUp:)` — `@ViewBuilder`, self-hides
-  on a flat metric. Arrow glyph (`arrow.up.right` / `arrow.down.right`)
-  shows the **raw** numeric direction; tint reads the **value
-  judgment** — `goodWhenUp` flips the green (`AppColor.positive`) /
-  amber (`AppColor.caution`) assignment so trust-up and tension-down
-  both read green, trust-down and tension-up both read amber.
-- Calm capsule register (0.12-alpha tint background) — matches the
-  tone-match strip; it's data, not a celebration or a penalty.
-- VoiceOver: the chip row carries one combined label ("Recent trend:
-  trust trending up, tension trending down, based on your earliest and
-  latest N reps.") via `relationalTrendAccessibilityLabel`. Accessibility
-  identifier `history.im.scenario.trendChips`.
+### Track 3 — List-row gating contract (the one genuinely new test surface)
 
-### Track 3 — Tone-match chip on `IMHistoryBreakdownCard` row (#4)
+The trend math is already exhaustively tested. What was *not* yet
+locked is the contract the **list row** newly depends on: the row
+appears for any scenario with ≥1 rep, but the trend chip must appear
+only when there is honest signal — the two must never disagree. New
+`IMHistoryBreakdownTrendContractTests` in `NoumTests/NoumTests.swift`
+(3 cases) pin exactly that:
 
-`Noum/IMHistoryBreakdownCard.swift` row gains a compact "Tone X/Y" chip
-beneath the subtitle in the leading column, rendered only when the
-scenario has at least one rep with a recorded `actualTone`
-(`evaluatedCount > 0`):
+- a ≥4-rep improving scenario yields **both** a `breakdowns` row **and**
+  a non-nil trend with `hasSignal == true` (chip shows on that row);
+- a 2-rep scenario renders a row (its stats are real) but
+  `relationalTrend` returns `nil` → the chip self-hides, no fabricated
+  flat reading on a row that legitimately has stat data;
+- a stable 4-rep scenario renders a row with a non-nil trend whose
+  `hasSignal == false` → chip hidden, the same "enough data, no trend"
+  self-hide the detail header uses.
 
-- `toneMatchStats(for:)` reads the same pure helper the scenario
-  drill-down uses, so the list row and the detail view never drift on
-  the match rate.
-- `toneMatchChip(stats:)` — `target` glyph + "Tone X/Y" in the
-  mode-tinted calm capsule register. Marked `accessibilityHidden(true)`
-  because the row's combined VoiceOver label already folds in the tone
-  read (", tone matched X of Y reps") — no double read.
-- A scenario the evaluator never produced a tone for shows **no chip**
-  rather than a fabricated "0/0" — honest cold-start behaviour, same
-  contract as the detail strip.
+### Accessibility
+
+The trend read folds into the row's existing combined VoiceOver label
+via `relationalTrendCopy(for:)` (", trust trending up and tension
+trending down"), appended ahead of the existing tone clause. The visual
+`chipRow` is marked `accessibilityHidden(true)` so VoiceOver reads the
+row's single combined label once — no double read of the chips. The
+trend copy is empty when `hasSignal` is false, so VoiceOver never
+announces a trend the chips aren't showing.
 
 ### Vision alignment
 
-Both moves land on the same axes as rounds 5 and 6:
-
-- **Pillar #3 — Conversational intelligence.** "Your last few
-  Difficult Conversation reps recovered trust faster and held tension
-  lower" is the read a £130/hr human coach gives after pulling up the
-  history. The trend chips put that read on the scenario header; the
-  tone-match list chip puts the tone-accuracy read on the History list
-  without a drill-in.
+- **Pillar #3 — Conversational intelligence.** "Your Difficult
+  Conversation reps are recovering trust faster and holding tension
+  lower lately" is the read a human coach gives after pulling up the
+  history. Round 7 put it on the scenario header; this round puts it on
+  the History list itself, one tap earlier.
 - **Pillar #4 — Believable progress.** Every new surface self-hides on
-  insufficient or missing data: trend chips need ≥4 reps with a final
-  state *and* a non-flat signal; the tone chip needs ≥1 recorded
-  `actualTone`. No fabricated points, no placeholder visuals, no
-  fake-zero percentages.
-- **Anti-goals.** The trend helper reports the *raw* numeric movement
-  and reads `normalizedTrust`/`normalizedTension` directly — no
-  smoothing, no AI reframe. The tone chip reuses the engine's own
-  `actualTone` string via the already-tested substring matcher. No
-  punish-shame: a low tone-match or an amber trend chip is informative
-  data in a calm capsule, never a red failure state.
+  insufficient data: trend chips need ≥4 final-state reps with a
+  non-flat |Δ|≥0.5 signal; the tone chip needs ≥1 recorded `actualTone`.
+  No fabricated points, no placeholder visuals, no fake-zero percentages.
+- **Anti-goals.** The chip reports the *raw* numeric movement (arrow =
+  direction the numbers actually moved) and only the color carries the
+  good/bad judgment. No smoothing, no AI reframe, no punish-shame: an
+  amber chip is informative data in a calm capsule, never a red failure.
 
 ## Files touched
 
-- **Modified:** `Noum/IMHistorySummary.swift` (+~85 LOC —
-  `IMScenarioRelationalTrend` value type + `Movement` enum +
-  `relationalTrendThreshold` + `relationalTrend(from:scenario:)`)
-- **Modified:** `Noum/IMScenarioDetailView.swift` (+~55 LOC —
-  `relationalTrend` computed wrap, header chip row, `trendChip`
-  `@ViewBuilder`, `relationalTrendAccessibilityLabel`)
-- **Modified:** `Noum/IMHistoryBreakdownCard.swift` (+~30 LOC —
-  `toneMatchStats(for:)`, `toneMatchChip(stats:)`, chip in the leading
-  column gated on `evaluatedCount > 0`, tone read folded into the row's
-  combined accessibility label)
-- **Modified:** `NoumTests/NoumTests.swift` (+~205 LOC — new
-  `IMScenarioRelationalTrendTests` suite, 10 cases: nil on empty, nil
-  below 4 reps, detects improvement (trust ↑ / tension ↓), detects
-  regression, flat when stable, flat below 0.5 threshold, window size
-  for 4 reps, threshold inclusive at 0.5, ignores other scenarios +
-  Timed modes, drops reps without a final state)
+- **Modified:** `Noum/IMHistoryBreakdownCard.swift` (+~75 LOC —
+  `breakdownRow` restructured to a `VStack`; new `chipRow(for:)`,
+  `relationalTrend(for:)`, `trendChip(label:movement:goodWhenUp:)`,
+  `relationalTrendCopy(for:)`; tone chip moved into `chipRow`; trend
+  clause folded into the combined accessibility label; top doc-comment
+  updated to describe the chip row)
+- **Modified:** `NoumTests/NoumTests.swift` (+~95 LOC — new
+  `IMHistoryBreakdownTrendContractTests` suite, 3 cases)
 - **Modified:** `HANDOFF.md` (this file)
 - **Modified:** `docs/CURRENT_STATE.md` (rolling summary)
 
@@ -159,55 +144,56 @@ Both moves land on the same axes as rounds 5 and 6:
 
 The artifact a user can now hold:
 
-1. **At a scenario, they read the relational arc in one glance.** Two
-   chips on the `IMScenarioDetailView` summary header — "Trust ↑" green,
-   "Tension ↓" green (or amber for the reverse) — sitting above the
-   trace chart that shows the underlying shape. Self-hides below 4 reps
-   or when both metrics are flat.
-
-2. **On the IM History list, they read tone accuracy per scenario
-   without drilling in.** A compact "Tone X/Y" chip on each
-   `IMHistoryBreakdownCard` row. Self-hides for any scenario with no
-   recorded `actualTone`.
-
-Both are vision-aligned on the conversational-intelligence (#3) and
-believable-progress (#4) pillars, and carry the same honest-data
-contracts the round-6 cards established: drop missing data rather than
-fabricate it; self-hide rather than render a placeholder.
+**On the IM History list, they read each scenario's relational arc and
+tone accuracy at a glance, without drilling in.** Each
+`IMHistoryBreakdownCard` row shows, beneath its stat columns, the two
+trend chips ("Trust ↑" green / "Tension ↓" green, or amber for the
+reverse) the scenario detail header carries, alongside the round-7
+"Tone X/Y" chip. The chip row self-hides for any scenario without ≥4
+final-state reps of real movement and without a recorded tone — honest
+cold-start behaviour, the same contracts the round-6 and round-7 cards
+established.
 
 ## Future moves
 
-(Updated priority list — items 4 and 5 closed in this push removed;
-remaining items carried forward:)
+(Updated priority list — item #5 closed this round; remaining items
+carried forward:)
 
 1. **Per-scenario drill recommendations.** When the tone-match rate on
    a scenario is low (<40%) AND the user has 3+ evaluated reps, the
    `RecommendationBiasEngine` could surface a "Drill the <scenario>
    tone" recommendation that biases toward the relevant skill area +
-   auto-fills the scenario. This closes the loop between the
-   per-scenario read (now visible at both the list and detail level
-   after this round) and the recommendation surface. Deferred because
-   `RecommendationBiasEngine` lives in `PracticeSupport.swift` and
-   feeds seven consumer surfaces (`PracticeModeSelectionView`,
-   `SummaryView`, `HomeCoachCard`, `PracticeTopics`, `ContentView`,
-   `SummaryCards`) — a new recommendation trigger wants a dedicated
-   push with the recommendation-surface QA, not a rider on a
-   chip-rendering change.
+   auto-fills the scenario. With both the relational-trend read and the
+   tone read now visible at the list **and** detail level, the read
+   side of this loop is fully surfaced — the missing half is the
+   recommendation trigger. Still deferred because
+   `RecommendationBiasEngine` lives in `PracticeSupport.swift` and feeds
+   seven consumer surfaces (`PracticeModeSelectionView`, `SummaryView`,
+   `HomeCoachCard`, `PracticeTopics`, `ContentView`, `SummaryCards`); a
+   new recommendation trigger wants a dedicated push with the
+   recommendation-surface QA, not a rider on a chip-rendering change.
+   **This is the natural next round — the read is done; close the loop.**
 2. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
    `PublicProfileSnapshot` schema work.
 3. **`coachNoteRevealed` cleanup.** Still risky — animation chain
    interleaving with celebration timing. Worth a dedicated refactor
-   pass with proper visual QA.
+   pass with proper visual QA (and a real device, which this build host
+   does not have).
 4. **Rate-limiter live refresh.** Make `AIRateLimiter` an
    `ObservableObject` (or expose a publisher) so the Settings AI-usage
    card AND the `CoachReadCard` daily-budget hint refresh mid-view when
    a background rep finalizes and consumes budget. Low priority because
    Settings is modal in practice.
-5. **Trust/tension trend chip on `IMHistoryBreakdownCard` row.** Now
-   that `relationalTrend` is a pure helper, the History list row could
-   carry the same directional chips the detail header now shows — the
-   list would read the relational arc per scenario without a drill-in,
-   the same way the tone chip landed this round. Deferred only to keep
-   the row from getting visually crowded; wants a quick layout QA pass
-   to confirm the row still reads at a glance with trend + tone chips
-   together.
+
+## Build-host limitation (honest note for the next agent)
+
+This environment has **no Xcode and no Swift toolchain**, so nothing in
+this round was compiled or run — not the app, not the test suite. The
+change was written to match the existing, tested patterns line-for-line
+(`trendChip` mirrors `IMScenarioDetailView`; the new test reuses the
+`IMScenarioRelationalTrendTests` session-builder shape), and the
+crowding risk was removed structurally rather than verified visually.
+Before this lands in a TestFlight build it still wants a real
+`xcodebuild test` + a glance at the IM History screen on a narrow
+device to confirm the three-chip row reads as intended. Treat the
+"reads at a glance" claim as designed-for, not observed.

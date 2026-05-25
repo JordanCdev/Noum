@@ -14553,3 +14553,103 @@ struct IMScenarioRelationalTrendTests {
         #expect(IMHistorySummary.relationalTrend(from: sessions, scenario: .networking) == nil)
     }
 }
+
+// MARK: - IMHistoryBreakdownCard row — trend-chip gating contract
+//
+// The IM History list row now carries the trust/tension trend chips
+// (the same `relationalTrend` read the scenario detail header shows) on
+// a full-width chip row beneath its stats. The row itself appears for
+// any scenario with ≥1 IM rep, but the trend chips must appear only
+// when there is honest signal. These tests lock that two-part contract
+// so the list and the detail drill-down can never disagree about when a
+// trend is shown:
+//   • a scenario in `breakdowns` with ≥4 trending final-state reps both
+//     renders a row AND yields a non-nil trend with `hasSignal == true`
+//   • a scenario in `breakdowns` with too few reps still renders a row
+//     but `relationalTrend` is nil → the chip self-hides, never a
+//     fabricated flat reading on a row that has data for its stats
+
+struct IMHistoryBreakdownTrendContractTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        trust: Int,
+        tension: Int,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: .confident),
+                turns: [],
+                actualTone: nil,
+                finalState: IMConversationState(trust: trust, engagement: 6, tension: tension, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func trendingScenarioYieldsBothRowAndSignal() {
+        // Six reps, improving arc. The scenario must surface as a
+        // breakdown row (so the user sees it on the list) AND carry a
+        // non-flat trend (so the chip renders on that row).
+        let sessions = [
+            imSession(scenario: .difficultConversation, trust: 3, tension: 8, daysOffset: -6),
+            imSession(scenario: .difficultConversation, trust: 3, tension: 8, daysOffset: -5),
+            imSession(scenario: .difficultConversation, trust: 3, tension: 8, daysOffset: -4),
+            imSession(scenario: .difficultConversation, trust: 8, tension: 3, daysOffset: -3),
+            imSession(scenario: .difficultConversation, trust: 8, tension: 3, daysOffset: -2),
+            imSession(scenario: .difficultConversation, trust: 8, tension: 3, daysOffset: -1)
+        ]
+        let breakdowns = IMHistorySummary.breakdowns(from: sessions)
+        #expect(breakdowns.contains { $0.scenario == .difficultConversation })
+
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .difficultConversation)
+        #expect(trend?.hasSignal == true)
+        #expect(trend?.trust == .up)
+        #expect(trend?.tension == .down)
+    }
+
+    @Test func tooFewRepsRenderRowButHideTrendChip() {
+        // Two reps: enough for a breakdown row (it has stats), but below
+        // the 4-rep floor the trend helper returns nil → the row renders
+        // its stats with no trend chip rather than fabricating a flat one.
+        let sessions = [
+            imSession(scenario: .networking, trust: 4, tension: 6, daysOffset: -2),
+            imSession(scenario: .networking, trust: 7, tension: 4, daysOffset: -1)
+        ]
+        let breakdowns = IMHistorySummary.breakdowns(from: sessions)
+        #expect(breakdowns.contains { $0.scenario == .networking })
+        #expect(breakdowns.first?.runCount == 2)
+
+        #expect(IMHistorySummary.relationalTrend(from: sessions, scenario: .networking) == nil)
+    }
+
+    @Test func stableButSufficientHistoryRowShowsNoChip() {
+        // Four reps, no movement: a breakdown row exists, the trend is
+        // non-nil but `hasSignal` is false → the chip row self-hides on
+        // this scenario. Locks that "enough data, no trend" reads as
+        // no-chip, the same contract the detail header self-hide uses.
+        let sessions = [
+            imSession(scenario: .workUpdate, trust: 6, tension: 5, daysOffset: -4),
+            imSession(scenario: .workUpdate, trust: 6, tension: 5, daysOffset: -3),
+            imSession(scenario: .workUpdate, trust: 6, tension: 5, daysOffset: -2),
+            imSession(scenario: .workUpdate, trust: 6, tension: 5, daysOffset: -1)
+        ]
+        let breakdowns = IMHistorySummary.breakdowns(from: sessions)
+        #expect(breakdowns.contains { $0.scenario == .workUpdate })
+
+        let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .workUpdate)
+        #expect(trend != nil)
+        #expect(trend?.hasSignal == false)
+    }
+}
