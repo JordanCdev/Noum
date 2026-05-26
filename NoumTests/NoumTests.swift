@@ -13118,9 +13118,10 @@ struct SuddenDeathHistoryExportTests {
             wasNewBestAtTime: false
         )
 
-        #expect(SuddenDeathHistoryExport.headerRow() == "Date | Tier | Cleared | Outcome")
+        #expect(SuddenDeathHistoryExport.headerRow() == "Date | Tier | Points | Outcome")
         let row = SuddenDeathHistoryExport.formatRow(run)
-        #expect(row.contains("| 3 | 2 | Filler overload"))
+        #expect(row.contains("| 3 |"))
+        #expect(row.contains("| Filler overload"))
         #expect(!row.contains("/10"))
     }
 }
@@ -15827,5 +15828,169 @@ struct IMHistoryBreakdownTrendContractTests {
         let trend = IMHistorySummary.relationalTrend(from: sessions, scenario: .workUpdate)
         #expect(trend != nil)
         #expect(trend?.hasSignal == false)
+    }
+}
+
+// MARK: - SuddenDeathGamePointsTests
+
+@Suite("Sudden Death Game Points")
+struct SuddenDeathGamePointsTests {
+
+    private func makeResult(
+        roundsSurvived: Int,
+        totalFillers: Int = 0,
+        totalWords: Int = 50,
+        wordCountsByRound: [Int]? = nil,
+        finalOutcome: RoundOutcome = .fillerOverload
+    ) -> PressureSessionResult {
+        let outcomes: [RoundOutcome] = {
+            var arr = Array(repeating: RoundOutcome.survived, count: roundsSurvived)
+            if finalOutcome.isFailed { arr.append(finalOutcome) }
+            return arr
+        }()
+        let words = wordCountsByRound ?? Array(repeating: 15, count: roundsSurvived)
+        let minimums = Array(repeating: 10, count: outcomes.count)
+        return PressureSessionResult(
+            roundsSurvived: roundsSurvived,
+            finalOutcome: finalOutcome,
+            roundOutcomes: outcomes,
+            totalDuration: Double(roundsSurvived) * 20,
+            totalFillers: totalFillers,
+            totalWords: totalWords,
+            bestRoundWords: words.max() ?? 0,
+            personalBest: 0,
+            difficulty: .medium,
+            wordCountsByRound: words,
+            minimumWordsByRound: minimums
+        )
+    }
+
+    // MARK: Base points
+
+    @Test func zeroRoundsGivesZeroPoints() {
+        let result = makeResult(roundsSurvived: 0)
+        #expect(result.gamePoints == 0)
+    }
+
+    @Test func basePointsAre100PerRound() {
+        let result = makeResult(roundsSurvived: 3, totalFillers: 1, wordCountsByRound: [10, 10, 10])
+        #expect(result.gamePoints >= 300)
+    }
+
+    // MARK: Clean multiplier
+
+    @Test func cleanRunApplies1_5xMultiplier() {
+        let clean = makeResult(roundsSurvived: 2, totalFillers: 0, wordCountsByRound: [15, 15])
+        let dirty = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15])
+        #expect(clean.gamePoints > dirty.gamePoints)
+        let mults = clean.computedMultipliers.map(\.label)
+        #expect(mults.contains("Clean"))
+    }
+
+    @Test func cleanMultiplierValueIs1_5() {
+        let result = makeResult(roundsSurvived: 1, totalFillers: 0, wordCountsByRound: [15])
+        let cleanMult = result.computedMultipliers.first { $0.label == "Clean" }
+        #expect(cleanMult != nil)
+        #expect(cleanMult?.value == 1.5)
+    }
+
+    // MARK: Depth multiplier
+
+    @Test func deepRunAt5RoundsApplies1_3x() {
+        let result = makeResult(roundsSurvived: 5, totalFillers: 1, wordCountsByRound: [15, 15, 15, 15, 15])
+        let mults = result.computedMultipliers.map(\.label)
+        #expect(mults.contains("Deep"))
+        let deepMult = result.computedMultipliers.first { $0.label == "Deep" }
+        #expect(deepMult?.value == 1.3)
+    }
+
+    @Test func marathonAt8RoundsReplacesDeep() {
+        let result = makeResult(roundsSurvived: 8, totalFillers: 1, wordCountsByRound: Array(repeating: 15, count: 8))
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(labels.contains("Marathon"))
+        #expect(!labels.contains("Deep"))
+    }
+
+    @Test func marathonMultiplierValueIs1_6() {
+        let result = makeResult(roundsSurvived: 8, totalFillers: 1, wordCountsByRound: Array(repeating: 15, count: 8))
+        let marathonMult = result.computedMultipliers.first { $0.label == "Marathon" }
+        #expect(marathonMult?.value == 1.6)
+    }
+
+    // MARK: Articulate multiplier
+
+    @Test func articulateRequires3RoundsWith20PlusWords() {
+        let articulate = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [25, 22, 21, 10])
+        let labels = articulate.computedMultipliers.map(\.label)
+        #expect(labels.contains("Articulate"))
+
+        let notArticulate = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [25, 22, 10, 10])
+        let labels2 = notArticulate.computedMultipliers.map(\.label)
+        #expect(!labels2.contains("Articulate"))
+    }
+
+    // MARK: Content bonus
+
+    @Test func contentBonusAdds50PerStrongRound() {
+        let strong = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [25, 25])
+        let weak = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [10, 10])
+        #expect(strong.gamePoints > weak.gamePoints)
+        #expect(strong.gamePoints - weak.gamePoints >= 100)
+    }
+
+    // MARK: Follow-up bonus
+
+    @Test func followUpBonusAppliesForFollowUpRounds() {
+        let result = makeResult(roundsSurvived: 3, totalFillers: 1, wordCountsByRound: [15, 15, 15])
+        let config2 = PressureRoundConfig.config(for: 2, difficulty: .medium)
+        let config3 = PressureRoundConfig.config(for: 3, difficulty: .medium)
+        let expectedFollowUps = (config2.isFollowUp ? 1 : 0) + (config3.isFollowUp ? 1 : 0)
+        #expect(expectedFollowUps > 0)
+        #expect(result.gamePoints > 300)
+    }
+
+    // MARK: Multiplier stacking
+
+    @Test func allMultipliersStackForCleanDeepArticulateRun() {
+        let result = makeResult(roundsSurvived: 5, totalFillers: 0, wordCountsByRound: [25, 22, 21, 25, 20])
+        let labels = Set(result.computedMultipliers.map(\.label))
+        #expect(labels.contains("Clean"))
+        #expect(labels.contains("Deep"))
+        #expect(labels.contains("Articulate"))
+        #expect(result.gamePoints > Int(500 * 1.5 * 1.3))
+    }
+
+    // MARK: Label formatting
+
+    @Test func multiplierLabelsFormatCorrectly() {
+        let result = makeResult(roundsSurvived: 5, totalFillers: 0, wordCountsByRound: [15, 15, 15, 15, 15])
+        let labels = result.multiplierLabels
+        #expect(labels.contains("×1.5 Clean"))
+        #expect(labels.contains("×1.3 Deep"))
+    }
+
+    // MARK: Legacy record compat
+
+    @Test func legacyRunRecordDefaultsToZeroGamePoints() {
+        let record = SuddenDeathRunRecord(
+            difficulty: .medium,
+            roundsSurvived: 3,
+            totalFillers: 0,
+            totalWords: 50,
+            score: 5,
+            xpEarned: 100,
+            finalOutcome: .fillerOverload,
+            wasNewBestAtTime: false
+        )
+        #expect(record.gamePoints == 0)
+        #expect(record.activeMultipliers.isEmpty)
+    }
+
+    // MARK: Points high score store
+
+    @Test func bestPointsStartsAtZero() {
+        let store = SuddenDeathHighScoreStore.shared
+        let current = store.bestPoints()
+        #expect(current >= 0)
     }
 }

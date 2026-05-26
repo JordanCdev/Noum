@@ -174,15 +174,16 @@ struct SuddenDeathDifficultyRunsView: View {
     }
 
     private func runRow(run: SuddenDeathRunRecord) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: run.finalOutcome.isFailed ? "xmark.circle.fill" : "checkmark.circle.fill")
+        let tier = max(1, run.roundsSurvived + (run.finalOutcome.isFailed ? 1 : 0))
+        return HStack(spacing: 12) {
+            Image(systemName: run.wasNewBestAtTime ? "trophy.fill" : "bolt.fill")
                 .font(.subheadline)
-                .foregroundStyle(run.finalOutcome.isFailed ? AppColor.warning : AppColor.positive)
+                .foregroundStyle(run.wasNewBestAtTime ? Color.yellow : accent)
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text("\(run.roundsSurvived) round\(run.roundsSurvived == 1 ? "" : "s")")
+                    Text("Tier \(tier)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     if run.wasNewBestAtTime {
@@ -196,9 +197,10 @@ struct SuddenDeathDifficultyRunsView: View {
 
             Spacer()
 
-            HStack(spacing: 14) {
-                statChip(value: "\(run.totalFillers)", label: "fillers", tint: run.totalFillers == 0 ? AppColor.positive : .secondary)
-                statChip(value: "\(run.score)/10", label: "score", tint: .secondary)
+            if run.gamePoints > 0 {
+                Text("\(run.gamePoints.formatted()) pts")
+                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .foregroundStyle(accent)
             }
         }
         .accessibilityElement(children: .combine)
@@ -219,17 +221,6 @@ struct SuddenDeathDifficultyRunsView: View {
         .background(Color.yellow.opacity(0.12), in: Capsule())
     }
 
-    private func statChip(value: String, label: String, tint: Color) -> some View {
-        VStack(spacing: 0) {
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: - Helpers
 
     private func absoluteDateLabel(_ date: Date) -> String {
@@ -240,9 +231,11 @@ struct SuddenDeathDifficultyRunsView: View {
     }
 
     private func accessibilityLabel(for run: SuddenDeathRunRecord) -> String {
+        let tier = max(1, run.roundsSurvived + (run.finalOutcome.isFailed ? 1 : 0))
         let outcome = SuddenDeathHistoryExport.outcomeLabel(run.finalOutcome)
         let bestPart = run.wasNewBestAtTime ? ", new best" : ""
-        return "\(run.roundsSurvived) rounds, \(run.totalFillers) fillers, score \(run.score) of 10, \(outcome.lowercased())\(bestPart)"
+        let pointsPart = run.gamePoints > 0 ? ", \(run.gamePoints) points" : ""
+        return "Tier \(tier), \(outcome.lowercased())\(pointsPart)\(bestPart)"
     }
 
     // MARK: - Background

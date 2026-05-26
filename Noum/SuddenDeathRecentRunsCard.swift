@@ -2,18 +2,6 @@
 import SwiftUI
 
 // MARK: - Sudden Death Recent Runs Card
-//
-// Compact "last N runs at this difficulty" surface for the Result
-// screen. Honest evidence: each row is the actual run record the
-// engine wrote at finalize — tier reached, the outcome that ended the
-// run, and the day. No invented trend lines, no
-// "you're improving!" copy unless the data actually supports it.
-//
-// Vision-aligned: this is the "believable progress" pillar — the
-// user sees their own track record, not a coach-narrated story
-// about it. The current run renders FIRST and is visually anchored
-// ("Just now" + filled-in badge) so the user has a clear "this run
-// vs. those" comparison without having to read.
 
 @available(iOS 17.0, *)
 struct SuddenDeathRecentRunsCard: View {
@@ -24,9 +12,6 @@ struct SuddenDeathRecentRunsCard: View {
     private let accentColor = AppColor.modeSuddenDeath
 
     var body: some View {
-        // Only render when there are at least 2 runs (the current one
-        // plus at least one prior). A single-row history is just a
-        // restatement of the stats row above — no signal.
         if runs.count >= 2 {
             VStack(alignment: .leading, spacing: 12) {
                 header
@@ -43,15 +28,12 @@ struct SuddenDeathRecentRunsCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("Last Attempts")
+            Text("Recent Runs")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.8)
             Spacer()
-            Text("\(runs.count) shown")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -85,17 +67,18 @@ struct SuddenDeathRecentRunsCard: View {
                         bestBadge
                     }
                 }
-                Text("\(run.roundsSurvived) cleared · \(relativeDateLabel(for: run.completedAt, isCurrent: isCurrent))")
+                Text(relativeDateLabel(for: run.completedAt, isCurrent: isCurrent))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Text(outcomeLabel(for: run.finalOutcome))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+            if run.gamePoints > 0 {
+                Text("\(run.gamePoints.formatted()) pts")
+                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .foregroundStyle(accentColor)
+            }
         }
         .padding(.vertical, 4)
         .background(
@@ -123,9 +106,6 @@ struct SuddenDeathRecentRunsCard: View {
 
     // MARK: - Footer hint
 
-    /// One-line honest read of the last 5 runs. Only emits a phrase
-    /// when the data clearly supports it; otherwise stays silent so
-    /// nothing fake makes it onto the screen.
     @ViewBuilder
     private var footerHint: some View {
         if let hint = honestTrendHint() {
@@ -137,12 +117,10 @@ struct SuddenDeathRecentRunsCard: View {
     }
 
     private func honestTrendHint() -> String? {
-        let rounds = runs.map { $0.roundsSurvived }
-        guard rounds.count >= 3 else { return nil }
-        // Compare current (newest) to median of prior runs at this
-        // difficulty. The store is sorted newest-first.
-        guard let current = rounds.first else { return nil }
-        let prior = Array(rounds.dropFirst())
+        let points = runs.compactMap { $0.gamePoints > 0 ? $0.gamePoints : nil }
+        guard points.count >= 3 else { return nil }
+        guard let current = points.first else { return nil }
+        let prior = Array(points.dropFirst())
         let priorSorted = prior.sorted()
         let median: Double
         if priorSorted.count % 2 == 1 {
@@ -151,10 +129,11 @@ struct SuddenDeathRecentRunsCard: View {
             let mid = priorSorted.count / 2
             median = Double(priorSorted[mid - 1] + priorSorted[mid]) / 2.0
         }
-        if Double(current) >= median + 2 {
+        let threshold = median * 0.3
+        if Double(current) >= median + threshold {
             return "Above your usual run."
         }
-        if Double(current) <= median - 2 {
+        if Double(current) <= median - threshold {
             return "Below your usual run. One rep, not a trend."
         }
         return nil
@@ -164,15 +143,6 @@ struct SuddenDeathRecentRunsCard: View {
 
     private func reachedTier(for run: SuddenDeathRunRecord) -> Int {
         max(1, run.roundsSurvived + (run.finalOutcome.isFailed ? 1 : 0))
-    }
-
-    private func outcomeLabel(for outcome: RoundOutcome) -> String {
-        switch outcome {
-        case .survived: return "Cleared"
-        case .fillerOverload: return "Filler caught"
-        case .timeoutBeforeStart: return "Timed out"
-        case .tooShort: return "Too short"
-        }
     }
 
     private func relativeDateLabel(for date: Date, isCurrent: Bool) -> String {

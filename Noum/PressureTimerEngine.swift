@@ -309,6 +309,64 @@ struct PressureSessionResult: Equatable {
     var isNewPersonalBest: Bool {
         roundsSurvived > personalBest && personalBest > 0
     }
+
+    // MARK: - Game Points (result-screen scoring)
+
+    /// Transparent, multiplier-based points for the result screen.
+    /// Every component maps to a real communication signal:
+    /// - Base: 100 pts per tier cleared (survival under pressure)
+    /// - Content bonus: +50 per round with 20+ words (strong responses)
+    /// - Follow-up bonus: +25 per follow-up round survived (conversational agility)
+    /// - Multipliers stack on top for clean speech and depth.
+    var gamePoints: Int {
+        let base = roundsSurvived * 100
+
+        var bonuses = 0
+        for (index, outcome) in roundOutcomes.enumerated() where outcome == .survived {
+            if index < wordCountsByRound.count, wordCountsByRound[index] >= 20 {
+                bonuses += 50
+            }
+            let config = PressureRoundConfig.config(for: index + 1, difficulty: difficulty)
+            if config.isFollowUp {
+                bonuses += 25
+            }
+        }
+
+        var multiplier = 1.0
+        for m in computedMultipliers {
+            multiplier *= m.value
+        }
+
+        return max(0, Int(round(Double(base + bonuses) * multiplier)))
+    }
+
+    /// Which multipliers are active for this run. Each is backed by a
+    /// real signal — no decorative numbers.
+    var computedMultipliers: [(label: String, value: Double)] {
+        var result: [(String, Double)] = []
+
+        if totalFillers == 0 && roundsSurvived >= 1 {
+            result.append(("Clean", 1.5))
+        }
+
+        if roundsSurvived >= 8 {
+            result.append(("Marathon", 1.6))
+        } else if roundsSurvived >= 5 {
+            result.append(("Deep", 1.3))
+        }
+
+        let strongRounds = wordCountsByRound.filter { $0 >= 20 }.count
+        if strongRounds >= 3 {
+            result.append(("Articulate", 1.2))
+        }
+
+        return result
+    }
+
+    /// Display-ready multiplier labels (e.g. ["×1.5 Clean", "×1.3 Deep"]).
+    var multiplierLabels: [String] {
+        computedMultipliers.map { "×\(String(format: "%.1f", $0.value)) \($0.label)" }
+    }
 }
 
 // MARK: - Follow-Up Provider Protocol (reusable)

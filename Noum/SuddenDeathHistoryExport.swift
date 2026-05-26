@@ -51,31 +51,21 @@ enum SuddenDeathHistoryExport {
         return lines.joined(separator: "\n")
     }
 
-    /// Format the entire run history across every difficulty,
-    /// grouped by difficulty header. Used by the Result-screen-level
-    /// export affordance.
+    /// Format the entire run history as a single flat list (no difficulty
+    /// grouping — the UI uses automatic progression now). Used by the
+    /// Result-screen share affordance.
     static func formatPlainText(runs: [SuddenDeathRunRecord]) -> String {
         guard !runs.isEmpty else {
             return "Noum · Sudden Death history\nNo runs yet."
         }
+        let sorted = runs.sorted { $0.completedAt > $1.completedAt }
         var lines: [String] = []
         lines.append("Noum · Sudden Death history")
-        lines.append("\(runs.count) total run\(runs.count == 1 ? "" : "s")")
-
-        let grouped = Dictionary(grouping: runs, by: \.difficulty)
-        // Stable difficulty order so the export reads the same way
-        // every time even when the user has runs in different
-        // difficulties — Easy first, then Medium, then Hard.
-        let order: [SuddenDeathDifficulty] = [.easy, .medium, .hard]
-        for difficulty in order {
-            guard let group = grouped[difficulty], !group.isEmpty else { continue }
-            let sorted = group.sorted { $0.completedAt > $1.completedAt }
-            lines.append("")
-            lines.append("--- \(difficulty.title) (\(sorted.count) run\(sorted.count == 1 ? "" : "s") · best \(maxRounds(sorted))) ---")
-            lines.append(headerRow())
-            for run in sorted {
-                lines.append(formatRow(run))
-            }
+        lines.append("\(sorted.count) run\(sorted.count == 1 ? "" : "s") · best \(maxRounds(sorted)) tiers")
+        lines.append("")
+        lines.append(headerRow())
+        for run in sorted {
+            lines.append(formatRow(run))
         }
         return lines.joined(separator: "\n")
     }
@@ -85,7 +75,7 @@ enum SuddenDeathHistoryExport {
     /// One header row used by both single- and full-history exports
     /// so the column shape is identical across surfaces.
     static func headerRow() -> String {
-        "Date | Tier | Cleared | Outcome"
+        "Date | Tier | Points | Outcome"
     }
 
     /// Format a single run as one row in the table. Pure — no
@@ -96,7 +86,8 @@ enum SuddenDeathHistoryExport {
         let date = isoDate(run.completedAt)
         let outcome = outcomeLabel(run.finalOutcome)
         let best = run.wasNewBestAtTime ? " (best)" : ""
-        return "\(date) | \(tierReached(in: run)) | \(run.roundsSurvived) | \(outcome)\(best)"
+        let pts = run.gamePoints > 0 ? "\(run.gamePoints)" : "-"
+        return "\(date) | \(tierReached(in: run)) | \(pts) | \(outcome)\(best)"
     }
 
     static func outcomeLabel(_ outcome: RoundOutcome) -> String {

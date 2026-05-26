@@ -92,6 +92,14 @@ final class SuddenDeathRunHistoryStore: ObservableObject {
         return Array(filtered.prefix(limit))
     }
 
+    /// Returns the most recent runs across all difficulties, newest first.
+    func recentRuns(limit: Int? = nil) -> [SuddenDeathRunRecord] {
+        guard let limit, limit > 0, runs.count > limit else {
+            return runs
+        }
+        return Array(runs.prefix(limit))
+    }
+
     /// All runs across all difficulties, newest first. Used by the
     /// Profile/History surfaces if they ever want to render a full
     /// run history; the Result screen uses `recentRuns(difficulty:)`.

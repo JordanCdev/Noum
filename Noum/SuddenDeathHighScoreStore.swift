@@ -27,6 +27,24 @@ final class SuddenDeathHighScoreStore: ObservableObject {
         return true
     }
 
+    // MARK: - Single-track game points (no difficulty bucketing)
+
+    /// Best game points across all runs, regardless of difficulty.
+    func bestPoints() -> Int {
+        let key = "\(keyPrefix).bestPoints.\(accountID())"
+        return UserDefaults.standard.integer(forKey: key)
+    }
+
+    /// Records game points for a run. Returns true if this is a new best.
+    @discardableResult
+    func recordPoints(_ points: Int) -> Bool {
+        let key = "\(keyPrefix).bestPoints.\(accountID())"
+        let current = UserDefaults.standard.integer(forKey: key)
+        guard points > current else { return false }
+        UserDefaults.standard.set(points, forKey: key)
+        return true
+    }
+
     private func storageKey(for difficulty: SuddenDeathDifficulty) -> String {
         let account = accountID()
         return "\(keyPrefix).\(difficulty.rawValue).\(account)"

@@ -30,6 +30,12 @@ struct SuddenDeathRunRecord: Codable, Equatable, Identifiable {
     /// doesn't retroactively un-flag the prior peak; the badge in the
     /// list represents "this WAS the best when it happened."
     let wasNewBestAtTime: Bool
+    /// Multiplier-based game points shown on the result screen.
+    /// Defaults to 0 for records created before this field existed.
+    let gamePoints: Int
+    /// Which multipliers were active (e.g. ["×1.5 Clean", "×1.3 Deep"]).
+    /// Defaults to empty for legacy records.
+    let activeMultipliers: [String]
 
     init(
         id: UUID = UUID(),
@@ -41,7 +47,9 @@ struct SuddenDeathRunRecord: Codable, Equatable, Identifiable {
         score: Int,
         xpEarned: Int,
         finalOutcome: RoundOutcome,
-        wasNewBestAtTime: Bool
+        wasNewBestAtTime: Bool,
+        gamePoints: Int = 0,
+        activeMultipliers: [String] = []
     ) {
         self.id = id
         self.completedAt = completedAt
@@ -53,6 +61,8 @@ struct SuddenDeathRunRecord: Codable, Equatable, Identifiable {
         self.xpEarned = xpEarned
         self.finalOutcome = finalOutcome
         self.wasNewBestAtTime = wasNewBestAtTime
+        self.gamePoints = gamePoints
+        self.activeMultipliers = activeMultipliers
     }
 }
 
