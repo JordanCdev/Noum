@@ -66,6 +66,16 @@ struct PracticeModeSelectionView: View {
     /// `ModeOption.recommendedReason` when nil (cold start, no
     /// session history).
     @State private var cachedRecommendedReason: String?
+    /// IM scenario + tone the recommendation prefills. Non-nil only when
+    /// the blueprint recommends IM — either the goal-based bias (preferred
+    /// scenario for the user's coaching goal) or a tone-drill override
+    /// (the exact scenario whose committed tone keeps slipping). Carried
+    /// into `appDestination(for: .imConversation)` so the Begin CTA lands
+    /// the user in the recommended setup instead of a cold scenario grid,
+    /// matching the home Coach Card. nil → IM launches uncommitted, exactly
+    /// as before.
+    @State private var cachedRecommendedScenario: IMConversationScenario?
+    @State private var cachedRecommendedTone: IMTargetTone?
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
@@ -872,9 +882,14 @@ struct PracticeModeSelectionView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: plan
+            plan: plan,
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
         cachedRecommendedMode = blueprint.recommendedMode
+        cachedRecommendedScenario = blueprint.recommendedScenario
+        cachedRecommendedTone = blueprint.recommendedTone
         // Prefer `whyNow` (the situational hook) over `whyMode` (the
         // mode-benefit), but fall back gracefully and ignore empty
         // strings so we never render a blank line.
@@ -893,7 +908,10 @@ struct PracticeModeSelectionView: View {
             return .ahCounterPractice
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                return .imPractice(scenario: nil, tone: nil)
+                return .imPractice(
+                    scenario: cachedRecommendedScenario,
+                    tone: cachedRecommendedTone
+                )
             } else {
                 return .timedPractice
             }
