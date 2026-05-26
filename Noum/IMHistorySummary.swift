@@ -473,7 +473,7 @@ enum IMHistorySummary {
             )
         }
 
-        return candidates.sorted { lhs, rhs in
+        guard let winner = candidates.sorted({ lhs, rhs in
             if lhs.signal.matchRate != rhs.signal.matchRate {
                 return lhs.signal.matchRate < rhs.signal.matchRate          // worst hit rate first
             }
@@ -481,7 +481,105 @@ enum IMHistorySummary {
                 return lhs.signal.evaluatedCount > rhs.signal.evaluatedCount // more evidence first
             }
             return lhs.lastEvaluatedDate > rhs.lastEvaluatedDate            // freshest read first
-        }.first?.signal
+        }).first else { return nil }
+
+        // Attach the Adaptation read for the chosen scenario so the
+        // recommendation copy can reinforce / vary instead of repeating
+        // the same first-pass prescription once a before/after exists.
+        return IMToneDrillSignal(
+            scenario: winner.signal.scenario,
+            targetTone: winner.signal.targetTone,
+            matchRate: winner.signal.matchRate,
+            evaluatedCount: winner.signal.evaluatedCount,
+            adaptation: toneDrillAdaptation(from: sessions, scenario: winner.signal.scenario)
+        )
+    }
+
+    // MARK: - Tone-drill Adaptation read ("did the drill work?")
+    //
+    // The "act" half of the loop *prescribes* the same scenario + tone
+    // everywhere the user lands. This is the "observe + adapt" half: did
+    // the committed tone start landing across the reps that followed the
+    // recommendation? Because the drill is surfaced continuously while
+    // the signal is live, the *recent* evaluated reps in that scenario
+    // genuinely are the reps that came after seeing it — so an early-vs-
+    // recent split on the scenario's own tone-match trace answers
+    // "is the prescribed work helping?" with no separate timestamp store.
+    //
+    // Method mirrors `relationalTrend`: split the scenario's evaluated
+    // tone-match trace (oldest→newest) into a non-overlapping early
+    // window and recent window of `min(3, count / 2)` reps each; compare
+    // the fraction that landed the tone. A swing of at least
+    // `toneDrillAdaptationDelta` reads as a real change; below that it's
+    // `.holding`. Below `toneDrillAdaptationMinReps` evaluated reps there
+    // isn't an honest before/after yet, so it's `.firstPass`.
+    //
+    // This is association, not proof: the user may have faced an easier
+    // turn or a different persona. The copy that consumes it says
+    // "landing more / slipping," never "the drill caused this."
+    //
+    // Defensive contracts (locked by `IMToneDrillAdaptationTests`):
+    //   • reuses the same `.imConversation` + scenario + non-blank
+    //     `actualTone` filter and `matches(targetTone:actualTone:)` rule
+    //     as `toneMatchStats`
+    //   • `.firstPass` below `toneDrillAdaptationMinReps` evaluated reps
+    //   • the two windows never overlap (2·window ≤ count)
+    //   • `.holding` when |recent − earlier| < `toneDrillAdaptationDelta`
+
+    /// Minimum evaluated reps in a scenario before its tone-match trace
+    /// can read as an improving / stalling trend rather than a first
+    /// pass. Set above the 3-rep firing bar so the coach only claims a
+    /// before/after once the user has actually re-repped a couple times.
+    static let toneDrillAdaptationMinReps = 5
+
+    /// Minimum change in the landed-tone fraction (recent window minus
+    /// early window) to read as reinforcing / not-landing rather than
+    /// holding. 0.25 ≈ one rep flipping in a 2–3-rep window. Shared with
+    /// the test suite so the boundary is asserted, not guessed.
+    static let toneDrillAdaptationDelta = 0.25
+
+    static func toneDrillAdaptation(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> ToneDrillAdaptation {
+        let matched = orderedToneMatches(from: sessions, scenario: scenario)
+        guard matched.count >= toneDrillAdaptationMinReps else { return .firstPass }
+
+        let window = min(3, matched.count / 2)
+        let early = matched.prefix(window)
+        let late = matched.suffix(window)
+        let earlierRate = Double(early.filter { $0 }.count) / Double(window)
+        let recentRate = Double(late.filter { $0 }.count) / Double(window)
+        let delta = recentRate - earlierRate
+
+        if delta >= toneDrillAdaptationDelta {
+            return .reinforcing(recentRate: recentRate, earlierRate: earlierRate)
+        }
+        if delta <= -toneDrillAdaptationDelta {
+            return .notLanding(recentRate: recentRate, earlierRate: earlierRate)
+        }
+        return .holding(recentRate: recentRate, earlierRate: earlierRate)
+    }
+
+    /// Oldest→newest tone-match booleans for a scenario's evaluated reps
+    /// (those that produced a non-blank `actualTone`). Same filter +
+    /// match rule as `toneMatchStats`, ordered by date so window splits
+    /// read as early vs recent.
+    private static func orderedToneMatches(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> [Bool] {
+        sessions.compactMap { session -> (matched: Bool, date: Date)? in
+            guard session.mode == .imConversation,
+                  let details = session.imConversationDetails,
+                  details.setup.scenario == scenario,
+                  let actual = details.actualTone,
+                  !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return (matches(targetTone: details.setup.targetTone, actualTone: actual), session.date)
+        }
+        .sorted { $0.date < $1.date }
+        .map(\.matched)
     }
 
     /// The tone the user committed to most often among a scenario's
