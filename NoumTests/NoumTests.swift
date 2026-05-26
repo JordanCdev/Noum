@@ -1668,6 +1668,32 @@ struct RoundOutcomeTests {
     }
 }
 
+struct PressureSessionTotalsTests {
+
+    @Test func fillerEndingTierRecordsTheTriggeringFiller() {
+        var totals = PressureSessionTotals()
+
+        totals.recordRound(duration: 7.5, fillers: 1, words: 9)
+
+        #expect(totals.fillers == 1)
+        #expect(totals.words == 9)
+        #expect(totals.bestRoundWords == 9)
+        #expect(totals.duration == 7.5)
+    }
+
+    @Test func completedTiersAccumulateThroughOnePath() {
+        var totals = PressureSessionTotals()
+
+        totals.recordRound(duration: 12, fillers: 0, words: 18)
+        totals.recordRound(duration: 5, fillers: 1, words: 6)
+
+        #expect(totals.fillers == 1)
+        #expect(totals.words == 24)
+        #expect(totals.bestRoundWords == 18)
+        #expect(totals.duration == 17)
+    }
+}
+
 struct PressureSessionResultTests {
 
     @Test func deepSurvivalCleanRunGetsTopLabel() {
@@ -13074,6 +13100,28 @@ struct SuddenDeathRunHistoryStoreTests {
         #expect(decoded.xpEarned == 240)
         #expect(decoded.finalOutcome == .fillerOverload)
         #expect(decoded.wasNewBestAtTime == true)
+    }
+}
+
+struct SuddenDeathHistoryExportTests {
+
+    @Test func gameFacingExportUsesTierAndClearedRoundsInsteadOfRating() {
+        let run = SuddenDeathRunRecord(
+            completedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            difficulty: .medium,
+            roundsSurvived: 2,
+            totalFillers: 1,
+            totalWords: 42,
+            score: 6,
+            xpEarned: 100,
+            finalOutcome: .fillerOverload,
+            wasNewBestAtTime: false
+        )
+
+        #expect(SuddenDeathHistoryExport.headerRow() == "Date | Tier | Cleared | Outcome")
+        let row = SuddenDeathHistoryExport.formatRow(run)
+        #expect(row.contains("| 3 | 2 | Filler overload"))
+        #expect(!row.contains("/10"))
     }
 }
 

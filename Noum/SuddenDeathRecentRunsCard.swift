@@ -5,8 +5,8 @@ import SwiftUI
 //
 // Compact "last N runs at this difficulty" surface for the Result
 // screen. Honest evidence: each row is the actual run record the
-// engine wrote at finalize — rounds survived, fillers, the outcome
-// that ended the run, and the day. No invented trend lines, no
+// engine wrote at finalize — tier reached, the outcome that ended the
+// run, and the day. No invented trend lines, no
 // "you're improving!" copy unless the data actually supports it.
 //
 // Vision-aligned: this is the "believable progress" pillar — the
@@ -20,9 +20,6 @@ struct SuddenDeathRecentRunsCard: View {
 
     let currentRunID: UUID
     let runs: [SuddenDeathRunRecord]
-    let difficulty: SuddenDeathDifficulty
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let accentColor = AppColor.modeSuddenDeath
 
@@ -46,7 +43,7 @@ struct SuddenDeathRecentRunsCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("Recent runs · \(difficulty.title)")
+            Text("Last Attempts")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
@@ -74,34 +71,31 @@ struct SuddenDeathRecentRunsCard: View {
 
     private func runRow(run: SuddenDeathRunRecord, isCurrent: Bool) -> some View {
         HStack(spacing: 10) {
-            // Outcome indicator
-            Image(systemName: run.finalOutcome.isFailed ? "xmark.circle.fill" : "checkmark.circle.fill")
+            Image(systemName: run.wasNewBestAtTime ? "trophy.fill" : "bolt.fill")
                 .font(.subheadline)
-                .foregroundStyle(run.finalOutcome.isFailed ? AppColor.warning : AppColor.positive)
+                .foregroundStyle(run.wasNewBestAtTime ? Color.yellow : accentColor)
                 .frame(width: 18)
 
-            // Rounds + date column
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text("\(run.roundsSurvived) round\(run.roundsSurvived == 1 ? "" : "s")")
+                    Text("Tier \(reachedTier(for: run))")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     if run.wasNewBestAtTime {
                         bestBadge
                     }
                 }
-                Text(relativeDateLabel(for: run.completedAt, isCurrent: isCurrent))
+                Text("\(run.roundsSurvived) cleared · \(relativeDateLabel(for: run.completedAt, isCurrent: isCurrent))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            // Inline stats
-            HStack(spacing: 12) {
-                statChip(value: "\(run.totalFillers)", label: "fillers", tint: run.totalFillers == 0 ? AppColor.positive : .secondary)
-                statChip(value: "\(run.score)/10", label: "score", tint: .secondary)
-            }
+            Text(outcomeLabel(for: run.finalOutcome))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
         }
         .padding(.vertical, 4)
         .background(
@@ -125,17 +119,6 @@ struct SuddenDeathRecentRunsCard: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 1)
         .background(Color.yellow.opacity(0.12), in: Capsule())
-    }
-
-    private func statChip(value: String, label: String, tint: Color) -> some View {
-        VStack(spacing: 0) {
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
     }
 
     // MARK: - Footer hint
@@ -169,15 +152,28 @@ struct SuddenDeathRecentRunsCard: View {
             median = Double(priorSorted[mid - 1] + priorSorted[mid]) / 2.0
         }
         if Double(current) >= median + 2 {
-            return "Above your usual run at \(difficulty.title)."
+            return "Above your usual run."
         }
         if Double(current) <= median - 2 {
-            return "Below your usual run at \(difficulty.title). One rep — not a trend."
+            return "Below your usual run. One rep, not a trend."
         }
         return nil
     }
 
     // MARK: - Helpers
+
+    private func reachedTier(for run: SuddenDeathRunRecord) -> Int {
+        max(1, run.roundsSurvived + (run.finalOutcome.isFailed ? 1 : 0))
+    }
+
+    private func outcomeLabel(for outcome: RoundOutcome) -> String {
+        switch outcome {
+        case .survived: return "Cleared"
+        case .fillerOverload: return "Filler caught"
+        case .timeoutBeforeStart: return "Timed out"
+        case .tooShort: return "Too short"
+        }
+    }
 
     private func relativeDateLabel(for date: Date, isCurrent: Bool) -> String {
         if isCurrent { return "Just now" }

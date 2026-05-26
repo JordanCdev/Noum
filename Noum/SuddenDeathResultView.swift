@@ -7,15 +7,8 @@ import UIKit
 /// Extracted, redesigned result screen for Sudden Death mode.
 ///
 /// Replaces the inline `resultScreen` function in `SuddenDeathPracticeView`.
-/// Visual hierarchy:
-///   1. Contextual run header (not the difficulty name)
-///   2. Icon tinted to outcome
-///   3. Number roll-up on rounds survived (dopamine beat)
-///   4. "New Best!" badge when high score is beaten
-///   5. Stats row (rounds / fillers / score)
-///   6. Round-by-round breakdown
-///   7. XP chip (readable size)
-///   8. Share + action buttons
+/// Visual hierarchy prioritises replayable game signals: tier reached,
+/// time survived and personal best. Detailed coaching remains in Summary.
 @available(iOS 17.0, *)
 struct SuddenDeathResultView: View {
 
@@ -45,36 +38,53 @@ struct SuddenDeathResultView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let accentColor = AppColor.modeSuddenDeath
+    private let visibleTierLimit = 4
 
     // MARK: - Contextual header
 
-    /// Replaces the generic `resultLabel` (which was the difficulty-mapped
-    /// outcome description) with a run-specific headline.
+    private var tierReached: Int {
+        max(1, result.roundOutcomes.count)
+    }
+
+    private var displayedBest: Int {
+        max(result.roundsSurvived, result.personalBest)
+    }
+
     private var contextualHeader: String {
         if isNewHighScore {
-            return "New Best · \(result.roundsSurvived) round\(result.roundsSurvived == 1 ? "" : "s")"
+            return "New Best · \(result.roundsSurvived) cleared"
         }
-        if result.roundsSurvived > 0 && result.finalOutcome == .survived {
-            // Completed all offered rounds with no failure
-            if result.totalFillers == 0 {
-                return "Clean Run · \(result.roundsSurvived) round\(result.roundsSurvived == 1 ? "" : "s")"
-            }
-            return "Survived · \(result.roundsSurvived) round\(result.roundsSurvived == 1 ? "" : "s")"
+        return "Tier \(tierReached) Reached"
+    }
+
+    private var runEndNote: String {
+        switch result.finalOutcome {
+        case .survived:
+            return "Run cleared"
+        case .fillerOverload:
+            return "Filler detected · run complete"
+        case .timeoutBeforeStart:
+            return "Start window expired · run complete"
+        case .tooShort:
+            return "Response below word target · run complete"
         }
-        // Eliminated
-        return "Eliminated · Round \(result.roundsSurvived + 1)"
+    }
+
+    private var survivalTimeLabel: String {
+        let totalSeconds = max(0, Int(result.totalDuration.rounded(.down)))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        if minutes > 0 {
+            return String(format: "%d:%02d", minutes, seconds)
+        }
+        return "\(seconds)s"
     }
 
     // MARK: - Share text
 
     private var shareText: String {
-        let difficultyName = result.difficulty.title
         let rounds = result.roundsSurvived
-        let fillers = result.totalFillers
-        if fillers == 0 {
-            return "Survived \(rounds) round\(rounds == 1 ? "" : "s") in Noum Sudden Death (\(difficultyName)) with zero filler words."
-        }
-        return "Survived \(rounds) round\(rounds == 1 ? "" : "s") in Noum Sudden Death (\(difficultyName))."
+        return "Reached Tier \(tierReached) and cleared \(rounds) round\(rounds == 1 ? "" : "s") in \(survivalTimeLabel) on Noum Sudden Death."
     }
 
     /// Cross-difficulty plain-text dump of every Sudden Death run the
@@ -96,24 +106,23 @@ struct SuddenDeathResultView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer()
-
-            VStack(spacing: 20) {
-                outcomeIcon
-                headerBlock
-                if isNewHighScore { newBestBadge }
-                statsRow
-                roundBreakdown
-                SuddenDeathRecentRunsCard(
-                    currentRunID: currentRunID,
-                    runs: runHistoryStore.recentRuns(difficulty: result.difficulty, limit: 5),
-                    difficulty: result.difficulty
-                )
-                xpChip
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 20) {
+                    outcomeIcon
+                    headerBlock
+                    if isNewHighScore { newBestBadge }
+                    statsRow
+                    roundBreakdown
+                    SuddenDeathRecentRunsCard(
+                        currentRunID: currentRunID,
+                        runs: runHistoryStore.recentRuns(difficulty: result.difficulty, limit: 5)
+                    )
+                    xpChip
+                }
+                .padding(.horizontal, Spacing.screenH)
+                .padding(.top, Spacing.lg)
+                .padding(.bottom, Spacing.md)
             }
-            .padding(.horizontal, Spacing.screenH)
-
-            Spacer()
 
             actionButtons
                 .padding(.horizontal, Spacing.screenH)
@@ -139,13 +148,15 @@ struct SuddenDeathResultView: View {
     // MARK: - Subviews
 
     private var outcomeIcon: some View {
-        ZStack {
+        let icon = isNewHighScore ? "trophy.fill" : "bolt.fill"
+        let tint = isNewHighScore ? Color.yellow : accentColor
+        return ZStack {
             Circle()
-                .fill(result.resultTint.opacity(0.12))
+                .fill(tint.opacity(0.12))
                 .frame(width: 80, height: 80)
-            Image(systemName: result.resultIcon)
+            Image(systemName: icon)
                 .font(.system(size: 36, weight: .bold))
-                .foregroundStyle(result.resultTint)
+                .foregroundStyle(tint)
         }
     }
 
@@ -154,8 +165,7 @@ struct SuddenDeathResultView: View {
             Text(contextualHeader)
                 .font(Typography.bigStat)
                 .multilineTextAlignment(.center)
-            // Difficulty as the subtitle — where it belongs
-            Text(result.difficulty.title)
+            Text(runEndNote)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
         }
@@ -179,42 +189,57 @@ struct SuddenDeathResultView: View {
         HStack(spacing: 20) {
             statTile(
                 value: "\(displayedRounds)",
-                label: "Rounds",
-                tint: .green
+                label: "Cleared",
+                tint: accentColor
             )
             .monospacedDigit()
 
             statTile(
-                value: "\(result.totalFillers)",
-                label: "Fillers",
-                tint: result.totalFillers == 0 ? .green : .red
+                value: survivalTimeLabel,
+                label: "Survived",
+                tint: .primary
             )
             statTile(
-                value: "\(result.score)/10",
-                label: "Score",
-                tint: .blue
+                value: "\(displayedBest)",
+                label: "Best",
+                tint: .yellow
             )
         }
     }
 
     private var roundBreakdown: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Rounds")
+            Text("Run Path")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
-            ForEach(Array(result.roundOutcomes.enumerated()), id: \.offset) { index, outcome in
+            if hiddenTierCount > 0 {
                 HStack(spacing: 8) {
-                    Image(systemName: outcome.isFailed ? "xmark.circle.fill" : "checkmark.circle.fill")
-                        .foregroundStyle(outcome.isFailed ? .red : .green)
+                    Image(systemName: "ellipsis.circle.fill")
+                        .foregroundStyle(accentColor.opacity(0.72))
                         .font(.caption)
-                    Text("Round \(index + 1)")
+                    Text("\(hiddenTierCount) earlier tier\(hiddenTierCount == 1 ? "" : "s")")
                         .font(.caption.weight(.medium))
                     Spacer()
-                    Text(roundOutcomeRowLabel(outcome: outcome, index: index))
+                    Text("Cleared")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(outcome.isFailed ? .red : .green)
+                        .foregroundStyle(AppColor.positive)
+                }
+            }
+
+            ForEach(visibleTierEntries, id: \.offset) { entry in
+                let outcome = entry.element
+                HStack(spacing: 8) {
+                    Image(systemName: outcome.isFailed ? "stop.circle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(outcome.isFailed ? accentColor : AppColor.positive)
+                        .font(.caption)
+                    Text("Tier \(entry.offset + 1)")
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text(roundOutcomeRowLabel(outcome: outcome, index: entry.offset))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(outcome.isFailed ? accentColor : AppColor.positive)
                 }
             }
         }
@@ -323,26 +348,47 @@ struct SuddenDeathResultView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Bounds-checked label for a round outcome row. Legacy sessions predate
-    /// per-round word-count arrays; falls back to the enum label.
+    private var visibleTierEntries: [(offset: Int, element: RoundOutcome)] {
+        Array(result.roundOutcomes.enumerated().suffix(visibleTierLimit))
+    }
+
+    private var hiddenTierCount: Int {
+        max(0, result.roundOutcomes.count - visibleTierLimit)
+    }
+
+    /// Bounds-checked label for a stopped tier. Legacy sessions predate
+    /// per-round word-count arrays, so keep the fallback general.
     private func roundOutcomeRowLabel(outcome: RoundOutcome, index: Int) -> String {
-        guard outcome == .tooShort,
-              index < result.wordCountsByRound.count,
-              index < result.minimumWordsByRound.count else {
-            return outcome.label
+        switch outcome {
+        case .survived:
+            return "Cleared"
+        case .fillerOverload:
+            return "Filler detected"
+        case .timeoutBeforeStart:
+            return "Start window expired"
+        case .tooShort:
+            guard index < result.wordCountsByRound.count,
+                  index < result.minimumWordsByRound.count else {
+                return "Below word target"
+            }
+            let said = result.wordCountsByRound[index]
+            let needed = result.minimumWordsByRound[index]
+            return "\(said) word\(said == 1 ? "" : "s") · \(needed) needed"
         }
-        let said = result.wordCountsByRound[index]
-        let needed = result.minimumWordsByRound[index]
-        return "Too short — \(said) word\(said == 1 ? "" : "s") (needed \(needed))"
     }
 
     /// Records the run in the high score store, appends to the per-
     /// account run history, and kicks off the roll-up animation.
     private func resolveHighScore() {
-        isNewHighScore = highScoreStore.recordRun(
+        // Difficulty selection is no longer part of new play. Keep
+        // populating the legacy bucket for stored-history compatibility,
+        // while the visible best follows the one automatic progression
+        // track already shown on the setup screen.
+        _ = highScoreStore.recordRun(
             roundsSurvived: result.roundsSurvived,
             difficulty: result.difficulty
         )
+        isNewHighScore = result.roundsSurvived > result.personalBest
         // Append the full run to history with the new-best flag
         // snapshotted at recording time. Idempotent on the stable
         // `currentRunID` State so a re-mount within the same lifecycle

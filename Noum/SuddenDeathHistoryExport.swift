@@ -9,8 +9,8 @@ import Foundation
 //
 // Vision-aligned (docs/VISION.md anti-goals): the user's transcripts
 // are NEVER part of this export — only the engine's own outcome
-// numbers (rounds, fillers, score, the named outcome that ended the
-// run, the date). That mirrors the leaderboard rule: "never publishes
+// numbers (tier reached, rounds cleared, the named outcome that ended
+// the run, the date). That mirrors the leaderboard rule: "never publishes
 // raw transcripts." A History export should match the same posture
 // since the user might share it with anyone.
 //
@@ -85,7 +85,7 @@ enum SuddenDeathHistoryExport {
     /// One header row used by both single- and full-history exports
     /// so the column shape is identical across surfaces.
     static func headerRow() -> String {
-        "Date | Rounds | Fillers | Score | Outcome"
+        "Date | Tier | Cleared | Outcome"
     }
 
     /// Format a single run as one row in the table. Pure — no
@@ -96,7 +96,7 @@ enum SuddenDeathHistoryExport {
         let date = isoDate(run.completedAt)
         let outcome = outcomeLabel(run.finalOutcome)
         let best = run.wasNewBestAtTime ? " (best)" : ""
-        return "\(date) | \(run.roundsSurvived) | \(run.totalFillers) | \(run.score)/10 | \(outcome)\(best)"
+        return "\(date) | \(tierReached(in: run)) | \(run.roundsSurvived) | \(outcome)\(best)"
     }
 
     static func outcomeLabel(_ outcome: RoundOutcome) -> String {
@@ -112,6 +112,10 @@ enum SuddenDeathHistoryExport {
 
     private static func maxRounds(_ runs: [SuddenDeathRunRecord]) -> Int {
         runs.map(\.roundsSurvived).max() ?? 0
+    }
+
+    private static func tierReached(in run: SuddenDeathRunRecord) -> Int {
+        max(1, run.roundsSurvived + (run.finalOutcome.isFailed ? 1 : 0))
     }
 
     /// `yyyy-MM-dd` in the user's local calendar. ISO so the export

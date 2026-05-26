@@ -122,13 +122,6 @@ struct SuddenDeathPracticeView: View {
         UserDefaults.standard.integer(forKey: Self.personalBestKey)
     }
 
-    // Difficulty selector — persisted across launches.
-    private static let difficultyKey = "suddenDeath.difficulty"
-    @State private var difficulty: SuddenDeathDifficulty = {
-        let raw = UserDefaults.standard.string(forKey: Self.difficultyKey) ?? ""
-        return SuddenDeathDifficulty(rawValue: raw) ?? .medium
-    }()
-
     private let accentColor = AppColor.modeSuddenDeath
 
     private var characterStage: NoumCharacter.Stage {
@@ -206,9 +199,8 @@ struct SuddenDeathPracticeView: View {
             speechVM.prepareForInteractiveUse()
 
             // Quick Start handshake — picker armed Sudden Death for a
-            // one-tap launch. `beginSession` re-resolves a fresh prompt
-            // and uses the persisted difficulty, so "Start now" only
-            // skips the setup tap; the user's settings still apply.
+            // one-tap launch. `beginSession` resolves a fresh prompt
+            // and starts the automatic pressure ramp.
             if engine.phase == .setup, PracticeModeQuickStart.consume(for: .suddenDeath) {
                 beginSession()
             } else if engine.phase == .setup, !intentPromptShownThisVisit,
@@ -412,13 +404,11 @@ struct SuddenDeathPracticeView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ruleRow(icon: "timer", text: "A prompt appears. You have seconds to start speaking.")
                     ruleRow(icon: "arrow.turn.right.up", text: "The NPC fires back follow-ups based on what you said.")
-                    ruleRow(icon: "waveform.badge.exclamationmark", text: "Too many fillers, too slow, or too short — run over.")
+                    ruleRow(icon: "waveform.badge.exclamationmark", text: "One filler, a slow start, or a short response ends the run.")
                     ruleRow(icon: "flame.fill", text: "Pressure increases every round. How far can you go?")
                 }
                 .padding(Spacing.lg)
                 .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-
-                difficultyPicker
 
                 // Personal best
                 if previousBestRounds > 0 {
@@ -473,62 +463,6 @@ struct SuddenDeathPracticeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    // MARK: - Difficulty Picker (Easy / Medium / Hard)
-
-    private var difficultyPicker: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("DIFFICULTY")
-                .font(Typography.micro)
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 8) {
-                ForEach(SuddenDeathDifficulty.allCases) { option in
-                    difficultyChip(option)
-                }
-            }
-
-            Text(difficulty.subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Difficulty: \(difficulty.title). \(difficulty.subtitle)")
-    }
-
-    private func difficultyChip(_ option: SuddenDeathDifficulty) -> some View {
-        let isSelected = difficulty == option
-        return Button {
-            withAnimation(.snappySpring) {
-                difficulty = option
-                UserDefaults.standard.set(option.rawValue, forKey: Self.difficultyKey)
-            }
-            CoachHaptic.selectionTap()
-        } label: {
-            Text(option.title)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(isSelected ? .white : accentColor)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(
-                    isSelected ? accentColor : accentColor.opacity(0.10),
-                    in: Capsule()
-                )
-        }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(option.title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Countdown Screen
@@ -1026,8 +960,7 @@ struct SuddenDeathPracticeView: View {
             engine.configure(
                 openingPrompt: openingPrompt,
                 followUpProvider: PressureFollowUpService.shared,
-                previousBest: previousBestRounds,
-                difficulty: difficulty
+                previousBest: previousBestRounds
             )
             engine.beginCountdown()
         }
@@ -1043,8 +976,7 @@ struct SuddenDeathPracticeView: View {
             engine.configure(
                 openingPrompt: openingPrompt,
                 followUpProvider: PressureFollowUpService.shared,
-                previousBest: previousBestRounds,
-                difficulty: difficulty
+                previousBest: previousBestRounds
             )
             engine.beginCountdown()
         }

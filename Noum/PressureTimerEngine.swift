@@ -192,6 +192,23 @@ extension RoundOutcome {
 
 // MARK: - Session Result
 
+/// Accumulates completed-round measurements through one write path.
+/// Sudden Death can terminate during live monitoring, before normal
+/// evaluation runs, so result accounting must not depend on how a round ended.
+struct PressureSessionTotals: Equatable {
+    private(set) var duration: TimeInterval = 0
+    private(set) var fillers: Int = 0
+    private(set) var words: Int = 0
+    private(set) var bestRoundWords: Int = 0
+
+    mutating func recordRound(duration: TimeInterval, fillers: Int, words: Int) {
+        self.duration += max(0, duration)
+        self.fillers += max(0, fillers)
+        self.words += max(0, words)
+        bestRoundWords = max(bestRoundWords, max(0, words))
+    }
+}
+
 /// Full session result with behavior-mapped labels.
 struct PressureSessionResult: Equatable {
     let roundsSurvived: Int
@@ -366,11 +383,9 @@ final class PressureTimerEngine: ObservableObject {
     /// Difficulty for the current session. Set in `configure()`.
     private(set) var difficulty: SuddenDeathDifficulty = .medium
 
-    // Accumulated stats
-    private var totalFillers: Int = 0
-    private var totalWords: Int = 0
-    private var bestRoundWords: Int = 0
-    private var totalDuration: TimeInterval = 0
+    // Accumulated stats. Written only when a round ends so direct
+    // filler elimination and ordinary evaluation cannot drift.
+    private var totals = PressureSessionTotals()
 
     // Per-round word counts + thresholds so the result screen can show
     // the user the actual words they spoke vs. the bar they missed,
@@ -413,10 +428,7 @@ final class PressureTimerEngine: ObservableObject {
         lastUserTranscript = ""
         sessionStartDate = nil
         roundStartDate = nil
-        totalFillers = 0
-        totalWords = 0
-        bestRoundWords = 0
-        totalDuration = 0
+        totals = PressureSessionTotals()
         roundWordCounts = []
         roundMinimumWords = []
         promptHistory = []
@@ -628,12 +640,6 @@ final class PressureTimerEngine: ObservableObject {
         timerTask?.cancel()
         responseLimitTask?.cancel()
 
-        let elapsed = Date().timeIntervalSince(roundStartDate ?? Date())
-        totalDuration += elapsed
-        totalFillers += currentFillerCount
-        totalWords += currentWordCount
-        bestRoundWords = max(bestRoundWords, currentWordCount)
-
         // Store for follow-up generation
         promptHistory.append((prompt: currentPromptText, response: lastUserTranscript))
 
@@ -658,9 +664,11 @@ final class PressureTimerEngine: ObservableObject {
         roundWordCounts.append(currentWordCount)
         roundMinimumWords.append(roundConfig.minimumWords)
 
-        if outcome != .survived {
-            totalDuration += Date().timeIntervalSince(roundStartDate ?? Date())
-        }
+        totals.recordRound(
+            duration: Date().timeIntervalSince(roundStartDate ?? Date()),
+            fillers: currentFillerCount,
+            words: currentWordCount
+        )
 
         print("[PressureEngine] Round \(round) ended: \(outcome.label)")
         phase = .roundResult(round: round, outcome: outcome)
@@ -697,10 +705,10 @@ final class PressureTimerEngine: ObservableObject {
             roundsSurvived: roundsSurvived,
             finalOutcome: finalOutcome,
             roundOutcomes: roundOutcomes,
-            totalDuration: totalDuration,
-            totalFillers: totalFillers,
-            totalWords: totalWords,
-            bestRoundWords: bestRoundWords,
+            totalDuration: totals.duration,
+            totalFillers: totals.fillers,
+            totalWords: totals.words,
+            bestRoundWords: totals.bestRoundWords,
             personalBest: previousBestRounds,
             difficulty: difficulty,
             wordCountsByRound: roundWordCounts,
