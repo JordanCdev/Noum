@@ -327,7 +327,8 @@ struct SummaryView: View {
                 modeBenefitBias: ""
             ),
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
-            imToneSignal: imToneDrillSignal
+            imToneSignal: imToneDrillSignal,
+            imToneAdaptation: imToneDrillAdaptation
         )
     }
 
@@ -340,6 +341,19 @@ struct SummaryView: View {
         guard IMModeAvailability.isAvailable else { return nil }
         if #available(iOS 17.0, *) {
             return IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+        }
+        return nil
+    }
+
+    /// The observed response to the prescribed drill, shared with the same
+    /// surfaces. When the scenario the signal prescribes is still slipping
+    /// across a fresh window the "Looking ahead" copy varies the angle;
+    /// when it's recovering it reinforces. Same `if #available` guard as the
+    /// signal — `IMToneDrillAdaptation` itself is non-gated.
+    private var imToneDrillAdaptation: IMToneDrillAdaptation? {
+        guard IMModeAvailability.isAvailable else { return nil }
+        if #available(iOS 17.0, *) {
+            return IMHistorySummary.toneDrillAdaptation(from: sessionStore.sessions)
         }
         return nil
     }
@@ -2783,6 +2797,11 @@ extension SummaryView {
         let pathBinding = navigationPath
         let payloadId = payload.id
         let payloadMode = payload.mode
+        // The exact scenario + tone the user just practised, so an IM
+        // "Practice Again" re-runs the same setup instead of dropping back
+        // on the scenario grid. nil for non-IM reps (and defensively when
+        // the conversation metadata is absent) → the old grid behaviour.
+        let imReplaySetup = entry?.imConversationDetails?.setup
         self.onHome = {
             SummaryDataStore.shared.remove(for: payloadId)
             pathBinding.wrappedValue = NavigationPath()
@@ -2805,7 +2824,7 @@ extension SummaryView {
             case .timed: destination = .timedPractice
             case .suddenDeath: destination = .suddenDeathPractice
             case .ahCounter: destination = .ahCounterPractice
-            case .imConversation: destination = .imPractice(scenario: nil, tone: nil)
+            case .imConversation: destination = .imPractice(scenario: imReplaySetup?.scenario, tone: imReplaySetup?.targetTone)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 pathBinding.wrappedValue.append(destination)

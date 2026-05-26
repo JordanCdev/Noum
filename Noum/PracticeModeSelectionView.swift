@@ -891,6 +891,12 @@ struct PracticeModeSelectionView: View {
             // of recommending a mode that would just re-route to Timed.
             imToneSignal: IMModeAvailability.isAvailable
                 ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil,
+            // Same self-clearing read of whether the prescribed drill is
+            // working: when it's landing the picker reason reinforces, when
+            // it's still slipping it varies the angle instead of repeating.
+            imToneAdaptation: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillAdaptation(from: sessionStore.sessions)
                 : nil
         )
         cachedRecommendedMode = blueprint.recommendedMode
