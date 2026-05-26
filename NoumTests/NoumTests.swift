@@ -15534,6 +15534,252 @@ struct IMToneDrillProgressTests {
     }
 }
 
+// MARK: - Tone-drill trajectory threaded into the chat coach context
+//
+// Round 12 of the M24 deferred slate: the Adaptation read the
+// recommendation engine already adapts to (rounds 9–11) is now carried
+// into `CoachContextBuilder.userContext` so the persistent Ask Noum coach
+// can speak to whether the prescribed tone drill is working — not only the
+// next-practice card. These tests lock the terse, citeable line shape, the
+// per-direction guidance, the nil-when-no-trajectory contract, and the
+// end-to-end surfacing inside `userContext`.
+
+struct ToneDrillTrajectoryContextTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func trajectoryLinesNilWhenSignalCarriesNoProgress() {
+        // A pre-Adaptation signal (no progress) must not fabricate a
+        // trajectory the coach can't see.
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 3
+        )
+        #expect(CoachContextBuilder.toneDrillTrajectoryLines(for: signal) == nil)
+    }
+
+    @Test func trajectoryLinesReinforceWhenRecovering() {
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 5,
+            progress: IMToneDrillProgress(
+                direction: .recovering, earlierRate: 0.0, recentRate: 0.5, windowSize: 2
+            )
+        )
+        let lines = CoachContextBuilder.toneDrillTrajectoryLines(for: signal)
+        let joined = (lines ?? []).joined(separator: "\n")
+        #expect(joined.contains("Calm tone in Difficult Conversation"))
+        #expect(joined.contains("0% to 50%"))
+        #expect(joined.contains("recovering"))
+        // Guidance must reinforce, not restate the original miss.
+        #expect(joined.lowercased().contains("reinforce"))
+    }
+
+    @Test func trajectoryLinesVaryApproachWhenSlipping() {
+        let signal = IMToneDrillSignal(
+            scenario: .networking,
+            targetTone: .confident,
+            matchRate: 0.2,
+            evaluatedCount: 5,
+            progress: IMToneDrillProgress(
+                direction: .slipping, earlierRate: 1.0, recentRate: 0.0, windowSize: 2
+            )
+        )
+        let joined = (CoachContextBuilder.toneDrillTrajectoryLines(for: signal) ?? []).joined(separator: "\n")
+        #expect(joined.contains("100% to 0%"))
+        #expect(joined.contains("slipping"))
+        #expect(joined.lowercased().contains("changing how they open"))
+    }
+
+    @Test func trajectoryLinesNameThePlateauWhenStalled() {
+        let signal = IMToneDrillSignal(
+            scenario: .workUpdate,
+            targetTone: .professional,
+            matchRate: 0.25,
+            evaluatedCount: 4,
+            progress: IMToneDrillProgress(
+                direction: .stalled, earlierRate: 0.5, recentRate: 0.5, windowSize: 2
+            )
+        )
+        let joined = (CoachContextBuilder.toneDrillTrajectoryLines(for: signal) ?? []).joined(separator: "\n")
+        #expect(joined.contains("no movement yet"))
+        #expect(joined.lowercased().contains("plateau"))
+    }
+
+    @Test func userContextSurfacesTrajectoryForPrescribedScenario() {
+        // End-to-end: a low-but-recovering history → userContext carries a
+        // TONE-DRILL TRAJECTORY section for the prescribed scenario so the
+        // chat coach can speak to the response, not only the card.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("TONE-DRILL TRAJECTORY"))
+        #expect(ctx.contains("Calm tone in Difficult Conversation"))
+        #expect(ctx.contains("recovering"))
+    }
+
+    @Test func userContextOmitsTrajectoryWhenNoDrillSignal() {
+        // No IM history clears the drill bar → no hollow trajectory heading.
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!ctx.contains("TONE-DRILL TRAJECTORY"))
+    }
+}
+
+// MARK: - Tone-drill trajectory threaded into the post-rep coach note
+//
+// The same Adaptation read also reaches the post-rep `CoachReadCard` via
+// `PostRepCoachNoteService`: when the just-finished rep was an IM
+// conversation whose committed tone is recovering or slipping, the
+// deterministic note speaks to that response ahead of the per-rep metrics.
+// These tests lock the voice-shaped copy, the recovering/slipping gating
+// (stalled falls through), and the priority placement.
+
+struct PostRepCoachNoteToneTrajectoryTests {
+
+    private func makeInput(
+        voice: SpeakingStyleGoal? = nil,
+        mode: PracticeMode = .imConversation,
+        progress: IMToneDrillProgress?,
+        scenarioTitle: String? = "Difficult Conversation",
+        toneTitle: String? = "Calm"
+    ) -> PostRepCoachNoteInput {
+        PostRepCoachNoteInput(
+            sessionID: UUID(),
+            mode: mode,
+            score: 7,
+            fillerCount: 2,
+            duration: 60,
+            wordCount: 120,
+            voice: voice,
+            intentLabel: nil,
+            baselineFillerRate: nil,
+            baselinePaceWPM: nil,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil,
+            totalSessionCount: 8,
+            imToneDrillProgress: progress,
+            imToneDrillScenarioTitle: scenarioTitle,
+            imToneDrillToneTitle: toneTitle
+        )
+    }
+
+    @Test func recoveringTrajectoryHeadlinesTheNote() {
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                progress: IMToneDrillProgress(
+                    direction: .recovering, earlierRate: 0.0, recentRate: 0.5, windowSize: 2
+                )
+            )
+        )
+        let lower = note.noteText.lowercased()
+        #expect(lower.contains("difficult conversation"))
+        #expect(lower.contains("calm"))
+        #expect(note.noteText.contains("0%") && note.noteText.contains("50%"))
+        #expect(!note.noteText.contains("!"))
+    }
+
+    @Test func slippingTrajectoryPointsAtADifferentOpening() {
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                voice: .authoritative,
+                progress: IMToneDrillProgress(
+                    direction: .slipping, earlierRate: 1.0, recentRate: 0.0, windowSize: 2
+                )
+            )
+        )
+        #expect(note.noteText.lowercased().contains("difficult conversation"))
+        #expect(note.noteText.lowercased().contains("open"))
+    }
+
+    @Test func stalledTrajectoryFallsThroughToMetricNote() {
+        // A flat trajectory is not worth bumping the per-rep metric note, so
+        // the branch is skipped and the scenario name does not appear.
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                progress: IMToneDrillProgress(
+                    direction: .stalled, earlierRate: 0.5, recentRate: 0.5, windowSize: 2
+                )
+            )
+        )
+        #expect(!note.noteText.contains("Difficult Conversation"))
+    }
+
+    @Test func noTrajectoryFallsThroughToMetricNote() {
+        // Non-IM reps carry nil progress → the branch never fires.
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(mode: .timed, progress: nil, scenarioTitle: nil, toneTitle: nil)
+        )
+        #expect(!note.noteText.contains("Difficult Conversation"))
+    }
+
+    @Test func trajectorySentenceIsVoiceShapedAndCleanAcrossAllVoices() {
+        let voices: [SpeakingStyleGoal?] = [
+            .authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil
+        ]
+        let recovering = IMToneDrillProgress(
+            direction: .recovering, earlierRate: 0.0, recentRate: 0.5, windowSize: 2
+        )
+        for voice in voices {
+            let persona = CoachPersona.persona(for: voice)
+            let sentence = PostRepCoachNoteService.imToneTrajectorySentence(
+                progress: recovering, scenario: "Difficult Conversation", tone: "Calm", persona: persona
+            )
+            #expect(sentence.contains("0%") && sentence.contains("50%"))
+            #expect(!sentence.contains("!"))
+            #expect(!sentence.lowercased().hasPrefix("let's"))
+        }
+    }
+}
+
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
 //
 // The scenario header's two trend chips ("Trust ↑" / "Tension ↓") read

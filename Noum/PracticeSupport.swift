@@ -6492,6 +6492,25 @@ enum PracticeSessionFinalizer {
             baselineFillerRate: baselineFillerRate
         )
 
+        // IM tone-drill Adaptation read for the just-finished rep's
+        // scenario, so the post-rep note can speak to whether the tone
+        // work is landing — the same Adaptation signal the next-practice
+        // card and the chat coach read. Only computed for IM reps; nil for
+        // every other mode and for thin histories.
+        let imToneProgress: IMToneDrillProgress?
+        let imToneScenarioTitle: String?
+        let imToneToneTitle: String?
+        if session.mode == .imConversation, let details = session.imConversationDetails {
+            let scenario = details.setup.scenario
+            imToneProgress = IMHistorySummary.toneDrillProgress(from: allSessions, scenario: scenario)
+            imToneScenarioTitle = scenario.title
+            imToneToneTitle = details.setup.targetTone.title
+        } else {
+            imToneProgress = nil
+            imToneScenarioTitle = nil
+            imToneToneTitle = nil
+        }
+
         let input = PostRepCoachNoteInput(
             sessionID: session.id,
             mode: session.mode,
@@ -6513,7 +6532,10 @@ enum PracticeSessionFinalizer {
             scoreTrendDirection: momentum.scoreTrendDirection,
             weeklyRepCount: momentum.weeklyRepCount,
             isPersonalBest: momentum.isPersonalBest,
-            totalSessionCount: momentum.totalSessionCount
+            totalSessionCount: momentum.totalSessionCount,
+            imToneDrillProgress: imToneProgress,
+            imToneDrillScenarioTitle: imToneScenarioTitle,
+            imToneDrillToneTitle: imToneToneTitle
         )
 
         // Deterministic note lands synchronously so the Summary
