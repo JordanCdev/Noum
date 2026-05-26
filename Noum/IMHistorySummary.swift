@@ -473,7 +473,7 @@ enum IMHistorySummary {
             )
         }
 
-        return candidates.sorted { lhs, rhs in
+        let winner = candidates.sorted { lhs, rhs in
             if lhs.signal.matchRate != rhs.signal.matchRate {
                 return lhs.signal.matchRate < rhs.signal.matchRate          // worst hit rate first
             }
@@ -481,7 +481,99 @@ enum IMHistorySummary {
                 return lhs.signal.evaluatedCount > rhs.signal.evaluatedCount // more evidence first
             }
             return lhs.lastEvaluatedDate > rhs.lastEvaluatedDate            // freshest read first
-        }.first?.signal
+        }.first
+
+        guard let winner else { return nil }
+        // Attach the Adaptation read for the selected scenario so the
+        // engine can reinforce a recovering drill or change a slipping
+        // one. Computed only for the winner — the other candidates are
+        // never prescribed, so their trajectory isn't needed.
+        let base = winner.signal
+        return IMToneDrillSignal(
+            scenario: base.scenario,
+            targetTone: base.targetTone,
+            matchRate: base.matchRate,
+            evaluatedCount: base.evaluatedCount,
+            progress: toneDrillProgress(from: sessions, scenario: base.scenario)
+        )
+    }
+
+    // MARK: - Tone-drill Adaptation read (is the drill working?)
+    //
+    // The *Adaptation* half of the IM tone-drill loop (docs/VISION.md
+    // coach-parity stage #4). `toneDrillSignal` prescribes the scenario +
+    // tone to re-rep; this reads whether the user's hit rate in that
+    // scenario is actually recovering across their recent reps, so the
+    // coach can reinforce a drill that is landing or change the approach
+    // on one that is stuck — rather than giving the identical "you missed
+    // X%" line every time regardless of response.
+    //
+    // Method mirrors `relationalTrend`: compare the tone-match rate of the
+    // earliest `window` evaluated reps against the latest `window`, where
+    // `window = min(3, count / 2)` so the two windows are always disjoint.
+    // A swing of at least `toneDrillProgressThreshold` reads as
+    // recovering / slipping; anything smaller is stalled. Because each
+    // window holds 2–3 reps, the smallest possible non-zero swing (one rep
+    // flipping in a 2-rep window) is 0.5 — comfortably above the 0.15
+    // threshold — so the boundary is robust to fractional rounding.
+    //
+    // Defensive contracts (locked by `IMToneDrillProgressTests`):
+    //   • reuses the same `.imConversation` + scenario filter and the same
+    //     missing/whitespace-`actualTone` exclusion as `toneMatchStats`
+    //   • orders evaluated reps oldest → newest so "earlier" really is the
+    //     first stretch in time
+    //   • nil below 4 evaluated reps (fewer can't separate two windows)
+    //   • windows never overlap
+    //   • `.stalled` when |recentRate − earlierRate| < threshold
+
+    /// Minimum swing in tone-match rate (0.0–1.0) between the earliest and
+    /// latest windows for the trajectory to read as recovering/slipping
+    /// rather than stalled. Shared with the test suite so the boundary is
+    /// asserted, not guessed.
+    static let toneDrillProgressThreshold = 0.15
+
+    static func toneDrillProgress(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> IMToneDrillProgress? {
+        let outcomes: [Bool] = sessions
+            .compactMap { session -> (date: Date, matched: Bool)? in
+                guard session.mode == .imConversation,
+                      let details = session.imConversationDetails,
+                      details.setup.scenario == scenario,
+                      let actual = details.actualTone,
+                      !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+                return (session.date, matches(targetTone: details.setup.targetTone, actualTone: actual))
+            }
+            .sorted { $0.date < $1.date }   // oldest → newest
+            .map { $0.matched }
+
+        guard outcomes.count >= 4 else { return nil }
+
+        let window = min(3, outcomes.count / 2)
+        let earlier = outcomes.prefix(window)
+        let recent = outcomes.suffix(window)
+
+        let earlierRate = Double(earlier.filter { $0 }.count) / Double(earlier.count)
+        let recentRate = Double(recent.filter { $0 }.count) / Double(recent.count)
+        let delta = recentRate - earlierRate
+
+        let direction: IMToneDrillProgress.Direction
+        if delta >= toneDrillProgressThreshold {
+            direction = .recovering
+        } else if delta <= -toneDrillProgressThreshold {
+            direction = .slipping
+        } else {
+            direction = .stalled
+        }
+
+        return IMToneDrillProgress(
+            direction: direction,
+            earlierRate: (earlierRate * 100).rounded() / 100,
+            recentRate: (recentRate * 100).rounded() / 100,
+            windowSize: window
+        )
     }
 
     /// The tone the user committed to most often among a scenario's

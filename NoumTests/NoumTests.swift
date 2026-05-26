@@ -14964,6 +14964,275 @@ struct IMToneDrillSignalTests {
         #expect(blueprint.recommendedScenario == .difficultConversation)
         #expect(blueprint.recommendedTone == .calm)
     }
+
+    // MARK: - Adaptation: the blueprint copy responds to the trajectory
+
+    @Test func blueprintReinforcesWhenDrillRecovering() {
+        // A recovering trajectory should reinforce the drill the user is
+        // already on (it's working — one more) and report the climb, not
+        // repeat the flat "you missed X%" line.
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 5,
+            progress: IMToneDrillProgress(
+                direction: .recovering,
+                earlierRate: 0.0,
+                recentRate: 0.5,
+                windowSize: 2
+            )
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: signal
+        )
+        // Prefill is identical across trajectories — only the rationale adapts.
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.recommendedTone == .calm)
+        // Reinforcing rationale names the climb (recent vs earlier window).
+        #expect(blueprint.whyNow.contains("50%"))
+        #expect(blueprint.whyNow.contains("0%"))
+        #expect(blueprint.whyMode.contains("working"))
+        // Not the neutral "landed only" line.
+        #expect(!blueprint.whyNow.contains("landed only"))
+    }
+
+    @Test func blueprintVariesWhenDrillSlipping() {
+        // A slipping trajectory should change the approach rather than
+        // repeat the identical ask, and report the drop honestly.
+        let signal = IMToneDrillSignal(
+            scenario: .networking,
+            targetTone: .confident,
+            matchRate: 0.2,
+            evaluatedCount: 5,
+            progress: IMToneDrillProgress(
+                direction: .slipping,
+                earlierRate: 1.0,
+                recentRate: 0.0,
+                windowSize: 2
+            )
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: signal
+        )
+        #expect(blueprint.recommendedScenario == .networking)
+        #expect(blueprint.recommendedTone == .confident)
+        #expect(blueprint.whyNow.contains("0%"))
+        #expect(blueprint.whyNow.contains("100%"))
+        #expect(blueprint.whyMode.contains("change"))
+        #expect(!blueprint.whyNow.contains("landed only"))
+    }
+
+    @Test func blueprintStaysNeutralWhenProgressStalledOrAbsent() {
+        // No trajectory read (or a stalled one) → the neutral prescription
+        // reporting the overall hit rate, unchanged from before Adaptation.
+        let stalled = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 4,
+            progress: IMToneDrillProgress(
+                direction: .stalled,
+                earlierRate: 0.0,
+                recentRate: 0.0,
+                windowSize: 2
+            )
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: stalled
+        )
+        #expect(blueprint.whyNow.contains("landed only"))
+        #expect(blueprint.whyNow.contains("25%"))
+        #expect(!blueprint.whyMode.contains("working"))
+
+        // The pre-Adaptation nil case still reads neutral too.
+        let noProgress = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 4
+        )
+        let neutral = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: noProgress
+        )
+        #expect(neutral.whyNow.contains("landed only"))
+    }
+
+    @Test func signalCarriesProgressWhenEnoughReps() {
+        // End-to-end: a low-but-recovering history → the signal the engine
+        // receives carries a recovering Adaptation read for the same
+        // scenario it prescribes.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.scenario == .difficultConversation)
+        #expect(signal?.matchRate == 0.25)
+        #expect(signal?.progress?.direction == .recovering)
+    }
+}
+
+// MARK: - IM tone-drill Adaptation read (is the drill working?)
+//
+// `IMHistorySummary.toneDrillProgress` compares the tone-match hit rate of
+// a scenario's earliest vs latest evaluated-rep window. It is the
+// Adaptation half of the tone-drill loop — the read the engine uses to
+// reinforce a recovering drill or change a slipping one. These tests lock
+// the honest-data contracts (nil below 4 reps, non-overlapping windows,
+// oldest→newest ordering, missing-`actualTone` exclusion) and the
+// recovering / stalled / slipping classification at the threshold.
+
+struct IMToneDrillProgressTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func progressNilOnEmptyHistory() {
+        #expect(IMHistorySummary.toneDrillProgress(from: [], scenario: .networking) == nil)
+    }
+
+    @Test func progressNilBelowFourEvaluatedReps() {
+        // Three evaluated reps can't be split into two disjoint windows
+        // honestly — the helper declines rather than fabricating a read.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3)
+        ]
+        #expect(IMHistorySummary.toneDrillProgress(from: sessions, scenario: .networking) == nil)
+    }
+
+    @Test func progressIgnoresRepsWithoutActualTone() {
+        // nil/blank actualTone is missing data, not a miss — it must not
+        // pad the count to four and produce a read off three real reps.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: nil,         daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "   ",       daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -5)
+        ]
+        // Only 3 evaluated reps remain → below the bar.
+        #expect(IMHistorySummary.toneDrillProgress(from: sessions, scenario: .networking) == nil)
+    }
+
+    @Test func progressReadsRecoveringWhenRecentBeatsEarlier() {
+        // Oldest reps miss, newest reps land → the rate is climbing.
+        // Ordered oldest→newest the outcomes are [miss, miss, match, match];
+        // window = 2 → earlier 0/2 == 0.0, recent 2/2 == 1.0.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let progress = IMHistorySummary.toneDrillProgress(from: sessions, scenario: .difficultConversation)
+        #expect(progress?.direction == .recovering)
+        #expect(progress?.earlierRate == 0.0)
+        #expect(progress?.recentRate == 1.0)
+        #expect(progress?.windowSize == 2)
+    }
+
+    @Test func progressReadsSlippingWhenRecentWorseThanEarlier() {
+        // Oldest reps land, newest reps miss → the rate is falling.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -1)
+        ]
+        let progress = IMHistorySummary.toneDrillProgress(from: sessions, scenario: .networking)
+        #expect(progress?.direction == .slipping)
+        #expect(progress?.earlierRate == 1.0)
+        #expect(progress?.recentRate == 0.0)
+    }
+
+    @Test func progressReadsStalledWhenFlat() {
+        // Same rate in both windows (one match per window) → no trajectory.
+        // Ordered oldest→newest: [match, miss, match, miss]; window = 2 →
+        // earlier 1/2 == 0.5, recent 1/2 == 0.5, delta 0 < threshold.
+        let sessions = [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -4),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",        daysOffset: -3),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered",    daysOffset: -1)
+        ]
+        let progress = IMHistorySummary.toneDrillProgress(from: sessions, scenario: .workUpdate)
+        #expect(progress?.direction == .stalled)
+        #expect(progress?.earlierRate == 0.5)
+        #expect(progress?.recentRate == 0.5)
+    }
+
+    @Test func progressWindowsNeverOverlapAtSixReps() {
+        // Six evaluated reps → window = min(3, 6/2) == 3; the earliest 3
+        // and latest 3 partition the set with no rep counted twice.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        let progress = IMHistorySummary.toneDrillProgress(from: sessions, scenario: .networking)
+        #expect(progress?.windowSize == 3)
+        #expect(progress?.direction == .recovering)
+        #expect(progress?.earlierRate == 0.0)   // 0 of first 3
+        #expect(progress?.recentRate == 1.0)    // 3 of last 3
+    }
+
+    @Test func progressFiltersToScenarioAndMode() {
+        // Cross-scenario and non-IM reps must not contaminate the read for
+        // the requested scenario. Networking has 4 clean recovering reps;
+        // the difficultConversation reps are noise for this query.
+        var sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        sessions.append(imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: -5))
+        sessions.append(imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: -6))
+        let progress = IMHistorySummary.toneDrillProgress(from: sessions, scenario: .networking)
+        #expect(progress?.direction == .recovering)
+        #expect(progress?.recentRate == 1.0)
+    }
+
+    @Test func progressThresholdConstantIsRobustToWindowGranularity() {
+        // The threshold must sit below the smallest possible non-zero swing
+        // (one rep flipping in a 2-rep window == 0.5) and above zero, so a
+        // flat history reads stalled and any real flip reads directional.
+        #expect(IMHistorySummary.toneDrillProgressThreshold > 0)
+        #expect(IMHistorySummary.toneDrillProgressThreshold < 0.5)
+    }
 }
 
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
