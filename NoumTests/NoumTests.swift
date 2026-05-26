@@ -14930,6 +14930,63 @@ struct IMToneDrillSignalTests {
         #expect(blueprint.recommendedScenario == .difficultConversation)
         #expect(blueprint.recommendedTone == .calm)
     }
+
+    @Test func goalBasedImRecommendationCarriesScenarioAndTone() {
+        // The newly-wired surfaces (PracticeModeSelectionView's Begin CTA
+        // and Summary's looking-ahead read) forward
+        // `blueprint.recommendedScenario` / `recommendedTone` straight into
+        // the IM destination. That forwarding is only correct if an IM
+        // recommendation always carries both — lock it for the *goal-based*
+        // bias (no drill signal at all), not only the tone-drill override.
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .calmerDelivery,        // → IM is the top priority
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .rushing,          // not fillerWords/rambling/freezing
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .warm,            // → recommended tone == .warm
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        // plan: nil → no strongestMode, so the preferred mode stays IM.
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input(),
+            plan: nil
+        )
+        #expect(blueprint.recommendedMode == .imConversation)
+        // work context + calmerDelivery → difficultConversation scenario.
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.recommendedTone == .warm)
+    }
+
+    @Test func nonImRecommendationCarriesNoScenarioOrTone() {
+        // The mirror invariant: when the recommendation is *not* IM, the
+        // scenario/tone are nil so the IM-destination forwarding is a
+        // no-op and a non-IM CTA can never smuggle a stale scenario.
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,         // → Ah-Counter is the top priority
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .persuasive,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input(),
+            plan: nil
+        )
+        #expect(blueprint.recommendedMode != .imConversation)
+        #expect(blueprint.recommendedScenario == nil)
+        #expect(blueprint.recommendedTone == nil)
+    }
 }
 
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
