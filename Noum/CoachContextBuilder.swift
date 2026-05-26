@@ -82,6 +82,13 @@ enum CoachContextBuilder {
         6. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
            "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
         7. When REAL-WORLD TRANSFER is present, it is the user's report of what happened and how the room felt. Use it to ask, adapt, or prepare; never call it objective proof or claim a drill caused the result.
+        8. When TONE-DRILL TRAJECTORY is present, it reports whether a \
+           prescribed IM tone drill is recovering, stalled, or slipping \
+           across the user's own reps. Speak to the response — reinforce a \
+           recovering drill, change the approach on a slipping one, treat a \
+           stalled one as a plateau to break — rather than re-issuing the \
+           original miss as if nothing has moved. It is observed \
+           association, never proof a drill caused the change.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -445,6 +452,22 @@ enum CoachContextBuilder {
             lines.append(contentsOf: interventionLines)
         }
 
+        // TONE-DRILL TRAJECTORY — the IM analog of INTERVENTION RESPONSE.
+        // The recommendation engine already adapts its next-practice card
+        // to whether the prescribed tone drill is recovering or slipping;
+        // this carries the same Adaptation read into the chat coach so it
+        // can speak to the response in conversation ("your calm tone is
+        // recovering — 0% to 50%"), not only on the post-rep card. Pure read
+        // over the user's own IM reps; surfaced only when the prescribed
+        // scenario carries a trajectory (≥4 evaluated reps), so the coach
+        // never claims a movement it can't see.
+        if let toneSignal = IMHistorySummary.toneDrillSignal(from: sessions),
+           let trajectoryLines = toneDrillTrajectoryLines(for: toneSignal) {
+            lines.append("")
+            lines.append("TONE-DRILL TRAJECTORY (is the prescribed tone drill working?)")
+            lines.append(contentsOf: trajectoryLines)
+        }
+
         // RECENT — last 3 sessions, so the coach can quote actual numbers.
         // M21: when a session carried a declared intent (the user tapped a
         // chip on the SessionIntent prompt before the rep), append a quiet
@@ -546,6 +569,49 @@ enum CoachContextBuilder {
         lines.append("")
         lines.append("=== END CONTEXT ===")
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Tone-drill trajectory (Adaptation read for the chat coach)
+    //
+    // Turns the Adaptation read carried on a tone-drill signal into the
+    // terse, citeable register the system prompt's intelligence floor
+    // expects ("0% to 50%"). Mirrors the branching of
+    // `RecommendationBiasEngine`'s drill blueprint copy — reinforce a
+    // recovering drill, change a slipping one, name a stalled plateau —
+    // but for the conversational surface rather than the next-practice
+    // card, so the two never disagree about whether the work is landing.
+    //
+    // Returns nil when the signal carries no trajectory (`progress == nil`,
+    // i.e. fewer than the 4 evaluated reps needed to split two disjoint
+    // windows). The coach must not invent a trajectory it cannot see — same
+    // honest-evidence bar the helper that produced the signal enforces.
+    //
+    // First string is the data line; the second is a guidance clause so the
+    // model uses the read correctly (the system prompt's rule 8 is the
+    // backstop, this is the in-context nudge).
+    static func toneDrillTrajectoryLines(for signal: IMToneDrillSignal) -> [String]? {
+        guard let progress = signal.progress else { return nil }
+        let scenario = signal.scenario.title
+        let tone = signal.targetTone.title
+        let earlierPct = Int((progress.earlierRate * 100).rounded())
+        let recentPct = Int((progress.recentRate * 100).rounded())
+
+        let directionPhrase: String
+        let guidance: String
+        switch progress.direction {
+        case .recovering:
+            directionPhrase = "recovering"
+            guidance = "The prescribed tone drill is landing — reinforce it and name the climb; do not restate the original miss as if nothing has changed."
+        case .slipping:
+            directionPhrase = "slipping"
+            guidance = "The tone drill is not landing — suggest changing how they open the scenario rather than repeating the identical ask."
+        case .stalled:
+            directionPhrase = "flat — no movement yet"
+            guidance = "The tone has not moved yet — acknowledge the plateau honestly and offer a different angle if the user asks."
+        }
+
+        let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — \(directionPhrase)."
+        return [dataLine, "- \(guidance)"]
     }
 
     // MARK: - Session-anchored opener

@@ -87,6 +87,28 @@ struct PostRepCoachNoteInput {
     /// overclaiming ("third clean rep" when the user has 3 total reps).
     let totalSessionCount: Int
 
+    // MARK: - IM tone-drill Adaptation read
+    //
+    // When the just-finished rep was an IM conversation, the Adaptation read
+    // for that rep's scenario — whether the committed tone is recovering or
+    // slipping across the user's recent reps in it. Lets the post-rep note
+    // speak to whether the tone work is landing ("your calm tone is
+    // recovering"), the same Adaptation signal the next-practice card and
+    // the chat coach now read. nil for non-IM reps and for thin histories
+    // (fewer than the 4 evaluated reps the read needs). The scenario + tone
+    // titles travel as plain strings so the service stays decoupled from the
+    // IM enums.
+
+    /// Tone-match trajectory for the just-finished IM rep's scenario, or nil
+    /// for non-IM reps / thin histories.
+    let imToneDrillProgress: IMToneDrillProgress?
+    /// Display title of the just-finished IM rep's scenario (e.g. "Difficult
+    /// Conversation"). nil when `imToneDrillProgress` is nil.
+    let imToneDrillScenarioTitle: String?
+    /// Display title of the tone the user committed to in that rep (e.g.
+    /// "Calm"). nil when `imToneDrillProgress` is nil.
+    let imToneDrillToneTitle: String?
+
     init(
         sessionID: UUID,
         mode: PracticeMode,
@@ -108,7 +130,10 @@ struct PostRepCoachNoteInput {
         scoreTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int = 0,
         isPersonalBest: Bool = false,
-        totalSessionCount: Int = 0
+        totalSessionCount: Int = 0,
+        imToneDrillProgress: IMToneDrillProgress? = nil,
+        imToneDrillScenarioTitle: String? = nil,
+        imToneDrillToneTitle: String? = nil
     ) {
         self.sessionID = sessionID
         self.mode = mode
@@ -131,6 +156,9 @@ struct PostRepCoachNoteInput {
         self.weeklyRepCount = weeklyRepCount
         self.isPersonalBest = isPersonalBest
         self.totalSessionCount = totalSessionCount
+        self.imToneDrillProgress = imToneDrillProgress
+        self.imToneDrillScenarioTitle = imToneDrillScenarioTitle
+        self.imToneDrillToneTitle = imToneDrillToneTitle
     }
 }
 
@@ -433,7 +461,7 @@ actor PostRepCoachNoteService {
     /// Priority chain that picks the one sentence to feature. Pure,
     /// exposed for tests.
     ///
-    /// Momentum branches (0a–0c) sit above the per-rep metric branches
+    /// Momentum branches (0a–0d) sit above the per-rep metric branches
     /// (1–6) because they carry multi-session evidence — the coach
     /// quoting trajectory is higher-signal than quoting today's stats.
     nonisolated static func metricSentence(
@@ -459,6 +487,22 @@ actor PostRepCoachNoteService {
         // and consecutive clean because it's a softer signal.
         if input.fillerTrendDirection == .improving, input.totalSessionCount >= 6 {
             return fillerTrendImprovingSentence(persona: persona)
+        }
+
+        // 0d) IM tone-drill trajectory — when this rep was an IM
+        // conversation and the committed tone in its scenario is recovering
+        // or slipping across recent reps, speak to that response (the
+        // Adaptation read) ahead of the per-rep metrics. Multi-session
+        // evidence specific to IM, so it sits with the other momentum
+        // branches. Stalled reads fall through — a flat trajectory isn't
+        // worth bumping the metric note.
+        if let progress = input.imToneDrillProgress,
+           progress.direction != .stalled,
+           let scenario = input.imToneDrillScenarioTitle,
+           let tone = input.imToneDrillToneTitle {
+            return imToneTrajectorySentence(
+                progress: progress, scenario: scenario, tone: tone, persona: persona
+            )
         }
 
         // 1) Filler comparison vs baseline (when both signals exist).
@@ -740,6 +784,54 @@ actor PostRepCoachNoteService {
         }
     }
 
+    /// IM tone-drill Adaptation read, voice-shaped. Reports the climb (or
+    /// drop) in the committed tone's hit rate for the just-finished
+    /// scenario. Only called for `.recovering` / `.slipping` — a recovering
+    /// read reinforces the drill, a slipping read points at a different
+    /// opening. Percentages come straight off the progress windows; no
+    /// reframe, no shame — a slip is data plus a constructive next move.
+    nonisolated static func imToneTrajectorySentence(
+        progress: IMToneDrillProgress,
+        scenario: String,
+        tone: String,
+        persona: CoachPersona
+    ) -> String {
+        let lower = tone.lowercased()
+        let earlierPct = Int((progress.earlierRate * 100).rounded())
+        let recentPct = Int((progress.recentRate * 100).rounded())
+        let recovering = progress.direction == .recovering
+        switch persona.voice {
+        case .authoritative:
+            return recovering
+                ? "Your \(lower) tone in \(scenario) is landing more — \(earlierPct)% to \(recentPct)%. Hold that line."
+                : "Your \(lower) tone in \(scenario) slipped — \(earlierPct)% to \(recentPct)%. Change how you open it."
+        case .warm:
+            return recovering
+                ? "Your \(lower) tone in \(scenario) is finding its footing — \(earlierPct)% to \(recentPct)%. That's real progress."
+                : "Your \(lower) tone in \(scenario) dipped — \(earlierPct)% to \(recentPct)%. A softer opening can reset it."
+        case .concise:
+            return recovering
+                ? "\(scenario): \(lower) tone \(earlierPct)% to \(recentPct)%. Climbing. Hold it."
+                : "\(scenario): \(lower) tone \(earlierPct)% to \(recentPct)%. Slipping. Reopen it."
+        case .persuasive:
+            return recovering
+                ? "Your \(lower) tone in \(scenario) is recovering — \(earlierPct)% to \(recentPct)%. The drill is working; one more locks it."
+                : "Your \(lower) tone in \(scenario) dropped — \(earlierPct)% to \(recentPct)%. Same scenario, a different opening closes it."
+        case .executive:
+            return recovering
+                ? "\(scenario) \(lower) tone: \(earlierPct)% to \(recentPct)%. Recovering. Recommend one more rep."
+                : "\(scenario) \(lower) tone: \(earlierPct)% to \(recentPct)%. Slipping. Recommend changing the open."
+        case .storytelling:
+            return recovering
+                ? "Your \(lower) tone in \(scenario) is climbing — \(earlierPct)% to \(recentPct)%. The arc is turning."
+                : "Your \(lower) tone in \(scenario) lost the thread — \(earlierPct)% to \(recentPct)%. Reopen the scene."
+        case .none:
+            return recovering
+                ? "Your \(lower) tone in \(scenario) is recovering — \(earlierPct)% to \(recentPct)%. Hold it."
+                : "Your \(lower) tone in \(scenario) slipped — \(earlierPct)% to \(recentPct)%. Change how you open it."
+        }
+    }
+
     // MARK: - Suffix sentences (BigMoment, weekly rhythm, transcript opener)
 
     /// BigMoment suffix replaces the standard closing when a big moment
@@ -980,6 +1072,15 @@ actor PostRepCoachNoteService {
         }
         if input.weeklyRepCount >= 2 {
             momentumLines.append("- Reps this week: \(input.weeklyRepCount).")
+        }
+        if let progress = input.imToneDrillProgress,
+           progress.direction != .stalled,
+           let scenario = input.imToneDrillScenarioTitle,
+           let tone = input.imToneDrillToneTitle {
+            let earlierPct = Int((progress.earlierRate * 100).rounded())
+            let recentPct = Int((progress.recentRate * 100).rounded())
+            let word = progress.direction == .recovering ? "recovering" : "slipping"
+            momentumLines.append("- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% across recent reps (\(word)).")
         }
         if !momentumLines.isEmpty {
             lines.append("")
