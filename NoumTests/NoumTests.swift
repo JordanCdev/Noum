@@ -14966,6 +14966,222 @@ struct IMToneDrillSignalTests {
     }
 }
 
+// MARK: - Tone-drill Adaptation read ("did the drill work?")
+//
+// `IMHistorySummary.toneDrillAdaptation` is the observe-and-adapt half of
+// the coach-parity loop: after the same scenario + tone is prescribed
+// everywhere, did the committed tone start landing across the reps that
+// followed? These tests lock the early-vs-recent window math and the
+// honest-data contracts (firstPass below the rep bar, non-overlapping
+// windows, the holding band), then confirm the recommendation copy
+// reinforces / varies / re-diagnoses off the read instead of repeating
+// the identical first-pass nudge.
+struct IMToneDrillAdaptationTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    private func input() -> AIHomeRecommendationInput {
+        AIHomeRecommendationInput(
+            recentSessionSummary: "",
+            averageFillers: 0,
+            averageDuration: 0,
+            averageWordsPerMinute: 0,
+            fillerTrendDelta: 0,
+            durationTrendDelta: 0,
+            paceTrendDelta: 0,
+            averageWordCount: 0,
+            strongestMode: nil,
+            currentIdentity: "",
+            currentIdentityEvidence: "",
+            styleAlignmentScore: 0,
+            sessionStreak: 0,
+            daysSinceLastSession: 0,
+            preferredModeBias: "",
+            preferredToneBias: "",
+            preferredScenarioBias: "",
+            modeBenefitBias: ""
+        )
+    }
+
+    @Test func thresholdConstantsAreStable() {
+        // The boundaries the copy and the suite both lean on.
+        #expect(IMHistorySummary.toneDrillAdaptationMinReps == 5)
+        #expect(IMHistorySummary.toneDrillAdaptationDelta == 0.25)
+    }
+
+    @Test func adaptationIsFirstPassBelowRepBar() {
+        // 4 evaluated reps clears the *firing* bar (≥3, sub-40%) but not
+        // the *adaptation* bar (≥5) — there's no honest before/after yet,
+        // so the read stays a plain first-pass prescription.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.evaluatedCount == 4)
+        #expect(signal?.adaptation == .firstPass)
+    }
+
+    @Test func adaptationReadsReinforcingWhenRecentRepsLandMore() {
+        // 6 reps oldest→newest: the three oldest all miss, the recent
+        // window lands 2 of 3. Overall 2/6 == 0.33 still fires the signal,
+        // and the recent climb reads as reinforcing.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -1)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.matchRate == 0.33)
+        guard case let .reinforcing(recentRate, earlierRate)? = signal?.adaptation else {
+            Issue.record("expected .reinforcing, got \(String(describing: signal?.adaptation))")
+            return
+        }
+        #expect(earlierRate == 0.0)
+        #expect(abs(recentRate - 2.0 / 3.0) < 0.0001)
+
+        // Copy reinforces with real numbers and leads with the gain.
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: signal
+        )
+        #expect(blueprint.whyNow.contains("landing more"))
+        #expect(blueprint.whyNow.contains("67%"))
+        #expect(blueprint.whyNow.contains("up from 0%"))
+        #expect(blueprint.whyNow.contains("lock it in"))
+    }
+
+    @Test func adaptationReadsNotLandingWhenRecentRepsSlip() {
+        // 8 reps: the oldest window lands 2/3, the recent window 0/3,
+        // overall 3/8 == 0.38 still fires. Recent slip → notLanding, and
+        // the copy varies the entry rather than repeating the nudge.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -8),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -7),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "tense",     daysOffset: -1)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.matchRate == 0.38)
+        guard case let .notLanding(recentRate, earlierRate)? = signal?.adaptation else {
+            Issue.record("expected .notLanding, got \(String(describing: signal?.adaptation))")
+            return
+        }
+        #expect(recentRate == 0.0)
+        #expect(abs(earlierRate - 2.0 / 3.0) < 0.0001)
+
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: signal
+        )
+        #expect(blueprint.whyNow.contains("slipping"))
+        #expect(blueprint.whyNow.contains("down from 67%"))
+        #expect(blueprint.whyMode.contains("change the entry"))
+    }
+
+    @Test func adaptationReadsHoldingWhenFlat() {
+        // 6 reps, one match in each window → delta 0, inside the holding
+        // band. Overall 2/6 == 0.33 fires; the read is steady-but-not-yet.
+        let sessions = [
+            imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "warm", daysOffset: -6),
+            imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "flat", daysOffset: -5),
+            imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "flat", daysOffset: -4),
+            imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "flat", daysOffset: -3),
+            imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "flat", daysOffset: -2),
+            imSession(scenario: .socialCatchUp, targetTone: .warm, actualTone: "warm", daysOffset: -1)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        #expect(signal?.matchRate == 0.33)
+        guard case .holding = signal?.adaptation ?? .firstPass else {
+            Issue.record("expected .holding, got \(String(describing: signal?.adaptation))")
+            return
+        }
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: signal
+        )
+        #expect(blueprint.whyNow.contains("holding around 33%"))
+        #expect(blueprint.whyMode.contains("fresh angle"))
+    }
+
+    @Test func windowsNeverOverlapAtMinReps() {
+        // At exactly 5 reps the window is 2 each (5/2). The single middle
+        // rep is excluded from both, so a strong-recent / weak-early split
+        // is read purely from disjoint windows — not double-counted.
+        // oldest 2 miss, middle match (ignored), newest 2 match.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -1)
+        ]
+        // Overall 3/5 == 0.60 — does NOT fire the signal (≥0.40), so the
+        // adaptation analyzer is exercised directly to assert the window math.
+        #expect(IMHistorySummary.toneDrillSignal(from: sessions) == nil)
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions, scenario: .difficultConversation)
+        guard case let .reinforcing(recentRate, earlierRate) = adaptation else {
+            Issue.record("expected .reinforcing, got \(adaptation)")
+            return
+        }
+        #expect(recentRate == 1.0)   // newest 2 both matched
+        #expect(earlierRate == 0.0)  // oldest 2 both missed
+    }
+
+    @Test func adaptationIgnoresOtherScenariosAndMissingTone() {
+        // Cross-scenario reps and reps the evaluator never read must not
+        // bleed into the drilled scenario's before/after.
+        var sessions: [PracticeSession] = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -1)
+        ]
+        // Noise: a different scenario, and a blank-tone (unread) rep in the
+        // drilled scenario at the freshest slot — neither should change the read.
+        sessions.append(imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2))
+        sessions.append(imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "  ", daysOffset: -0.5))
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions, scenario: .difficultConversation)
+        guard case .reinforcing = adaptation else {
+            Issue.record("expected .reinforcing despite noise, got \(adaptation)")
+            return
+        }
+    }
+}
+
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
 //
 // The scenario header's two trend chips ("Trust ↑" / "Tension ↓") read
