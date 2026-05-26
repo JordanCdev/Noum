@@ -326,8 +326,22 @@ struct SummaryView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
+            imToneSignal: imToneDrillSignal
         )
+    }
+
+    /// The per-scenario tone-drill signal, shared with Home and the mode
+    /// picker. When set, the post-rep "Looking ahead" card prescribes the
+    /// exact scenario + tone to re-drill instead of a generic mode nudge.
+    /// `if #available` guards the iOS-17 summary type so this unannotated
+    /// view still compiles; `IMToneDrillSignal` itself is non-gated.
+    private var imToneDrillSignal: IMToneDrillSignal? {
+        guard IMModeAvailability.isAvailable else { return nil }
+        if #available(iOS 17.0, *) {
+            return IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+        }
+        return nil
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {

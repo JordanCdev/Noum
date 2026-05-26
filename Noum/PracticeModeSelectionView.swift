@@ -66,6 +66,16 @@ struct PracticeModeSelectionView: View {
     /// `ModeOption.recommendedReason` when nil (cold start, no
     /// session history).
     @State private var cachedRecommendedReason: String?
+    /// IM scenario + tone the `RecommendationBiasEngine` wants this user
+    /// to drill next, carried by the blueprint only when the recommended
+    /// mode is IM (a per-scenario tone drill or the goal-based default).
+    /// Threaded into `appDestination(for: .imConversation)` so launching
+    /// IM from the picker prefills the same scenario + tone the Home
+    /// coach card does — the drill is offered wherever the user lands,
+    /// not just on Home. Both nil when IM isn't the recommendation, so
+    /// the IM setup falls back to the normal scenario grid.
+    @State private var cachedRecommendedScenario: IMConversationScenario?
+    @State private var cachedRecommendedTone: IMTargetTone?
     /// When true, the picker has the Cut the Crutch tile selected.
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
@@ -872,9 +882,20 @@ struct PracticeModeSelectionView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: plan
+            plan: plan,
+            // Same honest, self-clearing tone-drill signal Home reads:
+            // when one IM scenario reliably misses its committed tone
+            // (≥3 evaluated reps, sub-40% hit rate) the engine prescribes
+            // re-running that exact scenario + tone. Availability-guarded
+            // so an offline IM mode falls back to the normal bias instead
+            // of recommending a mode that would just re-route to Timed.
+            imToneSignal: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil
         )
         cachedRecommendedMode = blueprint.recommendedMode
+        cachedRecommendedScenario = blueprint.recommendedScenario
+        cachedRecommendedTone = blueprint.recommendedTone
         // Prefer `whyNow` (the situational hook) over `whyMode` (the
         // mode-benefit), but fall back gracefully and ignore empty
         // strings so we never render a blank line.
@@ -893,7 +914,11 @@ struct PracticeModeSelectionView: View {
             return .ahCounterPractice
         case .imConversation:
             if IMModeAvailability.isAvailable {
-                return .imPractice(scenario: nil, tone: nil)
+                // Honour the engine's recommended scenario + tone (set
+                // only when IM is the recommendation — a tone drill or the
+                // goal-based default). Both nil otherwise, so a free-choice
+                // IM launch still opens the normal scenario grid.
+                return .imPractice(scenario: cachedRecommendedScenario, tone: cachedRecommendedTone)
             } else {
                 return .timedPractice
             }

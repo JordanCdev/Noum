@@ -14907,7 +14907,41 @@ struct IMToneDrillSignalTests {
             plan: nil
         )
         #expect(blueprint.recommendedMode == .timed)
+        // Both nil on a non-IM recommendation. The picker + summary now
+        // forward `recommendedScenario` / `recommendedTone` straight into
+        // the IM destination, so this nil-when-off-IM contract is what
+        // keeps a free-choice IM launch on the normal scenario grid
+        // instead of a stale prefill.
         #expect(blueprint.recommendedScenario == nil)
+        #expect(blueprint.recommendedTone == nil)
+    }
+
+    @Test func goalBasedIMRecommendationCarriesScenarioAndTone() {
+        // The other half of the destination contract: when the *goal*
+        // bias (not a tone drill) lands on IM, the blueprint must carry a
+        // concrete scenario + tone so the picker quick-start and Home both
+        // prefill the same setup. A calmer-delivery / social / warm-voice
+        // profile prioritises IM → social catch-up + warm.
+        let profile = CoachingProfile(
+            speakingContext: .social,
+            primaryGoal: .calmerDelivery,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .rushing,
+            desiredOutcome: .composed,
+            speakingStyleGoal: .warm,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input(),
+            plan: nil
+        )
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .socialCatchUp)
+        #expect(blueprint.recommendedTone == .warm)
     }
 
     @Test func endToEndSignalFeedsImDrillBlueprint() {
