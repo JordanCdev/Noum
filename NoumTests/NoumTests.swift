@@ -14966,6 +14966,299 @@ struct IMToneDrillSignalTests {
     }
 }
 
+// MARK: - Tone-drill adaptation → recommendation engine (Adaptation stage)
+//
+// `toneDrillSignal` prescribes the drill; `toneDrillAdaptation` reads the
+// *response*. After the user has run a fresh prior→recent window on a
+// scenario that was a tone gap, did the hit rate recover (`.landing`,
+// reinforce) or hold below the bar (`.stillMissing`, vary the angle)?
+// These tests lock the full-window evidence bar, the "prior must have been
+// a gap" guard, the landing/still-missing classification, the worst-recent
+// selection, and the way the engine varies the tone-drill copy by response
+// without ever swapping the user's committed scenario + tone.
+
+struct IMToneDrillAdaptationTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    private func input() -> AIHomeRecommendationInput {
+        AIHomeRecommendationInput(
+            recentSessionSummary: "",
+            averageFillers: 0,
+            averageDuration: 0,
+            averageWordsPerMinute: 0,
+            fillerTrendDelta: 0,
+            durationTrendDelta: 0,
+            paceTrendDelta: 0,
+            averageWordCount: 0,
+            strongestMode: nil,
+            currentIdentity: "",
+            currentIdentityEvidence: "",
+            styleAlignmentScore: 0,
+            sessionStreak: 0,
+            daysSinceLastSession: 0,
+            preferredModeBias: "",
+            preferredToneBias: "",
+            preferredScenarioBias: "",
+            modeBenefitBias: ""
+        )
+    }
+
+    @Test func adaptationNilOnEmptyHistory() {
+        #expect(IMHistorySummary.toneDrillAdaptation(from: []) == nil)
+    }
+
+    @Test func adaptationNilBelowFullWindowBar() {
+        // Five evaluated reps can't form a full 3+3 before/after pair, so
+        // there's no honest way to separate the gap from the response.
+        let sessions = (1...5).map { i in
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -Double(i))
+        }
+        #expect(IMHistorySummary.toneDrillAdaptation(from: sessions) == nil)
+    }
+
+    @Test func adaptationNilWhenPriorWindowWasNotAGap() {
+        // The prior (older) window was already landing the tone, so there
+        // was never a drill to adapt — even if the recent window slipped.
+        // We don't manufacture an "adaptation" out of a good-then-bad run.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillAdaptation(from: sessions) == nil)
+    }
+
+    @Test func adaptationLandingWhenRecentRecovers() {
+        // Prior window 0/3 (a real gap), recent window 3/3 — the drill is
+        // working, the tone is landing again.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "tense",     daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions)
+        #expect(adaptation?.scenario == .networking)
+        #expect(adaptation?.targetTone == .confident)
+        #expect(adaptation?.response == .landing)
+        #expect(adaptation?.priorMatchRate == 0.0)
+        #expect(adaptation?.recentMatchRate == 1.0)
+        #expect(adaptation?.priorEvaluatedCount == 3)
+        #expect(adaptation?.recentEvaluatedCount == 3)
+    }
+
+    @Test func adaptationStillMissingWhenRecentStaysLow() {
+        // Prior 0/3 gap; recent 1/3 == 0.33, still below the 0.40 bar —
+        // the drill hasn't taken yet, so the coach should vary the angle.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -1)
+        ]
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions)
+        #expect(adaptation?.response == .stillMissing)
+        #expect(adaptation?.priorMatchRate == 0.0)
+        #expect(adaptation?.recentMatchRate == 0.33)
+    }
+
+    @Test func adaptationIgnoresNonIMAndUnqualifiedScenarios() {
+        // A networking run that qualifies, plus noise: a Timed rep and two
+        // Difficult Conversation reps (below the full-window bar). Only the
+        // qualifying IM scenario should surface.
+        var sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "tense",     daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -8),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -7)
+        ]
+        sessions.append(PracticeSession(
+            transcript: "timed",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate,
+            mode: .timed,
+            score: 9
+        ))
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions)
+        #expect(adaptation?.scenario == .networking)
+        #expect(adaptation?.response == .landing)
+    }
+
+    @Test func adaptationPicksWorstRecentScenario() {
+        // Two qualifying scenarios; the one whose recent window is still
+        // worst (most in need) wins: networking recovered to 2/3 (0.67)
+        // while Difficult Conversation is still at 0/3.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -12),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -11),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -10),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -9),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -8),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -7),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -4)
+        ]
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions)
+        #expect(adaptation?.scenario == .difficultConversation)
+        #expect(adaptation?.response == .stillMissing)
+        #expect(adaptation?.recentMatchRate == 0.0)
+    }
+
+    @Test func adaptationIgnoresRepsWithoutActualTone() {
+        // Blank/nil-actualTone reps are missing data, not evaluated reps —
+        // they must not pad the window count into clearing the 3+3 bar.
+        // Five evaluated + two unread → still below the full-window bar.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -7),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: nil,         daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "tense",     daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "   ",       daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillAdaptation(from: sessions) == nil)
+    }
+
+    @Test func blueprintVariesCopyWhenDrillStillMissing() {
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation, targetTone: .calm, matchRate: 0.0, evaluatedCount: 6
+        )
+        let adaptation = IMToneDrillAdaptation(
+            scenario: .difficultConversation, targetTone: .calm, response: .stillMissing,
+            priorMatchRate: 0.0, recentMatchRate: 0.0, priorEvaluatedCount: 3, recentEvaluatedCount: 3
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil,
+            imToneSignal: signal, imToneAdaptation: adaptation
+        )
+        // Structural recommendation unchanged — only the framing adapts.
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.recommendedTone == .calm)
+        #expect(blueprint.focus == "Difficult Conversation tone — new angle")
+        #expect(blueprint.whyMode.contains("change the approach"))
+        #expect(blueprint.target.contains("opening"))
+    }
+
+    @Test func blueprintReinforcesWhenRecentLanding() {
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation, targetTone: .calm, matchRate: 0.17, evaluatedCount: 6
+        )
+        let adaptation = IMToneDrillAdaptation(
+            scenario: .difficultConversation, targetTone: .calm, response: .landing,
+            priorMatchRate: 0.0, recentMatchRate: 0.67, priorEvaluatedCount: 3, recentEvaluatedCount: 3
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil,
+            imToneSignal: signal, imToneAdaptation: adaptation
+        )
+        #expect(blueprint.focus == "Difficult Conversation tone — keep going")
+        #expect(blueprint.whyMode.contains("the drill is working"))
+        #expect(blueprint.whyNow.contains("up from"))
+        #expect(blueprint.whyNow.contains("67%"))
+        #expect(blueprint.whyNow.contains("0%"))
+    }
+
+    @Test func blueprintIgnoresAdaptationForDifferentScenario() {
+        // The adaptation read is for a different scenario than the one the
+        // signal prescribes, so it must not reframe this prescription.
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation, targetTone: .calm, matchRate: 0.25, evaluatedCount: 4
+        )
+        let adaptation = IMToneDrillAdaptation(
+            scenario: .networking, targetTone: .confident, response: .stillMissing,
+            priorMatchRate: 0.0, recentMatchRate: 0.0, priorEvaluatedCount: 3, recentEvaluatedCount: 3
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil,
+            imToneSignal: signal, imToneAdaptation: adaptation
+        )
+        #expect(blueprint.focus == "Difficult Conversation tone")          // default, unchanged
+        #expect(blueprint.whyMode.contains("keeps slipping in this exact setup"))
+    }
+
+    @Test func blueprintDefaultCopyWhenNoAdaptation() {
+        // No adaptation read yet (the common case) → the original
+        // prescription copy, unchanged. Regression guard on the nil path.
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation, targetTone: .calm, matchRate: 0.25, evaluatedCount: 4
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil, imToneSignal: signal
+        )
+        #expect(blueprint.focus == "Difficult Conversation tone")
+        #expect(blueprint.whyNow.contains("25%"))
+    }
+
+    @Test func endToEndStillMissingVariesCopy() {
+        // Full path: a Difficult Conversation history that's a tone gap and
+        // hasn't recovered → signal + still-missing adaptation → the engine
+        // varies the angle in the prescription it hands every surface.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -1)
+        ]
+        let signal = IMHistorySummary.toneDrillSignal(from: sessions)
+        let adaptation = IMHistorySummary.toneDrillAdaptation(from: sessions)
+        #expect(signal?.scenario == .difficultConversation)
+        #expect(adaptation?.response == .stillMissing)
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil, input: input(), plan: nil,
+            imToneSignal: signal, imToneAdaptation: adaptation
+        )
+        #expect(blueprint.recommendedScenario == .difficultConversation)
+        #expect(blueprint.focus.contains("new angle"))
+        #expect(blueprint.whyNow.contains("33%"))
+    }
+}
+
 // MARK: - IMScenarioDetailView relational trend (trust/tension chips)
 //
 // The scenario header's two trend chips ("Trust ↑" / "Tension ↓") read

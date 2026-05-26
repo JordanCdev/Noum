@@ -6963,6 +6963,31 @@ struct IMToneDrillSignal: Equatable {
     let evaluatedCount: Int
 }
 
+/// The observed *response* to a prescribed tone drill — the "Adaptation"
+/// stage of the coach-parity loop in `docs/VISION.md`. `toneDrillSignal`
+/// *prescribes* re-running a scenario's committed tone; this reads whether
+/// a fresh before/after window of reps actually moved the hit rate.
+/// Produced by `IMHistorySummary.toneDrillAdaptation(from:)` only when a
+/// full prior→recent window pair clears the evidence bar AND the prior
+/// window was itself sub-threshold (so the drill was genuinely warranted).
+/// `.landing` means the recent window has recovered to/above the threshold
+/// (reinforce — the drill is working, hold it); `.stillMissing` means it's
+/// holding below the bar across a fresh window (vary the angle, don't
+/// repeat the identical ask). Rates are 0.0–1.0 over their windows.
+struct IMToneDrillAdaptation: Equatable {
+    enum Response: Equatable {
+        case landing       // recovered at/above threshold — reinforce
+        case stillMissing  // still below threshold after a drill window — vary the angle
+    }
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    let response: Response
+    let priorMatchRate: Double
+    let recentMatchRate: Double
+    let priorEvaluatedCount: Int
+    let recentEvaluatedCount: Int
+}
+
 enum RecommendationBiasEngine {
     static let playbook: [PracticeModePlaybookEntry] = [
         .init(
@@ -6991,7 +7016,8 @@ enum RecommendationBiasEngine {
         profile: CoachingProfile?,
         input: AIHomeRecommendationInput,
         plan: CoachingPlan?,
-        imToneSignal: IMToneDrillSignal? = nil
+        imToneSignal: IMToneDrillSignal? = nil,
+        imToneAdaptation: IMToneDrillAdaptation? = nil
     ) -> RecommendationBiasBlueprint {
         // A scenario where the committed tone reliably misses is a
         // concrete, evidence-backed intervention — the read side of
@@ -7005,7 +7031,7 @@ enum RecommendationBiasEngine {
         // so this never gets stuck recommending a scenario the user
         // has already fixed.
         if let imToneSignal {
-            return toneDrillBlueprint(signal: imToneSignal)
+            return toneDrillBlueprint(signal: imToneSignal, adaptation: imToneAdaptation)
         }
 
         guard let profile else {
@@ -7056,20 +7082,66 @@ enum RecommendationBiasEngine {
     /// weakest setup. Copy reports the *observed* hit rate — no AI
     /// reframe, no shame; the amber read is informative, the fix is a
     /// rep, not a lecture.
-    private static func toneDrillBlueprint(signal: IMToneDrillSignal) -> RecommendationBiasBlueprint {
+    private static func toneDrillBlueprint(
+        signal: IMToneDrillSignal,
+        adaptation: IMToneDrillAdaptation? = nil
+    ) -> RecommendationBiasBlueprint {
         let benefit = playbookEntry(for: .imConversation)
         let scenario = signal.scenario.title
-        let tone = signal.targetTone.title
+        let tone = signal.targetTone.title.lowercased()
         let pct = Int((signal.matchRate * 100).rounded())
+
+        // Adaptation stage (docs/VISION.md): only when we've observed the
+        // *response* to this exact scenario's drill — a full prior→recent
+        // window — do we change the coaching voice. `.landing` reinforces a
+        // recovery already underway; `.stillMissing` varies the angle
+        // rather than repeating the identical ask. Guard on scenario
+        // identity so a different scenario's adaptation never reframes this
+        // prescription. The structural recommendation (mode, scenario,
+        // tone) is unchanged in every branch — only the framing adapts, so
+        // the user's committed tone is respected, never swapped out.
+        if let adaptation, adaptation.scenario == signal.scenario {
+            let recentPct = Int((adaptation.recentMatchRate * 100).rounded())
+            switch adaptation.response {
+            case .landing:
+                let priorPct = Int((adaptation.priorMatchRate * 100).rounded())
+                return RecommendationBiasBlueprint(
+                    recommendedMode: .imConversation,
+                    recommendedTone: signal.targetTone,
+                    recommendedScenario: signal.scenario,
+                    focus: "\(scenario) tone — keep going",
+                    target: "Hold \(tone) in \(scenario)",
+                    modeBenefit: benefit.benefit,
+                    whyMode: "Your \(tone) tone is starting to land in \(scenario) — the drill is working. One more clean rep locks it in.",
+                    whyNow: "Your most recent \(scenario) reps hit \(tone) \(recentPct)% of the time, up from \(priorPct)% earlier. Run it again and hold the line.",
+                    suggestedTimedDifficulty: nil,
+                    suggestedTheme: .all
+                )
+            case .stillMissing:
+                return RecommendationBiasBlueprint(
+                    recommendedMode: .imConversation,
+                    recommendedTone: signal.targetTone,
+                    recommendedScenario: signal.scenario,
+                    focus: "\(scenario) tone — new angle",
+                    target: "Win \(tone) in your opening",
+                    modeBenefit: benefit.benefit,
+                    whyMode: "You've drilled \(scenario) and \(tone) is still slipping — so change the approach, don't repeat the same rep. Win the tone in your first two replies and let the rest follow.",
+                    whyNow: "Your \(tone) tone still landed only \(recentPct)% across your latest \(scenario) reps. Same target, smaller bite: nail \(tone) in the open, then protect it.",
+                    suggestedTimedDifficulty: nil,
+                    suggestedTheme: .all
+                )
+            }
+        }
+
         return RecommendationBiasBlueprint(
             recommendedMode: .imConversation,
             recommendedTone: signal.targetTone,
             recommendedScenario: signal.scenario,
             focus: "\(scenario) tone",
-            target: "Land \(tone.lowercased()) in \(scenario)",
+            target: "Land \(tone) in \(scenario)",
             modeBenefit: benefit.benefit,
             whyMode: "Your committed tone keeps slipping in this exact setup — drilling the same scenario is where it gets fixed.",
-            whyNow: "Across your last \(signal.evaluatedCount) \(scenario) reps your \(tone.lowercased()) tone landed only \(pct)% of the time. Re-run the same scenario and hold the tone end to end.",
+            whyNow: "Across your last \(signal.evaluatedCount) \(scenario) reps your \(tone) tone landed only \(pct)% of the time. Re-run the same scenario and hold the tone end to end.",
             suggestedTimedDifficulty: nil,
             suggestedTheme: .all
         )

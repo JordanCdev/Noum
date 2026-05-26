@@ -517,4 +517,109 @@ enum IMHistorySummary {
               let lastDate = best?.value.map(\.date).max() else { return nil }
         return (tone, lastDate)
     }
+
+    // MARK: - Tone-drill adaptation (did the prescribed drill work?)
+    //
+    // The "Adaptation" stage of the coach-parity loop in docs/VISION.md.
+    // `toneDrillSignal` *prescribes* re-running a scenario's committed
+    // tone; this reads the *response*. After the user has been pointed at
+    // one scenario's tone across several reps, did a fresh window actually
+    // move the hit rate, or is it still slipping?
+    //
+    // Method: order the scenario's evaluated reps oldest→newest, take the
+    // most-recent `recentWindowSize` as the response window and the
+    // `priorWindowSize` reps immediately before it as the baseline. The
+    // two windows are adjacent and disjoint. A scenario is read only when:
+    //   • it has at least `recentWindowSize + priorWindowSize` evaluated
+    //     reps (a full before/after pair — fewer can't separate "the gap
+    //     that warranted the drill" from "the response to it"), AND
+    //   • the prior window was itself sub-threshold (matchRate <
+    //     `matchRateThreshold`) — otherwise the tone was already landing
+    //     and there was no drill to adapt to.
+    //
+    // `.landing` when the recent window recovers to/above the threshold
+    // (reinforce — hold it); `.stillMissing` when it stays below (vary the
+    // angle, don't repeat the identical ask). The defaults reuse the
+    // `toneDrillSignal` evidence bar: a 3-rep prior window is the same
+    // "this is a pattern, not a bad day" bar the prescription requires, and
+    // a 3-rep recent window is a fair read of the response.
+    //
+    // Selection when several scenarios qualify: worst recent hit rate first
+    // (still most in need), tiebreak by more evidence, then freshest — the
+    // same ordering `toneDrillSignal` uses, so when a scenario clears both
+    // bars the adaptation read lines up with the scenario being prescribed.
+    //
+    // Pure function of session history — no new persistence. Defensive
+    // contracts locked by `IMToneDrillAdaptationTests`:
+    //   • reuses the same `.imConversation` filter, scenario filter, and
+    //     missing/whitespace-`actualTone` exclusion the stats helpers use
+    //   • nil below the full window bar, and when the prior window wasn't a
+    //     gap (nothing to adapt)
+    //   • `targetTone` is the dominant committed tone over the same
+    //     evaluated reps — the exact target the drill re-set
+    static func toneDrillAdaptation(
+        from sessions: [PracticeSession],
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        recentWindowSize: Int = toneDrillMinEvaluatedReps,
+        priorWindowSize: Int = toneDrillMinEvaluatedReps
+    ) -> IMToneDrillAdaptation? {
+        struct Candidate {
+            let adaptation: IMToneDrillAdaptation
+            let lastEvaluatedDate: Date
+        }
+
+        let candidates: [Candidate] = IMConversationScenario.allCases.compactMap { scenario in
+            // (matched, date) for each evaluated rep, oldest→newest.
+            let evaluated: [(matched: Bool, date: Date)] = sessions
+                .compactMap { session in
+                    guard session.mode == .imConversation,
+                          let details = session.imConversationDetails,
+                          details.setup.scenario == scenario,
+                          let actual = details.actualTone,
+                          !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { return nil }
+                    return (matches(targetTone: details.setup.targetTone, actualTone: actual), session.date)
+                }
+                .sorted { $0.date < $1.date }
+
+            guard evaluated.count >= recentWindowSize + priorWindowSize else { return nil }
+
+            let recent = evaluated.suffix(recentWindowSize)
+            let prior = evaluated.dropLast(recentWindowSize).suffix(priorWindowSize)
+
+            func rate(_ window: ArraySlice<(matched: Bool, date: Date)>) -> Double {
+                guard !window.isEmpty else { return 0 }
+                return Double(window.filter { $0.matched }.count) / Double(window.count)
+            }
+
+            let priorRate = rate(prior)
+            // The drill was only warranted if the prior window was itself a
+            // gap — otherwise there's nothing to adapt to.
+            guard priorRate < matchRateThreshold else { return nil }
+            let recentRate = rate(recent)
+
+            guard let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario) else { return nil }
+
+            let adaptation = IMToneDrillAdaptation(
+                scenario: scenario,
+                targetTone: dominant.tone,
+                response: recentRate >= matchRateThreshold ? .landing : .stillMissing,
+                priorMatchRate: (priorRate * 100).rounded() / 100,
+                recentMatchRate: (recentRate * 100).rounded() / 100,
+                priorEvaluatedCount: prior.count,
+                recentEvaluatedCount: recent.count
+            )
+            return Candidate(adaptation: adaptation, lastEvaluatedDate: recent.last?.date ?? dominant.lastDate)
+        }
+
+        return candidates.sorted { lhs, rhs in
+            if lhs.adaptation.recentMatchRate != rhs.adaptation.recentMatchRate {
+                return lhs.adaptation.recentMatchRate < rhs.adaptation.recentMatchRate // worst recent rate first
+            }
+            if lhs.adaptation.recentEvaluatedCount != rhs.adaptation.recentEvaluatedCount {
+                return lhs.adaptation.recentEvaluatedCount > rhs.adaptation.recentEvaluatedCount // more evidence first
+            }
+            return lhs.lastEvaluatedDate > rhs.lastEvaluatedDate // freshest read first
+        }.first?.adaptation
+    }
 }

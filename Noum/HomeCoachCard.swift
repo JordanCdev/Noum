@@ -745,6 +745,9 @@ struct HomeCoachCard: View {
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
             imToneSignal: IMModeAvailability.isAvailable
                 ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+                : nil,
+            imToneAdaptation: IMModeAvailability.isAvailable
+                ? IMHistorySummary.toneDrillAdaptation(from: sessionStore.sessions)
                 : nil
         )
     }
