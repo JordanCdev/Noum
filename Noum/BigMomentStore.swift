@@ -74,6 +74,107 @@ struct BigMoment: Codable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Real-World Outcome Report
+
+/// User-owned account of how a completed real-world moment went. This is
+/// deliberately not derived from practice metrics: Noum can prepare for an
+/// interview or presentation, but only the user can report what happened.
+enum ReportedMomentOutcome: String, Codable, CaseIterable, Identifiable {
+    case wentWell
+    case mixed
+    case fellShort
+
+    var id: String { rawValue }
+
+    var chipLabel: String {
+        switch self {
+        case .wentWell:  return "Went well"
+        case .mixed:     return "Mixed"
+        case .fellShort: return "Fell short"
+        }
+    }
+
+    var coachClause: String {
+        switch self {
+        case .wentWell:  return "it went well"
+        case .mixed:     return "it was mixed"
+        case .fellShort: return "it fell short of what they wanted"
+        }
+    }
+}
+
+/// The user's perception of the room or counterpart during the completed
+/// moment. Kept separate from outcome so the coach can learn whether a
+/// polished performance actually appeared to connect.
+enum ReportedAudienceResponse: String, Codable, CaseIterable, Identifiable {
+    case engaged
+    case unclear
+    case resistant
+
+    var id: String { rawValue }
+
+    var chipLabel: String {
+        switch self {
+        case .engaged:   return "They engaged"
+        case .unclear:   return "Hard to tell"
+        case .resistant: return "Met resistance"
+        }
+    }
+
+    var coachClause: String {
+        switch self {
+        case .engaged:   return "the audience or counterpart seemed engaged"
+        case .unclear:   return "their response was hard to read"
+        case .resistant: return "they perceived resistance"
+        }
+    }
+}
+
+struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
+    static let noteCharacterLimit = 180
+
+    let id: UUID
+    let momentID: UUID
+    let momentTitle: String
+    let category: BigMomentCategory
+    let outcome: ReportedMomentOutcome
+    let audienceResponse: ReportedAudienceResponse
+    let note: String?
+    let recordedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        moment: BigMoment,
+        outcome: ReportedMomentOutcome,
+        audienceResponse: ReportedAudienceResponse,
+        note: String? = nil,
+        recordedAt: Date = Date()
+    ) {
+        self.id = id
+        self.momentID = moment.id
+        self.momentTitle = moment.title
+        self.category = moment.category
+        self.outcome = outcome
+        self.audienceResponse = audienceResponse
+        let normalizedNote = note?
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        if let normalizedNote, !normalizedNote.isEmpty {
+            self.note = String(normalizedNote.prefix(Self.noteCharacterLimit))
+        } else {
+            self.note = nil
+        }
+        self.recordedAt = recordedAt
+    }
+
+    /// Bounded, explicitly user-reported language for the AI coach context.
+    var coachContextLine: String {
+        let base = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
+        guard let note else { return base }
+        return "\(base) Their note: \"\(note)\"."
+    }
+}
+
 // MARK: - BigMomentStore
 
 @MainActor
@@ -82,13 +183,23 @@ final class BigMomentStore: ObservableObject {
 
     @Published private(set) var activeMoment: BigMoment?
     @Published private(set) var archive: [BigMoment] = []
+    @Published private(set) var outcomeReports: [BigMomentOutcomeReport] = []
 
-    private let accountKey = "NoumAccountID"
+    private let defaults: UserDefaults
+    private let accountIDProvider: () -> String?
     private let activeMomentKeyPrefix = "bigMoment."
     private let archiveKeyPrefix = "bigMomentArchive."
+    private let outcomesKeyPrefix = "bigMomentOutcomes."
     private static let archiveCap = 5
+    static let outcomeReportCap = 12
 
-    private init() {}
+    init(
+        defaults: UserDefaults = .standard,
+        accountIDProvider: @escaping () -> String? = { KeychainHelper.load(key: "NoumAccountID") }
+    ) {
+        self.defaults = defaults
+        self.accountIDProvider = accountIDProvider
+    }
 
     // MARK: - Lifecycle
 
@@ -96,16 +207,19 @@ final class BigMomentStore: ObservableObject {
         guard let accountID = currentAccountID else {
             activeMoment = nil
             archive = []
+            outcomeReports = []
             return
         }
-        activeMoment = Self.loadMoment(forKey: activeMomentKey(for: accountID))
-        archive = Self.loadArchive(forKey: archiveKey(for: accountID))
+        activeMoment = loadMoment(forKey: activeMomentKey(for: accountID))
+        archive = Self.loadArchive(forKey: archiveKey(for: accountID), defaults: defaults)
+        outcomeReports = Self.loadOutcomes(forKey: outcomesKey(for: accountID), defaults: defaults)
         archiveExpiredIfNeeded(accountID: accountID)
     }
 
     func endSession() {
         activeMoment = nil
         archive = []
+        outcomeReports = []
     }
 
     // MARK: - API
@@ -119,12 +233,19 @@ final class BigMomentStore: ObservableObject {
     func clearMoment() {
         guard let accountID = currentAccountID else { return }
         activeMoment = nil
-        UserDefaults.standard.removeObject(forKey: activeMomentKey(for: accountID))
+        defaults.removeObject(forKey: activeMomentKey(for: accountID))
+    }
+
+    /// Re-evaluate an active dated moment when Home appears or remains open
+    /// across its due date. Sign-in also calls this as part of reload.
+    func archiveExpiredIfNeeded() {
+        guard let accountID = currentAccountID else { return }
+        archiveExpiredIfNeeded(accountID: accountID)
     }
 
     func daysUntil() -> Int? {
         guard let moment = activeMoment else { return nil }
-        return daysUntil(moment)
+        return Self.daysUntil(moment)
     }
 
     /// Days from today until `moment.date`, or nil if no date is set.
@@ -132,13 +253,50 @@ final class BigMomentStore: ObservableObject {
     /// this is pure calendar math — no `activeMoment` read needed — so
     /// non-MainActor callers (e.g. `CoachContextBuilder.userContext`)
     /// can use it directly.
-    nonisolated func daysUntil(_ moment: BigMoment) -> Int? {
+    nonisolated static func daysUntil(_ moment: BigMoment) -> Int? {
         guard let date = moment.date else { return nil }
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let target = calendar.startOfDay(for: date)
         let components = calendar.dateComponents([.day], from: today, to: target)
         return components.day
+    }
+
+    nonisolated func daysUntil(_ moment: BigMoment) -> Int? {
+        Self.daysUntil(moment)
+    }
+
+    /// Most recent archived moment the user has not yet reflected on.
+    var pendingOutcomeCheckInMoment: BigMoment? {
+        archive.first { moment in
+            !outcomeReports.contains { $0.momentID == moment.id }
+        }
+    }
+
+    func recentOutcomeReports(limit: Int = 2) -> [BigMomentOutcomeReport] {
+        guard limit > 0 else { return [] }
+        return Array(outcomeReports.prefix(limit))
+    }
+
+    @discardableResult
+    func recordOutcome(
+        for moment: BigMoment,
+        outcome: ReportedMomentOutcome,
+        audienceResponse: ReportedAudienceResponse,
+        note: String? = nil
+    ) -> BigMomentOutcomeReport? {
+        guard let accountID = currentAccountID else { return nil }
+        let report = BigMomentOutcomeReport(
+            moment: moment,
+            outcome: outcome,
+            audienceResponse: audienceResponse,
+            note: note
+        )
+        var updated = outcomeReports.filter { $0.momentID != moment.id }
+        updated.insert(report, at: 0)
+        outcomeReports = Array(updated.prefix(Self.outcomeReportCap))
+        persistOutcomeReports(accountID: accountID)
+        return report
     }
 
     // MARK: - Private
@@ -154,15 +312,21 @@ final class BigMomentStore: ObservableObject {
         }
         archive = updatedArchive
         activeMoment = nil
-        UserDefaults.standard.removeObject(forKey: activeMomentKey(for: accountID))
+        defaults.removeObject(forKey: activeMomentKey(for: accountID))
         if let data = try? JSONEncoder().encode(updatedArchive) {
-            UserDefaults.standard.set(data, forKey: archiveKey(for: accountID))
+            defaults.set(data, forKey: archiveKey(for: accountID))
         }
     }
 
     private func persist(accountID: String) {
         if let moment = activeMoment, let data = try? JSONEncoder().encode(moment) {
-            UserDefaults.standard.set(data, forKey: activeMomentKey(for: accountID))
+            defaults.set(data, forKey: activeMomentKey(for: accountID))
+        }
+    }
+
+    private func persistOutcomeReports(accountID: String) {
+        if let data = try? JSONEncoder().encode(outcomeReports) {
+            defaults.set(data, forKey: outcomesKey(for: accountID))
         }
     }
 
@@ -174,30 +338,42 @@ final class BigMomentStore: ObservableObject {
         "\(archiveKeyPrefix)\(accountID)"
     }
 
-    private var currentAccountID: String? {
-        KeychainHelper.load(key: accountKey)
+    private func outcomesKey(for accountID: String) -> String {
+        "\(outcomesKeyPrefix)\(accountID)"
     }
 
-    private static func loadMoment(forKey key: String) -> BigMoment? {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    private var currentAccountID: String? {
+        accountIDProvider()
+    }
+
+    private func loadMoment(forKey key: String) -> BigMoment? {
+        guard let data = defaults.data(forKey: key),
               let moment = try? JSONDecoder().decode(BigMoment.self, from: data) else { return nil }
         return moment
     }
 
-    private static func loadArchive(forKey key: String) -> [BigMoment] {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    private static func loadArchive(forKey key: String, defaults: UserDefaults) -> [BigMoment] {
+        guard let data = defaults.data(forKey: key),
               let moments = try? JSONDecoder().decode([BigMoment].self, from: data) else { return [] }
         return moments
+    }
+
+    private static func loadOutcomes(forKey key: String, defaults: UserDefaults) -> [BigMomentOutcomeReport] {
+        guard let data = defaults.data(forKey: key),
+              let reports = try? JSONDecoder().decode([BigMomentOutcomeReport].self, from: data) else { return [] }
+        return reports
     }
 
     // MARK: - Auth Wipe
 
     func deleteAllData(for accountID: String) {
-        UserDefaults.standard.removeObject(forKey: activeMomentKey(for: accountID))
-        UserDefaults.standard.removeObject(forKey: archiveKey(for: accountID))
+        defaults.removeObject(forKey: activeMomentKey(for: accountID))
+        defaults.removeObject(forKey: archiveKey(for: accountID))
+        defaults.removeObject(forKey: outcomesKey(for: accountID))
         if currentAccountID == accountID {
             activeMoment = nil
             archive = []
+            outcomeReports = []
         }
     }
 }

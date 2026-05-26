@@ -29,7 +29,7 @@ enum CoachLetterCoordinator {
         let baseline = BaselineStore.shared.baseline
         let allSessions = PracticeSessionStore.shared.sessions
         let bigMoment = BigMomentStore.shared.activeMoment
-        let bigMomentDays = bigMoment.flatMap { BigMomentStore.shared.daysUntil($0) }
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
 
         let sessionsInMonth: [PracticeSession]
         if let (start, end) = CoachLetter.dateRange(forMonthKey: monthKey) {

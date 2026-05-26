@@ -248,7 +248,8 @@ enum SessionFinalizer {
             lastSessionID: latestSessionID,
             pendingIntervention: RecommendationLearningStore.shared.pendingExposure,
             recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
-            latestReflection: SessionReflectionStore.shared.latest
+            latestReflection: SessionReflectionStore.shared.latest,
+            latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first
         )
 
         let milestone = detectMilestone(

@@ -855,6 +855,7 @@ struct AskNoumView: View {
             pathGatingPhrase: pathProgress.currentNodeGatingPhrase,
             recentProofs: proofStore.recent(limit: 3),
             bigMoment: bigMomentStore.activeMoment,
+            recentMomentOutcomes: bigMomentStore.recentOutcomeReports(limit: 2),
             forwardPlan: forwardPlanStore.activePlan,
             latestRepNote: postRepCoachNoteStore.latestNote(),
             coachMemory: coachMemoryStore.currentMemory,

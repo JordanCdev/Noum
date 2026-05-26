@@ -159,7 +159,7 @@ public final class AINPCChatService: ObservableObject {
         // exists shapes pressure (a user with a board pitch in 3 days
         // deserves slightly sharper friction in workUpdate / networking).
         if let moment = bigMoment,
-           let days = BigMomentStore.shared.daysUntil(moment),
+           let days = BigMomentStore.daysUntil(moment),
            days >= 0 && days <= 60 {
             lines.append("")
             lines.append("UPCOMING REAL-LIFE STAKE (do not mention directly unless the user brings it up)")

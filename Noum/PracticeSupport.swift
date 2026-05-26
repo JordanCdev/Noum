@@ -6460,7 +6460,7 @@ enum PracticeSessionFinalizer {
         let profile = CoachingProfileStore.shared.profile
         let baseline = BaselineStore.shared.baseline
         let bigMoment = BigMomentStore.shared.activeMoment
-        let bigMomentDays = bigMoment.flatMap { BigMomentStore.shared.daysUntil($0) }
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
 
         let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient ? nil : baseline.fillerRate.value
         let baselinePace: Double? = baseline.pace.confidence == .insufficient ? nil : baseline.pace.value
@@ -6605,7 +6605,7 @@ enum PracticeSessionFinalizer {
 
         let baseline = BaselineStore.shared.baseline
         let bigMoment = BigMomentStore.shared.activeMoment
-        let bigMomentDays = bigMoment.flatMap { BigMomentStore.shared.daysUntil($0) }
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
 
         let input = regenerationInput(
             from: session,

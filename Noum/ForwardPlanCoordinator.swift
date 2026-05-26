@@ -33,7 +33,7 @@ enum ForwardPlanCoordinator {
         let sessions = PracticeSessionStore.shared.sessions
         let rating = RatingStore.shared.rating
         let bigMoment = BigMomentStore.shared.activeMoment
-        let bigMomentDays = bigMoment.flatMap { BigMomentStore.shared.daysUntil($0) }
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let weeklyReps = sessions.filter { $0.date >= cutoff }.count
         let weeklyDelta = rating.weeklyDelta

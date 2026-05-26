@@ -5593,6 +5593,39 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("their own read, not a measured signal"))
     }
 
+    @Test func userContextSurfacesTransferReviewAsAUserOwnedCaseAction() {
+        let report = BigMomentOutcomeReport(
+            moment: BigMoment(title: "Investor pitch", category: .presentation),
+            outcome: .mixed,
+            audienceResponse: .resistant,
+            note: "Questions exposed a rushed close."
+        )
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            lastTransferReview: CoachTransferReview(report: report)
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("Transfer case update: For presentation \"Investor pitch\", the user reported it was mixed"))
+        #expect(ctx.contains("Ask what held and what broke down before repeating or changing the intervention."))
+        #expect(ctx.contains("do not treat it as proof that the intervention caused the outcome"))
+    }
+
     @Test func userContextSurfacesObservedInterventionResponseWithoutClaimingCausation() {
         let outcome = RecommendationOutcome(
             id: UUID(),
@@ -9359,6 +9392,40 @@ struct BigMomentStoreTests {
         let key2 = "bigMoment.account-xyz"
         #expect(key1 != key2)
     }
+
+    @Test func outcomeReportRoundTripsAndTrimsOptionalNote() throws {
+        let moment = BigMoment(title: "Panel interview", category: .interview)
+        let original = BigMomentOutcomeReport(
+            moment: moment,
+            outcome: .mixed,
+            audienceResponse: .unclear,
+            note: "  I lost the answer\non salary.  "
+        )
+
+        let decoded = try JSONDecoder().decode(
+            BigMomentOutcomeReport.self,
+            from: JSONEncoder().encode(original)
+        )
+
+        #expect(decoded.momentID == moment.id)
+        #expect(decoded.outcome == .mixed)
+        #expect(decoded.audienceResponse == .unclear)
+        #expect(decoded.note == "I lost the answer on salary.")
+        #expect(decoded.coachContextLine.contains("the user reported"))
+    }
+
+    @Test func outcomeReportBoundsFreeTextBeforeItEntersCoachContext() {
+        let report = BigMomentOutcomeReport(
+            moment: BigMoment(title: "Leadership review", category: .review),
+            outcome: .mixed,
+            audienceResponse: .unclear,
+            note: String(repeating: "x", count: BigMomentOutcomeReport.noteCharacterLimit + 20)
+        )
+
+        #expect(report.note?.count == BigMomentOutcomeReport.noteCharacterLimit)
+        #expect(report.coachContextLine.contains(String(repeating: "x", count: BigMomentOutcomeReport.noteCharacterLimit)))
+        #expect(!report.coachContextLine.contains(String(repeating: "x", count: BigMomentOutcomeReport.noteCharacterLimit + 1)))
+    }
 }
 
 // MARK: - BigMomentDaysUntilTests
@@ -9397,6 +9464,62 @@ struct BigMomentDaysUntilTests {
         let moment = BigMoment(title: "No date", category: .other)
         // Without a date, daysUntil must return nil.
         #expect(moment.date == nil)
+    }
+}
+
+@MainActor
+@Suite("BigMomentTransferStoreTests")
+struct BigMomentTransferStoreTests {
+
+    @Test func elapsedMomentInvitesOutcomeThenPersistedReportClearsPrompt() {
+        let suite = "big-moment-transfer-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+        let store = BigMomentStore(defaults: defaults, accountIDProvider: { accountID })
+        let moment = BigMoment(
+            title: "Promotion conversation",
+            date: Calendar.current.date(byAdding: .day, value: -1, to: Date()),
+            category: .conversation
+        )
+
+        store.setMoment(moment)
+        store.archiveExpiredIfNeeded()
+        #expect(store.activeMoment == nil)
+        #expect(store.pendingOutcomeCheckInMoment?.id == moment.id)
+
+        store.recordOutcome(
+            for: moment,
+            outcome: .wentWell,
+            audienceResponse: .engaged,
+            note: "They asked me to lead the next step."
+        )
+        #expect(store.pendingOutcomeCheckInMoment == nil)
+
+        let reloaded = BigMomentStore(defaults: defaults, accountIDProvider: { accountID })
+        reloaded.reloadForCurrentAccount()
+        #expect(reloaded.pendingOutcomeCheckInMoment == nil)
+        #expect(reloaded.recentOutcomeReports().first?.momentID == moment.id)
+        #expect(reloaded.recentOutcomeReports().first?.note == "They asked me to lead the next step.")
+    }
+
+    @Test func outcomeHistoryIsBoundedMostRecentFirst() {
+        let suite = "big-moment-transfer-cap-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BigMomentStore(defaults: defaults, accountIDProvider: { "active" })
+
+        for index in 0...BigMomentStore.outcomeReportCap {
+            store.recordOutcome(
+                for: BigMoment(title: "Moment \(index)", category: .other),
+                outcome: .mixed,
+                audienceResponse: .unclear
+            )
+        }
+
+        #expect(store.outcomeReports.count == BigMomentStore.outcomeReportCap)
+        #expect(store.outcomeReports.first?.momentTitle == "Moment \(BigMomentStore.outcomeReportCap)")
+        #expect(!store.outcomeReports.contains { $0.momentTitle == "Moment 0" })
     }
 }
 
@@ -9546,6 +9669,38 @@ struct CoachContextBuilderBigMomentTests {
             bigMoment: moment
         )
         #expect(!ctx.contains("BIG MOMENT"))
+    }
+
+    @Test func userReportedTransferOutcomeAppearsWithProvenanceGuard() {
+        let moment = BigMoment(title: "Board pitch", category: .presentation)
+        let report = BigMomentOutcomeReport(
+            moment: moment,
+            outcome: .wentWell,
+            audienceResponse: .engaged,
+            note: "Questions became more constructive."
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: makeProfile(),
+            baseline: makeBaseline(),
+            rating: makeRating(),
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentMomentOutcomes: [report]
+        )
+
+        #expect(ctx.contains("REAL-WORLD TRANSFER"))
+        #expect(ctx.contains("the user reported it went well"))
+        #expect(ctx.contains("audience or counterpart seemed engaged"))
+        #expect(ctx.contains("not objective evidence"))
+    }
+
+    @Test func systemPromptDoesNotLetReportedTransferBecomeCausalProof() {
+        let prompt = CoachContextBuilder.systemPrompt(for: makeProfile())
+        #expect(prompt.contains("REAL-WORLD TRANSFER"))
+        #expect(prompt.contains("never call it objective proof"))
+        #expect(prompt.contains("claim a drill caused the result"))
     }
 }
 
@@ -10161,6 +10316,7 @@ struct CoachMemoryEngineTests {
         #expect(decoded.activeIntervention == nil)
         #expect(decoded.adaptationLog == nil)
         #expect(decoded.lastReflectionSummary == nil)
+        #expect(decoded.lastTransferReview == nil)
         #expect(decoded.currentLever == .structure)
     }
 
@@ -10192,6 +10348,58 @@ struct CoachMemoryEngineTests {
             now: Date(timeIntervalSince1970: 1_000)
         )
         #expect(memory?.lastReflectionSummary == nil)
+    }
+
+    @Test func buildCarriesRealWorldTransferReviewWithoutChangingInterventionVerdict() {
+        let pending = RecommendationExposure(
+            fingerprint: "timed-close",
+            title: "Land the close",
+            focus: "a decisive close",
+            target: "One clean final sentence",
+            mode: .timed,
+            isAIBacked: true,
+            shownAt: Date(timeIntervalSince1970: 900),
+            tappedAt: nil
+        )
+        let report = BigMomentOutcomeReport(
+            moment: BigMoment(title: "Leadership update", category: .presentation),
+            outcome: .fellShort,
+            audienceResponse: .unclear,
+            note: "I lost the decision at the end.",
+            recordedAt: Date(timeIntervalSince1970: 950)
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            pendingIntervention: pending,
+            latestTransferReport: report,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.lastTransferReview?.nextAction == .adaptBeforeNextMoment)
+        #expect(memory?.activeIntervention?.reviewStatus == .awaitingAttempt)
+
+        let rebuilt = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: memory,
+            lastSessionID: nil,
+            pendingIntervention: pending,
+            now: Date(timeIntervalSince1970: 1_100)
+        )
+
+        #expect(rebuilt?.lastTransferReview?.momentTitle == "Leadership update")
+        #expect(rebuilt?.lastTransferReview?.nextAction == .adaptBeforeNextMoment)
+        #expect(rebuilt?.activeIntervention?.reviewStatus == .awaitingAttempt)
     }
 
     @Test func buildAttachesFillerSuccessCriterionWithStatusFromFollowedReps() {
@@ -10483,6 +10691,48 @@ struct CoachMemoryStoreTests {
         activeID = "first"
         store.reloadForCurrentAccount()
         #expect(store.currentMemory == nil)
+    }
+
+    @Test func noteTransferOutcomePersistsReviewWithoutRewritingInterventionStatus() {
+        let suite = "coach-memory-transfer-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+
+        store.refresh(
+            profile: profile(voice: .concise),
+            baseline: baseline(count: 5),
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            pendingIntervention: RecommendationExposure(
+                fingerprint: "timed-close",
+                title: "Land the close",
+                focus: "a decisive close",
+                target: "One clean final sentence",
+                mode: .timed,
+                isAIBacked: true,
+                shownAt: Date(timeIntervalSince1970: 900),
+                tappedAt: nil
+            ),
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        store.noteTransferOutcome(
+            BigMomentOutcomeReport(
+                moment: BigMoment(title: "Board update", category: .presentation),
+                outcome: .wentWell,
+                audienceResponse: .engaged,
+                note: "They approved the recommendation."
+            )
+        )
+
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.lastTransferReview?.nextAction == .exploreWhatTransferred)
+        #expect(reloaded.currentMemory?.lastTransferReview?.momentTitle == "Board update")
+        #expect(reloaded.currentMemory?.activeIntervention?.reviewStatus == .awaitingAttempt)
     }
 
     private func baseline(count: Int) -> CommunicationBaseline {

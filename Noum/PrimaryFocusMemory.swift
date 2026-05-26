@@ -160,6 +160,64 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     var evidenceBasis: String
 }
 
+/// The next coaching move implied by a user's real-world outcome report.
+/// This steers the review conversation without treating subjective transfer
+/// evidence as proof that an intervention caused the result.
+enum CoachTransferReviewAction: String, Codable, Equatable {
+    case exploreWhatTransferred
+    case diagnoseBeforeNextMoment
+    case adaptBeforeNextMoment
+
+    var contextInstruction: String {
+        switch self {
+        case .exploreWhatTransferred:
+            return "Ask what specifically transferred before reinforcing the current intervention."
+        case .diagnoseBeforeNextMoment:
+            return "Ask what held and what broke down before repeating or changing the intervention."
+        case .adaptBeforeNextMoment:
+            return "Review what broke down and adapt preparation before the next similar moment."
+        }
+    }
+}
+
+/// A bounded snapshot of the latest off-app check-in held inside the durable
+/// coaching case. `BigMomentStore` remains the complete outcome-history owner;
+/// this is only the case file's current transfer-review decision.
+struct CoachTransferReview: Codable, Equatable {
+    var momentID: UUID
+    var momentTitle: String
+    var category: BigMomentCategory
+    var outcome: ReportedMomentOutcome
+    var audienceResponse: ReportedAudienceResponse
+    var note: String?
+    var recordedAt: Date
+    var nextAction: CoachTransferReviewAction
+
+    init(report: BigMomentOutcomeReport) {
+        momentID = report.momentID
+        momentTitle = report.momentTitle
+        category = report.category
+        outcome = report.outcome
+        audienceResponse = report.audienceResponse
+        note = report.note
+        recordedAt = report.recordedAt
+        switch report.outcome {
+        case .wentWell:
+            nextAction = .exploreWhatTransferred
+        case .mixed:
+            nextAction = .diagnoseBeforeNextMoment
+        case .fellShort:
+            nextAction = .adaptBeforeNextMoment
+        }
+    }
+
+    var reportedOutcomeLine: String {
+        let base = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
+        guard let note else { return base }
+        return "\(base) Their note: \"\(note)\"."
+    }
+}
+
 /// The bounded intervention cycle carried in durable coach memory.
 /// RecommendationLearningStore remains the raw evidence owner; this record
 /// holds the coach's current prescription and review state for continuity.
@@ -216,6 +274,11 @@ struct CoachMemory: Codable, Equatable {
     // backward compat.
     var lastReflectionSummary: String?
 
+    // The latest off-app outcome folded into this case file. Optional for
+    // backward compatibility and kept separate from intervention verdicts:
+    // reported transfer guides review but does not prove causation.
+    var lastTransferReview: CoachTransferReview?
+
     // Momentum — cross-session trajectory. Optional for backward compat
     // (existing persisted memories decode without these keys).
     var consecutiveCleanReps: Int?
@@ -248,6 +311,7 @@ struct CoachMemory: Codable, Equatable {
         activeIntervention: CoachIntervention? = nil,
         adaptationLog: [CoachCourseChange]? = nil,
         lastReflectionSummary: String? = nil,
+        lastTransferReview: CoachTransferReview? = nil,
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int? = nil,
@@ -275,6 +339,7 @@ struct CoachMemory: Codable, Equatable {
         self.activeIntervention = activeIntervention
         self.adaptationLog = adaptationLog
         self.lastReflectionSummary = lastReflectionSummary
+        self.lastTransferReview = lastTransferReview
         self.consecutiveCleanReps = consecutiveCleanReps
         self.fillerTrendDirection = fillerTrendDirection
         self.weeklyRepCount = weeklyRepCount
@@ -292,7 +357,7 @@ struct CoachMemory: Codable, Equatable {
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
         case adaptationLog
-        case lastReflectionSummary
+        case lastReflectionSummary, lastTransferReview
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
     }
@@ -321,6 +386,7 @@ struct CoachMemory: Codable, Equatable {
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
         adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
         lastReflectionSummary = try c.decodeIfPresent(String.self, forKey: .lastReflectionSummary)
+        lastTransferReview = try c.decodeIfPresent(CoachTransferReview.self, forKey: .lastTransferReview)
         consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
@@ -340,6 +406,7 @@ enum CoachMemoryEngine {
         pendingIntervention: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
         latestReflection: SessionReflection? = nil,
+        latestTransferReport: BigMomentOutcomeReport? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> CoachMemory? {
@@ -444,6 +511,8 @@ enum CoachMemoryEngine {
         )
         memory.adaptationLog = adaptationLog.isEmpty ? nil : adaptationLog
         memory.lastReflectionSummary = latestReflection?.coachClause
+        memory.lastTransferReview = latestTransferReport.map { CoachTransferReview(report: $0) }
+            ?? previous?.lastTransferReview
         memory.consecutiveCleanReps = momentumClean
         memory.fillerTrendDirection = momentumFillerTrend
         memory.weeklyRepCount = momentumWeekly
@@ -884,6 +953,7 @@ final class CoachMemoryStore: ObservableObject {
         pendingIntervention: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
         latestReflection: SessionReflection? = nil,
+        latestTransferReport: BigMomentOutcomeReport? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) {
@@ -898,6 +968,7 @@ final class CoachMemoryStore: ObservableObject {
             pendingIntervention: pendingIntervention,
             recommendationOutcomes: recommendationOutcomes,
             latestReflection: latestReflection,
+            latestTransferReport: latestTransferReport,
             now: now,
             calendar: calendar
         ) else { return }
@@ -912,6 +983,17 @@ final class CoachMemoryStore: ObservableObject {
     func noteReflection(_ summary: String?) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = summary
+        memory.updatedAt = Date()
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Fold a completed real-world check-in into the current case without
+    /// changing the measured intervention verdict. The report may motivate a
+    /// review question or an adaptation, but it cannot establish causation.
+    func noteTransferOutcome(_ report: BigMomentOutcomeReport) {
+        guard var memory = currentMemory else { return }
+        memory.lastTransferReview = CoachTransferReview(report: report)
         memory.updatedAt = Date()
         currentMemory = memory
         persist(memory)

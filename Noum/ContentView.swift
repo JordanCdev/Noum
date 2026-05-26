@@ -65,6 +65,7 @@ struct ContentView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
@@ -151,6 +152,9 @@ struct ContentView: View {
                                 navigationPath: $navigationPath,
                                 scrollOffset: homeScrollOffset
                             ).cardEntrance(0)
+                            if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
+                                BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
+                            }
                             DailyGoalCard(manager: dailyGoal).cardEntrance(1)
                             secondaryDiscoveryCard.cardEntrance(2)
                         } else {
@@ -235,6 +239,9 @@ struct ContentView: View {
                                     navigationPath: $navigationPath,
                                     scrollOffset: homeScrollOffset
                                 ).cardEntrance(0)
+                            }
+                            if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
+                                BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
                             }
                             // HomeUtilityStrip is the thin status row beneath
                             // the Coach Card: streak + word of the day as a
@@ -511,6 +518,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            bigMomentStore.archiveExpiredIfNeeded()
             dailyGoal.recompute()
             DailyChallengesManager.shared.ensureForToday()
             DailyChallengesManager.shared.recomputeReady()
@@ -531,6 +539,7 @@ struct ContentView: View {
             Timer.publish(every: 300, on: .main, in: .common).autoconnect()
         ) { _ in
             refreshHourBucket()
+            bigMomentStore.archiveExpiredIfNeeded()
         }
         .task {
             guard !isUITesting, !isOnboardingUITesting, !authManager.isSignedIn else { return }

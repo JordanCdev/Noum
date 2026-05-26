@@ -81,6 +81,7 @@ enum CoachContextBuilder {
         5. When ACTIVE PRESCRIPTION is present, it is an intention only: the user has not yet supplied a followed rep, so do not describe it as effective or ineffective.
         6. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
            "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
+        7. When REAL-WORLD TRANSFER is present, it is the user's report of what happened and how the room felt. Use it to ask, adapt, or prepare; never call it objective proof or claim a drill caused the result.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -195,6 +196,9 @@ enum CoachContextBuilder {
     ///     when no proofs exist so the model never invents one. Bounded
     ///     to the most-recent 3 — enough texture without crowding the
     ///     system prompt.
+    ///   • REAL-WORLD TRANSFER — user-reported outcome and perceived
+    ///     counterpart response from completed Big Moments. Bounded to
+    ///     the most recent 2 and explicitly labelled subjective evidence.
     static func userContext(
         profile: CoachingProfile?,
         baseline: CommunicationBaseline,
@@ -205,6 +209,7 @@ enum CoachContextBuilder {
         pathGatingPhrase: String?,
         recentProofs: [ProofMomentRecord] = [],
         bigMoment: BigMoment? = nil,
+        recentMomentOutcomes: [BigMomentOutcomeReport] = [],
         forwardPlan: ForwardPlan? = nil,
         latestRepNote: PostRepCoachNote? = nil,
         coachMemory: CoachMemory? = nil,
@@ -264,11 +269,20 @@ enum CoachContextBuilder {
         // When present, the coach should ground at least one concrete next
         // move in the days-remaining and category (rule 4 of intelligence floor).
         if let moment = bigMoment,
-           let days = BigMomentStore.shared.daysUntil(moment),
+           let days = BigMomentStore.daysUntil(moment),
            days >= 0 && days <= 60 {
             lines.append("")
             lines.append("BIG MOMENT")
             lines.append("- Preparing for: \(moment.title) (\(moment.category.displayName)). \(days) day\(days == 1 ? "" : "s") away.")
+        }
+
+        if !recentMomentOutcomes.isEmpty {
+            lines.append("")
+            lines.append("REAL-WORLD TRANSFER")
+            for report in recentMomentOutcomes.prefix(2) {
+                lines.append("- \(report.coachContextLine)")
+            }
+            lines.append("- These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.")
         }
 
         // PLAN — current week of the active forward plan + completed-vs-target
@@ -663,7 +677,7 @@ enum CoachContextBuilder {
         // Signal 1 — BigMoment. If a moment is active and within 60 days,
         // lead with two prompts anchored to the event.
         if let moment = bigMoment {
-            let daysUntil = BigMomentStore.shared.daysUntil(moment)
+            let daysUntil = BigMomentStore.daysUntil(moment)
             if let days = daysUntil, days >= 0 && days <= 60 {
                 let categoryLabel = moment.category.displayName
                 chips.append("How should I open my \(categoryLabel)?")
@@ -1322,6 +1336,10 @@ enum CoachContextBuilder {
             if let due = intervention.reviewDueAt {
                 lines.append("- Review cadence: revisit by \(caseReviewLabel(for: due)).")
             }
+        }
+
+        if let transfer = memory.lastTransferReview {
+            lines.append("- Transfer case update: \(transfer.reportedOutcomeLine) Next review move: \(transfer.nextAction.contextInstruction) This is user-reported evidence only; do not treat it as proof that the intervention caused the outcome.")
         }
 
         if let change = memory.adaptationLog?.last {

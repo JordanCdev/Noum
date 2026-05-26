@@ -519,6 +519,7 @@ class AuthManager: ObservableObject {
             // M19: Big Moment intake + archive of past moments
             "bigMoment.\(accountID)",
             "bigMomentArchive.\(accountID)",
+            "bigMomentOutcomes.\(accountID)",
             // M20: Forward Plan (4-week coach program)
             "forwardPlan.\(accountID)",
             // M21: Session Intent — bounded history of declared focuses
