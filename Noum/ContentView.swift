@@ -334,6 +334,8 @@ struct ContentView: View {
                     }
                 case .cutTheCrutchPractice:
                     CutTheCrutchView(navigationPath: $navigationPath)
+                case .paceTrainingPractice:
+                    PaceTrainingView(navigationPath: $navigationPath)
                 case .friendLeaderboard:
                     FriendLeaderboardView()
                 case .league:

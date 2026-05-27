@@ -80,6 +80,8 @@ struct PracticeModeSelectionView: View {
     /// Tracked separately because Cut the Crutch isn't a `PracticeMode` —
     /// it's a sibling drill, not a pressure mode.
     @State private var crutchSelected: Bool = false
+    /// When true, the picker has the Pace Training tile selected.
+    @State private var paceSelected: Bool = false
     /// Per-row expansion state for the "What this trains" affordance.
     /// Set semantics so multiple rows can stay expanded if the user opens
     /// several — explore-then-commit, not modal "one at a time".
@@ -94,6 +96,15 @@ struct PracticeModeSelectionView: View {
     }
 
     private let crutchOption = CrutchOption()
+
+    private struct PaceOption {
+        let title: String = "Pace Training"
+        let subtitle: String = "Match the target speaking pace for 75 seconds."
+        let systemImage: String = "metronome"
+        var tint: Color { AppColor.modePace }
+    }
+
+    private let paceOption = PaceOption()
 
     // MARK: - Mode Options
 
@@ -156,11 +167,15 @@ struct PracticeModeSelectionView: View {
     }
 
     private var activeStartTitle: String {
-        crutchSelected ? crutchOption.title : primaryOption.title
+        if paceSelected { return paceOption.title }
+        if crutchSelected { return crutchOption.title }
+        return primaryOption.title
     }
 
     private var activeStartTint: Color {
-        crutchSelected ? crutchOption.tint : primaryOption.tint
+        if paceSelected { return paceOption.tint }
+        if crutchSelected { return crutchOption.tint }
+        return primaryOption.tint
     }
 
     // MARK: - Body
@@ -179,6 +194,7 @@ struct PracticeModeSelectionView: View {
                             modeCard(option)
                         }
                         crutchCard
+                        paceCard
                         lessonsCard
                         speechProjectsCard
                     }
@@ -236,7 +252,7 @@ struct PracticeModeSelectionView: View {
     // MARK: - Mode Card
 
     private func modeCard(_ option: ModeOption) -> some View {
-        let isSelected = !crutchSelected && selectedMode == option.mode
+        let isSelected = !crutchSelected && !paceSelected && selectedMode == option.mode
         let isRecommended = option.mode == recommendedMode
         let isExpanded = expandedModes.contains(option.mode)
 
@@ -245,6 +261,7 @@ struct PracticeModeSelectionView: View {
                 animateMode {
                     selectedMode = option.mode
                     crutchSelected = false
+                    paceSelected = false
                     // Collapse every other mode so the selected one stands
                     // out and the list stays compact.
                     expandedModes = [option.mode]
@@ -571,6 +588,7 @@ struct PracticeModeSelectionView: View {
             Button {
                 withAnimation(.snappySpring) {
                     crutchSelected = true
+                    paceSelected = false
                 }
                 CoachHaptic.selectionTap()
             } label: {
@@ -673,6 +691,112 @@ struct PracticeModeSelectionView: View {
         .accessibilityIdentifier("practiceMode.cutTheCrutch.quickStart")
         .accessibilityLabel("Start now, Cut the Crutch")
         .accessibilityHint("Begins a Cut the Crutch drill with default settings, no setup screen.")
+    }
+
+    // MARK: - Pace Training Card
+
+    private var paceCard: some View {
+        let isSelected = paceSelected
+        let tint = paceOption.tint
+
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.snappySpring) {
+                    paceSelected = true
+                    crutchSelected = false
+                }
+                CoachHaptic.selectionTap()
+            } label: {
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .fill(tint.opacity(0.14))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: paceOption.systemImage)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(tint)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text(paceOption.title)
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 0)
+                        }
+                        Text(paceOption.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(isSelected ? tint : Color.secondary.opacity(0.4))
+                        .accessibilityHidden(true)
+                }
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.pressable)
+            .sensoryFeedback(.selection, trigger: isSelected) { _, _ in hapticsSettings.isEnabled }
+            .accessibilityIdentifier("practiceMode.paceTraining")
+            .accessibilityLabel(paceOption.title)
+            .accessibilityHint(paceOption.subtitle)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            if isSelected {
+                paceQuickStartButton(tint: tint)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, Spacing.lg)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(
+                    isSelected ? tint.opacity(0.32) : Color.white.opacity(0.72),
+                    lineWidth: isSelected ? 1.5 : 1
+                )
+        )
+        .shadow(
+            color: isSelected ? tint.opacity(0.10) : .clear,
+            radius: 16,
+            y: 8
+        )
+    }
+
+    private func paceQuickStartButton(tint: Color) -> some View {
+        Button {
+            CoachHaptic.selectionTap()
+            navigationPath.append(AppDestination.paceTrainingPractice)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.footnote.weight(.bold))
+                Text("Start now \u{00B7} Pace Training")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(tint.opacity(0.10), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(tint.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("practiceMode.paceTraining.quickStart")
+        .accessibilityLabel("Start now, Pace Training")
+        .accessibilityHint("Begins a Pace Training drill.")
     }
 
     // MARK: - Lessons Card
@@ -817,7 +941,9 @@ struct PracticeModeSelectionView: View {
         // U+00B7 (middle dot) is the same separator the Coach Card uses.
         let ctaLabel = "Begin \u{00B7} \(title)"
         return Button {
-            if crutchSelected {
+            if paceSelected {
+                navigationPath.append(AppDestination.paceTrainingPractice)
+            } else if crutchSelected {
                 navigationPath.append(AppDestination.cutTheCrutchPractice)
             } else {
                 navigationPath.append(appDestination(for: selectedMode))

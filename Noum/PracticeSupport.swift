@@ -15,6 +15,7 @@ enum AppDestination: Hashable {
     case ahCounterPractice
     case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
     case cutTheCrutchPractice
+    case paceTrainingPractice
     case friendLeaderboard
     case league
     case speechProjects

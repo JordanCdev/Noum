@@ -84,6 +84,8 @@ enum AppColor {
     static let modeIM = Color(red: 0.32, green: 0.43, blue: 0.94)
     /// Cut the Crutch — control / restraint drill (warm rose, distinct from pressure tints)
     static let modeCrutch = Color(red: 0.78, green: 0.32, blue: 0.50)
+    /// Pace Training mode — teal, distinct from modeAhCounter's green
+    static let modePace = Color(red: 0.15, green: 0.72, blue: 0.78)
 
     // MARK: Semantic Feedback
 

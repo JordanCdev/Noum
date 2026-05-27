@@ -16426,7 +16426,11 @@ struct SuddenDeathGamePointsTests {
         totalFillers: Int = 0,
         totalWords: Int = 50,
         wordCountsByRound: [Int]? = nil,
-        finalOutcome: RoundOutcome = .fillerOverload
+        finalOutcome: RoundOutcome = .fillerOverload,
+        pitchMetrics: PitchMetrics? = nil,
+        wordChoiceMetrics: WordChoiceMetrics? = nil,
+        eloquenceFindings: [EloquenceFinding] = [],
+        sessionWPM: Double = 0
     ) -> PressureSessionResult {
         let outcomes: [RoundOutcome] = {
             var arr = Array(repeating: RoundOutcome.survived, count: roundsSurvived)
@@ -16435,7 +16439,7 @@ struct SuddenDeathGamePointsTests {
         }()
         let words = wordCountsByRound ?? Array(repeating: 15, count: roundsSurvived)
         let minimums = Array(repeating: 10, count: outcomes.count)
-        return PressureSessionResult(
+        var result = PressureSessionResult(
             roundsSurvived: roundsSurvived,
             finalOutcome: finalOutcome,
             roundOutcomes: outcomes,
@@ -16448,18 +16452,46 @@ struct SuddenDeathGamePointsTests {
             wordCountsByRound: words,
             minimumWordsByRound: minimums
         )
+        result.pitchMetrics = pitchMetrics
+        result.wordChoiceMetrics = wordChoiceMetrics
+        result.eloquenceFindings = eloquenceFindings
+        result.sessionWPM = sessionWPM
+        return result
     }
 
-    // MARK: Base points
+    // MARK: Base points (tiered)
 
     @Test func zeroRoundsGivesZeroPoints() {
         let result = makeResult(roundsSurvived: 0)
         #expect(result.gamePoints == 0)
     }
 
-    @Test func basePointsAre100PerRound() {
+    @Test func warmUpTierBaseIs100PerRound() {
+        // Rounds 1–3 are 100 pts each.
         let result = makeResult(roundsSurvived: 3, totalFillers: 1, wordCountsByRound: [10, 10, 10])
+        // Base = 300, no content bonuses (words < 20). Minimal multipliers.
         #expect(result.gamePoints >= 300)
+    }
+
+    @Test func mediumTierBaseIs150PerRound() {
+        // Rounds 4–6 award 150 pts each. 4 rounds: 3×100 + 1×150 = 450 base.
+        let result = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [10, 10, 10, 10])
+        #expect(result.gamePoints >= 450)
+    }
+
+    @Test func hardTierBaseIs200PerRound() {
+        // Rounds 7+ award 200 pts each. 7 rounds: 3×100 + 3×150 + 1×200 = 950 base.
+        let result = makeResult(roundsSurvived: 7, totalFillers: 1, wordCountsByRound: [10, 10, 10, 10, 10, 10, 10])
+        #expect(result.gamePoints >= 950)
+    }
+
+    @Test func tieredBasePointsStaticMethod() {
+        #expect(PressureRoundConfig.basePoints(for: 1) == 100)
+        #expect(PressureRoundConfig.basePoints(for: 3) == 100)
+        #expect(PressureRoundConfig.basePoints(for: 4) == 150)
+        #expect(PressureRoundConfig.basePoints(for: 6) == 150)
+        #expect(PressureRoundConfig.basePoints(for: 7) == 200)
+        #expect(PressureRoundConfig.basePoints(for: 10) == 200)
     }
 
     // MARK: Clean multiplier
@@ -16537,12 +16569,15 @@ struct SuddenDeathGamePointsTests {
     // MARK: Multiplier stacking
 
     @Test func allMultipliersStackForCleanDeepDevelopedRun() {
+        // Tiered base: 3×100 + 2×150 = 600. All 5 rounds ≥ 20 words → 5×50 = 250 content bonus.
+        // Survival multipliers: Clean ×1.5, Deep ×1.3, Developed ×1.2.
         let result = makeResult(roundsSurvived: 5, totalFillers: 0, wordCountsByRound: [25, 22, 21, 25, 20])
         let labels = Set(result.computedMultipliers.map(\.label))
         #expect(labels.contains("Clean"))
         #expect(labels.contains("Deep"))
         #expect(labels.contains("Developed"))
-        #expect(result.gamePoints > Int(500 * 1.5 * 1.3))
+        // 600 base + 250 content + follow-up bonuses, times stacked multipliers.
+        #expect(result.gamePoints > Int(Double(600) * 1.5 * 1.3))
     }
 
     // MARK: Label formatting
@@ -16577,5 +16612,357 @@ struct SuddenDeathGamePointsTests {
         let store = SuddenDeathHighScoreStore.shared
         let current = store.bestPoints()
         #expect(current >= 0)
+    }
+
+    // MARK: Quality multipliers — Vocal Variety
+
+    @Test func vocalVarietyAppliesWhenPitchIsVaried() {
+        // monotoneScore < 0.35 with reliable pitch → ×1.15
+        let pitch = PitchMetrics(meanHz: 180, stdHz: 40, voicedRatio: 0.6, windowCount: 20)
+        #expect(pitch.isReliable)
+        #expect(pitch.monotoneScore < 0.35)
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], pitchMetrics: pitch)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(labels.contains("Vocal Variety"))
+        let mult = result.computedMultipliers.first { $0.label == "Vocal Variety" }
+        #expect(mult?.value == 1.15)
+    }
+
+    @Test func vocalVarietySkippedWhenMonotone() {
+        // monotoneScore >= 0.35 → no Vocal Variety multiplier
+        let pitch = PitchMetrics(meanHz: 180, stdHz: 10, voicedRatio: 0.6, windowCount: 20)
+        #expect(pitch.isReliable)
+        #expect(pitch.monotoneScore >= 0.35)
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], pitchMetrics: pitch)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Vocal Variety"))
+    }
+
+    @Test func vocalVarietySkippedWhenUnreliable() {
+        // Not enough windows → isReliable == false
+        let pitch = PitchMetrics(meanHz: 180, stdHz: 40, voicedRatio: 0.6, windowCount: 3)
+        #expect(!pitch.isReliable)
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], pitchMetrics: pitch)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Vocal Variety"))
+    }
+
+    // MARK: Quality multipliers — Pace Control
+
+    @Test func paceControlAppliesInIdealRange() {
+        // WPM 120–160 with ≥ 30 total words → ×1.10
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, totalWords: 40, wordCountsByRound: [20, 20], sessionWPM: 130)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(labels.contains("Pace Control"))
+        let mult = result.computedMultipliers.first { $0.label == "Pace Control" }
+        #expect(mult?.value == 1.10)
+    }
+
+    @Test func paceControlSkippedWhenTooFast() {
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, totalWords: 40, wordCountsByRound: [20, 20], sessionWPM: 170)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Pace Control"))
+    }
+
+    @Test func paceControlSkippedWhenTooFewWords() {
+        // < 30 total words → not enough data
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, totalWords: 20, wordCountsByRound: [10, 10], sessionWPM: 130)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Pace Control"))
+    }
+
+    // MARK: Quality multipliers — Word Choice
+
+    @Test func wordChoiceAppliesWithHighUniqueRatio() {
+        let wc = WordChoiceMetrics(uniqueRatio: 0.70, repeatedContentWords: [], contentWordCount: 25)
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], wordChoiceMetrics: wc)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(labels.contains("Word Choice"))
+        let mult = result.computedMultipliers.first { $0.label == "Word Choice" }
+        #expect(mult?.value == 1.10)
+    }
+
+    @Test func wordChoiceSkippedBelowMinContentWords() {
+        let wc = WordChoiceMetrics(uniqueRatio: 0.70, repeatedContentWords: [], contentWordCount: 10)
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], wordChoiceMetrics: wc)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Word Choice"))
+    }
+
+    @Test func wordChoiceSkippedBelowUniqueThreshold() {
+        let wc = WordChoiceMetrics(uniqueRatio: 0.50, repeatedContentWords: [], contentWordCount: 25)
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], wordChoiceMetrics: wc)
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Word Choice"))
+    }
+
+    // MARK: Quality multipliers — Rhetoric
+
+    @Test func rhetoricAppliesWithAnyFinding() {
+        let finding = EloquenceFinding(device: .tricolon, snippet: "life, liberty, and pursuit", coachLine: "Nice tricolon")
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], eloquenceFindings: [finding])
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(labels.contains("Rhetoric"))
+        let mult = result.computedMultipliers.first { $0.label == "Rhetoric" }
+        #expect(mult?.value == 1.15)
+    }
+
+    @Test func rhetoricSkippedWhenNoFindings() {
+        let result = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [15, 15], eloquenceFindings: [])
+        let labels = result.computedMultipliers.map(\.label)
+        #expect(!labels.contains("Rhetoric"))
+    }
+
+    // MARK: Backward compat — nil quality signals
+
+    @Test func nilQualitySignalsProduceSameMultipliersAsBefore() {
+        // No quality signals populated → only survival multipliers fire.
+        let result = makeResult(roundsSurvived: 5, totalFillers: 0, wordCountsByRound: [25, 22, 21, 25, 20])
+        let labels = Set(result.computedMultipliers.map(\.label))
+        #expect(labels == Set(["Clean", "Deep", "Developed"]))
+        #expect(!labels.contains("Vocal Variety"))
+        #expect(!labels.contains("Pace Control"))
+        #expect(!labels.contains("Word Choice"))
+        #expect(!labels.contains("Rhetoric"))
+    }
+
+    // MARK: Quality multipliers stack with survival multipliers
+
+    @Test func qualityMultipliersStackWithSurvivalMultipliers() {
+        let pitch = PitchMetrics(meanHz: 180, stdHz: 40, voicedRatio: 0.6, windowCount: 20)
+        let wc = WordChoiceMetrics(uniqueRatio: 0.70, repeatedContentWords: [], contentWordCount: 25)
+        let finding = EloquenceFinding(device: .anaphora, snippet: "we will, we will", coachLine: "Anaphora")
+        let result = makeResult(
+            roundsSurvived: 5,
+            totalFillers: 0,
+            totalWords: 50,
+            wordCountsByRound: [25, 22, 21, 25, 20],
+            pitchMetrics: pitch,
+            wordChoiceMetrics: wc,
+            eloquenceFindings: [finding],
+            sessionWPM: 135
+        )
+        let labels = Set(result.computedMultipliers.map(\.label))
+        // Survival multipliers
+        #expect(labels.contains("Clean"))
+        #expect(labels.contains("Deep"))
+        #expect(labels.contains("Developed"))
+        // Quality multipliers
+        #expect(labels.contains("Vocal Variety"))
+        #expect(labels.contains("Pace Control"))
+        #expect(labels.contains("Word Choice"))
+        #expect(labels.contains("Rhetoric"))
+        // Points must be significantly higher than survival-only.
+        let survivalOnly = makeResult(roundsSurvived: 5, totalFillers: 0, wordCountsByRound: [25, 22, 21, 25, 20])
+        #expect(result.gamePoints > survivalOnly.gamePoints)
+    }
+}
+
+// MARK: - PaceTrainingEngine Tests
+
+@Suite("Pace Training Engine")
+struct PaceTrainingEngineTests {
+
+    // MARK: Sub-mode
+
+    @Test func subModeLabels() {
+        #expect(PaceSubMode.freestyle.label == "Freestyle")
+        #expect(PaceSubMode.readAlong.label == "Read Along")
+    }
+
+    @Test func subModeAllCases() {
+        #expect(PaceSubMode.allCases.count == 2)
+    }
+
+    // MARK: Engine defaults
+
+    @Test @MainActor func engineDefaultsToFreestyle() {
+        let engine = PaceTrainingEngine()
+        #expect(engine.subMode == .freestyle)
+    }
+
+    @Test @MainActor func engineDefaultTargetWPM() {
+        let engine = PaceTrainingEngine()
+        #expect(engine.targetWPM == 130)
+        #expect(engine.zoneMin == 110)
+        #expect(engine.zoneMax == 150)
+    }
+
+    @Test @MainActor func engineStartsInSetupPhase() {
+        let engine = PaceTrainingEngine()
+        #expect(engine.phase == .setup)
+    }
+
+    @Test @MainActor func engineCustomTargetWPM() {
+        let engine = PaceTrainingEngine(targetWPM: 150)
+        #expect(engine.targetWPM == 150)
+        #expect(engine.zoneMin == 130)
+        #expect(engine.zoneMax == 170)
+    }
+
+    // MARK: Band position
+
+    @Test @MainActor func bandPositionClampsAtBounds() {
+        let engine = PaceTrainingEngine()
+        // At 0 WPM → band position clamped to 0
+        #expect(engine.bandPosition == 0)
+    }
+
+    // MARK: Zone label
+
+    @Test @MainActor func zoneLabelReflectsWPM() {
+        let engine = PaceTrainingEngine()
+        // At 0 WPM → "Too Slow"
+        #expect(engine.zoneLabel == "Too Slow")
+    }
+
+    // MARK: Reset
+
+    @Test @MainActor func resetClearsState() {
+        let engine = PaceTrainingEngine()
+        engine.ingestTranscript("hello world")
+        engine.reset()
+        #expect(engine.totalWords == 0)
+        #expect(engine.currentWPM == 0)
+        #expect(engine.elapsed == 0)
+        #expect(engine.phase == .setup)
+    }
+
+    // MARK: Transcript ingestion
+
+    @Test @MainActor func ingestTranscriptDoesNothingInSetup() {
+        let engine = PaceTrainingEngine()
+        engine.ingestTranscript("hello world test words")
+        // In setup phase, ingestion is ignored
+        #expect(engine.totalWords == 0)
+    }
+
+    // MARK: Prompts
+
+    @Test @MainActor func randomPromptReturnsNonEmpty() {
+        let prompt = PaceTrainingEngine.randomPrompt()
+        #expect(!prompt.isEmpty)
+    }
+
+    // MARK: Passages
+
+    @Test @MainActor func passagesAreNonEmpty() {
+        #expect(PaceTrainingEngine.passages.count >= 10)
+    }
+
+    @Test @MainActor func passageWordsAreParsed() {
+        let passage = PaceTrainingEngine.passages[0]
+        #expect(passage.words.count > 40)
+    }
+
+    // MARK: Drill duration
+
+    @Test @MainActor func drillDurationIs75Seconds() {
+        #expect(PaceTrainingEngine.drillDuration == 75)
+    }
+}
+
+// MARK: - PaceTrainingResult Tests
+
+@Suite("Pace Training Result")
+struct PaceTrainingResultTests {
+
+    private func makeResult(
+        zonePercentage: Double,
+        averageWPM: Double = 130,
+        wpmSamples: [Double] = []
+    ) -> PaceTrainingResult {
+        PaceTrainingResult(
+            subMode: .freestyle,
+            targetWPM: 130,
+            averageWPM: averageWPM,
+            zonePercentage: zonePercentage,
+            peakWPM: 155,
+            lowestWPM: 105,
+            totalWords: 100,
+            fillerCount: 0,
+            totalDuration: 75,
+            wpmSamples: wpmSamples
+        )
+    }
+
+    // MARK: Score mapping
+
+    @Test func perfectZoneScores10() {
+        let result = makeResult(zonePercentage: 0.85)
+        #expect(result.score == 10)
+    }
+
+    @Test func goodZoneScores8() {
+        let result = makeResult(zonePercentage: 0.65)
+        #expect(result.score == 8)
+    }
+
+    @Test func poorZoneScores3() {
+        let result = makeResult(zonePercentage: 0.15)
+        #expect(result.score == 3)
+    }
+
+    @Test func zeroZoneScores1() {
+        let result = makeResult(zonePercentage: 0)
+        #expect(result.score == 1)
+    }
+
+    // MARK: XP
+
+    @Test func xpIs5TimesScore() {
+        let result = makeResult(zonePercentage: 0.85)
+        #expect(result.xpEarned == result.score * 5)
+    }
+
+    // MARK: Verdict labels
+
+    @Test func lockedInAt70Percent() {
+        let result = makeResult(zonePercentage: 0.75)
+        #expect(result.verdictLabel == "Locked In")
+    }
+
+    @Test func findingRhythmBelowThreshold() {
+        let result = makeResult(zonePercentage: 0.50)
+        #expect(result.verdictLabel == "Finding the Rhythm")
+    }
+
+    @Test func findingRhythmAtLowZone() {
+        let result = makeResult(zonePercentage: 0.20)
+        #expect(result.verdictLabel == "Finding the Rhythm")
+    }
+
+    @Test func slowStartStrongFinishDetected() {
+        // First half mostly out of zone, second half mostly in zone.
+        let firstHalf = Array(repeating: 80.0, count: 20)  // Out of zone
+        let secondHalf = Array(repeating: 130.0, count: 20) // In zone
+        let samples = firstHalf + secondHalf
+        let result = makeResult(zonePercentage: 0.50, wpmSamples: samples)
+        #expect(result.verdictLabel == "Slow Start, Strong Finish")
+    }
+
+    // MARK: Verdict icons
+
+    @Test func verdictIconMetronomeForLocked() {
+        let result = makeResult(zonePercentage: 0.80)
+        #expect(result.verdictIcon == "metronome")
+    }
+
+    @Test func verdictIconWaveformPathForMiddle() {
+        let result = makeResult(zonePercentage: 0.55)
+        #expect(result.verdictIcon == "waveform.path")
+    }
+
+    @Test func verdictIconWaveformForLow() {
+        let result = makeResult(zonePercentage: 0.20)
+        #expect(result.verdictIcon == "waveform")
+    }
+
+    // MARK: Equatable
+
+    @Test func resultEquatable() {
+        let a = makeResult(zonePercentage: 0.50)
+        let b = makeResult(zonePercentage: 0.50)
+        #expect(a == b)
     }
 }

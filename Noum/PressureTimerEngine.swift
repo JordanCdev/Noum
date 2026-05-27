@@ -67,6 +67,16 @@ struct PressureRoundConfig: Equatable {
     /// Whether this round uses a follow-up (vs. a fresh prompt).
     let isFollowUp: Bool
 
+    /// Base points for surviving this round. Harder tiers award more.
+    /// Rounds 1–3: 100 pts (warm-up), 4–6: 150 pts (medium), 7+: 200 pts (hard).
+    static func basePoints(for round: Int) -> Int {
+        switch max(1, round) {
+        case 1...3: return 100
+        case 4...6: return 150
+        default:    return 200
+        }
+    }
+
     /// Builds config for a given round (1-indexed) at a given difficulty.
     /// Filler tolerance is always 0 in Sudden Death — difficulty only controls
     /// start window width and minimum word count.
@@ -250,6 +260,20 @@ struct PressureSessionResult: Equatable {
     /// view to reconstruct round configs.
     var minimumWordsByRound: [Int] = []
 
+    // MARK: Quality signals (populated post-session before gamePoints is read)
+
+    /// Pitch metrics from the audio engine's tap buffer.
+    var pitchMetrics: PitchMetrics?
+
+    /// Vocabulary analysis from the combined session transcript.
+    var wordChoiceMetrics: WordChoiceMetrics?
+
+    /// Rhetorical devices detected in the combined transcript.
+    var eloquenceFindings: [EloquenceFinding] = []
+
+    /// Session-wide words per minute.
+    var sessionWPM: Double = 0
+
     /// Behavior-mapped result label.
     var resultLabel: String {
         if roundsSurvived >= 6 && totalFillers == 0 {
@@ -330,12 +354,15 @@ struct PressureSessionResult: Equatable {
 
     /// Transparent, multiplier-based points for the result screen.
     /// Every component maps to a real communication signal:
-    /// - Base: 100 pts per tier cleared (survival under pressure)
+    /// - Tiered base: 100/150/200 pts per round (pressure escalation)
     /// - Content bonus: +50 per round with 20+ words (developed responses)
     /// - Follow-up bonus: +25 per follow-up round survived (conversational agility)
-    /// - Multipliers stack on top for clean speech and depth.
+    /// - Multipliers stack on top for clean speech, depth, and quality signals.
     var gamePoints: Int {
-        let base = roundsSurvived * 100
+        var base = 0
+        for (index, outcome) in roundOutcomes.enumerated() where outcome == .survived {
+            base += PressureRoundConfig.basePoints(for: index + 1)
+        }
 
         var bonuses = 0
         for (index, outcome) in roundOutcomes.enumerated() where outcome == .survived {
@@ -358,8 +385,14 @@ struct PressureSessionResult: Equatable {
 
     /// Which multipliers are active for this run. Each is backed by a
     /// real signal — no decorative numbers.
+    ///
+    /// Survival multipliers (1.2–1.6) are larger because surviving under
+    /// pressure is the primary game mechanic. Quality multipliers (1.10–1.15)
+    /// are smaller bonus recognition for how well the user spoke.
     var computedMultipliers: [(label: String, value: Double)] {
         var result: [(String, Double)] = []
+
+        // -- Survival multipliers --
 
         if totalFillers == 0 && roundsSurvived >= 1 {
             result.append(("Clean", 1.5))
@@ -374,6 +407,30 @@ struct PressureSessionResult: Equatable {
         let developedRounds = wordCountsByRound.filter { $0 >= 20 }.count
         if developedRounds >= 3 {
             result.append(("Developed", 1.2))
+        }
+
+        // -- Quality-signal multipliers (only when data is available) --
+
+        // Vocal Variety: monotoneScore < 0.35 means clearly varied pitch
+        if let pitch = pitchMetrics, pitch.isReliable, pitch.monotoneScore < 0.35 {
+            result.append(("Vocal Variety", 1.15))
+        }
+
+        // Pace Control: session WPM in the ideal 120–160 range
+        if sessionWPM >= 120 && sessionWPM <= 160 && totalWords >= 30 {
+            result.append(("Pace Control", 1.10))
+        }
+
+        // Word Choice: uniqueRatio >= 0.65 means varied vocabulary
+        if let wc = wordChoiceMetrics,
+           wc.contentWordCount >= WordChoiceMetrics.minContentWords,
+           wc.uniqueRatio >= 0.65 {
+            result.append(("Word Choice", 1.10))
+        }
+
+        // Rhetoric: any detected rhetorical device on the combined transcript
+        if !eloquenceFindings.isEmpty {
+            result.append(("Rhetoric", 1.15))
         }
 
         return result

@@ -62,6 +62,7 @@ struct SuddenDeathPracticeView: View {
     @State private var hasDetectedSpeechThisRound = false
     @State private var evaluation: PracticeEvaluation?
     @State private var wordThresholdHapticFired = false
+    @State private var enrichedResult: PressureSessionResult?
     #if DEBUG
     @State private var isPresentingResultFixture = false
     #endif
@@ -347,7 +348,7 @@ struct SuddenDeathPracticeView: View {
                 .transition(.opacity)
 
         case .sessionComplete(let result):
-            resultScreen(result: result)
+            resultScreen(result: enrichedResult ?? result)
                 .transition(.opacity.combined(with: .move(edge: .trailing)))
         }
     }
@@ -1092,7 +1093,18 @@ struct SuddenDeathPracticeView: View {
             speechVM.stopRecording()
             SoundscapeEngine.shared.stop()
             stopPromptReadout()
-            finalizeSession(result: result)
+
+            // Enrich with quality signals before the result screen reads gamePoints.
+            var enriched = result
+            enriched.pitchMetrics = speechVM.currentSessionPitchMetrics()
+            enriched.wordChoiceMetrics = WordChoiceMetrics.compute(transcript: engine.sessionTranscript)
+            enriched.eloquenceFindings = EloquenceEngine.analyse(transcript: engine.sessionTranscript)
+            if result.totalDuration > 0 {
+                enriched.sessionWPM = Double(result.totalWords) / (result.totalDuration / 60.0)
+            }
+            enrichedResult = enriched
+
+            finalizeSession(result: enriched)
 
         default:
             break
