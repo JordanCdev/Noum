@@ -6503,15 +6503,46 @@ enum PracticeSessionFinalizer {
         let imToneProgress: IMToneDrillProgress?
         let imToneScenarioTitle: String?
         let imToneToneTitle: String?
+        // The win, on the crossing rep only: titles + climb rates when this
+        // rep is the one that pushed its scenario across the resolved bar.
+        let imToneResolvedScenarioTitle: String?
+        let imToneResolvedToneTitle: String?
+        let imToneResolvedEarlierRate: Double?
+        let imToneResolvedRecentRate: Double?
         if session.mode == .imConversation, let details = session.imConversationDetails {
             let scenario = details.setup.scenario
             imToneProgress = IMHistorySummary.toneDrillProgress(from: allSessions, scenario: scenario)
             imToneScenarioTitle = scenario.title
             imToneToneTitle = details.setup.targetTone.title
+
+            // Did THIS rep solve the tone drill? Compare the resolved read
+            // for this scenario with the latest rep included vs. excluded.
+            // Resolved-now but not-resolved-before == the crossing rep, so
+            // the coach headlines the win exactly once. `allSessions`
+            // already contains the just-appended rep (see line above), so
+            // filtering it out yields the as-of-previous-rep history.
+            let resolvedNow = IMHistorySummary.toneDrillResolved(from: allSessions, scenario: scenario)
+            let priorSessions = allSessions.filter { $0.id != session.id }
+            let resolvedBefore = IMHistorySummary.toneDrillResolved(from: priorSessions, scenario: scenario)
+            if let resolvedNow, resolvedBefore == nil {
+                imToneResolvedScenarioTitle = scenario.title
+                imToneResolvedToneTitle = resolvedNow.targetTone.title
+                imToneResolvedEarlierRate = resolvedNow.earlierRate
+                imToneResolvedRecentRate = resolvedNow.recentRate
+            } else {
+                imToneResolvedScenarioTitle = nil
+                imToneResolvedToneTitle = nil
+                imToneResolvedEarlierRate = nil
+                imToneResolvedRecentRate = nil
+            }
         } else {
             imToneProgress = nil
             imToneScenarioTitle = nil
             imToneToneTitle = nil
+            imToneResolvedScenarioTitle = nil
+            imToneResolvedToneTitle = nil
+            imToneResolvedEarlierRate = nil
+            imToneResolvedRecentRate = nil
         }
 
         let input = PostRepCoachNoteInput(
@@ -6538,7 +6569,11 @@ enum PracticeSessionFinalizer {
             totalSessionCount: momentum.totalSessionCount,
             imToneDrillProgress: imToneProgress,
             imToneDrillScenarioTitle: imToneScenarioTitle,
-            imToneDrillToneTitle: imToneToneTitle
+            imToneDrillToneTitle: imToneToneTitle,
+            imToneDrillResolvedScenarioTitle: imToneResolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: imToneResolvedToneTitle,
+            imToneDrillResolvedEarlierRate: imToneResolvedEarlierRate,
+            imToneDrillResolvedRecentRate: imToneResolvedRecentRate
         )
 
         // Deterministic note lands synchronously so the Summary
