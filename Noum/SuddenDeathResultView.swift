@@ -42,7 +42,8 @@ struct SuddenDeathResultView: View {
     private var runEndNote: String {
         switch result.finalOutcome {
         case .survived:          return "Run cleared"
-        case .fillerOverload:    return "Filler detected"
+        case .fillerOverload:
+            return "\(result.totalFillers) filler\(result.totalFillers == 1 ? "" : "s") ended the run"
         case .timeoutBeforeStart: return "Start window expired"
         case .tooShort:          return "Below word target"
         }
@@ -88,11 +89,6 @@ struct SuddenDeathResultView: View {
                     if !result.computedMultipliers.isEmpty { multiplierChips }
                     statsRow
                     compactRunPath
-                    SuddenDeathRecentRunsCard(
-                        currentRunID: currentRunID,
-                        runs: runHistoryStore.recentRuns(limit: 5)
-                    )
-                    xpChip
                 }
                 .padding(.horizontal, Spacing.screenH)
                 .padding(.top, Spacing.lg)
@@ -251,15 +247,6 @@ struct SuddenDeathResultView: View {
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
-    private var xpChip: some View {
-        Text("+\(result.xpEarned) XP")
-            .font(.title3.weight(.bold))
-            .foregroundStyle(AppColor.brandBlue)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 8)
-            .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
-    }
-
     private var actionButtons: some View {
         VStack(spacing: 12) {
             Button(action: onRetry) {
@@ -280,7 +267,7 @@ struct SuddenDeathResultView: View {
                 shareMenu
 
                 Button(action: onSeeFullSummary) {
-                    Text("Full Summary")
+                    Label("Coach Read", systemImage: "text.bubble")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }

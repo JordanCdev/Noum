@@ -1694,6 +1694,28 @@ struct PressureSessionTotalsTests {
     }
 }
 
+struct PressureSessionTranscriptLogTests {
+
+    @Test func completedTierResponsesAreCombinedInOrder() {
+        var transcriptLog = PressureSessionTranscriptLog()
+
+        transcriptLog.record("  A clear opening. ")
+        transcriptLog.record("A stronger follow-up.\n")
+
+        #expect(transcriptLog.combinedText == "A clear opening.\n\nA stronger follow-up.")
+    }
+
+    @Test func emptyWaitingTurnsAreNotStoredAsEvidence() {
+        var transcriptLog = PressureSessionTranscriptLog()
+
+        transcriptLog.record("A completed answer.")
+        transcriptLog.record("   \n ")
+
+        #expect(transcriptLog.responses.count == 1)
+        #expect(transcriptLog.combinedText == "A completed answer.")
+    }
+}
+
 struct PressureSessionResultTests {
 
     @Test func deepSurvivalCleanRunGetsTopLabel() {

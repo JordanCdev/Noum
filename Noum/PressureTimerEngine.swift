@@ -209,6 +209,22 @@ struct PressureSessionTotals: Equatable {
     }
 }
 
+/// Preserves the spoken evidence from each completed tier so a multi-tier
+/// Sudden Death run is coached as one session rather than only its final turn.
+struct PressureSessionTranscriptLog: Equatable {
+    private(set) var responses: [String] = []
+
+    mutating func record(_ response: String) {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        responses.append(trimmed)
+    }
+
+    var combinedText: String {
+        responses.joined(separator: "\n\n")
+    }
+}
+
 /// Full session result with behavior-mapped labels.
 struct PressureSessionResult: Equatable {
     let roundsSurvived: Int
@@ -444,15 +460,16 @@ final class PressureTimerEngine: ObservableObject {
     // Accumulated stats. Written only when a round ends so direct
     // filler elimination and ordinary evaluation cannot drift.
     private var totals = PressureSessionTotals()
+    private var transcriptLog = PressureSessionTranscriptLog()
+
+    /// Complete spoken evidence for the finished run, in tier order.
+    var sessionTranscript: String { transcriptLog.combinedText }
 
     // Per-round word counts + thresholds so the result screen can show
     // the user the actual words they spoke vs. the bar they missed,
     // instead of leaving "Too Short" as an unexplained verdict.
     private var roundWordCounts: [Int] = []
     private var roundMinimumWords: [Int] = []
-
-    // Prompt history for context
-    private var promptHistory: [(prompt: String, response: String)] = []
 
     // MARK: - Session Control
 
@@ -487,9 +504,9 @@ final class PressureTimerEngine: ObservableObject {
         sessionStartDate = nil
         roundStartDate = nil
         totals = PressureSessionTotals()
+        transcriptLog = PressureSessionTranscriptLog()
         roundWordCounts = []
         roundMinimumWords = []
-        promptHistory = []
         pendingUserWaitingRound = nil
         print("[PressureEngine] Reset complete")
     }
@@ -624,6 +641,9 @@ final class PressureTimerEngine: ObservableObject {
 
     private func beginUserWaiting(round: Int) {
         roundStartDate = Date()
+        // The previous response has already been consumed by follow-up
+        // generation. Clear it so a start-timeout never duplicates it.
+        lastUserTranscript = ""
         let startWindow = roundConfig.startWindow
         displayRemaining = startWindow
         timerFraction = 0
@@ -707,9 +727,6 @@ final class PressureTimerEngine: ObservableObject {
         timerTask?.cancel()
         responseLimitTask?.cancel()
 
-        // Store for follow-up generation
-        promptHistory.append((prompt: currentPromptText, response: lastUserTranscript))
-
         if currentWordCount < roundConfig.minimumWords {
             endRound(round: round, outcome: .tooShort)
         } else if currentFillerCount > roundConfig.fillerTolerance {
@@ -723,6 +740,7 @@ final class PressureTimerEngine: ObservableObject {
         timerTask?.cancel()
         responseLimitTask?.cancel()
         roundOutcomes.append(outcome)
+        transcriptLog.record(lastUserTranscript)
 
         // Record this round's word count + threshold for the result-screen
         // breakdown. `currentWordCount` is 0 for start-timeout rounds

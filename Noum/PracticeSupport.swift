@@ -73,6 +73,9 @@ final class SummaryDataStore {
         let score: Int?
         let progressSegments: Int
         let xpEarned: Int
+        let suddenDeathGamePoints: Int?
+        let suddenDeathMultiplierLabels: [String]
+        let suddenDeathTotalWords: Int?
         let showDuration: Bool
         let practiceTitle: String
         let feedbackOverride: String?

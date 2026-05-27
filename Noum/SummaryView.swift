@@ -15,6 +15,9 @@ struct SummaryView: View {
     let score: Int?
     let progressSegments: Int
     let xpEarned: Int
+    var suddenDeathGamePoints: Int? = nil
+    var suddenDeathMultiplierLabels: [String] = []
+    var suddenDeathTotalWords: Int? = nil
     var showDuration: Bool = true
     var practiceTitle: String = "Practice Summary"
     var feedbackOverride: String?
@@ -143,6 +146,7 @@ struct SummaryView: View {
     }
 
     private var isIMSummary: Bool { currentMode == .imConversation }
+    private var isSuddenDeathSummary: Bool { currentMode == .suddenDeath }
 
     private var currentStreak: Int {
         PracticeSession.calculateStreak(from: sessionStore.sessions)
@@ -522,10 +526,10 @@ struct SummaryView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         // MODE CONSISTENCY NOTE (M20):
-                        // IM and Timed/other now share TalkToNoumCTACard as the
-                        // single Ask Noum entry point. Sudden Death is intentionally
-                        // excluded — its SuddenDeathResultView is arcade-style and
-                        // owned separately. Remaining divergences to address later:
+                        // IM, Sudden Death and Timed/other share TalkToNoumCTACard
+                        // as the single Ask Noum entry point. Sudden Death keeps an
+                        // arcade-style result hero while its cards below remain
+                        // coaching-first. Remaining divergences to address later:
                         //   - IM lacks BaselineComparisonCard equivalents for
                         //     WhatYouDidWell / WhatToImprove (uses IMReadCard instead)
                         //   - Ah-Counter has no dedicated mode-specific verdict card
@@ -578,27 +582,38 @@ struct SummaryView: View {
                             )
                             expandableDetailsSection
                         } else {
-                            // TIMED / AH-COUNTER / OTHER MODES — score-first hierarchy.
+                            // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
                             // The post-rep attention budget is small; only the
                             // signals that fight for "what happened, what was
                             // proven, what to do next" stay above the fold.
                             // Everything analytical/secondary lives inside
                             // `expandableDetailsSection` below.
-                            HeroScoreCard(
-                                scoreValue: scoreValue,
-                                practiceTitle: practiceTitle,
-                                scoreAccent: scoreAccent,
-                                scoreEmoji: scoreEmoji,
-                                headline: headline,
-                                sessionPrompt: sessionPrompt,
-                                effectiveFillerCount: effectiveFillerCount,
-                                fillerTint: fillerTint,
-                                fillerDelta: fillerDelta,
-                                effectiveDuration: effectiveDuration,
-                                durationAssessment: durationAssessment,
-                                xpEarned: xpEarned,
-                                celebrationVisible: celebrationVisible
-                            )
+                            if isSuddenDeathSummary {
+                                SuddenDeathReviewCard(
+                                    points: suddenDeathGamePoints ?? 0,
+                                    multiplierLabels: suddenDeathMultiplierLabels,
+                                    tiersCleared: progressSegments,
+                                    fillerCount: effectiveFillerCount,
+                                    duration: effectiveDuration,
+                                    wordCount: suddenDeathTotalWords ?? transcriptWordCount
+                                )
+                            } else {
+                                HeroScoreCard(
+                                    scoreValue: scoreValue,
+                                    practiceTitle: practiceTitle,
+                                    scoreAccent: scoreAccent,
+                                    scoreEmoji: scoreEmoji,
+                                    headline: headline,
+                                    sessionPrompt: sessionPrompt,
+                                    effectiveFillerCount: effectiveFillerCount,
+                                    fillerTint: fillerTint,
+                                    fillerDelta: fillerDelta,
+                                    effectiveDuration: effectiveDuration,
+                                    durationAssessment: durationAssessment,
+                                    xpEarned: xpEarned,
+                                    celebrationVisible: celebrationVisible
+                                )
+                            }
                             // M24 Track 1 — the coach turning toward the user
                             // and saying "here's what I just saw" in their
                             // chosen voice. Lands between the score (what
@@ -1849,7 +1864,7 @@ struct SummaryView: View {
     private var sessionAnchoredOpener: String {
         CoachContextBuilder.sessionOpener(
             mode: currentMode,
-            score: score,
+            score: isSuddenDeathSummary ? nil : score,
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
             voice: coachingProfileStore.profile?.speakingStyleGoal
@@ -1949,20 +1964,25 @@ struct SummaryView: View {
             .buttonStyle(.pressable)
         }
         .confirmationDialog("Share Session", isPresented: $showShareMenu) {
-            ShareLink(item: shareImage, preview: SharePreview("My Noum Score", image: shareImage)) {
-                Label("Share Achievement Card", systemImage: "photo.fill")
+            ShareLink(
+                item: shareImage,
+                preview: SharePreview(isSuddenDeathSummary ? "My Sudden Death Run" : "My Noum Score", image: shareImage)
+            ) {
+                Label(isSuddenDeathSummary ? "Share Run Card" : "Share Achievement Card", systemImage: "photo.fill")
             }
-            Button {
-                // SwiftUI guards against two presentations at once — if we
-                // flip the sheet binding here, it races the dialog dismissal
-                // and the runtime drops the sheet with "Currently, only
-                // presenting a single sheet is supported." Defer the binding
-                // flip until the dialog has fully dismissed.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    showFeedbackRequestSheet = true
+            if !isSuddenDeathSummary {
+                Button {
+                    // SwiftUI guards against two presentations at once — if we
+                    // flip the sheet binding here, it races the dialog dismissal
+                    // and the runtime drops the sheet with "Currently, only
+                    // presenting a single sheet is supported." Defer the binding
+                    // flip until the dialog has fully dismissed.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        showFeedbackRequestSheet = true
+                    }
+                } label: {
+                    Label("Request Feedback", systemImage: "person.2.fill")
                 }
-            } label: {
-                Label("Request Feedback", systemImage: "person.2.fill")
             }
         } message: {
             Text("Choose how to share this session")
@@ -2058,41 +2078,51 @@ struct SummaryView: View {
             .padding(.top, 28)
             .padding(.bottom, 20)
 
-            // Hero score
-            ZStack {
-                // Outer glow ring
-                Circle()
-                    .stroke(shareModeTint.opacity(0.12), lineWidth: 3)
-                    .frame(width: 140, height: 140)
-
-                // Score ring
-                Circle()
-                    .trim(from: 0, to: Double(scoreValue) / 10.0)
-                    .stroke(
-                        AngularGradient(
-                            colors: [shareModeTint, shareModeTint.opacity(0.6), shareModeTint],
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                    )
-                    .frame(width: 120, height: 120)
-                    .rotationEffect(.degrees(-90))
-
-                // Track
-                Circle()
-                    .stroke(.white.opacity(0.08), lineWidth: 8)
-                    .frame(width: 120, height: 120)
-
-                VStack(spacing: 0) {
-                    Text("\(scoreValue)")
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("out of 10")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.4))
+            if isSuddenDeathSummary {
+                VStack(spacing: 2) {
+                    Text((suddenDeathGamePoints ?? 0).formatted())
+                        .font(.system(size: 52, weight: .black, design: .rounded))
+                        .foregroundStyle(shareModeTint)
+                    Text("POINTS")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .tracking(1.2)
                 }
+                .padding(.bottom, 16)
+            } else {
+                // Hero score
+                ZStack {
+                    Circle()
+                        .stroke(shareModeTint.opacity(0.12), lineWidth: 3)
+                        .frame(width: 140, height: 140)
+
+                    Circle()
+                        .trim(from: 0, to: Double(scoreValue) / 10.0)
+                        .stroke(
+                            AngularGradient(
+                                colors: [shareModeTint, shareModeTint.opacity(0.6), shareModeTint],
+                                center: .center
+                            ),
+                            style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                        )
+                        .frame(width: 120, height: 120)
+                        .rotationEffect(.degrees(-90))
+
+                    Circle()
+                        .stroke(.white.opacity(0.08), lineWidth: 8)
+                        .frame(width: 120, height: 120)
+
+                    VStack(spacing: 0) {
+                        Text("\(scoreValue)")
+                            .font(.system(size: 52, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("out of 10")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+                .padding(.bottom, 16)
             }
-            .padding(.bottom, 16)
 
             // Headline
             Text(headline)
@@ -2113,11 +2143,19 @@ struct SummaryView: View {
 
             // Stats row
             HStack(spacing: 0) {
-                shareStatCell(value: "\(effectiveFillerCount)", label: "Fillers", tint: fillerTint)
-                shareDivider
-                shareStatCell(value: "\(Int(effectiveDuration))s", label: "Duration", tint: AppColor.brandBlue)
-                shareDivider
-                shareStatCell(value: "\(shareWPM)", label: "WPM", tint: AppColor.modeSuddenDeath)
+                if isSuddenDeathSummary {
+                    shareStatCell(value: "\(progressSegments)", label: "Cleared", tint: shareModeTint)
+                    shareDivider
+                    shareStatCell(value: "\(Int(effectiveDuration))s", label: "Time", tint: AppColor.brandBlue)
+                    shareDivider
+                    shareStatCell(value: "\(suddenDeathTotalWords ?? transcriptWordCount)", label: "Words", tint: .white)
+                } else {
+                    shareStatCell(value: "\(effectiveFillerCount)", label: "Fillers", tint: fillerTint)
+                    shareDivider
+                    shareStatCell(value: "\(Int(effectiveDuration))s", label: "Duration", tint: AppColor.brandBlue)
+                    shareDivider
+                    shareStatCell(value: "\(shareWPM)", label: "WPM", tint: AppColor.modeSuddenDeath)
+                }
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
@@ -2539,7 +2577,7 @@ struct SummaryView: View {
         enhancedCoachNote = result.coachNote
         eloquenceFindings = result.eloquenceFindings
 
-        if result.showProgressionScreen {
+        if result.showProgressionScreen && !isSuddenDeathSummary {
             showProgressionScreen = true
         }
 
@@ -2761,6 +2799,9 @@ extension SummaryView {
         self.score = entry?.score
         self.progressSegments = entry?.progressSegments ?? 0
         self.xpEarned = entry?.xpEarned ?? 0
+        self.suddenDeathGamePoints = entry?.suddenDeathGamePoints
+        self.suddenDeathMultiplierLabels = entry?.suddenDeathMultiplierLabels ?? []
+        self.suddenDeathTotalWords = entry?.suddenDeathTotalWords
         self.showDuration = entry?.showDuration ?? true
         self.practiceTitle = entry?.practiceTitle ?? "Practice Summary"
         self.feedbackOverride = entry?.feedbackOverride

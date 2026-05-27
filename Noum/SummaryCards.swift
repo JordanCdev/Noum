@@ -94,6 +94,92 @@ struct HeroScoreCard: View {
     }
 }
 
+// MARK: - Sudden Death Review Card
+
+struct SuddenDeathReviewCard: View {
+    let points: Int
+    let multiplierLabels: [String]
+    let tiersCleared: Int
+    let fillerCount: Int
+    let duration: TimeInterval
+    let wordCount: Int
+
+    private let accent = AppColor.modeSuddenDeath
+
+    private var elapsedLabel: String {
+        let totalSeconds = max(0, Int(duration.rounded(.down)))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return minutes > 0 ? String(format: "%d:%02d", minutes, seconds) : "\(seconds)s"
+    }
+
+    private var outcomeLine: String {
+        guard fillerCount > 0 else { return "No filler ended this run." }
+        return "\(fillerCount) filler\(fillerCount == 1 ? "" : "s") ended this run."
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("SUDDEN DEATH REVIEW")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .tracking(1.4)
+
+            VStack(spacing: 2) {
+                Text(points.formatted())
+                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .foregroundStyle(accent)
+                    .monospacedDigit()
+                Text("POINTS")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .tracking(1.2)
+            }
+
+            if !multiplierLabels.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(multiplierLabels, id: \.self) { multiplier in
+                            Text(multiplier)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(accent)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(accent.opacity(0.10), in: Capsule())
+                        }
+                    }
+                }
+            }
+
+            Text(outcomeLine)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 16) {
+                StatPill(label: "Cleared", value: "\(tiersCleared)", delta: nil, tint: accent, invertDelta: false)
+                StatPill(label: "Time", value: elapsedLabel, delta: nil, tint: .primary, invertDelta: false)
+                StatPill(label: "Words", value: "\(wordCount)", delta: nil, tint: .primary, invertDelta: false)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(
+            LinearGradient(
+                colors: [AppColor.cardBackground, accent.opacity(0.04)],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(accent.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+        .accessibilityIdentifier("suddenDeath.review.card")
+    }
+}
+
 // MARK: - Stat Pill (reusable)
 
 struct StatPill: View {

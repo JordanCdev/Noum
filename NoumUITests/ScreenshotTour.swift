@@ -221,12 +221,13 @@ final class ScreenshotTour: XCTestCase {
         captureSuddenDeathResult(
             launchArgument: "UI_TESTING_SUDDEN_DEATH_RESULT_FILLER",
             topName: "28-sudden-death-result-filler",
-            lowerName: "29-sudden-death-result-filler-lower"
+            lowerName: "29-sudden-death-result-filler-lower",
+            reviewName: "30-sudden-death-coach-read"
         )
         captureSuddenDeathResult(
             launchArgument: "UI_TESTING_SUDDEN_DEATH_RESULT_LONG",
-            topName: "30-sudden-death-result-long",
-            lowerName: "31-sudden-death-result-long-lower"
+            topName: "31-sudden-death-result-long",
+            lowerName: "32-sudden-death-result-long-lower"
         )
     }
 
@@ -287,7 +288,12 @@ final class ScreenshotTour: XCTestCase {
     }
 
     @MainActor
-    private func captureSuddenDeathResult(launchArgument: String, topName: String, lowerName: String) {
+    private func captureSuddenDeathResult(
+        launchArgument: String,
+        topName: String,
+        lowerName: String,
+        reviewName: String? = nil
+    ) {
         let app = launchSeededAt("noum://train", extraArgs: [launchArgument])
         let modeRow = app.buttons["practiceMode.suddenDeath"]
         XCTAssertTrue(modeRow.waitForExistence(timeout: 5))
@@ -316,6 +322,19 @@ final class ScreenshotTour: XCTestCase {
         app.swipeUp(velocity: .slow)
         Thread.sleep(forTimeInterval: 0.6)
         attach(app, name: lowerName)
+        if let reviewName {
+            let coachRead = app.buttons["Coach Read"]
+            XCTAssertTrue(coachRead.waitForExistence(timeout: 3))
+            if coachRead.exists {
+                coachRead.tap()
+                let reviewCard = app.descendants(matching: .any)["suddenDeath.review.card"]
+                XCTAssertTrue(reviewCard.waitForExistence(timeout: 5))
+                if reviewCard.exists {
+                    Thread.sleep(forTimeInterval: 0.4)
+                    attach(app, name: reviewName)
+                }
+            }
+        }
         app.terminate()
     }
 

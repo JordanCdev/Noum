@@ -1111,7 +1111,7 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func finalizeSession(result: PressureSessionResult) {
-        let transcript = roundTranscript
+        let transcript = engine.sessionTranscript
         let eval = PracticeEvaluator.evaluateSuddenDeathPractice(
             transcript: transcript,
             fillerCount: result.totalFillers,
@@ -1179,12 +1179,15 @@ struct SuddenDeathPracticeView: View {
     private func pushSummary(result: PressureSessionResult) {
         let payloadId = UUID()
         let entry = SummaryDataStore.Entry(
-            transcript: speechVM.highlightedText,
+            transcript: AttributedString(engine.sessionTranscript),
             fillerCount: result.totalFillers,
             duration: result.totalDuration,
             score: result.score,
             progressSegments: result.roundsSurvived,
             xpEarned: result.xpEarned,
+            suddenDeathGamePoints: result.gamePoints,
+            suddenDeathMultiplierLabels: result.multiplierLabels,
+            suddenDeathTotalWords: result.totalWords,
             showDuration: true,
             practiceTitle: "Pressure Drill",
             feedbackOverride: evaluation?.feedback,
