@@ -89,6 +89,12 @@ enum CoachContextBuilder {
            stalled one as a plateau to break — rather than re-issuing the \
            original miss as if nothing has moved. It is observed \
            association, never proof a drill caused the change.
+        9. When RESOLVED TONE is present, a tone the user used to miss in a \
+           scenario is now landing reliably — the drill loop's win. Treat it \
+           as banked confidence the user can draw on ("you cracked calm in \
+           Difficult Conversation — that holds now"); never re-prescribe that \
+           drill, never restate the old miss as if it were still open. \
+           Observed association, never proof a drill caused the change.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -468,6 +474,21 @@ enum CoachContextBuilder {
             lines.append(contentsOf: trajectoryLines)
         }
 
+        // RESOLVED TONE — the win the drill loop earns. `toneDrillSignal`
+        // (and the TONE-DRILL TRAJECTORY section above) self-clears the
+        // instant a scenario climbs above the 40% bar, which is exactly when
+        // the coach should *acknowledge* it rather than go silent. This
+        // surfaces a tone the user used to miss and now lands reliably so the
+        // chat coach can bank the win as confidence — never re-prescribing a
+        // drill it has already passed. Mutually exclusive with the trajectory
+        // section by construction (one fires below the bar, one at/above it),
+        // so the coach never both nags and congratulates the same scenario.
+        if let resolved = IMHistorySummary.resolvedToneSignal(from: sessions) {
+            lines.append("")
+            lines.append("RESOLVED TONE (a tone the user used to miss, now landing)")
+            lines.append(contentsOf: resolvedToneLine(for: resolved))
+        }
+
         // RECENT — last 3 sessions, so the coach can quote actual numbers.
         // M21: when a session carried a declared intent (the user tapped a
         // chip on the SessionIntent prompt before the rep), append a quiet
@@ -612,6 +633,24 @@ enum CoachContextBuilder {
 
         let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — \(directionPhrase)."
         return [dataLine, "- \(guidance)"]
+    }
+
+    // MARK: - Resolved-tone line (the banked win for the chat coach)
+    //
+    // Turns a resolved-tone signal into the same terse, citeable register as
+    // the trajectory line — a data line ("was X%, now holding at Y%") plus a
+    // guidance clause so the model treats it as a closed win, not an open
+    // drill. The numbers come straight off the signal's earliest- vs
+    // latest-window rates, so the coach cites the user's own arc. System
+    // prompt rule 9 is the backstop; this is the in-context nudge.
+    static func resolvedToneLine(for signal: IMToneResolvedSignal) -> [String] {
+        let scenario = signal.scenario.title
+        let tone = signal.targetTone.title
+        let wasPct = Int((signal.earlierRate * 100).rounded())
+        let nowPct = Int((signal.recentRate * 100).rounded())
+        let dataLine = "- \(tone) tone in \(scenario): tone-match was \(wasPct)%, now holding at \(nowPct)% (earliest vs latest reps) — resolved."
+        let guidance = "- This tone gap is closed. Bank it as confidence the user can build on; do not re-prescribe the drill or restate the old miss as if it were still open."
+        return [dataLine, guidance]
     }
 
     // MARK: - Session-anchored opener

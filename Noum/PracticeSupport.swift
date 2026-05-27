@@ -7035,6 +7035,37 @@ struct IMToneDrillSignal: Equatable {
     }
 }
 
+/// A scenario where the committed IM tone *used to* miss reliably and is
+/// now landing — the banked win that closes the tone-drill loop. The
+/// `resolved` analog of `TrendDirection`: was a problem, no longer is.
+/// Produced by `IMHistorySummary.resolvedToneSignal(from:)` only when the
+/// evidence clears a deliberately stiff bar (≥ `toneDrillMinEvaluatedReps`
+/// evaluated reps; overall hit rate now *at or above* the drill threshold
+/// so it is genuinely out of drill territory; the earliest window was
+/// *below* that threshold so there is real evidence it was once a struggle;
+/// and the latest window is solidly landing, ≥ `toneResolvedRecentRateFloor`).
+/// Mutually exclusive with `IMToneDrillSignal` by construction — a scenario
+/// at/above the drill bar can never be a drill candidate, and a resolved
+/// signal can never be below it — so the coach never both prescribes and
+/// congratulates the same scenario. `earlierRate`/`recentRate` are the same
+/// earliest- vs latest-window hit rates `toneDrillProgress` computes, so the
+/// "was X%, now holding at Y%" copy cites the user's own arc.
+struct IMToneResolvedSignal: Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    /// Current overall tone-match rate (0.0–1.0), now ≥ the drill threshold.
+    let matchRate: Double
+    /// Earliest-window hit rate (0.0–1.0) — below the drill threshold, the
+    /// evidence the tone *was* a struggle.
+    let earlierRate: Double
+    /// Latest-window hit rate (0.0–1.0) — at or above the resolved floor, the
+    /// evidence it is now landing reliably ("holding at Y%").
+    let recentRate: Double
+    let evaluatedCount: Int
+    /// Reps averaged in each window (the `min(3, count / 2)` bound).
+    let windowSize: Int
+}
+
 enum RecommendationBiasEngine {
     static let playbook: [PracticeModePlaybookEntry] = [
         .init(
