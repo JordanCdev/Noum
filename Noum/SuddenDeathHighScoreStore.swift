@@ -45,6 +45,14 @@ final class SuddenDeathHighScoreStore: ObservableObject {
         return true
     }
 
+    #if DEBUG
+    /// Sets the comparison score used by deterministic result-screen captures.
+    func replaceBestPointsForDebug(_ points: Int) {
+        let key = "\(keyPrefix).bestPoints.\(accountID())"
+        UserDefaults.standard.set(max(0, points), forKey: key)
+    }
+    #endif
+
     private func storageKey(for difficulty: SuddenDeathDifficulty) -> String {
         let account = accountID()
         return "\(keyPrefix).\(difficulty.rawValue).\(account)"

@@ -10,6 +10,14 @@ import XCTest
 ///       -only-testing:NoumUITests/ScreenshotTour/testCaptureAdvancementSurfaces \
 ///       -resultBundlePath /tmp/noum-tour.xcresult
 ///
+/// Targeted completed-state captures can be produced with:
+///
+///     xcodebuild test \
+///       -project Noum.xcodeproj -scheme Noum \
+///       -destination 'platform=iOS Simulator,name=iPhone 17' \
+///       -only-testing:NoumUITests/ScreenshotTour/testCaptureSuddenDeathResults \
+///       -resultBundlePath /tmp/noum-sudden-death-results.xcresult
+///
 /// Then extract:
 ///
 ///     xcrun xcresulttool export attachments \
@@ -208,6 +216,20 @@ final class ScreenshotTour: XCTestCase {
         notifPromptApp.terminate()
     }
 
+    @MainActor
+    func testCaptureSuddenDeathResults() throws {
+        captureSuddenDeathResult(
+            launchArgument: "UI_TESTING_SUDDEN_DEATH_RESULT_FILLER",
+            topName: "28-sudden-death-result-filler",
+            lowerName: "29-sudden-death-result-filler-lower"
+        )
+        captureSuddenDeathResult(
+            launchArgument: "UI_TESTING_SUDDEN_DEATH_RESULT_LONG",
+            topName: "30-sudden-death-result-long",
+            lowerName: "31-sudden-death-result-long-lower"
+        )
+    }
+
     // MARK: - Helpers
 
     @MainActor
@@ -221,9 +243,9 @@ final class ScreenshotTour: XCTestCase {
     /// Cold-launch with seed + a `-DeepLink` arg so the app routes straight
     /// to the target screen without going through gesture nav.
     @MainActor
-    private func launchSeededAt(_ deepLink: String) -> XCUIApplication {
+    private func launchSeededAt(_ deepLink: String, extraArgs: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE", "-DeepLink", deepLink]
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE"] + extraArgs + ["-DeepLink", deepLink]
         app.launch()
         // Home screen is the deep-link consumption point; wait for it then
         // give the routing one beat to flip the navigation path.
@@ -262,6 +284,39 @@ final class ScreenshotTour: XCTestCase {
             backButton.tap()
             Thread.sleep(forTimeInterval: 0.6)
         }
+    }
+
+    @MainActor
+    private func captureSuddenDeathResult(launchArgument: String, topName: String, lowerName: String) {
+        let app = launchSeededAt("noum://train", extraArgs: [launchArgument])
+        let modeRow = app.buttons["practiceMode.suddenDeath"]
+        XCTAssertTrue(modeRow.waitForExistence(timeout: 5))
+        guard modeRow.exists else {
+            app.terminate()
+            return
+        }
+        modeRow.tap()
+
+        let startCTA = app.buttons["practiceModes.start"]
+        XCTAssertTrue(startCTA.waitForExistence(timeout: 5))
+        guard startCTA.exists else {
+            app.terminate()
+            return
+        }
+        startCTA.tap()
+
+        let resultScreen = app.descendants(matching: .any)["suddenDeath.result.screen"]
+        XCTAssertTrue(resultScreen.waitForExistence(timeout: 10))
+        guard resultScreen.exists else {
+            app.terminate()
+            return
+        }
+        Thread.sleep(forTimeInterval: 1.2)
+        attach(app, name: topName)
+        app.swipeUp(velocity: .slow)
+        Thread.sleep(forTimeInterval: 0.6)
+        attach(app, name: lowerName)
+        app.terminate()
     }
 
     @MainActor

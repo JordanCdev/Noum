@@ -315,7 +315,7 @@ struct PressureSessionResult: Equatable {
     /// Transparent, multiplier-based points for the result screen.
     /// Every component maps to a real communication signal:
     /// - Base: 100 pts per tier cleared (survival under pressure)
-    /// - Content bonus: +50 per round with 20+ words (strong responses)
+    /// - Content bonus: +50 per round with 20+ words (developed responses)
     /// - Follow-up bonus: +25 per follow-up round survived (conversational agility)
     /// - Multipliers stack on top for clean speech and depth.
     var gamePoints: Int {
@@ -355,9 +355,9 @@ struct PressureSessionResult: Equatable {
             result.append(("Deep", 1.3))
         }
 
-        let strongRounds = wordCountsByRound.filter { $0 >= 20 }.count
-        if strongRounds >= 3 {
-            result.append(("Articulate", 1.2))
+        let developedRounds = wordCountsByRound.filter { $0 >= 20 }.count
+        if developedRounds >= 3 {
+            result.append(("Developed", 1.2))
         }
 
         return result
@@ -493,6 +493,15 @@ final class PressureTimerEngine: ObservableObject {
         pendingUserWaitingRound = nil
         print("[PressureEngine] Reset complete")
     }
+
+    #if DEBUG
+    /// Moves the existing engine into a completed state for deterministic
+    /// screenshot/UI-test fixtures without replaying timers or microphone input.
+    func presentResultForUITesting(_ result: PressureSessionResult) {
+        reset()
+        phase = .sessionComplete(result: result)
+    }
+    #endif
 
     /// Begin the countdown sequence.
     func beginCountdown() {

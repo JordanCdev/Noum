@@ -62,6 +62,9 @@ struct SuddenDeathPracticeView: View {
     @State private var hasDetectedSpeechThisRound = false
     @State private var evaluation: PracticeEvaluation?
     @State private var wordThresholdHapticFired = false
+    #if DEBUG
+    @State private var isPresentingResultFixture = false
+    #endif
 
     // MARK: - TTS (prompt readout)
     //
@@ -144,7 +147,7 @@ struct SuddenDeathPracticeView: View {
         // it. Rhetorical findings still surface in the post-session
         // `EloquenceFindingsCard` driven by the same engine output, so
         // the user gets credit without the intra-round interruption.
-        .accessibilityIdentifier("suddenDeath.screen")
+        .accessibilityIdentifier(phaseGroup == .result ? "suddenDeath.result.screen" : "suddenDeath.screen")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(phaseGroup != .setup)
@@ -197,6 +200,12 @@ struct SuddenDeathPracticeView: View {
         }
         .task {
             speechVM.prepareForInteractiveUse()
+
+            #if DEBUG
+            if presentRequestedResultFixtureIfNeeded() {
+                return
+            }
+            #endif
 
             // Quick Start handshake — picker armed Sudden Death for a
             // one-tap launch. `beginSession` resolves a fresh prompt
@@ -950,6 +959,17 @@ struct SuddenDeathPracticeView: View {
 
     // MARK: - Session Control
 
+    #if DEBUG
+    private func presentRequestedResultFixtureIfNeeded() -> Bool {
+        guard let fixture = SuddenDeathResultFixture.requested() else { return false }
+        isPresentingResultFixture = true
+        SuddenDeathRunHistoryStore.shared.replaceForDebug(fixture.priorRuns)
+        SuddenDeathHighScoreStore.shared.replaceBestPointsForDebug(fixture.previousBestPoints)
+        engine.presentResultForUITesting(fixture.result)
+        return true
+    }
+    #endif
+
     private func beginSession() {
         Task { @MainActor in
             let openingPrompt = await PracticeTopics.next(
@@ -1009,6 +1029,12 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func handlePhaseChange(_ newPhase: PressureTurnPhase) {
+        #if DEBUG
+        if isPresentingResultFixture, case .sessionComplete = newPhase {
+            return
+        }
+        #endif
+
         // Kick off the Live Activity the first time the engine moves
         // away from setup. Ending the activity is handled inside the
         // coordinator on `.sessionComplete`.
@@ -1337,4 +1363,104 @@ struct SuddenDeathPracticeView: View {
     private func stopPromptReadout() { }
     #endif
 }
+
+#if DEBUG
+/// Deterministic post-run content for the screenshot tour. Fixtures use the
+/// production result view and state owners; only the route into a completed
+/// engine state is test-only.
+@available(iOS 17.0, macOS 12.0, *)
+private enum SuddenDeathResultFixture {
+    case fillerEnded
+    case longRun
+
+    static func requested(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self? {
+        if arguments.contains("UI_TESTING_SUDDEN_DEATH_RESULT_FILLER") {
+            return .fillerEnded
+        }
+        if arguments.contains("UI_TESTING_SUDDEN_DEATH_RESULT_LONG") {
+            return .longRun
+        }
+        return nil
+    }
+
+    var previousBestPoints: Int {
+        switch self {
+        case .fillerEnded: return 560
+        case .longRun: return 2_400
+        }
+    }
+
+    var result: PressureSessionResult {
+        switch self {
+        case .fillerEnded:
+            return PressureSessionResult(
+                roundsSurvived: 2,
+                finalOutcome: .fillerOverload,
+                roundOutcomes: [.survived, .survived, .fillerOverload],
+                totalDuration: 52,
+                totalFillers: 1,
+                totalWords: 47,
+                bestRoundWords: 20,
+                personalBest: 4,
+                difficulty: .medium,
+                wordCountsByRound: [20, 19, 8],
+                minimumWordsByRound: [10, 10, 10]
+            )
+        case .longRun:
+            return PressureSessionResult(
+                roundsSurvived: 11,
+                finalOutcome: .fillerOverload,
+                roundOutcomes: Array(repeating: .survived, count: 11) + [.fillerOverload],
+                totalDuration: 267,
+                totalFillers: 1,
+                totalWords: 260,
+                bestRoundWords: 29,
+                personalBest: 8,
+                difficulty: .medium,
+                wordCountsByRound: [23, 24, 21, 27, 22, 26, 25, 20, 24, 29, 21, 8],
+                minimumWordsByRound: Array(repeating: 10, count: 12)
+            )
+        }
+    }
+
+    var priorRuns: [SuddenDeathRunRecord] {
+        let now = Date()
+        switch self {
+        case .fillerEnded:
+            return [
+                priorRun(rounds: 3, points: 480, minutesAgo: 16, date: now, wasNewBest: true),
+                priorRun(rounds: 1, points: 125, minutesAgo: 42, date: now),
+                priorRun(rounds: 2, points: 275, minutesAgo: 95, date: now)
+            ]
+        case .longRun:
+            return [
+                priorRun(rounds: 8, points: 2_150, minutesAgo: 38, date: now, wasNewBest: true),
+                priorRun(rounds: 6, points: 1_260, minutesAgo: 125, date: now),
+                priorRun(rounds: 7, points: 1_780, minutesAgo: 360, date: now)
+            ]
+        }
+    }
+
+    private func priorRun(
+        rounds: Int,
+        points: Int,
+        minutesAgo: TimeInterval,
+        date: Date,
+        wasNewBest: Bool = false
+    ) -> SuddenDeathRunRecord {
+        SuddenDeathRunRecord(
+            completedAt: date.addingTimeInterval(-(minutesAgo * 60)),
+            difficulty: .medium,
+            roundsSurvived: rounds,
+            totalFillers: 1,
+            totalWords: rounds * 19,
+            score: 0,
+            xpEarned: 0,
+            finalOutcome: .fillerOverload,
+            wasNewBestAtTime: wasNewBest,
+            gamePoints: points
+        )
+    }
+}
+#endif
 #endif

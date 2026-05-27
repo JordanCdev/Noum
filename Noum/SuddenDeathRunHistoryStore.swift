@@ -82,6 +82,14 @@ final class SuddenDeathRunHistoryStore: ObservableObject {
         persist()
     }
 
+    #if DEBUG
+    /// Seeds visible prior attempts for deterministic result-screen captures.
+    /// This is in-memory only; the result view records its current run normally.
+    func replaceForDebug(_ seededRuns: [SuddenDeathRunRecord]) {
+        runs = Array(seededRuns.sorted { $0.completedAt > $1.completedAt }.prefix(Self.capacity))
+    }
+    #endif
+
     /// Returns the most recent runs for a difficulty, newest first.
     /// Pass `limit: nil` for the full history at that difficulty.
     func recentRuns(difficulty: SuddenDeathDifficulty, limit: Int? = nil) -> [SuddenDeathRunRecord] {

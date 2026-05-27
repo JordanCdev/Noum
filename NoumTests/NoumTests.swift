@@ -13086,7 +13086,9 @@ struct SuddenDeathRunHistoryStoreTests {
             id: id, completedAt: date, difficulty: .hard,
             roundsSurvived: 7, totalFillers: 3, totalWords: 142,
             score: 8, xpEarned: 240, finalOutcome: .fillerOverload,
-            wasNewBestAtTime: true
+            wasNewBestAtTime: true,
+            gamePoints: 1_425,
+            activeMultipliers: ["x1.3 Deep"]
         )
         let data = try JSONEncoder().encode(record)
         let decoded = try JSONDecoder().decode(SuddenDeathRunRecord.self, from: data)
@@ -13100,6 +13102,35 @@ struct SuddenDeathRunHistoryStoreTests {
         #expect(decoded.xpEarned == 240)
         #expect(decoded.finalOutcome == .fillerOverload)
         #expect(decoded.wasNewBestAtTime == true)
+        #expect(decoded.gamePoints == 1_425)
+        #expect(decoded.activeMultipliers == ["x1.3 Deep"])
+    }
+
+    @Test func legacyRunRecordWithoutPointsFieldsStillDecodes() throws {
+        let record = SuddenDeathRunRecord(
+            difficulty: .medium,
+            roundsSurvived: 3,
+            totalFillers: 1,
+            totalWords: 52,
+            score: 5,
+            xpEarned: 70,
+            finalOutcome: .fillerOverload,
+            wasNewBestAtTime: false,
+            gamePoints: 400,
+            activeMultipliers: ["x1.2 Developed"]
+        )
+        let data = try JSONEncoder().encode(record)
+        var legacyObject = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        legacyObject.removeValue(forKey: "gamePoints")
+        legacyObject.removeValue(forKey: "activeMultipliers")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+
+        let decoded = try JSONDecoder().decode(SuddenDeathRunRecord.self, from: legacyData)
+        #expect(decoded.roundsSurvived == 3)
+        #expect(decoded.gamePoints == 0)
+        #expect(decoded.activeMultipliers.isEmpty)
     }
 }
 
@@ -16163,25 +16194,25 @@ struct SuddenDeathGamePointsTests {
         #expect(marathonMult?.value == 1.6)
     }
 
-    // MARK: Articulate multiplier
+    // MARK: Developed-response multiplier
 
-    @Test func articulateRequires3RoundsWith20PlusWords() {
-        let articulate = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [25, 22, 21, 10])
-        let labels = articulate.computedMultipliers.map(\.label)
-        #expect(labels.contains("Articulate"))
+    @Test func developedRequires3RoundsWith20PlusWords() {
+        let developed = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [25, 22, 21, 10])
+        let labels = developed.computedMultipliers.map(\.label)
+        #expect(labels.contains("Developed"))
 
-        let notArticulate = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [25, 22, 10, 10])
-        let labels2 = notArticulate.computedMultipliers.map(\.label)
-        #expect(!labels2.contains("Articulate"))
+        let notDeveloped = makeResult(roundsSurvived: 4, totalFillers: 1, wordCountsByRound: [25, 22, 10, 10])
+        let labels2 = notDeveloped.computedMultipliers.map(\.label)
+        #expect(!labels2.contains("Developed"))
     }
 
     // MARK: Content bonus
 
-    @Test func contentBonusAdds50PerStrongRound() {
-        let strong = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [25, 25])
-        let weak = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [10, 10])
-        #expect(strong.gamePoints > weak.gamePoints)
-        #expect(strong.gamePoints - weak.gamePoints >= 100)
+    @Test func contentBonusAdds50PerDevelopedRound() {
+        let developed = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [25, 25])
+        let brief = makeResult(roundsSurvived: 2, totalFillers: 1, wordCountsByRound: [10, 10])
+        #expect(developed.gamePoints > brief.gamePoints)
+        #expect(developed.gamePoints - brief.gamePoints >= 100)
     }
 
     // MARK: Follow-up bonus
@@ -16197,12 +16228,12 @@ struct SuddenDeathGamePointsTests {
 
     // MARK: Multiplier stacking
 
-    @Test func allMultipliersStackForCleanDeepArticulateRun() {
+    @Test func allMultipliersStackForCleanDeepDevelopedRun() {
         let result = makeResult(roundsSurvived: 5, totalFillers: 0, wordCountsByRound: [25, 22, 21, 25, 20])
         let labels = Set(result.computedMultipliers.map(\.label))
         #expect(labels.contains("Clean"))
         #expect(labels.contains("Deep"))
-        #expect(labels.contains("Articulate"))
+        #expect(labels.contains("Developed"))
         #expect(result.gamePoints > Int(500 * 1.5 * 1.3))
     }
 

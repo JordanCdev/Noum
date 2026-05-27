@@ -16,6 +16,21 @@ import Foundation
 
 @available(iOS 17.0, macOS 12.0, *)
 struct SuddenDeathRunRecord: Codable, Equatable, Identifiable {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case completedAt
+        case difficulty
+        case roundsSurvived
+        case totalFillers
+        case totalWords
+        case score
+        case xpEarned
+        case finalOutcome
+        case wasNewBestAtTime
+        case gamePoints
+        case activeMultipliers
+    }
+
     let id: UUID
     let completedAt: Date
     let difficulty: SuddenDeathDifficulty
@@ -63,6 +78,38 @@ struct SuddenDeathRunRecord: Codable, Equatable, Identifiable {
         self.wasNewBestAtTime = wasNewBestAtTime
         self.gamePoints = gamePoints
         self.activeMultipliers = activeMultipliers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        completedAt = try container.decode(Date.self, forKey: .completedAt)
+        difficulty = try container.decode(SuddenDeathDifficulty.self, forKey: .difficulty)
+        roundsSurvived = try container.decode(Int.self, forKey: .roundsSurvived)
+        totalFillers = try container.decode(Int.self, forKey: .totalFillers)
+        totalWords = try container.decode(Int.self, forKey: .totalWords)
+        score = try container.decode(Int.self, forKey: .score)
+        xpEarned = try container.decode(Int.self, forKey: .xpEarned)
+        finalOutcome = try container.decode(RoundOutcome.self, forKey: .finalOutcome)
+        wasNewBestAtTime = try container.decode(Bool.self, forKey: .wasNewBestAtTime)
+        gamePoints = try container.decodeIfPresent(Int.self, forKey: .gamePoints) ?? 0
+        activeMultipliers = try container.decodeIfPresent([String].self, forKey: .activeMultipliers) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(completedAt, forKey: .completedAt)
+        try container.encode(difficulty, forKey: .difficulty)
+        try container.encode(roundsSurvived, forKey: .roundsSurvived)
+        try container.encode(totalFillers, forKey: .totalFillers)
+        try container.encode(totalWords, forKey: .totalWords)
+        try container.encode(score, forKey: .score)
+        try container.encode(xpEarned, forKey: .xpEarned)
+        try container.encode(finalOutcome, forKey: .finalOutcome)
+        try container.encode(wasNewBestAtTime, forKey: .wasNewBestAtTime)
+        try container.encode(gamePoints, forKey: .gamePoints)
+        try container.encode(activeMultipliers, forKey: .activeMultipliers)
     }
 }
 

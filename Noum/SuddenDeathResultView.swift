@@ -104,6 +104,7 @@ struct SuddenDeathResultView: View {
                 .padding(.bottom, 24)
         }
         .onAppear { resolveAndAnimate() }
+        .accessibilityIdentifier("suddenDeath.result.screen")
         .sheet(isPresented: $showingShareSheet) {
             SuddenDeathShareSheet(text: resolvedShareText)
                 .ignoresSafeArea()
@@ -197,7 +198,7 @@ struct SuddenDeathResultView: View {
 
     private var statsRow: some View {
         HStack(spacing: 20) {
-            statTile(value: "\(result.roundsSurvived)", label: "Tiers", tint: accentColor)
+            statTile(value: "\(result.roundsSurvived)", label: "Cleared", tint: accentColor)
             statTile(value: survivalTimeLabel, label: "Time", tint: .primary)
             statTile(value: "\(result.totalWords)", label: "Words", tint: .primary)
         }
@@ -211,11 +212,11 @@ struct SuddenDeathResultView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
-            if result.roundOutcomes.count <= 10 {
+            if result.roundOutcomes.count <= 6 {
                 HStack(spacing: 6) {
                     ForEach(Array(result.roundOutcomes.enumerated()), id: \.offset) { index, outcome in
                         VStack(spacing: 3) {
-                            Image(systemName: outcome.isFailed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            Image(systemName: outcome.isFailed ? "stop.circle.fill" : "checkmark.circle.fill")
                                 .font(.body.weight(.semibold))
                                 .foregroundStyle(outcome.isFailed ? accentColor : AppColor.positive)
                             Text("\(index + 1)")
@@ -236,7 +237,7 @@ struct SuddenDeathResultView: View {
                         .font(.subheadline.weight(.medium))
                     Spacer()
                     if let last = lastOutcome, last.isFailed {
-                        Image(systemName: "xmark.circle.fill")
+                        Image(systemName: "stop.circle.fill")
                             .foregroundStyle(accentColor)
                             .font(.body)
                         Text("Tier \(tierReached)")
