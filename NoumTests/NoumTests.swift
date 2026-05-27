@@ -17155,3 +17155,51 @@ struct PaceTrainingResultTests {
         #expect(a == b)
     }
 }
+
+// MARK: - Practice Again destination
+
+/// `AppDestination.practiceAgain(mode:imSetup:)` resolves the post-summary
+/// "Practice Again" tap. The behaviour that matters: an IM rep must
+/// re-launch on the *same* scenario + tone the user just finished, so they
+/// land on the pre-filled tone step instead of being dropped back on the
+/// scenario grid. Other modes re-enter their own surface unchanged.
+struct AppDestinationPracticeAgainTests {
+
+    @Test func imPreservesScenarioAndTone() {
+        let setup = IMConversationSetup(scenario: .difficultConversation, targetTone: .calm)
+        let destination = AppDestination.practiceAgain(mode: .imConversation, imSetup: setup)
+        #expect(destination == .imPractice(scenario: .difficultConversation, tone: .calm),
+                "IM Practice Again must carry the just-finished scenario + tone forward")
+    }
+
+    @Test func imPreservesADifferentPairing() {
+        // Guard against a hardcoded default — a second pairing must also
+        // round-trip exactly, not collapse onto socialCatchUp/confident.
+        let setup = IMConversationSetup(scenario: .networking, targetTone: .warm)
+        let destination = AppDestination.practiceAgain(mode: .imConversation, imSetup: setup)
+        #expect(destination == .imPractice(scenario: .networking, tone: .warm))
+    }
+
+    @Test func imWithoutSetupFallsBackToScenarioGrid() {
+        // No setup (e.g. a missing entry) must still produce a valid IM
+        // destination — nil scenario/tone lands the user on the grid, the
+        // pre-redesign behaviour, rather than crashing or mis-routing.
+        let destination = AppDestination.practiceAgain(mode: .imConversation, imSetup: nil)
+        #expect(destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func nonIMModesIgnoreIMSetup() {
+        // The IM setup must never leak into another mode's destination,
+        // even if one is somehow present on the entry.
+        let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .professional)
+        #expect(AppDestination.practiceAgain(mode: .timed, imSetup: setup) == .timedPractice)
+        #expect(AppDestination.practiceAgain(mode: .suddenDeath, imSetup: setup) == .suddenDeathPractice)
+        #expect(AppDestination.practiceAgain(mode: .ahCounter, imSetup: setup) == .ahCounterPractice)
+    }
+
+    @Test func nonIMModesResolveWithoutSetup() {
+        #expect(AppDestination.practiceAgain(mode: .timed, imSetup: nil) == .timedPractice)
+        #expect(AppDestination.practiceAgain(mode: .suddenDeath, imSetup: nil) == .suddenDeathPractice)
+        #expect(AppDestination.practiceAgain(mode: .ahCounter, imSetup: nil) == .ahCounterPractice)
+    }
+}
