@@ -55,6 +55,22 @@ enum AppDestination: Hashable {
     case imScenarioDetail(scenario: IMConversationScenario)
 }
 
+extension AppDestination {
+    /// Destination for a post-summary "Practice Again" tap. IM reps
+    /// re-launch on the same scenario + tone so the user lands on the
+    /// pre-filled setup step rather than the scenario grid; every other
+    /// mode re-enters its own practice surface unchanged.
+    static func practiceAgain(mode: PracticeMode, imSetup: IMConversationSetup?) -> AppDestination {
+        switch mode {
+        case .timed: return .timedPractice
+        case .suddenDeath: return .suddenDeathPractice
+        case .ahCounter: return .ahCounterPractice
+        case .imConversation:
+            return .imPractice(scenario: imSetup?.scenario, tone: imSetup?.targetTone)
+        }
+    }
+}
+
 struct SummaryPayload: Identifiable, Hashable {
     let id: UUID
     let mode: PracticeMode
