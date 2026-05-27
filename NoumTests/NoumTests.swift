@@ -17170,3 +17170,328 @@ struct PaceTrainingResultTests {
         #expect(a == b)
     }
 }
+
+// MARK: - End-to-End: Reflection Note → CoachMemoryStore → Ask Noum Context
+
+@Suite("ReflectionToCoachContextEndToEndTests")
+struct ReflectionToCoachContextEndToEndTests {
+
+    /// Records a reflection with a note, refreshes CoachMemoryStore, and
+    /// verifies that CoachContextBuilder.userContext carries the exact
+    /// user-owned note in the CASE FORMULATION section.
+    @MainActor
+    @Test func reflectionNoteFlowsThroughStoreIntoCoachContext() {
+        let suite = "e2e-reflection-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "e2e-\(UUID().uuidString)"
+
+        // 1. Build a CoachMemoryStore with a session
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+        let session = PracticeSession(
+            transcript: "A test rep.", fillerWordCount: 1,
+            duration: 60, date: Date(), mode: .timed, score: 7
+        )
+
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [session],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: session.id,
+            latestReflection: SessionReflection(
+                sessionID: session.id,
+                feeling: .nervous,
+                note: "I froze when the topic changed"
+            ),
+            now: Date()
+        )
+
+        // 2. Verify the memory captured the reflection
+        #expect(store.currentMemory != nil)
+        #expect(store.currentMemory?.lastReflectionSummary?.contains("nerves affected their delivery") == true)
+        #expect(store.currentMemory?.lastReflectionSummary?.contains("I froze when the topic changed") == true)
+
+        // 3. Feed the memory into CoachContextBuilder and check the output
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(),
+            baseline: baseline,
+            rating: .initial,
+            sessions: [session],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: store.currentMemory
+        )
+        #expect(ctx.contains("CASE FORMULATION"))
+        #expect(ctx.contains("Last reflection: the user said nerves affected their delivery"))
+        #expect(ctx.contains("I froze when the topic changed"))
+        #expect(ctx.contains("their own read, not a measured signal"))
+    }
+
+    /// noteReflection() updates the memory in-place and persists, so a
+    /// subsequent context build includes the late-arriving note even
+    /// without a full refresh.
+    @MainActor
+    @Test func noteReflectionUpdatesMemoryInPlaceWithoutFullRefresh() {
+        let suite = "e2e-note-reflection-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "e2e-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+
+        // Initial refresh — no reflection yet
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 0,
+                duration: 45, date: Date(), mode: .timed, score: 8
+            )],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date()
+        )
+        #expect(store.currentMemory?.lastReflectionSummary == nil)
+
+        // Late reflection via noteReflection
+        store.noteReflection("it felt strong and in control — \"Nailed the opening\"")
+        #expect(store.currentMemory?.lastReflectionSummary == "it felt strong and in control — \"Nailed the opening\"")
+
+        // Persisted — reload picks it up
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.lastReflectionSummary == "it felt strong and in control — \"Nailed the opening\"")
+
+        // Context builder includes the late-arriving reflection
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(),
+            baseline: baseline,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: reloaded.currentMemory
+        )
+        #expect(ctx.contains("Nailed the opening"))
+    }
+
+    /// When no reflection is recorded, the CASE FORMULATION section does
+    /// not include a "Last reflection" line.
+    @MainActor
+    @Test func noReflectionOmitsLineFromCaseFormulation() {
+        let suite = "e2e-no-reflection-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "e2e-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 0,
+                duration: 45, date: Date(), mode: .timed, score: 8
+            )],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date()
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(),
+            baseline: baseline,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: store.currentMemory
+        )
+        #expect(!ctx.contains("Last reflection"))
+    }
+
+    private func profile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+}
+
+// MARK: - Sudden Death Idempotent Finalization
+
+@Suite("SuddenDeathIdempotentFinalizationTests")
+struct SuddenDeathIdempotentFinalizationTests {
+
+    /// CoachMemoryStore.refresh should be idempotent: calling it twice
+    /// with the same session data produces the same memory. The one-time
+    /// guard lives in SuddenDeathPracticeView (didCommitCompletedRun),
+    /// but we verify the store-level contract here: repeated refresh
+    /// calls don't compound effects.
+    @MainActor
+    @Test func repeatedRefreshProducesSameMemory() {
+        let suite = "sd-idempotent-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "sd-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+        let session = PracticeSession(
+            transcript: "Survived three rounds.",
+            fillerWordCount: 0,
+            duration: 90,
+            date: Date(),
+            mode: .suddenDeath,
+            score: 8
+        )
+
+        let refreshArgs: () -> Void = {
+            store.refresh(
+                profile: profile(),
+                baseline: baseline,
+                sessions: [session],
+                trends: [],
+                forwardPlan: nil,
+                lastSessionID: session.id,
+                now: Date(timeIntervalSince1970: 2_000)
+            )
+        }
+
+        // First refresh
+        refreshArgs()
+        let first = store.currentMemory
+
+        // Second refresh (simulating Go Again → Coach Read path)
+        refreshArgs()
+        let second = store.currentMemory
+
+        #expect(first == second)
+        #expect(first?.evidenceCount == second?.evidenceCount)
+        #expect(first?.currentLever == second?.currentLever)
+    }
+
+    /// noteReflection is additive but not compounding — calling it twice
+    /// with the same clause just overwrites, not appends.
+    @MainActor
+    @Test func noteReflectionOverwritesDoesNotCompound() {
+        let suite = "sd-reflection-overwrite-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "sd-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 0,
+                duration: 45, date: Date(), mode: .suddenDeath, score: 8
+            )],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date()
+        )
+
+        store.noteReflection("nerves got me")
+        store.noteReflection("nerves got me")
+        #expect(store.currentMemory?.lastReflectionSummary == "nerves got me")
+
+        // Overwrite with different value
+        store.noteReflection("felt strong")
+        #expect(store.currentMemory?.lastReflectionSummary == "felt strong")
+    }
+
+    /// Adaptation log does not grow when refreshed with the same lever.
+    @MainActor
+    @Test func adaptationLogDoesNotGrowOnSameLeverRefresh() {
+        let suite = "sd-adaptation-stable-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "sd-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 6
+        baseline.persistentBlockers = ["Filler words"]
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        // First refresh — sets lever to fillerReduction
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 3,
+                duration: 60, date: Date(), mode: .suddenDeath, score: 5
+            )],
+            trends: [trend],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        let logAfterFirst = store.currentMemory?.adaptationLog?.count ?? 0
+
+        // Second refresh — same lever, same trends
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 3,
+                duration: 60, date: Date(), mode: .suddenDeath, score: 5
+            )],
+            trends: [trend],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+        let logAfterSecond = store.currentMemory?.adaptationLog?.count ?? 0
+
+        #expect(logAfterFirst == logAfterSecond)
+    }
+
+    private func profile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+}

@@ -35,6 +35,7 @@ struct ProfileView: View {
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -192,6 +193,7 @@ struct ProfileView: View {
 
                 clusterHeader("Coaching")
                 coachingDirectionCard
+                caseReviewCard
                 speechPatternsCard
                 skillProgressPanel
                 activeChallengePanel
@@ -936,6 +938,19 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+    }
+
+    /// Compact read-only surface for the coaching case file — the
+    /// coach's working hypothesis, active intervention, adaptation log,
+    /// and momentum signals. Only shown when the coach has at least a
+    /// tentative evidence base (≥3 sessions). Shows nothing on cold
+    /// start so Profile never over-promises on thin data.
+    @ViewBuilder
+    private var caseReviewCard: some View {
+        if let memory = coachMemoryStore.currentMemory,
+           memory.evidenceConfidence >= .tentative {
+            CaseReviewCard(memory: memory)
+        }
     }
 
     /// M20: Forward Plan card inside the Coaching Direction card. Pure
