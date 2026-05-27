@@ -627,6 +627,7 @@ struct AhCounterView: View {
             score: evaluation?.score,
             progressSegments: 0,
             xpEarned: evaluation?.xpEarned ?? 0,
+            committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,

@@ -2491,6 +2491,7 @@ struct TimedPracticeView: View {
             score: evaluation?.score,
             progressSegments: progressSegments,
             xpEarned: evaluation?.xpEarned ?? 0,
+            committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,

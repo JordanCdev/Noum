@@ -74,6 +74,10 @@ final class SummaryDataStore {
         let score: Int?
         let progressSegments: Int
         let xpEarned: Int
+        /// Set when a mode commits reward/coaching side effects before
+        /// opening Summary. Summary renders this result without finalizing
+        /// the same session a second time.
+        let committedFinalization: SessionFinalizationResult?
         let suddenDeathGamePoints: Int?
         let suddenDeathMultiplierLabels: [String]
         let suddenDeathTotalWords: Int?

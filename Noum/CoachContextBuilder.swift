@@ -78,18 +78,20 @@ enum CoachContextBuilder {
            category. Do not restate the moment — use it as gravity. A \
            board pitch in 6 days gets a different drill than a job \
            interview in 30 days.
-        5. When ACTIVE PRESCRIPTION is present, it is an intention only: the user has not yet supplied a followed rep, so do not describe it as effective or ineffective.
-        6. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
+        5. When CASE FORMULATION is present, treat it as the current coach hypothesis, not a diagnosis. Use it to explain what you are testing, what evidence supports it, and what would change the read.
+        6. When INTERVENTION CYCLE is present, respect the active intervention, observable target, success criterion, and review cadence. If the status says adapt or diagnose before repeating, do not prescribe the identical work unchanged.
+        7. When ACTIVE PRESCRIPTION is present, it is an intention only: the user has not yet supplied a followed rep, so do not describe it as effective or ineffective.
+        8. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
            "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
-        7. When REAL-WORLD TRANSFER is present, it is the user's report of what happened and how the room felt. Use it to ask, adapt, or prepare; never call it objective proof or claim a drill caused the result.
-        8. When TONE-DRILL TRAJECTORY is present, it reports whether a \
+        9. When REAL-WORLD TRANSFER is present, it is the user's report of what happened and how the room felt. Use it to ask, adapt, or prepare; never call it objective proof or claim a drill caused the result.
+        10. When TONE-DRILL TRAJECTORY is present, it reports whether a \
            prescribed IM tone drill is recovering, stalled, or slipping \
            across the user's own reps. Speak to the response — reinforce a \
            recovering drill, change the approach on a slipping one, treat a \
            stalled one as a plateau to break — rather than re-issuing the \
            original miss as if nothing has moved. It is observed \
            association, never proof a drill caused the change.
-        9. When TONE-DRILL SOLVED is present, a tone gap the user used to \
+        11. When TONE-DRILL SOLVED is present, a tone gap the user used to \
            miss now holds above the drill bar. Name the win once, plainly, \
            then point them at the next target — do not re-prescribe the \
            solved drill or restate the old miss as if it were still open. \
@@ -195,8 +197,13 @@ enum CoachContextBuilder {
     ///   • RATING — overall + week peak + weekly delta
     ///   • BASELINE — most-stable numbers (fillers/min, pace, pause rate)
     ///   • STREAK — current streak + reps this week
-    ///   • COACH MEMORY — bounded working formulation: evidence depth,
-    ///     current lever, goal fit, active intervention, and review state.
+    ///   • COACH MEMORY — durable evidence depth, goal anchor, current
+    ///     plan, declared intent, and stable preserve/watch signals.
+    ///   • CASE FORMULATION — current hypothesis, goal fit, subjective
+    ///     reflection, transfer update, and preserve/watch signals.
+    ///   • INTERVENTION CYCLE — active intervention, observable target,
+    ///     success criterion, review status, cadence, and course-change
+    ///     reason.
     ///   • ACTIVE PRESCRIPTION — the currently shown intervention when
     ///     it has not yet been evaluated by a completed followed rep.
     ///   • INTERVENTION RESPONSE — whether previously prescribed modes
@@ -425,8 +432,16 @@ enum CoachContextBuilder {
         }
 
         let memoryLines: [String]
+        let caseLines: [String]
+        let cycleLines: [String]
         if let coachMemory {
             memoryLines = coachMemoryLines(
+                memory: coachMemory
+            )
+            caseLines = coachCaseFormulationLines(
+                memory: coachMemory
+            )
+            cycleLines = interventionCycleLines(
                 memory: coachMemory,
                 includeActiveIntervention: pendingRecommendation == nil
             )
@@ -437,11 +452,23 @@ enum CoachContextBuilder {
                 sessions: sessions,
                 trends: trends
             )
+            caseLines = []
+            cycleLines = []
         }
         if !memoryLines.isEmpty {
             lines.append("")
             lines.append("COACH MEMORY")
             lines.append(contentsOf: memoryLines)
+        }
+        if !caseLines.isEmpty {
+            lines.append("")
+            lines.append("CASE FORMULATION (current hypothesis; revise with evidence)")
+            lines.append(contentsOf: caseLines)
+        }
+        if !cycleLines.isEmpty {
+            lines.append("")
+            lines.append("INTERVENTION CYCLE (prescribe → observe → adapt)")
+            lines.append(contentsOf: cycleLines)
         }
 
         if let pendingRecommendation {
@@ -1396,8 +1423,7 @@ enum CoachContextBuilder {
     }
 
     private static func coachMemoryLines(
-        memory: CoachMemory,
-        includeActiveIntervention: Bool
+        memory: CoachMemory
     ) -> [String] {
         let signalNoun = memory.evidenceCount == 1 ? "rep signal" : "rep signals"
         var lines: [String] = [
@@ -1408,6 +1434,26 @@ enum CoachContextBuilder {
             lines.append("- Stated goal anchor: \(goal)")
         }
 
+        if let planFocus = memory.planFocus,
+           let weekIndex = memory.planWeekIndex {
+            if let mode = memory.planMode {
+                lines.append("- Current plan: week \(weekIndex) trains \(planFocus.displayName) via \(mode.displayLabel).")
+            } else {
+                lines.append("- Current plan: week \(weekIndex) trains \(planFocus.displayName).")
+            }
+        }
+
+        if let intent = memory.lastIntentLabel, !intent.isEmpty {
+            lines.append("- Last declared rep focus: \(intent).")
+        }
+
+        return Array(lines.prefix(7))
+    }
+
+    private static func coachCaseFormulationLines(
+        memory: CoachMemory
+    ) -> [String] {
+        var lines: [String] = []
         if let currentLever = memory.currentLever {
             let basis = memory.currentLeverBasis?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let evidence = basis.isEmpty ? "stored coach memory" : basis
@@ -1435,40 +1481,10 @@ enum CoachContextBuilder {
             }
         }
 
-        if includeActiveIntervention, let intervention = memory.activeIntervention {
-            let purpose = intervention.focus ?? intervention.title
-            let marker = intervention.target.map { " Success marker: \($0)." } ?? ""
-            lines.append("- Active intervention: \(intervention.mode.displayLabel) for \(purpose).\(marker)")
-            lines.append("- Intervention review: \(intervention.reviewStatus.contextLabel) \(intervention.reviewBasis)")
-            if let criterion = intervention.successCriterion {
-                let statusTail = intervention.criterionStatus.map { " — \($0.contextLabel)" } ?? ""
-                lines.append("- Success criterion: \(criterion.summary)\(statusTail).")
-            }
-            if let due = intervention.reviewDueAt {
-                lines.append("- Review cadence: revisit by \(caseReviewLabel(for: due)).")
-            }
-        }
-
         if let transfer = memory.lastTransferReview {
             lines.append("- Transfer case update: \(transfer.reportedOutcomeLine) Next review move: \(transfer.nextAction.contextInstruction) This is user-reported evidence only; do not treat it as proof that the intervention caused the outcome.")
         }
 
-        if let change = memory.adaptationLog?.last {
-            lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
-        }
-
-        if let planFocus = memory.planFocus,
-           let weekIndex = memory.planWeekIndex {
-            if let mode = memory.planMode {
-                lines.append("- Current plan: week \(weekIndex) trains \(planFocus.displayName) via \(mode.displayLabel).")
-            } else {
-                lines.append("- Current plan: week \(weekIndex) trains \(planFocus.displayName).")
-            }
-        }
-
-        if let intent = memory.lastIntentLabel, !intent.isEmpty {
-            lines.append("- Last declared rep focus: \(intent).")
-        }
         if let reflection = memory.lastReflectionSummary, !reflection.isEmpty {
             lines.append("- Last reflection: the user said \(reflection). This is their own read, not a measured signal — reference it, never contradict it.")
         }
@@ -1479,7 +1495,36 @@ enum CoachContextBuilder {
             lines.append("- Watch: \(blocker).")
         }
 
-        return Array(lines.prefix(14))
+        return Array(lines.prefix(10))
+    }
+
+    private static func interventionCycleLines(
+        memory: CoachMemory,
+        includeActiveIntervention: Bool
+    ) -> [String] {
+        var lines: [String] = []
+
+        if includeActiveIntervention, let intervention = memory.activeIntervention {
+            let purpose = intervention.focus ?? intervention.title
+            let marker = intervention.target.map { " Success marker: \($0)." } ?? ""
+            lines.append("- Active intervention: \(intervention.mode.displayLabel) for \(purpose).\(marker)")
+            let repNoun = intervention.followedRepCount == 1 ? "followed rep" : "followed reps"
+            lines.append("- Evidence depth for this intervention: \(intervention.followedRepCount) \(repNoun); review threshold \(intervention.minimumFollowedRepsForReview).")
+            lines.append("- Intervention review: \(intervention.reviewStatus.contextLabel) \(intervention.reviewBasis)")
+            if let criterion = intervention.successCriterion {
+                let statusTail = intervention.criterionStatus.map { " — \($0.contextLabel)" } ?? ""
+                lines.append("- Success criterion: \(criterion.summary)\(statusTail).")
+            }
+            if let due = intervention.reviewDueAt {
+                lines.append("- Review cadence: revisit by \(caseReviewLabel(for: due)).")
+            }
+        }
+
+        if let change = memory.adaptationLog?.last {
+            lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+        }
+
+        return Array(lines.prefix(9))
     }
 
     /// Short, future-facing phrase for an intervention's review date so the

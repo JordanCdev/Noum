@@ -1357,6 +1357,7 @@ struct IMPracticeView: View {
             score: summaryEvaluation?.overallScore,
             progressSegments: min(4, userTurnCount),
             xpEarned: summaryEvaluation?.xpEarned ?? 0,
+            committedFinalization: nil,
             suddenDeathGamePoints: nil,
             suddenDeathMultiplierLabels: [],
             suddenDeathTotalWords: nil,

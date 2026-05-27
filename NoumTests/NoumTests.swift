@@ -5536,9 +5536,12 @@ struct CoachContextBuilderTests {
         )
 
         #expect(ctx.contains("COACH MEMORY"))
+        #expect(ctx.contains("CASE FORMULATION (current hypothesis; revise with evidence)"))
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
         #expect(ctx.contains("Stated goal anchor: Make technical updates feel more vivid."))
         #expect(ctx.contains("Working hypothesis (tentative): Pauses may be the highest-leverage focus"))
         #expect(ctx.contains("Active intervention: Timed for a decisive close. Success marker: One clean final sentence."))
+        #expect(ctx.contains("Evidence depth for this intervention: 1 followed rep; review threshold 2."))
         #expect(ctx.contains("Intervention review: Evidence is forming."))
         #expect(ctx.contains("Focus shift: last read was Filler Words; current read is Pauses."))
         #expect(ctx.contains("Current plan: week 2 trains Pauses via Timed."))
@@ -5610,6 +5613,8 @@ struct CoachContextBuilderTests {
             coachMemory: memory
         )
 
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
+        #expect(ctx.contains("Evidence depth for this intervention: 2 followed reps; review threshold 2."))
         #expect(ctx.contains("Success criterion: 3 or fewer fillers per rep across 2 reps — criterion currently met."))
         #expect(ctx.contains("Review cadence: revisit by"))
         #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words. (declining trend in recent reps)."))
@@ -11990,6 +11995,16 @@ struct SessionReflectionTests {
     @Test func coachClauseOmitsBlankNote() {
         let reflection = SessionReflection(sessionID: UUID(), feeling: .strong, note: "   ")
         #expect(reflection.coachClause == "it felt strong and in control")
+        #expect(reflection.note == nil)
+    }
+
+    @Test func noteIsTrimmedAndBoundedForCoachContext() {
+        let long = "  " + String(repeating: "detail", count: 60) + "  "
+        let reflection = SessionReflection(sessionID: UUID(), feeling: .nervous, note: long)
+        #expect(reflection.note?.hasPrefix("detail") == true)
+        #expect((reflection.note?.count ?? 0) == SessionReflection.noteCharacterLimit)
+        #expect(reflection.coachClause.contains("nerves affected their delivery"))
+        #expect(reflection.coachClause.contains("\""))
     }
 
     @Test func historyCapIsThirty() {

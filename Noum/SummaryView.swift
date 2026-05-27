@@ -15,6 +15,7 @@ struct SummaryView: View {
     let score: Int?
     let progressSegments: Int
     let xpEarned: Int
+    var committedFinalization: SessionFinalizationResult? = nil
     var suddenDeathGamePoints: Int? = nil
     var suddenDeathMultiplierLabels: [String] = []
     var suddenDeathTotalWords: Int? = nil
@@ -2553,8 +2554,9 @@ struct SummaryView: View {
         xpToNext = ProfileManager.xpNeededToNextLevel(forXP: profile.xp)
         progress = ProfileManager.progressTowardsNextLevel(forXP: profile.xp)
 
-        // Delegate XP, achievements, milestones, and trend recording to SessionFinalizer
-        let result = SessionFinalizer.finalize(
+        // Sudden Death commits lifecycle effects on run completion so replay
+        // can never skip earned progress. Other modes still commit here.
+        let result = committedFinalization ?? SessionFinalizer.finalize(
             xpEarned: xpEarned,
             scoreValue: scoreValue,
             effectiveFillerCount: effectiveFillerCount,
@@ -2568,7 +2570,8 @@ struct SummaryView: View {
             imConversationDetails: imConversationDetails,
             practiceTitle: practiceTitle,
             derivedInsightsFirst: derivedInsights.first,
-            pressureLevel: recentSessions.first?.pressureLevel ?? .standard
+            pressureLevel: recentSessions.first?.pressureLevel ?? .standard,
+            transcript: transcriptText
         )
 
         progressionDeltas = result.achievementDeltas
@@ -2799,6 +2802,7 @@ extension SummaryView {
         self.score = entry?.score
         self.progressSegments = entry?.progressSegments ?? 0
         self.xpEarned = entry?.xpEarned ?? 0
+        self.committedFinalization = entry?.committedFinalization
         self.suddenDeathGamePoints = entry?.suddenDeathGamePoints
         self.suddenDeathMultiplierLabels = entry?.suddenDeathMultiplierLabels ?? []
         self.suddenDeathTotalWords = entry?.suddenDeathTotalWords

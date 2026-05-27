@@ -63,6 +63,8 @@ struct SuddenDeathPracticeView: View {
     @State private var evaluation: PracticeEvaluation?
     @State private var wordThresholdHapticFired = false
     @State private var enrichedResult: PressureSessionResult?
+    @State private var committedFinalization: SessionFinalizationResult?
+    @State private var didCommitCompletedRun = false
     #if DEBUG
     @State private var isPresentingResultFixture = false
     #endif
@@ -953,8 +955,14 @@ struct SuddenDeathPracticeView: View {
             result: result,
             highScoreStore: .shared,
             runHistoryStore: .shared,
-            onRetry: { retrySession() },
-            onSeeFullSummary: { pushSummary(result: result) }
+            onRetry: {
+                finalizeSession(result: result)
+                retrySession()
+            },
+            onSeeFullSummary: {
+                finalizeSession(result: result)
+                pushSummary(result: result)
+            }
         )
     }
 
@@ -1009,6 +1017,9 @@ struct SuddenDeathPracticeView: View {
         roundTranscript = ""
         hasDetectedSpeechThisRound = false
         evaluation = nil
+        enrichedResult = nil
+        committedFinalization = nil
+        didCommitCompletedRun = false
     }
 
     // MARK: - Phase Change Handler
@@ -1123,6 +1134,9 @@ struct SuddenDeathPracticeView: View {
     }
 
     private func finalizeSession(result: PressureSessionResult) {
+        guard !didCommitCompletedRun else { return }
+        didCommitCompletedRun = true
+
         let transcript = engine.sessionTranscript
         let eval = PracticeEvaluator.evaluateSuddenDeathPractice(
             transcript: transcript,
@@ -1151,7 +1165,7 @@ struct SuddenDeathPracticeView: View {
             isPressureModeOn: pressureOn,
             streakDays: PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
         )
-        _ = PracticeSessionFinalizer.finalize(
+        let session = PracticeSessionFinalizer.finalize(
             store: PracticeSessionStore.shared,
             draft: PracticeSessionDraft(
                 transcript: transcript,
@@ -1173,6 +1187,23 @@ struct SuddenDeathPracticeView: View {
                 ],
                 coachSummary: eval.feedback
             )
+        )
+        committedFinalization = SessionFinalizer.finalize(
+            xpEarned: result.xpEarned,
+            scoreValue: result.score,
+            effectiveFillerCount: result.totalFillers,
+            effectiveDuration: result.totalDuration,
+            transcriptWordCount: result.totalWords,
+            scoreBreakdown: eval.segments,
+            currentMode: .suddenDeath,
+            sessionPrompt: engine.currentPromptText,
+            latestSessionID: session.id,
+            recentSessions: PracticeSessionStore.shared.sessions,
+            imConversationDetails: nil,
+            practiceTitle: "Pressure Drill",
+            derivedInsightsFirst: eval.insights.first,
+            pressureLevel: pressure,
+            transcript: transcript
         )
 
         // Persist personal best
@@ -1197,6 +1228,7 @@ struct SuddenDeathPracticeView: View {
             score: result.score,
             progressSegments: result.roundsSurvived,
             xpEarned: result.xpEarned,
+            committedFinalization: committedFinalization,
             suddenDeathGamePoints: result.gamePoints,
             suddenDeathMultiplierLabels: result.multiplierLabels,
             suddenDeathTotalWords: result.totalWords,

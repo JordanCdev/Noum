@@ -73,6 +73,8 @@ enum ReflectionFeeling: String, Codable, CaseIterable, Identifiable {
 
 /// One recorded post-rep reflection, linked to the session it describes.
 struct SessionReflection: Codable, Identifiable, Equatable {
+    static let noteCharacterLimit = 160
+
     let id: UUID
     let sessionID: UUID
     let feeling: ReflectionFeeling
@@ -89,7 +91,11 @@ struct SessionReflection: Codable, Identifiable, Equatable {
         self.id = id
         self.sessionID = sessionID
         self.feeling = feeling
-        self.note = note
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.note = trimmedNote.flatMap { value in
+            guard !value.isEmpty else { return nil }
+            return String(value.prefix(Self.noteCharacterLimit))
+        }
         self.recordedAt = recordedAt
     }
 

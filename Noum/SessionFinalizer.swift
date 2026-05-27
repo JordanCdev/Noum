@@ -4,8 +4,8 @@ import SwiftUI
 
 // MARK: - Session Finalization Result
 
-/// All computed state from finalizing a post-session view.
-/// Produced once by `SessionFinalizer.finalize()`, consumed by SummaryView to drive display.
+/// All computed state from committing the post-session coaching lifecycle.
+/// Produced once by `SessionFinalizer.finalize()`, then rendered by SummaryView.
 struct SessionFinalizationResult {
     let previousXP: Int
     let newXP: Int
@@ -37,14 +37,15 @@ struct SessionFinalizationResult {
 
 // MARK: - Session Finalizer
 
-/// Extracts the lifecycle logic from SummaryView's `setup()` into a testable service.
+/// Extracts lifecycle logic into a single service shared by completion and summary flows.
 /// Handles XP application, achievement evaluation, milestone detection, and trend recording.
 @MainActor
 enum SessionFinalizer {
 
     /// Finalize a session: apply XP, evaluate achievements, detect milestones, record trends,
     /// and compute next-action recommendation with baseline-aware coaching.
-    /// Call once from SummaryView's `onAppear`.
+    /// Call exactly once per session. Modes with a replay-first result screen may
+    /// call this when the run ends and pass the resulting value into SummaryView.
     static func finalize(
         xpEarned: Int,
         scoreValue: Int,

@@ -24,6 +24,7 @@ struct SessionReflectionInlineCard: View {
 
     @StateObject private var store = SessionReflectionStore.shared
     @State private var justSaved = false
+    @State private var note = ""
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -68,7 +69,7 @@ struct SessionReflectionInlineCard: View {
     private func prompt(for sessionID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "heart.text.square.fill")
+                Image(systemName: "text.bubble.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(AppColor.brandBlue)
                 Text("How did that feel?")
@@ -83,6 +84,28 @@ struct SessionReflectionInlineCard: View {
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            TextField("What made it feel that way? (optional)", text: $note, axis: .vertical)
+                .font(Typography.caption)
+                .lineLimit(1...3)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.brandBlue.opacity(0.16), lineWidth: 1)
+                )
+                .accessibilityIdentifier("sessionReflection.note")
+                .accessibilityLabel("Reflection note")
+                .accessibilityHint("Optional. Tell your coach what made this rep feel that way.")
+                .onChange(of: note) { _, updated in
+                    if updated.count > SessionReflection.noteCharacterLimit {
+                        note = String(updated.prefix(SessionReflection.noteCharacterLimit))
+                    }
+                }
 
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(ReflectionFeeling.allCases) { feeling in
@@ -144,7 +167,7 @@ struct SessionReflectionInlineCard: View {
 
     private func record(_ feeling: ReflectionFeeling, sessionID: UUID) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        let reflection = store.record(sessionID: sessionID, feeling: feeling)
+        let reflection = store.record(sessionID: sessionID, feeling: feeling, note: note)
         CoachMemoryStore.shared.noteReflection(reflection.coachClause)
         withAnimation(.standardSpring) {
             justSaved = true
