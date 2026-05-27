@@ -576,6 +576,101 @@ enum IMHistorySummary {
         )
     }
 
+    // MARK: - Resolved-tone read (the win the drill loop earns)
+    //
+    // The `resolved` analog of `TrendDirection` (docs/VISION.md coach-parity
+    // stage #4 — Adaptation, and pillar #4 — Believable progress). The drill
+    // signal goes silent the moment a scenario climbs above the 40% bar,
+    // because at that point it is no longer the highest-leverage place to
+    // re-rep. But "no longer worth drilling" is exactly the moment a coach
+    // *acknowledges the win* — a human coach who told you "your calm tone
+    // keeps slipping in Difficult Conversation" does not then go quiet when
+    // you finally crack it; they say "you've got this now." Without this read
+    // the recommendation card and the chat coach (both gated on
+    // `toneDrillSignal`) stop mentioning a scenario the instant it recovers,
+    // so the user never hears that the work landed.
+    //
+    // Honest evidence bar (the only thing that keeps this from fabricating a
+    // win):
+    //   • `evaluatedCount >= minEvaluatedReps` — same denominator the drill
+    //     signal demands; a thin history is not a resolved pattern
+    //   • overall `matchRate >= matchRateThreshold` — genuinely out of drill
+    //     territory (this is what makes it mutually exclusive with
+    //     `toneDrillSignal`, which fires only *below* the same threshold)
+    //   • `progress.direction == .recovering` AND
+    //     `progress.earlierRate < matchRateThreshold` — there is real
+    //     evidence it *climbed from* a struggle, so a scenario the user was
+    //     always good at (e.g. 80% from rep one) never gets a fake "you fixed
+    //     it" — it was never broken
+    //   • `progress.recentRate >= recentRateFloor` — the latest window is
+    //     solidly landing, not merely scraping over the drill bar
+    //
+    // Selection when several scenarios resolved: most solidly held first
+    // (highest recent-window rate), tiebreak by evidence (evaluatedCount),
+    // then by the freshest evaluated rep — same ordering philosophy as the
+    // drill signal, inverted from "worst" to "best".
+    //
+    // Defensive contracts (locked by `ResolvedToneSignalTests`):
+    //   • reuses `toneMatchStats` + `toneDrillProgress` so it inherits their
+    //     `.imConversation` + scenario filters, missing/whitespace-`actualTone`
+    //     exclusion, oldest→newest ordering, and 4-rep two-window floor
+    //   • nil when nothing climbed above the bar from below it
+    //   • never returns a scenario that `toneDrillSignal` would also return
+
+    /// Latest-window hit rate (0.0–1.0) a recovered scenario must reach for
+    /// the tone gap to read as *resolved* rather than merely improving. 0.6
+    /// == "lands at least 60% of the time now." Sits clearly above the 0.4
+    /// drill bar so a scenario that only scraped over the line isn't called
+    /// solved. Shared with the test suite so the boundary is asserted.
+    static let toneResolvedRecentRateFloor = 0.6
+
+    static func resolvedToneSignal(
+        from sessions: [PracticeSession],
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        recentRateFloor: Double = toneResolvedRecentRateFloor,
+        minEvaluatedReps: Int = toneDrillMinEvaluatedReps
+    ) -> IMToneResolvedSignal? {
+        struct Candidate {
+            let signal: IMToneResolvedSignal
+            let lastEvaluatedDate: Date
+        }
+
+        let candidates: [Candidate] = IMConversationScenario.allCases.compactMap { scenario in
+            let stats = toneMatchStats(from: sessions, scenario: scenario)
+            guard stats.evaluatedCount >= minEvaluatedReps,
+                  let rate = stats.matchRate,
+                  rate >= matchRateThreshold,                         // out of drill territory
+                  let progress = toneDrillProgress(from: sessions, scenario: scenario),
+                  progress.direction == .recovering,                  // it climbed
+                  progress.earlierRate < matchRateThreshold,          // from below the bar
+                  progress.recentRate >= recentRateFloor,             // now solidly landing
+                  let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario)
+            else { return nil }
+            return Candidate(
+                signal: IMToneResolvedSignal(
+                    scenario: scenario,
+                    targetTone: dominant.tone,
+                    matchRate: rate,
+                    earlierRate: progress.earlierRate,
+                    recentRate: progress.recentRate,
+                    evaluatedCount: stats.evaluatedCount,
+                    windowSize: progress.windowSize
+                ),
+                lastEvaluatedDate: dominant.lastDate
+            )
+        }
+
+        return candidates.sorted { lhs, rhs in
+            if lhs.signal.recentRate != rhs.signal.recentRate {
+                return lhs.signal.recentRate > rhs.signal.recentRate          // most solidly held first
+            }
+            if lhs.signal.evaluatedCount != rhs.signal.evaluatedCount {
+                return lhs.signal.evaluatedCount > rhs.signal.evaluatedCount  // more evidence first
+            }
+            return lhs.lastEvaluatedDate > rhs.lastEvaluatedDate              // freshest read first
+        }.first?.signal
+    }
+
     /// The tone the user committed to most often among a scenario's
     /// evaluated reps (those that produced a non-empty `actualTone`),
     /// with the date of the most-recent rep that used it. Tiebreak on
