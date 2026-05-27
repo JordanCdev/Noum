@@ -576,6 +576,100 @@ enum IMHistorySummary {
         )
     }
 
+    // MARK: - Tone-drill resolved read (did the user close the gap?)
+    //
+    // The flip side of `toneDrillSignal`. That helper prescribes the
+    // scenario whose committed tone reliably *misses*; the moment a
+    // scenario's overall hit rate climbs back over
+    // `toneDrillMatchRateThreshold` it drops out of the candidate set and
+    // the recommendation engine, the chat coach, and the post-rep note all
+    // go quiet on it — exactly when the user earned a word. This reads the
+    // win: a scenario that *was* a gap (earliest window below the drill
+    // bar) and is *now* holding (latest window at or above the higher
+    // `toneDrillResolvedThreshold`), with an overall rate that has cleared
+    // the drill bar so it can never be both an active drill and resolved at
+    // once.
+    //
+    // Reuses the already-tested primitives so the windowing and the
+    // honest-evidence bar match the rest of the loop exactly:
+    // `toneMatchStats` for the overall rate + evaluated count,
+    // `toneDrillProgress` for the two disjoint windows (which carries the
+    // nil-below-4-reps contract), and `dominantEvaluatedTone` for the tone
+    // the user committed to. A "resolved" claim is therefore as conservative
+    // as the drill it closes.
+    //
+    // Defensive contracts (locked by `IMToneDrillResolvedTests`):
+    //   • nil below `minEvaluatedReps`, and nil while the overall rate is
+    //     still below the drill bar (that is an active drill, not a win)
+    //   • requires earliest window < drill bar AND latest window ≥ resolved
+    //     bar — a scenario that was always good never reads as "resolved"
+    //   • mutually exclusive with `toneDrillSignal`: a scenario this returns
+    //     can never be the prescribed drill, because the drill requires
+    //     overall rate < the bar this requires overall rate ≥
+
+    /// Hit rate (0.0–1.0) the latest window must reach for a recovered gap
+    /// to read as *resolved* rather than merely recovering. Higher than the
+    /// 0.4 drill bar so "solved" means a confident hold, not a scrape over
+    /// the line. Shared with the test suite so the boundary is asserted.
+    static let toneDrillResolvedThreshold = 0.6
+
+    /// Per-scenario: is *this* scenario a recently-closed tone gap? Returns
+    /// the resolved read when the scenario cleared the drill bar overall,
+    /// its earliest window sat below the bar, and its latest window holds at
+    /// or above the resolved bar. The post-rep note uses this for the
+    /// just-finished rep's scenario.
+    static func toneDrillResolved(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario,
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        resolvedThreshold: Double = toneDrillResolvedThreshold,
+        minEvaluatedReps: Int = toneDrillMinEvaluatedReps
+    ) -> IMToneDrillResolved? {
+        let stats = toneMatchStats(from: sessions, scenario: scenario)
+        guard stats.evaluatedCount >= minEvaluatedReps,
+              let rate = stats.matchRate,
+              rate >= matchRateThreshold,                       // no longer an active drill
+              let progress = toneDrillProgress(from: sessions, scenario: scenario),
+              progress.earlierRate < matchRateThreshold,        // there was a gap
+              progress.recentRate >= resolvedThreshold,         // and it is now held
+              let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario)
+        else { return nil }
+        return IMToneDrillResolved(
+            scenario: scenario,
+            targetTone: dominant.tone,
+            matchRate: rate,
+            earlierRate: progress.earlierRate,
+            recentRate: progress.recentRate,
+            evaluatedCount: stats.evaluatedCount,
+            windowSize: progress.windowSize
+        )
+    }
+
+    /// Cross-scenario: the single most worth-acknowledging resolved gap, for
+    /// the chat coach (which has no "current rep"). When several scenarios
+    /// resolved, prefers the strongest current hold (highest latest-window
+    /// rate), tiebreak by the freshest evaluated rep, then by evidence depth
+    /// — the inverse of the drill selection's "worst first", because here we
+    /// want the most confident win to acknowledge, not the weakest gap to
+    /// fix.
+    static func toneDrillResolved(from sessions: [PracticeSession]) -> IMToneDrillResolved? {
+        let candidates: [(resolved: IMToneDrillResolved, lastDate: Date)] = IMConversationScenario.allCases.compactMap { scenario in
+            guard let resolved = toneDrillResolved(from: sessions, scenario: scenario),
+                  let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario)
+            else { return nil }
+            return (resolved, dominant.lastDate)
+        }
+        return candidates.sorted { lhs, rhs in
+            if lhs.resolved.recentRate != rhs.resolved.recentRate {
+                return lhs.resolved.recentRate > rhs.resolved.recentRate    // strongest hold first
+            }
+            if lhs.lastDate != rhs.lastDate {
+                return lhs.lastDate > rhs.lastDate                          // freshest win first
+            }
+            return lhs.resolved.evaluatedCount > rhs.resolved.evaluatedCount
+        }.first?.resolved
+    }
+
     /// The tone the user committed to most often among a scenario's
     /// evaluated reps (those that produced a non-empty `actualTone`),
     /// with the date of the most-recent rep that used it. Tiebreak on

@@ -6500,15 +6500,21 @@ enum PracticeSessionFinalizer {
         let imToneProgress: IMToneDrillProgress?
         let imToneScenarioTitle: String?
         let imToneToneTitle: String?
+        let imToneResolved: Bool
         if session.mode == .imConversation, let details = session.imConversationDetails {
             let scenario = details.setup.scenario
             imToneProgress = IMHistorySummary.toneDrillProgress(from: allSessions, scenario: scenario)
             imToneScenarioTitle = scenario.title
             imToneToneTitle = details.setup.targetTone.title
+            // Did this rep land in a scenario the user has now *closed*?
+            // (Was below the drill bar, now holding above the resolved bar.)
+            // Lets the note headline the lock-in instead of the climb.
+            imToneResolved = IMHistorySummary.toneDrillResolved(from: allSessions, scenario: scenario) != nil
         } else {
             imToneProgress = nil
             imToneScenarioTitle = nil
             imToneToneTitle = nil
+            imToneResolved = false
         }
 
         let input = PostRepCoachNoteInput(
@@ -6535,7 +6541,8 @@ enum PracticeSessionFinalizer {
             totalSessionCount: momentum.totalSessionCount,
             imToneDrillProgress: imToneProgress,
             imToneDrillScenarioTitle: imToneScenarioTitle,
-            imToneDrillToneTitle: imToneToneTitle
+            imToneDrillToneTitle: imToneToneTitle,
+            imToneDrillResolved: imToneResolved
         )
 
         // Deterministic note lands synchronously so the Summary
@@ -7033,6 +7040,37 @@ struct IMToneDrillSignal: Equatable {
         self.evaluatedCount = evaluatedCount
         self.progress = progress
     }
+}
+
+/// A scenario whose committed-tone gap the user has *closed*: it used to
+/// miss below the drill bar and now lands reliably above a higher
+/// "resolved" bar. Produced by `IMHistorySummary.toneDrillResolved(...)`.
+/// This is the win that `IMToneDrillSignal` deliberately stops reporting —
+/// once a scenario's overall hit rate climbs back over
+/// `toneDrillMatchRateThreshold` it is no longer a drill candidate, so the
+/// recommendation engine moves on. Without this read the coach goes silent
+/// on the gap the moment it's won; with it, Ask Noum and the post-rep note
+/// can acknowledge the lock-in ("your calm tone in Difficult Conversation
+/// is holding above 60% now") and then point forward — quiet, earned, never
+/// a fanfare. `matchRate` is the overall hit rate (now ≥ the drill bar);
+/// `earlierRate`/`recentRate` are the same two disjoint windows
+/// `IMToneDrillProgress` uses, so "was 0%, now 100%" reads identically
+/// across surfaces.
+struct IMToneDrillResolved: Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    /// Overall tone-match rate (0.0–1.0) across all evaluated reps, now at
+    /// or above `toneDrillMatchRateThreshold` — the reason it is no longer
+    /// a drill candidate.
+    let matchRate: Double
+    /// Tone-match rate (0.0–1.0) of the earliest window — below the drill
+    /// bar, the gap that used to exist.
+    let earlierRate: Double
+    /// Tone-match rate (0.0–1.0) of the latest window — at or above the
+    /// resolved bar, the hold that closed it.
+    let recentRate: Double
+    let evaluatedCount: Int
+    let windowSize: Int
 }
 
 enum RecommendationBiasEngine {
