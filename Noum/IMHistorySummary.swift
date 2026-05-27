@@ -623,28 +623,50 @@ enum IMHistorySummary {
     /// suite so the boundary is asserted, not guessed.
     static let toneDrillResolvedHoldRate = 0.6
 
+    /// Resolved read for a *single* scenario, or nil when that scenario
+    /// hasn't cleared the turnaround bar. The per-scenario primitive the
+    /// cross-scenario `toneDrillResolved(from:)` maps over — and the exact
+    /// tool the post-rep finalizer needs to detect a *crossing rep*:
+    /// comparing this read across the same scenario with vs. without the
+    /// just-finished rep isolates the single rep that pushed the scenario
+    /// across the bar, so the win can headline exactly once instead of on
+    /// every rep thereafter.
+    static func toneDrillResolved(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario,
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        holdRate: Double = toneDrillResolvedHoldRate
+    ) -> IMToneDrillResolved? {
+        guard let progress = toneDrillProgress(from: sessions, scenario: scenario) else { return nil }
+        let stats = toneMatchStats(from: sessions, scenario: scenario)
+        guard let overallRate = stats.matchRate,
+              progress.earlierRate < matchRateThreshold,   // started below the bar
+              progress.recentRate >= holdRate,             // now holding high
+              overallRate >= matchRateThreshold,           // not an active drill
+              let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario),
+              let lastDate = stats.lastFive.first?.date    // most-recent evaluated rep
+        else { return nil }
+        return IMToneDrillResolved(
+            scenario: scenario,
+            targetTone: dominant.tone,
+            earlierRate: progress.earlierRate,
+            recentRate: progress.recentRate,
+            evaluatedCount: stats.evaluatedCount,
+            lastEvaluatedDate: lastDate
+        )
+    }
+
     static func toneDrillResolved(
         from sessions: [PracticeSession],
         matchRateThreshold: Double = toneDrillMatchRateThreshold,
         holdRate: Double = toneDrillResolvedHoldRate
     ) -> IMToneDrillResolved? {
         let candidates: [IMToneDrillResolved] = IMConversationScenario.allCases.compactMap { scenario in
-            guard let progress = toneDrillProgress(from: sessions, scenario: scenario) else { return nil }
-            let stats = toneMatchStats(from: sessions, scenario: scenario)
-            guard let overallRate = stats.matchRate,
-                  progress.earlierRate < matchRateThreshold,   // started below the bar
-                  progress.recentRate >= holdRate,             // now holding high
-                  overallRate >= matchRateThreshold,           // not an active drill
-                  let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario),
-                  let lastDate = stats.lastFive.first?.date    // most-recent evaluated rep
-            else { return nil }
-            return IMToneDrillResolved(
+            toneDrillResolved(
+                from: sessions,
                 scenario: scenario,
-                targetTone: dominant.tone,
-                earlierRate: progress.earlierRate,
-                recentRate: progress.recentRate,
-                evaluatedCount: stats.evaluatedCount,
-                lastEvaluatedDate: lastDate
+                matchRateThreshold: matchRateThreshold,
+                holdRate: holdRate
             )
         }
 
