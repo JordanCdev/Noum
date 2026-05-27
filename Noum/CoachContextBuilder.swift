@@ -89,6 +89,13 @@ enum CoachContextBuilder {
            stalled one as a plateau to break — rather than re-issuing the \
            original miss as if nothing has moved. It is observed \
            association, never proof a drill caused the change.
+        9. When TONE-DRILL RESOLVED is present, the user has closed a tone \
+           gap that used to miss — it now holds above the resolved bar. \
+           Acknowledge it once, plainly, then move the focus to a new \
+           target. Do not re-prescribe the resolved drill or keep re-citing \
+           the old miss, and do not oversell it — a closed gap is a quiet, \
+           earned win, not a fanfare. It is observed association, never \
+           proof a drill caused the change.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -461,11 +468,23 @@ enum CoachContextBuilder {
         // over the user's own IM reps; surfaced only when the prescribed
         // scenario carries a trajectory (≥4 evaluated reps), so the coach
         // never claims a movement it can't see.
-        if let toneSignal = IMHistorySummary.toneDrillSignal(from: sessions),
-           let trajectoryLines = toneDrillTrajectoryLines(for: toneSignal) {
+        // An active drill is the user's current focus, so it takes
+        // priority; only when no scenario is still a prescribed drill do we
+        // surface a recently-resolved gap, so the coach acknowledges the win
+        // the recommendation engine has (correctly) stopped reporting rather
+        // than going silent on it. The two reads are mutually exclusive per
+        // scenario by construction, and showing one tone read at a time keeps
+        // the context calm.
+        if let toneSignal = IMHistorySummary.toneDrillSignal(from: sessions) {
+            if let trajectoryLines = toneDrillTrajectoryLines(for: toneSignal) {
+                lines.append("")
+                lines.append("TONE-DRILL TRAJECTORY (is the prescribed tone drill working?)")
+                lines.append(contentsOf: trajectoryLines)
+            }
+        } else if let resolved = IMHistorySummary.toneDrillResolved(from: sessions) {
             lines.append("")
-            lines.append("TONE-DRILL TRAJECTORY (is the prescribed tone drill working?)")
-            lines.append(contentsOf: trajectoryLines)
+            lines.append("TONE-DRILL RESOLVED (a tone gap the user just closed)")
+            lines.append(contentsOf: toneDrillResolvedLines(for: resolved))
         }
 
         // RECENT — last 3 sessions, so the coach can quote actual numbers.
@@ -611,6 +630,33 @@ enum CoachContextBuilder {
         }
 
         let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — \(directionPhrase)."
+        return [dataLine, "- \(guidance)"]
+    }
+
+    // MARK: - Tone-drill resolved (acknowledge a closed gap, then move on)
+    //
+    // The companion to `toneDrillTrajectoryLines`. A trajectory line speaks
+    // to a drill still in progress; this speaks to one the user has *won* —
+    // a scenario whose committed tone used to miss below the drill bar and
+    // now holds above the higher resolved bar. The recommendation engine
+    // correctly stops prescribing it (it's no longer a candidate), which is
+    // exactly why the coach needs a line for it: so a closed gap is
+    // acknowledged once and the focus moves forward, rather than the coach
+    // going quiet or — worse — re-citing the old miss as if nothing changed.
+    //
+    // Same terse, citeable register as the trajectory line: a data line the
+    // model can quote verbatim ("0% to 67%") plus a guidance clause so the
+    // win is acknowledged plainly and once, not turned into a fanfare or a
+    // re-prescription. Non-optional: the resolved struct is already
+    // evidence-validated by `IMHistorySummary.toneDrillResolved`, so unlike
+    // the trajectory read there is no nil case to guard.
+    static func toneDrillResolvedLines(for resolved: IMToneDrillResolved) -> [String] {
+        let scenario = resolved.scenario.title
+        let tone = resolved.targetTone.title
+        let earlierPct = Int((resolved.earlierRate * 100).rounded())
+        let recentPct = Int((resolved.recentRate * 100).rounded())
+        let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — gap closed, now holding."
+        let guidance = "This tone gap is closed — acknowledge it once, plainly, then move the focus to a new target; do not re-prescribe the resolved drill or re-cite the old miss. Observed association, not proof the drill caused it."
         return [dataLine, "- \(guidance)"]
     }
 

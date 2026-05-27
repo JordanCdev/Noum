@@ -108,6 +108,16 @@ struct PostRepCoachNoteInput {
     /// Display title of the tone the user committed to in that rep (e.g.
     /// "Calm"). nil when `imToneDrillProgress` is nil.
     let imToneDrillToneTitle: String?
+    /// True when the just-finished IM rep's scenario is a *resolved* tone
+    /// gap — it used to miss below the drill bar and now holds above the
+    /// higher resolved bar (`IMHistorySummary.toneDrillResolved`). When set,
+    /// the note headlines the lock-in ("your calm tone is holding now")
+    /// instead of the recovering-climb line, so a won gap reads as won
+    /// rather than still-in-progress. `imToneDrillProgress` is always present
+    /// alongside it (a resolved scenario clears the 4-rep window bar), and it
+    /// carries the earliest/latest rates the sentence quotes. False for
+    /// non-IM reps and unresolved scenarios.
+    let imToneDrillResolved: Bool
 
     init(
         sessionID: UUID,
@@ -133,7 +143,8 @@ struct PostRepCoachNoteInput {
         totalSessionCount: Int = 0,
         imToneDrillProgress: IMToneDrillProgress? = nil,
         imToneDrillScenarioTitle: String? = nil,
-        imToneDrillToneTitle: String? = nil
+        imToneDrillToneTitle: String? = nil,
+        imToneDrillResolved: Bool = false
     ) {
         self.sessionID = sessionID
         self.mode = mode
@@ -159,6 +170,7 @@ struct PostRepCoachNoteInput {
         self.imToneDrillProgress = imToneDrillProgress
         self.imToneDrillScenarioTitle = imToneDrillScenarioTitle
         self.imToneDrillToneTitle = imToneDrillToneTitle
+        self.imToneDrillResolved = imToneDrillResolved
     }
 }
 
@@ -461,7 +473,7 @@ actor PostRepCoachNoteService {
     /// Priority chain that picks the one sentence to feature. Pure,
     /// exposed for tests.
     ///
-    /// Momentum branches (0a–0d) sit above the per-rep metric branches
+    /// Momentum branches (0a–0e) sit above the per-rep metric branches
     /// (1–6) because they carry multi-session evidence — the coach
     /// quoting trajectory is higher-signal than quoting today's stats.
     nonisolated static func metricSentence(
@@ -489,7 +501,23 @@ actor PostRepCoachNoteService {
             return fillerTrendImprovingSentence(persona: persona)
         }
 
-        // 0d) IM tone-drill trajectory — when this rep was an IM
+        // 0d) IM tone-drill resolved — when this rep was an IM conversation
+        // in a scenario the user has *closed* (was below the drill bar, now
+        // holding above the resolved bar), headline the lock-in ahead of the
+        // recovering-climb line and the per-rep metrics. Sits above 0e
+        // because "you've held this now" is a stronger, more final read than
+        // "this is climbing"; a resolved scenario would otherwise read as
+        // merely recovering (its windows still trend up).
+        if input.imToneDrillResolved,
+           let progress = input.imToneDrillProgress,
+           let scenario = input.imToneDrillScenarioTitle,
+           let tone = input.imToneDrillToneTitle {
+            return imToneResolvedSentence(
+                progress: progress, scenario: scenario, tone: tone, persona: persona
+            )
+        }
+
+        // 0e) IM tone-drill trajectory — when this rep was an IM
         // conversation and the committed tone in its scenario is recovering
         // or slipping across recent reps, speak to that response (the
         // Adaptation read) ahead of the per-rep metrics. Multi-session
@@ -832,6 +860,42 @@ actor PostRepCoachNoteService {
         }
     }
 
+    /// IM tone-drill *resolved* read, voice-shaped. Fires when the
+    /// just-finished rep's scenario has closed its committed-tone gap — it
+    /// used to miss below the drill bar and now holds above the resolved bar.
+    /// Reports the climb that closed it (earliest → latest window) and frames
+    /// it as a quiet, earned lock-in, not a fanfare: every voice acknowledges
+    /// the win once and points forward without an exclamation, per the
+    /// motivation system's "celebrates silently / acknowledge small wins
+    /// quietly" rule. `recentPct` is the latest-window hold the user is now
+    /// sitting on.
+    nonisolated static func imToneResolvedSentence(
+        progress: IMToneDrillProgress,
+        scenario: String,
+        tone: String,
+        persona: CoachPersona
+    ) -> String {
+        let lower = tone.lowercased()
+        let earlierPct = Int((progress.earlierRate * 100).rounded())
+        let recentPct = Int((progress.recentRate * 100).rounded())
+        switch persona.voice {
+        case .authoritative:
+            return "Your \(lower) tone in \(scenario) is holding now — \(earlierPct)% to \(recentPct)%. That gap is closed. Pick the next one."
+        case .warm:
+            return "Your \(lower) tone in \(scenario) has settled — \(earlierPct)% up to \(recentPct)%. You closed that gap. Time for a new edge."
+        case .concise:
+            return "\(scenario): \(lower) tone \(earlierPct)% to \(recentPct)%. Held. Gap closed. Next target."
+        case .persuasive:
+            return "Your \(lower) tone in \(scenario) is locked in — \(earlierPct)% to \(recentPct)%. That work paid off. Aim the next rep elsewhere."
+        case .executive:
+            return "\(scenario) \(lower) tone: \(earlierPct)% to \(recentPct)%. Resolved and holding. Recommend shifting focus."
+        case .storytelling:
+            return "Your \(lower) tone in \(scenario) found its footing — \(earlierPct)% to \(recentPct)%. That arc resolved. Start a new one."
+        case .none:
+            return "Your \(lower) tone in \(scenario) is holding now — \(earlierPct)% to \(recentPct)%. That gap is closed. Pick the next one."
+        }
+    }
+
     // MARK: - Suffix sentences (BigMoment, weekly rhythm, transcript opener)
 
     /// BigMoment suffix replaces the standard closing when a big moment
@@ -1073,7 +1137,14 @@ actor PostRepCoachNoteService {
         if input.weeklyRepCount >= 2 {
             momentumLines.append("- Reps this week: \(input.weeklyRepCount).")
         }
-        if let progress = input.imToneDrillProgress,
+        if input.imToneDrillResolved,
+           let progress = input.imToneDrillProgress,
+           let scenario = input.imToneDrillScenarioTitle,
+           let tone = input.imToneDrillToneTitle {
+            let earlierPct = Int((progress.earlierRate * 100).rounded())
+            let recentPct = Int((progress.recentRate * 100).rounded())
+            momentumLines.append("- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% across recent reps — gap closed, now holding. Acknowledge once, do not re-prescribe.")
+        } else if let progress = input.imToneDrillProgress,
            progress.direction != .stalled,
            let scenario = input.imToneDrillScenarioTitle,
            let tone = input.imToneDrillToneTitle {
