@@ -109,6 +109,33 @@ struct PostRepCoachNoteInput {
     /// "Calm"). nil when `imToneDrillProgress` is nil.
     let imToneDrillToneTitle: String?
 
+    // MARK: - IM tone-drill resolved read (the win, on the crossing rep)
+    //
+    // Set by the finalizer ONLY when the just-finished rep is the one that
+    // pushed its scenario across the resolved bar — a real, held turnaround
+    // (was below the drill bar, now holding ≥ the hold rate) that wasn't
+    // resolved as of the previous rep. When present, the note headlines the
+    // win once ("your calm tone in Difficult Conversation is solved") and
+    // outranks the in-flight trajectory read — a solved drill is the
+    // terminal state of the intervention loop, not another "keep going."
+    // nil on every rep that isn't the crossing rep, so the coach names the
+    // win once and never repeats it. The scenario + tone titles travel as
+    // plain strings (same decoupling as the trajectory fields above); the
+    // climb rates carry the evidence so the win cites "0% to 100%".
+
+    /// Display title of the scenario the just-finished rep solved, or nil
+    /// when this rep didn't cross the bar.
+    let imToneDrillResolvedScenarioTitle: String?
+    /// Display title of the solved scenario's dominant committed tone, or
+    /// nil when this rep didn't cross the bar.
+    let imToneDrillResolvedToneTitle: String?
+    /// Tone-match rate (0.0–1.0) of the earliest window — the gap that
+    /// existed before the climb. nil when this rep didn't cross the bar.
+    let imToneDrillResolvedEarlierRate: Double?
+    /// Tone-match rate (0.0–1.0) of the latest window — where it holds now.
+    /// nil when this rep didn't cross the bar.
+    let imToneDrillResolvedRecentRate: Double?
+
     init(
         sessionID: UUID,
         mode: PracticeMode,
@@ -133,7 +160,11 @@ struct PostRepCoachNoteInput {
         totalSessionCount: Int = 0,
         imToneDrillProgress: IMToneDrillProgress? = nil,
         imToneDrillScenarioTitle: String? = nil,
-        imToneDrillToneTitle: String? = nil
+        imToneDrillToneTitle: String? = nil,
+        imToneDrillResolvedScenarioTitle: String? = nil,
+        imToneDrillResolvedToneTitle: String? = nil,
+        imToneDrillResolvedEarlierRate: Double? = nil,
+        imToneDrillResolvedRecentRate: Double? = nil
     ) {
         self.sessionID = sessionID
         self.mode = mode
@@ -159,6 +190,10 @@ struct PostRepCoachNoteInput {
         self.imToneDrillProgress = imToneDrillProgress
         self.imToneDrillScenarioTitle = imToneDrillScenarioTitle
         self.imToneDrillToneTitle = imToneDrillToneTitle
+        self.imToneDrillResolvedScenarioTitle = imToneDrillResolvedScenarioTitle
+        self.imToneDrillResolvedToneTitle = imToneDrillResolvedToneTitle
+        self.imToneDrillResolvedEarlierRate = imToneDrillResolvedEarlierRate
+        self.imToneDrillResolvedRecentRate = imToneDrillResolvedRecentRate
     }
 }
 
@@ -461,13 +496,39 @@ actor PostRepCoachNoteService {
     /// Priority chain that picks the one sentence to feature. Pure,
     /// exposed for tests.
     ///
-    /// Momentum branches (0a–0d) sit above the per-rep metric branches
-    /// (1–6) because they carry multi-session evidence — the coach
-    /// quoting trajectory is higher-signal than quoting today's stats.
+    /// Momentum branches (0·win, 0a–0d) sit above the per-rep metric
+    /// branches (1–6) because they carry multi-session evidence — the coach
+    /// quoting trajectory is higher-signal than quoting today's stats. The
+    /// solved-drill win (0·win) headlines above them all: it's the terminal
+    /// state of an intervention the coach has been pushing.
     nonisolated static func metricSentence(
         for input: PostRepCoachNoteInput,
         persona: CoachPersona
     ) -> String {
+        // 0·win) IM tone-drill SOLVED — the just-finished rep pushed its
+        // scenario across the resolved bar (a real, held turnaround the
+        // finalizer confirmed wasn't already solved last rep). This is the
+        // terminal state of the intervention loop, so it headlines above
+        // every other momentum read: a coach who pushed you on a tone for
+        // weeks names the win the moment it lands, then moves you on. Fires
+        // only on the crossing rep (the finalizer nils these fields on every
+        // other rep), so the win is named once and never repeated. Outranks
+        // the in-flight trajectory branch (0d) — on the crossing rep the
+        // same scenario would also read as `.recovering`, but "solved" beats
+        // "still climbing."
+        if let scenario = input.imToneDrillResolvedScenarioTitle,
+           let tone = input.imToneDrillResolvedToneTitle,
+           let earlierRate = input.imToneDrillResolvedEarlierRate,
+           let recentRate = input.imToneDrillResolvedRecentRate {
+            return imToneResolvedSentence(
+                scenario: scenario,
+                tone: tone,
+                earlierRate: earlierRate,
+                recentRate: recentRate,
+                persona: persona
+            )
+        }
+
         // 0a) Personal best — strongest momentum signal. Only fires when
         // there are enough prior sessions to make "best" meaningful.
         if input.isPersonalBest, input.totalSessionCount >= 5,
@@ -832,6 +893,43 @@ actor PostRepCoachNoteService {
         }
     }
 
+    /// IM tone-drill "solved" headline, voice-shaped. Names the win once
+    /// and cites the held climb (earliest vs latest window) as the evidence.
+    /// Only called on the crossing rep. Honesty bar matches the Ask Noum
+    /// `TONE-DRILL SOLVED` rule: name the win, never re-prescribe the beaten
+    /// drill, never claim the drill *caused* the recovery — the climb is
+    /// observed in the user's own reps. The forward motion ("next") is left
+    /// to the note's suffix + the next-practice card, which rightly move to
+    /// the next-weakest scenario; this sentence closes the loop on the one
+    /// just beaten.
+    nonisolated static func imToneResolvedSentence(
+        scenario: String,
+        tone: String,
+        earlierRate: Double,
+        recentRate: Double,
+        persona: CoachPersona
+    ) -> String {
+        let lower = tone.lowercased()
+        let earlierPct = Int((earlierRate * 100).rounded())
+        let recentPct = Int((recentRate * 100).rounded())
+        switch persona.voice {
+        case .authoritative:
+            return "Your \(lower) tone in \(scenario) is solved — \(earlierPct)% to \(recentPct)% and holding. That gap is closed."
+        case .warm:
+            return "Your \(lower) tone in \(scenario) has come good — \(earlierPct)% to \(recentPct)% and holding. You've genuinely turned that one around."
+        case .concise:
+            return "\(scenario): \(lower) tone solved. \(earlierPct)% to \(recentPct)%, holding."
+        case .persuasive:
+            return "Your \(lower) tone in \(scenario) is locked in — \(earlierPct)% to \(recentPct)% and holding. The case is closed on that one."
+        case .executive:
+            return "\(scenario) \(lower) tone: solved. \(earlierPct)% to \(recentPct)%, holding above the bar."
+        case .storytelling:
+            return "Your \(lower) tone in \(scenario) landed for good — \(earlierPct)% to \(recentPct)% and holding. That arc is complete."
+        case .none:
+            return "Your \(lower) tone in \(scenario) is solved — \(earlierPct)% to \(recentPct)% and holding now."
+        }
+    }
+
     // MARK: - Suffix sentences (BigMoment, weekly rhythm, transcript opener)
 
     /// BigMoment suffix replaces the standard closing when a big moment
@@ -1081,6 +1179,17 @@ actor PostRepCoachNoteService {
             let recentPct = Int((progress.recentRate * 100).rounded())
             let word = progress.direction == .recovering ? "recovering" : "slipping"
             momentumLines.append("- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% across recent reps (\(word)).")
+        }
+        // SOLVED — this rep crossed the resolved bar. Name the win once, do
+        // not re-prescribe the beaten drill, do not claim the drill caused
+        // the recovery (observed in the user's own reps only).
+        if let scenario = input.imToneDrillResolvedScenarioTitle,
+           let tone = input.imToneDrillResolvedToneTitle,
+           let earlierRate = input.imToneDrillResolvedEarlierRate,
+           let recentRate = input.imToneDrillResolvedRecentRate {
+            let earlierPct = Int((earlierRate * 100).rounded())
+            let recentPct = Int((recentRate * 100).rounded())
+            momentumLines.append("- SOLVED this rep: \(tone) tone in \(scenario) climbed \(earlierPct)% to \(recentPct)% and now holds above the drill bar. Name this win once; do not re-prescribe it or claim a drill caused it.")
         }
         if !momentumLines.isEmpty {
             lines.append("")

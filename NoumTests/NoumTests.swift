@@ -15882,6 +15882,63 @@ struct IMToneDrillResolvedTests {
         // would read as won.
         #expect(IMHistorySummary.toneDrillResolvedHoldRate > IMHistorySummary.toneDrillMatchRateThreshold)
     }
+
+    @Test func perScenarioResolvedMatchesAllScenarioRead() {
+        // The per-scenario overload (used by the finalizer's crossing-rep
+        // check) must agree with the all-scenarios read for the one scenario
+        // that's solved, and return nil for a scenario with no reps.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let scoped = IMHistorySummary.toneDrillResolved(from: sessions, scenario: .difficultConversation)
+        #expect(scoped?.scenario == .difficultConversation)
+        #expect(scoped?.recentRate == 1.0)
+        // A scenario with no reps in this history reads nil.
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions, scenario: .networking) == nil)
+        // And the per-scenario read equals the all-scenarios freshest win
+        // here, since only one scenario qualifies.
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions) == scoped)
+    }
+
+    @Test func crossingRepIsResolvedNowButNotBefore() {
+        // The finalizer fires the win exactly when the latest rep flips the
+        // scenario from unresolved to resolved. Four reps (miss, miss, miss,
+        // match) sit just under "solved" — the latest 2-rep window holds
+        // only 50%, below the 60% hold bar. The fifth landed "calm" pushes
+        // the latest window to 100% and the overall rate to the 40% bar.
+        let priorReps = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -2)
+        ]
+        let beforeResolved = IMHistorySummary.toneDrillResolved(
+            from: priorReps, scenario: .difficultConversation
+        )
+        // The crossing rep — a second consecutive landed "calm".
+        let crossingRep = imSession(
+            scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: -1
+        )
+        let afterResolved = IMHistorySummary.toneDrillResolved(
+            from: priorReps + [crossingRep], scenario: .difficultConversation
+        )
+        // The win surfaces only after the crossing rep is included.
+        #expect(beforeResolved == nil)
+        #expect(afterResolved != nil)
+        // And a sixth "calm" rep keeps it resolved (so the finalizer would
+        // see resolved-before != nil and NOT re-fire the headline).
+        let postWin = imSession(
+            scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: 0
+        )
+        #expect(IMHistorySummary.toneDrillResolved(
+            from: priorReps + [crossingRep, postWin], scenario: .difficultConversation
+        ) != nil)
+    }
 }
 
 // MARK: - Tone-drill resolved read threaded into the chat coach context
@@ -16115,6 +16172,122 @@ struct PostRepCoachNoteToneTrajectoryTests {
             #expect(sentence.contains("0%") && sentence.contains("50%"))
             #expect(!sentence.contains("!"))
             #expect(!sentence.lowercased().hasPrefix("let's"))
+        }
+    }
+}
+
+// MARK: - Post-rep coach note: the tone-drill WIN headline (crossing rep)
+//
+// `toneDrillResolved` self-clears on the recommendation surfaces (an active
+// drill stops being prescribed once solved) and round 13 threaded the win
+// into Ask Noum. This closes the loop on the post-rep surface: when the
+// just-finished rep is the one that crosses the resolved bar, the coach note
+// headlines the win once. These tests lock the headline branch, its priority
+// over the in-flight trajectory read, the fall-through when nothing resolved,
+// and the clean voice-shaping across every voice.
+
+struct PostRepCoachNoteToneResolvedTests {
+
+    private func makeInput(
+        voice: SpeakingStyleGoal? = nil,
+        mode: PracticeMode = .imConversation,
+        resolvedScenario: String? = "Difficult Conversation",
+        resolvedTone: String? = "Calm",
+        resolvedEarlier: Double? = 0.0,
+        resolvedRecent: Double? = 1.0,
+        progress: IMToneDrillProgress? = nil,
+        progressScenario: String? = nil,
+        progressTone: String? = nil
+    ) -> PostRepCoachNoteInput {
+        PostRepCoachNoteInput(
+            sessionID: UUID(),
+            mode: mode,
+            score: 7,
+            fillerCount: 2,
+            duration: 60,
+            wordCount: 120,
+            voice: voice,
+            intentLabel: nil,
+            baselineFillerRate: nil,
+            baselinePaceWPM: nil,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil,
+            totalSessionCount: 8,
+            imToneDrillProgress: progress,
+            imToneDrillScenarioTitle: progressScenario,
+            imToneDrillToneTitle: progressTone,
+            imToneDrillResolvedScenarioTitle: resolvedScenario,
+            imToneDrillResolvedToneTitle: resolvedTone,
+            imToneDrillResolvedEarlierRate: resolvedEarlier,
+            imToneDrillResolvedRecentRate: resolvedRecent
+        )
+    }
+
+    @Test func solvedHeadlinesTheNote() {
+        let note = PostRepCoachNoteService.deterministicNote(input: makeInput())
+        let lower = note.noteText.lowercased()
+        #expect(lower.contains("difficult conversation"))
+        #expect(lower.contains("calm"))
+        #expect(note.noteText.contains("0%") && note.noteText.contains("100%"))
+        #expect(!note.noteText.contains("!"))
+    }
+
+    @Test func solvedOutranksInFlightTrajectory() {
+        // On the crossing rep the same scenario also reads as `.recovering`.
+        // The win must win: the note names it solved, not "still climbing".
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                voice: .authoritative,
+                progress: IMToneDrillProgress(
+                    direction: .recovering, earlierRate: 0.0, recentRate: 1.0, windowSize: 3
+                ),
+                progressScenario: "Difficult Conversation",
+                progressTone: "Calm"
+            )
+        )
+        #expect(note.noteText.lowercased().contains("solved"))
+        #expect(!note.noteText.lowercased().contains("landing more"))
+    }
+
+    @Test func noResolvedFallsThroughToMetricNote() {
+        // No crossing this rep → the win branch never fires. With a clean
+        // 2-filler / score-7 rep and no resolved fields, the note must not
+        // claim anything was solved.
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(
+                resolvedScenario: nil, resolvedTone: nil,
+                resolvedEarlier: nil, resolvedRecent: nil
+            )
+        )
+        #expect(!note.noteText.lowercased().contains("solved"))
+        #expect(!note.noteText.contains("Difficult Conversation"))
+    }
+
+    @Test func partialResolvedFieldsDoNotFire() {
+        // Defensive: a scenario title without the climb rates is not enough
+        // to headline a win — all four fields are required.
+        let note = PostRepCoachNoteService.deterministicNote(
+            input: makeInput(resolvedEarlier: nil, resolvedRecent: nil)
+        )
+        #expect(!note.noteText.lowercased().contains("solved"))
+    }
+
+    @Test func solvedSentenceVoiceShapedAndCleanAcrossAllVoices() {
+        let voices: [SpeakingStyleGoal?] = [
+            .authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil
+        ]
+        for voice in voices {
+            let persona = CoachPersona.persona(for: voice)
+            let sentence = PostRepCoachNoteService.imToneResolvedSentence(
+                scenario: "Difficult Conversation", tone: "Calm",
+                earlierRate: 0.0, recentRate: 1.0, persona: persona
+            )
+            #expect(sentence.contains("0%") && sentence.contains("100%"))
+            #expect(sentence.lowercased().contains("difficult conversation"))
+            #expect(!sentence.contains("!"))
+            #expect(!sentence.lowercased().hasPrefix("let's"))
+            // Never re-prescribe the beaten drill in the win line itself.
+            #expect(!sentence.lowercased().contains("one more rep"))
         }
     }
 }
