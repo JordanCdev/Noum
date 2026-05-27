@@ -576,6 +576,89 @@ enum IMHistorySummary {
         )
     }
 
+    // MARK: - Tone-drill "resolved" read (the win, after the drill is won)
+    //
+    // The complement to `toneDrillSignal` + `toneDrillProgress`. Those two
+    // fire only while a scenario is *still* below the drill bar (sub-40%
+    // hit rate). The moment the user climbs above it, the drill signal
+    // self-clears — correct for the recommendation engine (don't keep
+    // prescribing a solved problem) but it leaves the coach silent at
+    // exactly the moment it should say "you fixed this." A human coach who
+    // pushed you on your calm tone in Difficult Conversation for two weeks
+    // notices when it finally holds, and names the win before moving on.
+    //
+    // A scenario reads as resolved only with genuine turnaround evidence:
+    //   • enough evaluated reps to compare two disjoint windows (the same
+    //     4-rep / `min(3, count/2)` bar as `toneDrillProgress`)
+    //   • the earliest window was *below* the drill bar — there was a real
+    //     gap, not just steady competence the user always had
+    //   • the latest window holds *at or above* `toneDrillResolvedHoldRate`
+    //     — the climb stuck, it isn't one lucky rep
+    //   • the overall hit rate is at/above the drill bar, so the active
+    //     `toneDrillSignal` has already cleared for this scenario — the
+    //     "solved" read and the "still drilling" read can never both fire
+    //     for the same scenario (they CAN co-exist across two scenarios:
+    //     one solved, another still being drilled)
+    //
+    // Returns the single freshest win (most-recent evaluated rep first,
+    // tiebreak by the larger climb, then more evidence) so the coach
+    // acknowledges what the user just earned, not a month-old recovery.
+    // nil when nothing clears the bar — the coach stays quiet rather than
+    // inventing a victory.
+    //
+    // Defensive contracts (locked by `IMToneDrillResolvedTests`):
+    //   • reuses `toneDrillProgress` + `toneMatchStats`, inheriting their
+    //     `.imConversation` + scenario filter and missing/whitespace-
+    //     `actualTone` exclusion
+    //   • nil below 4 evaluated reps (no two disjoint windows)
+    //   • a scenario the user never struggled in (earliest window already
+    //     above the drill bar) never reads as a "win"
+    //   • a scenario still below the drill bar overall (an active drill)
+    //     never reads as solved
+
+    /// Recent-window hit rate (0.0–1.0) a scenario must hold *at or above*
+    /// for a past tone gap to read as solved. 0.6 == "lands at least 60%
+    /// of the time now" — comfortably clear of the 0.4 drill bar, so
+    /// "solved" means held, not barely scraped over. Shared with the test
+    /// suite so the boundary is asserted, not guessed.
+    static let toneDrillResolvedHoldRate = 0.6
+
+    static func toneDrillResolved(
+        from sessions: [PracticeSession],
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        holdRate: Double = toneDrillResolvedHoldRate
+    ) -> IMToneDrillResolved? {
+        let candidates: [IMToneDrillResolved] = IMConversationScenario.allCases.compactMap { scenario in
+            guard let progress = toneDrillProgress(from: sessions, scenario: scenario) else { return nil }
+            let stats = toneMatchStats(from: sessions, scenario: scenario)
+            guard let overallRate = stats.matchRate,
+                  progress.earlierRate < matchRateThreshold,   // started below the bar
+                  progress.recentRate >= holdRate,             // now holding high
+                  overallRate >= matchRateThreshold,           // not an active drill
+                  let dominant = dominantEvaluatedTone(from: sessions, scenario: scenario),
+                  let lastDate = stats.lastFive.first?.date    // most-recent evaluated rep
+            else { return nil }
+            return IMToneDrillResolved(
+                scenario: scenario,
+                targetTone: dominant.tone,
+                earlierRate: progress.earlierRate,
+                recentRate: progress.recentRate,
+                evaluatedCount: stats.evaluatedCount,
+                lastEvaluatedDate: lastDate
+            )
+        }
+
+        return candidates.sorted { lhs, rhs in
+            if lhs.lastEvaluatedDate != rhs.lastEvaluatedDate {
+                return lhs.lastEvaluatedDate > rhs.lastEvaluatedDate    // freshest win first
+            }
+            let lhsClimb = lhs.recentRate - lhs.earlierRate
+            let rhsClimb = rhs.recentRate - rhs.earlierRate
+            if lhsClimb != rhsClimb { return lhsClimb > rhsClimb }      // bigger climb first
+            return lhs.evaluatedCount > rhs.evaluatedCount             // more evidence first
+        }.first
+    }
+
     /// The tone the user committed to most often among a scenario's
     /// evaluated reps (those that produced a non-empty `actualTone`),
     /// with the date of the most-recent rep that used it. Tiebreak on

@@ -7038,6 +7038,29 @@ struct IMToneDrillSignal: Equatable {
     }
 }
 
+/// A scenario where the user *used to* miss the IM tone they committed to
+/// but has since recovered and is now holding above the drill bar — the
+/// win, surfaced so the coach can name it instead of going silent the
+/// moment a drill is won. The complement to `IMToneDrillSignal` (which
+/// prescribes a still-failing drill and self-clears on recovery) and
+/// `IMToneDrillProgress` (the in-flight Adaptation read). Produced by
+/// `IMHistorySummary.toneDrillResolved(from:)` only with genuine
+/// turnaround evidence: an earliest window below the drill bar (a real gap
+/// existed), a latest window holding at/above `toneDrillResolvedHoldRate`
+/// (the climb stuck), and an overall rate at/above the drill bar so the
+/// active-drill signal has already cleared — "solved" and "still drilling"
+/// can never both fire for one scenario. `earlierRate`/`recentRate` are
+/// 0.0–1.0; `lastEvaluatedDate` is the most-recent evaluated rep so the
+/// coach can acknowledge the freshest win first.
+struct IMToneDrillResolved: Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    let earlierRate: Double
+    let recentRate: Double
+    let evaluatedCount: Int
+    let lastEvaluatedDate: Date
+}
+
 enum RecommendationBiasEngine {
     static let playbook: [PracticeModePlaybookEntry] = [
         .init(

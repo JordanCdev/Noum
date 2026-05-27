@@ -89,6 +89,12 @@ enum CoachContextBuilder {
            stalled one as a plateau to break — rather than re-issuing the \
            original miss as if nothing has moved. It is observed \
            association, never proof a drill caused the change.
+        9. When TONE-DRILL SOLVED is present, a tone gap the user used to \
+           miss now holds above the drill bar. Name the win once, plainly, \
+           then point them at the next target — do not re-prescribe the \
+           solved drill or restate the old miss as if it were still open. \
+           It is observed association in the user's own reps, never proof a \
+           drill caused the recovery.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -468,6 +474,23 @@ enum CoachContextBuilder {
             lines.append(contentsOf: trajectoryLines)
         }
 
+        // TONE-DRILL SOLVED — the win after the drill is won. The signal
+        // that feeds TONE-DRILL TRAJECTORY self-clears the moment a
+        // scenario climbs past the drill bar, which is right for the
+        // recommendation engine but leaves the coach silent at exactly the
+        // moment it should name the win. This carries a recently-resolved
+        // tone read so the coach can say "your calm tone in Difficult
+        // Conversation is holding now — 0% to 100%" instead of dropping the
+        // thread. Mutually exclusive with the trajectory section per
+        // scenario (a scenario is either a still-sub-bar drill or a
+        // resolved win, never both), but a drill in one scenario and a win
+        // in another can — and should — both surface.
+        if let resolved = IMHistorySummary.toneDrillResolved(from: sessions) {
+            lines.append("")
+            lines.append("TONE-DRILL SOLVED (a past tone gap the user has closed)")
+            lines.append(contentsOf: toneDrillResolvedLines(for: resolved))
+        }
+
         // RECENT — last 3 sessions, so the coach can quote actual numbers.
         // M21: when a session carried a declared intent (the user tapped a
         // chip on the SessionIntent prompt before the rep), append a quiet
@@ -612,6 +635,28 @@ enum CoachContextBuilder {
 
         let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — \(directionPhrase)."
         return [dataLine, "- \(guidance)"]
+    }
+
+    // MARK: - Tone-drill resolved read (the win, for the chat coach)
+    //
+    // The complement to `toneDrillTrajectoryLines`. That speaks to a drill
+    // still in flight; this speaks to one the user has *won* — a scenario
+    // whose committed tone used to miss but now holds above the drill bar.
+    // Same terse, citeable register ("0% to 100%") so the two never read
+    // as different voices. Two lines: a data line naming the scenario +
+    // tone + the climb, and a guidance clause so the model names the win
+    // once and moves the user to the next target rather than re-prescribing
+    // a drill they have already beaten — the in-context backstop to the
+    // system prompt's rule 9. Honest about provenance: the recovery is
+    // observed in the user's own reps, never proof a drill caused it.
+    static func toneDrillResolvedLines(for resolved: IMToneDrillResolved) -> [String] {
+        let scenario = resolved.scenario.title
+        let tone = resolved.targetTone.title
+        let earlierPct = Int((resolved.earlierRate * 100).rounded())
+        let recentPct = Int((resolved.recentRate * 100).rounded())
+        let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — holding above the drill bar now."
+        let guidance = "- The user closed this tone gap; name the win once and point them at the next target rather than re-prescribing the solved drill. Observed in their own reps, not proof a drill caused it."
+        return [dataLine, guidance]
     }
 
     // MARK: - Session-anchored opener

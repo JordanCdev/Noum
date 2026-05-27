@@ -15727,6 +15727,292 @@ struct ToneDrillTrajectoryContextTests {
     }
 }
 
+// MARK: - Tone-drill "resolved" read (the win, after the drill is won)
+//
+// M24 deferred slate (round 13): `toneDrillSignal` + `toneDrillProgress`
+// self-clear the moment a scenario climbs past the drill bar, so the coach
+// stops acknowledging a tone gap at exactly the moment the user closes it.
+// `toneDrillResolved` is the complement — it fires only on genuine
+// turnaround evidence (earliest window below the bar, latest window holding
+// at/above the 60% hold rate, overall at/above the bar so the active drill
+// has cleared). These tests lock the turnaround detection, the four
+// negative paths (empty, too-thin, never-struggled, still-active-drill,
+// bouncy-recent), the freshest-win selection, and the constant boundary.
+
+struct IMToneDrillResolvedTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func resolvedNilOnEmptyHistory() {
+        #expect(IMHistorySummary.toneDrillResolved(from: []) == nil)
+    }
+
+    @Test func resolvedNilBelowFourEvaluatedReps() {
+        // Three reps can't be split into two disjoint windows — no read.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions) == nil)
+    }
+
+    @Test func resolvedDetectsTurnaround() {
+        // Six reps, window = 3: earliest 3 all miss (0%), latest 3 all land
+        // (100%), overall 3/6 == 50% — a clean, held win above the 40% bar.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let resolved = IMHistorySummary.toneDrillResolved(from: sessions)
+        #expect(resolved?.scenario == .difficultConversation)
+        #expect(resolved?.targetTone == .calm)
+        #expect(resolved?.earlierRate == 0.0)
+        #expect(resolved?.recentRate == 1.0)
+        #expect(resolved?.evaluatedCount == 6)
+    }
+
+    @Test func resolvedNilWhenNeverStruggled() {
+        // Steady competence is not a "win to announce" — the earliest
+        // window is already above the drill bar, so there's no gap closed.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions) == nil)
+    }
+
+    @Test func resolvedNilWhenStillActiveDrill() {
+        // Eight reps, window = 3: earliest 3 miss, latest 3 land, but the
+        // overall rate (3/8 == 37.5%) is still below the 40% drill bar — so
+        // `toneDrillSignal` is still firing for this scenario and the coach
+        // must not double-announce it as solved.
+        let sessions = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -8),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -7),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions) == nil)
+    }
+
+    @Test func resolvedNilWhenRecentWindowDoesNotHold() {
+        // Eight reps, window = 3: a bouncy recovery where the latest window
+        // only lands 1 of 3 (33% < 60% hold bar) even though the overall
+        // rate clears the drill bar. A win must be *held*, not lucky.
+        // Oldest→newest outcomes: miss, match, miss, match, match, miss,
+        // match, miss → earliest 3 == 1/3 (33%), latest 3 == 1/3 (33%),
+        // overall 4/8 == 50%.
+        let sessions = [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",        daysOffset: -8),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -7),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered",    daysOffset: -6),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -5),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -4),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",        daysOffset: -3),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered",    daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions) == nil)
+    }
+
+    @Test func resolvedPicksFreshestWinAcrossScenarios() {
+        // Two scenarios both resolved; the one whose most-recent evaluated
+        // rep is freshest wins — acknowledge what the user just earned, not
+        // the older recovery. Networking's last rep is more recent.
+        var sessions = [
+            // Difficult Conversation resolved, but older (last rep -10d).
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -15),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -14),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense", daysOffset: -13),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -12),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -11),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",  daysOffset: -10)
+        ]
+        sessions += [
+            // Networking resolved, fresher (last rep -1d).
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        #expect(IMHistorySummary.toneDrillResolved(from: sessions)?.scenario == .networking)
+    }
+
+    @Test func resolvedHoldRateSitsAboveTheDrillBar() {
+        // "Solved" must be a meaningfully cleared bar, not a scrape over the
+        // drill threshold — otherwise a recovering-but-not-held scenario
+        // would read as won.
+        #expect(IMHistorySummary.toneDrillResolvedHoldRate > IMHistorySummary.toneDrillMatchRateThreshold)
+    }
+}
+
+// MARK: - Tone-drill resolved read threaded into the chat coach context
+//
+// The win belongs on the conversational surface: the recommendation card
+// rightly moves on to the next drill once a scenario clears the bar, but a
+// user who opens Ask Noum should hear the coach acknowledge what they fixed.
+// These tests lock the citeable line shape, the end-to-end surfacing inside
+// `userContext`, the omission when nothing is resolved, and the coherence
+// case where an active drill in one scenario and a solved win in another
+// both surface at once.
+
+struct ToneDrillResolvedContextTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func resolvedLinesCiteClimbAndScenario() {
+        let resolved = IMToneDrillResolved(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            earlierRate: 0.0,
+            recentRate: 1.0,
+            evaluatedCount: 6,
+            lastEvaluatedDate: baseDate
+        )
+        let joined = CoachContextBuilder.toneDrillResolvedLines(for: resolved).joined(separator: "\n")
+        #expect(joined.contains("Calm tone in Difficult Conversation"))
+        #expect(joined.contains("0% to 100%"))
+        #expect(joined.lowercased().contains("holding above the drill bar"))
+        // Guidance must move the user forward, not re-prescribe the drill.
+        #expect(joined.lowercased().contains("next target"))
+    }
+
+    @Test func userContextSurfacesSolvedSection() {
+        // End-to-end: a once-failing, now-holding scenario → userContext
+        // carries a TONE-DRILL SOLVED section so the chat coach names the win.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("TONE-DRILL SOLVED"))
+        #expect(ctx.contains("Calm tone in Difficult Conversation"))
+        #expect(ctx.contains("0% to 100%"))
+    }
+
+    @Test func userContextOmitsSolvedWhenNothingResolved() {
+        // No resolved scenario → no hollow "solved" heading.
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!ctx.contains("TONE-DRILL SOLVED"))
+    }
+
+    @Test func solvedAndTrajectoryCoexistForDifferentScenarios() {
+        // An active drill in one scenario (Work Update, 0% over 4 reps) and a
+        // solved win in another (Networking, 0% → 100% over 6 reps) must both
+        // surface — the coach drills the open gap and names the closed one.
+        var sessions = [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",     daysOffset: -4),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered", daysOffset: -3),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",     daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "rushed",    daysOffset: -1)
+        ]
+        sessions += [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -10),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -9),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -8),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -7),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -5)
+        ]
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("TONE-DRILL TRAJECTORY"))
+        #expect(ctx.contains("Professional tone in Work Update"))
+        #expect(ctx.contains("TONE-DRILL SOLVED"))
+        #expect(ctx.contains("Confident tone in Networking"))
+    }
+}
+
 // MARK: - Tone-drill trajectory threaded into the post-rep coach note
 //
 // The same Adaptation read also reaches the post-rep `CoachReadCard` via
