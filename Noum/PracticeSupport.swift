@@ -6504,15 +6504,45 @@ enum PracticeSessionFinalizer {
         let imToneProgress: IMToneDrillProgress?
         let imToneScenarioTitle: String?
         let imToneToneTitle: String?
+        // SOLVED read — set only when THIS rep is the one that crossed the
+        // scenario over the bar. See the crossing comparison below.
+        let imToneResolved: IMToneDrillResolved?
+        let imToneResolvedScenarioTitle: String?
+        let imToneResolvedToneTitle: String?
         if session.mode == .imConversation, let details = session.imConversationDetails {
             let scenario = details.setup.scenario
             imToneProgress = IMHistorySummary.toneDrillProgress(from: allSessions, scenario: scenario)
             imToneScenarioTitle = scenario.title
             imToneToneTitle = details.setup.targetTone.title
+
+            // Crossing detection: headline a solved tone-drill exactly once
+            // — on the rep that pushes the scenario across the bar, not on
+            // every rep after. `allSessions` already includes the
+            // just-finalized rep, so comparing the scenario's resolved read
+            // with-vs-without it isolates the single crossing rep: resolved
+            // now AND not resolved a rep ago means this rep is the one that
+            // closed the gap. A scenario that was already solved before this
+            // rep stays quiet (no repeat); a genuine relapse-then-reclear
+            // reads as a new crossing, which is correct.
+            let priorSessions = allSessions.filter { $0.id != session.id }
+            let resolvedNow = IMHistorySummary.toneDrillResolved(from: allSessions, scenario: scenario)
+            let resolvedBefore = IMHistorySummary.toneDrillResolved(from: priorSessions, scenario: scenario)
+            if let crossed = resolvedNow, resolvedBefore == nil {
+                imToneResolved = crossed
+                imToneResolvedScenarioTitle = scenario.title
+                imToneResolvedToneTitle = crossed.targetTone.title
+            } else {
+                imToneResolved = nil
+                imToneResolvedScenarioTitle = nil
+                imToneResolvedToneTitle = nil
+            }
         } else {
             imToneProgress = nil
             imToneScenarioTitle = nil
             imToneToneTitle = nil
+            imToneResolved = nil
+            imToneResolvedScenarioTitle = nil
+            imToneResolvedToneTitle = nil
         }
 
         let input = PostRepCoachNoteInput(
@@ -6539,7 +6569,10 @@ enum PracticeSessionFinalizer {
             totalSessionCount: momentum.totalSessionCount,
             imToneDrillProgress: imToneProgress,
             imToneDrillScenarioTitle: imToneScenarioTitle,
-            imToneDrillToneTitle: imToneToneTitle
+            imToneDrillToneTitle: imToneToneTitle,
+            imToneDrillResolved: imToneResolved,
+            imToneDrillResolvedScenarioTitle: imToneResolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: imToneResolvedToneTitle
         )
 
         // Deterministic note lands synchronously so the Summary
