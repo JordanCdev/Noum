@@ -83,6 +83,47 @@ enum SummaryPracticeAgainRouter {
     }
 }
 
+/// Pure router for the Summary "Looking ahead" recommendation launch.
+/// Mirrors `SummaryPracticeAgainRouter` but maps the *forward-looking*
+/// `RecommendationBiasBlueprint` (the same shape Home's coach card and
+/// the mode-picker recommendation tile already consume) into the
+/// destination that running the recommendation should push.
+///
+/// The blueprint carries the recommended scenario + tone for IM reps —
+/// when the tone-drill signal fires, those carry the exact pair the user
+/// keeps missing, so launching directly into that scenario closes the
+/// loop in one tap instead of dropping the user back on the picker. When
+/// the blueprint is the goal-biased fallback (no tone-drill signal,
+/// non-IM mode), the scenario/tone are nil and the router still routes
+/// cleanly to the plain practice destination for that mode.
+///
+/// IM mode is gated by `imAvailable` so the caller can hand up the same
+/// `IMModeAvailability.isAvailable` flag that the other launch surfaces
+/// honor. When IM is the recommendation but IM Mode is unconfigured on
+/// the device, the router falls back to `.timedPractice` — mirroring
+/// `HomeCoachCard.destination(for:)` and `ContentView.practiceAppDestination`,
+/// so the recommendation never sends the user to a surface that can't
+/// run. Pure data in, pure destination out — no SwiftUI, no nav path,
+/// no availability lookups; the caller owns those.
+enum SummaryLookingAheadRouter {
+    static func destination(
+        for blueprint: RecommendationBiasBlueprint,
+        imAvailable: Bool
+    ) -> AppDestination {
+        switch blueprint.recommendedMode {
+        case .timed: return .timedPractice
+        case .suddenDeath: return .suddenDeathPractice
+        case .ahCounter: return .ahCounterPractice
+        case .imConversation:
+            guard imAvailable else { return .timedPractice }
+            return .imPractice(
+                scenario: blueprint.recommendedScenario,
+                tone: blueprint.recommendedTone
+            )
+        }
+    }
+}
+
 struct SummaryPayload: Identifiable, Hashable {
     let id: UUID
     let mode: PracticeMode

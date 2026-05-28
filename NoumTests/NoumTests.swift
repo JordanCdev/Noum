@@ -17578,3 +17578,139 @@ struct SummaryPracticeAgainRouterTests {
         ) == .ahCounterPractice)
     }
 }
+
+// MARK: - Summary "Looking ahead" router
+
+/// Locks the contract of `SummaryLookingAheadRouter` — the pure helper
+/// behind the post-rep "Looking ahead" recommendation launch.
+///
+/// The blueprint already carries the recommended scenario + tone for IM
+/// reps (the tone-drill signal threads them when the user is missing the
+/// same scenario/tone repeatedly), so a one-tap launch from the
+/// recommendation card lands the user directly inside that scenario
+/// instead of dropping back on the picker. The non-IM modes ignore the
+/// scenario/tone fields entirely. When IM is the recommendation but the
+/// device has IM Mode unconfigured (`imAvailable == false`), the router
+/// falls back to `.timedPractice` so the recommendation never sends the
+/// user to a surface that can't run — mirroring `HomeCoachCard`'s
+/// existing fallback. These tests pin every branch.
+@MainActor
+struct SummaryLookingAheadRouterTests {
+
+    /// Helper that fills the non-routing fields of a blueprint with neutral
+    /// placeholders. The router only reads `recommendedMode`,
+    /// `recommendedScenario`, and `recommendedTone`; the copy / theme /
+    /// difficulty fields are irrelevant to destination selection but are
+    /// required by the struct's memberwise init.
+    private func blueprint(
+        mode: PracticeMode,
+        scenario: IMConversationScenario? = nil,
+        tone: IMTargetTone? = nil
+    ) -> RecommendationBiasBlueprint {
+        RecommendationBiasBlueprint(
+            recommendedMode: mode,
+            recommendedTone: tone,
+            recommendedScenario: scenario,
+            focus: "",
+            target: "",
+            modeBenefit: "",
+            whyMode: "",
+            whyNow: "",
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: .all
+        )
+    }
+
+    @Test func imRecommendationLaunchesScenarioAndTone() {
+        let plan = blueprint(
+            mode: .imConversation,
+            scenario: .difficultConversation,
+            tone: .calm
+        )
+        let destination = SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(
+            scenario: .difficultConversation,
+            tone: .calm
+        ))
+    }
+
+    @Test func imRecommendationWithoutPairFallsBackToPicker() {
+        // Goal-biased IM recommendation with no specific tone-drill
+        // signal — scenario/tone are nil. The router still routes to the
+        // IM picker (the safe default) rather than substituting Timed.
+        let plan = blueprint(mode: .imConversation)
+        let destination = SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func imRecommendationFallsBackToTimedWhenImUnavailable() {
+        // IM is the recommendation but the device has IM Mode
+        // unconfigured (no AI provider, no backend) — sending the user
+        // into IM would just bounce them at IMPracticeView's guard, so
+        // route to Timed instead. Mirrors `HomeCoachCard.destination(for:)`.
+        let plan = blueprint(
+            mode: .imConversation,
+            scenario: .networking,
+            tone: .warm
+        )
+        let destination = SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: false
+        )
+        #expect(destination == .timedPractice)
+    }
+
+    @Test func timedIgnoresImFields() {
+        let plan = blueprint(
+            mode: .timed,
+            scenario: .workUpdate,
+            tone: .confident
+        )
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: true
+        ) == .timedPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: false
+        ) == .timedPractice)
+    }
+
+    @Test func suddenDeathIgnoresImFields() {
+        let plan = blueprint(
+            mode: .suddenDeath,
+            scenario: .networking,
+            tone: .warm
+        )
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: true
+        ) == .suddenDeathPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: false
+        ) == .suddenDeathPractice)
+    }
+
+    @Test func ahCounterIgnoresImFields() {
+        let plan = blueprint(
+            mode: .ahCounter,
+            scenario: .socialCatchUp,
+            tone: .confident
+        )
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: true
+        ) == .ahCounterPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: plan,
+            imAvailable: false
+        ) == .ahCounterPractice)
+    }
+}
