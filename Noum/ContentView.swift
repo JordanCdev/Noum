@@ -2115,20 +2115,19 @@ struct ContentView: View {
                 )
             }
         }
-        switch suggestion.mode {
-        case .timed:
-            return .timedPractice
-        case .suddenDeath:
-            return .suddenDeathPractice
-        case .ahCounter:
-            return .ahCounterPractice
-        case .imConversation:
-            if IMModeAvailability.isAvailable {
-                return .imPractice(scenario: suggestion.recommendedScenario, tone: suggestion.recommendedTone)
-            } else {
-                return .timedPractice
-            }
-        }
+        // Round 17: destination mapping collapsed into
+        // `SummaryLookingAheadRouter` so this surface, `HomeCoachCard`,
+        // and the post-rep "Looking ahead" launch share one tested
+        // mode-to-destination switch (incl. the IM-unavailable fallback
+        // to Timed). Theme caching above stays here — it's the
+        // suggestion-specific side effect, not part of the destination
+        // contract.
+        return SummaryLookingAheadRouter.destination(
+            for: suggestion.mode,
+            scenario: suggestion.recommendedScenario,
+            tone: suggestion.recommendedTone,
+            imAvailable: IMModeAvailability.isAvailable
+        )
     }
 
     private func normalizedSuggestion(_ suggestion: PracticeSuggestion) -> PracticeSuggestion {

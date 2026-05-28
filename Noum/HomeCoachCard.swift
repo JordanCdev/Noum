@@ -592,23 +592,16 @@ struct HomeCoachCard: View {
     }
 
     private func destination(for mode: PracticeMode) -> AppDestination {
-        switch mode {
-        case .timed:
-            return .timedPractice
-        case .suddenDeath:
-            return .suddenDeathPractice
-        case .ahCounter:
-            return .ahCounterPractice
-        case .imConversation:
-            if IMModeAvailability.isAvailable {
-                return .imPractice(
-                    scenario: recommendationBlueprint.recommendedScenario,
-                    tone: recommendationBlueprint.recommendedTone
-                )
-            } else {
-                return .timedPractice
-            }
-        }
+        // Round 17: collapsed into `SummaryLookingAheadRouter` so the
+        // mode-to-destination mapping and the IM-unavailable fallback
+        // live in one tested place. `mode` always matches
+        // `recommendationBlueprint.recommendedMode` at this call site
+        // (the caller reads `recommendedMode` into `mode` before
+        // navigating), so threading the blueprint is the same data.
+        SummaryLookingAheadRouter.destination(
+            for: recommendationBlueprint,
+            imAvailable: IMModeAvailability.isAvailable
+        )
     }
 
     // MARK: - Mood lifecycle

@@ -100,26 +100,53 @@ enum SummaryPracticeAgainRouter {
 /// IM mode is gated by `imAvailable` so the caller can hand up the same
 /// `IMModeAvailability.isAvailable` flag that the other launch surfaces
 /// honor. When IM is the recommendation but IM Mode is unconfigured on
-/// the device, the router falls back to `.timedPractice` — mirroring
-/// `HomeCoachCard.destination(for:)` and `ContentView.practiceAppDestination`,
-/// so the recommendation never sends the user to a surface that can't
-/// run. Pure data in, pure destination out — no SwiftUI, no nav path,
-/// no availability lookups; the caller owns those.
+/// the device, the router falls back to `.timedPractice` — so the
+/// recommendation never sends the user to a surface that can't run. Pure
+/// data in, pure destination out — no SwiftUI, no nav path, no
+/// availability lookups; the caller owns those.
+///
+/// As of round 17, both `HomeCoachCard.destination(for:)` and
+/// `ContentView.practiceAppDestination(for:)` route their destination
+/// calculation through this router so the mode-to-destination mapping
+/// and the IM-unavailable fallback live in exactly one place. The two
+/// call sites use the lower-level `destination(for:scenario:tone:imAvailable:)`
+/// overload because they hold the recommended mode + scenario + tone
+/// across two slightly different shapes (a blueprint on the coach card,
+/// a `PracticeSuggestion` in ContentView) — the overload reads only the
+/// three fields the router actually needs and ignores the rest.
 enum SummaryLookingAheadRouter {
     static func destination(
         for blueprint: RecommendationBiasBlueprint,
         imAvailable: Bool
     ) -> AppDestination {
-        switch blueprint.recommendedMode {
+        destination(
+            for: blueprint.recommendedMode,
+            scenario: blueprint.recommendedScenario,
+            tone: blueprint.recommendedTone,
+            imAvailable: imAvailable
+        )
+    }
+
+    /// Lower-level form for callers that hold the recommended mode +
+    /// scenario + tone outside a full `RecommendationBiasBlueprint`
+    /// (e.g. `ContentView`'s private `PracticeSuggestion` value type).
+    /// Behavior is identical to the blueprint overload — the blueprint
+    /// form delegates straight through to this one — so both call sites
+    /// get the same mode-to-destination mapping and the same IM-
+    /// unavailable fallback to `.timedPractice` without re-deriving them.
+    static func destination(
+        for mode: PracticeMode,
+        scenario: IMConversationScenario?,
+        tone: IMTargetTone?,
+        imAvailable: Bool
+    ) -> AppDestination {
+        switch mode {
         case .timed: return .timedPractice
         case .suddenDeath: return .suddenDeathPractice
         case .ahCounter: return .ahCounterPractice
         case .imConversation:
             guard imAvailable else { return .timedPractice }
-            return .imPractice(
-                scenario: blueprint.recommendedScenario,
-                tone: blueprint.recommendedTone
-            )
+            return .imPractice(scenario: scenario, tone: tone)
         }
     }
 }

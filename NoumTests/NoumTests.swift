@@ -17713,4 +17713,134 @@ struct SummaryLookingAheadRouterTests {
             imAvailable: false
         ) == .ahCounterPractice)
     }
+
+    // MARK: - Lower-level overload (round 17)
+
+    // The `destination(for:scenario:tone:imAvailable:)` overload is the
+    // form `ContentView.practiceAppDestination(for:)` calls into — it
+    // holds the recommended mode + scenario + tone on a
+    // `PracticeSuggestion` value type rather than a full
+    // `RecommendationBiasBlueprint`. Behavior must be identical to the
+    // blueprint form (the blueprint form delegates straight through to
+    // this one), so these tests pin the same set of branches *and*
+    // confirm parity for the cases that matter.
+
+    @Test func lowerLevelImLaunchesScenarioAndTone() {
+        let destination = SummaryLookingAheadRouter.destination(
+            for: .imConversation,
+            scenario: .difficultConversation,
+            tone: .calm,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(
+            scenario: .difficultConversation,
+            tone: .calm
+        ))
+    }
+
+    @Test func lowerLevelImWithoutPairFallsBackToPicker() {
+        // Mirrors the goal-biased IM recommendation: scenario/tone are
+        // nil, but the user *did* ask for IM Mode, so route to the
+        // picker (the safe default) rather than substituting Timed.
+        let destination = SummaryLookingAheadRouter.destination(
+            for: .imConversation,
+            scenario: nil,
+            tone: nil,
+            imAvailable: true
+        )
+        #expect(destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func lowerLevelImFallsBackToTimedWhenImUnavailable() {
+        // IM was the recommendation but the device has IM Mode
+        // unconfigured — same fallback as the blueprint form, so the
+        // home coach card and the ContentView suggestion tile produce
+        // the same destination for the same data shape.
+        let destination = SummaryLookingAheadRouter.destination(
+            for: .imConversation,
+            scenario: .networking,
+            tone: .warm,
+            imAvailable: false
+        )
+        #expect(destination == .timedPractice)
+    }
+
+    @Test func lowerLevelTimedIgnoresImFields() {
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .timed,
+            scenario: .workUpdate,
+            tone: .confident,
+            imAvailable: true
+        ) == .timedPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .timed,
+            scenario: .workUpdate,
+            tone: .confident,
+            imAvailable: false
+        ) == .timedPractice)
+    }
+
+    @Test func lowerLevelSuddenDeathIgnoresImFields() {
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .suddenDeath,
+            scenario: .networking,
+            tone: .warm,
+            imAvailable: true
+        ) == .suddenDeathPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .suddenDeath,
+            scenario: .networking,
+            tone: .warm,
+            imAvailable: false
+        ) == .suddenDeathPractice)
+    }
+
+    @Test func lowerLevelAhCounterIgnoresImFields() {
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .ahCounter,
+            scenario: .socialCatchUp,
+            tone: .confident,
+            imAvailable: true
+        ) == .ahCounterPractice)
+        #expect(SummaryLookingAheadRouter.destination(
+            for: .ahCounter,
+            scenario: .socialCatchUp,
+            tone: .confident,
+            imAvailable: false
+        ) == .ahCounterPractice)
+    }
+
+    @Test func blueprintAndLowerLevelOverloadsAgree() {
+        // Parity check: for every combination of mode × availability ×
+        // scenario/tone presence, the two overloads must return the
+        // same destination. If they ever diverge, the home coach card
+        // and the ContentView suggestion tile would start producing
+        // different launches for the same recommendation — exactly the
+        // bug round 17 collapses against.
+        let modes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
+        let pairs: [(IMConversationScenario?, IMTargetTone?)] = [
+            (nil, nil),
+            (.difficultConversation, .calm),
+            (.networking, .warm),
+            (.workUpdate, .confident)
+        ]
+        for mode in modes {
+            for (scenario, tone) in pairs {
+                for imAvailable in [true, false] {
+                    let plan = blueprint(mode: mode, scenario: scenario, tone: tone)
+                    let viaBlueprint = SummaryLookingAheadRouter.destination(
+                        for: plan,
+                        imAvailable: imAvailable
+                    )
+                    let viaLowerLevel = SummaryLookingAheadRouter.destination(
+                        for: mode,
+                        scenario: scenario,
+                        tone: tone,
+                        imAvailable: imAvailable
+                    )
+                    #expect(viaBlueprint == viaLowerLevel)
+                }
+            }
+        }
+    }
 }
