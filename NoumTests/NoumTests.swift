@@ -17495,3 +17495,50 @@ struct SuddenDeathIdempotentFinalizationTests {
         )
     }
 }
+
+// MARK: - Practice Again destination (round 15)
+//
+// Round-14 HANDOFF "Future move" #2: "Practice Again" on an IM rep used to
+// re-launch `.imPractice(scenario: nil, tone: nil)`, dropping the user back on
+// the scenario grid even though the finished session carries the exact scenario
+// + tone. These lock the pure mapping `AppDestination.practiceAgain(mode:imSetup:)`
+// that now preserves the drill — and the contract that non-IM modes ignore the
+// setup and a missing setup falls through to the grid (nil/nil).
+struct PracticeAgainDestinationTests {
+
+    @Test func imPracticeAgainPreservesScenarioAndTone() {
+        let setup = IMConversationSetup(scenario: .difficultConversation, targetTone: .calm)
+        let destination = AppDestination.practiceAgain(mode: .imConversation, imSetup: setup)
+        #expect(destination == .imPractice(scenario: .difficultConversation, tone: .calm))
+    }
+
+    @Test func imPracticeAgainRoundTripsAnyScenarioTonePair() {
+        // Not hardcoded to one pair: a different scenario + tone flows through
+        // unchanged, so the preserved drill is genuinely the finished rep's.
+        let setup = IMConversationSetup(scenario: .networking, targetTone: .warm)
+        let destination = AppDestination.practiceAgain(mode: .imConversation, imSetup: setup)
+        #expect(destination == .imPractice(scenario: .networking, tone: .warm))
+    }
+
+    @Test func imPracticeAgainWithoutSetupFallsBackToGrid() {
+        // No IM details on the session (shouldn't happen for an IM rep, but the
+        // mapping is total) → nil/nil, which IMPracticeView reads as "show grid".
+        let destination = AppDestination.practiceAgain(mode: .imConversation, imSetup: nil)
+        #expect(destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func nonIMModesMapToTheirDefaultEntry() {
+        #expect(AppDestination.practiceAgain(mode: .timed, imSetup: nil) == .timedPractice)
+        #expect(AppDestination.practiceAgain(mode: .suddenDeath, imSetup: nil) == .suddenDeathPractice)
+        #expect(AppDestination.practiceAgain(mode: .ahCounter, imSetup: nil) == .ahCounterPractice)
+    }
+
+    @Test func nonIMModesIgnoreAnyStaleIMSetup() {
+        // A non-IM "Practice Again" must never smuggle an IM setup into its
+        // destination, even if one were somehow passed in.
+        let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .professional)
+        #expect(AppDestination.practiceAgain(mode: .timed, imSetup: setup) == .timedPractice)
+        #expect(AppDestination.practiceAgain(mode: .suddenDeath, imSetup: setup) == .suddenDeathPractice)
+        #expect(AppDestination.practiceAgain(mode: .ahCounter, imSetup: setup) == .ahCounterPractice)
+    }
+}

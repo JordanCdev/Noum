@@ -55,6 +55,23 @@ enum AppDestination: Hashable {
     case imScenarioDetail(scenario: IMConversationScenario)
 }
 
+extension AppDestination {
+    /// The destination "Practice Again" pushes for a finished session of
+    /// `mode`. For an IM rep it preserves the just-finished scenario + tone
+    /// (carried on `imSetup`) so the user re-enters the *same* drill instead
+    /// of the scenario grid; a `nil` setup — or any non-IM mode — falls
+    /// through to that mode's default entry. Pure mapping, no nav side effects.
+    static func practiceAgain(mode: PracticeMode, imSetup: IMConversationSetup?) -> AppDestination {
+        switch mode {
+        case .timed: return .timedPractice
+        case .suddenDeath: return .suddenDeathPractice
+        case .ahCounter: return .ahCounterPractice
+        case .imConversation:
+            return .imPractice(scenario: imSetup?.scenario, tone: imSetup?.targetTone)
+        }
+    }
+}
+
 struct SummaryPayload: Identifiable, Hashable {
     let id: UUID
     let mode: PracticeMode
