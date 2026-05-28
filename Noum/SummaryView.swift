@@ -2828,6 +2828,10 @@ extension SummaryView {
         let pathBinding = navigationPath
         let payloadId = payload.id
         let payloadMode = payload.mode
+        // Preserve the just-finished IM scenario + tone so "Practice Again"
+        // drops the user straight back into the same drill instead of the
+        // scenario grid. nil for non-IM reps; the mapping ignores it there.
+        let imPracticeAgainSetup = entry?.imConversationDetails?.setup
         self.onHome = {
             SummaryDataStore.shared.remove(for: payloadId)
             pathBinding.wrappedValue = NavigationPath()
@@ -2845,13 +2849,10 @@ extension SummaryView {
             if path.count > 0 { path.removeLast() }
             if path.count > 0 { path.removeLast() }
             pathBinding.wrappedValue = path
-            let destination: AppDestination
-            switch payloadMode {
-            case .timed: destination = .timedPractice
-            case .suddenDeath: destination = .suddenDeathPractice
-            case .ahCounter: destination = .ahCounterPractice
-            case .imConversation: destination = .imPractice(scenario: nil, tone: nil)
-            }
+            let destination = AppDestination.practiceAgain(
+                mode: payloadMode,
+                imSetup: imPracticeAgainSetup
+            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 pathBinding.wrappedValue.append(destination)
             }
