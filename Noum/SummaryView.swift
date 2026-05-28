@@ -2828,6 +2828,10 @@ extension SummaryView {
         let pathBinding = navigationPath
         let payloadId = payload.id
         let payloadMode = payload.mode
+        // Captured for "Practice Again" so IM reps re-arm the just-finished
+        // scenario + tone instead of dropping back on the picker. The
+        // other modes have no per-rep setup, so the router ignores this.
+        let practiceAgainIMSetup = entry?.imConversationDetails?.setup
         self.onHome = {
             SummaryDataStore.shared.remove(for: payloadId)
             pathBinding.wrappedValue = NavigationPath()
@@ -2845,13 +2849,10 @@ extension SummaryView {
             if path.count > 0 { path.removeLast() }
             if path.count > 0 { path.removeLast() }
             pathBinding.wrappedValue = path
-            let destination: AppDestination
-            switch payloadMode {
-            case .timed: destination = .timedPractice
-            case .suddenDeath: destination = .suddenDeathPractice
-            case .ahCounter: destination = .ahCounterPractice
-            case .imConversation: destination = .imPractice(scenario: nil, tone: nil)
-            }
+            let destination = SummaryPracticeAgainRouter.destination(
+                for: payloadMode,
+                imSetup: practiceAgainIMSetup
+            )
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 pathBinding.wrappedValue.append(destination)
             }

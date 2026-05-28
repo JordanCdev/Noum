@@ -1,23 +1,19 @@
-# HANDOFF — M24 deferred slate (round 14): headline the tone-drill WIN in the post-rep coach note
+# HANDOFF — M24 deferred slate (round 15): preserve the just-finished IM scenario/tone on Practice Again
 
 ## Scope
 
-Round 13 (the prior HANDOFF) added the *resolved* read —
-`IMHistorySummary.toneDrillResolved(from:)` — the complement to the
-in-flight tone-drill signal, and threaded it into Ask Noum so the chat
-coach acknowledges a solved tone gap instead of going silent the moment a
-drill is won. Round 13 named the next move and flagged it #1 in its
-"Future moves":
+Round 14 (the prior HANDOFF) headlined the tone-drill WIN on the post-rep
+coach note, closing round-13 "Future move" #1 (Ask Noum already named a
+solved tone gap; the surface the user sees every rep — `CoachReadCard` —
+now names it too, exactly on the crossing rep). Round 14 named the next
+move and flagged it #2 in its "Future moves":
 
-> **The post-rep note should headline the win too.** This round threads the
-> resolved read into Ask Noum; the post-rep `CoachReadCard` still only
-> speaks to a drill *in flight* (round-12 branch 0d, recovering/slipping).
-> The cleanest add: a momentum branch that, when the just-finished rep is
-> the one that pushed a scenario across the bar, headlines "you've solved
-> your calm tone in Difficult Conversation" once. Gating is the subtlety —
-> it must fire on the crossing rep, not repeat every rep thereafter. Likely
-> wants a small "was-resolved-as-of-the-previous-rep" comparison in the
-> finalizer. Pure-helper + deterministic-copy work, no device QA.
+> **Preserve the just-finished IM scenario/tone on "Practice Again".**
+> `SummaryView.onPracticeAgain` re-runs an IM rep with
+> `.imPractice(scenario: nil, tone: nil)`, dropping the user back on the
+> scenario grid even though `imConversationDetails.setup` carries the exact
+> scenario + tone. Small, high-confidence, uses the existing prefill
+> plumbing.
 
 This push closes it.
 
@@ -28,110 +24,94 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- The chat coach now names a solved tone gap (round 13), but the surface
-  the user sees *every single rep* — the post-rep `CoachReadCard` — still
-  only ever says "recovering" / "slipping" while a drill is in flight, and
-  goes quiet the moment the gap closes. A real coach who pushed you on your
-  calm tone in Difficult Conversation for two weeks notices the rep where
-  it *finally holds* and names that win to your face before moving you on.
-  This round gives the post-rep note that read — fired on the crossing rep,
-  once, never nagged again.
+- The Summary screen's "Practice Again" CTA worked clean for Timed,
+  Sudden Death, and Ah-Counter — those modes have no per-rep setup, so
+  relaunching their own surface is the whole story. For IM Mode, the
+  finished rep carries a `setup` (`scenario`, `targetTone`) that fully
+  defines what the user just ran. Hard-coding `imPractice(scenario: nil,
+  tone: nil)` on Practice Again threw that away and made the user reselect
+  the same Difficult Conversation + Calm pair they just spent five minutes
+  inside. The IMPracticeView already consumes `preferredScenario` /
+  `preferredTone` (the same plumbing Quick Start and the path-node CTAs
+  use) — this round threads the finished rep's setup through to it.
 
 ## What shipped
 
-### Track 1 — the primitive (`IMHistorySummary`)
-
-`Noum/IMHistorySummary.swift`:
-
-- New **per-scenario** overload `toneDrillResolved(from:scenario:)` carved
-  out of the existing cross-scenario scan, which now simply maps over it.
-  Same evidence bar (earliest window below the drill bar, latest window
-  holding ≥ `toneDrillResolvedHoldRate`, overall ≥ the drill bar so the
-  active-drill signal has already self-cleared). Pure refactor — the
-  cross-scenario API and its locked behavior are unchanged.
-- This overload is the exact tool the finalizer needs to detect a
-  **crossing rep**: ask "is this scenario resolved counting this rep?" vs.
-  "was it resolved a rep ago?" and the answer isolates the single rep that
-  closed the gap.
-
-### Track 2 — the type plumbing (`PostRepCoachNoteService`)
-
-`Noum/PostRepCoachNoteService.swift`:
-
-- New `PostRepCoachNoteInput` SOLVED trio — `imToneDrillResolved`
-  (`IMToneDrillResolved?`) plus `imToneDrillResolvedScenarioTitle` /
-  `imToneDrillResolvedToneTitle` (display strings, so the service stays
-  decoupled from the IM enums, mirroring the in-flight trajectory trio).
-  All default `nil`; set only on the crossing rep.
-- New **branch 0** at the very top of `metricSentence` — above branch 0a
-  (personal best). A closed prescribed-drill loop is the rarest, most
-  coaching-significant momentum signal, so the win outranks every other
-  note; the upstream once-only gating means it never crowds the other
-  branches on later reps.
-- New voice-shaped `imToneResolvedSentence` (all 7 personas) — the terminal
-  complement to `imToneTrajectorySentence`. Names the outcome ("solved",
-  "turned around") as an observation of the user's *own hit rate*, cites
-  the climb (e.g. "0% to 100%, holding now"), and points to the next
-  target. Never claims a drill *caused* the recovery; never re-prescribes
-  the beaten scenario — the same honesty bar as round 13's chat-coach rule.
-- AI path: a `SOLVED this rep` momentum line in `userPrompt` carrying the
-  same name-once / point-forward / no-causation guidance, so the AI polish
-  layer reads the win the same way the deterministic path does.
-
-### Track 3 — the gating (`PracticeSessionFinalizer`)
+### Track 1 — the pure router (`PracticeSupport.swift`)
 
 `Noum/PracticeSupport.swift`:
 
-- `recordPostRepCoachNote` now computes the crossing for IM reps:
-  `allSessions` already includes the just-finalized rep, so it compares
-  `toneDrillResolved(from: allSessions, scenario:)` against
-  `toneDrillResolved(from: priorSessions, scenario:)` (prior = all minus
-  this rep). **Resolved now AND not a rep ago** ⇒ this rep is the crossing
-  rep ⇒ populate the SOLVED trio. Otherwise the trio stays `nil` (no
-  headline). A scenario already solved before this rep stays quiet; a
-  genuine relapse-then-reclear reads as a new crossing, which is correct.
+- New `SummaryPracticeAgainRouter.destination(for:imSetup:)` placed
+  directly below the `AppDestination` enum it returns. Carved out of
+  `SummaryView`'s path-based init so the destination choice is
+  independent of SwiftUI/`NavigationPath`/`SummaryDataStore` and can be
+  locked under `swift test` without any UI scaffolding.
+- IM-mode reps now route to `.imPractice(scenario:tone:)` populated from
+  the setup the finalizer already stored on `IMConversationDetails.setup`.
+  When the setup is unavailable (e.g. the data-store entry got evicted),
+  the router falls back to `(nil, nil)` — the picker stays as the safe
+  default rather than crashing.
+- The other three modes ignore any IM setup passed alongside them and
+  route to their plain practice destinations. The tests pin this so the
+  cross-pollination can't happen.
 
-### Track 4 — locked the contracts (`NoumTests/NoumTests.swift`)
+### Track 2 — the wiring (`SummaryView.swift`)
 
-- `IMToneDrillResolvedTests` (+4): the per-scenario overload returns the
-  same win the cross-scenario scan does for a single resolved scenario;
-  it's scoped (a resolved Difficult Conversation never surfaces under a
-  Networking query); the **crossing fires on the rep, not before** (5 reps
-  whose latest window holds only 50% → nil; the 6th match → non-nil); and
-  it **does not repeat after crossing** (both the 6-rep and 7-rep states
-  read resolved, so the finalizer's "resolved now AND not a rep ago" check
-  yields no second headline).
-- `PostRepCoachNoteToneResolvedTests` (+5): the win headlines the note
-  (scenario + tone + "0%"/"100%" + "solved", no exclamation); it **outranks
-  a personal best** on the same rep; it falls through honestly when nothing
-  crossed (a personal best headlines instead, no scenario name); and the
-  sentence is voice-shaped, clean, forward-pointing, within the note's
-  character budget, and passes the brand-voice contract across all 7 voices.
+`Noum/SummaryView.swift`:
+
+- Path-based init captures `entry?.imConversationDetails?.setup` once,
+  before the closure, into a local `practiceAgainIMSetup`. The
+  `onPracticeAgain` closure now calls
+  `SummaryPracticeAgainRouter.destination(for: payloadMode, imSetup:
+  practiceAgainIMSetup)` instead of the inline switch. The pop sequence
+  and the 0.05s async hop (separates the store mutation from the nav
+  push, same pattern Ask-Noum uses) are unchanged.
+
+### Track 3 — locked the contract (`NoumTests/NoumTests.swift`)
+
+- New `SummaryPracticeAgainRouterTests` (+5): IM rep re-arms scenario +
+  tone (`difficultConversation` + `.calm` round-trips through the router);
+  IM rep without setup falls back to `.imPractice(nil, nil)` so the picker
+  remains the safe default; Timed routes to `.timedPractice` regardless of
+  whether an IM setup is passed in; Sudden Death routes to
+  `.suddenDeathPractice` regardless of whether an IM setup is passed in;
+  Ah-Counter routes to `.ahCounterPractice` regardless of whether an IM
+  setup is passed in. The last three pin that an IM-shaped setup leaking
+  into a non-IM payload (defensive worst case) cannot mis-route the user.
 
 ### Vision alignment
 
-- **Pillar #5 — Personalized coaching** and **coach-parity stage #4 —
-  Adaptation.** Round 13 let the *chat* coach close the loop on a win;
-  this round closes it on the surface the user actually sees after every
-  rep. A coach who only ever says "keep working on it" and never "you've
-  got this one — next" is nagging, not adapting. The post-rep note now
-  names the terminal state of the loop the moment it's earned.
-- **Anti-goals respected.** No new disconnected AI surface — the read is a
-  deterministic helper over the user's own reps. No hollow celebration: the
-  win fires only on a genuine sub-bar → held turnaround, exactly once, on
-  the crossing rep. No causation claim: the copy and the AI guidance both
-  forbid it. No fabricated data: nil below the evidence bar.
+- **Pillar #4 — Frictionless reps.** The whole "Practice Again" CTA
+  exists so the user can keep reps moving without thinking about the
+  picker. For IM the picker reappearing every rep undercut the entire
+  loop: a user who picked Difficult Conversation + Calm and wanted three
+  reps had to pick the pair three times. This round restores parity with
+  the other modes — Practice Again means "same shape, again" — without
+  taking away the user's ability to switch (the IM view still surfaces
+  its scenario/tone steps; the prefill just spares the re-selection).
+- **Pillar #5 — Personalized coaching.** Round 14 named the win on the
+  crossing rep. The natural next move *after* the user sees that win is
+  another rep in the same scenario to feel the new state hold. The
+  Practice Again button was sending them to the picker instead. This
+  round closes that loop too — the win names itself, then the same CTA
+  drops them straight back into the same scenario + tone for the
+  confirming rep.
+- **Anti-goals respected.** No new AI surface — this is pure
+  navigation-helper plumbing over data the finalizer already wrote. No
+  new persistent state — the setup is read off the existing
+  `IMConversationDetails.setup` field. No coupling between modes — the
+  router fans out by mode, and the non-IM branches don't even look at
+  the IM setup parameter.
 
 ## Files touched
 
-- **Modified:** `Noum/IMHistorySummary.swift` (+per-scenario
-  `toneDrillResolved(from:scenario:)`; cross-scenario version delegates)
-- **Modified:** `Noum/PostRepCoachNoteService.swift` (+SOLVED input trio,
-  +branch 0 in `metricSentence`, +`imToneResolvedSentence`, +AI momentum
-  line)
-- **Modified:** `Noum/PracticeSupport.swift` (+crossing detection in
-  `recordPostRepCoachNote`, +SOLVED args on the `PostRepCoachNoteInput`)
-- **Modified:** `NoumTests/NoumTests.swift` (+9 tests across 2 structs)
+- **Modified:** `Noum/PracticeSupport.swift` (+`SummaryPracticeAgainRouter`
+  next to `AppDestination`)
+- **Modified:** `Noum/SummaryView.swift` (path-based init captures
+  `practiceAgainIMSetup` and the `onPracticeAgain` closure now routes
+  through `SummaryPracticeAgainRouter`)
+- **Modified:** `NoumTests/NoumTests.swift` (+5 tests in
+  `SummaryPracticeAgainRouterTests`)
 - **Modified:** `HANDOFF.md` (this file)
 - **Modified:** `docs/CURRENT_STATE.md` (rolling summary)
 
@@ -143,17 +123,16 @@ into `main`.
 
 The artifact a user can now hold:
 
-**The coach says the win to your face, on the rep you earn it.** Grind your
-calm tone in Difficult Conversation from missing it every time up to landing
-it consistently, and on the very rep that finally pushes you over the line
-the post-rep card stops saying "recovering" and says it plainly: "Your calm
-tone in Difficult Conversation is solved — 0% to 100%, holding now. Target
-met; next one's open." Do another rep in the same scenario and it doesn't
-nag — the win was named once, the coach has moved you on.
+**Practice Again means "same rep, again", on every mode.** Run a
+Difficult Conversation in Calm; the rep wraps; the Summary lands; tap
+Practice Again and you're back inside Difficult Conversation in Calm — no
+detour through the scenario grid, no detour through the tone grid. The
+shortcut works whether the just-finished rep delivered a win, a wobble,
+or the moment the coach finally names a tone gap solved.
 
 ## Future moves
 
-(Updated priority list — round-13 item #1 closed this round; remaining
+(Updated priority list — round-14 item #2 closed this round; remaining
 items carried forward and re-prioritised:)
 
 1. **Make the `LookingAheadCard` itself launch the drill.** Today the
@@ -162,36 +141,33 @@ items carried forward and re-prioritised:)
    `SummaryView`'s init and rendering a subordinate CTA would complete the
    loop on the most-seen post-rep surface. Deferred: new interactive
    recommendation UI wants real-device QA this build host lacks.
-2. **Preserve the just-finished IM scenario/tone on "Practice Again".**
-   `SummaryView.onPracticeAgain` re-runs an IM rep with
-   `.imPractice(scenario: nil, tone: nil)`, dropping the user back on the
-   scenario grid even though `imConversationDetails.setup` carries the exact
-   scenario + tone. Small, high-confidence, uses the existing prefill
-   plumbing.
-3. **Surface the SOLVED win on the summary card itself, not only the coach
-   note.** This round names the win in the `CoachReadCard` prose; the
+2. **Surface the SOLVED win on the summary card itself, not only the coach
+   note.** Round 14 names the win in the `CoachReadCard` prose; the
    `LookingAheadCard`/`HeroScoreCard` still move silently to the next focus.
    A small "you just solved X" ribbon on the crossing rep's summary —
    reading the same `imToneDrillResolved` the note already computes — would
    make the moment unmissable. Deferred: new summary UI wants device QA.
-4. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
+3. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
    `PublicProfileSnapshot` schema work.
-5. **`coachNoteRevealed` cleanup.** Still risky — animation chain
+4. **`coachNoteRevealed` cleanup.** Still risky — animation chain
    interleaving with celebration timing. Worth a dedicated refactor pass
    with proper visual QA (and a real device).
-6. **Rate-limiter live refresh.** Make `AIRateLimiter` an `ObservableObject`
+5. **Rate-limiter live refresh.** Make `AIRateLimiter` an `ObservableObject`
    so the Settings AI-usage card AND the `CoachReadCard` daily-budget hint
    refresh mid-view. Low priority.
 
 ## Build-host limitation (honest note for the next agent)
 
 This environment has **no Xcode and no Swift toolchain**, so nothing in this
-round was compiled or run — not the app, not the test suite. The changes
-were written to match the existing, tested patterns line-for-line: the
-per-scenario `toneDrillResolved` overload is the exact body the
-cross-scenario scan already ran (now extracted, with the scan delegating to
-it); `imToneResolvedSentence` mirrors `imToneTrajectorySentence`'s shape and
-voice switch; the SOLVED input trio mirrors the in-flight trajectory trio;
-and the finalizer crossing block sits beside the existing `imToneProgress`
-computation it parallels. The new tests reuse the `IMToneDrillResolvedTests`
-fixtures and the `PostRepCoachNoteToneTrajectoryTests` `makeInput` shape.
+round was compiled or run — not the app, not the test suite. The change is
+deliberately small and matches the existing, tested patterns line-for-line:
+`SummaryPracticeAgainRouter.destination(for:imSetup:)` is a pure switch
+over `PracticeMode` that returns the same `AppDestination` cases the
+inline switch did before, plus the IM-setup forwarding the router was
+written to add; the captured `practiceAgainIMSetup` is a `let` derived from
+the same `entry?.imConversationDetails` that the init already pulls one
+line earlier into `self.imConversationDetails`; the closure body is
+otherwise byte-identical (same pop sequence, same 0.05s async hop, same
+`append` target). The new tests exercise the router as a pure value
+function — no SwiftUI, no `NavigationPath`, no `SummaryDataStore` — so
+they'll run cleanly under `swift test` when a build host is available.

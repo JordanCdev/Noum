@@ -17495,3 +17495,86 @@ struct SuddenDeathIdempotentFinalizationTests {
         )
     }
 }
+
+// MARK: - Summary "Practice Again" router
+
+/// Locks the contract of `SummaryPracticeAgainRouter` — the pure helper
+/// behind Summary's "Practice Again" CTA.
+///
+/// IM-mode reps re-arm the just-finished scenario + tone instead of
+/// dropping the user back on the picker (the old behavior hard-coded
+/// `scenario: nil, tone: nil` even though `IMConversationDetails.setup`
+/// carries the exact pair). The other modes have no per-rep setup, so the
+/// router must ignore any IM setup passed alongside them — these tests
+/// pin that the cross-pollination can't happen.
+@MainActor
+struct SummaryPracticeAgainRouterTests {
+
+    @Test func imRepReArmsScenarioAndTone() {
+        let setup = IMConversationSetup(
+            scenario: .difficultConversation,
+            targetTone: .calm
+        )
+        let destination = SummaryPracticeAgainRouter.destination(
+            for: .imConversation,
+            imSetup: setup
+        )
+        #expect(destination == .imPractice(
+            scenario: .difficultConversation,
+            tone: .calm
+        ))
+    }
+
+    @Test func imRepWithoutSetupFallsBackToPicker() {
+        let destination = SummaryPracticeAgainRouter.destination(
+            for: .imConversation,
+            imSetup: nil
+        )
+        #expect(destination == .imPractice(scenario: nil, tone: nil))
+    }
+
+    @Test func timedIgnoresImSetup() {
+        let setup = IMConversationSetup(
+            scenario: .workUpdate,
+            targetTone: .confident
+        )
+        #expect(SummaryPracticeAgainRouter.destination(
+            for: .timed,
+            imSetup: setup
+        ) == .timedPractice)
+        #expect(SummaryPracticeAgainRouter.destination(
+            for: .timed,
+            imSetup: nil
+        ) == .timedPractice)
+    }
+
+    @Test func suddenDeathIgnoresImSetup() {
+        let setup = IMConversationSetup(
+            scenario: .networking,
+            targetTone: .warm
+        )
+        #expect(SummaryPracticeAgainRouter.destination(
+            for: .suddenDeath,
+            imSetup: setup
+        ) == .suddenDeathPractice)
+        #expect(SummaryPracticeAgainRouter.destination(
+            for: .suddenDeath,
+            imSetup: nil
+        ) == .suddenDeathPractice)
+    }
+
+    @Test func ahCounterIgnoresImSetup() {
+        let setup = IMConversationSetup(
+            scenario: .socialCatchUp,
+            targetTone: .confident
+        )
+        #expect(SummaryPracticeAgainRouter.destination(
+            for: .ahCounter,
+            imSetup: setup
+        ) == .ahCounterPractice)
+        #expect(SummaryPracticeAgainRouter.destination(
+            for: .ahCounter,
+            imSetup: nil
+        ) == .ahCounterPractice)
+    }
+}

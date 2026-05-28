@@ -55,6 +55,34 @@ enum AppDestination: Hashable {
     case imScenarioDetail(scenario: IMConversationScenario)
 }
 
+/// Pure router for the Summary "Practice Again" CTA. Carved out of
+/// `SummaryView`'s path-based init so the destination choice is
+/// independent of SwiftUI/navigation plumbing and can be locked in tests.
+///
+/// IM-mode reps carry a `setup` (scenario + tone) on the finished rep's
+/// `IMConversationDetails`. Practice Again must re-arm the *same* scenario
+/// and tone the user just ran — dropping back to the picker on every rep
+/// is friction the rest of the modes never inflict on Timed/Sudden Death/
+/// Ah-Counter. The other modes have no per-rep setup to preserve, so they
+/// route to their plain practice destinations.
+enum SummaryPracticeAgainRouter {
+    static func destination(
+        for mode: PracticeMode,
+        imSetup: IMConversationSetup?
+    ) -> AppDestination {
+        switch mode {
+        case .timed: return .timedPractice
+        case .suddenDeath: return .suddenDeathPractice
+        case .ahCounter: return .ahCounterPractice
+        case .imConversation:
+            return .imPractice(
+                scenario: imSetup?.scenario,
+                tone: imSetup?.targetTone
+            )
+        }
+    }
+}
+
 struct SummaryPayload: Identifiable, Hashable {
     let id: UUID
     let mode: PracticeMode
