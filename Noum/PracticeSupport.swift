@@ -151,6 +151,54 @@ enum SummaryLookingAheadRouter {
     }
 }
 
+/// Pure derivation of what tapping the post-rep "Looking ahead" CTA
+/// should do — the destination to push, plus whether the Timed theme
+/// preference should be seeded from the blueprint.
+///
+/// Carved out alongside `SummaryLookingAheadRouter` so the CTA wiring
+/// in `SummaryView.init(payload:navigationPath:)` becomes a
+/// `pathBinding.wrappedValue.append(action.destination)` call without
+/// re-deriving the theme-seed rule or the IM-unavailable fallback. The
+/// router still owns the mode-to-destination switch; this enum stacks
+/// the Timed theme-seed decision on top of it so every "launch the
+/// recommendation" surface (home coach card and post-rep
+/// `LookingAheadCard` as of round 18) reads the same rule.
+///
+/// Theme-seed rule: write the suggested theme into
+/// `timedPractice.selectedTheme` only when the blueprint *itself* asks
+/// for Timed mode AND its `suggestedTheme` is more specific than
+/// `.all`. The IM-unavailable fallback to Timed never seeds — the user
+/// asked for IM, the fallback is a safety net, not a Timed theme
+/// prescription. Mirrors `HomeCoachCard.start()`'s seed gate exactly so
+/// both call sites stay aligned without a shared protocol.
+enum SummaryLookingAheadStarter {
+    struct Action: Equatable {
+        /// Destination to push onto the navigation path.
+        let destination: AppDestination
+        /// Theme to write into `timedPractice.selectedTheme`, or `nil`
+        /// when the caller must not touch the UserDefaults key.
+        let timedThemeToSeed: PromptTheme?
+    }
+
+    static func action(
+        for blueprint: RecommendationBiasBlueprint,
+        imAvailable: Bool
+    ) -> Action {
+        let destination = SummaryLookingAheadRouter.destination(
+            for: blueprint,
+            imAvailable: imAvailable
+        )
+        let themeToSeed: PromptTheme?
+        if blueprint.recommendedMode == .timed,
+           blueprint.suggestedTheme != .all {
+            themeToSeed = blueprint.suggestedTheme
+        } else {
+            themeToSeed = nil
+        }
+        return Action(destination: destination, timedThemeToSeed: themeToSeed)
+    }
+}
+
 struct SummaryPayload: Identifiable, Hashable {
     let id: UUID
     let mode: PracticeMode

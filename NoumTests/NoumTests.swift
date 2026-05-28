@@ -17844,3 +17844,170 @@ struct SummaryLookingAheadRouterTests {
         }
     }
 }
+
+// MARK: - SummaryLookingAheadStarter (round-16 "Future move" #1 closure)
+
+/// Locks the post-rep "Looking ahead" CTA's tap-action derivation —
+/// destination + Timed-theme-seed decision — against the same rules
+/// `HomeCoachCard.start()` already follows. Together with
+/// `SummaryLookingAheadRouterTests` this pins both halves of the
+/// launcher contract: the router decides *where* to land, the Starter
+/// decides whether to *seed the Timed theme on the way*. The CTA
+/// wiring in `SummaryView.init(payload:navigationPath:)` is then a
+/// thin drop-and-push around the Starter's `Action`.
+struct SummaryLookingAheadStarterTests {
+
+    private func blueprint(
+        mode: PracticeMode,
+        scenario: IMConversationScenario? = nil,
+        tone: IMTargetTone? = nil,
+        theme: PromptTheme = .all
+    ) -> RecommendationBiasBlueprint {
+        RecommendationBiasBlueprint(
+            recommendedMode: mode,
+            recommendedTone: tone,
+            recommendedScenario: scenario,
+            focus: "",
+            target: "",
+            modeBenefit: "",
+            whyMode: "",
+            whyNow: "",
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: theme
+        )
+    }
+
+    @Test func timedRecommendationWithSpecificThemeSeedsTheme() {
+        // The canonical happy path — Timed prescription carrying a
+        // narrowed theme should land the user in Timed *and* prime the
+        // theme preference so the picker doesn't drop them on "All".
+        let action = SummaryLookingAheadStarter.action(
+            for: blueprint(mode: .timed, theme: .workCareer),
+            imAvailable: true
+        )
+        #expect(action.destination == .timedPractice)
+        #expect(action.timedThemeToSeed == .workCareer)
+    }
+
+    @Test func timedRecommendationWithAllThemeSkipsSeed() {
+        // `.all` is the neutral "no theme bias" sentinel — seeding it
+        // would write a meaningless value over a user's prior choice.
+        // Stay silent; the launcher writes nothing.
+        let action = SummaryLookingAheadStarter.action(
+            for: blueprint(mode: .timed, theme: .all),
+            imAvailable: true
+        )
+        #expect(action.destination == .timedPractice)
+        #expect(action.timedThemeToSeed == nil)
+    }
+
+    @Test func suddenDeathNeverSeedsTimedTheme() {
+        // Theme is a Timed-mode concept. A Sudden Death prescription
+        // must never write into `timedPractice.selectedTheme`, even if
+        // the blueprint happens to carry a non-`.all` theme.
+        let action = SummaryLookingAheadStarter.action(
+            for: blueprint(mode: .suddenDeath, theme: .workCareer),
+            imAvailable: true
+        )
+        #expect(action.destination == .suddenDeathPractice)
+        #expect(action.timedThemeToSeed == nil)
+    }
+
+    @Test func ahCounterNeverSeedsTimedTheme() {
+        let action = SummaryLookingAheadStarter.action(
+            for: blueprint(mode: .ahCounter, theme: .workCareer),
+            imAvailable: true
+        )
+        #expect(action.destination == .ahCounterPractice)
+        #expect(action.timedThemeToSeed == nil)
+    }
+
+    @Test func imRecommendationCarriesScenarioAndTone() {
+        // IM with a tone-drill signal — both fields carry, theme is
+        // ignored. Mirrors the router's IM branch and confirms the
+        // Starter doesn't fabricate a Timed theme write on an IM path.
+        let action = SummaryLookingAheadStarter.action(
+            for: blueprint(
+                mode: .imConversation,
+                scenario: .difficultConversation,
+                tone: .calm,
+                theme: .workCareer
+            ),
+            imAvailable: true
+        )
+        #expect(action.destination == .imPractice(
+            scenario: .difficultConversation,
+            tone: .calm
+        ))
+        #expect(action.timedThemeToSeed == nil)
+    }
+
+    @Test func imFallbackToTimedSkipsThemeSeed() {
+        // The user intended IM; the device just can't run it. The
+        // router falls back to `.timedPractice` as a safety net —
+        // that's not a Timed-theme prescription. Stay silent on the
+        // theme so the safety-net fallback never overrides a user's
+        // prior theme choice with the IM blueprint's bias.
+        let action = SummaryLookingAheadStarter.action(
+            for: blueprint(
+                mode: .imConversation,
+                scenario: .networking,
+                tone: .warm,
+                theme: .workCareer
+            ),
+            imAvailable: false
+        )
+        #expect(action.destination == .timedPractice)
+        #expect(action.timedThemeToSeed == nil)
+    }
+
+    @Test func destinationParityWithRouterAcrossModes() {
+        // Parity contract: the Starter's destination must equal the
+        // router's for the same blueprint, across every mode and both
+        // IM-availability states. Locks the two surfaces against
+        // future drift the same way the round-17 parity test locks
+        // the two router overloads.
+        let modes: [PracticeMode] = [.timed, .suddenDeath, .ahCounter, .imConversation]
+        let themes: [PromptTheme] = [.all, .workCareer]
+        for mode in modes {
+            for theme in themes {
+                for imAvail in [true, false] {
+                    let bp = blueprint(
+                        mode: mode,
+                        scenario: .networking,
+                        tone: .warm,
+                        theme: theme
+                    )
+                    let viaRouter = SummaryLookingAheadRouter.destination(
+                        for: bp,
+                        imAvailable: imAvail
+                    )
+                    let viaStarter = SummaryLookingAheadStarter.action(
+                        for: bp,
+                        imAvailable: imAvail
+                    ).destination
+                    #expect(viaRouter == viaStarter,
+                            "Destination drift between Router and Starter — mode=\(mode), theme=\(theme), imAvail=\(imAvail)")
+                }
+            }
+        }
+    }
+
+    @Test func themeSeedGateIsThemeAgnosticForNonTimedModes() {
+        // Coverage invariant — for every non-Timed mode, every theme
+        // value (including `.all`) must yield `timedThemeToSeed == nil`.
+        // Prevents a future refactor from accidentally seeding the
+        // theme on a non-Timed launch.
+        let nonTimedModes: [PracticeMode] = [.suddenDeath, .ahCounter, .imConversation]
+        for mode in nonTimedModes {
+            for theme in PromptTheme.allCases {
+                let action = SummaryLookingAheadStarter.action(
+                    for: blueprint(mode: mode, theme: theme),
+                    imAvailable: true
+                )
+                #expect(action.timedThemeToSeed == nil,
+                        "Non-Timed mode \(mode) seeded theme \(theme) — must stay nil.")
+            }
+        }
+    }
+}

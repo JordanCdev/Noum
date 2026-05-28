@@ -46,6 +46,15 @@ struct SummaryView: View {
     /// so the user lands inside a coach reply already in flight.
     var onAskNoumAboutRep: ((String) -> Void)?
 
+    /// Launch the recommendation surfaced by the post-rep "Looking
+    /// ahead" card directly from the summary (closes round-16 "Future
+    /// move" #1). The callback receives the *current* recommendation
+    /// blueprint computed off the live stores, so the path-based init
+    /// can route through `SummaryLookingAheadStarter.action(...)` —
+    /// same destination + same theme-seed gate as `HomeCoachCard`.
+    /// `nil` keeps the card descriptive (previews, legacy callers).
+    var onLookingAheadStart: ((RecommendationBiasBlueprint) -> Void)? = nil
+
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
@@ -948,9 +957,23 @@ struct SummaryView: View {
             // recommended mode is different from the one just finished and
             // we have at least a little baseline signal. Lives at the very
             // bottom of the expandable area so it never competes with the
-            // in-the-moment drill CTA above.
+            // in-the-moment drill CTA above. When `onLookingAheadStart` is
+            // wired, the card becomes a one-tap launcher for the
+            // recommendation (closes round-16 "Future move" #1); when nil,
+            // it stays descriptive — same restraint everywhere else uses.
             if let lookingAhead = lookingAheadHint {
-                LookingAheadCard(hint: lookingAhead)
+                LookingAheadCard(
+                    hint: lookingAhead,
+                    onStart: onLookingAheadStart.map { callback in
+                        // Defer `summaryRecommendation` to tap time so
+                        // the launched blueprint reflects the live
+                        // store state rather than the body-render
+                        // snapshot. SwiftUI view structs hold stable
+                        // refs to the `@StateObject` singletons so the
+                        // computed property reads current values.
+                        { callback(summaryRecommendation) }
+                    }
+                )
             }
         }
     }
@@ -2869,6 +2892,31 @@ extension SummaryView {
             _ = AskNoumStore.shared.injectUserTurn(opener)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 pathBinding.wrappedValue.append(AppDestination.askNoum)
+            }
+        }
+
+        // Looking-ahead launcher — closes round-16 "Future move" #1.
+        // Mirrors `onSelectPracticeMode`'s "clear path then append"
+        // structure so back-from-practice lands on home cleanly (the
+        // user is changing modes, not continuing the just-finished
+        // chain). The destination + Timed theme-seed decision both
+        // route through `SummaryLookingAheadStarter.action(...)` so
+        // this surface and `HomeCoachCard.start()` never drift.
+        self.onLookingAheadStart = { blueprint in
+            let action = SummaryLookingAheadStarter.action(
+                for: blueprint,
+                imAvailable: IMModeAvailability.isAvailable
+            )
+            if let theme = action.timedThemeToSeed {
+                UserDefaults.standard.set(
+                    theme.rawValue,
+                    forKey: "timedPractice.selectedTheme"
+                )
+            }
+            SummaryDataStore.shared.remove(for: payloadId)
+            pathBinding.wrappedValue = NavigationPath()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(action.destination)
             }
         }
     }

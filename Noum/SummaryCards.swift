@@ -573,8 +573,31 @@ struct LookingAheadCard: View {
     }
 
     let hint: Hint
+    /// Optional tap action — when non-nil, the card renders as an
+    /// interactive button that launches the recommended next session
+    /// directly from the post-rep surface (closes round-16 "Future
+    /// move" #1). When nil, the card stays descriptive (back-compat for
+    /// previews and any caller that wants a read-only surface).
+    var onStart: (() -> Void)? = nil
 
     var body: some View {
+        if let onStart {
+            Button(action: onStart) {
+                cardContent(showsAffordance: true)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("summary.lookingAhead.start")
+            .accessibilityLabel(accessibilityCopy)
+            .accessibilityHint(Text("Starts the recommended next session."))
+        } else {
+            cardContent(showsAffordance: false)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityCopy)
+        }
+    }
+
+    @ViewBuilder
+    private func cardContent(showsAffordance: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.forward.circle")
@@ -585,22 +608,31 @@ struct LookingAheadCard: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.8)
+                Spacer(minLength: 0)
+                if showsAffordance {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Text("For your next session, try \(hint.mode.displayLabel).")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(hint.whyMode)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
 
             if !hint.whyNow.isEmpty {
                 Text(hint.whyNow)
                     .font(.caption)
                     .foregroundStyle(.secondary.opacity(0.85))
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -614,8 +646,7 @@ struct LookingAheadCard: View {
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityCopy)
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
     private var accessibilityCopy: String {
