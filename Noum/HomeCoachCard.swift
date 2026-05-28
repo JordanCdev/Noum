@@ -588,16 +588,18 @@ struct HomeCoachCard: View {
                 )
             }
         }
-        navigationPath.append(destination(for: mode))
+        navigationPath.append(destination())
     }
 
-    private func destination(for mode: PracticeMode) -> AppDestination {
-        // Round 17: collapsed into `SummaryLookingAheadRouter` so the
-        // mode-to-destination mapping and the IM-unavailable fallback
-        // live in one tested place. `mode` always matches
-        // `recommendationBlueprint.recommendedMode` at this call site
-        // (the caller reads `recommendedMode` into `mode` before
-        // navigating), so threading the blueprint is the same data.
+    private func destination() -> AppDestination {
+        // Round 18: the `mode` parameter was removed because the router
+        // already reads `recommendedMode` off `recommendationBlueprint`
+        // — passing it in opened a silent-drift hole where a caller could
+        // claim to route a different mode than the blueprint says. The
+        // function is now a one-liner against the same router that
+        // `ContentView.practiceAppDestination(for:)` and (once the
+        // closure-pass UI lands) the post-rep `LookingAheadCard` call
+        // into, so the IM-unavailable fallback stays in one tested place.
         SummaryLookingAheadRouter.destination(
             for: recommendationBlueprint,
             imAvailable: IMModeAvailability.isAvailable

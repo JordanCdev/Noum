@@ -17653,7 +17653,7 @@ struct SummaryLookingAheadRouterTests {
         // IM is the recommendation but the device has IM Mode
         // unconfigured (no AI provider, no backend) — sending the user
         // into IM would just bounce them at IMPracticeView's guard, so
-        // route to Timed instead. Mirrors `HomeCoachCard.destination(for:)`.
+        // route to Timed instead. Mirrors `HomeCoachCard.destination()`.
         let plan = blueprint(
             mode: .imConversation,
             scenario: .networking,

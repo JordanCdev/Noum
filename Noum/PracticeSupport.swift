@@ -105,15 +105,16 @@ enum SummaryPracticeAgainRouter {
 /// data in, pure destination out — no SwiftUI, no nav path, no
 /// availability lookups; the caller owns those.
 ///
-/// As of round 17, both `HomeCoachCard.destination(for:)` and
-/// `ContentView.practiceAppDestination(for:)` route their destination
-/// calculation through this router so the mode-to-destination mapping
-/// and the IM-unavailable fallback live in exactly one place. The two
-/// call sites use the lower-level `destination(for:scenario:tone:imAvailable:)`
-/// overload because they hold the recommended mode + scenario + tone
-/// across two slightly different shapes (a blueprint on the coach card,
-/// a `PracticeSuggestion` in ContentView) — the overload reads only the
-/// three fields the router actually needs and ignores the rest.
+/// As of round 17, both `HomeCoachCard.destination()` (zero-arg as of
+/// round 18) and `ContentView.practiceAppDestination(for:)` route their
+/// destination calculation through this router so the mode-to-destination
+/// mapping and the IM-unavailable fallback live in exactly one place.
+/// `ContentView` calls the lower-level
+/// `destination(for:scenario:tone:imAvailable:)` overload because its
+/// private `PracticeSuggestion` value type holds the three fields the
+/// router reads outside a full `RecommendationBiasBlueprint`;
+/// `HomeCoachCard` holds the blueprint directly and calls the
+/// blueprint-shaped overload.
 enum SummaryLookingAheadRouter {
     static func destination(
         for blueprint: RecommendationBiasBlueprint,
