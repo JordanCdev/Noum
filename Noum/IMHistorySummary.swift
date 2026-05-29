@@ -681,6 +681,63 @@ enum IMHistorySummary {
         }.first
     }
 
+    /// Crossing-detection helper for a tone-drill SOLVED moment in a
+    /// single scenario. Returns the resolved-now read only when the
+    /// just-finished rep is the rep that pushed the scenario across the
+    /// bar — resolved-now reads non-nil AND resolved-without-this-rep
+    /// reads nil. A scenario that was already solved before this rep
+    /// stays quiet (no repeat); a genuine relapse-then-reclear correctly
+    /// reads as a new crossing — same honesty contract round 13's
+    /// `toneDrillResolved(from:scenario:)` ships.
+    ///
+    /// Single source of truth for two post-rep coach surfaces that must
+    /// light up on the *same* rep and never double-celebrate:
+    ///   • the post-rep coach-note (round 14,
+    ///     `PracticeSessionFinalizer.recordPostRepCoachNote`)
+    ///   • the hero score card SOLVED ribbon (round 20,
+    ///     `SummaryView.heroToneDrillResolvedRibbon`)
+    ///
+    /// Both call sites used to repeat the same with-vs-without-this-rep
+    /// comparison locally; routing them through this helper makes the
+    /// "both surfaces fire on exactly one rep" contract enforceable in
+    /// one place instead of two — same hygiene move round 17 made for
+    /// `SummaryLookingAheadRouter`.
+    ///
+    /// `sessions` MUST include the just-finished rep; the helper strips
+    /// it by `id` to compute the "before" read, so callers can pass a
+    /// store-prepended list (`SummaryView`, `sessionStore.sessions`) or
+    /// a finalizer-ordered list (`PracticeSessionFinalizer`,
+    /// `allSessions`) without ordering assumptions.
+    ///
+    /// nil when:
+    ///   • the scenario hasn't crossed the bar
+    ///   • the scenario was already across the bar before this rep
+    ///   • `currentRepId` doesn't match any session in `sessions`
+    ///     (defensive: never invents a victory from a stale id)
+    static func toneDrillCrossing(
+        in sessions: [PracticeSession],
+        scenario: IMConversationScenario,
+        currentRepId: UUID,
+        matchRateThreshold: Double = toneDrillMatchRateThreshold,
+        holdRate: Double = toneDrillResolvedHoldRate
+    ) -> IMToneDrillResolved? {
+        guard sessions.contains(where: { $0.id == currentRepId }) else { return nil }
+        guard let resolvedNow = toneDrillResolved(
+            from: sessions,
+            scenario: scenario,
+            matchRateThreshold: matchRateThreshold,
+            holdRate: holdRate
+        ) else { return nil }
+        let priorSessions = sessions.filter { $0.id != currentRepId }
+        guard toneDrillResolved(
+            from: priorSessions,
+            scenario: scenario,
+            matchRateThreshold: matchRateThreshold,
+            holdRate: holdRate
+        ) == nil else { return nil }
+        return resolvedNow
+    }
+
     /// The tone the user committed to most often among a scenario's
     /// evaluated reps (those that produced a non-empty `actualTone`),
     /// with the date of the most-recent rep that used it. Tiebreak on

@@ -363,10 +363,12 @@ struct SummaryView: View {
 
     /// IM tone-drill SOLVED ribbon for the hero score card, gated to the
     /// *crossing rep* only — the rep that pushed a scenario's hit rate
-    /// over the bar. Mirrors `PracticeSessionFinalizer.recordPostRepCoachNote`'s
-    /// crossing detection byte-for-byte so the SOLVED ribbon on the hero
-    /// and the SOLVED-headlined sentence in the post-rep coach note light
-    /// up on the same rep and never double-celebrate.
+    /// over the bar. Routes through `IMHistorySummary.toneDrillCrossing`
+    /// (round 21) so this surface and the post-rep coach-note (the prose
+    /// SOLVED-headlined sentence in `PracticeSessionFinalizer.
+    /// recordPostRepCoachNote`) share one tested crossing primitive and
+    /// can never drift apart — both light up on the same rep and never
+    /// double-celebrate.
     ///
     /// Returns the display strings (scenario title + tone title) so the
     /// card can render without depending on the iOS-17-gated
@@ -384,28 +386,17 @@ struct SummaryView: View {
         // matching how the finalizer scopes the crossing read.
         guard let details = imConversationDetails else { return nil }
         if #available(iOS 17.0, *) {
-            let sessions = sessionStore.sessions
             // Latest session in the store is the just-finalized rep
-            // (`PracticeSessionStore` prepends). The crossing comparison
-            // mirrors the finalizer: resolved-now reads from all sessions
-            // (including this rep); resolved-before strips the latest so
-            // we can tell which rep closed the gap. resolved now AND not
-            // a rep ago == this rep is the crossing rep. A scenario that
-            // was already solved before this rep stays quiet (no repeat);
-            // a genuine relapse-then-reclear correctly reads as a new
-            // crossing — same shape as the post-rep note logic.
-            guard sessions.first != nil else { return nil }
+            // (`PracticeSessionStore` prepends). Pass its id to the
+            // helper so the with-vs-without-this-rep comparison is
+            // order-independent — same primitive the finalizer uses.
+            guard let currentRepId = sessionStore.sessions.first?.id else { return nil }
             let scenario = details.setup.scenario
-            let priorSessions = Array(sessions.dropFirst())
-            let resolvedNow = IMHistorySummary.toneDrillResolved(
-                from: sessions,
-                scenario: scenario
-            )
-            let resolvedBefore = IMHistorySummary.toneDrillResolved(
-                from: priorSessions,
-                scenario: scenario
-            )
-            guard let crossed = resolvedNow, resolvedBefore == nil else { return nil }
+            guard let crossed = IMHistorySummary.toneDrillCrossing(
+                in: sessionStore.sessions,
+                scenario: scenario,
+                currentRepId: currentRepId
+            ) else { return nil }
             return HeroScoreCard.ToneDrillResolvedRibbon(
                 scenarioTitle: scenario.title,
                 toneTitle: crossed.targetTone.title

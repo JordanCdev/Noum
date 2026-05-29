@@ -15980,6 +15980,240 @@ struct IMToneDrillResolvedTests {
     }
 }
 
+// MARK: - Tone-drill crossing helper (the single source of truth)
+//
+// M24 deferred slate (round 21): the with-vs-without-this-rep crossing
+// predicate used to live in two places — `PracticeSessionFinalizer.
+// recordPostRepCoachNote` (the prose post-rep coach note) and
+// `SummaryView.heroToneDrillResolvedRibbon` (the hero score card SOLVED
+// ribbon). Both surfaces must light up on the *same* rep and never
+// double-celebrate; the round-21 refactor lifts the predicate into
+// `IMHistorySummary.toneDrillCrossing(in:scenario:currentRepId:)` so both
+// call sites route through one tested primitive. These tests lock the
+// helper's positive path, the "already-solved-before stays quiet"
+// negative path, the relapse-then-reclear positive path, the stale-id
+// defensive negative, and order-independence (store-prepended list vs.
+// finalizer-appended list yield the same crossing read).
+
+struct IMToneDrillCrossingTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    @Test func crossingFiresOnTheRepThatClosesTheGap() {
+        // Mirrors `resolvedDetectsCrossingRep` (the round-13 raw-primitive
+        // test) but routes through the round-21 helper. Five reps below
+        // the bar + a sixth rep that lands the tone → the sixth rep is
+        // the crossing rep. The helper must return the resolved read
+        // when called with that rep's id.
+        let priorReps = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -1)
+        ]
+        let crossingRep = imSession(
+            scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0
+        )
+        let allSessions = priorReps + [crossingRep]
+        let crossed = IMHistorySummary.toneDrillCrossing(
+            in: allSessions,
+            scenario: .networking,
+            currentRepId: crossingRep.id
+        )
+        #expect(crossed?.scenario == .networking)
+        #expect(crossed?.targetTone == .confident)
+    }
+
+    @Test func crossingStaysQuietWhenAlreadyResolvedBefore() {
+        // The rep after a crossing rep also reads as resolved — but the
+        // helper must return nil, because the win was already named one
+        // rep ago. This is the "never repeat" contract: the SOLVED
+        // headline (note) and the SOLVED ribbon (hero card) must not
+        // light up on rep #7 just because rep #6 already closed the gap.
+        let throughCrossing = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1)
+        ]
+        let nextRep = imSession(
+            scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0
+        )
+        let allSessions = throughCrossing + [nextRep]
+        // Sanity: both the with-this-rep and without-this-rep reads
+        // are non-nil — so the helper's "before == nil" gate is what
+        // keeps the win from repeating.
+        #expect(IMHistorySummary.toneDrillResolved(from: allSessions, scenario: .networking) != nil)
+        #expect(IMHistorySummary.toneDrillResolved(from: throughCrossing, scenario: .networking) != nil)
+        #expect(IMHistorySummary.toneDrillCrossing(
+            in: allSessions,
+            scenario: .networking,
+            currentRepId: nextRep.id
+        ) == nil)
+    }
+
+    @Test func crossingFiresAgainOnRelapseThenReclear() {
+        // The honesty contract: a scenario that crossed, fell back below
+        // the bar across a fresh window, then climbed again, reads as a
+        // *new* crossing — the user did genuinely re-close the gap. The
+        // round-13 primitive locks this for the raw read; the helper
+        // must surface it the same way through the with-vs-without
+        // comparison.
+        //
+        // Construction: 6 reps that crossed (oldest), then 3 reps that
+        // drop the latest window back below the hold bar, then a 10th
+        // rep that lands the tone and re-clears. With the 10th rep in,
+        // resolved-now reads non-nil; with the 10th rep stripped, the
+        // latest-window-only-lands-1/3 (33% < 60%) read is nil → the
+        // helper returns the fresh crossing.
+        let earlyCrossing = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -12),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -11),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -10),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -9),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -8),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -7)
+        ]
+        let relapseWindow = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -1)
+        ]
+        let reclearRep = imSession(
+            scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: 0
+        )
+        let priorOnly = earlyCrossing + relapseWindow
+        let withReclear = priorOnly + [reclearRep]
+        // Sanity: the relapse pushed the latest window back below the
+        // hold bar, so resolved-before is nil; resolved-now (with the
+        // reclear rep) is non-nil → exactly the crossing the helper
+        // surfaces.
+        #expect(IMHistorySummary.toneDrillResolved(from: priorOnly, scenario: .difficultConversation) == nil)
+        #expect(IMHistorySummary.toneDrillResolved(from: withReclear, scenario: .difficultConversation) != nil)
+        let crossed = IMHistorySummary.toneDrillCrossing(
+            in: withReclear,
+            scenario: .difficultConversation,
+            currentRepId: reclearRep.id
+        )
+        #expect(crossed?.scenario == .difficultConversation)
+        #expect(crossed?.targetTone == .calm)
+    }
+
+    @Test func crossingNilWhenScenarioNeverCrossed() {
+        // A scenario still firmly below the drill bar — the helper must
+        // not invent a victory just because the call site asked. Locks
+        // the primary negative for the recommendation-engine still owns
+        // this scenario; the SOLVED surfaces stay quiet.
+        let belowBar = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",  daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",   daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",  daysOffset: -1)
+        ]
+        let latest = imSession(
+            scenario: .networking, targetTone: .confident, actualTone: "rushed", daysOffset: 0
+        )
+        let allSessions = belowBar + [latest]
+        #expect(IMHistorySummary.toneDrillCrossing(
+            in: allSessions,
+            scenario: .networking,
+            currentRepId: latest.id
+        ) == nil)
+    }
+
+    @Test func crossingNilOnStaleRepId() {
+        // Defensive contract: if `currentRepId` doesn't match any session
+        // in the list, the helper returns nil — it never invents a
+        // victory from a stale id. Without this gate, a refactor that
+        // accidentally passed e.g. the *prior* rep's id while sessions
+        // already excluded it could silently surface a SOLVED moment on
+        // the wrong rep.
+        let throughCrossing = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -5),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0)
+        ]
+        // Sanity: the cross-history read IS resolved — so the helper's
+        // stale-id gate is what keeps it from surfacing.
+        #expect(IMHistorySummary.toneDrillResolved(from: throughCrossing, scenario: .networking) != nil)
+        #expect(IMHistorySummary.toneDrillCrossing(
+            in: throughCrossing,
+            scenario: .networking,
+            currentRepId: UUID()  // a freshly generated id that can't match any session
+        ) == nil)
+    }
+
+    @Test func crossingIsOrderIndependentAcrossCallSites() {
+        // The two call sites pass differently-ordered lists: the
+        // finalizer hands the helper `allSessions` (insertion order),
+        // the SummaryView hands it `sessionStore.sessions` (the store
+        // prepends, so the just-finished rep is at index 0). The helper
+        // must return the same crossing read for both orderings — the
+        // with-vs-without comparison is by id, not by position.
+        let priorReps = [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",        daysOffset: -5),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered",    daysOffset: -4),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -3),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",        daysOffset: -1)
+        ]
+        let crossingRep = imSession(
+            scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: 0
+        )
+        // Finalizer-style ordering: latest rep appended.
+        let finalizerOrdering = priorReps + [crossingRep]
+        // SummaryView-style ordering: latest rep prepended.
+        let storeOrdering = [crossingRep] + priorReps
+        let finalizerCrossing = IMHistorySummary.toneDrillCrossing(
+            in: finalizerOrdering,
+            scenario: .workUpdate,
+            currentRepId: crossingRep.id
+        )
+        let storeCrossing = IMHistorySummary.toneDrillCrossing(
+            in: storeOrdering,
+            scenario: .workUpdate,
+            currentRepId: crossingRep.id
+        )
+        #expect(finalizerCrossing?.scenario == .workUpdate)
+        #expect(finalizerCrossing?.targetTone == .professional)
+        #expect(storeCrossing?.scenario == .workUpdate)
+        #expect(storeCrossing?.targetTone == .professional)
+        // The exact same primitive output across both orderings.
+        #expect(finalizerCrossing == storeCrossing)
+    }
+}
+
 // MARK: - Tone-drill resolved read threaded into the chat coach context
 //
 // The win belongs on the conversational surface: the recommendation card

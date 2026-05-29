@@ -6618,17 +6618,18 @@ enum PracticeSessionFinalizer {
 
             // Crossing detection: headline a solved tone-drill exactly once
             // — on the rep that pushes the scenario across the bar, not on
-            // every rep after. `allSessions` already includes the
-            // just-finalized rep, so comparing the scenario's resolved read
-            // with-vs-without it isolates the single crossing rep: resolved
-            // now AND not resolved a rep ago means this rep is the one that
-            // closed the gap. A scenario that was already solved before this
-            // rep stays quiet (no repeat); a genuine relapse-then-reclear
-            // reads as a new crossing, which is correct.
-            let priorSessions = allSessions.filter { $0.id != session.id }
-            let resolvedNow = IMHistorySummary.toneDrillResolved(from: allSessions, scenario: scenario)
-            let resolvedBefore = IMHistorySummary.toneDrillResolved(from: priorSessions, scenario: scenario)
-            if let crossed = resolvedNow, resolvedBefore == nil {
+            // every rep after. The with-vs-without-this-rep comparison
+            // lives in `IMHistorySummary.toneDrillCrossing` (round 21), so
+            // this surface and the hero score card SOLVED ribbon route
+            // through the same primitive and can never drift apart. A
+            // scenario already solved before this rep stays quiet (no
+            // repeat); a genuine relapse-then-reclear reads as a new
+            // crossing, which is correct.
+            if let crossed = IMHistorySummary.toneDrillCrossing(
+                in: allSessions,
+                scenario: scenario,
+                currentRepId: session.id
+            ) {
                 imToneResolved = crossed
                 imToneResolvedScenarioTitle = scenario.title
                 imToneResolvedToneTitle = crossed.targetTone.title
