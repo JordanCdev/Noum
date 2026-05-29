@@ -17,8 +17,45 @@
 		0B31DDB72E04EA9100DE8F71 /* AWSClientRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0B31DDB62E04EA9100DE8F71 /* AWSClientRuntime */; };
 		0D222222222222222222222223 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 0D222222222222222222222222 /* GoogleSignIn */; };
 		0D333333333333333333333334 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 0D333333333333333333333333 /* GoogleSignInSwift */; };
+		13ADAEE9552495B025EA8F21 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2B592692ED2330951C4E69E7 /* SwiftUI.framework */; };
+		1707DBB82F8EF188001B0638 /* MOTIVATION_SYSTEM.md in Resources */ = {isa = PBXBuildFile; fileRef = 1707DBB72F8EF188001B0638 /* MOTIVATION_SYSTEM.md */; };
+		1707DBBA2F8EF1BC001B0638 /* RewardEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBB92F8EF1BC001B0638 /* RewardEngine.swift */; };
+		1707DBBC2F8EF208001B0638 /* ReinforcementCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBBB2F8EF208001B0638 /* ReinforcementCopy.swift */; };
+		1707DBBE2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md in Resources */ = {isa = PBXBuildFile; fileRef = 1707DBBD2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md */; };
+		1707DBC02F8F0350001B0638 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBBF2F8F0350001B0638 /* ProfileView.swift */; };
+		1707DBC22F8F0446001B0638 /* TranscriptionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC12F8F0446001B0638 /* TranscriptionProvider.swift */; };
+		1707DBC42F8F0456001B0638 /* AWSTranscribeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */; };
+		1707DBC62F8F046D001B0638 /* DeepgramProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */; };
+		1707DBC82F8F0488001B0638 /* GoogleSpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */; };
+		172AAB697E174427D454853A /* SharedNoumState.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA07461F80C69C67D4971B7 /* SharedNoumState.swift */; };
+		175693632FA7E6880092625D /* Claude.MD in Resources */ = {isa = PBXBuildFile; fileRef = 175693622FA7E6810092625D /* Claude.MD */; };
 		1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */; };
 		1774FCF02F849A3000A6D313 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCEF2F849A3000A6D313 /* DesignSystem.swift */; };
+		17A4658F2F93F0CC003BE025 /* AchievementsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A4658E2F93F0CC003BE025 /* AchievementsPage.swift */; };
+		17A465912F94267A003BE025 /* BeatTheBrakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465902F94267A003BE025 /* BeatTheBrakeView.swift */; };
+		17A465932F9426B4003BE025 /* LandThePauseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465922F9426B4003BE025 /* LandThePauseView.swift */; };
+		17A465952F9426EF003BE025 /* PREPStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465942F9426EF003BE025 /* PREPStackView.swift */; };
+		18FE033D26AC8C946B0A26A6 /* NoumWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A166822D783742B7625C3CF /* NoumWidget.swift */; };
+		2977C581512A87BD4743E193 /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C63B55A0192A0DE42D1BA84 /* MessagesView.swift */; };
+		2FB46C81A2E2A52DE7330992 /* WatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 231C7607E1CC00EE43C19EBA /* WatchKit.framework */; };
+		3133BD2530F634A6113FDFE0 /* NoumWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = DCD44EB9C5F375D3493E8BEA /* NoumWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		3EA32DF9D7BCC5D2E02C658C /* NoumWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD78B4DA8DA3A9C4650B058 /* NoumWatchApp.swift */; };
+		3EE70F6EBB76B88F4241AD52 /* PracticeLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98E5F52D1704B06F5C874FFE /* PracticeLiveActivity.swift */; };
+		4674457F0A4AB7B7C3E60289 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8D178F5A360EC16F0C02AF21 /* ActivityKit.framework */; };
+		4AB5A5613220456EC37D9EE7 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F11DC072DAD18D124AFDE91 /* WidgetKit.framework */; };
+		5CDFB658B4ED30C5843031AC /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CA69724AABCFA7930BBC79F7 /* Foundation.framework */; };
+		5E6E68109887A7962371DDCB /* PracticeLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8EAA5CA5C96E24E4D96A6C /* PracticeLiveActivityAttributes.swift */; };
+		6E2B9848CF1EC44CF7E17B45 /* NoumMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 230560D9003F4D73ABCAE0D9 /* NoumMessages.swift */; };
+		7C9424CFC506B5BCEE708A03 /* SharedNoumState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11E06D1FE23DF175C6CC851 /* SharedNoumState.swift */; };
+		8B64D56C09C14CA5B5EC1D0D /* WatchHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A439224BF78FD71FB3B7381 /* WatchHomeView.swift */; };
+		8D2C2D47F541AF3B80DE677A /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2B592692ED2330951C4E69E7 /* SwiftUI.framework */; };
+		ACB38E6991178A3054A441EA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7B1BA4F7358AFC0DEFDA505A /* Foundation.framework */; };
+		BFD6C0EEDF83B3B4CF797CA7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E57054D9722C05C6474E93A4 /* SwiftUI.framework */; };
+		C34B895CCCF8459667D277B2 /* Messages.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AACBAB3F5BA5ABC6D6075F43 /* Messages.framework */; };
+		C8B9B37F4539A06C8596D8F6 /* NoumMessages.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F24BD37964A75728C959AC6D /* NoumMessages.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E4FDFFBF1F790A8008E8DE0D /* SharedNoumState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1113001713A266D6D38CA1E /* SharedNoumState.swift */; };
+		F92B855B386524DF5D8FE943 /* NoumWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0916AE3C6275D4318B3882 /* NoumWidgetBundle.swift */; };
+		FF7D35A8CDD2ECCF744DBD91 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CA69724AABCFA7930BBC79F7 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,14 +73,85 @@
 			remoteGlobalIDString = 0B981F6B2D44610E008F4158;
 			remoteInfo = Noum;
 		};
+		172F7CC604B941F884D1C77E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0B981F642D44610E008F4158 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 74A34FD038249080673A537A;
+			remoteInfo = NoumMessages;
+		};
+		5536935E401356DC5FE7F675 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0B981F642D44610E008F4158 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A5968C998A1F007A54E4F76E;
+			remoteInfo = NoumWidget;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		924DBA80596839F9D4518872 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3133BD2530F634A6113FDFE0 /* NoumWidget.appex in Embed App Extensions */,
+				C8B9B37F4539A06C8596D8F6 /* NoumMessages.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0B981F6C2D44610E008F4158 /* Noum.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noum.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B981F7C2D446110008F4158 /* NoumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B981F862D446110008F4158 /* NoumUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoumUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		127484EF6C0F21727546072B /* NoumWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoumWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1707DBB72F8EF188001B0638 /* MOTIVATION_SYSTEM.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = MOTIVATION_SYSTEM.md; sourceTree = "<group>"; };
+		1707DBB92F8EF1BC001B0638 /* RewardEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewardEngine.swift; sourceTree = "<group>"; };
+		1707DBBB2F8EF208001B0638 /* ReinforcementCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReinforcementCopy.swift; sourceTree = "<group>"; };
+		1707DBBD2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = EXPERIENCE_FRAMEWORK.md; sourceTree = "<group>"; };
+		1707DBBF2F8F0350001B0638 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		1707DBC12F8F0446001B0638 /* TranscriptionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionProvider.swift; sourceTree = "<group>"; };
+		1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWSTranscribeProvider.swift; sourceTree = "<group>"; };
+		1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepgramProvider.swift; sourceTree = "<group>"; };
+		1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSpeechProvider.swift; sourceTree = "<group>"; };
+		175693622FA7E6810092625D /* Claude.MD */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Claude.MD; sourceTree = "<group>"; };
 		1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRecordingManager.swift; sourceTree = "<group>"; };
 		1774FCEF2F849A3000A6D313 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		17A4658E2F93F0CC003BE025 /* AchievementsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementsPage.swift; sourceTree = "<group>"; };
+		17A465902F94267A003BE025 /* BeatTheBrakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeatTheBrakeView.swift; sourceTree = "<group>"; };
+		17A465922F9426B4003BE025 /* LandThePauseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandThePauseView.swift; sourceTree = "<group>"; };
+		17A465942F9426EF003BE025 /* PREPStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PREPStackView.swift; sourceTree = "<group>"; };
+		1AD78B4DA8DA3A9C4650B058 /* NoumWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoumWatchApp.swift; sourceTree = "<group>"; };
+		230560D9003F4D73ABCAE0D9 /* NoumMessages.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoumMessages.swift; sourceTree = "<group>"; };
+		231C7607E1CC00EE43C19EBA /* WatchKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS.sdk/System/Library/Frameworks/WatchKit.framework; sourceTree = DEVELOPER_DIR; };
+		2A439224BF78FD71FB3B7381 /* WatchHomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchHomeView.swift; sourceTree = "<group>"; };
+		2B592692ED2330951C4E69E7 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/SwiftUI.framework; sourceTree = DEVELOPER_DIR; };
+		2C0F2BA0EC1C2CE8A3B76E3B /* NoumWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = NoumWidget.entitlements; sourceTree = "<group>"; };
+		2F11DC072DAD18D124AFDE91 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/WidgetKit.framework; sourceTree = DEVELOPER_DIR; };
+		3506A230A21D43C0B0E6C16D /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		5C63B55A0192A0DE42D1BA84 /* MessagesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MessagesView.swift; sourceTree = "<group>"; };
+		5E109AED7C3FEDA6BEBE3AC6 /* NoumWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = NoumWatch.entitlements; sourceTree = "<group>"; };
+		5F0916AE3C6275D4318B3882 /* NoumWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoumWidgetBundle.swift; sourceTree = "<group>"; };
+		6770A6B692DC634FF4FB0202 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7B1BA4F7358AFC0DEFDA505A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		89956F692F20344982DC39EE /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8D178F5A360EC16F0C02AF21 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/ActivityKit.framework; sourceTree = DEVELOPER_DIR; };
+		98E5F52D1704B06F5C874FFE /* PracticeLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PracticeLiveActivity.swift; sourceTree = "<group>"; };
+		9A166822D783742B7625C3CF /* NoumWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoumWidget.swift; sourceTree = "<group>"; };
+		9C8EAA5CA5C96E24E4D96A6C /* PracticeLiveActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PracticeLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		AACBAB3F5BA5ABC6D6075F43 /* Messages.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Messages.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Messages.framework; sourceTree = DEVELOPER_DIR; };
+		ABA07461F80C69C67D4971B7 /* SharedNoumState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedNoumState.swift; sourceTree = "<group>"; };
+		B1113001713A266D6D38CA1E /* SharedNoumState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedNoumState.swift; sourceTree = "<group>"; };
+		CA69724AABCFA7930BBC79F7 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		D4A6C8D931ABA8B8DB3206A9 /* NoumMessages.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = NoumMessages.entitlements; sourceTree = "<group>"; };
+		DCD44EB9C5F375D3493E8BEA /* NoumWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NoumWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E57054D9722C05C6474E93A4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS.sdk/System/Library/Frameworks/SwiftUI.framework; sourceTree = DEVELOPER_DIR; };
+		F11E06D1FE23DF175C6CC851 /* SharedNoumState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedNoumState.swift; sourceTree = "<group>"; };
+		F24BD37964A75728C959AC6D /* NoumMessages.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NoumMessages.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -109,12 +217,61 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		79BEC40D5690148BB089EAA1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFD6C0EEDF83B3B4CF797CA7 /* SwiftUI.framework in Frameworks */,
+				2FB46C81A2E2A52DE7330992 /* WatchKit.framework in Frameworks */,
+				ACB38E6991178A3054A441EA /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D7D6607354CC4FD39E877DC6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FF7D35A8CDD2ECCF744DBD91 /* Foundation.framework in Frameworks */,
+				4AB5A5613220456EC37D9EE7 /* WidgetKit.framework in Frameworks */,
+				13ADAEE9552495B025EA8F21 /* SwiftUI.framework in Frameworks */,
+				4674457F0A4AB7B7C3E60289 /* ActivityKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F07E50ABB38A9303C46570BA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CDFB658B4ED30C5843031AC /* Foundation.framework in Frameworks */,
+				C34B895CCCF8459667D277B2 /* Messages.framework in Frameworks */,
+				8D2C2D47F541AF3B80DE677A /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0036DFAF3F4CBE7CDEE34467 /* NoumWidget */ = {
+			isa = PBXGroup;
+			children = (
+				9A166822D783742B7625C3CF /* NoumWidget.swift */,
+				5F0916AE3C6275D4318B3882 /* NoumWidgetBundle.swift */,
+				98E5F52D1704B06F5C874FFE /* PracticeLiveActivity.swift */,
+				3506A230A21D43C0B0E6C16D /* Info.plist */,
+				2C0F2BA0EC1C2CE8A3B76E3B /* NoumWidget.entitlements */,
+				ABA07461F80C69C67D4971B7 /* SharedNoumState.swift */,
+				9C8EAA5CA5C96E24E4D96A6C /* PracticeLiveActivityAttributes.swift */,
+			);
+			path = NoumWidget;
+			sourceTree = "<group>";
+		};
 		0B31DDBB2E04EDE800DE8F71 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				D332CC035AC070A05E34D827 /* iOS */,
+				E57054D9722C05C6474E93A4 /* SwiftUI.framework */,
+				231C7607E1CC00EE43C19EBA /* WatchKit.framework */,
+				7B1BA4F7358AFC0DEFDA505A /* Foundation.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -122,6 +279,7 @@
 		0B981F632D44610E008F4158 = {
 			isa = PBXGroup;
 			children = (
+				175693622FA7E6810092625D /* Claude.MD */,
 				0B981F6E2D44610E008F4158 /* Noum */,
 				0B981F7F2D446110008F4158 /* NoumTests */,
 				0B981F892D446110008F4158 /* NoumUITests */,
@@ -129,6 +287,22 @@
 				0B981F6D2D44610E008F4158 /* Products */,
 				1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */,
 				1774FCEF2F849A3000A6D313 /* DesignSystem.swift */,
+				1707DBB72F8EF188001B0638 /* MOTIVATION_SYSTEM.md */,
+				1707DBB92F8EF1BC001B0638 /* RewardEngine.swift */,
+				1707DBBB2F8EF208001B0638 /* ReinforcementCopy.swift */,
+				1707DBBD2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md */,
+				1707DBBF2F8F0350001B0638 /* ProfileView.swift */,
+				1707DBC12F8F0446001B0638 /* TranscriptionProvider.swift */,
+				1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */,
+				1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */,
+				1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */,
+				17A4658E2F93F0CC003BE025 /* AchievementsPage.swift */,
+				17A465902F94267A003BE025 /* BeatTheBrakeView.swift */,
+				17A465922F9426B4003BE025 /* LandThePauseView.swift */,
+				17A465942F9426EF003BE025 /* PREPStackView.swift */,
+				0036DFAF3F4CBE7CDEE34467 /* NoumWidget */,
+				387658183637424FEDE9CFE7 /* NoumWatch */,
+				BA432DC5C997F80FB1F9CE15 /* NoumMessages */,
 			);
 			sourceTree = "<group>";
 		};
@@ -138,8 +312,47 @@
 				0B981F6C2D44610E008F4158 /* Noum.app */,
 				0B981F7C2D446110008F4158 /* NoumTests.xctest */,
 				0B981F862D446110008F4158 /* NoumUITests.xctest */,
+				DCD44EB9C5F375D3493E8BEA /* NoumWidget.appex */,
+				127484EF6C0F21727546072B /* NoumWatch.app */,
+				F24BD37964A75728C959AC6D /* NoumMessages.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		387658183637424FEDE9CFE7 /* NoumWatch */ = {
+			isa = PBXGroup;
+			children = (
+				1AD78B4DA8DA3A9C4650B058 /* NoumWatchApp.swift */,
+				2A439224BF78FD71FB3B7381 /* WatchHomeView.swift */,
+				F11E06D1FE23DF175C6CC851 /* SharedNoumState.swift */,
+				6770A6B692DC634FF4FB0202 /* Info.plist */,
+				5E109AED7C3FEDA6BEBE3AC6 /* NoumWatch.entitlements */,
+			);
+			path = NoumWatch;
+			sourceTree = "<group>";
+		};
+		BA432DC5C997F80FB1F9CE15 /* NoumMessages */ = {
+			isa = PBXGroup;
+			children = (
+				230560D9003F4D73ABCAE0D9 /* NoumMessages.swift */,
+				5C63B55A0192A0DE42D1BA84 /* MessagesView.swift */,
+				B1113001713A266D6D38CA1E /* SharedNoumState.swift */,
+				89956F692F20344982DC39EE /* Info.plist */,
+				D4A6C8D931ABA8B8DB3206A9 /* NoumMessages.entitlements */,
+			);
+			path = NoumMessages;
+			sourceTree = "<group>";
+		};
+		D332CC035AC070A05E34D827 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				CA69724AABCFA7930BBC79F7 /* Foundation.framework */,
+				2F11DC072DAD18D124AFDE91 /* WidgetKit.framework */,
+				2B592692ED2330951C4E69E7 /* SwiftUI.framework */,
+				8D178F5A360EC16F0C02AF21 /* ActivityKit.framework */,
+				AACBAB3F5BA5ABC6D6075F43 /* Messages.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -152,10 +365,13 @@
 				0B981F682D44610E008F4158 /* Sources */,
 				0B981F692D44610E008F4158 /* Frameworks */,
 				0B981F6A2D44610E008F4158 /* Resources */,
+				924DBA80596839F9D4518872 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				311EEBD583D7DB71AD1027B7 /* PBXTargetDependency */,
+				60CD7358A0B9AD9BDE83CE9D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0B981F6E2D44610E008F4158 /* Noum */,
@@ -194,8 +410,6 @@
 				0B981F7F2D446110008F4158 /* NoumTests */,
 			);
 			name = NoumTests;
-			packageProductDependencies = (
-			);
 			productName = NoumTests;
 			productReference = 0B981F7C2D446110008F4158 /* NoumTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -217,11 +431,60 @@
 				0B981F892D446110008F4158 /* NoumUITests */,
 			);
 			name = NoumUITests;
-			packageProductDependencies = (
-			);
 			productName = NoumUITests;
 			productReference = 0B981F862D446110008F4158 /* NoumUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		60C6CC08D80D001F2B12B6F9 /* NoumWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB67288597615F0D5F394B89 /* Build configuration list for PBXNativeTarget "NoumWatch" */;
+			buildPhases = (
+				7D85A4556EFA4BC6DD72C737 /* Sources */,
+				79BEC40D5690148BB089EAA1 /* Frameworks */,
+				7CFEF2368AB84F5800C5796D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NoumWatch;
+			productName = NoumWatch;
+			productReference = 127484EF6C0F21727546072B /* NoumWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		74A34FD038249080673A537A /* NoumMessages */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 015E9C1A3955AC14BB839A07 /* Build configuration list for PBXNativeTarget "NoumMessages" */;
+			buildPhases = (
+				08ADF00BF72A12993938A252 /* Sources */,
+				F07E50ABB38A9303C46570BA /* Frameworks */,
+				0C242371E4D3995222C13F9D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NoumMessages;
+			productName = NoumMessages;
+			productReference = F24BD37964A75728C959AC6D /* NoumMessages.appex */;
+			productType = "com.apple.product-type.app-extension.messages";
+		};
+		A5968C998A1F007A54E4F76E /* NoumWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D02CB8C887E56A2EF860234 /* Build configuration list for PBXNativeTarget "NoumWidget" */;
+			buildPhases = (
+				0ACFB5ABFA60290BBEBC2D81 /* Sources */,
+				D7D6607354CC4FD39E877DC6 /* Frameworks */,
+				3DB3A5C936251E20710A8568 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NoumWidget;
+			productName = NoumWidget;
+			productReference = DCD44EB9C5F375D3493E8BEA /* NoumWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -268,6 +531,9 @@
 				0B981F6B2D44610E008F4158 /* Noum */,
 				0B981F7B2D446110008F4158 /* NoumTests */,
 				0B981F852D446110008F4158 /* NoumUITests */,
+				A5968C998A1F007A54E4F76E /* NoumWidget */,
+				60C6CC08D80D001F2B12B6F9 /* NoumWatch */,
+				74A34FD038249080673A537A /* NoumMessages */,
 			);
 		};
 /* End PBXProject section */
@@ -277,6 +543,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				175693632FA7E6880092625D /* Claude.MD in Resources */,
+				1707DBB82F8EF188001B0638 /* MOTIVATION_SYSTEM.md in Resources */,
+				1707DBBE2F8EF5FF001B0638 /* EXPERIENCE_FRAMEWORK.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,14 +563,68 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0C242371E4D3995222C13F9D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3DB3A5C936251E20710A8568 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7CFEF2368AB84F5800C5796D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		08ADF00BF72A12993938A252 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6E2B9848CF1EC44CF7E17B45 /* NoumMessages.swift in Sources */,
+				2977C581512A87BD4743E193 /* MessagesView.swift in Sources */,
+				E4FDFFBF1F790A8008E8DE0D /* SharedNoumState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0ACFB5ABFA60290BBEBC2D81 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				18FE033D26AC8C946B0A26A6 /* NoumWidget.swift in Sources */,
+				F92B855B386524DF5D8FE943 /* NoumWidgetBundle.swift in Sources */,
+				3EE70F6EBB76B88F4241AD52 /* PracticeLiveActivity.swift in Sources */,
+				172AAB697E174427D454853A /* SharedNoumState.swift in Sources */,
+				5E6E68109887A7962371DDCB /* PracticeLiveActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0B981F682D44610E008F4158 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				17A465912F94267A003BE025 /* BeatTheBrakeView.swift in Sources */,
 				1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */,
+				1707DBC42F8F0456001B0638 /* AWSTranscribeProvider.swift in Sources */,
+				1707DBC02F8F0350001B0638 /* ProfileView.swift in Sources */,
+				1707DBBC2F8EF208001B0638 /* ReinforcementCopy.swift in Sources */,
+				1707DBC62F8F046D001B0638 /* DeepgramProvider.swift in Sources */,
+				1707DBC22F8F0446001B0638 /* TranscriptionProvider.swift in Sources */,
+				1707DBC82F8F0488001B0638 /* GoogleSpeechProvider.swift in Sources */,
+				1707DBBA2F8EF1BC001B0638 /* RewardEngine.swift in Sources */,
+				17A4658F2F93F0CC003BE025 /* AchievementsPage.swift in Sources */,
+				17A465952F9426EF003BE025 /* PREPStackView.swift in Sources */,
+				17A465932F9426B4003BE025 /* LandThePauseView.swift in Sources */,
 				1774FCF02F849A3000A6D313 /* DesignSystem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -320,6 +643,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7D85A4556EFA4BC6DD72C737 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3EA32DF9D7BCC5D2E02C658C /* NoumWatchApp.swift in Sources */,
+				8B64D56C09C14CA5B5EC1D0D /* WatchHomeView.swift in Sources */,
+				7C9424CFC506B5BCEE708A03 /* SharedNoumState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -332,6 +665,18 @@
 			isa = PBXTargetDependency;
 			target = 0B981F6B2D44610E008F4158 /* Noum */;
 			targetProxy = 0B981F872D446110008F4158 /* PBXContainerItemProxy */;
+		};
+		311EEBD583D7DB71AD1027B7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = NoumWidget;
+			target = A5968C998A1F007A54E4F76E /* NoumWidget */;
+			targetProxy = 5536935E401356DC5FE7F675 /* PBXContainerItemProxy */;
+		};
+		60CD7358A0B9AD9BDE83CE9D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = NoumMessages;
+			target = 74A34FD038249080673A537A /* NoumMessages */;
+			targetProxy = 172F7CC604B941F884D1C77E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -389,7 +734,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -448,7 +793,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -465,23 +810,19 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Noum/Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Capture Speech Input";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -496,23 +837,19 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_ASSET_PATHS = "\"Noum/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Noum/Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Capture Speech Input";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Capture Speech Input";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -526,10 +863,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
-				MARKETING_VERSION = 1.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.NoumTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -544,10 +881,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
-				MARKETING_VERSION = 1.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.NoumTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -561,9 +898,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.NoumUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -577,9 +914,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.NoumUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -589,9 +926,159 @@
 			};
 			name = Release;
 		};
+		36A83E6BC5B42B593E4F845F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = NoumWatch/NoumWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NoumWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Noum;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jordancoaten.noum;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = NO;
+				SUPPORTED_PLATFORMS = "watchsimulator watchos";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		410CACE9B0F19A3AE0F0125B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = NoumWidget/NoumWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				INFOPLIST_FILE = NoumWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.NoumWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4A7AB7AD33EE7624B4018C5A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = NoumWidget/NoumWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				INFOPLIST_FILE = NoumWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.NoumWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		618B09524D59BADF0C8CDB65 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = NoumWatch/NoumWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NoumWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Noum;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jordancoaten.noum;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = NO;
+				SUPPORTED_PLATFORMS = "watchsimulator watchos";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		B21E53573F80CF1FB34D28AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = NoumMessages/NoumMessages.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				INFOPLIST_FILE = NoumMessages/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.NoumMessages;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C3F9249D6E50ABCE8DC6EFE2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = NoumMessages/NoumMessages.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				INFOPLIST_FILE = NoumMessages/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jordancoaten.noum.NoumMessages;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		015E9C1A3955AC14BB839A07 /* Build configuration list for PBXNativeTarget "NoumMessages" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B21E53573F80CF1FB34D28AF /* Release */,
+				C3F9249D6E50ABCE8DC6EFE2 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0B981F672D44610E008F4158 /* Build configuration list for PBXProject "Noum" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -624,6 +1111,24 @@
 			buildConfigurations = (
 				0B981F972D446110008F4158 /* Debug */,
 				0B981F982D446110008F4158 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4D02CB8C887E56A2EF860234 /* Build configuration list for PBXNativeTarget "NoumWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A7AB7AD33EE7624B4018C5A /* Release */,
+				410CACE9B0F19A3AE0F0125B /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB67288597615F0D5F394B89 /* Build configuration list for PBXNativeTarget "NoumWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				36A83E6BC5B42B593E4F845F /* Debug */,
+				618B09524D59BADF0C8CDB65 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

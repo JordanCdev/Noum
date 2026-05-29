@@ -84,7 +84,9 @@ final class PremiumManager: ObservableObject {
 
     /// Fallback purchase for when StoreKit products aren't loaded (simulated)
     func purchaseSimulated() {
+        #if DEBUG
         upgradeToPremium()
+        #endif
     }
 
     // MARK: - Restore
@@ -152,11 +154,6 @@ final class PremiumManager: ObservableObject {
     // MARK: - Manual Entitlement (for testing / promo codes)
 
     func upgradeToPremium() {
-        isPremium = true
-        UserDefaults.standard.set(true, forKey: storageKey)
-    }
-
-    func restorePurchase() {
         isPremium = true
         UserDefaults.standard.set(true, forKey: storageKey)
     }
@@ -303,63 +300,94 @@ struct PaywallView: View {
             )
             .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 28) {
-                    // Close button
-                    HStack {
-                        Spacer()
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.headline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.5))
-                                .frame(width: 36, height: 36)
-                                .background(Color.white.opacity(0.1), in: Circle())
+            VStack(spacing: 0) {
+                // Scrollable content — hero + feature lists
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 28) {
+                        // Close button
+                        HStack {
+                            Spacer()
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(0.5))
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.white.opacity(0.1), in: Circle())
+                            }
+                            .accessibilityLabel("Close")
                         }
-                    }
-                    .padding(.top, 8)
+                        .padding(.top, 8)
 
-                    // Hero
-                    VStack(spacing: 16) {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [proColor, AppColor.proLight],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                        // Hero
+                        VStack(spacing: 16) {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [proColor, AppColor.proLight],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .shadow(color: proColor.opacity(0.4), radius: 20, y: 8)
+                                .shadow(color: proColor.opacity(0.4), radius: 20, y: 8)
 
-                        Text("Upgrade to Pro")
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            Text("Upgrade to Pro")
+                                .font(.system(size: 32, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
 
-                        Text("Unlock the full coaching experience")
-                            .font(.body)
-                            .foregroundStyle(.white.opacity(0.6))
+                            Text("Unlock the full coaching experience")
+                                .font(.body)
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+
+                        // Already included — free
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Already included — free")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.5))
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                freeFeatureRow(icon: "mic.fill", text: "Classic practice mode")
+                                freeFeatureRow(icon: "brain.head.profile", text: "AI-powered scoring")
+                                freeFeatureRow(icon: "clock.arrow.circlepath", text: "Session history")
+                                freeFeatureRow(icon: "flame.fill", text: "Streaks & daily challenges")
+                                freeFeatureRow(icon: "person.fill.checkmark", text: "Coaching onboarding")
+                            }
+                        }
+                        .padding(Spacing.lg)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+
+                        // Pro features
+                        VStack(spacing: 0) {
+                            featureRow(icon: "text.magnifyingglass", title: "Coach mode", description: "Full transcript-led practice with deeper feedback")
+                            featureRow(icon: "text.quote", title: "Live transcript", description: "See your words in real time as you speak")
+                            featureRow(icon: "video.fill", title: "Video recording", description: "Record yourself and review your delivery")
+                            featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler tracking", description: "Detect and reduce verbal crutches")
+                            featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend analytics", description: "Track improvement across sessions")
+                            featureRow(icon: "person.2.wave.2.fill", title: "Unlimited async challenges", description: "Challenge friends to the same prompt")
+                            featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI video analysis", description: "Nonverbal coaching — 5 analyses/month")
+                            featureRow(icon: "tray.full.fill", title: "Saved transcripts", description: "Review and compare past sessions")
+                        }
+                        .padding(4)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+
+                        Spacer(minLength: 16)
                     }
+                    .padding(.horizontal, 20)
+                }
 
-                    // Features
-                    VStack(spacing: 0) {
-                        featureRow(icon: "text.magnifyingglass", title: "Coach Mode", description: "Full transcript-led practice with deeper feedback")
-                        featureRow(icon: "text.quote", title: "Live Transcript", description: "See your words in real time as you speak")
-                        featureRow(icon: "video.fill", title: "Video Recording", description: "Record yourself and review your delivery")
-                        featureRow(icon: "waveform.badge.magnifyingglass", title: "Filler Tracking", description: "Detect and reduce verbal crutches")
-                        featureRow(icon: "chart.line.uptrend.xyaxis", title: "Trend Analytics", description: "Track improvement across sessions")
-                        featureRow(icon: "person.2.wave.2.fill", title: "Unlimited Async Challenges", description: "Challenge friends to the same prompt")
-                        featureRow(icon: "sparkles.rectangle.stack.fill", title: "AI Video Analysis", description: "Nonverbal coaching — 5 analyses/month")
-                        featureRow(icon: "tray.full.fill", title: "Saved Transcripts", description: "Review and compare past sessions")
-                    }
-                    .padding(4)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-
+                // Sticky footer — plan selector + CTA always visible
+                VStack(spacing: 16) {
                     // Plan selector
                     HStack(spacing: 12) {
                         ForEach(PlanOption.allCases) { plan in
@@ -367,45 +395,46 @@ struct PaywallView: View {
                         }
                     }
 
-                    // CTA
-                    VStack(spacing: 12) {
-                        Button {
-                            purchasePremium()
-                        } label: {
-                            HStack(spacing: 8) {
-                                if isPurchasing {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Image(systemName: "crown.fill")
-                                        .font(.headline)
-                                }
-                                Text(isPurchasing ? "Processing..." : "Subscribe Now")
-                                    .font(.headline.weight(.bold))
+                    // Subscribe button
+                    Button {
+                        purchasePremium()
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isPurchasing {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "crown.fill")
+                                    .font(.headline)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.md)
-                            .background(
-                                LinearGradient(
-                                    colors: [proColor, proColor.opacity(0.8)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(.white)
-                            .shadow(color: proColor.opacity(0.4), radius: 16, y: 6)
+                            Text(isPurchasing ? "Processing\u{2026}" : "Subscribe")
+                                .font(.headline.weight(.bold))
                         }
-                        .buttonStyle(.pressable)
-                        .disabled(isPurchasing)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md)
+                        .background(
+                            LinearGradient(
+                                colors: [proColor, proColor.opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            in: Capsule()
+                        )
+                        .foregroundStyle(.white)
+                        .shadow(color: proColor.opacity(0.4), radius: 16, y: 6)
+                    }
+                    .buttonStyle(.pressable)
+                    .disabled(isPurchasing)
+                    .accessibilityLabel(isPurchasing ? "Processing purchase" : "Subscribe to Noum Pro")
 
-                        if let errorMessage {
-                            Text(errorMessage)
-                                .font(.caption)
-                                .foregroundStyle(.red.opacity(0.8))
-                        }
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red.opacity(0.8))
+                    }
 
-                        Button("Restore Purchase") {
+                    HStack(spacing: 16) {
+                        Button("Restore") {
                             Task {
                                 await premium.restorePurchases()
                                 if premium.isPremium {
@@ -416,14 +445,27 @@ struct PaywallView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.5))
 
-                        Text("Cancel anytime. No commitment.")
-                            .font(.caption)
+                        Text("·")
+                            .foregroundStyle(.white.opacity(0.2))
+
+                        Text("Cancel anytime.")
+                            .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.3))
                     }
-
-                    Spacer(minLength: 30)
                 }
                 .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.04, green: 0.02, blue: 0.10).opacity(0),
+                            Color(red: 0.07, green: 0.03, blue: 0.14)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
             }
 
             if showSuccess {
@@ -466,6 +508,18 @@ struct PaywallView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, Spacing.md)
+    }
+
+    private func freeFeatureRow(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(AppColor.positive)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+        }
     }
 
     private func planCard(_ plan: PlanOption) -> some View {
@@ -538,12 +592,20 @@ struct PaywallView: View {
                     }
                 }
             } else {
-                // Products not available (sandbox/dev) — simulate purchase
+                // Products not available
+                #if DEBUG
+                // Simulate purchase in development
                 try? await Task.sleep(for: .seconds(1.0))
                 await MainActor.run {
                     premium.purchaseSimulated()
                     isPurchasing = false
                 }
+                #else
+                await MainActor.run {
+                    errorMessage = "Unable to connect to the App Store. Please check your connection and try again."
+                    isPurchasing = false
+                }
+                #endif
             }
         }
     }

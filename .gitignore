@@ -22,3 +22,24 @@ Noum.xcodeproj/xcshareddata/xcschemes/Noum.xcscheme
 Noum/test.swift
 Noum/Info.plist
 Noum/Noum/Info.plist
+
+# Transcription provider dev keys (Phase 2)
+Noum/TranscriptionProviders.plist
+Noum/Noum/TranscriptionProviders.plist
+
+# Internal planning docs
+PLAN.md
+.claude/worktrees/elated-murdock-572717/
+
+# Per-run screenshot + handoff artifacts.
+# HANDOFF.md files ARE committed so cloud routines can read them.
+# PNG/JPG screenshots are local-only (heavy + cloud can't view them anyway).
+.screenshots/**/*.png
+.screenshots/**/*.jpg
+.screenshots/**/*.jpeg
+.claude/worktrees/
+
+# Per-developer / per-worktree Claude Code permission overrides.
+# Written by noum-orchestrator into each agent worktree so teammates auto-approve
+# safe ops; must stay out of git so it doesn't pollute review diffs.
+.claude/settings.local.json

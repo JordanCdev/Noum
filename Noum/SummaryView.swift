@@ -1,13 +1,10 @@
 import Foundation
-#if canImport(SwiftUI)
-import SwiftUI
-#endif
-
 #if canImport(UIKit)
 import UIKit
 #endif
 
 #if canImport(SwiftUI)
+import SwiftUI
 
 // MARK: - SummaryView (Redesigned)
 
@@ -18,6 +15,10 @@ struct SummaryView: View {
     let score: Int?
     let progressSegments: Int
     let xpEarned: Int
+    var committedFinalization: SessionFinalizationResult? = nil
+    var suddenDeathGamePoints: Int? = nil
+    var suddenDeathMultiplierLabels: [String] = []
+    var suddenDeathTotalWords: Int? = nil
     var showDuration: Bool = true
     var practiceTitle: String = "Practice Summary"
     var feedbackOverride: String?
@@ -33,9 +34,29 @@ struct SummaryView: View {
     var feedbackCategories: [FeedbackCategory] = []
     var strongMoments: [String] = []
     var weakMoments: [String] = []
+    var durationAssessment: DurationAssessment = .onTarget
+    var targetRange: (min: Double, target: Double, max: Double) = (30, 60, 120)
     var onSelectPracticeMode: () -> Void = {}
     var onHome: () -> Void = {}
     var onPracticeAgain: () -> Void = {}
+    var onStartDrill: ((DrillRecommendation) -> Void)?
+    /// Bridge into Ask Noum with a session-anchored opener already in
+    /// the thread. The owning ContentView wires this to inject the
+    /// opener into `AskNoumStore` then push `AppDestination.askNoum`,
+    /// so the user lands inside a coach reply already in flight.
+    var onAskNoumAboutRep: ((String) -> Void)?
+    /// Optional launch callback for the post-rep "Looking ahead"
+    /// recommendation. The path-based init wires this to pop the
+    /// summary + the prior practice screen and push the destination
+    /// produced by `SummaryLookingAheadRouter` — same shape as
+    /// `onPracticeAgain` (the user is launching a new full rep, so
+    /// the stale summary shouldn't be reachable via the back chevron).
+    /// Receives the `AppDestination` rather than recomputing it inside
+    /// the path closure because the destination depends on view-side
+    /// state (`summaryRecommendation` + `IMModeAvailability.isAvailable`)
+    /// the init doesn't have in scope. Defaults nil → the
+    /// `LookingAheadCard` stays the pre-round-19 descriptive-only nudge.
+    var onStartLookingAhead: ((AppDestination) -> Void)?
 
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
@@ -43,6 +64,10 @@ struct SummaryView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var premium = PremiumManager.shared
+    @StateObject private var baselineStore = BaselineStore.shared
+    @StateObject private var ratingStore = RatingStore.shared
+    @StateObject private var skillProgression = SkillProgressionStore.shared
+    @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -65,8 +90,44 @@ struct SummaryView: View {
     @State private var lockedScoreBreakdown: [PracticeScoreSegment] = []
     @State private var lockedInsights: [String] = []
     @State private var showShareSheet = false
+    @State private var showShareMenu = false
+    @State private var showFeedbackRequestSheet = false
+    @State private var feedbackRequestURL: URL?
     @State private var videoAnalysisResult: VideoAnalysisResult?
     @State private var isAnalyzingVideo = false
+    @State private var activeMilestone: MilestoneEvent?
+    @State private var personalBestMilestone: MilestoneEvent?
+    @State private var showPersonalBestScreen = false
+    @State private var showLevelUpScreen = false
+    @State private var levelUpPreviousLevel: String = ""
+    @State private var levelUpNewLevel: String = ""
+    /// Skill level-up sequence played between PersonalBest (or
+    /// LevelUp / Progression) and the standard summary content. The
+    /// snapshot is locked at setup so the pre-summary celebration
+    /// plays the exact set of events that was pending at finalize
+    /// time, not whatever's pending the moment the user scrolls back.
+    /// Empty array = no celebration; the parent skips straight to
+    /// summary content without rendering the overlay.
+    @State private var showPreSummaryCelebration = false
+    @State private var preSummaryEvents: [SkillLevelUpEvent] = []
+    @State private var activeMiniDrill: DrillRecommendationV2?
+    @State private var miniDrillOutcome: MiniDrillOutcome?
+    @State private var miniDrillAwardedXP: Int = 0
+    @State private var miniDrillXPBreakdown: DrillXPEngine.Breakdown?
+    @State private var showSecondaryDetails = false
+    @State private var nextAction: NextAction?
+    @State private var coachNoteRevealed = false
+    @State private var enhancedCoachNote: CoachNote?
+    @State private var eloquenceFindings: [EloquenceFinding] = []
+    @State private var showAIDisclosure = false
+    @State private var showProgressionScreen = false
+    /// Proof moment loaded for the personal-best celebration. Hydrated
+    /// async after the milestone fires; if it doesn't resolve in time
+    /// the celebration renders without the proof line.
+    @State private var personalBestProof: ProofMoment? = nil
+    @State private var progressionDeltas: [AchievementProgressDelta] = []
+    @State private var progressionNewUnlocks: [AchievementTier] = []
+    @State private var progressionPreviousXP: Int = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let aiCoachService: AICoachServicing = AICoachService()
@@ -98,40 +159,139 @@ struct SummaryView: View {
     }
 
     private var isIMSummary: Bool { currentMode == .imConversation }
+    private var isSuddenDeathSummary: Bool { currentMode == .suddenDeath }
+
+    private var currentStreak: Int {
+        PracticeSession.calculateStreak(from: sessionStore.sessions)
+    }
 
     private var scoreValue: Int {
         if let lockedScore { return lockedScore }
         if let score { return score }
+        // No words spoken at all = 0
+        if transcriptWordCount == 0 { return 0 }
         if effectiveDuration < 4 || transcriptWordCount < 4 { return 1 }
         if effectiveDuration < 8 || transcriptWordCount < 8 { return max(2, 5 - effectiveFillerCount) }
         return max(3, min(8, 7 - effectiveFillerCount))
     }
 
+    /// True when the user barely said anything — don't give credit for zero fillers etc.
+    private var isMinimalEffort: Bool {
+        transcriptWordCount < 5 || effectiveDuration < 5
+    }
+
+    /// The single "Next Rep" drill recommendation for this session (legacy v1).
+    private var drillRecommendation: DrillRecommendation {
+        DrillEngine.recommend(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            score: scoreValue,
+            feedbackCategories: feedbackCategories,
+            durationAssessment: durationAssessment
+        )
+    }
+
+    // MARK: - v2 Drill System
+
+    /// The v2 drill recommendation using trend intelligence and drill catalog.
+    /// Maps the drill recommendation's primary skill area to a Weakness
+    /// the AIRewriteService can act on. Returns nil for skill areas that
+    /// don't have a rewrite path yet (filler reduction, pace, pauses,
+    /// emphasis, confidence) — those are practice-mode interventions,
+    /// not rewrite-the-script ones.
+    private var primaryWeakness: AIRewriteService.Weakness? {
+        switch drillRecommendationV2.skillArea {
+        case .openingStrength:    return .opening
+        case .closingStrength:    return .closing
+        case .structure:          return .structure
+        case .conciseSpeaking:    return .concise
+        case .answerDevelopment:  return .structure
+        case .fillerReduction, .paceControl, .pauseUsage, .vocalEmphasis, .confidence:
+            return nil
+        }
+    }
+
+    private var drillRecommendationV2: DrillRecommendationV2 {
+        let categoryTuples = feedbackCategories.map { ($0.dimension, $0.rating.rawValue) }
+        return DrillEngineV2.recommend(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            score: scoreValue,
+            feedbackCategories: categoryTuples,
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+        )
+    }
+
+    /// Skill trends across recent sessions.
+    private var skillTrends: [SkillTrend] {
+        TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
+    }
+
+    /// Three-part coach note: momentum, leverage, next step.
+    /// Prefers the enhanced version from SessionFinalizer (baseline + pressure + style aware),
+    /// falls back to simple computation before setup() has run. The fallback still
+    /// passes `styleGoal` so the goal-aware enrichments (momentum / leverage /
+    /// nextStep) fire even before SessionFinalizer's richer pass lands.
+    private var coachNote: CoachNote {
+        if let enhancedCoachNote { return enhancedCoachNote }
+        let wpm = effectiveDuration > 0 ? Double(transcriptWordCount) / effectiveDuration * 60 : 0
+        let categoryRatings = Dictionary(uniqueKeysWithValues: feedbackCategories.map { ($0.dimension, $0.rating.rawValue) })
+        return VerdictEngine.generate(
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            wordCount: transcriptWordCount,
+            wpm: wpm,
+            score: scoreValue,
+            categoryRatings: categoryRatings,
+            trends: skillTrends,
+            primaryFocus: drillRecommendationV2.skillArea,
+            drillHistory: DrillHistoryStore.shared.entries,
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+        )
+    }
+
     private var headline: String {
         if let lockedHeadlineOverride { return lockedHeadlineOverride }
         if let headlineOverride { return headlineOverride }
+        if transcriptWordCount == 0 { return "No response detected" }
+        if isMinimalEffort { return "Just getting started" }
+        // If a Path mission just unlocked on this rep, the headline
+        // reads "Mission cleared." to anchor the story/progression
+        // register the rest of the app uses. PathProgressManager queues
+        // an unlocked node celebration via `pendingCelebrationNodeID`
+        // when a session causes a node to satisfy its criteria. We read
+        // it here without consuming — the PathNodeCelebration overlay
+        // still consumes on its own fullScreenCover dismissal.
+        if PathProgressManager.shared.pendingCelebrationNodeID != nil {
+            return "Mission cleared"
+        }
         switch scoreValue {
         case 9...10: return "Strong delivery"
         case 7...8: return "Good control"
-        case 4...6: return "Room to sharpen"
-        default: return "Needs another rep"
+        case 4...6: return "Building momentum"
+        default: return "Room to grow"
         }
     }
 
     private var verdict: String {
         if let lockedFeedbackOverride { return lockedFeedbackOverride }
         if let feedbackOverride { return feedbackOverride }
+        if transcriptWordCount == 0 {
+            return "No words were captured. Make sure your microphone is working and try speaking clearly. Tap Retry to give it another go."
+        }
         if effectiveDuration < 4 || transcriptWordCount < 4 {
-            return "That rep ended before the answer really began. Go again with a clear opening, one point, and a clean finish."
+            return "That was barely a start. Hit Retry and commit to at least 15 seconds — even a rough answer counts more than silence."
         }
         if effectiveDuration < 8 || transcriptWordCount < 8 {
-            return "This was too brief to show control yet. Push the next answer further so the idea has time to land."
+            return "Brief answer — try pushing past the opening sentence next time. Even 10 more seconds makes a difference."
         }
         switch scoreValue {
         case 8...10: return "A convincing rep. Keep that same control while raising the difficulty."
         case 6...7: return "There is a solid response in here. One stronger opening sentence would make it feel more complete."
         case 4...5: return "The idea started to form, but it needs more structure and follow-through."
-        default: return "Go again straight away and aim for a steadier opening with one clear supporting point."
+        default: return "Every rep builds the habit. Go again and focus on one strong opening sentence."
         }
     }
 
@@ -183,8 +343,66 @@ struct SummaryView: View {
                 preferredScenarioBias: "",
                 modeBenefitBias: ""
             ),
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
+            imToneSignal: imToneDrillSignal
         )
+    }
+
+    /// The per-scenario tone-drill signal, shared with Home and the mode
+    /// picker. When set, the post-rep "Looking ahead" card prescribes the
+    /// exact scenario + tone to re-drill instead of a generic mode nudge.
+    /// `if #available` guards the iOS-17 summary type so this unannotated
+    /// view still compiles; `IMToneDrillSignal` itself is non-gated.
+    private var imToneDrillSignal: IMToneDrillSignal? {
+        guard IMModeAvailability.isAvailable else { return nil }
+        if #available(iOS 17.0, *) {
+            return IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
+        }
+        return nil
+    }
+
+    /// IM tone-drill SOLVED ribbon for the hero score card, gated to the
+    /// *crossing rep* only — the rep that pushed a scenario's hit rate
+    /// over the bar. Routes through `IMHistorySummary.toneDrillCrossing`
+    /// (round 21) so this surface and the post-rep coach-note (the prose
+    /// SOLVED-headlined sentence in `PracticeSessionFinalizer.
+    /// recordPostRepCoachNote`) share one tested crossing primitive and
+    /// can never drift apart — both light up on the same rep and never
+    /// double-celebrate.
+    ///
+    /// Returns the display strings (scenario title + tone title) so the
+    /// card can render without depending on the iOS-17-gated
+    /// `IMHistorySummary` / `IMToneDrillResolved` types — the lookup
+    /// happens here, the card stays pure presentation.
+    ///
+    /// nil when the just-finished rep isn't IM, when no scenario crosses
+    /// on this rep, or when IM Mode is unavailable. The ribbon stays
+    /// quiet rather than inventing a victory — same honesty contract as
+    /// every other vision-aligned coach surface.
+    private var heroToneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon? {
+        guard IMModeAvailability.isAvailable else { return nil }
+        // Only IM reps can resolve an IM tone drill. The summary view's
+        // own `imConversationDetails` carries the just-finished scenario,
+        // matching how the finalizer scopes the crossing read.
+        guard let details = imConversationDetails else { return nil }
+        if #available(iOS 17.0, *) {
+            // Latest session in the store is the just-finalized rep
+            // (`PracticeSessionStore` prepends). Pass its id to the
+            // helper so the with-vs-without-this-rep comparison is
+            // order-independent — same primitive the finalizer uses.
+            guard let currentRepId = sessionStore.sessions.first?.id else { return nil }
+            let scenario = details.setup.scenario
+            guard let crossed = IMHistorySummary.toneDrillCrossing(
+                in: sessionStore.sessions,
+                scenario: scenario,
+                currentRepId: currentRepId
+            ) else { return nil }
+            return HeroScoreCard.ToneDrillResolvedRibbon(
+                scenarioTitle: scenario.title,
+                toneTitle: crossed.targetTone.title
+            )
+        }
+        return nil
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
@@ -260,7 +478,7 @@ struct SummaryView: View {
         if !insights.isEmpty { return insights }
         let previousSessions = Array(recentSessions.dropFirst())
         guard !previousSessions.isEmpty else {
-            return ["Finish a few more sessions and this screen will start surfacing trend-based coaching."]
+            return ["First rep complete — your baseline is set. From here, every session gives you something to compare against."]
         }
         let averageDuration = previousSessions.map(\.duration).reduce(0, +) / Double(previousSessions.count)
         let averageFillers = previousSessions.map(\.fillerWordCount).reduce(0, +) / previousSessions.count
@@ -286,53 +504,282 @@ struct SummaryView: View {
             AppColor.screenBackground
                 .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
-                    heroScoreCard
-                    verdictCard
-
-                    if isIMSummary, let details = imConversationDetails {
-                        imConversationOverview(details)
+            if showProgressionScreen {
+                // Post-session progression: XP, achievement progress, unlock celebrations
+                PostSessionProgressionView(
+                    xpEarned: xpEarned,
+                    previousXP: progressionPreviousXP,
+                    newXP: profile.xp,
+                    previousLevel: currentLevel,
+                    newLevel: ProfileManager.levelTitle(forXP: profile.xp),
+                    achievementProgress: progressionDeltas,
+                    newUnlocks: progressionNewUnlocks,
+                    onContinue: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            showProgressionScreen = false
+                            // Chain: level-up → personal best → pre-summary → summary
+                            if levelUpPreviousLevel != levelUpNewLevel && !levelUpNewLevel.isEmpty {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                        showLevelUpScreen = true
+                                    }
+                                }
+                            } else if personalBestMilestone != nil {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                        showPersonalBestScreen = true
+                                    }
+                                }
+                            } else {
+                                advanceToPreSummaryIfNeeded()
+                            }
+                        }
                     }
-
-                    if !feedbackCategories.isEmpty {
-                        categoryGrid
-                    } else if !effectiveScoreBreakdown.isEmpty {
-                        breakdownCard
+                )
+                .transition(.opacity)
+            } else if showLevelUpScreen {
+                // Full-screen level up celebration
+                LevelUpCelebrationScreen(
+                    newLevel: levelUpNewLevel,
+                    previousLevel: levelUpPreviousLevel,
+                    xpProgress: progress,
+                    onContinue: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            showLevelUpScreen = false
+                            // Chain to personal best if needed, otherwise
+                            // fall through to the skill-level-up sequence
+                            // before the summary content lands.
+                            if personalBestMilestone != nil {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    withAnimation(.easeInOut(duration: 0.4)) {
+                                        showPersonalBestScreen = true
+                                    }
+                                }
+                            } else {
+                                advanceToPreSummaryIfNeeded()
+                            }
+                        }
                     }
-
-                    aiMomentsCard
-
-                    if let recordingURL {
-                        recordingCard(url: recordingURL)
-                    }
-
-                    if let comparison = smartComparison {
-                        sessionComparisonCard(comparison)
-                    }
-
-                    if premium.canViewCoachingInsights {
-                        coachReadCard
-                    }
-
-                    xpProgressCard
-                    retentionCard
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 100)
-            }
-            .safeAreaInset(edge: .bottom) {
-                actionBar
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(.regularMaterial)
-            }
-
-            if celebrationVisible && !reduceMotion {
-                celebrationOverlay
-                    .allowsHitTesting(false)
+                )
+                .transition(.opacity)
+            } else if showPersonalBestScreen, let milestone = personalBestMilestone {
+                // Full-screen personal best celebration (intermediary before summary)
+                personalBestCelebration(milestone: milestone)
                     .transition(.opacity)
+            } else if showPreSummaryCelebration, !preSummaryEvents.isEmpty {
+                // Skill level-up celebration sequence — plays each
+                // pending SkillLevelUpEvent one at a time before the
+                // summary content lands. Replaces the previous inline
+                // stack inside the hero (which competed with the score
+                // and added visual noise on multi-event reps).
+                PreSummaryCelebration(events: preSummaryEvents) {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        showPreSummaryCelebration = false
+                    }
+                }
+                .transition(.opacity)
+            } else {
+                // Normal summary content — redesigned hierarchy
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 16) {
+                        // MODE CONSISTENCY NOTE (M20):
+                        // IM, Sudden Death and Timed/other share TalkToNoumCTACard
+                        // as the single Ask Noum entry point. Sudden Death keeps an
+                        // arcade-style result hero while its cards below remain
+                        // coaching-first. Remaining divergences to address later:
+                        //   - IM lacks BaselineComparisonCard equivalents for
+                        //     WhatYouDidWell / WhatToImprove (uses IMReadCard instead)
+                        //   - Ah-Counter has no dedicated mode-specific verdict card
+                        //     (falls into the Timed/other path — acceptable for now)
+                        if isIMSummary {
+                            // IM MODE — conversation-first hierarchy
+                            IMVerdictCard(
+                                scoreValue: scoreValue,
+                                scoreAccent: scoreAccent,
+                                scoreEmoji: scoreEmoji,
+                                headline: headline,
+                                effectiveFillerCount: effectiveFillerCount,
+                                effectiveDuration: effectiveDuration,
+                                xpEarned: xpEarned,
+                                imConversationDetails: imConversationDetails
+                            )
+                            IMReadCard(
+                                coachNote: coachNote,
+                                effectiveDuration: effectiveDuration,
+                                imConversationDetails: imConversationDetails
+                            )
+                            IMOneMoveCard(
+                                coachNote: coachNote,
+                                onPracticeAgain: onPracticeAgain,
+                                onSelectPracticeMode: onSelectPracticeMode
+                            )
+                            if let details = imConversationDetails {
+                                IMSignalsCard(details: details)
+                            }
+                            BaselineComparisonCard(
+                                baseline: baselineStore.baseline,
+                                transcriptText: transcriptText,
+                                effectiveFillerCount: effectiveFillerCount,
+                                effectiveDuration: effectiveDuration,
+                                explicitMode: explicitMode,
+                                score: score,
+                                scoreValue: scoreValue,
+                                rating: ratingStore.rating,
+                                pressureLevel: recentSessions.first?.pressureLevel ?? .standard
+                            )
+                            TalkToNoumCTACard(
+                                isPremium: premium.isPremium,
+                                speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                                onAskNoum: {
+                                    onAskNoumAboutRep?(sessionAnchoredOpener)
+                                },
+                                onUpgradePrompt: {
+                                    showPaywall = true
+                                }
+                            )
+                            expandableDetailsSection
+                        } else {
+                            // TIMED / AH-COUNTER / SUDDEN DEATH hierarchy.
+                            // The post-rep attention budget is small; only the
+                            // signals that fight for "what happened, what was
+                            // proven, what to do next" stay above the fold.
+                            // Everything analytical/secondary lives inside
+                            // `expandableDetailsSection` below.
+                            if isSuddenDeathSummary {
+                                SuddenDeathReviewCard(
+                                    points: suddenDeathGamePoints ?? 0,
+                                    multiplierLabels: suddenDeathMultiplierLabels,
+                                    tiersCleared: progressSegments,
+                                    fillerCount: effectiveFillerCount,
+                                    duration: effectiveDuration,
+                                    wordCount: suddenDeathTotalWords ?? transcriptWordCount
+                                )
+                            } else {
+                                HeroScoreCard(
+                                    scoreValue: scoreValue,
+                                    practiceTitle: practiceTitle,
+                                    scoreAccent: scoreAccent,
+                                    scoreEmoji: scoreEmoji,
+                                    headline: headline,
+                                    sessionPrompt: sessionPrompt,
+                                    effectiveFillerCount: effectiveFillerCount,
+                                    fillerTint: fillerTint,
+                                    fillerDelta: fillerDelta,
+                                    effectiveDuration: effectiveDuration,
+                                    durationAssessment: durationAssessment,
+                                    xpEarned: xpEarned,
+                                    celebrationVisible: celebrationVisible,
+                                    toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
+                                )
+                            }
+                            // M24 Track 1 — the coach turning toward the user
+                            // and saying "here's what I just saw" in their
+                            // chosen voice. Lands between the score (what
+                            // happened) and the wins/improvements (the
+                            // breakdown). Renders only when a note exists
+                            // for the most-recent session — `PracticeSession-
+                            // Finalizer` writes one immediately so the card
+                            // is populated on the first paint cycle.
+                            if let sessionID = sessionStore.sessions.first?.id,
+                               let coachNote = postRepCoachNoteStore.note(for: sessionID) {
+                                CoachReadCard(
+                                    note: coachNote,
+                                    session: sessionStore.sessions.first,
+                                    recentSessions: Array(sessionStore.sessions.prefix(5))
+                                )
+                            }
+                            // Observational hero block — replaces the
+                            // previous 5-card stack (SkillLevelUp loop +
+                            // AISessionDebrief + CoachNote + YourNextMove).
+                            // SkillLevelUps now play as a pre-summary
+                            // celebration (see PreSummaryCelebration).
+                            // AISessionDebrief + CoachNoteCard remain
+                            // reachable inside the Details disclosure.
+                            WhatYouDidWellCard(
+                                coachNote: coachNote,
+                                feedbackCategories: feedbackCategories,
+                                eloquenceFindings: eloquenceFindings,
+                                aiFeedback: aiFeedback,
+                                isMinimalEffort: isMinimalEffort,
+                                intentFocus: sessionStore.sessions.first?.intentFocus
+                            )
+                            WhatToImproveCard(
+                                coachNote: coachNote,
+                                feedbackCategories: feedbackCategories,
+                                aiFeedback: aiFeedback,
+                                transcriptText: transcriptText,
+                                effectiveFillerCount: effectiveFillerCount,
+                                effectiveDuration: effectiveDuration,
+                                transcriptWordCount: transcriptWordCount,
+                                isMinimalEffort: isMinimalEffort,
+                                intentFocus: sessionStore.sessions.first?.intentFocus
+                            )
+                            YourNextMoveCard(
+                                drill: drillRecommendationV2,
+                                legacyDrill: drillRecommendation,
+                                aiFeedback: aiFeedback,
+                                nextAction: nextAction,
+                                onStartMiniDrill: { drill in
+                                    print("[QuickDrill] Trigger: \(drill.title) | skill=\(drill.skillArea) | format=\(drill.format)")
+                                    activeMiniDrill = drill
+                                },
+                                onStartDrill: onStartDrill
+                            )
+                            SessionReflectionInlineCard(
+                                sessionID: sessionStore.sessions.first?.id
+                            )
+                            TalkToNoumCTACard(
+                                isPremium: premium.isPremium,
+                                speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                                onAskNoum: {
+                                    onAskNoumAboutRep?(sessionAnchoredOpener)
+                                },
+                                onUpgradePrompt: {
+                                    showPaywall = true
+                                }
+                            )
+                            expandableDetailsSection
+                        }
+
+                        // Pro Preview (free users only)
+                        if !premium.isPremium {
+                            proPreviewCard
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 100)
+                }
+                .safeAreaInset(edge: .bottom) {
+                    actionBar
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            AppColor.cardBackground
+                                .shadow(.drop(color: .black.opacity(0.06), radius: 12, y: -4))
+                        )
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                if celebrationVisible && !reduceMotion {
+                    celebrationOverlay
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+
+                // Non-personal-best milestones (level-up, streak, first session)
+                if let milestone = activeMilestone {
+                    MilestoneCelebrationOverlay(
+                        icon: milestone.icon,
+                        tint: milestone.tint,
+                        title: milestone.title,
+                        subtitle: milestone.subtitle,
+                        detail: milestone.detail,
+                        onDismiss: { activeMilestone = nil }
+                    )
+                    .transition(.opacity)
+                    .zIndex(10)
+                }
             }
         }
         .navigationTitle("")
@@ -345,103 +792,493 @@ struct SummaryView: View {
                 VideoPlaybackView(url: recordingURL)
             }
         }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
+        // First-rep celebration — fires *once* on the user's very first
+        // session. The manager handles the once-only logic; we just
+        // present whatever it yields.
+        .fullScreenCover(
+            item: Binding(
+                get: { FirstRepCelebrationManager.shared.pendingSession },
+                set: { newValue in
+                    if newValue == nil { FirstRepCelebrationManager.shared.dismiss() }
+                }
+            )
+        ) { session in
+            FirstRepCelebration(session: session) {
+                FirstRepCelebrationManager.shared.dismiss()
+            }
+        }
+        .fullScreenCover(item: $activeMiniDrill) { drill in
+            let _ = print("[QuickDrill] Present: \(drill.title) | id=\(drill.id) | type=\(MiniDrillType.from(variationId: drill.variation.id))")
+            drillView(for: drill)
+        }
+        .fullScreenCover(item: $miniDrillOutcome) { outcome in
+            let _ = print("[QuickDrill] Result: succeeded=\(outcome.succeeded) type=\(outcome.drillType)")
+            MiniDrillResultView(
+                outcome: outcome,
+                xpEarned: miniDrillAwardedXP,
+                xpBreakdown: miniDrillXPBreakdown,
+                streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea),
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal,
+                onDone: {
+                    print("[QuickDrill] Done — dismissing result")
+                    miniDrillOutcome = nil
+                },
+                onTryAnother: {
+                    print("[QuickDrill] Try another — loading next variation")
+                    miniDrillOutcome = nil
+                    if let freshVariation = DrillSelector.select(for: outcome.drill.skillArea) {
+                        let nextDrill = DrillRecommendationV2(
+                            variation: freshVariation,
+                            reason: "Keep building on this skill",
+                            trendContext: nil,
+                            alternateFormat: nil
+                        )
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            activeMiniDrill = nextDrill
+                        }
+                    } else {
+                        print("[QuickDrill] ERROR: No fresh variation found for \(outcome.drill.skillArea)")
+                    }
+                }
+            )
+        }
 #if canImport(UIKit)
         .onChange(of: celebrationVisible) { _, visible in
             if visible {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                CoachHaptic.personalBest()
             }
         }
 #endif
     }
+    /// Filler count tint: green if zero or better than average, orange if slightly above, red only if significantly worse.
+    /// Gray if no words were spoken — zero fillers isn't an achievement when you said nothing.
+    private var fillerTint: Color {
+        if isMinimalEffort { return .secondary }
+        if effectiveFillerCount == 0 { return AppColor.positive }
+        let pastFillers = recentWindow.dropFirst().map(\.fillerWordCount)
+        guard !pastFillers.isEmpty else { return AppColor.caution }
+        let avg = Double(pastFillers.reduce(0, +)) / Double(pastFillers.count)
+        if Double(effectiveFillerCount) <= avg { return AppColor.positive }
+        if Double(effectiveFillerCount) <= avg + 2 { return AppColor.caution }
+        return AppColor.warning
+    }
 
-    // MARK: - Hero Score Card
+    /// Delta vs recent average fillers (negative = improved)
+    private var fillerDelta: Int? {
+        let past = recentWindow.dropFirst().map(\.fillerWordCount)
+        guard !past.isEmpty else { return nil }
+        let avg = Double(past.reduce(0, +)) / Double(past.count)
+        let delta = effectiveFillerCount - Int(avg.rounded())
+        return delta
+    }
 
-    private var heroScoreCard: some View {
-        VStack(spacing: 16) {
-            // Mode label
-            Text(practiceTitle.uppercased())
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.secondary)
-                .tracking(1.4)
+    /// Delta vs recent average duration (positive = improved)
+    private var durationDelta: Int? {
+        let past = recentWindow.dropFirst().map(\.duration)
+        guard !past.isEmpty else { return nil }
+        let avg = past.reduce(0, +) / Double(past.count)
+        let delta = Int(effectiveDuration) - Int(avg.rounded())
+        return abs(delta) >= 3 ? delta : nil // only show if meaningful (3+ seconds)
+    }
 
-            // Score ring
-            ZStack {
-                Circle()
-                    .stroke(scoreAccent.opacity(0.15), lineWidth: 8)
-                    .frame(width: 120, height: 120)
+    // MARK: - Expandable Details Section
 
-                Circle()
-                    .trim(from: 0, to: Double(scoreValue) / 10.0)
-                    .stroke(scoreAccent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 120, height: 120)
-                    .rotationEffect(.degrees(-90))
+    private var expandableDetailsSection: some View {
+        VStack(spacing: 12) {
+            // Session Details (collapsed by default).
+            //
+            // Holds the analytical pass: per-skill breakdowns (eloquence,
+            // pauses, pitch, word-choice, grammar, filler chips), baseline
+            // comparison, transcript, category grid, AI strong/weak
+            // moments, coach read (premium), video, and the deferred
+            // reflection prompt. None of these are wrong to see — they
+            // just shouldn't fight the coach's read, the score, and the
+            // next move for the user's first three seconds.
+            DisclosureGroup(isExpanded: $showSecondaryDetails) {
+                VStack(spacing: 14) {
+                    // Inline reflection prompt — kept discoverable but
+                    // out of the hero block so it never interrupts the
+                    // coach's read. Self-hides when nothing is pending.
+                    if !isIMSummary {
+                        DeferredCaptureInlineCard()
+                    }
 
-                VStack(spacing: 2) {
-                    Text("\(scoreValue)")
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .foregroundStyle(scoreAccent)
-                    Text("/10")
-                        .font(.caption.weight(.semibold))
+                    // M25: AISessionDebriefCard removed as a standalone
+                    // surface — its content (post-hoc AI insight) now
+                    // folds into the hero CoachReadCard's "Deep analysis"
+                    // tap-to-reveal. One coach voice card, one source
+                    // of truth.
+
+                    // Speech-quality cards — each self-hides when there
+                    // isn't enough signal to read, so the disclosure
+                    // collapses to whatever the rep actually produced.
+                    if !isIMSummary {
+                        EloquenceFindingsCard(findings: eloquenceFindings)
+                        if let pauseMetrics = sessionStore.sessions.first?.pauseMetrics {
+                            PauseSummaryCard(metrics: pauseMetrics)
+                        }
+                        if let pitchMetrics = sessionStore.sessions.first?.pitchMetrics {
+                            PitchSummaryCard(metrics: pitchMetrics)
+                        }
+                        WordChoiceCard(metrics: WordChoiceMetrics.compute(transcript: transcriptText))
+                        GrammarPolishCard(session: sessionStore.sessions.first)
+                        // M25: FillerBreakdownCard dropped — its top-6 chips
+                        // duplicated the top-3 chips WhatToImproveCard already
+                        // surfaces in its filler bullet, and the "fillers tend
+                        // to cluster at transitions" coaching note now lives
+                        // in CoachReadCard's voice-shaped read.
+
+                        // Pro-gated rewrite card — preserves the user's
+                        // voice instead of producing AI-default coaching
+                        // text. Only renders when there's a clear
+                        // weakness category to act on AND the user is Pro.
+                        if let weakness = primaryWeakness, premium.isPremium {
+                            RewriteSuggestionCard(
+                                transcript: transcriptText,
+                                weakness: weakness
+                            )
+                        }
+
+                        // M25: BaselineComparisonCard dropped here —
+                        // its data (rating, peak, strengths, baseline
+                        // pace/fillers) lives in Profile and the Trends
+                        // chart. Reading it on every summary blurred the
+                        // signal of THIS rep's read.
+                    }
+
+                    // M25: transcriptDetailCard dropped — transcript is
+                    // available via the recording playback (Pro) and
+                    // history detail view. Surfacing the raw paragraph
+                    // on every summary added a heavy block users
+                    // skimmed past. Privacy posture also benefits.
+
+                    // M25: categoryGrid dropped — the 7-dimension chip
+                    // grid restated what WhatToImproveCard already
+                    // distilled into a coach-voice bullet. The grid
+                    // read as a dashboard, not a coach.
+
+                    // M25: aiMomentsContent dropped — strong/weak moment
+                    // lists overlapped with WhatYouDidWellCard +
+                    // WhatToImproveCard. The hero cards carry the same
+                    // arc in voice; the lists were the dashboard echo.
+
+                    // M25: Pro `coachReadCard` (strengths + key improvement)
+                    // dropped — it was the third coach-voice surface on the
+                    // same screen (after CoachReadCard at hero and
+                    // AISessionDebriefCard inside this disclosure). Its data
+                    // is already represented by WhatYouDidWellCard +
+                    // WhatToImproveCard above the fold.
+
+                    // Video playback
+                    if recordingURL != nil {
+                        videoPlaybackButton
+                    }
+
+                    // Session comparison
+                    sessionComparisonCard
+                }
+                .padding(.top, 8)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
+                    Text("Session Details")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
                 }
             }
-            .scaleEffect(celebrationVisible ? 1.06 : 1.0)
-            .animation(.bouncySpring, value: celebrationVisible)
+            .tint(.secondary)
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
 
-            // Headline
-            HStack(spacing: 8) {
-                Image(systemName: scoreEmoji)
-                    .foregroundStyle(scoreAccent)
-                Text(headline)
-                    .font(.title3.weight(.bold))
-            }
+            // XP Progress
+            xpProgressCard
 
-            // Prompt (if available)
-            if let sessionPrompt {
-                Text("\"\(sessionPrompt)\"")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .padding(.horizontal, 12)
-            }
-
-            // Quick stats row
-            HStack(spacing: 20) {
-                statPill(label: "Fillers", value: "\(effectiveFillerCount)", tint: effectiveFillerCount == 0 ? .green : .red)
-                statPill(label: "Duration", value: "\(Int(effectiveDuration))s", tint: .blue)
-                statPill(label: "XP", value: "+\(xpEarned)", tint: .orange)
+            // Quiet "what to do next session" hint — only shown when the
+            // recommended mode is different from the one just finished and
+            // we have at least a little baseline signal. Lives at the very
+            // bottom of the expandable area so it never competes with the
+            // in-the-moment drill CTA above.
+            //
+            // Round 19: when an `onStartLookingAhead` callback is wired,
+            // the card renders a subordinate "Start <Mode>" CTA. The
+            // destination is computed *inside the per-tap closure* (not
+            // at init time) because `summaryRecommendation` depends on
+            // view-side `@StateObject`s the path init doesn't have in
+            // scope. The router stays the single source of truth for
+            // the mode → destination mapping (same router the home coach
+            // card + ContentView suggestion tile already call into).
+            if let lookingAhead = lookingAheadHint {
+                LookingAheadCard(
+                    hint: lookingAhead,
+                    onStart: onStartLookingAhead.map { callback in
+                        {
+                            let destination = SummaryLookingAheadRouter.destination(
+                                for: summaryRecommendation,
+                                imAvailable: IMModeAvailability.isAvailable
+                            )
+                            callback(destination)
+                        }
+                    }
+                )
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(24)
+    }
+
+    /// Computed "next session" suggestion derived from the existing
+    /// `RecommendationBiasBlueprint`. Returns nil when there's no useful
+    /// hint — staying quiet beats forcing advice the data can't back.
+    private var lookingAheadHint: LookingAheadCard.Hint? {
+        // Need at least 3 sessions of signal before nudging direction —
+        // checked first so we skip the blueprint computation on early reps.
+        guard sessionStore.sessions.count >= 3 else { return nil }
+        let blueprint = summaryRecommendation
+        // No need to suggest the mode the user just finished.
+        guard blueprint.recommendedMode != currentMode else { return nil }
+        return LookingAheadCard.Hint(
+            mode: blueprint.recommendedMode,
+            whyMode: blueprint.modeBenefit,
+            whyNow: blueprint.whyNow,
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+        )
+    }
+
+    // MARK: - Pro Preview Card (Free Users)
+
+    private var proPreviewCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                Text("Unlock deeper insights")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                SparkleRibbon(tint: AppColor.pro)
+            }
+
+            Text("Pro members get personalized coach reads, video body language analysis, trend tracking, and detailed drills after every session.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Preview glimpse — show what a coach read looks like
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Coach read preview")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your opening was strong — direct and grounded...")
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.5))
+                    Text("Filler pattern suggests rehearsal on transitions...")
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.3))
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    LinearGradient(
+                        colors: [.clear, AppColor.cardBackground],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+
+            Button {
+                showPaywall = true
+            } label: {
+                HStack {
+                    Text("See what Pro unlocks")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [AppColor.pro, AppColor.proLight],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Spacing.lg)
         .background(
+            // Subtle purple wash so the Pro card reads as visually
+            // distinct from the default white cards. Stays inside the
+            // motion+color rule (no illustration), and uses the brand's
+            // existing purple tokens.
             LinearGradient(
-                colors: [AppColor.cardBackground, scoreAccent.opacity(0.04)],
-                startPoint: .top,
-                endPoint: .bottom
+                colors: [
+                    AppColor.pro.opacity(0.06),
+                    AppColor.cardBackground
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(scoreAccent.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
         )
     }
 
-    private func statPill(label: String, value: String, tint: Color) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.headline.weight(.bold))
-                .foregroundStyle(tint)
-            Text(label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
+    /// AI Moments content (extracted from the old aiMomentsCard for reuse inside DisclosureGroup)
+    private var aiMomentsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !strongMoments.isEmpty {
+                Text("Strong Moments")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.positive)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                ForEach(strongMoments, id: \.self) { moment in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.positive)
+                        Text(moment)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+            if !weakMoments.isEmpty {
+                Text("Areas to Watch")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.caution)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .padding(.top, weakMoments.isEmpty ? 0 : 4)
+                ForEach(weakMoments, id: \.self) { moment in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.caution)
+                        Text(moment)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Verdict Card
+    /// Transcript card. Visible inside Session Details so power users
+    /// can read what the speech engine actually heard. Selectable for
+    /// copy/paste; truncation handled by SwiftUI's intrinsic line-wrap.
+    /// M14: added in response to real-device feedback ("no where to
+    /// see transcript").
+    private var transcriptDetailCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "text.bubble.fill")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("Transcript")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Text("\(wordCountText)")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Text(transcriptText)
+                .font(Typography.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+    }
+
+    private var wordCountText: String {
+        let count = transcriptText.split { !$0.isLetter && !$0.isNumber }.count
+        return "\(count) word\(count == 1 ? "" : "s")"
+    }
+
+    /// Video playback button for the expandable section
+    private var videoPlaybackButton: some View {
+        Button {
+            showVideoPlayback = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.caption.weight(.semibold))
+                Text("Watch recording")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(AppColor.brandBlue)
+        }
+    }
+
+    /// Session comparison card
+    private var sessionComparisonCard: some View {
+        Group {
+            if recentSessions.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("vs. Recent Average")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    HStack(spacing: 16) {
+                        if let fd = fillerDelta {
+                            comparisonStat(label: "Fillers", delta: fd, inverted: true)
+                        }
+                        if let dd = durationDelta {
+                            comparisonStat(label: "Duration", delta: dd, inverted: false)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func comparisonStat(label: String, delta: Int, inverted: Bool) -> some View {
+        let improved = inverted ? delta < 0 : delta > 0
+        return HStack(spacing: 4) {
+            Image(systemName: improved ? "arrow.down" : "arrow.up")
+                .font(.caption2.weight(.bold))
+            Text("\(abs(delta))")
+                .font(.caption.weight(.bold))
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(improved ? AppColor.positive : AppColor.caution)
+    }
+
+    // MARK: - Legacy Verdict Card (kept for backward compatibility)
 
     private var verdictCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -459,6 +1296,191 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    // MARK: - Next Rep Card
+
+    private var nextRepCard: some View {
+        let drill = drillRecommendation
+        return VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: drill.icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(drill.tint)
+                Text("Next Rep")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Image(systemName: "flame.fill")
+                    .font(.caption2)
+                    .foregroundStyle(drill.tint.opacity(0.5))
+            }
+
+            // Drill title
+            Text(drill.title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            // Why this drill
+            Text(drill.reason)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // The constraint / rule
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your rule")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(drill.tint)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text(drill.constraint)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(drill.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+            // Success goal
+            HStack(spacing: 6) {
+                Image(systemName: "target")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(drill.successGoal)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // CTA Button
+            if onStartDrill != nil {
+                Button {
+                    onStartDrill?(drill)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Start rep")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(.white)
+                    .background(drill.tint, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    }
+
+    private struct FreeInsight {
+        let icon: String
+        let tint: Color
+        let message: String
+        let action: String
+    }
+
+    private var primaryFreeInsight: FreeInsight {
+        let wpm = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+        let fillers = effectiveFillerCount
+        let dur = effectiveDuration
+
+        // No words at all — the only insight is to actually speak
+        if transcriptWordCount == 0 {
+            return FreeInsight(
+                icon: "mic.slash",
+                tint: .secondary,
+                message: "No speech was detected. This could be a microphone issue, or the session ended before you started speaking.",
+                action: "Tap Retry, take a breath, and start talking — even a rough answer is better than none."
+            )
+        }
+
+        // Minimal effort
+        if isMinimalEffort {
+            return FreeInsight(
+                icon: "timer",
+                tint: .orange,
+                message: "You only spoke for about \(Int(dur)) seconds. That's not enough to practice any real speaking skill.",
+                action: "Next time, commit to at least 20 seconds. Structure it: opening thought, one example, then a close."
+            )
+        }
+
+        // High filler count is the most impactful thing to fix
+        if fillers >= 5 {
+            return FreeInsight(
+                icon: "waveform.path",
+                tint: .red,
+                message: "You used \(fillers) filler words. Most appeared in quick transitions between ideas — the moments where your brain is searching for the next thought.",
+                action: "Try this: pause silently for one beat before each new point. Silence feels longer to you than to your audience."
+            )
+        }
+
+        // Very short answers
+        if dur < 15 {
+            return FreeInsight(
+                icon: "timer",
+                tint: .orange,
+                message: "Your answer was only \(Int(dur)) seconds. That's too short to develop a complete thought and show control.",
+                action: "Try this: after your opening sentence, add one concrete example and then close with a summary."
+            )
+        }
+
+        // Rushed pace
+        if wpm > 160 {
+            return FreeInsight(
+                icon: "hare.fill",
+                tint: .orange,
+                message: "Your pace hit \(wpm) words per minute — noticeably fast. Rapid delivery can undermine clarity even when the content is strong.",
+                action: "Try this: deliberately slow your first two sentences. That sets a calmer tempo for the rest."
+            )
+        }
+
+        // Moderate fillers
+        if fillers >= 2 {
+            return FreeInsight(
+                icon: "waveform.path",
+                tint: AppColor.caution,
+                message: "You used \(fillers) filler words. They tend to cluster when you're transitioning between ideas or thinking out loud.",
+                action: "Try this: replace each \"um\" with a silent pause. The silence sounds confident to your audience."
+            )
+        }
+
+        // Very slow pace
+        if wpm > 0 && wpm < 100 && dur >= 15 {
+            return FreeInsight(
+                icon: "tortoise.fill",
+                tint: .blue,
+                message: "Your pace was \(wpm) WPM — quite slow. While pausing is good, too much hesitation can make you sound uncertain.",
+                action: "Try this: commit to each sentence before starting it, then deliver it at a natural conversational speed."
+            )
+        }
+
+        // Clean session — reinforce what worked
+        if fillers == 0 && dur >= 20 {
+            return FreeInsight(
+                icon: "checkmark.circle.fill",
+                tint: AppColor.positive,
+                message: "Zero filler words and \(Int(dur)) seconds of clean delivery. That's genuine control under pressure.",
+                action: "Next step: try a harder mode or a longer duration to push this control further."
+            )
+        }
+
+        // Default — general improvement
+        return FreeInsight(
+            icon: "lightbulb.fill",
+            tint: .blue,
+            message: "Your delivery had \(fillers) filler\(fillers == 1 ? "" : "s") across \(Int(dur)) seconds at \(wpm) WPM.",
+            action: "Try this: focus on a strong opening sentence. A confident start sets the tone for everything after."
+        )
     }
 
     // MARK: - Category Grid (7 dimensions)
@@ -489,11 +1511,11 @@ struct SummaryView: View {
                     Spacer()
 
                     Text(category.rating.rawValue)
-                        .font(.caption.weight(.bold))
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(ratingColor(category.rating))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(ratingColor(category.rating).opacity(0.10), in: Capsule())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(ratingColor(category.rating).opacity(0.08), in: Capsule())
                 }
             }
         }
@@ -608,16 +1630,17 @@ struct SummaryView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "play.circle.fill")
                         .font(.title3)
-                    Text("Watch Recording")
+                        .foregroundStyle(.primary)
+                    Text("Watch recording")
                         .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                 }
                 .padding(Spacing.cardGap)
-                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                .foregroundStyle(.blue)
+                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -628,62 +1651,60 @@ struct SummaryView: View {
                         videoManager.saveRecording()
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.down.fill")
-                                .font(.caption)
-                            Text("Save")
+                            if videoManager.isSaving {
+                                ProgressView()
+                                    .tint(.secondary)
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.caption)
+                            }
+                            Text(videoManager.isSaving ? "Saving..." : "Save")
                                 .font(.caption.weight(.semibold))
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                        .foregroundStyle(.green)
+                        .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
+                    .disabled(videoManager.isSaving)
                 } else {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(AppColor.positive)
                         Text("Saved")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Color.green.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                 }
 
-                // AI Video Analysis (premium)
-                if premium.isPremium {
-                    Button {
-                        analyzeVideo()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isAnalyzingVideo {
-                                ProgressView()
-                                    .tint(.purple)
-                                    .scaleEffect(0.7)
-                            } else {
-                                Image(systemName: "sparkles.rectangle.stack.fill")
-                                    .font(.caption)
-                            }
-                            Text(isAnalyzingVideo ? "Analyzing..." : "Analyze with AI")
-                                .font(.caption.weight(.semibold))
+                // AI Video Analysis
+                Button {
+                    analyzeVideo()
+                } label: {
+                    HStack(spacing: 6) {
+                        if isAnalyzingVideo {
+                            ProgressView()
+                                .tint(.secondary)
+                                .scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.caption)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                        .foregroundStyle(.purple)
+                        Text(isAnalyzingVideo ? "Analyzing..." : "AI Analysis")
+                            .font(.caption.weight(.semibold))
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isAnalyzingVideo || !premium.canUseVideoAnalysis)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                    .foregroundStyle(.primary)
                 }
-            }
-
-            // Credits remaining
-            if premium.isPremium {
-                Text("\(premium.videoAnalysisCreditsRemaining) AI analysis credit\(premium.videoAnalysisCreditsRemaining == 1 ? "" : "s") remaining this month")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                .buttonStyle(.plain)
+                .disabled(isAnalyzingVideo)
             }
 
             // Video analysis results
@@ -691,7 +1712,18 @@ struct SummaryView: View {
                 videoAnalysisResultView(result)
             }
 
-            if videoManager.savedRecordingURL == nil {
+            // Recording error display
+            if let error = videoManager.recordingError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                    Text(error)
+                        .font(.caption)
+                }
+                .foregroundStyle(.red)
+            }
+
+            if videoManager.savedRecordingURL == nil && !videoManager.isSaving {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle")
                         .font(.caption2)
@@ -724,7 +1756,7 @@ struct SummaryView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(10)
-                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
         }
     }
 
@@ -790,7 +1822,7 @@ struct SummaryView: View {
                             .font(.subheadline.italic())
                             .foregroundStyle(.secondary)
                             .padding(10)
-                            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                            .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
                     }
                 }
             } else {
@@ -805,28 +1837,116 @@ struct SummaryView: View {
                     .foregroundStyle(.red)
             }
 
-            Button {
-                Task { await requestDeeperFeedback() }
-            } label: {
-                HStack {
-                    if isRequestingAIFeedback {
-                        ProgressView()
-                            .tint(.white)
-                    }
-                    Text(aiFeedback == nil ? "Generate Coach Read" : "Refresh Coach Read")
-                        .font(.subheadline.weight(.bold))
+            // Gentle approaching-limit note (only when ≥90% used and no feedback yet generated)
+            if aiFeedback == nil && aiSettings.isApproachingLimit && !aiSettings.hasReachedLimit {
+                Text("\(aiSettings.remainingAnalyses) coaching \(aiSettings.remainingAnalyses == 1 ? "analysis" : "analyses") remaining this month")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if aiSettings.hasReachedLimit && aiFeedback == nil {
+                // Graceful at-limit experience — warm, not punitive
+                VStack(spacing: 8) {
+                    Text("Monthly coaching limit reached")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("You've made great use of AI coaching this month. Fresh analyses will be available \(aiSettings.resetDateFormatted).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(isRequestingAIFeedback ? Color.gray.opacity(0.35) : Color.blue, in: Capsule())
-                .foregroundStyle(.white)
+                .padding(.vertical, 14)
+                .padding(.horizontal, Spacing.md)
+                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+            } else {
+                Button {
+                    if aiSettings.hasAcknowledgedAIDisclosure {
+                        Task { await requestDeeperFeedback() }
+                    } else {
+                        showAIDisclosure = true
+                    }
+                } label: {
+                    HStack {
+                        if isRequestingAIFeedback {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                        Text(aiFeedback == nil ? "Generate Coach Read" : "Refresh Coach Read")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(isRequestingAIFeedback ? Color(.systemGray4) : Color.primary.opacity(0.85), in: Capsule())
+                    .foregroundStyle(Color(.systemBackground))
+                }
+                .buttonStyle(.plain)
+                .disabled(isRequestingAIFeedback)
             }
-            .buttonStyle(.plain)
-            .disabled(isRequestingAIFeedback)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    // MARK: - Secondary Details Section (Collapsed by Default)
+
+    private var secondaryDetailsSection: some View {
+        VStack(spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showSecondaryDetails.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Details")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                    Spacer()
+                    Image(systemName: showSecondaryDetails ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(.plain)
+
+            if showSecondaryDetails {
+                VStack(spacing: 14) {
+                    if !feedbackCategories.isEmpty {
+                        categoryGrid
+                    } else if !effectiveScoreBreakdown.isEmpty {
+                        breakdownCard
+                    }
+
+                    if let recordingURL {
+                        recordingCard(url: recordingURL)
+                    }
+
+                    if let comparison = smartComparison {
+                        sessionComparisonCard(comparison)
+                    }
+
+                    xpProgressCard
+                    retentionCard
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    // MARK: - Ask Noum session-anchored opener
+
+    private var sessionAnchoredOpener: String {
+        CoachContextBuilder.sessionOpener(
+            mode: currentMode,
+            score: isSuddenDeathSummary ? nil : score,
+            fillerCount: effectiveFillerCount,
+            duration: effectiveDuration,
+            voice: coachingProfileStore.profile?.speakingStyleGoal
+        )
     }
 
     // MARK: - XP Progress Card
@@ -841,7 +1961,7 @@ struct SummaryView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-            ShimmerProgressBar(progress: progress, tint: .blue)
+            ShimmerProgressBar(progress: progress, tint: AppColor.brandBlue)
 
             HStack {
                 Text("\(displayedXP) XP")
@@ -884,7 +2004,7 @@ struct SummaryView: View {
                     SparkleRibbon(tint: .orange)
                     Text(retentionSnapshot.activeChallenge.rewardLabel)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
                 }
             }
         }
@@ -892,57 +2012,118 @@ struct SummaryView: View {
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
-    // MARK: - Action Bar (Retry Loop)
+    // MARK: - Action Bar (Icon-based)
 
     private var actionBar: some View {
-        VStack(spacing: 10) {
-            // Primary: Retry Same Prompt
-            Button {
-                onPracticeAgain()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.subheadline.weight(.bold))
-                    Text("Retry Same Prompt")
-                        .font(.headline.weight(.bold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.md)
-                .background(Color.blue, in: Capsule())
-                .foregroundStyle(.white)
+        HStack(spacing: 0) {
+            // Home — accent matches the home nav's "Train" bucket (brand blue)
+            Button { onHome() } label: {
+                actionBarItem(icon: "house.fill", label: "Home", accent: AppColor.brandBlue)
             }
             .buttonStyle(.pressable)
 
-            HStack(spacing: 10) {
-                // Secondary: Try New Prompt
-                Button {
-                    onSelectPracticeMode()
-                } label: {
-                    Text("New Prompt")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(.primary)
-                }
+            // Retry Same Prompt — primary action; filled brand-blue circle
+            Button { onPracticeAgain() } label: {
+                actionBarItem(icon: "arrow.clockwise", label: "Retry", accent: AppColor.brandBlue, highlighted: true)
+            }
+            .buttonStyle(.pressable)
 
-                // Share Result (visual card)
-                ShareLink(item: shareImage, preview: SharePreview("My Noum Score", image: shareImage)) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.caption)
-                        Text("Share")
-                            .font(.subheadline.weight(.semibold))
+            // New Prompt — orange to mirror the home Review tab's accent
+            Button { onSelectPracticeMode() } label: {
+                actionBarItem(icon: "sparkles", label: "New", accent: .orange)
+            }
+            .buttonStyle(.pressable)
+
+            // Share — green to mirror the home Settings tab's accent;
+            // share-out reads as a settings-adjacent secondary action.
+            Button { showShareMenu = true } label: {
+                actionBarItem(icon: "square.and.arrow.up", label: "Share", accent: .green)
+            }
+            .buttonStyle(.pressable)
+        }
+        .confirmationDialog("Share Session", isPresented: $showShareMenu) {
+            ShareLink(
+                item: shareImage,
+                preview: SharePreview(isSuddenDeathSummary ? "My Sudden Death Run" : "My Noum Score", image: shareImage)
+            ) {
+                Label(isSuddenDeathSummary ? "Share Run Card" : "Share Achievement Card", systemImage: "photo.fill")
+            }
+            if !isSuddenDeathSummary {
+                Button {
+                    // SwiftUI guards against two presentations at once — if we
+                    // flip the sheet binding here, it races the dialog dismissal
+                    // and the runtime drops the sheet with "Currently, only
+                    // presenting a single sheet is supported." Defer the binding
+                    // flip until the dialog has fully dismissed.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        showFeedbackRequestSheet = true
                     }
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.blue.opacity(0.08), in: Capsule())
+                } label: {
+                    Label("Request Feedback", systemImage: "person.2.fill")
                 }
             }
+        } message: {
+            Text("Choose how to share this session")
+        }
+        .sheet(isPresented: $showFeedbackRequestSheet) {
+            FeedbackRequestComposer(
+                transcript: transcriptText,
+                fillerCount: effectiveFillerCount,
+                duration: effectiveDuration,
+                score: scoreValue,
+                headline: headline,
+                prompt: sessionPrompt,
+                theme: sessionTheme,
+                mode: currentMode,
+                feedbackCategories: feedbackCategories,
+                aiFeedback: aiFeedback,
+                recordingURL: recordingURL
+            )
+        }
+        .alert("AI Coaching Disclosure", isPresented: $showAIDisclosure) {
+            Button("Continue") {
+                aiSettings.acknowledgeAIDisclosure()
+                Task { await requestDeeperFeedback() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("To generate coaching feedback, your speech transcript is sent to \(aiSettings.activeProviderDisplayName) for analysis. Your transcript is processed under their API data terms and is not used to train their AI models. Noum does not sell or share your data with advertisers.")
         }
     }
 
-    // MARK: - Share Card (Visual Accomplishment Card)
+    /// Summary action bar — matches the home bottom-nav design language so the
+    /// app feels of-a-piece across surfaces. Real-device feedback flagged the
+    /// previous treatment (gray-tinted squares with primary-coloured icon, blue
+    /// label only on highlighted) as visually inconsistent with home's
+    /// accent-tinted circular icons + accent-coloured uppercase labels.
+    ///
+    /// Retry stays the loud primary action — its accent is brand-blue,
+    /// rendered as a filled circle (vs the soft 12%-opacity tinted circles
+    /// on the secondary actions). That preserves the "this is the action
+    /// you want" hierarchy without breaking visual coherence with home.
+    private func actionBarItem(icon: String, label: String, accent: Color, highlighted: Bool = false) -> some View {
+        VStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill(highlighted
+                          ? AnyShapeStyle(accent)
+                          : AnyShapeStyle(accent.opacity(0.12)))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(highlighted ? Color.white : accent)
+            }
+            Text(label)
+                .font(Typography.nav)
+                .textCase(.uppercase)
+                .tracking(0.4)
+                .foregroundStyle(accent.opacity(0.85))
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Share Achievement Card (Premium Visual)
 
     @MainActor
     private var shareImage: Image {
@@ -955,55 +2136,178 @@ struct SummaryView: View {
     }
 
     private var shareCardContent: some View {
-        VStack(spacing: 16) {
-            Text("NOUM")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white.opacity(0.6))
-                .tracking(3)
+        VStack(spacing: 0) {
+            // Top brand bar
+            HStack {
+                Text("NOUM")
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .tracking(4)
+                Spacer()
+                Text(currentMode.displayLabel.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(shareModeTint.opacity(0.8))
+                    .tracking(1.5)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(shareModeTint.opacity(0.15), in: Capsule())
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 28)
+            .padding(.bottom, 20)
 
-            Text("\(scoreValue)/10")
-                .font(.system(size: 56, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            if isSuddenDeathSummary {
+                VStack(spacing: 2) {
+                    Text((suddenDeathGamePoints ?? 0).formatted())
+                        .font(.system(size: 52, weight: .black, design: .rounded))
+                        .foregroundStyle(shareModeTint)
+                    Text("POINTS")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .tracking(1.2)
+                }
+                .padding(.bottom, 16)
+            } else {
+                // Hero score
+                ZStack {
+                    Circle()
+                        .stroke(shareModeTint.opacity(0.12), lineWidth: 3)
+                        .frame(width: 140, height: 140)
 
+                    Circle()
+                        .trim(from: 0, to: Double(scoreValue) / 10.0)
+                        .stroke(
+                            AngularGradient(
+                                colors: [shareModeTint, shareModeTint.opacity(0.6), shareModeTint],
+                                center: .center
+                            ),
+                            style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                        )
+                        .frame(width: 120, height: 120)
+                        .rotationEffect(.degrees(-90))
+
+                    Circle()
+                        .stroke(.white.opacity(0.08), lineWidth: 8)
+                        .frame(width: 120, height: 120)
+
+                    VStack(spacing: 0) {
+                        Text("\(scoreValue)")
+                            .font(.system(size: 52, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("out of 10")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+                .padding(.bottom, 16)
+            }
+
+            // Headline
             Text(headline)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.85))
+                .font(Typography.cardTitle)
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.bottom, 6)
 
+            // Prompt
             if let sessionPrompt {
                 Text("\"\(sessionPrompt)\"")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.35))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 8)
             }
 
-            HStack(spacing: 16) {
-                shareStatPill(label: "Fillers", value: "\(effectiveFillerCount)")
-                shareStatPill(label: "Duration", value: "\(Int(effectiveDuration))s")
-                shareStatPill(label: "XP", value: "+\(xpEarned)")
+            // Stats row
+            HStack(spacing: 0) {
+                if isSuddenDeathSummary {
+                    shareStatCell(value: "\(progressSegments)", label: "Cleared", tint: shareModeTint)
+                    shareDivider
+                    shareStatCell(value: "\(Int(effectiveDuration))s", label: "Time", tint: AppColor.brandBlue)
+                    shareDivider
+                    shareStatCell(value: "\(suddenDeathTotalWords ?? transcriptWordCount)", label: "Words", tint: .white)
+                } else {
+                    shareStatCell(value: "\(effectiveFillerCount)", label: "Fillers", tint: fillerTint)
+                    shareDivider
+                    shareStatCell(value: "\(Int(effectiveDuration))s", label: "Duration", tint: AppColor.brandBlue)
+                    shareDivider
+                    shareStatCell(value: "\(shareWPM)", label: "WPM", tint: AppColor.modeSuddenDeath)
+                }
             }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 20)
+            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+
+            // Footer
+            HStack {
+                Text("noum.app")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.25))
+                Spacer()
+                Text(Date().formatted(.dateTime.month(.abbreviated).day().year()))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.2))
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
         }
-        .frame(width: 340)
-        .padding(32)
+        .frame(width: 360)
         .background(
-            LinearGradient(
-                colors: [Color(red: 0.08, green: 0.08, blue: 0.18), scoreAccent.opacity(0.3)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            ZStack {
+                // Base dark gradient
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.06, green: 0.06, blue: 0.14),
+                        Color(red: 0.10, green: 0.08, blue: 0.18)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                // Accent glow
+                RadialGradient(
+                    colors: [shareModeTint.opacity(0.15), .clear],
+                    center: .center,
+                    startRadius: 20,
+                    endRadius: 220
+                )
+            }
         )
-        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        )
     }
 
-    private func shareStatPill(label: String, value: String) -> some View {
-        VStack(spacing: 2) {
+    private var shareModeTint: Color {
+        AppColor.tint(for: currentMode)
+    }
+
+    private var shareWPM: Int {
+        guard effectiveDuration > 0 else { return 0 }
+        return Int((Double(transcriptWordCount) / effectiveDuration * 60).rounded())
+    }
+
+    private func shareStatCell(value: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 3) {
             Text(value)
-                .font(.subheadline.weight(.bold))
+                .font(Typography.headline)
                 .foregroundStyle(.white)
             Text(label)
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.35))
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var shareDivider: some View {
+        Rectangle()
+            .fill(.white.opacity(0.08))
+            .frame(width: 1, height: 30)
     }
 
     // MARK: - Smart Session Comparison
@@ -1024,15 +2328,30 @@ struct SummaryView: View {
               let prompt = sessionPrompt else { return nil }
 
         let past = recentSessions.dropFirst()
+
+        // Same prompt match — always show when available
         if let match = past.first(where: { $0.prompt == prompt && $0.score != nil }) {
-            let scoreDelta = currentScore - (match.score ?? 0)
             let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
             let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
-            let fillerDelta = (lockedFillerCount ?? fillerCount) - match.fillerWordCount
+            return SessionComparison(
+                reason: "Same prompt",
+                previousScore: match.score ?? 0,
+                currentScore: currentScore,
+                previousWPM: matchWPM,
+                currentWPM: currentWPM,
+                previousFillers: match.fillerWordCount,
+                currentFillers: lockedFillerCount ?? fillerCount,
+                previousDate: match.date
+            )
+        }
 
-            if abs(scoreDelta) >= 5 || fillerDelta <= -2 {
+        // Same theme match — show whenever there's a theme match
+        if let theme = sessionTheme, theme != .all {
+            if let match = past.first(where: { $0.theme == theme && $0.score != nil }) {
+                let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+                let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
                 return SessionComparison(
-                    reason: "Same prompt",
+                    reason: "Same theme: \(theme.rawValue)",
                     previousScore: match.score ?? 0,
                     currentScore: currentScore,
                     previousWPM: matchWPM,
@@ -1044,25 +2363,20 @@ struct SummaryView: View {
             }
         }
 
-        if let theme = sessionTheme, theme != .all {
-            if let match = past.first(where: { $0.theme == theme && $0.score != nil }) {
-                let scoreDelta = currentScore - (match.score ?? 0)
-                let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
-                let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
-
-                if scoreDelta >= 10 {
-                    return SessionComparison(
-                        reason: "Same theme: \(theme.rawValue)",
-                        previousScore: match.score ?? 0,
-                        currentScore: currentScore,
-                        previousWPM: matchWPM,
-                        currentWPM: currentWPM,
-                        previousFillers: match.fillerWordCount,
-                        currentFillers: lockedFillerCount ?? fillerCount,
-                        previousDate: match.date
-                    )
-                }
-            }
+        // Same mode match — fallback comparison
+        if let match = past.first(where: { $0.mode == currentMode && $0.score != nil }) {
+            let currentWPM = effectiveDuration > 0 ? Int(Double(transcriptWordCount) / effectiveDuration * 60) : 0
+            let matchWPM = match.duration > 0 ? Int(Double(match.transcript.split { !$0.isLetter }.count) / match.duration * 60) : 0
+            return SessionComparison(
+                reason: "Previous \(currentMode.displayLabel) session",
+                previousScore: match.score ?? 0,
+                currentScore: currentScore,
+                previousWPM: matchWPM,
+                currentWPM: currentWPM,
+                previousFillers: match.fillerWordCount,
+                currentFillers: lockedFillerCount ?? fillerCount,
+                previousDate: match.date
+            )
         }
 
         return nil
@@ -1095,7 +2409,11 @@ struct SummaryView: View {
             if improved {
                 Text("You're improving. Keep going.")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(AppColor.positive)
+            } else if scoreDelta == 0 {
+                Text("Consistency is progress. Same score, building the habit.")
+                    .font(.caption)
+                    .foregroundStyle(AppColor.brandBlue)
             }
         }
         .padding(Spacing.cardGap)
@@ -1129,51 +2447,77 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity)
     }
+    // MARK: - Personal Best Celebration (Full-Screen Intermediary)
 
-    // MARK: - IM Conversation Overview
-
-    private func imConversationOverview(_ details: IMConversationDetails) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Conversation Read")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-
-            HStack(spacing: 10) {
-                chip(details.setup.targetTone.title, tint: .blue)
-                chip(details.setup.scenario.title, tint: .purple)
-            }
-
-            if let finalState = details.finalState {
-                HStack(spacing: 10) {
-                    statCard(title: "Trust", value: "\(finalState.normalizedTrust)/10", tint: .blue)
-                    statCard(title: "Tension", value: "\(finalState.normalizedTension)/10", tint: .orange)
-                    statCard(title: "Turns", value: "\(details.turns.filter { $0.speaker == .user }.count)", tint: .green)
+    private func personalBestCelebration(milestone: MilestoneEvent) -> some View {
+        PersonalBestCelebrationScreen(
+            scoreValue: scoreValue,
+            scoreAccent: scoreAccent,
+            modeName: currentMode.displayLabel,
+            previousBest: milestone.detail,
+            onContinue: {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    showPersonalBestScreen = false
                 }
-
-                Text(finalState.beat)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+                advanceToPreSummaryIfNeeded()
+            },
+            proof: personalBestProof
+        )
+        .onAppear {
+            Task { await loadPersonalBestProof() }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Spacing.lg)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
     }
 
-    private func statCard(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(tint)
+    /// Bridge between the personal-best / level-up chain and the new
+    /// pre-summary celebration. Fires the celebration on a small async
+    /// delay (mirroring the rest of the chain's pacing) so the previous
+    /// screen has finished its fade before the new overlay swaps in.
+    /// Idempotent — calling twice is a no-op once the celebration has
+    /// drained the snapshot.
+    private func advanceToPreSummaryIfNeeded() {
+        guard !preSummaryEvents.isEmpty, !showPreSummaryCelebration else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                showPreSummaryCelebration = true
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+    }
+
+    /// Load the proof moment for the personal-best celebration. Uses
+    /// the session we just finished (the one that set the new peak)
+    /// so the quote is fresh in the user's ear. Falls through to nil
+    /// on miss; the celebration renders without the proof line in
+    /// that case (a cold-start safety the AI-flow already builds in).
+    private func loadPersonalBestProof() async {
+        // Most recent session in the store is the one we just finished
+        // and finalized. If for some reason it's missing or has no
+        // transcript, skip the proof load.
+        let recent = PracticeSessionStore.shared.sessions
+            .sorted { $0.date > $1.date }
+            .first
+        guard let session = recent,
+              !session.transcript.isEmpty,
+              session.duration > 8 else {
+            personalBestProof = nil
+            return
+        }
+        let baseline = BaselineStore.shared.baseline
+        let profile = CoachingProfileStore.shared.profile
+        let input = ProofMomentInput(
+            session: session,
+            voice: profile?.speakingStyleGoal,
+            goalParaphrase: profile?.displayableGoal,
+            baselineFillerRate: baseline.fillerRate.confidence != .insufficient
+                ? baseline.fillerRate.value : nil,
+            baselinePace: baseline.pace.confidence != .insufficient
+                ? baseline.pace.value : nil
+        )
+        let proof = await ProofMomentService.shared.proof(for: input)
+        await MainActor.run {
+            withAnimation(.standardSpring) {
+                personalBestProof = proof
+            }
+        }
     }
 
     // MARK: - Celebration Overlay
@@ -1203,15 +2547,6 @@ struct SummaryView: View {
 
     // MARK: - Helpers
 
-    private func chip(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(tint.opacity(0.10), in: Capsule())
-    }
-
     private func color(for tintName: String) -> Color {
         switch tintName {
         case "blue": return .blue
@@ -1222,6 +2557,57 @@ struct SummaryView: View {
         case "indigo": return .indigo
         default: return .primary
         }
+    }
+
+    // MARK: - Drill Routing
+
+    @ViewBuilder
+    private func drillView(for drill: DrillRecommendationV2) -> some View {
+        let drillType = MiniDrillType.from(variationId: drill.variation.id)
+        switch drillType {
+        case .beatTheBrake:
+            BeatTheBrakeView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        case .landThePause:
+            LandThePauseView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        case .prepStack:
+            PREPStackView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        case .standard:
+            MiniDrillView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
+        }
+    }
+
+    private func handleDrillComplete(_ outcome: MiniDrillOutcome) {
+        print("[QuickDrill] Complete: succeeded=\(outcome.succeeded) fillers=\(outcome.fillerCount) words=\(outcome.wordCount) type=\(outcome.drillType)")
+        DrillHistoryStore.shared.record(
+            .init(variationId: outcome.drill.variation.id,
+                  skillArea: outcome.drill.skillArea,
+                  succeeded: outcome.succeeded,
+                  sessionId: UUID())
+        )
+
+        let xpBreakdown = DrillXPEngine.breakdown(outcome: outcome)
+        miniDrillAwardedXP = xpBreakdown.total
+        miniDrillXPBreakdown = xpBreakdown
+        ProfileManager.shared.addXP(xpBreakdown.total)
+        RewardEngine.shared.evaluateDrill(
+            skillArea: outcome.drill.skillArea,
+            succeeded: outcome.succeeded,
+            streak: DrillHistoryStore.shared.currentStreak(for: outcome.drill.skillArea)
+        )
+
+        if !outcome.transcript.isEmpty {
+            BaselineStore.shared.recordMiniDrillOutcome(outcome, prompt: sessionPrompt)
+        }
+
+        activeMiniDrill = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            miniDrillOutcome = outcome
+        }
+    }
+
+    private func handleDrillCancel() {
+        print("[QuickDrill] Cancelled")
+        activeMiniDrill = nil
     }
 
     // MARK: - Setup & Logic
@@ -1238,48 +2624,144 @@ struct SummaryView: View {
         lockedScoreBreakdown = scoreBreakdown
         lockedInsights = insights
         aiFeedback = recentSessions.first?.aiCoachFeedback
+        progressionPreviousXP = profile.xp
         displayedXP = profile.xp
         currentLevel = ProfileManager.levelTitle(forXP: profile.xp)
         nextLevel = ProfileManager.levelTitle(forXP: ((profile.xp / 1000) + 1) * 1000)
         xpToNext = ProfileManager.xpNeededToNextLevel(forXP: profile.xp)
         progress = ProfileManager.progressTowardsNextLevel(forXP: profile.xp)
 
-        profile.addXP(xpEarned)
-        animateXP(to: profile.xp)
-        animateSegments()
-        withAnimation(.easeInOut(duration: 0.35)) {
-            celebrationVisible = scoreValue >= 7 || xpEarned >= 100
+        // Sudden Death commits lifecycle effects on run completion so replay
+        // can never skip earned progress. Other modes still commit here.
+        let result = committedFinalization ?? SessionFinalizer.finalize(
+            xpEarned: xpEarned,
+            scoreValue: scoreValue,
+            effectiveFillerCount: effectiveFillerCount,
+            effectiveDuration: effectiveDuration,
+            transcriptWordCount: transcriptWordCount,
+            scoreBreakdown: lockedScoreBreakdown,
+            currentMode: currentMode,
+            sessionPrompt: sessionPrompt,
+            latestSessionID: latestSessionID,
+            recentSessions: recentSessions,
+            imConversationDetails: imConversationDetails,
+            practiceTitle: practiceTitle,
+            derivedInsightsFirst: derivedInsights.first,
+            pressureLevel: recentSessions.first?.pressureLevel ?? .standard,
+            transcript: transcriptText
+        )
+
+        progressionDeltas = result.achievementDeltas
+        progressionNewUnlocks = result.newUnlocks
+        nextAction = result.nextAction
+        enhancedCoachNote = result.coachNote
+        eloquenceFindings = result.eloquenceFindings
+
+        if result.showProgressionScreen && !isSuddenDeathSummary {
+            showProgressionScreen = true
         }
-        Task {
-            try? await Task.sleep(for: .seconds(1.6))
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.35)) {
-                    celebrationVisible = false
+
+        animateXP(to: result.newXP)
+        animateSegments()
+        CoachHaptic.scoreReveal()
+
+        // Milestone routing — personal bests and level-ups get full intermediary screens,
+        // other milestones (streak, first session) use the compact overlay.
+        if let milestone = result.milestone {
+            if milestone.title == "New personal best." {
+                personalBestMilestone = milestone
+                if !showProgressionScreen {
+                    showPersonalBestScreen = true
+                }
+            } else if milestone.title == "Level up." {
+                levelUpPreviousLevel = result.previousLevel
+                levelUpNewLevel = result.newLevel
+                if !showProgressionScreen {
+                    showLevelUpScreen = true
+                }
+            } else {
+                Task {
+                    try? await Task.sleep(for: .seconds(showProgressionScreen ? 0.5 : 2.2))
+                    await MainActor.run {
+                        withAnimation(.standardSpring) { activeMilestone = milestone }
+                    }
                 }
             }
         }
+
+        // Score celebration + coach note reveal (delayed if progression screen is showing)
+        let celebrationDelay: Double = showProgressionScreen ? 0.5 : 0
         Task {
-            await notificationManager.scheduleFollowUpReminder(
-                profile: coachingProfileStore.profile,
-                relationship: imConversationDetails?.relationshipSnapshot,
-                sessions: sessionStore.sessions,
-                practiceTitle: practiceTitle,
-                nextMove: derivedInsights.first
-            )
+            if celebrationDelay > 0 {
+                try? await Task.sleep(for: .seconds(celebrationDelay))
+            }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    celebrationVisible = scoreValue >= 7 || xpEarned >= 100
+                }
+            }
+            try? await Task.sleep(for: .seconds(0.8))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.4)) { coachNoteRevealed = true }
+            }
+            try? await Task.sleep(for: .seconds(0.8))
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35)) { celebrationVisible = false }
+            }
+        }
+
+        // Snapshot the pending skill level-ups at finalize time so the
+        // pre-summary celebration plays the exact set that was pending
+        // when the session landed. The Summary previously rendered
+        // these as a stack inside the hero (which competed with the
+        // score read); they now play as a sequenced intermediary
+        // screen between any existing celebration chain and the
+        // summary content. We DON'T consume from the store here —
+        // PreSummaryCelebration consumes each event as its card lands
+        // so a mid-sequence back-out doesn't leave them queued for
+        // the next session.
+        preSummaryEvents = skillProgression.pendingLevelUps
+        if !preSummaryEvents.isEmpty {
+            // If no other intermediary screen is going to fire (no
+            // progression screen, no personal best, no level-up), the
+            // pre-summary celebration is the only intermediary — fire
+            // it directly so the user lands on it instead of the
+            // summary content. Other chain branches call
+            // `advanceToPreSummaryIfNeeded` from their own continue
+            // handlers, so we only need the direct path here.
+            let willChainFromOther = showProgressionScreen
+                || showPersonalBestScreen
+                || showLevelUpScreen
+                || personalBestMilestone != nil
+                || (!levelUpNewLevel.isEmpty && levelUpPreviousLevel != levelUpNewLevel)
+            if !willChainFromOther {
+                advanceToPreSummaryIfNeeded()
+            }
         }
     }
 
     private func requestDeeperFeedback() async {
         aiError = nil
-        guard aiSettings.canRequestAnalysis else {
-            aiError = aiSettings.activeProvider == nil
-                ? "AI feedback is not configured yet."
-                : "AI feedback is temporarily unavailable right now."
+
+        // Check API configuration with specific error messages
+        if aiSettings.activeProvider == nil {
+            aiError = "Add an AI API key in Settings to enable Coach Read."
+            return
+        }
+        if aiSettings.hasReachedLimit {
+            aiError = "You've used all \(aiSettings.monthlyLimit) coaching analyses this month. Fresh analyses available \(aiSettings.resetDateFormatted)."
             return
         }
 
         guard let sessionID = latestSessionID else {
             aiError = "This session has not been saved yet. Finish one more rep and try again."
+            return
+        }
+
+        let text = transcriptText
+        let wordCount = text.split(whereSeparator: \.isWhitespace).count
+        if wordCount < 10 {
+            aiError = "Speak at least 10 words to generate coaching feedback."
             return
         }
 
@@ -1289,18 +2771,18 @@ struct SummaryView: View {
         do {
             let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
             let styleSnapshot = PracticeEvaluator.speakingIdentity(
-                for: String(transcript.characters),
+                for: text,
                 profile: coachingProfileStore.profile
             )
             let feedback = try await aiCoachService.generateDeeperFeedback(
                 input: AICoachSessionInput(
-                    transcript: String(transcript.characters),
+                    transcript: text,
                     mode: recentSessions.first?.mode ?? .timed,
                     score: score,
                     fillerCount: fillerCount,
                     duration: duration,
                     wordsPerMinute: PracticeEvaluator.paceSnapshot(
-                        forTranscript: String(transcript.characters),
+                        forTranscript: text,
                         duration: duration
                     ).wordsPerMinute,
                     speakingIdentity: styleSnapshot.identity
@@ -1311,34 +2793,38 @@ struct SummaryView: View {
             sessionStore.saveAIFeedback(sessionID: sessionID, feedback: feedback)
             aiFeedback = feedback
         } catch {
-            aiError = error.localizedDescription
+            let desc = error.localizedDescription
+            if desc.contains("transcriptTooShort") || desc.contains("too short") {
+                aiError = "Speak at least 10 words to generate coaching feedback."
+            } else if desc.contains("API key") || desc.contains("apiKey") {
+                aiError = "API key issue — check your AI provider settings."
+            } else {
+                aiError = "Coach Read failed: \(desc)"
+            }
         }
     }
 
     private func analyzeVideo() {
-        guard premium.consumeVideoAnalysisCredit() else { return }
+        guard let url = recordingURL else { return }
         isAnalyzingVideo = true
 
-        // Simulated analysis — in production this would upload to a backend
         Task {
-            try? await Task.sleep(for: .seconds(2.0))
-            await MainActor.run {
-                videoAnalysisResult = VideoAnalysisResult(
-                    posture: .ok,
-                    postureNote: "Mostly upright — watch for slight slouching",
-                    eyeContact: .good,
-                    eyeContactNote: "Consistent eye-line toward camera",
-                    facialExpression: .ok,
-                    facialExpressionNote: "Neutral — try adding more warmth",
-                    gestureUse: .couldImprove,
-                    gestureNote: "Hands stayed still — use deliberate gestures",
-                    energyConfidence: .good,
-                    energyNote: "Strong vocal energy throughout",
-                    presenceDelivery: .ok,
-                    presenceNote: "Good presence — work on intentional pauses",
-                    overallNote: "Solid delivery fundamentals. Focus on adding deliberate hand gestures and warmer facial expressions to elevate your presence."
-                )
-                isAnalyzingVideo = false
+            do {
+                let result = try await VideoAnalysisService.shared.analyzeRecording(at: url)
+                await MainActor.run {
+                    videoAnalysisResult = result
+                    isAnalyzingVideo = false
+                }
+            } catch {
+                await MainActor.run {
+                    isAnalyzingVideo = false
+                    let desc = error.localizedDescription
+                    if desc.contains("API key") || desc.contains("apiKey") || desc.contains("configured") {
+                        aiError = "Add an AI API key in Settings to analyze video."
+                    } else {
+                        aiError = "Video analysis failed: \(desc)"
+                    }
+                }
             }
         }
     }
@@ -1357,6 +2843,7 @@ struct SummaryView: View {
                 currentLevel = ProfileManager.levelTitle(forXP: endXP)
                 nextLevel = ProfileManager.levelTitle(forXP: ((endXP / 1000) + 1) * 1000)
                 xpToNext = ProfileManager.xpNeededToNextLevel(forXP: endXP)
+                CoachHaptic.xpEarned()
             }
         }
     }
@@ -1376,6 +2863,112 @@ struct SummaryView: View {
     }
 }
 
+#endif
+
+// MARK: - Path-based Navigation Init (in extension to preserve memberwise init)
+#if canImport(SwiftUI)
+extension SummaryView {
+    /// Path-based navigation initializer. Pulls all heavy data from SummaryDataStore.
+    init(payload: SummaryPayload, navigationPath: Binding<NavigationPath>) {
+        let store = SummaryDataStore.shared
+        let entry = store.retrieve(for: payload.id)
+
+        self.transcript = entry?.transcript ?? AttributedString("")
+        self.fillerCount = entry?.fillerCount ?? 0
+        self.duration = entry?.duration ?? 0
+        self.score = entry?.score
+        self.progressSegments = entry?.progressSegments ?? 0
+        self.xpEarned = entry?.xpEarned ?? 0
+        self.committedFinalization = entry?.committedFinalization
+        self.suddenDeathGamePoints = entry?.suddenDeathGamePoints
+        self.suddenDeathMultiplierLabels = entry?.suddenDeathMultiplierLabels ?? []
+        self.suddenDeathTotalWords = entry?.suddenDeathTotalWords
+        self.showDuration = entry?.showDuration ?? true
+        self.practiceTitle = entry?.practiceTitle ?? "Practice Summary"
+        self.feedbackOverride = entry?.feedbackOverride
+        self.headlineOverride = entry?.headlineOverride
+        self.scoreBreakdown = entry?.scoreBreakdown ?? []
+        self.insights = entry?.insights ?? []
+        self.recentSessions = entry?.recentSessions ?? []
+        self.imConversationDetails = entry?.imConversationDetails
+        self.explicitMode = entry?.explicitMode ?? payload.mode
+        self.recordingURL = entry?.recordingURL
+        self.sessionPrompt = entry?.sessionPrompt
+        self.sessionTheme = entry?.sessionTheme
+        self.feedbackCategories = entry?.feedbackCategories ?? []
+        self.strongMoments = entry?.strongMoments ?? []
+        self.weakMoments = entry?.weakMoments ?? []
+        self.durationAssessment = entry?.durationAssessment ?? .onTarget
+        self.targetRange = entry?.targetRange ?? (30, 60, 120)
+
+        // Path-based navigation callbacks
+        let pathBinding = navigationPath
+        let payloadId = payload.id
+        let payloadMode = payload.mode
+        // Captured for "Practice Again" so IM reps re-arm the just-finished
+        // scenario + tone instead of dropping back on the picker. The
+        // other modes have no per-rep setup, so the router ignores this.
+        let practiceAgainIMSetup = entry?.imConversationDetails?.setup
+        self.onHome = {
+            SummaryDataStore.shared.remove(for: payloadId)
+            pathBinding.wrappedValue = NavigationPath()
+        }
+        self.onSelectPracticeMode = {
+            SummaryDataStore.shared.remove(for: payloadId)
+            pathBinding.wrappedValue = NavigationPath()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(AppDestination.practiceSelection)
+            }
+        }
+        self.onPracticeAgain = {
+            SummaryDataStore.shared.remove(for: payloadId)
+            var path = pathBinding.wrappedValue
+            if path.count > 0 { path.removeLast() }
+            if path.count > 0 { path.removeLast() }
+            pathBinding.wrappedValue = path
+            let destination = SummaryPracticeAgainRouter.destination(
+                for: payloadMode,
+                imSetup: practiceAgainIMSetup
+            )
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(destination)
+            }
+        }
+        self.onStartDrill = entry?.onStartDrill
+
+        // Ask-Noum bridge — drops the session-anchored opener into the
+        // store, then pushes the AskNoum destination. A small async
+        // hop separates the store mutation from the nav push so the
+        // store's @Published flush settles before AskNoumView's
+        // onAppear consumes the pending coachID. Same pattern the
+        // onPracticeAgain wiring uses for its push.
+        self.onAskNoumAboutRep = { opener in
+            _ = AskNoumStore.shared.injectUserTurn(opener)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(AppDestination.askNoum)
+            }
+        }
+
+        // Round 19 — "Looking ahead" launch closure. Mirrors the
+        // `onPracticeAgain` shape: pop the summary + the prior practice
+        // screen, then push the destination the view computed via
+        // `SummaryLookingAheadRouter` (which it already does at tap time
+        // because the blueprint depends on view-side state). The user is
+        // launching a NEW rep in a different mode, so the stale summary
+        // shouldn't be reachable via the back chevron — same UX as
+        // Practice Again.
+        self.onStartLookingAhead = { destination in
+            SummaryDataStore.shared.remove(for: payloadId)
+            var path = pathBinding.wrappedValue
+            if path.count > 0 { path.removeLast() }
+            if path.count > 0 { path.removeLast() }
+            pathBinding.wrappedValue = path
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(destination)
+            }
+        }
+    }
+}
 #endif
 
 #if canImport(SwiftUI)
@@ -1415,4 +3008,6 @@ struct SummaryView: View {
         weakMoments: []
     )
 }
+
+
 #endif

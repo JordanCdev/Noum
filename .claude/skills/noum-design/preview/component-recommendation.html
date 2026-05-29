@@ -1,0 +1,68 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Recommendation Card</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+:root{
+  --tint: #3378F5;
+  --tint-light: #5E9BFF;
+}
+body{margin:0;padding:24px;background:var(--bg-screen);font-family:var(--font-rounded);color:var(--fg-primary)}
+.card{
+  position:relative;background:linear-gradient(180deg, color-mix(in srgb, var(--tint) 6%, #fff) 0%, #fff 60%);
+  border-radius:22px;padding:20px;
+  border:1px solid rgba(15,23,42,.04);
+  box-shadow:0 1px 0 rgba(15,23,42,.03), 0 8px 22px -12px rgba(15,23,42,.14);
+}
+.head{display:flex;align-items:flex-start;gap:14px}
+.glyph{
+  width:44px;height:44px;border-radius:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background: color-mix(in srgb, var(--tint) 14%, #fff);
+  color:var(--tint);
+}
+.kicker{
+  font-family:var(--font-text);font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--tint);margin:0;
+}
+.title{
+  font-family:var(--font-rounded);font-weight:800;font-size:20px;letter-spacing:-0.01em;line-height:1.2;
+  color:var(--fg-primary);margin:2px 0 0;
+}
+.why{
+  font-family:var(--font-text);font-weight:500;font-size:13.5px;line-height:1.45;
+  color:#3a4253;margin:6px 0 0;
+}
+.cta{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  margin-top:16px;padding:13px 18px;border-radius:999px;
+  background:linear-gradient(180deg, var(--tint-light) 0%, var(--tint) 100%);
+  color:#fff;font-family:var(--font-rounded);font-weight:800;font-size:15px;letter-spacing:-0.005em;
+  border:0;cursor:pointer;
+  transition:transform 260ms cubic-bezier(0.2,1,0.3,1), opacity 260ms;
+}
+.cta:active{transform:scale(0.97);opacity:0.85}
+.cta svg{width:16px;height:16px}
+</style>
+</head><body>
+
+<div class="card">
+  <div class="head">
+    <div class="glyph">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="13" r="8.5" fill="currentColor" fill-opacity=".18"/>
+        <path d="M12 13 L12 8"/>
+        <path d="M12 13 L15.6 14.6" opacity=".7"/>
+        <rect x="9.5" y="2" width="5" height="2.5" rx="1" fill="currentColor" stroke="none"/>
+      </svg>
+    </div>
+    <div style="flex:1;min-width:0">
+      <p class="kicker">Next focus</p>
+      <h3 class="title">Sharpen your 60-second open</h3>
+      <p class="why">Builds on yesterday's session — three timed reps to lock in cleaner starts.</p>
+    </div>
+  </div>
+  <button class="cta">
+    Start practice
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  </button>
+</div>
+
+</body></html>

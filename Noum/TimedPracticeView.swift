@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 #endif
 #if canImport(AVFoundation)
-import AVFoundation
+@preconcurrency import AVFoundation
 #endif
 
 #if canImport(SwiftUI)
@@ -371,46 +371,26 @@ private struct SettingsCardView: View {
     @Binding var showFillerWords: Bool
     @Binding var enableVideoRecording: Bool
     @ObservedObject var videoManager: VideoRecordingManager
+    @AppStorage("timedPractice.showSettings") private var showSettings: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Preferences")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            DisclosureGroup(isExpanded: $showSettings) {
+                Divider()
+                    .padding(.horizontal, 16)
 
-            Divider()
-                .padding(.horizontal, 16)
+                // Shared settings — available in all modes
+                if selectedMode == .coach {
+                    toggleRow(
+                        icon: "brain.head.profile",
+                        iconColor: .blue,
+                        title: "Thinking time",
+                        caption: "15 seconds to prepare",
+                        isOn: $enableThinkingTime
+                    )
 
-            if selectedMode == .classic {
-                toggleRow(
-                    icon: "eye",
-                    iconColor: .indigo,
-                    title: "Show prompt while speaking",
-                    caption: "Keep the topic visible",
-                    isOn: $keepPromptVisible
-                )
-
-                thinDivider
-
-                timerPicker
-            }
-
-            if selectedMode == .coach {
-                toggleRow(
-                    icon: "brain.head.profile",
-                    iconColor: .blue,
-                    title: "Thinking time",
-                    caption: "15 seconds to prepare",
-                    isOn: $enableThinkingTime
-                )
-
-                thinDivider
+                    thinDivider
+                }
 
                 toggleRow(
                     icon: "eye",
@@ -422,15 +402,17 @@ private struct SettingsCardView: View {
 
                 thinDivider
 
-                toggleRow(
-                    icon: "waveform.badge.magnifyingglass",
-                    iconColor: .red,
-                    title: "Filler word tracking",
-                    caption: "Counts verbal crutches live",
-                    isOn: $showFillerWords
-                )
+                if selectedMode == .coach {
+                    toggleRow(
+                        icon: "waveform.badge.magnifyingglass",
+                        iconColor: .red,
+                        title: "Filler word tracking",
+                        caption: "Counts verbal crutches live",
+                        isOn: $showFillerWords
+                    )
 
-                thinDivider
+                    thinDivider
+                }
 
                 timerPicker
 
@@ -457,7 +439,7 @@ private struct SettingsCardView: View {
                     icon: "video.fill",
                     iconColor: .pink,
                     title: "Record video",
-                    caption: showLiveTranscript ? "Not available with transcript" : "Review your delivery after",
+                    caption: showLiveTranscript ? "Not available with transcript" : "Full-screen camera while speaking",
                     isOn: Binding(
                         get: { enableVideoRecording },
                         set: { newValue in
@@ -470,12 +452,7 @@ private struct SettingsCardView: View {
                                         await MainActor.run { enableVideoRecording = false }
                                         return
                                     }
-                                    let ready = await videoManager.prepareSession()
-                                    if ready, let session = videoManager.captureSession, !session.isRunning {
-                                        DispatchQueue.global(qos: .userInitiated).async {
-                                            session.startRunning()
-                                        }
-                                    }
+                                    _ = await videoManager.prepareSession()
                                 }
                             } else {
                                 videoManager.cleanup()
@@ -485,20 +462,19 @@ private struct SettingsCardView: View {
                     disabled: showLiveTranscript
                 )
 
-                thinDivider
-
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(AppColor.pro)
-                    Text("Live transcript · Video · AI feedback · Score breakdown")
-                        .font(.caption.weight(.medium))
+                // Removed classic-only coach upsell since recording is now available in all modes
+            } label: {
+                HStack {
+                    Text("Preferences")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.pro.opacity(0.05))
             }
+            .tint(.secondary)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, showSettings ? 0 : 18)
         }
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .overlay(
@@ -507,6 +483,7 @@ private struct SettingsCardView: View {
         )
         .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
         .animation(.standardSpring, value: selectedMode)
+        .animation(.standardSpring, value: showSettings)
     }
 
     private var timerPicker: some View {
@@ -578,38 +555,81 @@ private struct SettingsCardView: View {
 @available(iOS 17.0, macOS 12.0, *)
 struct TimedPracticeView: View {
     @Environment(\.dismiss) private var dismiss
-    var goHome: (() -> Void)?
+    @Binding var navigationPath: NavigationPath
     @StateObject private var speechVM = SpeechRecognizerViewModel(preloadOnInit: false)
     @StateObject private var practiceSettings = PracticeSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var premium = PremiumManager.shared
+    // M21: Session Intent prompt — sheet-driven, one-shot per
+    // entry-to-setup. `forwardPlanStore` + `sessionIntentStore` are
+    // observed so the chip options refresh when the user regenerates
+    // their plan without leaving Timed.
+    @StateObject private var forwardPlanStore = ForwardPlanStore.shared
+    @StateObject private var sessionIntentStore = SessionIntentStore.shared
+    @State private var showIntentPrompt: Bool = false
+    @State private var intentPromptShownThisVisit: Bool = false
 
     // Session state
-    @State private var selectedTheme: PromptTheme = .all
+    @AppStorage("timedPractice.selectedTheme") private var selectedThemeRaw: String = PromptTheme.all.rawValue
     @State private var question: String = ""
+    @State private var wordOfTheDayTarget: String?
     @State private var phase: TimedSessionPhase = .setup
     @State private var thinkingCountdown: Int = 15
     @State private var elapsedSeconds: Int = 0
-    @State private var showSummary = false
     @State private var evaluation: PracticeEvaluation?
     @State private var isStopping = false
+    @State private var showExitConfirmation = false
+    @State private var activeDrill: DrillRecommendation?
 
     // Tasks
     @State private var thinkingTask: Task<Void, Never>?
     @State private var speakingTask: Task<Void, Never>?
 
-    // Settings (defaults = immersive "Classic" experience)
-    @State private var selectedMode: ImpromptuSetupMode = .classic
-    @State private var keepPromptVisible: Bool = false
-    @State private var timerDisplay: TimerDisplayOption = .none
-    @State private var enableThinkingTime: Bool = true
-    @State private var showLiveTranscript: Bool = false
-    @State private var showFillerWords: Bool = false
+    // Settings (persisted via @AppStorage)
+    @AppStorage("timedPractice.selectedMode") private var selectedModeRaw: String = ImpromptuSetupMode.classic.rawValue
+    @AppStorage("timedPractice.keepPromptVisible") private var keepPromptVisible: Bool = false
+    @AppStorage("timedPractice.timerDisplay") private var timerDisplayRaw: String = TimerDisplayOption.none.rawValue
+    @AppStorage("timedPractice.enableThinkingTime") private var enableThinkingTime: Bool = true
+    @AppStorage("timedPractice.showLiveTranscript") private var showLiveTranscript: Bool = false
+    @AppStorage("timedPractice.showFillerWords") private var showFillerWords: Bool = false
+    @AppStorage("timedPractice.classicInitialized") private var classicInitialized: Bool = false
+    @AppStorage("timedPractice.coachInitialized") private var coachInitialized: Bool = false
 
-    // TTS — persistent synthesizer + delegate, prewarmed voice for instant playback
+    private var selectedMode: ImpromptuSetupMode {
+        get { ImpromptuSetupMode(rawValue: selectedModeRaw) ?? .classic }
+        nonmutating set { selectedModeRaw = newValue.rawValue }
+    }
+
+    private var timerDisplay: TimerDisplayOption {
+        get { TimerDisplayOption(rawValue: timerDisplayRaw) ?? .none }
+        nonmutating set { timerDisplayRaw = newValue.rawValue }
+    }
+
+    private var selectedTheme: PromptTheme {
+        get { PromptTheme(rawValue: selectedThemeRaw) ?? .all }
+        nonmutating set { selectedThemeRaw = newValue.rawValue }
+    }
+
+    // TTS — persistent synthesizer + delegate, premium voice for warm, coach-like delivery
     private let ttsEngine = AVSpeechSynthesizer()
     private let ttsDelegate = TTSDelegate()
-    private let prewarmedVoice = AVSpeechSynthesisVoice(language: "en-US")
+    /// Select the best available English voice — prefer premium/enhanced quality voices
+    private let prewarmedVoice: AVSpeechSynthesisVoice? = {
+        let allVoices = AVSpeechSynthesisVoice.speechVoices()
+        let enVoices = allVoices.filter { $0.language.hasPrefix("en") }
+
+        // Prefer premium quality voices (user-downloaded enhanced voices)
+        if let premium = enVoices.first(where: { $0.quality == .premium }) {
+            return premium
+        }
+        // Fall back to enhanced quality
+        if let enhanced = enVoices.first(where: { $0.quality == .enhanced }) {
+            return enhanced
+        }
+        // Fall back to any en-US voice
+        return AVSpeechSynthesisVoice(language: "en-US")
+    }()
     @State private var isSpeakingPrompt = false
     @State private var ttsReady = false
 
@@ -618,7 +638,7 @@ struct TimedPracticeView: View {
 
     // Video recording (Coach mode only)
     @StateObject private var videoManager = VideoRecordingManager.shared
-    @State private var enableVideoRecording = false
+    @AppStorage("timedPractice.enableVideoRecording") private var enableVideoRecording: Bool = false
     @State private var showVideoPlayback = false
 
     // Immersive state
@@ -631,6 +651,17 @@ struct TimedPracticeView: View {
     @State private var showCelebration: Bool = false
 
     private let totalDuration = ImpromptuTimingState.hardStopSeconds
+
+    private var thinkingSubtitle: String {
+        if practiceSettings.pressureModeEnabled {
+            return thinkingCountdown > 5 ? "Pressure mode — think fast" : thinkingCountdown > 2 ? "Commit to your opening" : "Go."
+        }
+        return thinkingCountdown > 10 ? "Breathe and think" : thinkingCountdown > 5 ? "Plan your opening" : "Almost ready..."
+    }
+
+    private var characterStage: NoumCharacter.Stage {
+        ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
 
     var body: some View {
         ZStack {
@@ -668,58 +699,119 @@ struct TimedPracticeView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(phase == .speaking || phase == .thinking)
+        .toolbar {
+            if phase == .speaking || phase == .thinking {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showExitConfirmation = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.body.weight(.semibold))
+                            Text("Back")
+                        }
+                    }
+                }
+            }
+        }
         .toolbar(phase == .setup ? .visible : .hidden, for: .navigationBar)
+        .alert("End session?", isPresented: $showExitConfirmation) {
+            Button("Keep Practicing", role: .cancel) { }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("Your current session will be lost.")
+        }
         .accessibilityIdentifier("timedPractice.screen")
+        .sheet(isPresented: $showIntentPrompt) {
+            // M21: declared focus prompt. Sheet is shown at most once per
+            // visit to the setup phase. Dismissing without selecting drops
+            // cleanly — the rep finalizes with `intentFocus: nil`.
+            SessionIntentPromptView(
+                options: SessionIntentEngine.options(
+                    forwardPlan: forwardPlanStore.activePlan,
+                    trendFocus: TrendAnalyzer.primaryFocus(
+                        trends: TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots),
+                        currentSessionSnapshot: nil,
+                        recentDrills: DrillHistoryStore.shared.entries,
+                        styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+                    ),
+                    profile: coachingProfileStore.profile
+                ),
+                onSelect: { intent in
+                    sessionIntentStore.setPending(intent)
+                },
+                onSkip: {
+                    sessionIntentStore.clearPending()
+                }
+            )
+            .presentationDetents([.medium])
+        }
         .task {
             // Batch initial setup into a single Task so SwiftUI
             // processes the state changes in one transaction.
             // Yield first so the view renders its initial frame immediately.
             await Task.yield()
+            let seededPrompt = consumeSeededPrompt()
+            wordOfTheDayTarget = consumeSeededWord()
             if question.isEmpty {
-                question = PracticeTopics.random()
+                // Word-of-the-day path — if home tile seeded a one-shot
+                // neutral prompt, use it directly. Today's word is carried
+                // separately as a cue so the topic never does the user's
+                // vocabulary work for them.
+                if let seeded = seededPrompt {
+                    question = seeded
+                } else {
+                    question = await PracticeTopics.next(
+                        profile: coachingProfileStore.profile,
+                        baseline: baselineStore.baseline,
+                        theme: selectedTheme
+                    )
+                }
             }
             speechVM.prepareForInteractiveUse()
             prewarmTTS()
+
+            // If video recording was previously enabled, prepare the camera session
+            // prepareSession() starts the session internally before publishing captureSession
+            if enableVideoRecording && videoManager.captureSession == nil {
+                let hasPermission = await VideoRecordingManager.requestCameraPermission()
+                if hasPermission {
+                    _ = await videoManager.prepareSession()
+                } else {
+                    enableVideoRecording = false
+                }
+            }
+
+            // Quick Start handshake — if the picker armed Timed for a
+            // one-tap launch, skip the setup card and go straight into
+            // the existing begin flow. `beginSession` re-reads the
+            // persisted Classic/Coach + theme config, so the user's
+            // last settings still apply; "Start now" only saves taps,
+            // not their preferences.
+            if phase == .setup, PracticeModeQuickStart.consume(for: .timed) {
+                beginSession()
+            } else if phase == .setup, !intentPromptShownThisVisit,
+                      sessionIntentStore.pendingIntent == nil {
+                // M21: surface the focus prompt at most once per visit.
+                // Skipped on Quick Start (the user already committed to
+                // launching) and on returns from a started rep (the
+                // pending intent has already been consumed or the user
+                // already declined this visit).
+                intentPromptShownThisVisit = true
+                showIntentPrompt = true
+            }
         }
-        .onDisappear { cleanup() }
+        .onDisappear {
+            cleanup()
+            // M21: drop any pending intent that wasn't consumed by a
+            // finalize — keeps the next mode entry clean.
+            sessionIntentStore.clearPending()
+        }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
-        .navigationDestination(isPresented: $showSummary) {
-            SummaryView(
-                transcript: speechVM.highlightedText,
-                fillerCount: speechVM.fillerWordCount,
-                duration: speechVM.lastSessionDuration,
-                score: evaluation?.score,
-                progressSegments: progressSegments,
-                xpEarned: evaluation?.xpEarned ?? 0,
-                showDuration: false,
-                practiceTitle: "Impromptu Practice",
-                feedbackOverride: evaluation?.feedback,
-                headlineOverride: evaluation?.headline,
-                scoreBreakdown: evaluation?.segments ?? [],
-                insights: evaluation?.insights ?? [],
-                recentSessions: speechVM.pastSessions,
-                recordingURL: videoManager.recordingURL,
-                sessionPrompt: question,
-                sessionTheme: selectedTheme,
-                feedbackCategories: evaluation?.categories ?? [],
-                strongMoments: evaluation?.strongMoments ?? [],
-                weakMoments: evaluation?.weakMoments ?? [],
-                onSelectPracticeMode: {
-                    showSummary = false
-                    if let goHome { goHome() } else { dismiss() }
-                },
-                onHome: {
-                    showSummary = false
-                    if let goHome { goHome() } else { dismiss() }
-                },
-                onPracticeAgain: {
-                    showSummary = false
-                    restartSession()
-                }
-            )
-        }
+        // Summary navigation is handled by path-based .navigationDestination(for:) in ContentView
     }
 
     // MARK: - Background
@@ -761,6 +853,23 @@ struct TimedPracticeView: View {
         max(0, totalDuration - elapsedSeconds)
     }
 
+    private func consumeSeededPrompt() -> String? {
+        let defaults = UserDefaults.standard
+        defer { defaults.removeObject(forKey: "timedPractice.suggestedPrompt") }
+        return normalizedSeed(defaults.string(forKey: "timedPractice.suggestedPrompt"))
+    }
+
+    private func consumeSeededWord() -> String? {
+        let defaults = UserDefaults.standard
+        defer { defaults.removeObject(forKey: "timedPractice.suggestedWord") }
+        return normalizedSeed(defaults.string(forKey: "timedPractice.suggestedWord"))
+    }
+
+    private func normalizedSeed(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func formattedTime(_ seconds: Int) -> String {
         let m = seconds / 60
         let s = seconds % 60
@@ -772,17 +881,34 @@ struct TimedPracticeView: View {
     private var setupContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                // Header
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Impromptu")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text("Pick a theme. Think fast. Speak well.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
+                // Header — orb anchors the screen as a coach presence
+                // before the user even sees the timer; once recording
+                // starts the bound audioLevel reads as live.
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    NoumCharacter(
+                        mood: speechVM.isRecording ? .listening : .calm,
+                        tint: AppColor.brandBlue,
+                        size: 44,
+                        audioLevel: speechVM.audioLevel,
+                        stage: characterStage
+                    )
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Impromptu")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                        Text("Pick a theme. Think fast. Speak well.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
+
+                if let wordOfTheDayTarget {
+                    wordOfTheDaySetupCue(wordOfTheDayTarget)
+                }
 
                 // Mode selector
                 modeSelector
@@ -793,33 +919,130 @@ struct TimedPracticeView: View {
                 // Settings card
                 settingsCard
 
-                // Camera preview (when video recording is enabled)
+                // M14: live camera preview during setup so the user can
+                // see themselves and adjust framing BEFORE the rep starts.
+                // Real-device feedback: the preview was only rendering during
+                // the speaking phase, so users had no visibility while
+                // they were prepping. Tap the toggle in settings → preview
+                // appears here.
                 if enableVideoRecording, let session = videoManager.captureSession {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Camera Preview")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-
-                        CameraPreviewView(session: session)
-                            .frame(height: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                    .stroke(Color.pink.opacity(0.2), lineWidth: 1)
-                            )
-
-                        Text("You'll see yourself full-screen during the session")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 4)
-                    }
+                    cameraSetupPreview(session: session)
                 }
 
                 Spacer(minLength: 100)
             }
             .padding(.horizontal, 20)
         }
+    }
+
+    @available(iOS 17.0, *)
+    private func cameraSetupPreview(session: AVCaptureSession) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.pink)
+                Text("Camera preview")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                Text("Visible only to you")
+                    .font(Typography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            CameraPreviewView(session: session)
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                        .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                )
+        }
+    }
+
+    private func wordOfTheDaySetupCue(_ word: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "textformat")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppColor.brandBlue)
+                .frame(width: 34, height: 34)
+                .background(AppColor.brandBlue.opacity(0.10), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("TODAY'S WORD")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .tracking(0.8)
+
+                Text(word)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("Use it if it earns its place.")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's word: \(word). Use it if it earns its place.")
+    }
+
+    private func wordOfTheDayDarkCue(_ word: String) -> some View {
+        HStack(spacing: 8) {
+            Text("TODAY'S WORD")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white.opacity(0.45))
+                .tracking(0.8)
+            Text(word)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.84))
+            Text("Use it if it fits.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.45))
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.08), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's word: \(word). Use it if it fits.")
+    }
+
+    private func wordOfTheDayLightCue(_ word: String) -> some View {
+        HStack(spacing: 8) {
+            Text("TODAY'S WORD")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+            Text(word)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("Use it if it fits.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(AppColor.brandBlue.opacity(0.08), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Today's word: \(word). Use it if it fits.")
     }
 
     private var modeSelector: some View {
@@ -899,9 +1122,12 @@ struct TimedPracticeView: View {
 
                     HStack(spacing: 4) {
                         if mode == .coach && !premium.canUseCoachMode {
-                            Image(systemName: "lock.fill")
-                                .font(.caption2)
-                                .foregroundStyle(isSelected ? .white.opacity(0.9) : mode.badgeColor)
+                            Text("PRO")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.orange, in: Capsule())
                         }
                         Text(mode.badge)
                             .font(.caption2.weight(.bold))
@@ -956,12 +1182,16 @@ struct TimedPracticeView: View {
     private func applyModeDefaults(_ mode: ImpromptuSetupMode) {
         switch mode {
         case .classic:
+            guard !classicInitialized else { return }
+            classicInitialized = true
             showLiveTranscript = false
             showFillerWords = false
             keepPromptVisible = false
             timerDisplay = .none
             enableThinkingTime = true
         case .coach:
+            guard !coachInitialized else { return }
+            coachInitialized = true
             showLiveTranscript = true
             showFillerWords = true
             keepPromptVisible = true
@@ -973,9 +1203,9 @@ struct TimedPracticeView: View {
 
     private var settingsCard: some View {
         SettingsCardView(
-            selectedMode: $selectedMode,
+            selectedMode: Binding(get: { selectedMode }, set: { selectedMode = $0 }),
             keepPromptVisible: $keepPromptVisible,
-            timerDisplay: $timerDisplay,
+            timerDisplay: Binding(get: { timerDisplay }, set: { timerDisplay = $0 }),
             enableThinkingTime: $enableThinkingTime,
             showLiveTranscript: $showLiveTranscript,
             showFillerWords: $showFillerWords,
@@ -1025,6 +1255,10 @@ struct TimedPracticeView: View {
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
+
+                    if let wordOfTheDayTarget {
+                        wordOfTheDayDarkCue(wordOfTheDayTarget)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
@@ -1048,20 +1282,20 @@ struct TimedPracticeView: View {
 
             // Countdown with breathing indicator
             ZStack {
-                // Breathing circle — calming visual anchor
+                // Breathing circle — calming in normal mode, tighter pulse in pressure mode
                 Circle()
-                    .fill(Color.white.opacity(0.04))
+                    .fill(practiceSettings.pressureModeEnabled ? Color.orange.opacity(0.06) : Color.white.opacity(0.04))
                     .frame(width: breathePhase ? 180 : 140, height: breathePhase ? 180 : 140)
                     .blur(radius: 30)
-                    .animation(.easeInOut(duration: 3.5).repeatForever(autoreverses: true), value: breathePhase)
+                    .animation(.easeInOut(duration: practiceSettings.pressureModeEnabled ? 2.0 : 3.5).repeatForever(autoreverses: true), value: breathePhase)
 
                 VStack(spacing: 10) {
                     Text("\(thinkingCountdown)")
                         .font(.system(size: 80, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(practiceSettings.pressureModeEnabled ? .orange : .white)
                         .contentTransition(.numericText())
 
-                    Text(thinkingCountdown > 10 ? "Breathe and think" : thinkingCountdown > 5 ? "Plan your opening" : "Almost ready...")
+                    Text(thinkingSubtitle)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.4))
                         .contentTransition(.interpolate)
@@ -1090,6 +1324,9 @@ struct TimedPracticeView: View {
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                if let wordOfTheDayTarget {
+                    wordOfTheDayLightCue(wordOfTheDayTarget)
+                }
                 Text("Starting soon...")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1106,21 +1343,22 @@ struct TimedPracticeView: View {
 
     // MARK: - Speaking Phase
 
-    /// Whether Coach mode's full-screen camera is active
+    /// Whether full-screen camera background is active.
+    /// True whenever recording is enabled and the camera session is prepared — any mode.
     private var isFullScreenCameraActive: Bool {
-        enableVideoRecording && videoManager.isRecording && videoManager.captureSession != nil && selectedMode == .coach
+        enableVideoRecording && videoManager.captureSession != nil
     }
 
     private var speakingContent: some View {
         ZStack {
-            // Full-screen camera background (Coach mode with video)
+            // Full-screen camera background (any mode with recording enabled)
             if isFullScreenCameraActive, let session = videoManager.captureSession {
                 CameraPreviewView(session: session)
                     .ignoresSafeArea()
                     .overlay {
-                        // Dark gradient vignette so HUD text is readable over any background
+                        // Top-to-bottom vignette for readability
                         LinearGradient(
-                            colors: [.black.opacity(0.6), .clear, .clear, .black.opacity(0.7)],
+                            colors: [.black.opacity(0.5), .clear, .clear, .black.opacity(0.75)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -1129,8 +1367,25 @@ struct TimedPracticeView: View {
             }
 
             VStack(spacing: 0) {
+                // Pressure mode indicator (shown when pressure toggle is on)
+                if practiceSettings.pressureModeEnabled && activeDrill == nil {
+                    pressureBanner
+                }
+
+                // Drill constraint banner (shown during Next Rep sessions)
+                if let drill = activeDrill {
+                    drillBanner(drill)
+                }
+
+                // Goal-aware intent reminder — shows for ~4s at session start
+                // so the user sees what voice they're working toward every rep.
+                // Suppressed when an active drill already owns the intent surface.
+                if activeDrill == nil, let voice = coachingProfileStore.profile?.speakingStyleGoal {
+                    VoiceAnchorBanner(styleGoal: voice, isRecording: speechVM.isRecording)
+                }
+
                 if isFullScreenCameraActive {
-                    coachHUDLayout
+                    cameraOverlayLayout
                 } else if showLiveTranscript {
                     speakingTranscriptLayout
                 } else {
@@ -1138,15 +1393,79 @@ struct TimedPracticeView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            // Real-time positive feedback — pulses when the engine catches
+            // a rhetorical move. Self-contained: lifecycle is bound to the
+            // speech VM's recording flag, so it resets between sessions.
+            // styleGoal makes the chip's subtext goal-aware when the device
+            // aligns with the user's chosen voice (e.g. "toward your warm voice").
+            LiveEloquenceHUD(
+                speechVM: speechVM,
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal
+            )
+                .padding(.top, 4)
+        }
     }
 
-    // MARK: - Coach HUD Layout (full-screen camera with overlay)
+    /// Compact banner shown at top during a drill session, reminding the user of their constraint.
+    private func drillBanner(_ drill: DrillRecommendation) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: drill.icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(drill.tint)
+            Text(drill.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("·")
+                .foregroundStyle(.secondary)
+            Text(drill.constraint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
 
-    private var coachHUDLayout: some View {
+    /// Compact banner indicating pressure mode is active during speaking.
+    private var pressureBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bolt.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.orange)
+            Text("Pressure Mode")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("·")
+                .foregroundStyle(.secondary)
+            Text("One take — stay committed")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.orange.opacity(0.15), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
+
+    // MARK: - Camera Overlay Layout (full-screen camera with minimal overlay)
+
+    private var cameraOverlayLayout: some View {
         VStack(spacing: 0) {
-            // Top bar: REC indicator + timing state
-            HStack {
-                // REC badge
+            // Top bar: minimal — REC dot + timing + flip
+            HStack(spacing: 12) {
+                // REC indicator (no "LIVE" label)
                 HStack(spacing: 6) {
                     Circle()
                         .fill(.red)
@@ -1155,100 +1474,128 @@ struct TimedPracticeView: View {
                         .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: recPulse)
                         .onAppear { recPulse = true }
                     Text("REC")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.8))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(.red.opacity(0.25), in: Capsule())
-
-                Spacer()
-
-                // Timing state badge
-                Text(timingState.spotlightLabel)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(timingState == .neutral ? .white.opacity(0.7) : timingState.vividColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.12), in: Capsule())
-                    .contentTransition(.interpolate)
-                    .animation(.easeInOut(duration: 0.3), value: timingState)
+                .background(Color.red.opacity(0.2), in: Capsule())
 
                 if speechVM.connectionError != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
                         .foregroundStyle(.red)
-                        .padding(.leading, 4)
                 }
+
+                Spacer()
+
+                // Flip camera
+                Button { videoManager.flipCamera() } label: {
+                    Image(systemName: "camera.rotate")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial.opacity(0.3), in: Circle())
+                }
+                .buttonStyle(.pressable)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            // Compact timing bar
-            timingIndicator
-                .padding(.top, 8)
-
-            // Timer
-            Text(formattedTime(elapsedSeconds))
-                .font(.system(size: 56, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
-                .contentTransition(.numericText())
-                .padding(.top, 12)
+            .padding(.top, 8)
 
             Spacer()
 
-            // Bottom HUD: prompt + filler count + transcript snippet
-            VStack(spacing: 10) {
-                // Optional prompt pill
-                if keepPromptVisible {
-                    HStack(spacing: 8) {
-                        Image(systemName: "quote.opening")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.4))
-                        Text(question)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.8))
-                            .lineLimit(2)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial.opacity(0.6), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                }
+            // Bottom overlay panel — elegant, glass-style
+            cameraBottomPanel
+        }
+    }
 
-                // Live transcript snippet (last few words)
-                if showLiveTranscript {
-                    Text(speechVM.highlightedText)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial.opacity(0.5), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
-                }
-
-                // Filler words chip
-                if showFillerWords && speechVM.fillerWordCount > 0 {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color.red.opacity(0.6))
-                            .frame(width: 6, height: 6)
-                        Text("Fillers")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text("\(speechVM.fillerWordCount)")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.red)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial.opacity(0.5), in: Capsule())
+    private var cameraBottomPanel: some View {
+        VStack(spacing: 0) {
+            // Timing progress bar — thin accent line
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(timingState == .neutral ? .white.opacity(0.4) : timingState.vividColor)
+                        .frame(width: geo.size.width * CGFloat(min(elapsedSeconds, totalDuration)) / CGFloat(max(totalDuration, 1)))
+                        .animation(.easeInOut(duration: 0.5), value: elapsedSeconds)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
+            .frame(height: 2)
+
+            VStack(spacing: 10) {
+                // Timer — large, cinematic
+                Text(formattedTime(elapsedSeconds))
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+
+                // Timing state label
+                if timingState != .neutral {
+                    Text(timingState.spotlightLabel)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(timingState.vividColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(timingState.vividColor.opacity(0.15), in: Capsule())
+                        .contentTransition(.interpolate)
+                        .transition(.opacity.combined(with: .scale))
+                }
+
+                // Optional prompt — compact
+                if keepPromptVisible {
+                    Text(question)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 12)
+                }
+
+                // Filler count — subtle
+                if showFillerWords && speechVM.fillerWordCount > 0 {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Color.red.opacity(0.6))
+                            .frame(width: 5, height: 5)
+                        Text("Fillers")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.3))
+                        Text("\(speechVM.fillerWordCount)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
+                }
+
+                // Inline stop button — integrated into the panel
+                Button(action: { stopSession() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12))
+                        Text("End")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 10)
+                    .background(Color.red.opacity(0.8), in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .disabled(isStopping)
+                .opacity(isStopping ? 0.5 : 1)
+            }
+            .padding(.top, 14)
+            .padding(.bottom, 20)
+            .padding(.horizontal, 24)
         }
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.45), .black.opacity(0.7)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     // MARK: - Coach / Transcript Layout
@@ -1256,7 +1603,16 @@ struct TimedPracticeView: View {
     private var speakingTranscriptLayout: some View {
         VStack(spacing: 0) {
             // Premium header with status
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 12) {
+                NoumCharacter(
+                    mood: speechVM.isRecording ? .listening : .calm,
+                    tint: AppColor.brandBlue,
+                    size: 36,
+                    audioLevel: speechVM.audioLevel,
+                    stage: characterStage
+                )
+                .accessibilityHidden(true)
+
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Circle()
@@ -1387,7 +1743,7 @@ struct TimedPracticeView: View {
                     }
                     Spacer()
                     Text("\(speechVM.fillerWordCount)")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(Typography.cardTitle)
                         .foregroundStyle(speechVM.fillerWordCount > 5 ? .red : speechVM.fillerWordCount > 2 ? .orange : .green)
                 }
                 .padding(.horizontal, 20)
@@ -1522,27 +1878,8 @@ struct TimedPracticeView: View {
     // MARK: - Celebration Overlay
 
     private var celebrationOverlay: some View {
-        ZStack {
-            // Burst of emoji particles
-            ForEach(0..<12, id: \.self) { i in
-                let angle = Double(i) * (360.0 / 12.0)
-                let radians = angle * .pi / 180
-                Text(["🎉", "✨", "🔥", "⭐️", "💪", "🏆"][i % 6])
-                    .font(.system(size: CGFloat.random(in: 20...32)))
-                    .offset(
-                        x: showCelebration ? cos(radians) * CGFloat.random(in: 100...160) : 0,
-                        y: showCelebration ? sin(radians) * CGFloat.random(in: 100...160) : 0
-                    )
-                    .opacity(showCelebration ? 0 : 1)
-                    .scaleEffect(showCelebration ? 0.3 : 1.0)
-                    .animation(
-                        .easeOut(duration: 1.4)
-                            .delay(Double(i) * 0.04),
-                        value: showCelebration
-                    )
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ConfettiLayer(active: showCelebration)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Haptics
@@ -1588,31 +1925,42 @@ struct TimedPracticeView: View {
     }
 
     private func speakPromptAloud() {
-        // Ensure delegate is wired up
-        if ttsEngine.delegate == nil {
-            configureTTSDelegate()
-        }
-
         // Toggle off if already speaking
-        if ttsEngine.isSpeaking {
+        let speaker = IMMessageSpeaker.shared
+        if ttsEngine.isSpeaking || isSpeakingPrompt {
             ttsEngine.stopSpeaking(at: .immediate)
+            speaker.stop()
             isSpeakingPrompt = false
             return
         }
 
-        // Activate audio session before speaking — this is the root fix for
-        // delayed / silent TTS on first invocation
-        activateTTSAudioSession()
-
-        let utterance = AVSpeechUtterance(string: question)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
-        utterance.pitchMultiplier = 1.04
-        utterance.prefersAssistiveTechnologySettings = false
-        // Use prewarmed voice to avoid first-call latency
-        utterance.voice = prewarmedVoice
-
         isSpeakingPrompt = true
-        ttsEngine.speak(utterance)
+
+        // Try cloud TTS first (natural, high quality voice) with on-device fallback
+        Task {
+            let didPlayCloud = await speaker.speakPrompt(question)
+            if didPlayCloud {
+                // Cloud audio played successfully — wait for it to finish
+                // The speaker's AVAudioPlayer will handle playback completion
+                await MainActor.run { isSpeakingPrompt = false }
+                return
+            }
+
+            // Fallback: on-device AVSpeechSynthesizer
+            await MainActor.run {
+                if ttsEngine.delegate == nil { configureTTSDelegate() }
+                activateTTSAudioSession()
+
+                let utterance = AVSpeechUtterance(string: question)
+                utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
+                utterance.pitchMultiplier = 0.98
+                utterance.preUtteranceDelay = 0.15
+                utterance.postUtteranceDelay = 0.3
+                utterance.prefersAssistiveTechnologySettings = false
+                utterance.voice = prewarmedVoice
+                ttsEngine.speak(utterance)
+            }
+        }
     }
 
     /// Prewarm TTS engine with a silent utterance so the first real speak is instant.
@@ -1820,44 +2168,47 @@ struct TimedPracticeView: View {
         let isImmersive = phase == .speaking && !showLiveTranscript && !isFullScreenCameraActive
         let isCamera = isFullScreenCameraActive
 
-        return VStack(spacing: 8) {
-            Button(action: { stopSession() }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "stop.fill")
-                        .font(.subheadline)
-                    Text("End Session")
-                        .font(.headline.weight(.semibold))
+        return Group {
+            if isCamera {
+                // Camera mode: stop button is in the overlay panel, no bottom bar needed
+                Color.clear.frame(height: 0)
+            } else {
+                VStack(spacing: 8) {
+                    Button(action: { stopSession() }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "stop.fill")
+                                .font(.subheadline)
+                            Text("End Session")
+                                .font(.headline.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                    }
+                    .background(
+                        isImmersive
+                            ? AnyShapeStyle(Color.white.opacity(0.15))
+                            : AnyShapeStyle(Color.red),
+                        in: Capsule()
+                    )
+                    .foregroundStyle(.white)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(isImmersive ? 0.2 : 0), lineWidth: 1)
+                    )
+                    .buttonStyle(.pressable)
+                    .disabled(isStopping)
+                    .opacity(isStopping ? 0.5 : 1)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+                .background(
+                    showLiveTranscript
+                        ? AnyShapeStyle(.regularMaterial)
+                        : AnyShapeStyle(Color.clear)
+                )
             }
-            .background(
-                isImmersive
-                    ? AnyShapeStyle(Color.white.opacity(0.15))
-                    : isCamera
-                        ? AnyShapeStyle(Color.red.opacity(0.85))
-                        : AnyShapeStyle(Color.red),
-                in: Capsule()
-            )
-            .foregroundStyle(.white)
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(isImmersive || isCamera ? 0.2 : 0), lineWidth: 1)
-            )
-            .buttonStyle(.pressable)
-            .disabled(isStopping)
-            .opacity(isStopping ? 0.5 : 1)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 16)
-        .background(
-            isCamera
-                ? AnyShapeStyle(.ultraThinMaterial)
-                : showLiveTranscript
-                    ? AnyShapeStyle(.regularMaterial)
-                    : AnyShapeStyle(Color.clear)
-        )
     }
 
     // MARK: - Actions
@@ -1871,38 +2222,54 @@ struct TimedPracticeView: View {
             return
         }
 
-        question = PracticeTopics.random(theme: selectedTheme)
-
-        // Ensure TTS is ready (may already be prewarmed from onAppear)
-        if ttsEngine.delegate == nil { configureTTSDelegate() }
-
-        // Haptic feedback for session start
+        // Haptic feedback for session start fires before the AI hop so the
+        // tap feels immediate even if prompt selection takes a beat.
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
-        // Classic always gets 15-second thinking time; Coach respects the toggle
-        let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+        // Pre-rep ambience starts now so the user has audio feedback while
+        // we resolve the prompt + warm up TTS.
+        SoundscapeEngine.shared.startPreferredMode()
 
-        if useThinkingTime {
-            thinkingCountdown = 15
-            withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
-            startThinkingCountdown()
-        } else if !keepPromptVisible {
-            withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                if phase == .briefReveal {
-                    await MainActor.run { startSpeaking() }
+        // Resolve the prompt asynchronously — gives PracticeTopics.next() a
+        // budget to attempt an AI-generated prompt without blocking. Falls
+        // back to the curated pool on timeout/failure (≤ 3s).
+        Task { @MainActor in
+            question = await PracticeTopics.next(
+                profile: coachingProfileStore.profile,
+                baseline: baselineStore.baseline,
+                theme: selectedTheme
+            )
+
+            // Ensure TTS is ready (may already be prewarmed from onAppear)
+            if ttsEngine.delegate == nil { configureTTSDelegate() }
+
+            // Classic always gets 15-second thinking time; Coach respects the toggle
+            // Pressure mode halves thinking time for increased challenge
+            let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+            let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
+
+            if useThinkingTime {
+                thinkingCountdown = thinkingDuration
+                withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+                startThinkingCountdown(thinkingDuration: thinkingDuration)
+            } else if !keepPromptVisible {
+                withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    if phase == .briefReveal {
+                        await MainActor.run { startSpeaking() }
+                    }
                 }
+            } else {
+                startSpeaking()
             }
-        } else {
-            startSpeaking()
         }
     }
 
-    private func startThinkingCountdown() {
+    private func startThinkingCountdown(thinkingDuration: Int = 15) {
         thinkingTask?.cancel()
         thinkingTask = Task {
-            for i in stride(from: 15, through: 1, by: -1) {
+            for i in stride(from: thinkingDuration, through: 1, by: -1) {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     withAnimation(.snappy(duration: 0.25)) { thinkingCountdown = i }
@@ -1929,21 +2296,25 @@ struct TimedPracticeView: View {
     private func startSpeaking() {
         guard !speechVM.isRecording else { return }
 
+        // Cut pre-rep ambience the moment the rep starts — soundscape
+        // is for prep only, never for the rep itself.
+        SoundscapeEngine.shared.stop()
+
         withAnimation(.easeInOut(duration: 0.3)) { phase = .speaking }
 
         elapsedSeconds = 0
         isStopping = false
         lastMilestoneState = .neutral
         milestoneScale = 1.0
+        speechVM.sessionPrompt = question
         speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
 
-        // Start video recording if enabled (Coach mode, premium only)
+        // Start video recording if enabled (any mode)
         // Camera session was already prepared when the user toggled the switch
-        if enableVideoRecording && selectedMode == .coach && premium.canRecordVideo {
+        if enableVideoRecording {
             Task {
                 if videoManager.captureSession == nil {
-                    // Fallback: prepare if not already done
                     let hasPermission = await VideoRecordingManager.requestCameraPermission()
                     guard hasPermission else { return }
                     let ready = await videoManager.prepareSession()
@@ -1972,13 +2343,18 @@ struct TimedPracticeView: View {
     private func stopSession() {
         guard !isStopping else { return }
         isStopping = true
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        CoachHaptic.sessionComplete()
         speakingTask?.cancel()
         speakingTask = nil
         speechVM.stopRecording()
         if videoManager.isRecording { videoManager.stopRecording() }
 
         Task {
+            // Wait for video recording delegate to finish writing the file
+            // The delegate publishes an explicit terminal state when the file is ready or failed.
+            if enableVideoRecording {
+                _ = await videoManager.waitForRecordingFinalization()
+            }
             try? await Task.sleep(for: .milliseconds(650))
             await MainActor.run {
                 let result = PracticeEvaluator.evaluateTimedPractice(
@@ -2014,21 +2390,38 @@ struct TimedPracticeView: View {
                     }
                 }
 
-                showSummary = true
+                pushSummary()
             }
         }
     }
 
+    /// Retry with the same prompt — skip setup and go straight to thinking/speaking.
     private func restartSession() {
         cleanup()
-        resetState()
+        resetState(keepPrompt: true)
+        // Go straight into the session flow (skip setup page)
+        launchSessionFlow()
     }
 
-    private func resetState() {
+    /// Pick a new random prompt and start a new session.
+    private func newPromptSession() {
+        cleanup()
+        resetState(keepPrompt: false)
+        Task { @MainActor in
+            question = await PracticeTopics.next(
+                profile: coachingProfileStore.profile,
+                baseline: baselineStore.baseline,
+                theme: selectedTheme
+            )
+            launchSessionFlow()
+        }
+    }
+
+    private func resetState(keepPrompt: Bool) {
         speakingTask?.cancel()
         thinkingTask?.cancel()
         speechVM.resetCurrentSession()
-        thinkingCountdown = 15
+        thinkingCountdown = practiceSettings.pressureModeEnabled ? 8 : 15
         elapsedSeconds = 0
         currentTimingState = .neutral
         evaluation = nil
@@ -2038,7 +2431,41 @@ struct TimedPracticeView: View {
         milestoneScale = 1.0
         recPulse = false
         showCelebration = false
+        // Reset video recording state for the new session
+        videoManager.cleanup()
+        // Don't reset phase yet — launchSessionFlow will set it
         phase = .setup
+    }
+
+    /// Shared logic for starting a session from retry/new prompt flows.
+    /// Bypasses the setup page guard in beginSession().
+    private func launchSessionFlow() {
+        if ttsEngine.delegate == nil { configureTTSDelegate() }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        let useThinkingTime = selectedMode == .classic ? true : enableThinkingTime
+        let thinkingDuration = practiceSettings.pressureModeEnabled ? 8 : 15
+        if useThinkingTime {
+            thinkingCountdown = thinkingDuration
+            withAnimation(.easeInOut(duration: 0.3)) { phase = .thinking }
+            // Pre-rep ambience runs through the thinking window — long
+            // enough for the user to feel it, cuts the moment recording
+            // starts inside `startSpeaking()` so it never bleeds onto the
+            // rep itself.
+            SoundscapeEngine.shared.startPreferredMode()
+            startThinkingCountdown(thinkingDuration: thinkingDuration)
+        } else if !keepPromptVisible {
+            withAnimation(.easeInOut(duration: 0.3)) { phase = .briefReveal }
+            SoundscapeEngine.shared.startPreferredMode()
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                if phase == .briefReveal {
+                    await MainActor.run { startSpeaking() }
+                }
+            }
+        } else {
+            startSpeaking()
+        }
     }
 
     private func cleanup() {
@@ -2048,8 +2475,52 @@ struct TimedPracticeView: View {
         thinkingTask = nil
         ttsEngine.stopSpeaking(at: .immediate)
         if videoManager.isRecording { videoManager.stopRecording() }
+        // If the user backs out mid-thinking-window, stop ambience so
+        // it doesn't leak into the next surface.
+        SoundscapeEngine.shared.stop()
     }
 
+    // MARK: - Navigation
+
+    private func pushSummary() {
+        let payloadId = UUID()
+        let entry = SummaryDataStore.Entry(
+            transcript: speechVM.highlightedText,
+            fillerCount: speechVM.fillerWordCount,
+            duration: speechVM.lastSessionDuration,
+            score: evaluation?.score,
+            progressSegments: progressSegments,
+            xpEarned: evaluation?.xpEarned ?? 0,
+            committedFinalization: nil,
+            suddenDeathGamePoints: nil,
+            suddenDeathMultiplierLabels: [],
+            suddenDeathTotalWords: nil,
+            showDuration: false,
+            practiceTitle: "Impromptu Practice",
+            feedbackOverride: evaluation?.feedback,
+            headlineOverride: evaluation?.headline,
+            scoreBreakdown: evaluation?.segments ?? [],
+            insights: evaluation?.insights ?? [],
+            recentSessions: speechVM.pastSessions,
+            imConversationDetails: nil,
+            explicitMode: .timed,
+            recordingURL: videoManager.recordingURL,
+            sessionPrompt: question,
+            sessionTheme: selectedTheme,
+            feedbackCategories: evaluation?.categories ?? [],
+            strongMoments: evaluation?.strongMoments ?? [],
+            weakMoments: evaluation?.weakMoments ?? [],
+            durationAssessment: evaluation?.durationAssessment ?? .onTarget,
+            targetRange: evaluation?.targetRange ?? practiceSettings.timedDifficulty.targetRange,
+            onStartDrill: { [self] drill in
+                activeDrill = drill
+                restartSession()
+            }
+        )
+        SummaryDataStore.shared.store(entry, for: payloadId)
+        let payload = SummaryPayload(id: payloadId, mode: .timed)
+        navigationPath.append(AppDestination.summary(payload))
+    }
 
 }
 #endif

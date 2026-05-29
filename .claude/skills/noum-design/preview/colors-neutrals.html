@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Colors — Neutrals & Surfaces</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:20px;background:#fff;}
+  .row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .sw{border-radius:14px;aspect-ratio:1.3/1;padding:10px;display:flex;flex-direction:column;justify-content:space-between;font-family:var(--font-rounded);border:1px solid var(--subtle-border);}
+  .sw .n{font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--fg-secondary)}
+  .sw .h{font-size:12px;font-weight:800;font-family:var(--font-text)}
+  .sw .l{font-size:13px;font-weight:800;color:var(--fg-primary)}
+  .dark{color:#fff;border:0;}
+  .dark .n{color:rgba(255,255,255,.7)}
+  .dark .l,.dark .h{color:#fff}
+</style></head><body>
+<div class="row">
+  <div class="sw" style="background:var(--bg-screen)"><span class="n">Screen BG</span><div><div class="l">screenBackground</div><div class="h">#F2F2F7</div></div></div>
+  <div class="sw" style="background:var(--bg-card);border:1px solid var(--card-border)"><span class="n">Card Surface</span><div><div class="l">cardBackground</div><div class="h">#FFFFFF</div></div></div>
+  <div class="sw" style="background:var(--bg-inner)"><span class="n">Inner Surface</span><div><div class="l">innerSurface</div><div class="h">#F7F7FA</div></div></div>
+  <div class="sw" style="background:var(--bg-light-gradient)"><span class="n">Light Gradient</span><div><div class="l">setup screens</div><div class="h">#F7F7FF→#EDF2FF</div></div></div>
+  <div class="sw" style="background:var(--fg-primary);color:#fff" class="dark"><span class="n" style="color:rgba(255,255,255,.7)">Text Primary</span><div><div class="l" style="color:#fff">textPrimary</div><div class="h" style="color:#fff">#212633</div></div></div>
+  <div class="sw" style="background:var(--fg-secondary);color:#fff"><span class="n" style="color:rgba(255,255,255,.7)">Text Secondary</span><div><div class="l" style="color:#fff">textSecondary</div><div class="h" style="color:#fff">#697382</div></div></div>
+  <div class="sw" style="background:var(--dark-gradient);color:#fff"><span class="n" style="color:rgba(255,255,255,.6)">Dark · Login</span><div><div class="l" style="color:#fff">dark-gradient</div><div class="h" style="color:#fff">#14182D→#2D2938</div></div></div>
+  <div class="sw" style="background:repeating-linear-gradient(45deg,#fff,#fff 4px,#0000000a 4px,#0000000a 8px);border:1px solid var(--subtle-border)"><span class="n">Subtle Border</span><div><div class="l">rgba(0,0,0,.05)</div><div class="h">stroke-card</div></div></div>
+</div>
+</body></html>
