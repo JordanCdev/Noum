@@ -52,14 +52,27 @@ struct CoachReadCard: View {
     /// rep finalize landing while the user is still reading the
     /// previous summary, or a deletion from "Clear all data" while
     /// the card is rendered).
-    ///
-    /// Premium tier changes are not observed here: the summary card
-    /// is short-lived and the typical Pro-upgrade path leaves the
-    /// summary surface entirely (paywall → checkout → back to home).
-    /// The cap is still read at call time via
-    /// `rateLimiter.currentCap()`, so a re-mount of the card after
-    /// an upgrade shows the wider budget.
     @StateObject private var rateLimiter = AIRateLimiter.shared
+    /// Observed so the daily-budget hint refreshes mid-view when the
+    /// user upgrades to Pro from the paywall sheet that
+    /// `SummaryView` presents on top of this card (see
+    /// `SummaryView.swift` `.sheet(isPresented: $showPaywall)`). The
+    /// paywall is a sheet, not a navigation push — when the purchase
+    /// completes and the sheet dismisses, the underlying CoachReadCard
+    /// stays mounted. Without this observer the hint reads the stale
+    /// pre-upgrade cap (12) until the user navigates away and
+    /// re-enters; with it, the body recomputes immediately so the cap
+    /// reads 40 and the ratio drops below the show-threshold the same
+    /// turn the purchase lands.
+    ///
+    /// The dependency is also true at the cascade level — `SummaryView`
+    /// re-renders on the same publication and would propagate down —
+    /// but making it explicit here keeps the read-side honesty
+    /// contract on this card self-contained (a future `Equatable`
+    /// optimization on the parent, or a refactor that hoists the
+    /// CoachReadCard out of the SummaryView subtree, can't silently
+    /// re-introduce the stale read).
+    @StateObject private var premium = PremiumManager.shared
     /// Read at body recomputation time. The post-rep coach note runs
     /// synchronously at finalize, so by the time SummaryView mounts
     /// the consumption has happened and this read is fresh. Re-
@@ -303,14 +316,41 @@ struct CoachReadCard: View {
     /// `dailyBudgetHintThresholdRatio` of the cap. The cap is the
     /// active tier's cap (`AIRateLimiter.currentCap()` reads premium
     /// vs free at call time), so a mid-day Pro upgrade widens the
-    /// budget without re-firing the hint.
+    /// budget and — because this view observes `PremiumManager` —
+    /// the threshold recomputes the same body turn, hiding the hint
+    /// the moment the wider cap pulls the ratio back below the bar.
     private var shouldShowDailyBudgetHint: Bool {
-        guard note.isAIBacked else { return false }
-        let cap = dailyCoachNoteCap
+        CoachReadCard.shouldShowDailyBudgetHint(
+            noteIsAIBacked: note.isAIBacked,
+            cap: dailyCoachNoteCap,
+            remaining: dailyCoachNoteRemaining
+        )
+    }
+
+    /// Pure-function form of the threshold predicate so the contract
+    /// can be locked by tests without standing up a real `AIRateLimiter`
+    /// + `PremiumManager`. The math is:
+    ///   • Rule-based notes → false (the `RULE-BASED` tag tells the
+    ///     story instead; the hint would be a second voice saying the
+    ///     same thing).
+    ///   • Cap ≤ 0 → false (defensive — no honest "remaining" read
+    ///     exists, so silence is the right caption).
+    ///   • Else: `used / cap >= dailyBudgetHintThresholdRatio`.
+    /// The tier-change contract that round 23 protects: at cap=12
+    /// with used=10 the ratio is ~0.83 (hint shown); after a Pro
+    /// upgrade widens cap to 40 the ratio is 0.25 (hint hidden) the
+    /// same body turn, never after re-mount.
+    static func shouldShowDailyBudgetHint(
+        noteIsAIBacked: Bool,
+        cap: Int,
+        remaining: Int
+    ) -> Bool {
+        guard noteIsAIBacked else { return false }
         guard cap > 0 else { return false }
-        let used = cap - dailyCoachNoteRemaining
+        let clampedRemaining = max(0, min(cap, remaining))
+        let used = cap - clampedRemaining
         let ratio = Double(used) / Double(cap)
-        return ratio >= CoachReadCard.dailyBudgetHintThresholdRatio
+        return ratio >= dailyBudgetHintThresholdRatio
     }
 
     private var dailyBudgetHintCopy: String {

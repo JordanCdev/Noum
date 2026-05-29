@@ -1,30 +1,39 @@
-# HANDOFF — M24 deferred slate (round 22): `AIRateLimiter` becomes an `ObservableObject` so the Settings AI-usage card + `CoachReadCard` daily-budget hint refresh mid-view
+# HANDOFF — M24 deferred slate (round 23): `CoachReadCard` observes `PremiumManager` so the daily-budget hint refreshes the same body turn a Pro upgrade lands
 
 ## Scope
 
-Round 21 (the prior HANDOFF) closed the round-20 "Future move" #1 —
-lifted the SOLVED crossing-detection predicate into
-`IMHistorySummary.toneDrillCrossing(in:scenario:currentRepId:)` so the
-post-rep coach note and the hero score-card ribbon can never drift
-apart by construction. Round 21's own "Future moves" list rolled its
-remaining items forward; the next-most-actionable item on that list
-that doesn't need a real iOS device, an unblocked Firestore schema, or
-a high-risk animation refactor pass is item #3:
+Round 22 (the prior HANDOFF) closed the round-21 "Future move" #3 —
+made `AIRateLimiter` an `ObservableObject` so the Settings AI-usage
+card and the `CoachReadCard` daily-budget hint refresh mid-view as the
+budget is consumed elsewhere. The round-22 HANDOFF added two new
+deferred items to the future-moves list. Round 23 closes one of them:
 
-> **Rate-limiter live refresh.** Make `AIRateLimiter` an
-> `ObservableObject` so the Settings AI-usage card AND the
-> `CoachReadCard` daily-budget hint refresh mid-view. Low priority.
+> **#6 NEW — observe `PremiumManager` in `CoachReadCard` if
+> real-device usage shows mid-summary upgrades.** The round-22
+> doc-comment explicitly skipped this on cost-of-observation grounds
+> (summary card is short-lived, paywall is full-screen, re-mount
+> handles it). Worth a real-device check — if a paywall sheet on top
+> of the summary triggers a Pro upgrade WITHOUT dismissing the
+> summary underneath, the hint stays stale until the user navigates
+> away. Cheap fix if needed: one more `@StateObject` line. No code
+> change this round.
 
-This push closes that item. The artifact a user can hold once compiled
-is the same Settings AI-usage card and the same post-rep coach card —
-but they now **observe** the limiter instead of reading it once at
-body construction. A rep finalizing in the practice tab while
-Settings is pinned in a sheet now correctly tickles the AI-usage
-card's "coach notes today" row down by one in the same MainActor
-turn; a user re-mounting a still-visible CoachReadCard after the
-limiter's `consumeIfAllowed` lands sees the daily-budget hint cross
-its 75%-used threshold mid-view instead of staying frozen at the
-stale pre-finalize value.
+The evidence the round-22 deferral asked for came from code reading,
+not a simulator: `SummaryView.swift` line 795 confirms the paywall
+entry from the summary surface is `.sheet(isPresented: $showPaywall)
+{ PaywallView() }` — a sheet, not a navigation push. When the sheet
+dismisses after a successful purchase, the underlying CoachReadCard
+stays mounted. Without round 23's explicit observation, the daily-
+budget hint would keep reading the pre-upgrade cap (12 against the
+same used count) and continue rendering "1 AI coach note remaining
+today" even though the new cap (40) puts the user back at 30
+remaining.
+
+The fix is the one-line `@StateObject` the round-22 future-moves
+list pre-committed to. Round 23 also extracts the threshold
+predicate into a static pure function so the tier-change contract
+can be locked by tests without standing up a real `AIRateLimiter` +
+`PremiumManager`.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -33,214 +42,151 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- The honest gap from round 21 ("a rep consumed elsewhere while the
-  card is open leaves the rendered count stale") was the smallest
-  remaining mechanical hole on the surfaces the coach voice owns.
-  Round 22 closes it with the minimum amount of plumbing — one
-  `@Published` token, three `&+=` bumps, two `@StateObject`
-  swaps — and adds 8 tests locking the publication contract so a
-  future agent reordering bumps or adding a new lifecycle hook
-  doesn't silently break the read-side observers.
-- The contract is narrow on purpose: bump on writes that change
-  what `remainingToday(kind:)` would return; stay quiet on
-  no-op writes (debounce-block, cap-reached, other-account wipe).
-  That's the same self-discipline the round-21
-  `IMHistorySummary.toneDrillCrossing` predicate exercises — one
-  function, one contract, no view-driven rerender storms.
+- The honest gap from round 22 ("a Pro upgrade landing through the
+  paywall sheet leaves the hint stale until navigation") was the
+  smallest remaining mechanical hole on the surfaces the coach
+  voice owns. Round 23 closes it with the minimum amount of
+  plumbing — one `@StateObject`, one doc-comment swap, one
+  predicate extraction — and adds 12 tests locking the threshold-
+  crossing math so a future agent tweaking the 0.75 ratio or
+  refactoring the predicate breaks the test rather than the UX.
+- The contract is narrow on purpose: observe `PremiumManager` so
+  the cap reads fresh in the same body turn; don't try to model
+  premium changes inside the limiter itself. The publication
+  contract on `AIRateLimiter` stays "publish on writes the limiter
+  performs"; tier changes are observed by views that care, the
+  same way `SettingsView` already observes `premium` for the
+  AI-usage card. One pattern, two surfaces, no spooky action at a
+  distance.
 - The redesign-branch invariant: this is a `Redesign`-branch push
   per the user brief. The branch the agent runs on
-  (`claude/nifty-meitner-h2Pwd`) is merged forward into `Redesign`
-  so the round-22 work lands on `Redesign` directly. No fork in the
-  lineage.
+  (`claude/adoring-dijkstra-ksBsS`) is merged forward into
+  `Redesign` so the round-23 work lands on `Redesign` directly. No
+  fork in the lineage.
 
 ## What shipped
 
-### Track 1 — `AIRateLimiter` becomes an `ObservableObject` (`AIRateLimiter.swift`)
-
-`Noum/AIRateLimiter.swift`:
-
-- `import Combine` added at the top so `@Published` resolves. Mirrors
-  the existing `PostRepCoachNoteStore` pattern (also `@MainActor`,
-  also `ObservableObject`, also imports Combine).
-- `final class AIRateLimiter` → `final class AIRateLimiter:
-  ObservableObject`. No subclassing; no callers depend on a non-
-  observable surface (verified by grep — every call site reads
-  through the public method API, never via a generic constraint).
-- New `@Published private(set) var changeToken: UInt64 = 0`. Bumps
-  on every state change that affects what `remainingToday(kind:)`
-  would return; stays quiet on every no-op state change. The token
-  is `UInt64` with wrapping addition (`&+=`) so heavy-usage
-  overflow can't crash the limiter — the maths is ~580 billion
-  years of one-second-bursts before the counter wraps once. A
-  re-render on wrap is harmless (it's an identity change SwiftUI
-  honors the same way it honors any +1).
-- `consumeIfAllowed(kind:)` (line ~135). Adds `changeToken &+= 1`
-  AFTER the `defaults.set(current + 1, forKey: countKey)` write,
-  so any observer's body recomputation reads the post-consume
-  `remainingToday` value, never the pre-consume one. The
-  debounce-block and cap-reached early-return paths stay token-
-  silent; they didn't move the read-side count.
-- `endSession()` (line ~179). Doc-comment added that explicitly
-  names the publication contract: this hook only clears the
-  in-memory `lastCallTimestamp` debounce window; views don't
-  observe debounce, so no token bump. Bumping here would re-render
-  every observing surface every sign-out for nothing.
-- `deleteAllData(for accountID:)` (line ~187). Adds `changeToken
-  &+= 1` INSIDE the existing `accountIDProvider() == accountID`
-  guard. Other-account wipes (a stale signed-out account's
-  counters being scrubbed at logout) don't affect what
-  `remainingToday(kind:)` would return for the current account, so
-  the bump is gated behind the active-account check. Active-account
-  wipes reset every (kind × day) counter to 0 and bump exactly
-  once so observing surfaces re-read and surface the wider budget.
-- Top-of-file doc-comment updated with the new "Read-side
-  observability" design rule, explaining the publication contract
-  so the next agent doesn't have to re-derive why three writes bump
-  and one stays quiet.
-
-### Track 2 — Settings AI-usage card observes the limiter (`SettingsView.swift`)
-
-`Noum/SettingsView.swift`:
-
-- New `@StateObject private var rateLimiter = AIRateLimiter.shared`
-  declared alongside the other settings observers (line ~43, right
-  after `@StateObject private var aiSettings`). Doc-comment names
-  the contract: this is what makes the AI-usage card's "coach notes
-  today" row refresh mid-view as the budget is consumed elsewhere.
-- `aiUsageCard` (line ~950). The local `let rateLimiter =
-  AIRateLimiter.shared` line is removed — the view-property
-  observer carries the same instance, and dropping the local
-  rebinding is what hooks the observation up. The
-  `coachNotesRemaining` / `coachNotesCap` reads stay verbatim
-  (`rateLimiter.remainingToday(kind: .postRepCoachNote)` /
-  `rateLimiter.currentCap()`), so the card body is identical.
-- No visual change. The card renders the same numbers it used to,
-  but now `objectWillChange` from the limiter triggers a fresh
-  body computation when the budget is consumed elsewhere — so the
-  numbers stay honest.
-
-### Track 3 — `CoachReadCard` observes the limiter (`CoachReadCard.swift`)
+### Track 1 — `CoachReadCard` observes `PremiumManager` (`CoachReadCard.swift`)
 
 `Noum/CoachReadCard.swift`:
 
-- New `@StateObject private var rateLimiter = AIRateLimiter.shared`
-  declared alongside the other card observers (line ~62, after
-  `coachingProfileStore`). Doc-comment explains the three
-  surfaces this protects: the AI-upgrade pass on a still-mounted
-  summary card, a deferred rep finalize landing while the user is
-  still reading the previous summary, and a deletion from "Clear
-  all data" while the card is rendered.
-- The doc-comment also explicitly notes premium tier changes are
-  NOT observed here: the summary card is short-lived, the typical
-  Pro-upgrade path leaves the surface (paywall → checkout → back
-  to home), and the cap is still read at call time via
-  `rateLimiter.currentCap()` so a re-mount after an upgrade reads
-  the wider budget. Right-sized observation — we don't pull
-  `PremiumManager` into the card just for an edge case that the
-  re-mount handles for free.
-- `dailyCoachNoteRemaining` (line ~68) and `dailyCoachNoteCap`
-  (line ~71) switched from `AIRateLimiter.shared.remainingToday`
-  / `.currentCap` to `rateLimiter.remainingToday` / `.currentCap`.
-  Same underlying instance (the singleton), but now read through
-  the view-property observer so SwiftUI tracks the dependency.
-- No visual change. The daily-budget hint renders the same string
-  at the same threshold, but now the threshold-crossing actually
-  refreshes the hint while the card is visible.
+- New `@StateObject private var premium = PremiumManager.shared`
+  declared right after the round-22 `rateLimiter` observer (line
+  ~63). The doc-comment names the contract: the paywall in
+  `SummaryView` is a `.sheet`, so the post-purchase CoachReadCard
+  stays mounted; explicit observation makes the body-recomputation
+  dependency self-contained so a future `Equatable` optimization
+  on the parent or a refactor that hoists CoachReadCard out of the
+  SummaryView subtree can't silently re-introduce the stale read.
+- The round-22 rationalization that said "Premium tier changes are
+  not observed here" is removed from the `rateLimiter` doc-comment
+  and replaced with the round-23 contract on a separate doc-comment
+  for the `premium` observer. The two contracts are now adjacent
+  in the source so a future agent can read the full read-side
+  honesty story in one place.
+- The `shouldShowDailyBudgetHint` doc-comment updated to name the
+  new cascade: "a mid-day Pro upgrade widens the budget and —
+  because this view observes `PremiumManager` — the threshold
+  recomputes the same body turn, hiding the hint the moment the
+  wider cap pulls the ratio back below the bar."
 
-### Track 4 — `AIRateLimiterPublicationTests` (8 tests, `NoumTests/NoumTests.swift`)
+### Track 2 — Pure-function predicate (`CoachReadCard.swift`)
 
-A new `@MainActor struct AIRateLimiterPublicationTests` appended
-after `HeroScoreCardToneDrillRibbonContractTests`. Same hermetic
-pattern as `PostRepCoachNoteStoreTests` (round-prior round) —
-each test stands up a fresh limiter with an in-memory `UserDefaults`
-suite, a frozen clock, a fixed account id, and a premium override
-so the cap and debounce floor are deterministic.
+- New `static func shouldShowDailyBudgetHint(noteIsAIBacked:cap:remaining:)`
+  carries the threshold math. The instance computed property now
+  routes through the static so the contract has one home and the
+  tests can pin the math directly.
+- Clamping added inside the static: `clampedRemaining = max(0,
+  min(cap, remaining))` so a transient state where the limiter and
+  the cap reader briefly disagree (e.g. mid-flight tier upgrade)
+  cannot invert the ratio and falsely trigger the hint. Defensive
+  but cheap; the existing instance property already returned false
+  on `cap > 0`, the new clamp closes the symmetric edge.
+- Doc-comment names the round-23 anchor explicitly: "at cap=12
+  with used=10 the ratio is ~0.83 (hint shown); after a Pro
+  upgrade widens cap to 40 the ratio is 0.25 (hint hidden) the
+  same body turn, never after re-mount."
 
-- `changeTokenStartsAtZeroForFreshInstance` — initial-state
-  contract. A brand-new limiter's token reads zero so an observer's
-  `.onAppear` baseline isn't preceded by a spurious render.
-- `consumeBumpsChangeTokenOnSuccess` — the primary positive path.
-  A successful `consumeIfAllowed` bumps the token by exactly 1
-  alongside the `UserDefaults` write.
-- `consumeIsMonotonicAcrossSuccessfulCalls` — the +1, never +2
-  contract. Pinning each successful consume to a single bump (no
-  double-publish from a future refactor that splits the write
-  path).
-- `consumeDoesNotBumpOnDebounceBlock` — the first negative
-  contract. The second consume inside the 1.5s debounce floor
-  returns false without writing to `UserDefaults` and without
-  bumping the token. The frozen clock holds the call inside the
-  debounce window.
-- `consumeDoesNotBumpOnCapReached` — the second negative contract.
-  A limiter clocked forward past the debounce window between each
-  consume gets pushed to exactly `freeDailyCap` successful
-  consumes; the +1 call returns false and the token reads
-  identical to its at-cap value. Pinned with a sanity assert that
-  the token bumped exactly `freeDailyCap` times up to that point.
-- `endSessionDoesNotBumpChangeToken` — the lifecycle-hook quiet
-  contract. `endSession` clears the in-memory debounce window only
-  and must not re-render every observing surface.
-- `deleteAllDataBumpsTokenForActiveAccount` — the active-account
-  wipe contract. The bump fires when the wiped id matches the
-  current `accountIDProvider` return value, AND the read-side
-  effect lines up (`remainingToday` reads back at the full cap
-  after the wipe).
-- `deleteAllDataDoesNotBumpForDifferentAccount` — the gated-bump
-  contract. Wiping a different account's counters cannot affect
-  what `remainingToday(kind:)` would return for the current
-  account; a bump here would re-render every observer for no
-  visible reason.
-- `tokenAndRemainingTodayStayInLockstep` — the integration
-  contract. Across 5 successful consumes (clock advancing past
-  the debounce window each time), every token bump corresponds
-  to exactly a -1 change in `remainingToday`. That's the contract
-  a SwiftUI body relies on: "if the token moved, the number I
-  read is different from last time."
+### Track 3 — `CoachReadCardDailyBudgetHintTests` (12 tests, `NoumTests/NoumTests.swift`)
+
+A new `@MainActor struct CoachReadCardDailyBudgetHintTests`
+appended after `AIRateLimiterPublicationTests`. All tests call the
+pure static so they need no test seam — the predicate is a function
+of three Ints + one Bool, deterministic by construction.
+
+- `hintIsHiddenWhenNoteIsRuleBased` — rule-based notes carry the
+  explicit `RULE-BASED` tag in the card header; the hint would be
+  a second voice saying the same thing.
+- `hintIsHiddenWhenBudgetIsHealthy` — below the 75%-used bar the
+  hint stays silent (cap=12, remaining=9, used=3 → ratio=0.25).
+- `hintAppearsExactlyAtThreshold` — the inclusive-comparison
+  contract (`>= 0.75`, not `> 0.75`). cap=12, remaining=3, used=9
+  → ratio=0.75 exactly, hint appears.
+- `hintIsShownWhenAtZeroRemaining` — cap-reached state. The card
+  has already soft-degraded to a rule-based note for the next rep.
+- `hintIsHiddenWhenCapIsZero` — defensive divide-by-zero guard.
+- `tierUpgradeCrossesBackBelowThreshold` — **the round-23 anchor**.
+  Same `used` count (10), cap goes 12 → 40 on a Pro upgrade.
+  Pre-upgrade ratio ~0.83 → hint shown; post-upgrade ratio 0.25 →
+  hint hidden.
+- `tierDowngradeCrossesAboveThreshold` — symmetric mirror of the
+  upgrade contract so a future refactor can't accidentally make
+  the predicate one-way-only.
+- `remainingOverCapClampsCleanly` — locks the round-23 clamp so
+  a `remaining > cap` value doesn't invert the ratio.
+- `thresholdMatchesDocumentedRatio` — pins the 0.75 constant
+  against the round-22 HANDOFF reference ("crossing the 75%-used
+  threshold mid-view") so a future tweak to a different number
+  surfaces as a documentation-update reminder.
+- `hintCopyAtZeroNamesTomorrowsResume` / `hintCopyAtOneIsSingular`
+  / `hintCopyAtMoreIsPlural` / `hintCopyNegativeClampsToZeroBranch`
+  — pin the four copy branches of `dailyBudgetHintCopy(remaining:)`,
+  including the negative-remaining defensive clamp.
 
 ### Vision alignment
 
-- **Pillar #4 (Believable progress).** The "coach notes today" row
-  in Settings and the "1 AI coach note remaining today" hint in
-  CoachReadCard are part of the user's honesty-contract surface
-  — they explain WHY the AI-polish layer might step aside today.
-  An observer reading a stale count is the kind of credibility
-  hole that makes a user wonder "is this broken or is the AI just
-  off?" Routing both through one `@Published` token makes the
-  read-side honest by construction.
+- **Pillar #4 (Believable progress).** The daily-budget hint is
+  part of the user's honesty-contract surface — it tells the user
+  WHY the AI-polish layer might step aside today. A user who
+  upgrades to Pro mid-summary expecting more headroom and then
+  sees the same "1 AI coach note remaining today" caption is the
+  exact credibility hole the round-22 doc-comment named ("is this
+  broken or is the AI just off?") but rationalized away. Round 23
+  closes it.
 - **Pillar #5 (Personalized coaching).** A real human coach
-  doesn't say "I have 8 hours of work in me today" while staring
-  at a calendar from yesterday morning. The rate-limiter is the
+  doesn't say "I have 8 hours of work in me today" right after
+  the user buys them a whole new shift. The rate-limiter is the
   closest the in-app coach has to a "today's energy budget" — it
-  has to read live.
-- **Coach-parity stage #4 (Adaptation).** Per the
-  `docs/VISION.md` development instructions: "Every recommendation
-  must have evidence, purpose, an observable target, and an
-  honest evidence threshold for changing the plan." The daily-
-  budget hint IS the honest threshold the coach voice exposes for
-  why it's reading rule-based today. Threshold-crossing must
-  refresh the hint as the threshold is actually crossed, not at
-  the next re-mount.
-- **Anti-goal alignment (no "hearts-and-lives gating").** The
-  publication contract preserves the soft-degrade promise: the
-  user always gets a coach note. Observing the limiter is a
+  has to read live across tier changes too.
+- **Coach-parity stage #4 (Adaptation).** Per `docs/VISION.md`:
+  "Every recommendation must have evidence, purpose, an
+  observable target, and an honest evidence threshold for
+  changing the plan." The daily-budget hint IS the honest
+  threshold the coach voice exposes for why it's reading rule-
+  based today. The threshold-crossing must refresh the hint as
+  the threshold is actually crossed in either direction — used-
+  count moving (round 22) or cap moving (round 23).
+- **Anti-goal alignment (no "hearts-and-lives gating").** Round 23
+  preserves the soft-degrade promise: the user always gets a
+  coach note. Observing the limiter and the premium tier is a
   read-side honesty improvement, not a new way to gate practice.
 
 ### Branch + redesign-alignment notes
 
-- All four edits land on `Redesign`, the redesign-lineage branch
+- All three edits land on `Redesign`, the redesign-lineage branch
   the rolling M24 deferred-slate work has been shipping on since
   round 11. The user brief explicitly calls this out: "ensure
   working on the redesign branch too (very important)." This
   round preserves the round-by-round loop on the redesign lineage.
   The draft PR tracking the redesign work into `main` picks up
   this round's changes automatically.
-- The branch the agent runs on (`claude/nifty-meitner-h2Pwd`) is
-  merged forward into `Redesign` so the round-22 work lands on
+- The branch the agent runs on (`claude/adoring-dijkstra-ksBsS`)
+  is merged forward into `Redesign` so the round-23 work lands on
   `Redesign` directly. No fork in the lineage.
 
 ## Future moves
 
-(Updated priority list — round-21 "Future move" #3 closed this round;
+(Updated priority list — round-22 "Future move" #6 closed this round;
 the rest roll forward.)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still blocked
@@ -249,10 +195,10 @@ the rest roll forward.)
    interleaving with celebration timing. Worth a dedicated refactor
    pass with proper visual QA (and a real device).
 3. **Visual polish pass on the round-19 launch CTA.** Carried forward
-   from rounds 19–21. Pure visual work, not destination logic — the
+   from rounds 19–22. Pure visual work, not destination logic — the
    router stays the single source of truth either way.
 4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–21. The current capsule is the minimum-
+   forward from rounds 20–22. The current capsule is the minimum-
    viable shape: IM-tinted, quiet, in register with the existing
    "Toward your <voice>" chip. A real-device read may want the
    capsule to grow into a full-width strip across the score ring,
@@ -265,90 +211,86 @@ the rest roll forward.)
    currently calls the cross-scenario read; if a future chat-coach
    surface ever wants to read only "fresh crossings from this
    session," the helper is there to route through.
-6. **NEW — observe `PremiumManager` in `CoachReadCard` if real-device
-   usage shows mid-summary upgrades.** The round-22 doc-comment
-   explicitly skipped this on cost-of-observation grounds (summary
-   card is short-lived, paywall is full-screen, re-mount handles
-   it). Worth a real-device check — if a paywall sheet on top of
-   the summary triggers a Pro upgrade WITHOUT dismissing the
-   summary underneath, the hint stays stale until the user
-   navigates away. Cheap fix if needed: one more `@StateObject`
-   line. No code change this round.
-7. **NEW — day-rollover refresh for long-mounted observers.** The
-   round-22 publication only fires on writes. A user who pins
-   Settings open across midnight would still see yesterday's
-   counters until the next consume bumps the token. The
-   `dayKey(for:)` rollover doesn't auto-publish. Real-world
-   relevance is low (nobody actually leaves Settings open across
-   midnight), but worth a note. A future round could subscribe to
+6. **Day-rollover refresh for long-mounted observers.** Carried
+   forward from round 22. The `AIRateLimiter` publication only
+   fires on writes. A user who pins Settings open across midnight
+   would still see yesterday's counters until the next consume
+   bumps the token. The `dayKey(for:)` rollover doesn't auto-
+   publish. Real-world relevance is low (nobody actually leaves
+   Settings open across midnight), but worth a note. A future
+   round could subscribe to
    `UIApplication.significantTimeChangeNotification` and bump the
    token from there, or add a `.task(id: Calendar.current.dayKey)`
-   to the observing views. No code change this round — the call
-   would be premature optimization without real-device evidence.
+   to the observing views. Premature optimization without real-
+   device evidence; no code change this round.
+7. **NEW — extend tier-change observation symmetry to other surfaces
+   that read `AIRateLimiter.currentCap()` directly.** Round 23 makes
+   `CoachReadCard` self-contained on tier changes; the
+   `SettingsView.aiUsageCard` already covers itself via its own
+   `@StateObject premium`. Any future surface that adds a third
+   read site for `currentCap()` should default to either observing
+   `PremiumManager` directly OR be a child of a view that does, so
+   the same body-turn refresh is preserved. No code change this
+   round — this is a note for the next agent so the pattern doesn't
+   drift.
 
 ## Build-host limitation (honest note for the next agent)
 
 This environment has **no Xcode and no Swift toolchain**, so nothing
 in this round was compiled or run — not the app, not the test suite.
-The changes are a pure conformance addition + 3 line bumps on the
-write paths + 2 `@StateObject` swaps:
+The changes are a one-line `@StateObject` addition + a pure-function
+predicate extraction + 12 tests on the predicate's algebra:
 
-- `AIRateLimiter` now conforms to `ObservableObject`. The
-  conformance is automatic (the `@Published` wrapper provides the
-  `objectWillChange` publisher); no manual `objectWillChange.send()`
-  is required. `@MainActor` + `ObservableObject` is the same pair
-  `PostRepCoachNoteStore` uses, which is already shipping. Confirmed
-  via grep that no caller depends on a non-`ObservableObject`-shaped
-  surface.
-- The three `changeToken &+= 1` bumps are after the persisted writes
-  (`consumeIfAllowed` write happens, then bump) so an observer
-  reading post-bump sees the post-write value. The deleteAllData
-  bump is inside the active-account guard so other-account wipes
-  stay token-silent.
-- The two `@StateObject` swaps (in `SettingsView` and
-  `CoachReadCard`) follow the same pattern the rest of those views
-  use for shared singleton stores. `@StateObject` with a singleton
-  is the canonical SwiftUI pattern — the closure runs once per
-  view first-mount, returns the same shared instance, and SwiftUI
-  subscribes to `objectWillChange` from there. No new memory; same
-  instance.
-- The 8 `AIRateLimiterPublicationTests` mirror the
-  `PostRepCoachNoteStoreTests` pattern byte-for-byte: same
-  `@MainActor struct`, same hermetic `UserDefaults(suiteName:
-  UUID().uuidString)!` per test, same `init` test seam
-  (`defaults`, `accountIDProvider`, `now`, `premiumProvider`).
-  The `tokenAndRemainingTodayStayInLockstep` test is the
-  integration anchor — every token bump corresponds to a
-  remainingToday change.
+- `CoachReadCard` already imports `SwiftUI` (the existing
+  `@StateObject` declarations on `BaselineStore.shared`,
+  `RatingStore.shared`, etc., confirm the import is in scope).
+  Adding `@StateObject private var premium = PremiumManager.shared`
+  follows the exact same pattern — `PremiumManager` is already
+  `final class PremiumManager: ObservableObject` with
+  `@Published private(set) var isPremium: Bool` (verified by grep
+  on `Noum/PremiumManager.swift`).
+- The pure static `shouldShowDailyBudgetHint(noteIsAIBacked:cap:remaining:)`
+  is a refactor of the existing instance-property body with one
+  defensive clamp added (`max(0, min(cap, remaining))`). The
+  instance property now delegates to the static so the
+  call-site behavior is byte-identical for the happy path and
+  strictly more defensive on the over-cap edge.
+- The 12 `CoachReadCardDailyBudgetHintTests` mirror the
+  `AIRateLimiterPublicationTests` pattern: same `@MainActor
+  struct`, same `@Test` annotations, no test seam needed (the
+  predicate is pure). They lock the threshold math, the inclusive-
+  comparison contract, the clamp, the tier-change anchors in both
+  directions, and the four copy branches.
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter AIRateLimiterPublicationTests` — the 8 new
-   tests should all pass.
-2. `swift test --filter PostRepCoachNoteStoreTests` — the existing
-   ObservableObject-style tests should still pass; they exercise a
-   sibling class with the same MainActor + Published pattern, so a
-   working harness for them is a working harness for the new tests.
-3. `swift test --filter IMToneDrillCrossingTests` — the round-21
-   helper tests should still pass (no changes to
-   `IMHistorySummary.toneDrillCrossing` this round).
-4. `swift test --filter HeroScoreCardToneDrillRibbonContractTests`
+1. `swift test --filter CoachReadCardDailyBudgetHintTests` — the 12
+   new tests should all pass.
+2. `swift test --filter AIRateLimiterPublicationTests` — the round-22
+   tests should still pass (no changes to `AIRateLimiter` this round).
+3. `swift test --filter PostRepCoachNoteStoreTests` — the sibling
+   ObservableObject-style tests should still pass.
+4. `swift test --filter IMToneDrillCrossingTests` — the round-21
+   helper tests should still pass.
+5. `swift test --filter HeroScoreCardToneDrillRibbonContractTests`
    — the round-20 ribbon-contract tests should still pass.
-5. `swift test --filter LookingAheadCardStartCTAContractTests` —
+6. `swift test --filter LookingAheadCardStartCTAContractTests` —
    the round-19 launch-CTA tests should still pass.
-6. Boot the app on simulator, open Settings → AI Usage, pin it in a
-   sheet (e.g. via the Settings deep link from Home), then finish a
-   rep in another tab. Confirm:
-   - The "coach notes today" row's "remaining" number drops by one
-     in the same render — no stale read until the user dismisses
-     and re-opens Settings.
-   - The "used / cap" tile re-flows around the new number.
-   - The CoachReadCard's "X AI coach notes remaining today" hint
-     (visible at 75%+ used) refreshes the same way on a deferred
-     finalize that lands while the previous summary is still on
-     screen.
-   - Crossing the 75%-used threshold mid-view actually starts
-     showing the hint without a re-mount.
-   - Sign-out → sign-back-in with the same account: the AI-usage
-     card reflects the persisted counter, and the daily-budget
-     hint reads honestly against it.
+7. Boot the app on simulator, finish a rep so the AI-backed coach
+   note + the daily-budget hint render (e.g. by repping 9 times so
+   3 remaining out of 12), then tap the Pro CTA inside the AI-usage
+   card OR the inline "Pro" entry on the summary to open the
+   paywall sheet. Use the simulator's StoreKit configuration to
+   complete a sandbox purchase. Confirm:
+   - The paywall sheet dismisses cleanly.
+   - The CoachReadCard underneath has NOT been re-mounted (the
+     deep-analysis reveal state, if expanded, is preserved).
+   - The daily-budget hint either disappears (if the new ratio
+     drops below 0.75 — at cap=40 with used=9 the ratio is 0.225
+     so it should) or refreshes its number (if the new ratio is
+     still above 0.75).
+   - Equivalent flow on subscription lapse if possible to
+     simulate — confirms the downgrade direction also refreshes.
+   - Sign-out → sign-back-in with the same account: the hint
+     reads honestly against the persisted counter at the active
+     tier.

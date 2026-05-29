@@ -18620,3 +18620,219 @@ struct AIRateLimiterPublicationTests {
         }
     }
 }
+
+// MARK: - M24 deferred slate round 23 — CoachReadCard daily-budget hint
+//
+// Round 22 made `AIRateLimiter` an `ObservableObject` so the daily-
+// budget hint on the post-rep CoachReadCard refreshes when a rep
+// elsewhere consumes the AI-polish budget. Round 23 closes the one
+// remaining read-side stale hole the round-22 doc-comment explicitly
+// rationalized away: premium tier changes. The Pro-upgrade entry from
+// `SummaryView` is a `.sheet` (verified in
+// `SummaryView.swift:.sheet(isPresented: $showPaywall)`), which means
+// the CoachReadCard stays mounted when the paywall dismisses after a
+// successful purchase. Without round 23's `@StateObject premium`
+// observer the hint would keep reading the pre-upgrade cap (12)
+// against the same used count, leaving "1 AI coach note remaining
+// today" on screen even though the new cap (40) puts the user back
+// at 30 remaining.
+//
+// The contract these tests lock lives at the pure-function layer —
+// `CoachReadCard.shouldShowDailyBudgetHint(noteIsAIBacked:cap:remaining:)`
+// — so the threshold math can be reasoned about without standing up
+// a real `AIRateLimiter` + `PremiumManager`. The tier-upgrade /
+// tier-downgrade tests are the round-23 anchors: at the same `used`
+// count, the hint flips solely on the cap change. That's the body
+// recomputation the new `@StateObject premium` triggers.
+
+@MainActor
+struct CoachReadCardDailyBudgetHintTests {
+
+    private let freeCap = AIRateLimiter.freeDailyCap        // 12
+    private let premiumCap = AIRateLimiter.premiumDailyCap  // 40
+    private let threshold = CoachReadCard.dailyBudgetHintThresholdRatio  // 0.75
+
+    @Test func hintIsHiddenWhenNoteIsRuleBased() {
+        // Rule-based notes carry the explicit `RULE-BASED` tag in the
+        // card header. The hint would be a second voice saying the
+        // same thing — and would also misleadingly imply the AI
+        // polish layer is "running out" when in fact it isn't
+        // participating at all.
+        #expect(
+            CoachReadCard.shouldShowDailyBudgetHint(
+                noteIsAIBacked: false,
+                cap: freeCap,
+                remaining: 0
+            ) == false
+        )
+    }
+
+    @Test func hintIsHiddenWhenBudgetIsHealthy() {
+        // Below the 75%-used bar the hint stays silent. At cap=12
+        // with 9 remaining, used=3 → ratio=0.25, well below the
+        // 0.75 threshold.
+        #expect(
+            CoachReadCard.shouldShowDailyBudgetHint(
+                noteIsAIBacked: true,
+                cap: freeCap,
+                remaining: 9
+            ) == false
+        )
+    }
+
+    @Test func hintAppearsExactlyAtThreshold() {
+        // The threshold is `>= 0.75`, not `> 0.75`. At cap=12 with
+        // 3 remaining, used=9 → ratio=0.75 exactly — the hint
+        // appears. Pins the inclusive-comparison contract so a
+        // future refactor flipping `>=` to `>` would surface as a
+        // test failure rather than as a quiet UX regression.
+        #expect(
+            CoachReadCard.shouldShowDailyBudgetHint(
+                noteIsAIBacked: true,
+                cap: freeCap,
+                remaining: 3
+            ) == true
+        )
+    }
+
+    @Test func hintIsShownWhenAtZeroRemaining() {
+        // Cap-reached. The card has already soft-degraded to a
+        // rule-based note for the next rep (the note in front of
+        // the user might still be AI-backed — it was the one that
+        // just tipped the limiter at the cap). The hint reads
+        // "Rule-based today — coach notes resume tomorrow."
+        #expect(
+            CoachReadCard.shouldShowDailyBudgetHint(
+                noteIsAIBacked: true,
+                cap: freeCap,
+                remaining: 0
+            ) == true
+        )
+    }
+
+    @Test func hintIsHiddenWhenCapIsZero() {
+        // Defensive — a misconfigured tier or a future limiter
+        // variant that returns cap=0 would otherwise divide by zero
+        // when computing the ratio. The pure function returns false
+        // so the body computation stays silent rather than crashing
+        // or rendering an empty caption.
+        #expect(
+            CoachReadCard.shouldShowDailyBudgetHint(
+                noteIsAIBacked: true,
+                cap: 0,
+                remaining: 0
+            ) == false
+        )
+    }
+
+    @Test func tierUpgradeCrossesBackBelowThreshold() {
+        // The round-23 anchor. Same `used` count (10), cap goes
+        // 12 → 40 on a Pro upgrade. Pre-upgrade ratio ~0.83 → hint
+        // shown. Post-upgrade ratio 0.25 → hint hidden. The card
+        // observing `PremiumManager` makes this transition happen
+        // the same body turn as the purchase landing, not on a
+        // navigation re-mount.
+        let used = 10
+        let preUpgrade = CoachReadCard.shouldShowDailyBudgetHint(
+            noteIsAIBacked: true,
+            cap: freeCap,
+            remaining: freeCap - used
+        )
+        let postUpgrade = CoachReadCard.shouldShowDailyBudgetHint(
+            noteIsAIBacked: true,
+            cap: premiumCap,
+            remaining: premiumCap - used
+        )
+        #expect(preUpgrade == true, "Pre-upgrade ratio 10/12 should trigger the hint.")
+        #expect(postUpgrade == false, "Post-upgrade ratio 10/40 should hide the hint.")
+    }
+
+    @Test func tierDowngradeCrossesAboveThreshold() {
+        // The mirror of the upgrade contract. A subscription lapse
+        // (premium → free) with the same `used` count flips the
+        // hint back on. Real-world relevance is lower than the
+        // upgrade case (lapse rarely happens mid-summary), but the
+        // contract is symmetric — locking both directions keeps a
+        // future refactor that hard-codes premium cap from
+        // accidentally one-way-only.
+        let used = 10
+        let preDowngrade = CoachReadCard.shouldShowDailyBudgetHint(
+            noteIsAIBacked: true,
+            cap: premiumCap,
+            remaining: premiumCap - used
+        )
+        let postDowngrade = CoachReadCard.shouldShowDailyBudgetHint(
+            noteIsAIBacked: true,
+            cap: freeCap,
+            remaining: freeCap - used
+        )
+        #expect(preDowngrade == false, "Pre-downgrade ratio 10/40 should hide the hint.")
+        #expect(postDowngrade == true, "Post-downgrade ratio 10/12 should trigger the hint.")
+    }
+
+    @Test func remainingOverCapClampsCleanly() {
+        // Defensive — if a caller ever passes a remaining count
+        // larger than the cap (e.g. mid-flight tier upgrade where
+        // the rate-limiter and the cap reader briefly disagree),
+        // the pure function clamps rather than reporting a
+        // negative `used` count that would invert the ratio and
+        // falsely trigger the hint.
+        #expect(
+            CoachReadCard.shouldShowDailyBudgetHint(
+                noteIsAIBacked: true,
+                cap: freeCap,
+                remaining: freeCap + 5
+            ) == false
+        )
+    }
+
+    @Test func thresholdMatchesDocumentedRatio() {
+        // The 0.75 ratio is referenced in:
+        //   • the round-22 HANDOFF (".. crossing the 75%-used
+        //     threshold mid-view actually starts showing the hint")
+        //   • the CoachReadCard doc-comment
+        // Pin the constant so a future tweak to a different number
+        // surfaces as a test that the documentation must be updated
+        // in lockstep with the code.
+        #expect(threshold == 0.75)
+    }
+
+    @Test func hintCopyAtZeroNamesTomorrowsResume() {
+        // The rule-based-today copy is the one shown at the
+        // cap-reached state. Brand-voice compliant: no exclamation,
+        // no urgency, no "running out" framing. Pins the exact
+        // string so a copy edit must be deliberate.
+        #expect(
+            CoachReadCard.dailyBudgetHintCopy(remaining: 0)
+                == "Rule-based today — coach notes resume tomorrow."
+        )
+    }
+
+    @Test func hintCopyAtOneIsSingular() {
+        // English singular/plural rule on the count noun.
+        #expect(
+            CoachReadCard.dailyBudgetHintCopy(remaining: 1)
+                == "1 AI coach note remaining today."
+        )
+    }
+
+    @Test func hintCopyAtMoreIsPlural() {
+        // Plural branch.
+        #expect(
+            CoachReadCard.dailyBudgetHintCopy(remaining: 3)
+                == "3 AI coach notes remaining today."
+        )
+    }
+
+    @Test func hintCopyNegativeClampsToZeroBranch() {
+        // Defensive — a transient state where the cap reader and
+        // the counter disagree could yield a negative `remaining`
+        // for a single body recomputation. The copy should treat
+        // that as cap-reached (the safe over-report) rather than
+        // emit "-1 AI coach notes remaining today."
+        #expect(
+            CoachReadCard.dailyBudgetHintCopy(remaining: -2)
+                == "Rule-based today — coach notes resume tomorrow."
+        )
+    }
+}
