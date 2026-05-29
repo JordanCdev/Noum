@@ -34,6 +34,13 @@ struct SettingsView: View {
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
+    /// Observed so the AI-usage card's "coach notes today" row
+    /// refreshes mid-view as the budget is consumed elsewhere — a
+    /// rep finishing in the practice tab while Settings is open, or
+    /// a deletion from the data-export sheet immediately above. The
+    /// limiter publishes a `changeToken` on every successful
+    /// `consumeIfAllowed` and on active-account `deleteAllData`.
+    @StateObject private var rateLimiter = AIRateLimiter.shared
 
     // M15 Phase 4 — escape hatch for the signal-gated home. Mirrors the
     // AppStorage key read by ContentView; flipping this on shows every
@@ -941,7 +948,6 @@ struct SettingsView: View {
     }
 
     private var aiUsageCard: some View {
-        let rateLimiter = AIRateLimiter.shared
         let coachNotesRemaining = rateLimiter.remainingToday(kind: .postRepCoachNote)
         let coachNotesCap = rateLimiter.currentCap()
         let coachNotesUsed = max(0, coachNotesCap - coachNotesRemaining)

@@ -45,17 +45,31 @@ struct CoachReadCard: View {
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var clutchWordStore = ClutchWordStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
-    /// Read once at body recomputation time. The post-rep coach note
-    /// runs synchronously at finalize, so by the time SummaryView
-    /// mounts the consumption has happened and this read is fresh.
-    /// Re-rendered if the rate limiter is touched again (e.g. an AI
-    /// upgrade pass) since CoachReadCard is rebuilt whenever the
-    /// underlying note dedupes-replaces in PostRepCoachNoteStore.
+    /// Observed so the daily-budget hint refreshes mid-view when the
+    /// limiter's `changeToken` bumps — i.e. when a rep elsewhere
+    /// consumes the AI-polish budget while this card is visible (the
+    /// AI-upgrade pass on a still-mounted summary card, a deferred
+    /// rep finalize landing while the user is still reading the
+    /// previous summary, or a deletion from "Clear all data" while
+    /// the card is rendered).
+    ///
+    /// Premium tier changes are not observed here: the summary card
+    /// is short-lived and the typical Pro-upgrade path leaves the
+    /// summary surface entirely (paywall → checkout → back to home).
+    /// The cap is still read at call time via
+    /// `rateLimiter.currentCap()`, so a re-mount of the card after
+    /// an upgrade shows the wider budget.
+    @StateObject private var rateLimiter = AIRateLimiter.shared
+    /// Read at body recomputation time. The post-rep coach note runs
+    /// synchronously at finalize, so by the time SummaryView mounts
+    /// the consumption has happened and this read is fresh. Re-
+    /// rendered whenever the rate limiter publishes a `changeToken`
+    /// bump — see `rateLimiter` above.
     private var dailyCoachNoteRemaining: Int {
-        AIRateLimiter.shared.remainingToday(kind: .postRepCoachNote)
+        rateLimiter.remainingToday(kind: .postRepCoachNote)
     }
     private var dailyCoachNoteCap: Int {
-        AIRateLimiter.shared.currentCap()
+        rateLimiter.currentCap()
     }
 
     var body: some View {

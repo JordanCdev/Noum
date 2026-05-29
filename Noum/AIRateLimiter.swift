@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 // MARK: - AIRateLimiter
 //
@@ -27,6 +28,14 @@ import Foundation
 //   • Test seam: `defaults`, `accountIDProvider`, `now`, and the
 //     premium check are injectable so the rate logic can run hermetic
 //     against a custom `UserDefaults` suite + frozen clock.
+//   • Read-side observability — `ObservableObject` + `@Published
+//     changeToken` so SwiftUI surfaces (Settings AI-usage card,
+//     `CoachReadCard` daily-budget hint) refresh mid-view as the
+//     budget is consumed elsewhere. The token bumps on writes that
+//     change what `remainingToday(kind:)` would return: a successful
+//     `consumeIfAllowed` and `deleteAllData(for:)`. `endSession`
+//     does not bump — it only clears the in-memory debounce window,
+//     which views don't observe.
 //
 // Vision-aligned (docs/VISION.md anti-goals): we don't introduce a
 // hard cap that visibly blocks the user — that would conflict with
@@ -36,9 +45,24 @@ import Foundation
 
 @available(iOS 17.0, macOS 12.0, *)
 @MainActor
-final class AIRateLimiter {
+final class AIRateLimiter: ObservableObject {
 
     static let shared = AIRateLimiter()
+
+    /// Bumps whenever a write changes what `remainingToday(kind:)`
+    /// would return for any kind — i.e. on a successful
+    /// `consumeIfAllowed` and on `deleteAllData(for:)`. SwiftUI
+    /// surfaces that hold an `@StateObject = AIRateLimiter.shared`
+    /// re-evaluate their body when this changes, so the Settings
+    /// AI-usage card and the `CoachReadCard` daily-budget hint
+    /// refresh mid-view as the budget is consumed elsewhere (e.g.
+    /// the user finishes a rep in another tab while Settings is
+    /// open).
+    ///
+    /// `UInt64` + wrapping addition (`&+=`) means the token never
+    /// throws on overflow — a user practising every second for
+    /// 580 billion years would still bump the counter cleanly.
+    @Published private(set) var changeToken: UInt64 = 0
 
     // MARK: - Surfaces
     //
@@ -128,6 +152,10 @@ final class AIRateLimiter {
         // doesn't reset the count.
         defaults.set(current + 1, forKey: countKey)
         lastCallTimestamp[kind] = now
+        // Bump the publication token AFTER the persisted write lands
+        // so any observer's body recomputation reads the post-consume
+        // remainingToday number, never the pre-consume one.
+        changeToken &+= 1
         return true
     }
 
@@ -149,6 +177,10 @@ final class AIRateLimiter {
     // MARK: - Lifecycle hooks (mirrors PostRepCoachNoteStore pattern)
 
     func endSession() {
+        // Only the in-memory debounce window — views don't read this,
+        // so no `changeToken` bump. Bumping here would spuriously
+        // re-render every observing surface every time the user
+        // signs out, with no read-side change to show.
         lastCallTimestamp = [:]
     }
 
@@ -170,6 +202,13 @@ final class AIRateLimiter {
         }
         if accountIDProvider() == accountID {
             lastCallTimestamp = [:]
+            // The active-account counters just reset to 0 across
+            // every (kind × day) — observing surfaces should re-read
+            // and surface the wider remaining budget. Other-account
+            // deletes don't affect what `remainingToday(kind:)` would
+            // return for the current account, so the bump is gated
+            // behind the active-account check.
+            changeToken &+= 1
         }
     }
 

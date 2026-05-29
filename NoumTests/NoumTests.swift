@@ -18400,3 +18400,223 @@ struct HeroScoreCardToneDrillRibbonContractTests {
         #expect(a != d, "Different tone must compare unequal.")
     }
 }
+
+// MARK: - M24 deferred slate round 22 — AIRateLimiter publication
+//
+// `AIRateLimiter` is the per-account, per-day budget for outbound AI
+// calls on the per-rep coach voice surface. Rounds prior to 22 read
+// it synchronously inside SwiftUI bodies (Settings AI-usage card,
+// `CoachReadCard` daily-budget hint) — which meant a rep consumed in
+// another tab while the card was visible left the rendered count
+// stale until the user navigated away and back. Round 22 makes the
+// limiter an `ObservableObject` that publishes a `changeToken` bump
+// on writes that change what `remainingToday(kind:)` would return.
+//
+// The publication contract is narrow on purpose:
+//   • Bump on a successful `consumeIfAllowed` — the read-side count
+//     went down.
+//   • Bump on `deleteAllData(for:)` ONLY when the wiped account is
+//     the active one — other-account wipes don't affect what
+//     `remainingToday(kind:)` would return for the current account.
+//   • Stay quiet on debounce-blocked or cap-reached `consumeIfAllowed`
+//     — the count didn't move, so observers re-rendering would burn
+//     CPU for no visible change.
+//   • Stay quiet on `endSession` — that's a sign-out lifecycle hook
+//     that clears the in-memory debounce window only; views don't
+//     observe debounce.
+//
+// These tests lock that contract pre-Combine-import: they sample
+// `changeToken` directly (it's `@Published private(set) var`,
+// readable from the same module) before and after each operation.
+// Sampling the underlying token is preferable to subscribing to
+// `objectWillChange` because the bump is synchronous in the same
+// MainActor turn — a Combine subscription would need extra delivery
+// scheduling to observe reliably in a unit test.
+
+@MainActor
+struct AIRateLimiterPublicationTests {
+
+    /// Hermetic limiter: fresh in-memory `UserDefaults` suite, frozen
+    /// clock so the debounce window can be reasoned about explicitly,
+    /// fixed account id so the active-account `deleteAllData` gate is
+    /// deterministic, and a premium override so the cap doesn't drift
+    /// with the test runner's StoreKit state.
+    private func freshLimiter(
+        accountID: String = "publication-tester",
+        premium: Bool = false,
+        clock: Date = Date(timeIntervalSince1970: 1_700_000_000)
+    ) -> AIRateLimiter {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        return AIRateLimiter(
+            defaults: suite,
+            accountIDProvider: { accountID },
+            now: { clock },
+            premiumProvider: { premium }
+        )
+    }
+
+    @Test func changeTokenStartsAtZeroForFreshInstance() {
+        // A brand-new limiter has not seen any state change yet. The
+        // token reads zero so observers can establish a baseline at
+        // `.onAppear` without spurious renders. (`@Published`
+        // semantics: an initial assignment in `init` does not fire
+        // `objectWillChange` for `private(set)` properties that were
+        // assigned their default value at declaration.)
+        let limiter = freshLimiter()
+        #expect(limiter.changeToken == 0)
+    }
+
+    @Test func consumeBumpsChangeTokenOnSuccess() {
+        // The primary positive path: a successful `consumeIfAllowed`
+        // writes a new value into `UserDefaults` AND bumps the token.
+        // SwiftUI surfaces observing the limiter re-render and read
+        // the post-consume `remainingToday` value.
+        let limiter = freshLimiter()
+        let before = limiter.changeToken
+        let allowed = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        #expect(allowed == true, "Fresh limiter under cap must allow consume.")
+        #expect(limiter.changeToken == before &+ 1,
+            "Successful consume must bump the publication token exactly once.")
+    }
+
+    @Test func consumeBumpsTokenExactlyOncePerSuccess() {
+        // The first successful consume on a fresh limiter lifts the
+        // token from 0 to exactly 1 — no double-bump from a refactor
+        // that splits the write path into a "check + record" pair, no
+        // skipped bump from a future early-return ordering bug. The
+        // `consumeDoesNotBumpOnCapReached` test below extends this
+        // exact-once contract across `freeDailyCap` successful
+        // consumes; this is the single-consume anchor.
+        let limiter = freshLimiter()
+        _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        #expect(limiter.changeToken == 1)
+    }
+
+    @Test func consumeDoesNotBumpOnDebounceBlock() {
+        // Debounce-blocked consume returns false without writing to
+        // `UserDefaults` and without bumping the token. The frozen
+        // clock holds the second call inside the 1.5s debounce floor
+        // of the first call's timestamp.
+        let limiter = freshLimiter()
+        let allowedFirst = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        #expect(allowedFirst == true)
+        let tokenAfterFirst = limiter.changeToken
+
+        let allowedSecond = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        #expect(allowedSecond == false,
+            "Second consume inside debounce window must be blocked.")
+        #expect(limiter.changeToken == tokenAfterFirst,
+            "Debounce-blocked consume must not bump the publication token.")
+    }
+
+    @Test func consumeDoesNotBumpOnCapReached() {
+        // Cap-reached consume returns false without bumping the
+        // token. We stand up a limiter whose clock advances past the
+        // debounce window between calls so only the cap gate is
+        // exercised, then push exactly `freeDailyCap` successful
+        // consumes through and assert the +1 call returns false with
+        // no further token bump.
+        let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        var tick = 0
+        let limiter = AIRateLimiter(
+            defaults: suite,
+            accountIDProvider: { "cap-tester" },
+            now: { baseDate.addingTimeInterval(Double(tick) * 60.0) },
+            premiumProvider: { false }
+        )
+
+        for _ in 0..<AIRateLimiter.freeDailyCap {
+            let allowed = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+            #expect(allowed == true)
+            tick += 1
+        }
+        let tokenAtCap = limiter.changeToken
+        #expect(tokenAtCap == UInt64(AIRateLimiter.freeDailyCap),
+            "Each successful consume up to the cap should bump exactly once.")
+
+        let overCap = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        #expect(overCap == false,
+            "Consume at cap+1 must return false (soft-degrade contract).")
+        #expect(limiter.changeToken == tokenAtCap,
+            "Cap-reached consume must not bump the publication token.")
+    }
+
+    @Test func endSessionDoesNotBumpChangeToken() {
+        // `endSession` clears the in-memory `lastCallTimestamp`
+        // dictionary — debounce only, no read-side effect. Observers
+        // that re-rendered here would burn CPU for nothing. The
+        // contract: `endSession` is silent on the publication axis.
+        let limiter = freshLimiter()
+        _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        let tokenBeforeEnd = limiter.changeToken
+        limiter.endSession()
+        #expect(limiter.changeToken == tokenBeforeEnd,
+            "endSession must not bump the publication token.")
+    }
+
+    @Test func deleteAllDataBumpsTokenForActiveAccount() {
+        // The active-account wipe resets every (kind × day) counter to
+        // 0 — observing surfaces should re-read and see the wider
+        // budget. The bump fires from inside `deleteAllData(for:)`
+        // when the wiped id matches the current `accountIDProvider`
+        // return value.
+        let limiter = freshLimiter(accountID: "active")
+        _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        let tokenBeforeWipe = limiter.changeToken
+        limiter.deleteAllData(for: "active")
+        #expect(limiter.changeToken == tokenBeforeWipe &+ 1,
+            "Active-account deleteAllData must bump the publication token.")
+        // Also lock the read-side effect: after the wipe, remaining
+        // is back to the full cap.
+        #expect(limiter.remainingToday(kind: .postRepCoachNote)
+            == AIRateLimiter.freeDailyCap)
+    }
+
+    @Test func deleteAllDataDoesNotBumpForDifferentAccount() {
+        // Wiping a *different* account's counters cannot affect what
+        // `remainingToday(kind:)` would return for the current
+        // account — they're in different storage keys. A bump here
+        // would re-render every observer for no visible reason.
+        // Locks the gated-bump contract.
+        let limiter = freshLimiter(accountID: "active")
+        _ = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+        let tokenBeforeOtherWipe = limiter.changeToken
+        limiter.deleteAllData(for: "some-other-account")
+        #expect(limiter.changeToken == tokenBeforeOtherWipe,
+            "Other-account deleteAllData must not bump the publication token.")
+    }
+
+    @Test func tokenAndRemainingTodayStayInLockstep() {
+        // Integration check: every token bump corresponds to a
+        // read-side change that an observing view would render. After
+        // each successful consume, `remainingToday` is one lower than
+        // before. This is the contract a SwiftUI body relies on —
+        // "if the token moved, the number I read is different from
+        // last time."
+        let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        var tick = 0
+        let limiter = AIRateLimiter(
+            defaults: suite,
+            accountIDProvider: { "lockstep" },
+            now: { baseDate.addingTimeInterval(Double(tick) * 60.0) },
+            premiumProvider: { false }
+        )
+
+        var lastToken = limiter.changeToken
+        var lastRemaining = limiter.remainingToday(kind: .postRepCoachNote)
+        for _ in 0..<5 {
+            tick += 1
+            let allowed = limiter.consumeIfAllowed(kind: .postRepCoachNote)
+            #expect(allowed == true)
+            let nowToken = limiter.changeToken
+            let nowRemaining = limiter.remainingToday(kind: .postRepCoachNote)
+            #expect(nowToken == lastToken &+ 1, "Token must advance by 1.")
+            #expect(nowRemaining == lastRemaining - 1,
+                "remainingToday must decrease by 1 when the token advances.")
+            lastToken = nowToken
+            lastRemaining = nowRemaining
+        }
+    }
+}

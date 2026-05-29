@@ -1,35 +1,30 @@
-# HANDOFF — M24 deferred slate (round 21): lift crossing-detection into `IMHistorySummary.toneDrillCrossing`
+# HANDOFF — M24 deferred slate (round 22): `AIRateLimiter` becomes an `ObservableObject` so the Settings AI-usage card + `CoachReadCard` daily-budget hint refresh mid-view
 
 ## Scope
 
-Round 20 (the prior HANDOFF) closed "Future move" #1 — surfaced the
-SOLVED win on the hero score card itself (not only in the post-rep
-coach note prose) via a quiet IM-tinted capsule between the score ring
-and the headline. Round 20's own "Future moves" list rolled the top
-item forward:
+Round 21 (the prior HANDOFF) closed the round-20 "Future move" #1 —
+lifted the SOLVED crossing-detection predicate into
+`IMHistorySummary.toneDrillCrossing(in:scenario:currentRepId:)` so the
+post-rep coach note and the hero score-card ribbon can never drift
+apart by construction. Round 21's own "Future moves" list rolled its
+remaining items forward; the next-most-actionable item on that list
+that doesn't need a real iOS device, an unblocked Firestore schema, or
+a high-risk animation refactor pass is item #3:
 
-> **Lift the crossing-detection helper into `IMHistorySummary`.** The
-> "resolved now AND not resolved before" predicate now lives in two
-> places — `PracticeSessionFinalizer.recordPostRepCoachNote` (note)
-> and `SummaryView.heroToneDrillResolvedRibbon` (ribbon). Both must
-> agree forever. A small static helper
-> `IMHistorySummary.toneDrillCrossing(in:scenario:)` returning the
-> crossed `IMToneDrillResolved?` would collapse both surfaces through
-> one tested point — exactly the same hygiene move round 17 made for
-> the `SummaryLookingAheadRouter`. Pure refactor, no UI surface, no
-> device QA required. Could ship next round.
+> **Rate-limiter live refresh.** Make `AIRateLimiter` an
+> `ObservableObject` so the Settings AI-usage card AND the
+> `CoachReadCard` daily-budget hint refresh mid-view. Low priority.
 
 This push closes that item. The artifact a user can hold once compiled
-is unchanged behaviorally — the same SOLVED ribbon on the hero card
-and the same SOLVED-headlined sentence in the post-rep coach note
-light up on the same crossing rep, exactly as round 20 shipped. What
-changes is the *contract*: the with-vs-without-this-rep predicate now
-lives in **one** tested place — `IMHistorySummary.toneDrillCrossing(
-in:scenario:currentRepId:)` — instead of being repeated by two call
-sites that must stay in lockstep. Pure refactor + 6 tests locking the
-positive crossing path, the "already-solved-before stays quiet"
-negative, the relapse-then-reclear positive, the stale-id defensive
-negative, and order-independence across both call sites.
+is the same Settings AI-usage card and the same post-rep coach card —
+but they now **observe** the limiter instead of reading it once at
+body construction. A rep finalizing in the practice tab while
+Settings is pinned in a sheet now correctly tickles the AI-usage
+card's "coach notes today" row down by one in the same MainActor
+turn; a user re-mounting a still-visible CoachReadCard after the
+limiter's `consumeIfAllowed` lands sees the daily-budget hint cross
+its 75%-used threshold mid-view instead of staying frozen at the
+stale pre-finalize value.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -38,300 +33,322 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- Round 20 surfaced the SOLVED win in two coach surfaces — the prose
-  note (round 14) and the hero ribbon (round 20). Both surfaces ran
-  the same with-vs-without-this-rep comparison locally: the finalizer
-  used `allSessions.filter { $0.id != session.id }`, the SummaryView
-  used `Array(sessions.dropFirst())`. Two implementations of the same
-  predicate; same primitive (`IMHistorySummary.toneDrillResolved(
-  from:scenario:)`); two places one of them could silently drift if a
-  copy-paste refactor touched only one. That kind of duplication is
-  exactly what round 17 pulled out of the "Looking ahead" launch
-  destination logic via `SummaryLookingAheadRouter`.
-- The refactor lifts the comparison into a single static helper on
-  `IMHistorySummary`. Both call sites become one-liner calls. The
-  ordering difference (`filter { $0.id != id }` vs `dropFirst()`)
-  collapses into one id-based filter the helper owns, so the
-  SummaryView (store prepends the just-finalized rep) and the
-  finalizer (`allSessions` is in insertion order) both pass arbitrary
-  orderings without thinking about it.
-- The helper keeps every other contract identical: the same
-  `IMHistorySummary.toneDrillResolved(from:scenario:)` reads the
-  before-and-after windows, the same `IMToneDrillResolved` value
-  bubbles up unchanged, the same nil-when-no-crossing honesty
-  contract holds. Nothing the user sees changes — but the next agent
-  who wants to change *how* a crossing is detected (e.g. raise the
-  hold bar, widen the window) only has to change one function and
-  re-run one test struct.
+- The honest gap from round 21 ("a rep consumed elsewhere while the
+  card is open leaves the rendered count stale") was the smallest
+  remaining mechanical hole on the surfaces the coach voice owns.
+  Round 22 closes it with the minimum amount of plumbing — one
+  `@Published` token, three `&+=` bumps, two `@StateObject`
+  swaps — and adds 8 tests locking the publication contract so a
+  future agent reordering bumps or adding a new lifecycle hook
+  doesn't silently break the read-side observers.
+- The contract is narrow on purpose: bump on writes that change
+  what `remainingToday(kind:)` would return; stay quiet on
+  no-op writes (debounce-block, cap-reached, other-account wipe).
+  That's the same self-discipline the round-21
+  `IMHistorySummary.toneDrillCrossing` predicate exercises — one
+  function, one contract, no view-driven rerender storms.
+- The redesign-branch invariant: this is a `Redesign`-branch push
+  per the user brief. The branch the agent runs on
+  (`claude/nifty-meitner-h2Pwd`) is merged forward into `Redesign`
+  so the round-22 work lands on `Redesign` directly. No fork in the
+  lineage.
 
 ## What shipped
 
-### Track 1 — `IMHistorySummary.toneDrillCrossing` (`IMHistorySummary.swift`)
+### Track 1 — `AIRateLimiter` becomes an `ObservableObject` (`AIRateLimiter.swift`)
 
-`Noum/IMHistorySummary.swift`:
+`Noum/AIRateLimiter.swift`:
 
-- New static helper
-  `toneDrillCrossing(in:scenario:currentRepId:matchRateThreshold:
-  holdRate:)`. Placed immediately after the cross-scenario
-  `toneDrillResolved(from:)` (line ~682) so the read primitives sit
-  together — single-scenario `toneDrillResolved`, cross-scenario
-  `toneDrillResolved`, then the crossing helper that composes both
-  into a single-rep contract.
-- Body:
-  ```swift
-  guard sessions.contains(where: { $0.id == currentRepId }) else { return nil }
-  guard let resolvedNow = toneDrillResolved(
-      from: sessions, scenario: scenario, ...
-  ) else { return nil }
-  let priorSessions = sessions.filter { $0.id != currentRepId }
-  guard toneDrillResolved(
-      from: priorSessions, scenario: scenario, ...
-  ) == nil else { return nil }
-  return resolvedNow
-  ```
-  Same `resolvedNow != nil && resolvedBefore == nil` shape both call
-  sites used; the id-filter strips the just-finished rep by id
-  instead of by position, so callers don't have to think about
-  whether their session list is store-prepended or finalizer-appended.
-- Same default threshold + hold-rate parameters as
-  `toneDrillResolved(from:scenario:)` so a future call site that
-  wants to swap the bars (e.g. a stricter SOLVED gate for an opt-in
-  "high-confidence wins only" mode) gets the same API surface.
-- Doc-comment names the contract explicitly:
-  - **Why it exists** — two coach surfaces (post-rep note, hero
-    ribbon) must light up on exactly one rep; routing both through
-    one primitive makes that enforceable.
-  - **What `sessions` must contain** — the just-finished rep
-    (otherwise resolved-now and resolved-before are the same read).
-  - **The four nil cases** — scenario hasn't crossed, scenario was
-    already across, stale id (defensive: never invent a victory from
-    a phantom rep), and the inherited "below the bar" cases the
-    underlying `toneDrillResolved` already gates.
+- `import Combine` added at the top so `@Published` resolves. Mirrors
+  the existing `PostRepCoachNoteStore` pattern (also `@MainActor`,
+  also `ObservableObject`, also imports Combine).
+- `final class AIRateLimiter` → `final class AIRateLimiter:
+  ObservableObject`. No subclassing; no callers depend on a non-
+  observable surface (verified by grep — every call site reads
+  through the public method API, never via a generic constraint).
+- New `@Published private(set) var changeToken: UInt64 = 0`. Bumps
+  on every state change that affects what `remainingToday(kind:)`
+  would return; stays quiet on every no-op state change. The token
+  is `UInt64` with wrapping addition (`&+=`) so heavy-usage
+  overflow can't crash the limiter — the maths is ~580 billion
+  years of one-second-bursts before the counter wraps once. A
+  re-render on wrap is harmless (it's an identity change SwiftUI
+  honors the same way it honors any +1).
+- `consumeIfAllowed(kind:)` (line ~135). Adds `changeToken &+= 1`
+  AFTER the `defaults.set(current + 1, forKey: countKey)` write,
+  so any observer's body recomputation reads the post-consume
+  `remainingToday` value, never the pre-consume one. The
+  debounce-block and cap-reached early-return paths stay token-
+  silent; they didn't move the read-side count.
+- `endSession()` (line ~179). Doc-comment added that explicitly
+  names the publication contract: this hook only clears the
+  in-memory `lastCallTimestamp` debounce window; views don't
+  observe debounce, so no token bump. Bumping here would re-render
+  every observing surface every sign-out for nothing.
+- `deleteAllData(for accountID:)` (line ~187). Adds `changeToken
+  &+= 1` INSIDE the existing `accountIDProvider() == accountID`
+  guard. Other-account wipes (a stale signed-out account's
+  counters being scrubbed at logout) don't affect what
+  `remainingToday(kind:)` would return for the current account, so
+  the bump is gated behind the active-account check. Active-account
+  wipes reset every (kind × day) counter to 0 and bump exactly
+  once so observing surfaces re-read and surface the wider budget.
+- Top-of-file doc-comment updated with the new "Read-side
+  observability" design rule, explaining the publication contract
+  so the next agent doesn't have to re-derive why three writes bump
+  and one stays quiet.
 
-### Track 2 — finalizer call site through the helper (`PracticeSupport.swift`)
+### Track 2 — Settings AI-usage card observes the limiter (`SettingsView.swift`)
 
-`Noum/PracticeSupport.swift`:
+`Noum/SettingsView.swift`:
 
-- `recordPostRepCoachNote` (line ~6628). Replaces the inline 4-line
-  predicate (priorSessions filter + two `toneDrillResolved` calls +
-  the `resolvedNow != nil && resolvedBefore == nil` gate) with a
-  single `IMHistorySummary.toneDrillCrossing(in: allSessions,
-  scenario: scenario, currentRepId: session.id)` call. Output
-  unchanged: the same `imToneResolved` / `imToneResolvedScenarioTitle`
-  / `imToneResolvedToneTitle` triple feeds the same
-  `PostRepCoachNoteInput` constructor (line ~6649) the same way.
-- Comment above the call updated to name the round-21 contract and
-  point at the helper so the next reader doesn't have to re-derive
-  why the comparison-by-id is correct.
-- No behavior change. The post-rep note still headlines the SOLVED
-  sentence on exactly the crossing rep, and stays quiet on every
-  rep after.
+- New `@StateObject private var rateLimiter = AIRateLimiter.shared`
+  declared alongside the other settings observers (line ~43, right
+  after `@StateObject private var aiSettings`). Doc-comment names
+  the contract: this is what makes the AI-usage card's "coach notes
+  today" row refresh mid-view as the budget is consumed elsewhere.
+- `aiUsageCard` (line ~950). The local `let rateLimiter =
+  AIRateLimiter.shared` line is removed — the view-property
+  observer carries the same instance, and dropping the local
+  rebinding is what hooks the observation up. The
+  `coachNotesRemaining` / `coachNotesCap` reads stay verbatim
+  (`rateLimiter.remainingToday(kind: .postRepCoachNote)` /
+  `rateLimiter.currentCap()`), so the card body is identical.
+- No visual change. The card renders the same numbers it used to,
+  but now `objectWillChange` from the limiter triggers a fresh
+  body computation when the budget is consumed elsewhere — so the
+  numbers stay honest.
 
-### Track 3 — SummaryView ribbon call site through the helper (`SummaryView.swift`)
+### Track 3 — `CoachReadCard` observes the limiter (`CoachReadCard.swift`)
 
-`Noum/SummaryView.swift`:
+`Noum/CoachReadCard.swift`:
 
-- `heroToneDrillResolvedRibbon` (line ~380). Replaces the inline
-  4-line predicate (dropFirst priorSessions + two `toneDrillResolved`
-  calls + the resolved-now / resolved-before guard) with a single
-  `IMHistorySummary.toneDrillCrossing(in: sessionStore.sessions,
-  scenario: scenario, currentRepId: currentRepId)` call. The view
-  still resolves the just-finalized rep's id as
-  `sessionStore.sessions.first?.id` (the store prepends), so the
-  store-ordered list and the id are consistent at the call site, but
-  the helper does the actual with-vs-without comparison.
-- Doc-comment updated to name the round-21 contract: routes through
-  the same primitive the post-rep coach-note uses, so the ribbon and
-  the note can never drift apart.
-- No behavior change. The SOLVED ribbon still renders on exactly the
-  crossing rep, in IM purple-blue, just above the headline; the
-  ribbon still doesn't render on non-IM reps, on already-resolved
-  scenarios, or when IM Mode is unavailable.
+- New `@StateObject private var rateLimiter = AIRateLimiter.shared`
+  declared alongside the other card observers (line ~62, after
+  `coachingProfileStore`). Doc-comment explains the three
+  surfaces this protects: the AI-upgrade pass on a still-mounted
+  summary card, a deferred rep finalize landing while the user is
+  still reading the previous summary, and a deletion from "Clear
+  all data" while the card is rendered.
+- The doc-comment also explicitly notes premium tier changes are
+  NOT observed here: the summary card is short-lived, the typical
+  Pro-upgrade path leaves the surface (paywall → checkout → back
+  to home), and the cap is still read at call time via
+  `rateLimiter.currentCap()` so a re-mount after an upgrade reads
+  the wider budget. Right-sized observation — we don't pull
+  `PremiumManager` into the card just for an edge case that the
+  re-mount handles for free.
+- `dailyCoachNoteRemaining` (line ~68) and `dailyCoachNoteCap`
+  (line ~71) switched from `AIRateLimiter.shared.remainingToday`
+  / `.currentCap` to `rateLimiter.remainingToday` / `.currentCap`.
+  Same underlying instance (the singleton), but now read through
+  the view-property observer so SwiftUI tracks the dependency.
+- No visual change. The daily-budget hint renders the same string
+  at the same threshold, but now the threshold-crossing actually
+  refreshes the hint while the card is visible.
 
-### Track 4 — tests (`NoumTests/NoumTests.swift`)
+### Track 4 — `AIRateLimiterPublicationTests` (8 tests, `NoumTests/NoumTests.swift`)
 
-6 new tests in a new `IMToneDrillCrossingTests` struct beneath
-`IMToneDrillResolvedTests`:
+A new `@MainActor struct AIRateLimiterPublicationTests` appended
+after `HeroScoreCardToneDrillRibbonContractTests`. Same hermetic
+pattern as `PostRepCoachNoteStoreTests` (round-prior round) —
+each test stands up a fresh limiter with an in-memory `UserDefaults`
+suite, a frozen clock, a fixed account id, and a premium override
+so the cap and debounce floor are deterministic.
 
-- `crossingFiresOnTheRepThatClosesTheGap` — positive path. Five reps
-  below the bar + a sixth rep that lands the tone. Calling the helper
-  with the sixth rep's id returns the resolved read. Locks the
-  primary positive: the helper *does* surface the crossing when the
-  current rep is the one that pushed the scenario over.
-- `crossingStaysQuietWhenAlreadyResolvedBefore` — the
-  never-double-celebrate contract. Six reps that crossed + a
-  seventh rep that also lands. Both resolved-now AND resolved-before
-  are non-nil (sanity asserts pinned). Helper returns nil — the
-  win was named on rep 6, rep 7 stays quiet.
-- `crossingFiresAgainOnRelapseThenReclear` — honesty contract: a
-  scenario that crossed, relapsed across three reps below the hold
-  bar, then re-cleared with a tenth rep, reads as a *new* crossing.
-  The user did genuinely re-close the gap; the helper surfaces it
-  the same way the round-13 primitive does. Sanity asserts that the
-  resolved-before reads nil (the relapse window pushed the latest
-  3-rep window back below 60% hold) and resolved-now reads non-nil.
-- `crossingNilWhenScenarioNeverCrossed` — primary negative. A
-  scenario still firmly below the drill bar. Helper returns nil —
-  the recommendation engine still owns this scenario, the SOLVED
-  surfaces stay quiet.
-- `crossingNilOnStaleRepId` — defensive contract. The same six-rep
-  crossing history (whose cross-history resolved read is non-nil)
-  but called with a freshly-generated `UUID()` that doesn't match
-  any session. Helper returns nil — it never invents a victory from
-  a phantom rep. Pinned with a sanity assert that the raw read IS
-  resolved, so the stale-id gate is what's keeping the helper quiet.
-- `crossingIsOrderIndependentAcrossCallSites` — the central refactor
-  invariant. Build the same crossing history two ways: finalizer
-  ordering (`priorReps + [crossingRep]`, insertion order) and store
-  ordering (`[crossingRep] + priorReps`, latest-prepended). Both
-  callers pass the *same* `currentRepId`. The helper returns the
-  *same* `IMToneDrillResolved` value for both orderings (the equality
-  pin reads `finalizerCrossing == storeCrossing`, exercising
-  `IMToneDrillResolved`'s existing Equatable conformance — confirmed
-  via `grep` of `PracticeSupport.swift:7191`). This is the test that
-  guarantees the SummaryView and the finalizer route through the
-  same primitive and produce the same answer.
+- `changeTokenStartsAtZeroForFreshInstance` — initial-state
+  contract. A brand-new limiter's token reads zero so an observer's
+  `.onAppear` baseline isn't preceded by a spurious render.
+- `consumeBumpsChangeTokenOnSuccess` — the primary positive path.
+  A successful `consumeIfAllowed` bumps the token by exactly 1
+  alongside the `UserDefaults` write.
+- `consumeIsMonotonicAcrossSuccessfulCalls` — the +1, never +2
+  contract. Pinning each successful consume to a single bump (no
+  double-publish from a future refactor that splits the write
+  path).
+- `consumeDoesNotBumpOnDebounceBlock` — the first negative
+  contract. The second consume inside the 1.5s debounce floor
+  returns false without writing to `UserDefaults` and without
+  bumping the token. The frozen clock holds the call inside the
+  debounce window.
+- `consumeDoesNotBumpOnCapReached` — the second negative contract.
+  A limiter clocked forward past the debounce window between each
+  consume gets pushed to exactly `freeDailyCap` successful
+  consumes; the +1 call returns false and the token reads
+  identical to its at-cap value. Pinned with a sanity assert that
+  the token bumped exactly `freeDailyCap` times up to that point.
+- `endSessionDoesNotBumpChangeToken` — the lifecycle-hook quiet
+  contract. `endSession` clears the in-memory debounce window only
+  and must not re-render every observing surface.
+- `deleteAllDataBumpsTokenForActiveAccount` — the active-account
+  wipe contract. The bump fires when the wiped id matches the
+  current `accountIDProvider` return value, AND the read-side
+  effect lines up (`remainingToday` reads back at the full cap
+  after the wipe).
+- `deleteAllDataDoesNotBumpForDifferentAccount` — the gated-bump
+  contract. Wiping a different account's counters cannot affect
+  what `remainingToday(kind:)` would return for the current
+  account; a bump here would re-render every observer for no
+  visible reason.
+- `tokenAndRemainingTodayStayInLockstep` — the integration
+  contract. Across 5 successful consumes (clock advancing past
+  the debounce window each time), every token bump corresponds
+  to exactly a -1 change in `remainingToday`. That's the contract
+  a SwiftUI body relies on: "if the token moved, the number I
+  read is different from last time."
 
 ### Vision alignment
 
-- **Pillar #4 (Believable progress).** A SOLVED ribbon and a SOLVED
-  prose headline that occasionally drift apart — different rep, or
-  one fires and the other doesn't — is exactly the kind of credibility
-  hole that erodes the user's trust in the rest of the coach voice.
-  Routing both through one tested primitive makes drift impossible by
-  construction, not by convention.
-- **Pillar #5 (Personalized coaching).** A human coach who pushed you
-  on your calm tone in Difficult Conversation for two weeks doesn't
-  acknowledge the win twice — once in the chip, once in the prose,
-  with subtly different timing. The single-source-of-truth helper
-  keeps the two coach voices aligned on the same rep.
-- **Coach-parity stage #4 (Adaptation).** The "explained rationale"
-  for moving on from a drill IS the SOLVED moment. Centralizing the
-  predicate makes the rationale auditable: one function, six tests,
-  one place to change the bar if longitudinal usage shows the 60%
-  hold rate is too lenient or too strict.
-- **Round-17 hygiene precedent.** Same shape as the
-  `SummaryLookingAheadRouter` lift round 17 did for the post-rep
-  "Looking ahead" launch destination. Two surfaces that had to agree
-  forever → one tested router both routed through. Round 21 applies
-  the same template to the crossing-detection predicate.
+- **Pillar #4 (Believable progress).** The "coach notes today" row
+  in Settings and the "1 AI coach note remaining today" hint in
+  CoachReadCard are part of the user's honesty-contract surface
+  — they explain WHY the AI-polish layer might step aside today.
+  An observer reading a stale count is the kind of credibility
+  hole that makes a user wonder "is this broken or is the AI just
+  off?" Routing both through one `@Published` token makes the
+  read-side honest by construction.
+- **Pillar #5 (Personalized coaching).** A real human coach
+  doesn't say "I have 8 hours of work in me today" while staring
+  at a calendar from yesterday morning. The rate-limiter is the
+  closest the in-app coach has to a "today's energy budget" — it
+  has to read live.
+- **Coach-parity stage #4 (Adaptation).** Per the
+  `docs/VISION.md` development instructions: "Every recommendation
+  must have evidence, purpose, an observable target, and an
+  honest evidence threshold for changing the plan." The daily-
+  budget hint IS the honest threshold the coach voice exposes for
+  why it's reading rule-based today. Threshold-crossing must
+  refresh the hint as the threshold is actually crossed, not at
+  the next re-mount.
+- **Anti-goal alignment (no "hearts-and-lives gating").** The
+  publication contract preserves the soft-degrade promise: the
+  user always gets a coach note. Observing the limiter is a
+  read-side honesty improvement, not a new way to gate practice.
 
 ### Branch + redesign-alignment notes
 
-- All four edits land on `Redesign`, the redesign-lineage branch the
-  rolling M24 deferred-slate work has been shipping on since round 11.
-  The user brief explicitly calls this out: "ensure working on the
-  redesign branch too (very important)." This round preserves the
-  round-by-round loop on the redesign lineage. The draft PR tracking
-  the redesign work into `main` picks up this round's changes
-  automatically.
-- The branch the agent runs on (`claude/clever-hypatia-lUbpe`) is
-  merged forward into `Redesign` so the round-21 work lands on
+- All four edits land on `Redesign`, the redesign-lineage branch
+  the rolling M24 deferred-slate work has been shipping on since
+  round 11. The user brief explicitly calls this out: "ensure
+  working on the redesign branch too (very important)." This
+  round preserves the round-by-round loop on the redesign lineage.
+  The draft PR tracking the redesign work into `main` picks up
+  this round's changes automatically.
+- The branch the agent runs on (`claude/nifty-meitner-h2Pwd`) is
+  merged forward into `Redesign` so the round-22 work lands on
   `Redesign` directly. No fork in the lineage.
 
 ## Future moves
 
-(Updated priority list — round-20 "Future move" #1 closed this round;
-the rest roll forward, plus one new item that drops out of the
-refactor:)
+(Updated priority list — round-21 "Future move" #3 closed this round;
+the rest roll forward.)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still blocked
    on `PublicProfileSnapshot` schema work.
 2. **`coachNoteRevealed` cleanup.** Still risky — animation chain
    interleaving with celebration timing. Worth a dedicated refactor
    pass with proper visual QA (and a real device).
-3. **Rate-limiter live refresh.** Make `AIRateLimiter` an
-   `ObservableObject` so the Settings AI-usage card AND the
-   `CoachReadCard` daily-budget hint refresh mid-view. Low priority.
-4. **Visual polish pass on the round-19 launch CTA.** Carried forward
-   from rounds 19–20. Pure visual work, not destination logic — the
+3. **Visual polish pass on the round-19 launch CTA.** Carried forward
+   from rounds 19–21. Pure visual work, not destination logic — the
    router stays the single source of truth either way.
-5. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from round 20. The current capsule is the minimum-viable
-   shape: IM-tinted, quiet, in register with the existing "Toward
-   your <voice>" chip. A real-device read may want the capsule to
-   grow into a full-width strip across the score ring, or stay a
-   chip but gain a one-shot pulse animation on first render. Pure
-   visual work, not crossing logic — the round-21 helper stays the
-   single source of truth either way.
-6. **NEW — extend the crossing helper to the chat-coach context
-   line.** `CoachContextBuilder.toneDrillResolvedLines(for:)` (line
-   ~679 of `CoachContextBuilder.swift`) currently calls the
-   cross-scenario `IMHistorySummary.toneDrillResolved(from:)` — it
-   reads "a scenario is currently solved", not "the just-finished
-   rep crossed". For Ask Noum that's correct (the chat coach should
-   know about all standing wins). But if a future chat-coach
-   surface ever wants to read *only* "fresh crossings from this
-   session", the helper is there to route through. Note for the
-   record, not an action item.
+4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
+   forward from rounds 20–21. The current capsule is the minimum-
+   viable shape: IM-tinted, quiet, in register with the existing
+   "Toward your <voice>" chip. A real-device read may want the
+   capsule to grow into a full-width strip across the score ring,
+   or stay a chip but gain a one-shot pulse animation on first
+   render. Pure visual work, not crossing logic — the round-21
+   helper stays the single source of truth either way.
+5. **Extend the crossing helper to the chat-coach context line.**
+   Carried forward from round 21 as a note for the record (not an
+   action item): `CoachContextBuilder.toneDrillResolvedLines(for:)`
+   currently calls the cross-scenario read; if a future chat-coach
+   surface ever wants to read only "fresh crossings from this
+   session," the helper is there to route through.
+6. **NEW — observe `PremiumManager` in `CoachReadCard` if real-device
+   usage shows mid-summary upgrades.** The round-22 doc-comment
+   explicitly skipped this on cost-of-observation grounds (summary
+   card is short-lived, paywall is full-screen, re-mount handles
+   it). Worth a real-device check — if a paywall sheet on top of
+   the summary triggers a Pro upgrade WITHOUT dismissing the
+   summary underneath, the hint stays stale until the user
+   navigates away. Cheap fix if needed: one more `@StateObject`
+   line. No code change this round.
+7. **NEW — day-rollover refresh for long-mounted observers.** The
+   round-22 publication only fires on writes. A user who pins
+   Settings open across midnight would still see yesterday's
+   counters until the next consume bumps the token. The
+   `dayKey(for:)` rollover doesn't auto-publish. Real-world
+   relevance is low (nobody actually leaves Settings open across
+   midnight), but worth a note. A future round could subscribe to
+   `UIApplication.significantTimeChangeNotification` and bump the
+   token from there, or add a `.task(id: Calendar.current.dayKey)`
+   to the observing views. No code change this round — the call
+   would be premature optimization without real-device evidence.
 
 ## Build-host limitation (honest note for the next agent)
 
 This environment has **no Xcode and no Swift toolchain**, so nothing
 in this round was compiled or run — not the app, not the test suite.
-The changes are a pure refactor of the round-20 predicate into the
-round-13 helper file:
+The changes are a pure conformance addition + 3 line bumps on the
+write paths + 2 `@StateObject` swaps:
 
-- `IMHistorySummary.toneDrillCrossing` is a 12-line static helper
-  composed of two calls to the existing `toneDrillResolved(
-  from:scenario:)` (round 13) + one id-based filter + four guards.
-  No new dependencies, no new types, no new storage. The
-  `IMToneDrillResolved` return type is unchanged; the
-  `IMConversationScenario` / `PracticeSession` parameter types are
-  unchanged; the optional `matchRateThreshold` / `holdRate`
-  parameters default to the same `toneDrillMatchRateThreshold` /
-  `toneDrillResolvedHoldRate` constants the underlying
-  `toneDrillResolved(from:scenario:)` uses.
-- `PracticeSupport.swift:6628`-style call site collapses 11 lines of
-  inline predicate into one helper call. The `imToneResolved` /
-  `imToneResolvedScenarioTitle` / `imToneResolvedToneTitle` triple
-  the `PostRepCoachNoteInput` constructor consumes is built the same
-  way (same `scenario.title` and `crossed.targetTone.title`
-  derivations) — verified by re-reading the constructor call at
-  line ~6649 (no diff there).
-- `SummaryView.swift:380`-style call site collapses 14 lines of
-  inline predicate into one helper call. The view's existing
-  `IMModeAvailability.isAvailable` guard, the `imConversationDetails
-  != nil` guard, and the `if #available(iOS 17.0, *)` guard stay
-  unchanged — those are presentation-layer gates the card needs, not
-  crossing-detection logic.
-- `IMToneDrillCrossingTests` (6 tests) mirror the
-  `IMToneDrillResolvedTests` pattern byte-for-byte: same `imSession`
-  builder, same `baseDate`, same scenario / tone constructions.
-  The new `crossingIsOrderIndependentAcrossCallSites` test exercises
-  `IMToneDrillResolved`'s Equatable conformance — confirmed via
-  `grep "struct IMToneDrillResolved"` of `PracticeSupport.swift`
-  (line 7191: `struct IMToneDrillResolved: Equatable`).
+- `AIRateLimiter` now conforms to `ObservableObject`. The
+  conformance is automatic (the `@Published` wrapper provides the
+  `objectWillChange` publisher); no manual `objectWillChange.send()`
+  is required. `@MainActor` + `ObservableObject` is the same pair
+  `PostRepCoachNoteStore` uses, which is already shipping. Confirmed
+  via grep that no caller depends on a non-`ObservableObject`-shaped
+  surface.
+- The three `changeToken &+= 1` bumps are after the persisted writes
+  (`consumeIfAllowed` write happens, then bump) so an observer
+  reading post-bump sees the post-write value. The deleteAllData
+  bump is inside the active-account guard so other-account wipes
+  stay token-silent.
+- The two `@StateObject` swaps (in `SettingsView` and
+  `CoachReadCard`) follow the same pattern the rest of those views
+  use for shared singleton stores. `@StateObject` with a singleton
+  is the canonical SwiftUI pattern — the closure runs once per
+  view first-mount, returns the same shared instance, and SwiftUI
+  subscribes to `objectWillChange` from there. No new memory; same
+  instance.
+- The 8 `AIRateLimiterPublicationTests` mirror the
+  `PostRepCoachNoteStoreTests` pattern byte-for-byte: same
+  `@MainActor struct`, same hermetic `UserDefaults(suiteName:
+  UUID().uuidString)!` per test, same `init` test seam
+  (`defaults`, `accountIDProvider`, `now`, `premiumProvider`).
+  The `tokenAndRemainingTodayStayInLockstep` test is the
+  integration anchor — every token bump corresponds to a
+  remainingToday change.
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter IMToneDrillCrossingTests` — the 6 new tests
-   should all pass.
-2. `swift test --filter IMToneDrillResolvedTests` — the 12 existing
-   crossing-primitive tests should still pass (the underlying
-   `toneDrillResolved(from:scenario:)` is unchanged this round).
-3. `swift test --filter PostRepCoachNoteToneResolvedTests` — the 5
-   existing post-rep note crossing-contract tests should still pass
-   (the finalizer's `imToneResolved` output is unchanged; only the
-   internal computation routes through the helper).
-4. `swift test --filter HeroScoreCardToneDrillRibbonContractTests` —
-   the 6 round-20 ribbon-contract tests should still pass (the
-   SummaryView's `heroToneDrillResolvedRibbon` output is unchanged;
-   only the internal computation routes through the helper).
-5. `swift test --filter LookingAheadCardStartCTAContractTests` — the
-   6 round-19 launch-CTA tests should still pass (no card change
-   this round).
-6. Boot the app on simulator, run 6+ IM reps in the same scenario
-   (e.g. Difficult Conversation with `Calm` tone), the first 3
-   missing the tone, the latest 3 landing it. Confirm:
-   - The SOLVED ribbon renders on the crossing rep's summary, just
-     above the headline, in IM purple-blue.
-   - The post-rep coach note on the same crossing rep also headlines
-     the SOLVED sentence — both surfaces light up on the same rep,
-     neither alone.
-   - The ribbon does NOT render on the next rep after the crossing
-     (the helper's "before == nil" gate keeps it quiet).
-   - The ribbon does NOT render on non-IM reps (Timed / Sudden
-     Death / Ah-Counter).
-   - VoiceOver still reads "Solved · Calm tone in Difficult
-     Conversation" (single combined label, no icon double-read).
+1. `swift test --filter AIRateLimiterPublicationTests` — the 8 new
+   tests should all pass.
+2. `swift test --filter PostRepCoachNoteStoreTests` — the existing
+   ObservableObject-style tests should still pass; they exercise a
+   sibling class with the same MainActor + Published pattern, so a
+   working harness for them is a working harness for the new tests.
+3. `swift test --filter IMToneDrillCrossingTests` — the round-21
+   helper tests should still pass (no changes to
+   `IMHistorySummary.toneDrillCrossing` this round).
+4. `swift test --filter HeroScoreCardToneDrillRibbonContractTests`
+   — the round-20 ribbon-contract tests should still pass.
+5. `swift test --filter LookingAheadCardStartCTAContractTests` —
+   the round-19 launch-CTA tests should still pass.
+6. Boot the app on simulator, open Settings → AI Usage, pin it in a
+   sheet (e.g. via the Settings deep link from Home), then finish a
+   rep in another tab. Confirm:
+   - The "coach notes today" row's "remaining" number drops by one
+     in the same render — no stale read until the user dismisses
+     and re-opens Settings.
+   - The "used / cap" tile re-flows around the new number.
+   - The CoachReadCard's "X AI coach notes remaining today" hint
+     (visible at 75%+ used) refreshes the same way on a deferred
+     finalize that lands while the previous summary is still on
+     screen.
+   - Crossing the 75%-used threshold mid-view actually starts
+     showing the hint without a re-mount.
+   - Sign-out → sign-back-in with the same account: the AI-usage
+     card reflects the persisted counter, and the daily-budget
+     hint reads honestly against it.
