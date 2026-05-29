@@ -19,6 +19,52 @@ struct HeroScoreCard: View {
     let xpEarned: Int
     let celebrationVisible: Bool
 
+    /// Optional IM tone-drill SOLVED ribbon. When non-nil, the card
+    /// renders a quiet mode-tinted capsule between the score ring and the
+    /// headline naming the just-resolved scenario + committed tone. The
+    /// owning `SummaryView` only sets this on the *crossing rep* — the
+    /// rep that pushed a scenario's hit rate over the bar — mirroring
+    /// the post-rep coach-note crossing detection (`PracticeSessionFinalizer`
+    /// rounds 14+). Defaults nil → every existing call site keeps
+    /// rendering the descriptive-only hero. The ribbon is opt-in, not
+    /// opt-out: a future call site that doesn't compute the resolved
+    /// read can omit the argument and never accidentally celebrate.
+    ///
+    /// Pure-presentation contract: the card takes a string pair and
+    /// renders a capsule; the crossing logic (which scenario, which rep
+    /// crossed) lives in `SummaryView` next to the same store + scenario
+    /// derivation the coach-note path uses, so "SOLVED" and the
+    /// note's SOLVED-headlined sentence light up on the same rep.
+    var toneDrillResolvedRibbon: ToneDrillResolvedRibbon? = nil
+
+    /// Display-only bundle for the SOLVED ribbon. Two titles so the
+    /// renderer doesn't depend on the iOS-17-gated `IMHistorySummary`
+    /// types — the owning view does the lookup and passes the strings.
+    struct ToneDrillResolvedRibbon: Equatable {
+        /// Scenario the user just resolved, e.g. "Difficult Conversation".
+        let scenarioTitle: String
+        /// Committed tone whose hit rate crossed the bar, e.g. "Calm".
+        let toneTitle: String
+    }
+
+    /// Predicate the body uses to gate the ribbon. Lifted so the same
+    /// "show / hide" rule can be locked in tests without rendering the
+    /// SwiftUI body: the ribbon shows iff a ribbon is wired.
+    var shouldShowToneDrillResolvedRibbon: Bool { toneDrillResolvedRibbon != nil }
+
+    /// Display copy for the SOLVED ribbon. Lifted so the per-scenario /
+    /// per-tone label shape can be pinned in unit tests without rendering
+    /// SwiftUI. Mirrors the post-rep coach-note's `Your <tone> tone in
+    /// <scenario> is solved` phrasing but compressed to a capsule label:
+    /// names the outcome as observed hit rate, never claims a drill
+    /// *caused* the win, never re-prescribes. Returns nil when no ribbon
+    /// is wired so callers can use the same predicate for both the gate
+    /// and the label.
+    var toneDrillResolvedRibbonLabel: String? {
+        guard let ribbon = toneDrillResolvedRibbon else { return nil }
+        return "Solved · \(ribbon.toneTitle) tone in \(ribbon.scenarioTitle)"
+    }
+
     var body: some View {
         VStack(spacing: 16) {
             // Mode label
@@ -50,6 +96,30 @@ struct HeroScoreCard: View {
             }
             .scaleEffect(celebrationVisible ? 1.06 : 1.0)
             .animation(.bouncySpring, value: celebrationVisible)
+
+            // SOLVED ribbon (renders only when wired). Visual register
+            // stays deliberately restrained — quiet mode-tinted capsule
+            // in line with the existing "Toward your <voice>" chip on
+            // the `LookingAheadCard` and the "Best this week" chip on
+            // the per-mode breakdown cards. The score ring and headline
+            // are the loud signals; this is the "and you also just
+            // closed something the coach has been working on with you"
+            // tag that makes the moment unmissable without competing.
+            if let label = toneDrillResolvedRibbonLabel {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.caption.weight(.semibold))
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                }
+                .foregroundStyle(AppColor.modeIM)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(AppColor.modeIM.opacity(0.10), in: Capsule())
+                .accessibilityIdentifier("summary.hero.toneDrillSolvedRibbon")
+                .accessibilityLabel(label)
+            }
 
             // Headline
             HStack(spacing: 8) {

@@ -361,6 +361,59 @@ struct SummaryView: View {
         return nil
     }
 
+    /// IM tone-drill SOLVED ribbon for the hero score card, gated to the
+    /// *crossing rep* only — the rep that pushed a scenario's hit rate
+    /// over the bar. Mirrors `PracticeSessionFinalizer.recordPostRepCoachNote`'s
+    /// crossing detection byte-for-byte so the SOLVED ribbon on the hero
+    /// and the SOLVED-headlined sentence in the post-rep coach note light
+    /// up on the same rep and never double-celebrate.
+    ///
+    /// Returns the display strings (scenario title + tone title) so the
+    /// card can render without depending on the iOS-17-gated
+    /// `IMHistorySummary` / `IMToneDrillResolved` types — the lookup
+    /// happens here, the card stays pure presentation.
+    ///
+    /// nil when the just-finished rep isn't IM, when no scenario crosses
+    /// on this rep, or when IM Mode is unavailable. The ribbon stays
+    /// quiet rather than inventing a victory — same honesty contract as
+    /// every other vision-aligned coach surface.
+    private var heroToneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon? {
+        guard IMModeAvailability.isAvailable else { return nil }
+        // Only IM reps can resolve an IM tone drill. The summary view's
+        // own `imConversationDetails` carries the just-finished scenario,
+        // matching how the finalizer scopes the crossing read.
+        guard let details = imConversationDetails else { return nil }
+        if #available(iOS 17.0, *) {
+            let sessions = sessionStore.sessions
+            // Latest session in the store is the just-finalized rep
+            // (`PracticeSessionStore` prepends). The crossing comparison
+            // mirrors the finalizer: resolved-now reads from all sessions
+            // (including this rep); resolved-before strips the latest so
+            // we can tell which rep closed the gap. resolved now AND not
+            // a rep ago == this rep is the crossing rep. A scenario that
+            // was already solved before this rep stays quiet (no repeat);
+            // a genuine relapse-then-reclear correctly reads as a new
+            // crossing — same shape as the post-rep note logic.
+            guard sessions.first != nil else { return nil }
+            let scenario = details.setup.scenario
+            let priorSessions = Array(sessions.dropFirst())
+            let resolvedNow = IMHistorySummary.toneDrillResolved(
+                from: sessions,
+                scenario: scenario
+            )
+            let resolvedBefore = IMHistorySummary.toneDrillResolved(
+                from: priorSessions,
+                scenario: scenario
+            )
+            guard let crossed = resolvedNow, resolvedBefore == nil else { return nil }
+            return HeroScoreCard.ToneDrillResolvedRibbon(
+                scenarioTitle: scenario.title,
+                toneTitle: crossed.targetTone.title
+            )
+        }
+        return nil
+    }
+
     private var retentionSnapshot: RetentionLoopSnapshot {
         RetentionLoopEngine.snapshot(
             sessions: sessionStore.sessions,
@@ -624,7 +677,8 @@ struct SummaryView: View {
                                     effectiveDuration: effectiveDuration,
                                     durationAssessment: durationAssessment,
                                     xpEarned: xpEarned,
-                                    celebrationVisible: celebrationVisible
+                                    celebrationVisible: celebrationVisible,
+                                    toneDrillResolvedRibbon: heroToneDrillResolvedRibbon
                                 )
                             }
                             // M24 Track 1 — the coach turning toward the user

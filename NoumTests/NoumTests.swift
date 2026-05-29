@@ -17945,3 +17945,224 @@ struct LookingAheadCardStartCTAContractTests {
         }
     }
 }
+
+// MARK: - HeroScoreCard SOLVED ribbon (round 20)
+//
+// Round 20 surfaces the IM tone-drill SOLVED win on the post-rep hero
+// score card itself, not only inside the coach note. The crossing
+// detection — "is THIS the rep that pushed the scenario over the bar?" —
+// stays in `SummaryView` next to the same store + scenario derivation the
+// post-rep coach-note finalizer uses, so the SOLVED ribbon on the hero
+// and the SOLVED-headlined sentence in the note light up on the *same*
+// rep and never double-celebrate. The card stays pure presentation: it
+// takes a string pair (scenario title + tone title) and renders a quiet
+// mode-tinted capsule between the score ring and the headline.
+//
+// These tests pin the *opt-in* surface — the default-nil ribbon (so
+// every existing HeroScoreCard call site stays byte-for-byte unchanged),
+// the predicate the body uses to gate ribbon rendering, the per-scenario
+// / per-tone label copy shape, and the brand-voice contract (no
+// exclamations, no fanfare). The crossing-detection logic itself is
+// already locked by `IMToneDrillResolvedTests` (per-scenario primitive +
+// crossing comparison) above — these tests do not re-verify that
+// computation, only the surface-rendering contract.
+
+@MainActor
+struct HeroScoreCardToneDrillRibbonContractTests {
+
+    @Test func defaultInitOmitsRibbonForBackCompat() {
+        // The legacy call site — `HeroScoreCard(scoreValue: ..., ...)` —
+        // must keep working without the round-20 opt-in. If the
+        // ribbon parameter weren't defaulted, every prior call site
+        // (currently just the one in `SummaryView`, but defaults guard
+        // future call sites too) would fail to compile. This test pins
+        // the default behavior explicitly (the predicate the body's
+        // `if let label` branch reads is false → the ribbon stays
+        // hidden), so a future refactor that drops the default surfaces
+        // here.
+        let card = HeroScoreCard(
+            scoreValue: 8,
+            practiceTitle: "Timed",
+            scoreAccent: .blue,
+            scoreEmoji: "hand.thumbsup.fill",
+            headline: "Strong delivery",
+            sessionPrompt: nil,
+            effectiveFillerCount: 1,
+            fillerTint: .green,
+            fillerDelta: nil,
+            effectiveDuration: 30,
+            durationAssessment: .onTarget,
+            xpEarned: 50,
+            celebrationVisible: false
+        )
+        #expect(!card.shouldShowToneDrillResolvedRibbon, "Default card must not render the SOLVED ribbon.")
+        #expect(card.toneDrillResolvedRibbonLabel == nil, "Default label must be nil.")
+    }
+
+    @Test func wiringRibbonEnablesRender() {
+        // When the owning view passes a non-nil ribbon, the body's gate
+        // flips to true so the SOLVED capsule shows. The predicate is
+        // what the `if let label` branch in the body reads — this locks
+        // the contract independently of SwiftUI rendering.
+        let card = HeroScoreCard(
+            scoreValue: 9,
+            practiceTitle: "IM Mode",
+            scoreAccent: .blue,
+            scoreEmoji: "flame.fill",
+            headline: "Strong delivery",
+            sessionPrompt: nil,
+            effectiveFillerCount: 0,
+            fillerTint: .green,
+            fillerDelta: nil,
+            effectiveDuration: 60,
+            durationAssessment: .onTarget,
+            xpEarned: 50,
+            celebrationVisible: false,
+            toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
+                scenarioTitle: "Difficult Conversation",
+                toneTitle: "Calm"
+            )
+        )
+        #expect(card.shouldShowToneDrillResolvedRibbon)
+    }
+
+    @Test func ribbonLabelShapeNamesToneAndScenario() {
+        // The capsule copy mirrors the post-rep coach-note's
+        // `Your <tone> tone in <scenario> is solved` phrasing but
+        // compressed to a chip label. Both the scenario title AND the
+        // committed tone title appear in the label — without either,
+        // the user can't tell which drill closed. Locked across every
+        // (scenario, tone) pair the IM engine produces so a future tone
+        // addition can't ship a ribbon that drops the new tone name.
+        let scenarios = ["Social Catch-Up", "Work Update", "Difficult Conversation", "Networking"]
+        let tones = ["Confident", "Warm", "Concise", "Assertive", "Calm", "Professional"]
+        for scenario in scenarios {
+            for tone in tones {
+                let card = HeroScoreCard(
+                    scoreValue: 8,
+                    practiceTitle: "IM Mode",
+                    scoreAccent: .blue,
+                    scoreEmoji: "hand.thumbsup.fill",
+                    headline: "Strong delivery",
+                    sessionPrompt: nil,
+                    effectiveFillerCount: 0,
+                    fillerTint: .green,
+                    fillerDelta: nil,
+                    effectiveDuration: 45,
+                    durationAssessment: .onTarget,
+                    xpEarned: 50,
+                    celebrationVisible: false,
+                    toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
+                        scenarioTitle: scenario,
+                        toneTitle: tone
+                    )
+                )
+                let label = card.toneDrillResolvedRibbonLabel ?? ""
+                #expect(label.contains(scenario), "Label must name the scenario — got \(label)")
+                #expect(label.contains(tone), "Label must name the committed tone — got \(label)")
+                #expect(label.hasPrefix("Solved"), "Label must lead with the outcome — got \(label)")
+            }
+        }
+    }
+
+    @Test func ribbonLabelHasNoUrgencyOrFanfare() {
+        // Brand-voice contract — the SOLVED ribbon is a quiet "you closed
+        // this gap" tag, not a celebration overlay. The visual register
+        // (a 0.10-alpha IM-tinted capsule) is already restrained; the
+        // copy must match. No exclamations, no "let's", no urgency
+        // framing, no shouty "WIN!" / "AMAZING!" pep-talk. Locked
+        // across multiple (scenario, tone) pairs so a future copy
+        // tweak can't sneak fanfare onto one combination without a
+        // failing test. Mirrors `LookingAheadCardStartCTAContractTests.
+        // startCTALabelHasNoUrgencyOrFanfare` shape so the two
+        // restraint contracts stay aligned.
+        let cases: [(String, String)] = [
+            ("Difficult Conversation", "Calm"),
+            ("Networking", "Confident"),
+            ("Work Update", "Professional"),
+            ("Social Catch-Up", "Warm")
+        ]
+        for (scenario, tone) in cases {
+            let card = HeroScoreCard(
+                scoreValue: 8,
+                practiceTitle: "IM Mode",
+                scoreAccent: .blue,
+                scoreEmoji: "hand.thumbsup.fill",
+                headline: "Strong delivery",
+                sessionPrompt: nil,
+                effectiveFillerCount: 0,
+                fillerTint: .green,
+                fillerDelta: nil,
+                effectiveDuration: 45,
+                durationAssessment: .onTarget,
+                xpEarned: 50,
+                celebrationVisible: false,
+                toneDrillResolvedRibbon: HeroScoreCard.ToneDrillResolvedRibbon(
+                    scenarioTitle: scenario,
+                    toneTitle: tone
+                )
+            )
+            let label = card.toneDrillResolvedRibbonLabel ?? ""
+            #expect(!label.contains("!"), "Ribbon must not exclaim — got \(label)")
+            #expect(!label.lowercased().contains("let's"), "Ribbon must not pep-talk — got \(label)")
+            #expect(!label.lowercased().contains("now"), "Ribbon must not urgency-frame — got \(label)")
+            #expect(!label.lowercased().contains("hurry"), "Ribbon must not urgency-frame — got \(label)")
+            #expect(!label.lowercased().contains("amazing"), "Ribbon must not fanfare — got \(label)")
+            #expect(!label.lowercased().contains("nailed"), "Ribbon must not fanfare — got \(label)")
+            #expect(!label.lowercased().contains("crushed"), "Ribbon must not fanfare — got \(label)")
+        }
+    }
+
+    @Test func ribbonStaysHiddenWhenNotWired() {
+        // Sanity: explicitly passing nil keeps the ribbon hidden and
+        // the label nil. Locked separately from the default-omits
+        // case so a refactor that changes default from nil to a
+        // sentinel (or vice-versa) still has to keep the explicit-nil
+        // contract honest.
+        let card = HeroScoreCard(
+            scoreValue: 8,
+            practiceTitle: "Timed",
+            scoreAccent: .blue,
+            scoreEmoji: "hand.thumbsup.fill",
+            headline: "Strong delivery",
+            sessionPrompt: nil,
+            effectiveFillerCount: 1,
+            fillerTint: .green,
+            fillerDelta: nil,
+            effectiveDuration: 30,
+            durationAssessment: .onTarget,
+            xpEarned: 50,
+            celebrationVisible: false,
+            toneDrillResolvedRibbon: nil
+        )
+        #expect(!card.shouldShowToneDrillResolvedRibbon)
+        #expect(card.toneDrillResolvedRibbonLabel == nil)
+    }
+
+    @Test func ribbonValueTypeEquatability() {
+        // The `ToneDrillResolvedRibbon` bundle is Equatable so the
+        // SwiftUI body's `if let label` branch participates in
+        // diff-aware re-renders correctly: a stable scenario+tone
+        // pair across re-renders must compare equal so the capsule
+        // doesn't flicker. Pins the value-type contract.
+        let a = HeroScoreCard.ToneDrillResolvedRibbon(
+            scenarioTitle: "Difficult Conversation",
+            toneTitle: "Calm"
+        )
+        let b = HeroScoreCard.ToneDrillResolvedRibbon(
+            scenarioTitle: "Difficult Conversation",
+            toneTitle: "Calm"
+        )
+        let c = HeroScoreCard.ToneDrillResolvedRibbon(
+            scenarioTitle: "Networking",
+            toneTitle: "Calm"
+        )
+        let d = HeroScoreCard.ToneDrillResolvedRibbon(
+            scenarioTitle: "Difficult Conversation",
+            toneTitle: "Confident"
+        )
+        #expect(a == b, "Same scenario+tone must compare equal.")
+        #expect(a != c, "Different scenario must compare unequal.")
+        #expect(a != d, "Different tone must compare unequal.")
+    }
+}
