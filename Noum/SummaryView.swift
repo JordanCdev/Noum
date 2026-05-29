@@ -45,6 +45,18 @@ struct SummaryView: View {
     /// opener into `AskNoumStore` then push `AppDestination.askNoum`,
     /// so the user lands inside a coach reply already in flight.
     var onAskNoumAboutRep: ((String) -> Void)?
+    /// Optional launch callback for the post-rep "Looking ahead"
+    /// recommendation. The path-based init wires this to pop the
+    /// summary + the prior practice screen and push the destination
+    /// produced by `SummaryLookingAheadRouter` — same shape as
+    /// `onPracticeAgain` (the user is launching a new full rep, so
+    /// the stale summary shouldn't be reachable via the back chevron).
+    /// Receives the `AppDestination` rather than recomputing it inside
+    /// the path closure because the destination depends on view-side
+    /// state (`summaryRecommendation` + `IMModeAvailability.isAvailable`)
+    /// the init doesn't have in scope. Defaults nil → the
+    /// `LookingAheadCard` stays the pre-round-19 descriptive-only nudge.
+    var onStartLookingAhead: ((AppDestination) -> Void)?
 
     @StateObject private var profile = ProfileManager.shared
     @StateObject private var aiSettings = AISettingsManager.shared
@@ -949,8 +961,28 @@ struct SummaryView: View {
             // we have at least a little baseline signal. Lives at the very
             // bottom of the expandable area so it never competes with the
             // in-the-moment drill CTA above.
+            //
+            // Round 19: when an `onStartLookingAhead` callback is wired,
+            // the card renders a subordinate "Start <Mode>" CTA. The
+            // destination is computed *inside the per-tap closure* (not
+            // at init time) because `summaryRecommendation` depends on
+            // view-side `@StateObject`s the path init doesn't have in
+            // scope. The router stays the single source of truth for
+            // the mode → destination mapping (same router the home coach
+            // card + ContentView suggestion tile already call into).
             if let lookingAhead = lookingAheadHint {
-                LookingAheadCard(hint: lookingAhead)
+                LookingAheadCard(
+                    hint: lookingAhead,
+                    onStart: onStartLookingAhead.map { callback in
+                        {
+                            let destination = SummaryLookingAheadRouter.destination(
+                                for: summaryRecommendation,
+                                imAvailable: IMModeAvailability.isAvailable
+                            )
+                            callback(destination)
+                        }
+                    }
+                )
             }
         }
     }
@@ -2869,6 +2901,25 @@ extension SummaryView {
             _ = AskNoumStore.shared.injectUserTurn(opener)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 pathBinding.wrappedValue.append(AppDestination.askNoum)
+            }
+        }
+
+        // Round 19 — "Looking ahead" launch closure. Mirrors the
+        // `onPracticeAgain` shape: pop the summary + the prior practice
+        // screen, then push the destination the view computed via
+        // `SummaryLookingAheadRouter` (which it already does at tap time
+        // because the blueprint depends on view-side state). The user is
+        // launching a NEW rep in a different mode, so the stale summary
+        // shouldn't be reachable via the back chevron — same UX as
+        // Practice Again.
+        self.onStartLookingAhead = { destination in
+            SummaryDataStore.shared.remove(for: payloadId)
+            var path = pathBinding.wrappedValue
+            if path.count > 0 { path.removeLast() }
+            if path.count > 0 { path.removeLast() }
+            pathBinding.wrappedValue = path
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pathBinding.wrappedValue.append(destination)
             }
         }
     }

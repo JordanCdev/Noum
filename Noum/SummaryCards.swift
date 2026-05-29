@@ -543,6 +543,16 @@ struct YourNextMoveCard: View {
 /// in-the-moment drill CTA above. Only renders when the suggestion would
 /// actually shift the user's direction — see `lookingAheadHint` gating
 /// in SummaryView.
+///
+/// As of round 19, the card can carry an optional `onStart` closure. When
+/// the owning view passes one in, the card renders a subordinate text-link
+/// CTA ("Start <mode> →") beneath the descriptive copy so the user can
+/// launch the recommended mode in one tap instead of digging back through
+/// the picker. The CTA is *additive* and *defaults to hidden* (the closure
+/// defaults nil → all existing call sites and tests still compile and
+/// render the same descriptive-only card). The destination contract lives
+/// in `SummaryLookingAheadRouter`; the closure stays pure presentation so
+/// the card can be unit-tested without a NavigationPath in scope.
 struct LookingAheadCard: View {
     struct Hint {
         let mode: PracticeMode
@@ -573,6 +583,26 @@ struct LookingAheadCard: View {
     }
 
     let hint: Hint
+    /// Optional launch callback. When non-nil, the card renders a
+    /// subordinate text-link CTA that calls this on tap. Owning view is
+    /// responsible for computing the destination via
+    /// `SummaryLookingAheadRouter` and pushing it onto its navigation
+    /// path. Defaults nil → the CTA hides entirely and the card stays a
+    /// descriptive-only nudge (the pre-round-19 behavior).
+    var onStart: (() -> Void)? = nil
+
+    /// Predicate the body uses to gate the CTA. Lifted so the same
+    /// "show / hide" rule can be locked in tests without rendering the
+    /// view: the CTA shows iff a callback is wired.
+    var shouldShowStartCTA: Bool { onStart != nil }
+
+    /// Display copy for the subordinate CTA. Lifted so the tests can
+    /// pin the per-mode label without rendering the SwiftUI body —
+    /// matches the home coach card's "Begin · <Mode>" pattern shape
+    /// but uses "Start" so the post-rep voice doesn't echo Home.
+    var startCTALabel: String {
+        "Start \(hint.mode.displayLabel)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -609,6 +639,39 @@ struct LookingAheadCard: View {
                 mode: hint.mode,
                 tint: AppColor.tint(for: hint.mode)
             )
+
+            // Subordinate launch CTA. Renders only when an `onStart`
+            // closure is wired — the descriptive-only card stays the
+            // default so the existing voice-alignment tests + call
+            // sites are unchanged. Visual register stays quiet on
+            // purpose: this is a card that lives at the bottom of the
+            // Session Details disclosure, not the hero "Your Next Move"
+            // surface. The drill CTA above the fold is the loud
+            // action; this is the "and when you come back, this is
+            // where you should go" follow-on.
+            if let onStart {
+                Button {
+                    onStart()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.forward.circle.fill")
+                            .font(.footnote.weight(.semibold))
+                        Text(startCTALabel)
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .foregroundStyle(AppColor.tint(for: hint.mode))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        AppColor.tint(for: hint.mode).opacity(0.10),
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("summary.lookingAhead.startCTA")
+                .accessibilityLabel(startCTALabel)
+                .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)

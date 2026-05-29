@@ -17844,3 +17844,104 @@ struct SummaryLookingAheadRouterTests {
         }
     }
 }
+
+// MARK: - LookingAheadCard launch CTA (round 19)
+//
+// Round 19 wires the post-rep "Looking ahead" card into the same router
+// that the home coach card + ContentView suggestion tile already call
+// through (`SummaryLookingAheadRouter`). The card grows an additive
+// `onStart` closure: when wired by the owning view, a subordinate
+// text-link CTA renders so the user can launch the recommended next mode
+// in one tap from the bottom of the Session Details disclosure.
+//
+// The destination contract itself is already locked by
+// `SummaryLookingAheadRouterTests` above — these tests pin the *opt-in*
+// surface: the default-nil closure (so the existing voice-alignment
+// tests + every other LookingAheadCard call site stay byte-for-byte
+// unchanged), the predicate the body uses to gate CTA rendering, and
+// the per-mode label copy ("Start Timed" / "Start Sudden Death" / etc.)
+// so a future PracticeMode rename can never silently break the CTA
+// label without a failing test.
+
+@MainActor
+struct LookingAheadCardStartCTAContractTests {
+
+    private func hint(mode: PracticeMode) -> LookingAheadCard.Hint {
+        LookingAheadCard.Hint(
+            mode: mode,
+            whyMode: "Test mode benefit.",
+            whyNow: "Test why now."
+        )
+    }
+
+    @Test func defaultInitOmitsStartCallbackForBackCompat() {
+        // The legacy call site — `LookingAheadCard(hint:)` — must keep
+        // working without the round-19 opt-in. The existing voice-
+        // alignment tests construct the card with hint-only; if the
+        // closure parameter weren't defaulted, those tests would fail
+        // to compile. This test pins the default behavior explicitly
+        // (the predicate that the body's `if let onStart` branch reads
+        // is false → the subordinate CTA stays hidden), so a future
+        // refactor that drops the default surfaces here.
+        let card = LookingAheadCard(hint: hint(mode: .timed))
+        #expect(!card.shouldShowStartCTA, "Default card must not render the CTA.")
+    }
+
+    @Test func wiringCallbackEnablesCTARender() {
+        // When the owning view passes a closure, the body's gate flips
+        // to true so the subordinate CTA shows. The predicate is what
+        // the `if let onStart` branch in the body reads — this locks
+        // the contract independently of SwiftUI rendering.
+        let card = LookingAheadCard(hint: hint(mode: .timed), onStart: {})
+        #expect(card.shouldShowStartCTA)
+    }
+
+    @Test func startCTALabelMatchesModeDisplayLabel() {
+        // The CTA copy mirrors the mode's canonical display label so a
+        // future rename of `PracticeMode.displayLabel` propagates to
+        // the CTA without a manual sync.
+        for mode in [PracticeMode.timed, .suddenDeath, .ahCounter, .imConversation] {
+            let card = LookingAheadCard(hint: hint(mode: mode))
+            #expect(card.startCTALabel == "Start \(mode.displayLabel)")
+        }
+    }
+
+    @Test func startCTALabelHasNoUrgencyOrFanfare() {
+        // Brand-voice contract — the post-rep card is a quiet "and when
+        // you come back, this is where you should go" follow-on, not a
+        // celebration. No exclamations, no urgency framing, no "let's"
+        // pep-talk verbs. Locked across every mode so a future copy
+        // tweak can't sneak fanfare onto one mode without a failing
+        // test.
+        for mode in [PracticeMode.timed, .suddenDeath, .ahCounter, .imConversation] {
+            let label = LookingAheadCard(hint: hint(mode: mode)).startCTALabel
+            #expect(!label.contains("!"), "CTA must not exclaim — got \(label)")
+            #expect(!label.lowercased().contains("let's"), "CTA must not pep-talk — got \(label)")
+            #expect(!label.lowercased().contains("now"), "CTA must not urgency-frame — got \(label)")
+            #expect(!label.lowercased().contains("hurry"), "CTA must not urgency-frame — got \(label)")
+        }
+    }
+
+    @Test func callbackInvokesOnTap() {
+        // The closure shape (`() -> Void`) is what the owning view
+        // passes — when tapped, the card fires it without arguments.
+        // This pins the closure signature so a refactor that adds an
+        // argument (e.g. routing the destination through the closure
+        // instead of computing it inside the view body) is caught.
+        var fired = false
+        let card = LookingAheadCard(hint: hint(mode: .timed), onStart: { fired = true })
+        card.onStart?()
+        #expect(fired, "Wired closure must fire on tap.")
+    }
+
+    @Test func ctaShowsAcrossEveryMode() {
+        // Sanity check that the gate predicate is mode-agnostic — the
+        // closure-based gate must light up for every mode so the
+        // post-rep launch surface stays available regardless of which
+        // mode the engine recommends.
+        for mode in [PracticeMode.timed, .suddenDeath, .ahCounter, .imConversation] {
+            let card = LookingAheadCard(hint: hint(mode: mode), onStart: {})
+            #expect(card.shouldShowStartCTA, "CTA gate must fire for \(mode).")
+        }
+    }
+}
