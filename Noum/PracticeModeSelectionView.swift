@@ -60,6 +60,7 @@ struct PracticeModeSelectionView: View {
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var masteryStore = ModeMasteryStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var cachedRecommendedMode: PracticeMode?
     /// Dynamic per-user "why this mode" line produced by the
     /// `RecommendationBiasEngine`. Falls back to the static
@@ -1017,7 +1018,8 @@ struct PracticeModeSelectionView: View {
             // of recommending a mode that would just re-route to Timed.
             imToneSignal: IMModeAvailability.isAvailable
                 ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
-                : nil
+                : nil,
+            coachMemory: coachMemoryStore.currentMemory
         )
         cachedRecommendedMode = blueprint.recommendedMode
         cachedRecommendedScenario = blueprint.recommendedScenario

@@ -7093,6 +7093,13 @@ struct PracticeModePlaybookEntry {
     let bestFor: String
 }
 
+enum RecommendationBlueprintSource: Equatable {
+    case coldStart
+    case goalBias
+    case imToneDrill
+    case caseIntervention
+}
+
 struct RecommendationBiasBlueprint {
     let recommendedMode: PracticeMode
     let recommendedTone: IMTargetTone?
@@ -7107,6 +7114,35 @@ struct RecommendationBiasBlueprint {
     let suggestedTimedDifficulty: TimedPracticeDifficulty?
     /// Prompt theme that best matches this user's coaching goal.
     let suggestedTheme: PromptTheme
+    /// Why this blueprint won precedence. Surfaces can use this to keep an
+    /// active coaching intervention from being displaced by stale AI copy.
+    let source: RecommendationBlueprintSource
+
+    init(
+        recommendedMode: PracticeMode,
+        recommendedTone: IMTargetTone?,
+        recommendedScenario: IMConversationScenario?,
+        focus: String,
+        target: String,
+        modeBenefit: String,
+        whyMode: String,
+        whyNow: String,
+        suggestedTimedDifficulty: TimedPracticeDifficulty?,
+        suggestedTheme: PromptTheme,
+        source: RecommendationBlueprintSource = .goalBias
+    ) {
+        self.recommendedMode = recommendedMode
+        self.recommendedTone = recommendedTone
+        self.recommendedScenario = recommendedScenario
+        self.focus = focus
+        self.target = target
+        self.modeBenefit = modeBenefit
+        self.whyMode = whyMode
+        self.whyNow = whyNow
+        self.suggestedTimedDifficulty = suggestedTimedDifficulty
+        self.suggestedTheme = suggestedTheme
+        self.source = source
+    }
 }
 
 /// How a scenario's tone-match rate has moved across the user's recent
@@ -7225,8 +7261,22 @@ enum RecommendationBiasEngine {
         profile: CoachingProfile?,
         input: AIHomeRecommendationInput,
         plan: CoachingPlan?,
-        imToneSignal: IMToneDrillSignal? = nil
+        imToneSignal: IMToneDrillSignal? = nil,
+        coachMemory: CoachMemory? = nil
     ) -> RecommendationBiasBlueprint {
+        // The durable case file is the professional-coach layer: if the
+        // coach has prescribed an intervention and has not yet gathered
+        // enough honest evidence, keep the next recommendation on that
+        // intervention. This prevents the app from behaving like a fresh
+        // stateless recommender after every rep.
+        if let caseBlueprint = caseInterventionBlueprint(
+            profile: profile,
+            input: input,
+            memory: coachMemory
+        ) {
+            return caseBlueprint
+        }
+
         // A scenario where the committed tone reliably misses is a
         // concrete, evidence-backed intervention — the read side of
         // this loop (the trust/tension + tone-match chips on IM
@@ -7254,7 +7304,8 @@ enum RecommendationBiasEngine {
                 whyMode: playbookEntry(for: mode).bestFor,
                 whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline.",
                 suggestedTimedDifficulty: nil,
-                suggestedTheme: .all
+                suggestedTheme: .all,
+                source: .coldStart
             )
         }
 
@@ -7279,8 +7330,116 @@ enum RecommendationBiasEngine {
             whyMode: benefit.bestFor + " This lines up with the user's north star.",
             whyNow: whyNow,
             suggestedTimedDifficulty: difficulty,
-            suggestedTheme: theme
+            suggestedTheme: theme,
+            source: .goalBias
         )
+    }
+
+    private static func caseInterventionBlueprint(
+        profile: CoachingProfile?,
+        input: AIHomeRecommendationInput,
+        memory: CoachMemory?
+    ) -> RecommendationBiasBlueprint? {
+        guard let memory,
+              memory.evidenceConfidence >= .tentative,
+              let intervention = memory.activeIntervention,
+              shouldContinueCaseIntervention(intervention) else {
+            return nil
+        }
+
+        let mode = intervention.mode
+        let benefit = playbookEntry(for: mode)
+        let focus = caseFocus(for: intervention)
+        let target = caseTarget(for: intervention)
+        let theme = profile.map { suggestedTheme(for: $0) } ?? .all
+        let timedDifficulty = mode == .timed ? profile.map { suggestedTimedDifficulty(for: $0) } : nil
+        let tone = mode == .imConversation ? profile.map { recommendedTone(for: $0) } : nil
+        let scenario = mode == .imConversation ? profile.map { recommendedScenario(for: $0) } : nil
+
+        return RecommendationBiasBlueprint(
+            recommendedMode: mode,
+            recommendedTone: tone,
+            recommendedScenario: scenario,
+            focus: focus,
+            target: target,
+            modeBenefit: benefit.benefit,
+            whyMode: caseWhyMode(for: intervention, focus: focus),
+            whyNow: caseWhyNow(for: intervention, input: input),
+            suggestedTimedDifficulty: timedDifficulty,
+            suggestedTheme: theme,
+            source: .caseIntervention
+        )
+    }
+
+    private static func shouldContinueCaseIntervention(_ intervention: CoachIntervention) -> Bool {
+        switch intervention.reviewStatus {
+        case .awaitingAttempt, .formingEvidence, .continueAndVerify:
+            return true
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return false
+        }
+    }
+
+    private static func caseFocus(for intervention: CoachIntervention) -> String {
+        let candidates = [intervention.focus, intervention.title]
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+            ?? intervention.mode.displayLabel
+    }
+
+    private static func caseTarget(for intervention: CoachIntervention) -> String {
+        if let target = intervention.target?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !target.isEmpty {
+            return target
+        }
+        if let criterion = intervention.successCriterion?.summary.trimmingCharacters(in: .whitespacesAndNewlines),
+           !criterion.isEmpty {
+            return criterion
+        }
+        return "One followed rep"
+    }
+
+    private static func caseWhyMode(for intervention: CoachIntervention, focus: String) -> String {
+        let modeName = intervention.mode.displayLabel
+        switch intervention.reviewStatus {
+        case .awaitingAttempt:
+            return "\(modeName) is the open case-file intervention for \(focus.lowercased()); Noum needs one followed rep before judging it."
+        case .formingEvidence:
+            return "\(modeName) is still the active intervention for \(focus.lowercased()); keep collecting reps before strengthening the claim."
+        case .continueAndVerify:
+            return "\(modeName) is showing promise for \(focus.lowercased()); verify it once more before raising the confidence."
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return intervention.reviewBasis
+        }
+    }
+
+    private static func caseWhyNow(
+        for intervention: CoachIntervention,
+        input: AIHomeRecommendationInput
+    ) -> String {
+        let observed = intervention.followedRepCount
+        let minimum = max(1, intervention.minimumFollowedRepsForReview)
+        let remaining = max(0, minimum - observed)
+
+        switch intervention.reviewStatus {
+        case .awaitingAttempt:
+            return "This was prescribed in the current case file, but Noum has not observed a followed rep yet."
+        case .formingEvidence:
+            if remaining <= 1 {
+                return "The case file has \(observed) of \(minimum) followed reps. One more makes the review more honest."
+            }
+            return "The case file has \(observed) of \(minimum) followed reps. \(remaining) more reps make the review more honest."
+        case .continueAndVerify:
+            if let status = intervention.criterionStatus {
+                return "Early response is \(status.contextLabel); run one more rep to verify it holds."
+            }
+            return "Early response looks promising; run one more rep to verify it holds."
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return input.daysSinceLastSession > 2
+                ? "The case needs a fresh read before repeating the same prescription."
+                : intervention.reviewBasis
+        }
     }
 
     /// Builds the focused "drill this scenario's tone" recommendation
@@ -7334,7 +7493,8 @@ enum RecommendationBiasEngine {
             whyMode: whyMode,
             whyNow: whyNow,
             suggestedTimedDifficulty: nil,
-            suggestedTheme: .all
+            suggestedTheme: .all,
+            source: .imToneDrill
         )
     }
 

@@ -58,8 +58,17 @@ struct CaseReviewCard: View {
                 )
             }
 
-            // 4. Momentum signal — one quiet line
-            if let momentumLine = momentumSummary {
+            // 4. Real-world transfer — the case's latest off-app check-in.
+            // If present, this wins the final coaching-context slot over
+            // momentum/reflection because it answers the hardest question:
+            // did the work transfer outside the app?
+            if let transferLine = transferSummary {
+                caseRow(
+                    icon: "arrow.up.right.square",
+                    label: "Real-world check-in",
+                    text: transferLine
+                )
+            } else if let momentumLine = momentumSummary {
                 caseRow(
                     icon: "chart.line.uptrend.xyaxis",
                     label: "Momentum",
@@ -68,7 +77,8 @@ struct CaseReviewCard: View {
             }
 
             // 5. Latest reflection — user's own words
-            if let reflection = memory.lastReflectionSummary,
+            if transferSummary == nil,
+               let reflection = memory.lastReflectionSummary,
                !reflection.isEmpty {
                 caseRow(
                     icon: "quote.opening",
@@ -248,6 +258,25 @@ struct CaseReviewCard: View {
 
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: ". ") + "."
+    }
+
+    private var transferSummary: String? {
+        guard let transfer = memory.lastTransferReview else { return nil }
+        var line = "\(transfer.category.title): \(transfer.outcome.chipLabel.lowercased()); \(transfer.audienceResponse.chipLabel.lowercased())."
+        if let note = transfer.note?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !note.isEmpty {
+            line += " User note: \(note)"
+        } else {
+            switch transfer.nextAction {
+            case .exploreWhatTransferred:
+                line += " Next: ask what transferred."
+            case .diagnoseBeforeNextMoment:
+                line += " Next: diagnose what held and what broke down."
+            case .adaptBeforeNextMoment:
+                line += " Next: adapt before the next similar moment."
+            }
+        }
+        return line
     }
 
     private func reviewDateLabel(_ date: Date) -> String {

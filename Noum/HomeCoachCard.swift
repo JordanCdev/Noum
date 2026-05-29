@@ -30,6 +30,7 @@ struct HomeCoachCard: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     // Path progress drives the "Mission within reach" coach variant — when
     // the current path node is one rep / one score-point / one day from
     // unlocking, the coach voice points at it directly. Read-only.
@@ -332,6 +333,10 @@ struct HomeCoachCard: View {
             return "Start clean."
         }
 
+        if recommendationBlueprint.source == .caseIntervention {
+            return "Stay with the case."
+        }
+
         // Consecutive clean reps — trajectory signal. "Three in a row"
         // feels like a coach who notices patterns, not a dashboard.
         let cleanRun = consecutiveCleanReps
@@ -405,6 +410,10 @@ struct HomeCoachCard: View {
 
         if sessionStore.sessions.count < 3 {
             return "Three reps and Noum starts finding your weakest line."
+        }
+
+        if recommendationBlueprint.source == .caseIntervention {
+            return recommendationBlueprint.whyNow
         }
 
         // Mission within reach — subtitle is the gating line itself so the
@@ -740,7 +749,8 @@ struct HomeCoachCard: View {
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
             imToneSignal: IMModeAvailability.isAvailable
                 ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
-                : nil
+                : nil,
+            coachMemory: coachMemoryStore.currentMemory
         )
     }
 

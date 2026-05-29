@@ -65,6 +65,7 @@ struct ContentView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var aiSettings = AISettingsManager.shared
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var dailyGoal = DailyGoalManager.shared
     @StateObject private var streakFreeze = StreakFreezeManager.shared
@@ -1577,6 +1578,7 @@ struct ContentView: View {
     private var primarySuggestion: PracticeSuggestion {
         let sessions = sessionStore.sessions
         let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile)
+        let bias = recommendationBiasBlueprint
 
         guard let latest = sessions.first else {
             return PracticeSuggestion(
@@ -1589,6 +1591,14 @@ struct ContentView: View {
                 recommendedScenario: nil,
                 benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "Best for establishing a clean baseline.",
                 tint: .blue
+            )
+        }
+
+        if bias.source == .caseIntervention {
+            return suggestion(
+                from: bias,
+                title: "Continue the current intervention",
+                detail: bias.whyNow
             )
         }
 
@@ -1692,7 +1702,6 @@ struct ContentView: View {
             )
         }
 
-        let bias = recommendationBiasBlueprint
         return PracticeSuggestion(
             title: bias.recommendedMode == .imConversation ? "Train the live interaction" : (plan?.strongestMode == .ahCounter ? "Keep the delivery composed" : "Keep the streak deliberate"),
             detail: plan?.encouragement ?? bias.whyNow,
@@ -1709,12 +1718,22 @@ struct ContentView: View {
     }
 
     private var effectiveSuggestion: PracticeSuggestion {
+        let bias = recommendationBiasBlueprint
+        if bias.source == .caseIntervention {
+            return normalizedSuggestion(
+                suggestion(
+                    from: bias,
+                    title: "Continue the current intervention",
+                    detail: bias.whyNow
+                )
+            )
+        }
+
         guard let aiRecommendation,
               let mode = PracticeMode(rawValue: aiRecommendation.recommendedMode) else {
             return normalizedSuggestion(primarySuggestion)
         }
 
-        let bias = recommendationBiasBlueprint
         return normalizedSuggestion(PracticeSuggestion(
             title: aiRecommendation.title,
             detail: aiRecommendation.detail,
@@ -1786,7 +1805,28 @@ struct ContentView: View {
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
             imToneSignal: IMModeAvailability.isAvailable
                 ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
-                : nil
+                : nil,
+            coachMemory: coachMemoryStore.currentMemory
+        )
+    }
+
+    private func suggestion(
+        from bias: RecommendationBiasBlueprint,
+        title: String? = nil,
+        detail: String? = nil
+    ) -> PracticeSuggestion {
+        PracticeSuggestion(
+            title: title ?? (bias.recommendedMode == .imConversation ? "Train the live interaction" : "Keep the streak deliberate"),
+            detail: detail ?? bias.whyNow,
+            focus: bias.focus,
+            target: bias.target,
+            mode: bias.recommendedMode,
+            recommendedTone: bias.recommendedTone,
+            recommendedScenario: bias.recommendedScenario,
+            benefit: bias.modeBenefit,
+            tint: AppColor.tint(for: bias.recommendedMode),
+            suggestedTimedDifficulty: bias.suggestedTimedDifficulty,
+            suggestedTheme: bias.suggestedTheme
         )
     }
 
@@ -1923,7 +1963,20 @@ struct ContentView: View {
         let profileKey = coachingProfileStore.profile.map {
             "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.speakingStyleGoal.rawValue)"
         } ?? "no-profile"
-        return "homeRecommendation.\(profileKey).\(recent)"
+        let caseKey: String
+        if let intervention = coachMemoryStore.currentMemory?.activeIntervention {
+            caseKey = [
+                "case",
+                intervention.mode.rawValue,
+                intervention.reviewStatus.rawValue,
+                "\(intervention.followedRepCount)",
+                intervention.focus ?? "",
+                intervention.target ?? ""
+            ].joined(separator: "-")
+        } else {
+            caseKey = "no-case"
+        }
+        return "homeRecommendation.\(profileKey).\(caseKey).\(recent)"
     }
 
     /// Load the proof moment for the active path celebration. Picks
@@ -1961,6 +2014,11 @@ struct ContentView: View {
     }
 
     private func refreshHomeRecommendation() async {
+        if recommendationBiasBlueprint.source == .caseIntervention {
+            aiRecommendation = nil
+            return
+        }
+
         if let cached = loadCachedRecommendation(for: recommendationCacheKey) {
             aiRecommendation = cached
             return

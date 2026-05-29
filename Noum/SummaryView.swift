@@ -68,6 +68,7 @@ struct SummaryView: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var skillProgression = SkillProgressionStore.shared
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @State private var showPaywall = false
     @State private var displayedXP: Int = 0
     @State private var progress: Double = 0
@@ -344,7 +345,8 @@ struct SummaryView: View {
                 modeBenefitBias: ""
             ),
             plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
-            imToneSignal: imToneDrillSignal
+            imToneSignal: imToneDrillSignal,
+            coachMemory: coachMemoryStore.currentMemory
         )
     }
 
@@ -1041,7 +1043,7 @@ struct SummaryView: View {
         guard sessionStore.sessions.count >= 3 else { return nil }
         let blueprint = summaryRecommendation
         // No need to suggest the mode the user just finished.
-        guard blueprint.recommendedMode != currentMode else { return nil }
+        guard blueprint.recommendedMode != currentMode || blueprint.source == .caseIntervention else { return nil }
         return LookingAheadCard.Hint(
             mode: blueprint.recommendedMode,
             whyMode: blueprint.modeBenefit,

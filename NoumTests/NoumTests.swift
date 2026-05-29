@@ -15122,6 +15122,40 @@ struct IMToneDrillSignalTests {
         )
     }
 
+    private func caseMemory(
+        status: CoachInterventionReviewStatus,
+        followedRepCount: Int,
+        minimumFollowedRepsForReview: Int = 2,
+        target: String? = "One clean opening",
+        criterion: CoachSuccessCriterion? = nil
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: baseDate,
+            evidenceCount: 5,
+            evidenceConfidence: .tentative,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: ["Filler words"],
+            workingHypothesis: "Under pressure, fillers are still carrying the opening.",
+            activeIntervention: CoachIntervention(
+                title: "Clean up the opening",
+                focus: "cleaner opening",
+                target: target,
+                mode: .ahCounter,
+                prescribedAt: baseDate.addingTimeInterval(-3600),
+                lastObservedAt: nil,
+                followedRepCount: followedRepCount,
+                minimumFollowedRepsForReview: minimumFollowedRepsForReview,
+                reviewStatus: status,
+                reviewBasis: "Still forming evidence.",
+                successCriterion: criterion,
+                criterionStatus: criterion == nil ? nil : .pending,
+                reviewDueAt: baseDate.addingTimeInterval(86400)
+            )
+        )
+    }
+
     @Test func signalNilOnEmptyHistory() {
         #expect(IMHistorySummary.toneDrillSignal(from: []) == nil)
     }
@@ -15281,6 +15315,75 @@ struct IMToneDrillSignalTests {
         // instead of a stale prefill.
         #expect(blueprint.recommendedScenario == nil)
         #expect(blueprint.recommendedTone == nil)
+    }
+
+    @Test func caseInterventionContinuesBeforeToneDrillSignal() {
+        // A human coach should collect the minimum reps for the active
+        // intervention before a different signal steals the next drill.
+        let signal = IMToneDrillSignal(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            matchRate: 0.25,
+            evaluatedCount: 4
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil,
+            imToneSignal: signal,
+            coachMemory: caseMemory(status: .formingEvidence, followedRepCount: 1)
+        )
+
+        #expect(blueprint.source == .caseIntervention)
+        #expect(blueprint.recommendedMode == .ahCounter)
+        #expect(blueprint.focus == "cleaner opening")
+        #expect(blueprint.target == "One clean opening")
+        #expect(blueprint.whyNow.contains("1 of 2"))
+    }
+
+    @Test func caseInterventionFallsBackToCriterionWhenTargetMissing() {
+        let criterion = CoachSuccessCriterion(
+            metric: .fillersPerRep,
+            comparator: .atMost,
+            threshold: 1,
+            evaluationWindow: 2,
+            summary: "1 or fewer fillers per rep across 2 reps"
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil,
+            coachMemory: caseMemory(
+                status: .awaitingAttempt,
+                followedRepCount: 0,
+                target: nil,
+                criterion: criterion
+            )
+        )
+
+        #expect(blueprint.source == .caseIntervention)
+        #expect(blueprint.target == "1 or fewer fillers per rep across 2 reps")
+        #expect(blueprint.whyNow.contains("not observed"))
+    }
+
+    @Test func caseInterventionStopsWhenCoachNeedsAdaptation() {
+        let signal = IMToneDrillSignal(
+            scenario: .networking,
+            targetTone: .confident,
+            matchRate: 0.2,
+            evaluatedCount: 5
+        )
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: nil,
+            input: input(),
+            plan: nil,
+            imToneSignal: signal,
+            coachMemory: caseMemory(status: .adaptBeforeRepeating, followedRepCount: 2)
+        )
+
+        #expect(blueprint.source == .imToneDrill)
+        #expect(blueprint.recommendedMode == .imConversation)
+        #expect(blueprint.recommendedScenario == .networking)
     }
 
     @Test func goalBasedIMRecommendationCarriesScenarioAndTone() {
