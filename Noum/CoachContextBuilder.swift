@@ -242,7 +242,12 @@ enum CoachContextBuilder {
         // ratings (Opening / Structure / Depth / Close) into a STRUCTURAL
         // READ section. Defaults to nil so existing callers compile
         // unchanged.
-        latestSnapshot: SkillSnapshot? = nil
+        latestSnapshot: SkillSnapshot? = nil,
+        // M30 — Optional snapshot history for the DERIVED READ TRENDS
+        // section (longitudinal direction across the most-recent +
+        // prior windows). Defaults to empty so existing callers
+        // compile unchanged.
+        snapshotsForTrends: [SkillSnapshot] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -617,6 +622,31 @@ enum CoachContextBuilder {
                 lines.append("")
                 lines.append("STRUCTURAL READ (most-recent rep)")
                 lines.append("- \(structural.readout). Composite \(String(format: "%.2f", structural.score))/1.0 from \(structural.contributingDimensions) dimensions.")
+            }
+        }
+
+        // M30 — DERIVED READ TRENDS. Longitudinal direction (improving
+        // / declining / stable / insufficient) on each of the four
+        // derived reads (vocal energy steadiness, composure,
+        // confidence markers, structural). Pure function over the
+        // session history — no new persistence layer. Lets the coach
+        // say "your composure has trended up across the last 5 reps"
+        // instead of only commenting on the most-recent rep. Honest
+        // about thin windows — dimensions below the minRecentReps
+        // floor either omit or report .insufficient.
+        let hedgingPerMin = baseline.hedgingRate.value
+        let paceBaseline = baseline.pace.value
+        let derivedTrends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: snapshotsForTrends,
+            hedgingPerMinutePerSession: { _ in hedgingPerMin },
+            paceBaselinePerSession: { _ in paceBaseline }
+        )
+        if !derivedTrends.isEmpty {
+            lines.append("")
+            lines.append("DERIVED READ TRENDS (recent vs prior window)")
+            for trend in derivedTrends {
+                lines.append("- \(trend.readout)")
             }
         }
 

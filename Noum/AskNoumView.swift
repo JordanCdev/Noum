@@ -946,7 +946,8 @@ struct AskNoumView: View {
             pendingRecommendation: recommendationLearningStore.pendingExposure,
             recommendationOutcomes: recommendationLearningStore.outcomes,
             trends: trends,
-            latestSnapshot: snapshots.last
+            latestSnapshot: snapshots.last,
+            snapshotsForTrends: snapshots
         )
         let history = await MainActor.run { store.replayForModel }
         let outcome = await AICoachChatService.shared.reply(

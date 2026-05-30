@@ -20089,3 +20089,215 @@ struct StructuralReadEngineTests {
         #expect(decoded == original)
     }
 }
+
+// MARK: - M30 Derived Reads Trend Engine Tests
+//
+// DerivedReadsTrendEngine walks the session history + recomputes the
+// four derived reads (vocal energy / composure / confidence / structural)
+// per rep and classifies direction (improving / declining / stable /
+// insufficient) per dimension. Pure function — no new persistence.
+// Tests pin:
+//   - Empty / thin sessions → empty result
+//   - Recent-only (no prior comparison) → stable
+//   - Improving + declining classification at the movement threshold
+//   - Each dimension's score function feeds the classifier correctly
+//   - Sort order: newest-first (recent window = first N)
+//   - Per-trend readout copy includes the actual numbers
+
+@Suite("DerivedReadsTrendEngine")
+@available(iOS 17.0, macOS 13.0, *)
+struct DerivedReadsTrendEngineTests {
+
+    private func session(daysAgo: Int, energySteadiness: Double?, fillerCount: Int = 0, duration: TimeInterval = 60) -> PracticeSession {
+        let energy: VocalEnergyMetrics? = energySteadiness.map {
+            VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.6, stdDeviation: 0.05, coefficientOfVariation: 0.12, steadiness: $0, sampleCount: 100)
+        }
+        return PracticeSession(
+            transcript: "rep transcript with enough words for pace estimation here",
+            fillerWordCount: fillerCount,
+            duration: duration,
+            date: Date().addingTimeInterval(TimeInterval(-daysAgo * 86400)),
+            mode: .timed,
+            vocalEnergyMetrics: energy
+        )
+    }
+
+    @Test func emptySessionsProducesEmptyResult() {
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: [],
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in 150 }
+        )
+        #expect(trends.isEmpty)
+    }
+
+    @Test func thinSessionsProducesEmptyResult() {
+        // Only 2 sessions — below the minRecentReps floor of 3.
+        let sessions = [
+            session(daysAgo: 1, energySteadiness: 0.7),
+            session(daysAgo: 2, energySteadiness: 0.7)
+        ]
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(trends.isEmpty)
+    }
+
+    @Test func recentOnlyWithoutPriorReadsAsStable() {
+        // 5 recent reps, 0 prior. Should read as stable (no comparison
+        // basis).
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.75) }
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        let energyTrend = trends.first { $0.dimension == "Vocal energy steadiness" }
+        #expect(energyTrend?.direction == .stable)
+        #expect(energyTrend?.recentCount == 5)
+        #expect(energyTrend?.priorCount == 0)
+    }
+
+    @Test func improvingTrendClassifiesCorrectly() {
+        // 5 recent (mean ~0.85) + 5 prior (mean ~0.55) → improving
+        var sessions: [PracticeSession] = []
+        for i in 1...5 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.85))     // recent
+        }
+        for i in 6...10 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.55))     // prior
+        }
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        let energy = trends.first { $0.dimension == "Vocal energy steadiness" }
+        #expect(energy?.direction == .improving)
+        #expect(energy?.recentMean ?? 0 > 0.80)
+        #expect(energy?.priorMean ?? 0 < 0.60)
+    }
+
+    @Test func decliningTrendClassifiesCorrectly() {
+        // 5 recent (mean ~0.40) + 5 prior (mean ~0.80) → declining
+        var sessions: [PracticeSession] = []
+        for i in 1...5 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.40))
+        }
+        for i in 6...10 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.80))
+        }
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        let energy = trends.first { $0.dimension == "Vocal energy steadiness" }
+        #expect(energy?.direction == .declining)
+    }
+
+    @Test func deltaWithinNoiseBandReadsAsStable() {
+        // Recent 0.70 + prior 0.74 → delta -0.04 → within ±0.05 → stable
+        var sessions: [PracticeSession] = []
+        for i in 1...5 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.70))
+        }
+        for i in 6...10 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.74))
+        }
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        let energy = trends.first { $0.dimension == "Vocal energy steadiness" }
+        #expect(energy?.direction == .stable)
+    }
+
+    @Test func sessionsAreSortedNewestFirst() {
+        // Pass sessions in jumbled order; verify the engine sorted
+        // them — recent window must pick the newest 5, not the
+        // first 5 of the input array.
+        var sessions: [PracticeSession] = []
+        // Add prior (low steadiness) FIRST in the array but with
+        // older dates
+        for i in 6...10 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.40))
+        }
+        // Add recent (high steadiness) AFTER, with newer dates
+        for i in 1...5 {
+            sessions.append(session(daysAgo: i, energySteadiness: 0.85))
+        }
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        let energy = trends.first { $0.dimension == "Vocal energy steadiness" }
+        // If sort worked: recent = high steadiness → improving
+        #expect(energy?.direction == .improving)
+    }
+
+    @Test func dimensionOmittedWhenNoSignalAcrossWindow() {
+        // No vocal energy metrics on ANY session → vocal energy
+        // dimension should be omitted (not produce a 0-score trend).
+        let sessions = (1...10).map { session(daysAgo: $0, energySteadiness: nil) }
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        let energy = trends.first { $0.dimension == "Vocal energy steadiness" }
+        #expect(energy == nil, "Dimension with no signal must be omitted, not zeroed")
+    }
+
+    @Test func readoutLinesIncludeActualNumbers() {
+        let trend = DerivedReadTrend(
+            dimension: "Composure",
+            recentMean: 0.78,
+            priorMean: 0.62,
+            recentCount: 5,
+            priorCount: 5,
+            direction: .improving
+        )
+        #expect(trend.readout.contains("0.62"))
+        #expect(trend.readout.contains("0.78"))
+        #expect(trend.readout.contains("improving"))
+    }
+
+    @Test func computeTrendReturnsNilWhenNoRecentScores() {
+        // No recent sessions had a score → return nil so the engine
+        // omits the dimension entirely.
+        let trend = DerivedReadsTrendEngine.computeTrend(
+            dimension: "test",
+            recent: [session(daysAgo: 1, energySteadiness: nil)],
+            prior: [],
+            score: { _ in nil }
+        )
+        #expect(trend == nil)
+    }
+
+    @Test func codableRoundTripPreservesTrend() throws {
+        let original = DerivedReadTrend(
+            dimension: "Composure",
+            recentMean: 0.78,
+            priorMean: 0.62,
+            recentCount: 5,
+            priorCount: 5,
+            direction: .improving
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(DerivedReadTrend.self, from: data)
+        #expect(decoded == original)
+    }
+}
