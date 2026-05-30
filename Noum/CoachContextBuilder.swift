@@ -795,6 +795,32 @@ enum CoachContextBuilder {
         return "\(lead) \(ask)"
     }
 
+    /// Compact display headline for the AskNoumView empty-state case-
+    /// review chip. The chip is a short-form sibling of
+    /// `InterventionReviewPromptCard` — same trigger predicate
+    /// (`CoachIntervention.isReviewDue(at:)`), same coach voice, but
+    /// a terser surface because it lives inside the chat empty state
+    /// alongside other one-line starter prompts, not as a dedicated
+    /// post-rep card.
+    ///
+    /// Mirrors `InterventionReviewPromptCard.headlineCopy(for:)`'s
+    /// focus-or-title fallback so the user reads continuous voice
+    /// across the two surfaces (the summary card and the AskNoum
+    /// chip). The chip text is the DISPLAY label only — the actual
+    /// opener dispatched when the user taps it is
+    /// `interventionReviewOpener(intervention:voice:)`, which carries
+    /// the case scaffolding (mode + focus + followed-rep depth) and
+    /// the voice-shaped review ask. The reply the user gets is the
+    /// same conversation no matter which surface they arrived from.
+    ///
+    /// Brand-voice rules: no exclamation, no "Let's", lower-cased
+    /// focus (mid-sentence after the em-dash, not a proper noun).
+    static func interventionReviewStarterHeadline(for intervention: CoachIntervention) -> String {
+        let focus = (intervention.focus?.isEmpty == false ? intervention.focus : intervention.title)
+            ?? intervention.title
+        return "Review the active case — \(focus.lowercased())"
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the

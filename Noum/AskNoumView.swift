@@ -250,6 +250,14 @@ struct AskNoumView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // Case-review priority chip — only renders when the active
+            // intervention has reached its review threshold. Conditional
+            // sibling to `InterventionReviewPromptCard` on SummaryView,
+            // wired below the empty-state intro so a user who lands in
+            // Ask Noum directly (not through the post-rep flow) still
+            // gets a one-tap entry into the same case-review conversation.
+            caseReviewStarterChip
+
             Text("Starters")
                 .font(Typography.micro.weight(.bold))
                 .foregroundStyle(.secondary)
@@ -313,6 +321,81 @@ struct AskNoumView: View {
             return "Coaching your \(voice.title.lowercased())."
         }
         return "Your coaching thread."
+    }
+
+    // MARK: - Case-review starter chip
+    //
+    // Empty-state companion to `InterventionReviewPromptCard`. Renders
+    // only when the active `CoachIntervention.isReviewDue(at:)`
+    // predicate returns true — same eligibility gate the summary card
+    // uses, so the two surfaces honour the same case-file cadence.
+    //
+    // Why a distinct visual register (calendar icon, brand-purple
+    // tinted background, heavier stroke) rather than just another
+    // entry in the starter-prompts catalog:
+    //   • The chip is a coach priority signal, not a generic prompt.
+    //     The user reads "your coach has a check-in queued" in one
+    //     beat, not "here's another thing you could ask."
+    //   • The display label is intentionally short (the
+    //     `interventionReviewStarterHeadline` helper renders ~40 chars).
+    //     The actual dispatched opener is the full `interventionReviewOpener`,
+    //     same string the summary card sends — so the reply lands
+    //     with mode + focus + followed-rep depth in scope and a
+    //     voice-shaped review question already asked.
+    //   • Voice continuity: tapping the chip from Ask Noum and tapping
+    //     "Review with coach" from the summary produce the identical
+    //     chat thread. No surface-specific phrasing drift.
+    @ViewBuilder
+    private var caseReviewStarterChip: some View {
+        if let intervention = coachMemoryStore.currentMemory?.activeIntervention,
+           intervention.isReviewDue(at: Date()) {
+            Button {
+                let opener = CoachContextBuilder.interventionReviewOpener(
+                    intervention: intervention,
+                    voice: voice
+                )
+                send(opener)
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("REVIEW DUE")
+                            .font(Typography.captionSmall)
+                            .tracking(0.6)
+                            .foregroundStyle(AppColor.pro)
+                        Text(CoachContextBuilder.interventionReviewStarterHeadline(for: intervention))
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.top, 4)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.pro.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.pro.opacity(0.32), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Review the active coaching case with Noum")
+            .accessibilityHint("Opens the case-review conversation with the same context the post-rep card uses.")
+            .accessibilityIdentifier("askNoum.emptyState.caseReviewChip")
+        }
     }
 
     private var emptyStateBody: String {

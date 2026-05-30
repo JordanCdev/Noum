@@ -19284,4 +19284,47 @@ struct InterventionReviewPromptTests {
         )
         #expect(opener.hasSuffix("Should we keep going, adapt, or change tack?"))
     }
+
+    // MARK: - Starter-chip headline (AskNoumView empty state)
+    //
+    // The chip on `AskNoumView`'s empty state is a short-form sibling
+    // of `InterventionReviewPromptCard`. The display label has to
+    // share the card's focus-or-title fallback so the user reads the
+    // same noun phrase across both surfaces. These tests lock the
+    // pure helper's three copy branches — the chip dispatches the
+    // full `interventionReviewOpener` on tap (already covered by the
+    // opener tests above), so only the display label needs new
+    // coverage here.
+
+    @Test func caseReviewStarterHeadlineNamesFocus() {
+        // Happy path — focus is present, lower-cased mid-sentence
+        // after the em-dash.
+        let intervention = makeIntervention(focus: "Filler reduction", title: "Filler drill")
+        #expect(
+            CoachContextBuilder.interventionReviewStarterHeadline(for: intervention)
+                == "Review the active case — filler reduction"
+        )
+    }
+
+    @Test func caseReviewStarterHeadlineFallsBackToTitleWhenFocusIsNil() {
+        // Defensive — same fallback the card headline carries. Early
+        // in the case cycle an intervention may not yet have a focus
+        // phrase; the chip must never read "Review the active case — ."
+        let intervention = makeIntervention(focus: nil, title: "Authority practice")
+        #expect(
+            CoachContextBuilder.interventionReviewStarterHeadline(for: intervention)
+                == "Review the active case — authority practice"
+        )
+    }
+
+    @Test func caseReviewStarterHeadlineFallsBackToTitleWhenFocusIsEmpty() {
+        // Same fallback for the empty-string edge — case-engine
+        // refactors that write `""` instead of `nil` shouldn't
+        // produce an empty noun phrase.
+        let intervention = makeIntervention(focus: "", title: "Pace control")
+        #expect(
+            CoachContextBuilder.interventionReviewStarterHeadline(for: intervention)
+                == "Review the active case — pace control"
+        )
+    }
 }
