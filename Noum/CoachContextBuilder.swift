@@ -896,6 +896,130 @@ enum CoachContextBuilder {
         return "Review the active case — \(focus.lowercased())"
     }
 
+    // MARK: - Hypothesis acknowledgement chips (post-case-review reply)
+    //
+    // Round 26 — the case-parity adaptation move. After the coach replies
+    // to an `interventionReviewOpener` (dispatched from either the
+    // summary card or the AskNoumView empty-state chip), surface a single
+    // row of one-tap acknowledgement chips so the user can record their
+    // verdict on the working hypothesis without typing a sentence. The
+    // ack lands in durable `CoachMemory.hypothesisAcknowledgement` and
+    // feeds back into the next user-context block so the model knows
+    // whether to reinforce, probe, or adapt.
+    //
+    // Why chips instead of a free-text follow-up:
+    //   • Friction. Three taps cover the entire "confirmed / uncertain /
+    //     rejected" space; free text would re-ask "what do you think?"
+    //     after the coach already asked it.
+    //   • Durable signal. A typed reply becomes one more conversational
+    //     turn the model has to interpret. A discrete enum lands in
+    //     case-file storage and survives across sessions / rebuilds.
+    //   • Coach parity. A human coach asks "does that sound right?" and
+    //     marks the answer; we owe the same structured record.
+    //
+    // Pure-helper contract: the predicate + chip catalog are testable
+    // without standing up `AskNoumStore` or `CoachMemoryStore`. The UI
+    // surface reads both at render time.
+
+    /// Lead prefix on every `interventionReviewOpener` — used by the
+    /// hypothesis ack-chip predicate to detect that the most-recent user
+    /// turn was a case-review dispatch (from the summary card or the
+    /// AskNoum chip) rather than an organic question. Pinned as a
+    /// constant so the predicate and the opener stay in lockstep across
+    /// future copy edits.
+    static let interventionReviewOpenerLead = "Time to review the active case:"
+
+    /// Display chip for the hypothesis acknowledgement row. Carries the
+    /// label the user sees + the confidence the tap records + the short
+    /// user-turn text dispatched into the thread so the chat surface
+    /// stays continuous (a chip tap reads as a real reply, not a
+    /// silent background mutation).
+    struct HypothesisAcknowledgementChip: Equatable {
+        let confidence: CoachHypothesisConfidence
+        let label: String
+        let dispatchText: String
+    }
+
+    /// Should the AskNoumView render the hypothesis ack-chip row? True
+    /// when the thread's most-recent message is a non-pending coach
+    /// reply AND the user turn that triggered it begins with the
+    /// `interventionReviewOpener` lead. Pure function of message
+    /// sequence so the UI eligibility check matches what the tests
+    /// pin.
+    ///
+    /// Why both conditions: we only want the chip row after the coach
+    /// has actually answered the case-review opener — not on the user
+    /// turn (which is the opener itself) and not while the reply is
+    /// pending (premature acknowledgement). A user turn after the
+    /// coach reply means the conversation has moved on; the chip row
+    /// stops rendering.
+    static func shouldShowHypothesisAcknowledgement(messages: [CoachMessage]) -> Bool {
+        guard let last = messages.last,
+              last.role == .coach,
+              !last.isPending,
+              !last.text.isEmpty else { return false }
+        // Find the user turn that triggered this coach reply (the last
+        // user turn before `last`). Search backwards from the
+        // second-to-last message.
+        let prior = messages.dropLast()
+        guard let userTurn = prior.last(where: { $0.role == .user }) else { return false }
+        return userTurn.text.hasPrefix(interventionReviewOpenerLead)
+    }
+
+    /// Three voice-shaped acknowledgement chips — confirmed / uncertain
+    /// / rejected. The chip set is fixed at three so the UI row reads as
+    /// a complete verdict palette; the labels shift per voice so the
+    /// authoritative coach's chip reads as a verdict ("Yes — that's the
+    /// read") while the warm coach's reads as agreement ("That fits how
+    /// I see it"). Same three branches under the hood — the durable
+    /// `CoachHypothesisConfidence` value is voice-independent.
+    static func hypothesisAcknowledgementChips(for voice: SpeakingStyleGoal?) -> [HypothesisAcknowledgementChip] {
+        switch voice {
+        case .authoritative:
+            return [
+                .init(confidence: .confirmed, label: "Yes — that's the read", dispatchText: "Yes — that's the read."),
+                .init(confidence: .uncertain, label: "Not sure yet", dispatchText: "Not sure yet."),
+                .init(confidence: .rejected, label: "Off — adapt the read", dispatchText: "That's off — adapt the read."),
+            ]
+        case .warm:
+            return [
+                .init(confidence: .confirmed, label: "That fits how I see it", dispatchText: "That fits how I see it."),
+                .init(confidence: .uncertain, label: "I'm still figuring it out", dispatchText: "I'm still figuring it out."),
+                .init(confidence: .rejected, label: "Doesn't quite match", dispatchText: "That doesn't quite match what I notice."),
+            ]
+        case .concise:
+            return [
+                .init(confidence: .confirmed, label: "Matches", dispatchText: "Matches."),
+                .init(confidence: .uncertain, label: "Unsure", dispatchText: "Unsure."),
+                .init(confidence: .rejected, label: "Adapt", dispatchText: "Adapt."),
+            ]
+        case .persuasive:
+            return [
+                .init(confidence: .confirmed, label: "Yes — make the case", dispatchText: "Yes — make the case."),
+                .init(confidence: .uncertain, label: "I'd like more evidence", dispatchText: "I'd like more evidence before agreeing."),
+                .init(confidence: .rejected, label: "I'd argue different", dispatchText: "I'd argue a different read."),
+            ]
+        case .executive:
+            return [
+                .init(confidence: .confirmed, label: "Confirmed", dispatchText: "Confirmed."),
+                .init(confidence: .uncertain, label: "TBD", dispatchText: "TBD — need another data point."),
+                .init(confidence: .rejected, label: "Reject — adapt", dispatchText: "Reject — adapt the read."),
+            ]
+        case .storytelling:
+            return [
+                .init(confidence: .confirmed, label: "That's the arc I see", dispatchText: "That's the arc I see."),
+                .init(confidence: .uncertain, label: "I'm still in the middle", dispatchText: "I'm still in the middle of figuring it out."),
+                .init(confidence: .rejected, label: "Different chapter", dispatchText: "I'd tell a different chapter here."),
+            ]
+        case .none:
+            return [
+                .init(confidence: .confirmed, label: "That matches what I see", dispatchText: "That matches what I see."),
+                .init(confidence: .uncertain, label: "Not sure yet", dispatchText: "Not sure yet."),
+                .init(confidence: .rejected, label: "Doesn't match", dispatchText: "That doesn't match what I notice."),
+            ]
+        }
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -1616,6 +1740,16 @@ enum CoachContextBuilder {
                 lines.append("- Current coaching hypothesis: \(currentLever.displayName) is the next lever (\(confidence.rawValue) evidence: \(evidence)).")
             } else {
                 lines.append("- Current coaching hypothesis: \(currentLever.displayName) is the next lever (\(evidence)).")
+            }
+
+            // User's most-recent ack on the working hypothesis. Only
+            // surfaced when the ack is still about the currently-carried
+            // hypothesis (the snapshot guard) — a stale ack from a prior
+            // case read is dropped so the coach never reinforces a
+            // hypothesis the user already agreed-to-then-replaced.
+            if let ack = memory.hypothesisAcknowledgement,
+               ack.appliesTo(currentHypothesis: memory.workingHypothesis) {
+                lines.append("- Hypothesis acknowledgement: \(ack.confidence.contextLabel). \(ack.confidence.nextMoveInstruction)")
             }
 
             if let prior = memory.previousLever, prior != currentLever {
