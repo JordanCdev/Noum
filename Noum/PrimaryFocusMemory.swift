@@ -218,6 +218,67 @@ struct CoachTransferReview: Codable, Equatable {
     }
 }
 
+/// The next coaching move implied by the user's self-reported inner
+/// experience after a rep. This is deliberately a review instruction, not a
+/// diagnosis: the user owns the feeling, and the coach asks the next useful
+/// question.
+enum CoachReflectionReviewAction: String, Codable, Equatable {
+    case reinforceControl
+    case diagnoseNerves
+    case exploreAvoidance
+    case calibrateAuthenticity
+
+    var contextInstruction: String {
+        switch self {
+        case .reinforceControl:
+            return "Ask what made the rep feel controlled before reinforcing the current intervention."
+        case .diagnoseNerves:
+            return "Ask where nerves appeared and whether the next rep needs a lower-pressure setup or a narrower target."
+        case .exploreAvoidance:
+            return "Ask what they avoided saying before strengthening or changing the intervention."
+        case .calibrateAuthenticity:
+            return "Ask what felt unlike them before coaching polish further."
+        }
+    }
+}
+
+/// A bounded snapshot of the latest post-rep reflection held inside durable
+/// coach memory. `SessionReflectionStore` remains the historical owner; this
+/// record is the current case-file read the AI coach receives every turn.
+struct CoachReflectionReview: Codable, Equatable {
+    var sessionID: UUID
+    var feeling: ReflectionFeeling
+    var note: String?
+    var recordedAt: Date
+    var nextAction: CoachReflectionReviewAction
+
+    init(reflection: SessionReflection) {
+        sessionID = reflection.sessionID
+        feeling = reflection.feeling
+        note = reflection.note
+        recordedAt = reflection.recordedAt
+        switch reflection.feeling {
+        case .strong:
+            nextAction = .reinforceControl
+        case .nervous:
+            nextAction = .diagnoseNerves
+        case .heldBack:
+            nextAction = .exploreAvoidance
+        case .notLikeMe:
+            nextAction = .calibrateAuthenticity
+        }
+    }
+
+    var reportedLine: String {
+        var line = "the user said \(feeling.coachClause)"
+        if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !note.isEmpty {
+            line += " — \"\(note)\""
+        }
+        return line
+    }
+}
+
 /// The bounded intervention cycle carried in durable coach memory.
 /// RecommendationLearningStore remains the raw evidence owner; this record
 /// holds the coach's current prescription and review state for continuity.
@@ -291,6 +352,11 @@ struct CoachMemory: Codable, Equatable {
     // backward compat.
     var lastReflectionSummary: String?
 
+    // Structured version of the same self-report, carrying the coach's next
+    // review move. Optional for backward compatibility; older memories only
+    // have `lastReflectionSummary`.
+    var lastReflectionReview: CoachReflectionReview?
+
     // The latest off-app outcome folded into this case file. Optional for
     // backward compatibility and kept separate from intervention verdicts:
     // reported transfer guides review but does not prove causation.
@@ -328,6 +394,7 @@ struct CoachMemory: Codable, Equatable {
         activeIntervention: CoachIntervention? = nil,
         adaptationLog: [CoachCourseChange]? = nil,
         lastReflectionSummary: String? = nil,
+        lastReflectionReview: CoachReflectionReview? = nil,
         lastTransferReview: CoachTransferReview? = nil,
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
@@ -356,6 +423,7 @@ struct CoachMemory: Codable, Equatable {
         self.activeIntervention = activeIntervention
         self.adaptationLog = adaptationLog
         self.lastReflectionSummary = lastReflectionSummary
+        self.lastReflectionReview = lastReflectionReview
         self.lastTransferReview = lastTransferReview
         self.consecutiveCleanReps = consecutiveCleanReps
         self.fillerTrendDirection = fillerTrendDirection
@@ -374,7 +442,7 @@ struct CoachMemory: Codable, Equatable {
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
         case adaptationLog
-        case lastReflectionSummary, lastTransferReview
+        case lastReflectionSummary, lastReflectionReview, lastTransferReview
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
     }
@@ -403,6 +471,7 @@ struct CoachMemory: Codable, Equatable {
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
         adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
         lastReflectionSummary = try c.decodeIfPresent(String.self, forKey: .lastReflectionSummary)
+        lastReflectionReview = try c.decodeIfPresent(CoachReflectionReview.self, forKey: .lastReflectionReview)
         lastTransferReview = try c.decodeIfPresent(CoachTransferReview.self, forKey: .lastTransferReview)
         consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
@@ -528,6 +597,9 @@ enum CoachMemoryEngine {
         )
         memory.adaptationLog = adaptationLog.isEmpty ? nil : adaptationLog
         memory.lastReflectionSummary = latestReflection?.coachClause
+            ?? previous?.lastReflectionSummary
+        memory.lastReflectionReview = latestReflection.map(CoachReflectionReview.init)
+            ?? previous?.lastReflectionReview
         memory.lastTransferReview = latestTransferReport.map { CoachTransferReview(report: $0) }
             ?? previous?.lastTransferReview
         memory.consecutiveCleanReps = momentumClean
@@ -1000,6 +1072,19 @@ final class CoachMemoryStore: ObservableObject {
     func noteReflection(_ summary: String?) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = summary
+        memory.lastReflectionReview = nil
+        memory.updatedAt = Date()
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Structured late-arriving reflection from the post-rep summary. Keeps
+    /// the user's own words and the next review move inside the durable case
+    /// immediately, without waiting for the next full memory rebuild.
+    func noteReflection(_ reflection: SessionReflection) {
+        guard var memory = currentMemory else { return }
+        memory.lastReflectionSummary = reflection.coachClause
+        memory.lastReflectionReview = CoachReflectionReview(reflection: reflection)
         memory.updatedAt = Date()
         currentMemory = memory
         persist(memory)

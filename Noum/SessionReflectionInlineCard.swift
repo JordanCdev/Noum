@@ -168,7 +168,7 @@ struct SessionReflectionInlineCard: View {
     private func record(_ feeling: ReflectionFeeling, sessionID: UUID) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         let reflection = store.record(sessionID: sessionID, feeling: feeling, note: note)
-        CoachMemoryStore.shared.noteReflection(reflection.coachClause)
+        CoachMemoryStore.shared.noteReflection(reflection)
         withAnimation(.standardSpring) {
             justSaved = true
         }

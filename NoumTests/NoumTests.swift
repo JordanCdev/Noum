@@ -5646,6 +5646,40 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("their own read, not a measured signal"))
     }
 
+    @Test func userContextSurfacesStructuredReflectionWithNextReviewMove() {
+        let reflection = SessionReflection(
+            sessionID: UUID(),
+            feeling: .heldBack,
+            note: "I avoided disagreeing with the prompt."
+        )
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            lastReflectionSummary: reflection.coachClause,
+            lastReflectionReview: CoachReflectionReview(reflection: reflection)
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("Subjective reflection: the user said they held back and played it safe"))
+        #expect(ctx.contains("I avoided disagreeing with the prompt."))
+        #expect(ctx.contains("Next review move: Ask what they avoided saying"))
+        #expect(ctx.contains("not a measured signal"))
+    }
+
     @Test func userContextSurfacesTransferReviewAsAUserOwnedCaseAction() {
         let report = BigMomentOutcomeReport(
             moment: BigMoment(title: "Investor pitch", category: .presentation),
@@ -10369,12 +10403,19 @@ struct CoachMemoryEngineTests {
         #expect(decoded.activeIntervention == nil)
         #expect(decoded.adaptationLog == nil)
         #expect(decoded.lastReflectionSummary == nil)
+        #expect(decoded.lastReflectionReview == nil)
         #expect(decoded.lastTransferReview == nil)
         #expect(decoded.currentLever == .structure)
     }
 
     @Test func buildPopulatesLastReflectionFromLatestReflection() {
-        let reflection = SessionReflection(sessionID: UUID(), feeling: .nervous)
+        let sessionID = UUID()
+        let reflection = SessionReflection(
+            sessionID: sessionID,
+            feeling: .nervous,
+            note: "I froze when the topic changed",
+            recordedAt: Date(timeIntervalSince1970: 900)
+        )
         let memory = CoachMemoryEngine.build(
             profile: profile(voice: .concise),
             baseline: .empty,
@@ -10386,7 +10427,11 @@ struct CoachMemoryEngineTests {
             latestReflection: reflection,
             now: Date(timeIntervalSince1970: 1_000)
         )
-        #expect(memory?.lastReflectionSummary == "nerves affected their delivery")
+        #expect(memory?.lastReflectionSummary == "nerves affected their delivery — \"I froze when the topic changed\"")
+        #expect(memory?.lastReflectionReview?.sessionID == sessionID)
+        #expect(memory?.lastReflectionReview?.feeling == .nervous)
+        #expect(memory?.lastReflectionReview?.nextAction == .diagnoseNerves)
+        #expect(memory?.lastReflectionReview?.reportedLine.contains("I froze when the topic changed") == true)
     }
 
     @Test func buildLeavesReflectionNilWithoutOne() {
@@ -10401,6 +10446,41 @@ struct CoachMemoryEngineTests {
             now: Date(timeIntervalSince1970: 1_000)
         )
         #expect(memory?.lastReflectionSummary == nil)
+        #expect(memory?.lastReflectionReview == nil)
+    }
+
+    @Test func buildCarriesReflectionForwardWithoutFreshReflection() {
+        let priorReflection = SessionReflection(
+            sessionID: UUID(),
+            feeling: .heldBack,
+            note: "I softened the disagreement.",
+            recordedAt: Date(timeIntervalSince1970: 700)
+        )
+        let previous = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 800),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            lastReflectionSummary: priorReflection.coachClause,
+            lastReflectionReview: CoachReflectionReview(reflection: priorReflection)
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: previous,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.lastReflectionSummary == "they held back and played it safe — \"I softened the disagreement.\"")
+        #expect(memory?.lastReflectionReview?.nextAction == .exploreAvoidance)
+        #expect(memory?.lastReflectionReview?.note == "I softened the disagreement.")
     }
 
     @Test func buildCarriesRealWorldTransferReviewWithoutChangingInterventionVerdict() {
@@ -17551,6 +17631,7 @@ struct ReflectionToCoachContextEndToEndTests {
         #expect(store.currentMemory != nil)
         #expect(store.currentMemory?.lastReflectionSummary?.contains("nerves affected their delivery") == true)
         #expect(store.currentMemory?.lastReflectionSummary?.contains("I froze when the topic changed") == true)
+        #expect(store.currentMemory?.lastReflectionReview?.nextAction == .diagnoseNerves)
 
         // 3. Feed the memory into CoachContextBuilder and check the output
         let ctx = CoachContextBuilder.userContext(
@@ -17564,8 +17645,9 @@ struct ReflectionToCoachContextEndToEndTests {
             coachMemory: store.currentMemory
         )
         #expect(ctx.contains("CASE FORMULATION"))
-        #expect(ctx.contains("Last reflection: the user said nerves affected their delivery"))
+        #expect(ctx.contains("Subjective reflection: the user said nerves affected their delivery"))
         #expect(ctx.contains("I froze when the topic changed"))
+        #expect(ctx.contains("Next review move: Ask where nerves appeared"))
         #expect(ctx.contains("their own read, not a measured signal"))
     }
 
@@ -17618,6 +17700,57 @@ struct ReflectionToCoachContextEndToEndTests {
             coachMemory: reloaded.currentMemory
         )
         #expect(ctx.contains("Nailed the opening"))
+    }
+
+    /// The structured overload preserves the feeling category, not just the
+    /// display clause, so the coach can ask the right next review question.
+    @MainActor
+    @Test func structuredNoteReflectionPersistsNextReviewMove() {
+        let suite = "e2e-structured-note-reflection-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "e2e-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 0,
+                duration: 45, date: Date(), mode: .timed, score: 8
+            )],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date()
+        )
+
+        store.noteReflection(
+            SessionReflection(
+                sessionID: UUID(),
+                feeling: .notLikeMe,
+                note: "It sounded polished but fake."
+            )
+        )
+
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.lastReflectionReview?.feeling == .notLikeMe)
+        #expect(reloaded.currentMemory?.lastReflectionReview?.nextAction == .calibrateAuthenticity)
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(),
+            baseline: baseline,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: reloaded.currentMemory
+        )
+        #expect(ctx.contains("Ask what felt unlike them before coaching polish further."))
     }
 
     /// When no reflection is recorded, the CASE FORMULATION section does

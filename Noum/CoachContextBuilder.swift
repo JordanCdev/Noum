@@ -84,14 +84,15 @@ enum CoachContextBuilder {
         8. When INTERVENTION RESPONSE is present, treat it as observed association, never proof that a drill caused an outcome. If a prescribed mode is marked \
            "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
         9. When REAL-WORLD TRANSFER is present, it is the user's report of what happened and how the room felt. Use it to ask, adapt, or prepare; never call it objective proof or claim a drill caused the result.
-        10. When TONE-DRILL TRAJECTORY is present, it reports whether a \
+        10. When SUBJECTIVE REFLECTION is present, it is the user's own inner read, not telemetry. Use it to ask the next review question, especially around nerves, avoidance, confidence, or authenticity; never contradict it with measured data.
+        11. When TONE-DRILL TRAJECTORY is present, it reports whether a \
            prescribed IM tone drill is recovering, stalled, or slipping \
            across the user's own reps. Speak to the response — reinforce a \
            recovering drill, change the approach on a slipping one, treat a \
            stalled one as a plateau to break — rather than re-issuing the \
            original miss as if nothing has moved. It is observed \
            association, never proof a drill caused the change.
-        11. When TONE-DRILL SOLVED is present, a tone gap the user used to \
+        12. When TONE-DRILL SOLVED is present, a tone gap the user used to \
            miss now holds above the drill bar. Name the win once, plainly, \
            then point them at the next target — do not re-prescribe the \
            solved drill or restate the old miss as if it were still open. \
@@ -1563,7 +1564,10 @@ enum CoachContextBuilder {
             lines.append("- Transfer case update: \(transfer.reportedOutcomeLine) Next review move: \(transfer.nextAction.contextInstruction) This is user-reported evidence only; do not treat it as proof that the intervention caused the outcome.")
         }
 
-        if let reflection = memory.lastReflectionSummary, !reflection.isEmpty {
+        if let reflection = memory.lastReflectionReview {
+            lines.append("- Subjective reflection: \(reflection.reportedLine). Next review move: \(reflection.nextAction.contextInstruction)")
+            lines.append("- Reflection evidence rule: this is their own read, not a measured signal — it captures inner experience; reference it, never contradict it.")
+        } else if let reflection = memory.lastReflectionSummary, !reflection.isEmpty {
             lines.append("- Last reflection: the user said \(reflection). This is their own read, not a measured signal — reference it, never contradict it.")
         }
         if let strength = memory.strengths.first, !strength.isEmpty {
