@@ -10647,6 +10647,269 @@ struct CoachMemoryEngineTests {
         #expect(memory?.adaptationLog?.last?.reason == "earlier shift")
     }
 
+    // MARK: - Round-27: rejected ack → adaptation log
+
+    @Test func buildLogsCourseChangeWhenRejectedAckIsDroppedByHypothesisRevise() {
+        // The user tapped "rejected" on a prior read, then a memory
+        // rebuild rewrote the working hypothesis (different evidence
+        // confidence in this fixture: tentative → moderate, which the
+        // workingHypothesis(...) helper renders as a different clause).
+        // The engine must log the user's pushback as a `CoachCourseChange`
+        // — the bounded case record carries the user-reported reason,
+        // not an engine inference.
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 2,                       // tentative → "may be"
+            evidenceConfidence: .tentative,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Pace may be the highest-leverage focus because stable at developing; verify over more reps.",
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .rejected,
+                hypothesisSnapshot: "Pace may be the highest-leverage focus because stable at developing; verify over more reps.",
+                acknowledgedAt: Date(timeIntervalSince1970: 950)
+            )
+        )
+        // Same lever, but moderate confidence rewrites the hypothesis
+        // clause from "may be" to "appears to be".
+        let trend = SkillTrend(
+            skillArea: .paceControl,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 10,
+            currentLevel: .developing
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.adaptationLog?.count == 1)
+        let entry = memory?.adaptationLog?.last
+        #expect(entry?.reason.contains("User reported the prior hypothesis did not match") == true)
+        #expect(entry?.evidenceBasis.contains("user-tapped rejection") == true)
+        #expect(entry?.evidenceBasis.contains("Pace may be the highest-leverage focus") == true)
+        #expect(entry?.fromLever == .paceControl)
+        #expect(entry?.toLever == .paceControl)
+        // The ack must be dropped once it has been folded into the log —
+        // otherwise the next build would double-log the same rejection.
+        #expect(memory?.hypothesisAcknowledgement == nil)
+    }
+
+    @Test func buildLogsSingleCourseChangeWhenLeverShiftAndRejectedAckCoincide() {
+        // Both signals fire on the same rebuild: the lever swapped AND
+        // the user had a `.rejected` ack on the prior hypothesis. The
+        // engine must produce ONE entry whose reason carries both the
+        // shift and the user-pushback — never two competing entries.
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps.",
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .rejected,
+                hypothesisSnapshot: "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps.",
+                acknowledgedAt: Date(timeIntervalSince1970: 950)
+            )
+        )
+        let trend = SkillTrend(
+            skillArea: .answerDevelopment,
+            direction: .newIssue,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.adaptationLog?.count == 1)
+        let entry = memory?.adaptationLog?.last
+        #expect(entry?.fromLever == .paceControl)
+        #expect(entry?.toLever == .answerDevelopment)
+        // Carries BOTH the focus shift AND the user-reported reason.
+        #expect(entry?.reason.contains("Shifted focus from Pace to Depth") == true)
+        #expect(entry?.reason.contains("user reported the prior hypothesis did not match") == true)
+        // Evidence basis is the user-tapped rejection, not the engine
+        // inference — the documented reason is the user's report.
+        #expect(entry?.evidenceBasis.contains("user-tapped rejection") == true)
+        #expect(memory?.hypothesisAcknowledgement == nil)
+    }
+
+    @Test func buildDoesNotLogAdaptationForConfirmedOrUncertainAck() {
+        // Only the `.rejected` branch documents a course change — a
+        // confirmed/uncertain ack on a now-rewritten hypothesis is
+        // dropped (the snapshot guard catches it) but does NOT pollute
+        // the adaptation log. The course-change record must only carry
+        // genuine pushback.
+        for confidence in [CoachHypothesisConfidence.confirmed, .uncertain] {
+            let prior = CoachMemory(
+                updatedAt: Date(timeIntervalSince1970: 900),
+                evidenceCount: 2,
+                evidenceConfidence: .tentative,
+                currentLever: .paceControl,
+                goalFit: .aligned,
+                strengths: [],
+                blockers: [],
+                workingHypothesis: "Pace may be the highest-leverage focus because stable at developing; verify over more reps.",
+                hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                    confidence: confidence,
+                    hypothesisSnapshot: "Pace may be the highest-leverage focus because stable at developing; verify over more reps.",
+                    acknowledgedAt: Date(timeIntervalSince1970: 950)
+                )
+            )
+            let trend = SkillTrend(
+                skillArea: .paceControl,
+                direction: .stable,
+                confidence: .high,
+                windowSize: 10,
+                currentLevel: .developing
+            )
+
+            let memory = CoachMemoryEngine.build(
+                profile: profile(voice: .warm),
+                baseline: .empty,
+                sessions: Array(repeating: session(), count: 10),
+                trends: [trend],
+                forwardPlan: nil,
+                previous: prior,
+                lastSessionID: nil,
+                now: Date(timeIntervalSince1970: 1_000)
+            )
+
+            #expect(memory?.adaptationLog == nil,
+                    "\(confidence) ack on a rewritten hypothesis must NOT append a course change")
+            #expect(memory?.hypothesisAcknowledgement == nil,
+                    "\(confidence) ack on a rewritten hypothesis is still dropped by the snapshot guard")
+        }
+    }
+
+    @Test func buildDoesNotDoubleLogRejectedAckWhenHypothesisHolds() {
+        // The ack still applies to the freshly-built hypothesis (same
+        // snapshot text). The engine must NOT append a course-change
+        // entry — the rejection is still active and the user will be
+        // re-prompted on the chip row. Double-logging would balloon
+        // the case file every rebuild.
+        //
+        // Fixture sized to 3 sessions / windowSize 3 so the build's
+        // `evidenceCount` lands at 3 → `BaselineConfidence.tentative` →
+        // the workingHypothesis(...) helper emits the "may be ...
+        // verify" clause that the snapshot below mirrors.
+        let hypothesisText = "Pace may be the highest-leverage focus because stable at developing; verify over more reps."
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 2,
+            evidenceConfidence: .tentative,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: hypothesisText,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .rejected,
+                hypothesisSnapshot: hypothesisText,
+                acknowledgedAt: Date(timeIntervalSince1970: 950)
+            )
+        )
+        let trend = SkillTrend(
+            skillArea: .paceControl,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 3,
+            currentLevel: .developing
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 3),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        #expect(memory?.workingHypothesis == hypothesisText,
+                "fixture should produce the same hypothesis text so the snapshot guard holds")
+        #expect(memory?.adaptationLog == nil,
+                "no rebuild-triggered log when the rejected ack still applies")
+        #expect(memory?.hypothesisAcknowledgement?.confidence == .rejected,
+                "the ack persists because the user has not yet re-evaluated")
+    }
+
+    @Test func buildTrimsLongRejectedSnapshotInEvidenceBasis() {
+        // Snapshot longer than the 140-char readable cap must be
+        // truncated with an ellipsis so the adaptation log entry stays
+        // a single readable clause in the coach-context block. The
+        // bounded case file is for the coach to skim, not for archival.
+        let longSnapshot = String(repeating: "Filler reduction may be the highest-leverage focus because the rolling rate trend is stable at developing across the most-recent reps; verify over more reps. ", count: 3)
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 2,
+            evidenceConfidence: .tentative,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "stale hypothesis text that does not match the snapshot below",
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .rejected,
+                hypothesisSnapshot: longSnapshot,
+                acknowledgedAt: Date(timeIntervalSince1970: 950)
+            )
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 8),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let entry = memory?.adaptationLog?.last
+        #expect(entry != nil)
+        #expect(entry?.evidenceBasis.contains("…") == true,
+                "long snapshots must be truncated with an ellipsis")
+        // Quoted clause itself should be ≤ ~150 chars (140 cap + ellipsis
+        // + quotes); the full evidence basis is slightly longer because
+        // of the lead "user-tapped rejection of: " prefix.
+        #expect((entry?.evidenceBasis.count ?? 0) < 200,
+                "trimmed evidence basis stays short and readable")
+    }
+
     private func ahCounterSession(fillers: Int, at time: TimeInterval) -> PracticeSession {
         PracticeSession(
             transcript: "rep",

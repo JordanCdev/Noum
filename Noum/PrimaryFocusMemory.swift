@@ -603,28 +603,71 @@ enum CoachMemoryEngine {
             return voice.aligns(with: currentLever) ? .aligned : .offGoal
         }()
 
+        let newWorkingHypothesis = workingHypothesis(
+            lever: lever,
+            evidenceConfidence: evidenceConfidence
+        )
+
+        // Round-27 lift: surface a previously-recorded `.rejected`
+        // acknowledgement as a documented `CoachCourseChange` whenever the
+        // memory rebuild drops the ack (because the working hypothesis was
+        // rewritten or the lever swapped). The bounded case-change record
+        // then carries the user's own pushback as the reason for changing
+        // course, instead of the engine silently inferring one. Pure
+        // function lift — no UI changes.
+        let droppedRejectedAck: CoachHypothesisAcknowledgement? = {
+            guard let ack = previous?.hypothesisAcknowledgement,
+                  ack.confidence == .rejected,
+                  !ack.appliesTo(currentHypothesis: newWorkingHypothesis) else { return nil }
+            return ack
+        }()
+
         let previousLever: SkillArea?
         let focusShiftedAt: Date?
         var adaptationLog = previous?.adaptationLog ?? []
-        if let prior = previous?.currentLever,
-           let currentLever,
-           prior != currentLever {
+        let priorLeverShift: SkillArea? = {
+            guard let prior = previous?.currentLever,
+                  let currentLever,
+                  prior != currentLever else { return nil }
+            return prior
+        }()
+
+        if let prior = priorLeverShift {
             previousLever = prior
             focusShiftedAt = now
+        } else {
+            previousLever = previous?.previousLever
+            focusShiftedAt = previous?.focusShiftedAt
+        }
+
+        if priorLeverShift != nil || droppedRejectedAck != nil {
+            let reason: String
+            let evidenceBasis: String
+            switch (priorLeverShift, droppedRejectedAck) {
+            case let (prior?, ack?):
+                reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read") after the user reported the prior hypothesis did not match what they saw."
+                evidenceBasis = rejectedAckEvidenceBasis(ack: ack)
+            case let (prior?, nil):
+                reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read")."
+                evidenceBasis = lever?.basis ?? "updated read across recent reps"
+            case let (nil, ack?):
+                reason = "User reported the prior hypothesis did not match what they saw; revising the read."
+                evidenceBasis = rejectedAckEvidenceBasis(ack: ack)
+            case (nil, nil):
+                reason = ""
+                evidenceBasis = ""
+            }
             adaptationLog.append(
                 CoachCourseChange(
                     id: UUID(),
                     changedAt: now,
-                    fromLever: prior,
+                    fromLever: previous?.currentLever,
                     toLever: currentLever,
-                    reason: "Shifted focus from \(prior.displayName) to \(currentLever.displayName).",
-                    evidenceBasis: lever?.basis ?? "updated read across recent reps"
+                    reason: reason,
+                    evidenceBasis: evidenceBasis
                 )
             )
             adaptationLog = Array(adaptationLog.suffix(8))
-        } else {
-            previousLever = previous?.previousLever
-            focusShiftedAt = previous?.focusShiftedAt
         }
 
         let currentWeek = forwardPlan?.currentWeek(now: now, calendar: calendar)
@@ -669,10 +712,7 @@ enum CoachMemoryEngine {
             planWeekIndex: currentWeek?.weekIndex,
             planFocus: currentWeek?.focusSkillArea,
             planMode: currentWeek?.suggestedMode,
-            workingHypothesis: workingHypothesis(
-                lever: lever,
-                evidenceConfidence: evidenceConfidence
-            ),
+            workingHypothesis: newWorkingHypothesis,
             activeIntervention: activeIntervention(
                 pending: pendingIntervention,
                 outcomes: recommendationOutcomes,
@@ -815,6 +855,28 @@ enum CoachMemoryEngine {
             return "\(core); \(delta)"
         }
         return core
+    }
+
+    /// Evidence-basis copy for a `CoachCourseChange` whose documented reason
+    /// is a user-tapped rejection of the working hypothesis. Trims the
+    /// snapshot down to a single readable clause so the case file's
+    /// adaptation log carries the user's own pushback, not a paraphrase.
+    private static func rejectedAckEvidenceBasis(
+        ack: CoachHypothesisAcknowledgement
+    ) -> String {
+        let snapshot = ack.hypothesisSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snapshot.isEmpty else {
+            return "user-tapped rejection on the prior read"
+        }
+        let cap = 140
+        let trimmed: String
+        if snapshot.count > cap {
+            let index = snapshot.index(snapshot.startIndex, offsetBy: cap)
+            trimmed = "\(snapshot[..<index].trimmingCharacters(in: .whitespacesAndNewlines))…"
+        } else {
+            trimmed = snapshot
+        }
+        return "user-tapped rejection of: \"\(trimmed)\""
     }
 
     private static func workingHypothesis(
