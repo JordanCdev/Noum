@@ -46,6 +46,12 @@ class SpeechRecognizerViewModel: ObservableObject {
     /// voice. Resets to 0 between sessions so a teardown doesn't leave the
     /// orb stuck at the last live value.
     @Published var audioLevel: Double = 0.0
+
+    /// M26 — per-session vocal-energy accumulator. Captures raw RMS
+    /// samples on the audio thread (lock-light). Reset on every
+    /// session start; finalized at session end via
+    /// `currentSessionVocalEnergy()`.
+    private let vocalEnergyAccumulator = VocalEnergyAccumulator()
     /// RMS smoothing coefficient — higher = snappier, lower = calmer. 0.30
     /// reads as "alive" without jittering on consonants.
     private static let audioLevelSmoothing: Double = 0.30
@@ -398,6 +404,10 @@ class SpeechRecognizerViewModel: ObservableObject {
             // running sum-of-squares. The published envelope drives any
             // surface that wants the orb to track the user's voice.
             let level = Self.normalizedRMSLevel(buffer: buffer)
+            // M26 — accumulate raw (unsmoothed) RMS for the per-session
+            // VocalEnergyMetrics aggregate. Lock-light append; finalize()
+            // happens off the audio thread in `currentSessionVocalEnergy()`.
+            self.vocalEnergyAccumulator.append(level: level)
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let blended = self.audioLevel * (1 - Self.audioLevelSmoothing) + level * Self.audioLevelSmoothing
@@ -527,6 +537,10 @@ class SpeechRecognizerViewModel: ObservableObject {
         finalTranscript = ""
         partialTranscript = ""
         connectionError = nil
+        // M26 — drop the prior session's vocal-energy samples so the
+        // accumulator starts clean for the next rep. The audio tap
+        // begins appending again the moment recording resumes.
+        vocalEnergyAccumulator.reset()
     }
 
     private func saveCurrentSession() {
@@ -551,6 +565,11 @@ class SpeechRecognizerViewModel: ObservableObject {
         )
         let pauseMetrics = currentSessionPauseMetrics()
         let pitchMetrics = currentSessionPitchMetrics()
+        // M26 — finalize the vocal-energy accumulator. Returns nil
+        // when the rep is too thin (≥ minimumSampleFloor samples
+        // required) so we never persist a fabricated read on a 1-2s
+        // session.
+        let vocalEnergyMetrics = vocalEnergyAccumulator.finalize()
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -564,7 +583,8 @@ class SpeechRecognizerViewModel: ObservableObject {
                 pressureLevel: pressure,
                 isRated: pressureOn,
                 pauseMetrics: pauseMetrics,
-                pitchMetrics: pitchMetrics
+                pitchMetrics: pitchMetrics,
+                vocalEnergyMetrics: vocalEnergyMetrics
             )
         )
         pastSessions = sessionStore.sessions
@@ -649,6 +669,13 @@ struct PracticeSession: Identifiable, Codable {
     /// `intentFocus` so the coach can quote the exact label back at the
     /// user rather than paraphrasing.
     var intentLabel: String? = nil
+    /// M26: per-session vocal-energy aggregate (mean RMS, peak,
+    /// steadiness). Optional because (a) older persisted sessions
+    /// decode without it and (b) reps shorter than the accumulator's
+    /// minimumSampleFloor return nil rather than a fabricated read.
+    /// Feeds the coach context block so the AI can comment on HOW the
+    /// user sounded, not only what they said.
+    var vocalEnergyMetrics: VocalEnergyMetrics? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -676,6 +703,7 @@ struct PracticeSession: Identifiable, Codable {
         case grammarFindings
         case intentFocus
         case intentLabel
+        case vocalEnergyMetrics
     }
 
     init(
@@ -703,7 +731,8 @@ struct PracticeSession: Identifiable, Codable {
         pitchMetrics: PitchMetrics? = nil,
         grammarFindings: [GrammarFinding]? = nil,
         intentFocus: CoachingPriority? = nil,
-        intentLabel: String? = nil
+        intentLabel: String? = nil,
+        vocalEnergyMetrics: VocalEnergyMetrics? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -730,6 +759,7 @@ struct PracticeSession: Identifiable, Codable {
         self.grammarFindings = grammarFindings
         self.intentFocus = intentFocus
         self.intentLabel = intentLabel
+        self.vocalEnergyMetrics = vocalEnergyMetrics
     }
 
     init(from decoder: Decoder) throws {
@@ -759,5 +789,6 @@ struct PracticeSession: Identifiable, Codable {
         grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)
         intentFocus = try container.decodeIfPresent(CoachingPriority.self, forKey: .intentFocus)
         intentLabel = try container.decodeIfPresent(String.self, forKey: .intentLabel)
+        vocalEnergyMetrics = try container.decodeIfPresent(VocalEnergyMetrics.self, forKey: .vocalEnergyMetrics)
     }
 }

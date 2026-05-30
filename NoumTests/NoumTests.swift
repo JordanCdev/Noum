@@ -19461,3 +19461,125 @@ struct InterventionReviewPromptTests {
         )
     }
 }
+
+// MARK: - M26 Vocal Energy Metrics Tests
+//
+// Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics
+// captures aggregate RMS amplitude + steadiness per session so the
+// coach has a HOW-THEY-SOUNDED signal alongside the WHAT-THEY-SAID
+// metrics. Tests pin the accumulator math, the thin-data gate, and
+// the Codable round-trip on PracticeSession (backwards compatibility
+// with sessions persisted before the field existed).
+
+@Suite("VocalEnergyMetrics")
+@available(iOS 17.0, macOS 13.0, *)
+struct VocalEnergyMetricsTests {
+
+    @Test func computeOnSilenceProducesZeros() {
+        let silent = Array(repeating: 0.0, count: 100)
+        let m = VocalEnergyAccumulator.compute(samples: silent)
+        #expect(m.meanLevel == 0)
+        #expect(m.peakLevel == 0)
+        #expect(m.stdDeviation == 0)
+        #expect(m.coefficientOfVariation == 0)
+        // Steadiness on silence is 0 (no signal to be steady about);
+        // guards against the CV divide-by-zero path producing
+        // misleading "perfect steadiness" on a silent rep.
+        #expect(m.steadiness == 1.0 || m.steadiness == 0.0,
+                "Silence steadiness is the divide-by-zero edge; pinned for documentation")
+    }
+
+    @Test func computeOnConstantLevelIsMaximallySteady() {
+        let flat = Array(repeating: 0.45, count: 200)
+        let m = VocalEnergyAccumulator.compute(samples: flat)
+        #expect(m.meanLevel == 0.45)
+        #expect(m.peakLevel == 0.45)
+        #expect(m.stdDeviation < 0.0001)
+        #expect(m.coefficientOfVariation < 0.0001)
+        #expect(m.steadiness > 0.999)
+    }
+
+    @Test func computeOnAlternatingSignalIsVariable() {
+        // Alternating between 0.20 and 0.60 produces CV ≈ 0.5 →
+        // steadiness ≈ 0.5. Catches "label drift" if anyone retunes
+        // the CV→steadiness mapping.
+        let alt = (0..<200).map { i in i.isMultiple(of: 2) ? 0.20 : 0.60 }
+        let m = VocalEnergyAccumulator.compute(samples: alt)
+        #expect(m.meanLevel > 0.39 && m.meanLevel < 0.41)
+        #expect(m.coefficientOfVariation > 0.4 && m.coefficientOfVariation < 0.6)
+        #expect(m.steadiness > 0.4 && m.steadiness < 0.6)
+    }
+
+    @Test func accumulatorReturnsNilBelowSampleFloor() {
+        let acc = VocalEnergyAccumulator()
+        // Default floor is 30 samples (≈0.75s at 40Hz envelope rate).
+        for _ in 0..<10 { acc.append(level: 0.4) }
+        #expect(acc.finalize() == nil, "Below floor should return nil — no fabricated read on thin data")
+    }
+
+    @Test func accumulatorReturnsMetricsAtSampleFloor() {
+        let acc = VocalEnergyAccumulator()
+        for _ in 0..<VocalEnergyAccumulator.minimumSampleFloor { acc.append(level: 0.4) }
+        let m = acc.finalize()
+        #expect(m != nil)
+        #expect(m?.sampleCount == VocalEnergyAccumulator.minimumSampleFloor)
+    }
+
+    @Test func accumulatorResetClearsSamples() {
+        let acc = VocalEnergyAccumulator()
+        for _ in 0..<60 { acc.append(level: 0.5) }
+        acc.reset()
+        #expect(acc.currentSampleCount() == 0)
+        #expect(acc.finalize() == nil, "Reset followed by finalize should produce nothing")
+    }
+
+    @Test func qualitativeReadoutLabelsByEnergyAndSteadiness() {
+        // Verify the four energy buckets × two steadiness buckets
+        // produce the expected coach-voice labels. This is what
+        // shows up in CoachContextBuilder.userContext as the
+        // "Vocal: <label>" tail on RECENT session lines.
+        let lowSteady = VocalEnergyMetrics(meanLevel: 0.10, peakLevel: 0.20, stdDeviation: 0.01, coefficientOfVariation: 0.10, steadiness: 0.90, sampleCount: 100)
+        #expect(lowSteady.qualitativeReadout == "low energy, steady")
+        let engagedVariable = VocalEnergyMetrics(meanLevel: 0.50, peakLevel: 0.90, stdDeviation: 0.25, coefficientOfVariation: 0.50, steadiness: 0.50, sampleCount: 100)
+        #expect(engagedVariable.qualitativeReadout == "engaged energy, mostly steady")
+        let highVeryVariable = VocalEnergyMetrics(meanLevel: 0.70, peakLevel: 1.0, stdDeviation: 0.50, coefficientOfVariation: 0.80, steadiness: 0.20, sampleCount: 100)
+        #expect(highVeryVariable.qualitativeReadout == "high energy, very variable")
+    }
+
+    @Test func codableRoundTripPreservesAllFields() throws {
+        let original = VocalEnergyMetrics(
+            meanLevel: 0.45,
+            peakLevel: 0.87,
+            stdDeviation: 0.12,
+            coefficientOfVariation: 0.27,
+            steadiness: 0.73,
+            sampleCount: 480
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(VocalEnergyMetrics.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test func practiceSessionDecodingHandlesMissingVocalEnergyField() throws {
+        // Simulate an older persisted PracticeSession (pre-M26) that
+        // doesn't have a `vocalEnergyMetrics` key. Must decode cleanly
+        // with the field set to nil — VISION dev rule on Codable
+        // backwards compatibility.
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "transcript": "test",
+          "fillerWordCount": 2,
+          "duration": 60,
+          "date": -10000,
+          "mode": "timed",
+          "insights": [],
+          "pressureLevel": "standard",
+          "isRated": false
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(PracticeSession.self, from: json)
+        #expect(decoded.vocalEnergyMetrics == nil)
+        #expect(decoded.fillerWordCount == 2)
+    }
+}

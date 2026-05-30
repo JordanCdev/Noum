@@ -5872,6 +5872,12 @@ struct PracticeSessionDraft {
     /// summary cards and Ask Noum can reference it.
     let intentFocus: CoachingPriority?
     let intentLabel: String?
+    /// M26: per-session vocal-energy aggregate. Optional default nil
+    /// so existing draft call sites compile unchanged; only the
+    /// `SpeechRecognizerViewModel.saveCurrentSession` path opts in by
+    /// passing the accumulator's finalized output. Other draft
+    /// builders (debug seeds, IM session synthesis) leave it nil.
+    let vocalEnergyMetrics: VocalEnergyMetrics?
 
     init(
         transcript: String,
@@ -5887,7 +5893,8 @@ struct PracticeSessionDraft {
         pauseMetrics: PauseMetrics? = nil,
         pitchMetrics: PitchMetrics? = nil,
         intentFocus: CoachingPriority? = nil,
-        intentLabel: String? = nil
+        intentLabel: String? = nil,
+        vocalEnergyMetrics: VocalEnergyMetrics? = nil
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -5903,6 +5910,7 @@ struct PracticeSessionDraft {
         self.pitchMetrics = pitchMetrics
         self.intentFocus = intentFocus
         self.intentLabel = intentLabel
+        self.vocalEnergyMetrics = vocalEnergyMetrics
     }
 }
 
@@ -5972,7 +5980,8 @@ final class PracticeSessionStore: ObservableObject {
             pauseMetrics: draft.pauseMetrics,
             pitchMetrics: draft.pitchMetrics,
             intentFocus: draft.intentFocus,
-            intentLabel: draft.intentLabel
+            intentLabel: draft.intentLabel,
+            vocalEnergyMetrics: draft.vocalEnergyMetrics
         )
         sessions.insert(session, at: 0)
         persist()

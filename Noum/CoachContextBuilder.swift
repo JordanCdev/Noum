@@ -542,7 +542,21 @@ enum CoachContextBuilder {
                     }
                     return ""
                 }()
-                lines.append("- \(day) · \(mode): \(score), \(fillers), \(duration)\(intentTail).")
+                // M26 — vocal energy tail. When the rep produced a
+                // VocalEnergyMetrics aggregate (≥ minimumSampleFloor
+                // samples in the accumulator), surface the qualitative
+                // readout ("engaged energy, mostly steady") so the
+                // coach has a HOW-THEY-SOUNDED signal alongside the
+                // WHAT-THEY-SAID metrics. Older sessions decode with
+                // nil → no tail; the model never sees a fabricated
+                // read on thin-data reps.
+                let vocalTail: String = {
+                    if let ve = s.vocalEnergyMetrics {
+                        return " · Vocal: \(ve.qualitativeReadout)"
+                    }
+                    return ""
+                }()
+                lines.append("- \(day) · \(mode): \(score), \(fillers), \(duration)\(intentTail)\(vocalTail).")
             }
         }
 
