@@ -19462,6 +19462,367 @@ struct InterventionReviewPromptTests {
     }
 }
 
+// MARK: - M24 deferred slate round 26 — Hypothesis acknowledgement chips
+//
+// Closes the round-25 future-move #1 — "Record user confirmation /
+// rejection of the working hypothesis." After the coach replies to an
+// `interventionReviewOpener` dispatch, the AskNoum view surfaces a
+// three-chip row (confirmed / uncertain / rejected). A tap persists
+// the verdict to `CoachMemory.hypothesisAcknowledgement` and dispatches
+// a voice-shaped follow-up turn into the chat.
+//
+// Pure-helper layers under test:
+//   • `CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages:)` —
+//     predicate that decides when the row renders. Matches the lead of
+//     `interventionReviewOpenerLead`.
+//   • `CoachContextBuilder.hypothesisAcknowledgementChips(for:)` — the
+//     voice-shaped chip catalog; three branches per voice, all carrying
+//     the same `CoachHypothesisConfidence` enum.
+//   • `CoachHypothesisAcknowledgement.appliesTo(currentHypothesis:)` —
+//     snapshot guard so a rebuild that rewrites the hypothesis re-prompts
+//     the user.
+//   • `CoachMemoryStore.noteHypothesisAcknowledgement(_:)` — persistence
+//     mutation. Snapshots the current hypothesis so drift is detectable.
+//
+// Vision alignment: closes the "case formulation needs a reason for
+// changing course" gap called out in `docs/VISION.md`. The user's
+// verdict on the hypothesis is now durable case-file data, not an
+// inference from chat tone.
+
+@MainActor
+@Suite("HypothesisAcknowledgementTests")
+struct HypothesisAcknowledgementTests {
+
+    // MARK: - Predicate
+
+    @Test func shouldShowReturnsTrueWhenCoachRepliedToReviewOpener() {
+        // Happy path: a case-review opener landed (user turn), the
+        // coach replied (most-recent message), no later user turn.
+        // The chip row eligible.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.interventionReviewOpenerLead) Timed for filler reduction, 4 followed reps in. Keep, adapt, or replace?"),
+            CoachMessage(role: .coach, text: "Three reps in, your filler rate is down by 30%; I'd keep going for one more rep before I'd call it.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: messages) == true)
+    }
+
+    @Test func shouldShowReturnsFalseWhenLastMessageIsUserTurn() {
+        // After the user replies to the case-review thread, the chip
+        // row must collapse — the conversation has moved on and a
+        // late ack on a stale coach reply would land out of order.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.interventionReviewOpenerLead) Timed for filler reduction, 4 followed reps in."),
+            CoachMessage(role: .coach, text: "Three reps in, your filler rate is down."),
+            CoachMessage(role: .user, text: "Tell me more about the trend."),
+        ]
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseWhenCoachReplyIsPending() {
+        // While the model is composing, the chip row must not render
+        // — there's no reply to react to. Pinning the pending guard
+        // stops a flash-of-chips on the typing dots.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.interventionReviewOpenerLead) Timed for filler reduction."),
+            CoachMessage(role: .coach, text: "", isPending: true),
+        ]
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseWhenUserTurnIsOrganicQuestion() {
+        // A coach reply to a regular question (not the case-review
+        // opener) must not surface the chip row — the row is the
+        // case-review surface, not a generic "do you agree with me?"
+        // pestering pattern.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "What was my filler rate this week?"),
+            CoachMessage(role: .coach, text: "Your filler rate landed at 3.4 per minute this week.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseOnEmptyMessages() {
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: []) == false)
+    }
+
+    // MARK: - Chip catalog
+
+    @Test func chipCatalogIsThreeChipsPerVoice() {
+        // The verdict palette must always offer the full three branches —
+        // confirmed / uncertain / rejected — so the user has the same
+        // expressive surface regardless of voice tone. A voice that
+        // collapsed the catalog to two would deny the user the
+        // "uncertain" middle option.
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling] {
+            let chips = CoachContextBuilder.hypothesisAcknowledgementChips(for: voice)
+            #expect(chips.count == 3, "voice \(voice) chip catalog missing branches")
+            #expect(Set(chips.map(\.confidence)) == Set([.confirmed, .uncertain, .rejected]))
+        }
+        let nilChips = CoachContextBuilder.hypothesisAcknowledgementChips(for: nil)
+        #expect(nilChips.count == 3)
+        #expect(Set(nilChips.map(\.confidence)) == Set([.confirmed, .uncertain, .rejected]))
+    }
+
+    @Test func chipDispatchTextIsNeverEmpty() {
+        // Defensive: the dispatched user turn lands in the chat thread.
+        // An empty dispatch would create a blank user bubble and an
+        // orphan coach turn.
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil] as [SpeakingStyleGoal?] {
+            let chips = CoachContextBuilder.hypothesisAcknowledgementChips(for: voice)
+            for chip in chips {
+                #expect(!chip.dispatchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        "voice \(String(describing: voice)) confidence \(chip.confidence) has empty dispatch")
+                #expect(!chip.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        "voice \(String(describing: voice)) confidence \(chip.confidence) has empty label")
+            }
+        }
+    }
+
+    @Test func chipLabelsAvoidBannedPhrasings() {
+        // Brand-voice rule scan — no exclamation marks, no "Let's",
+        // no urgency framing. The chips are a verdict surface, not a
+        // CTA chorus.
+        let banned = ["!", "Let's", "let's", "hurry", "now or never"]
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil] as [SpeakingStyleGoal?] {
+            let chips = CoachContextBuilder.hypothesisAcknowledgementChips(for: voice)
+            for chip in chips {
+                for phrase in banned {
+                    #expect(!chip.label.contains(phrase),
+                            "voice \(String(describing: voice)) chip label contains banned phrase \(phrase)")
+                    #expect(!chip.dispatchText.contains(phrase),
+                            "voice \(String(describing: voice)) chip dispatch contains banned phrase \(phrase)")
+                }
+            }
+        }
+    }
+
+    @Test func authoritativeVoiceUsesVerdictRegister() {
+        // Voice-shape sanity: the authoritative coach's chips read as
+        // verdicts ("Yes — that's the read"), not as agreement ("That
+        // fits how I see it" is the warm coach's register). Catches a
+        // copy-paste of the warm chips into the authoritative slot.
+        let chips = CoachContextBuilder.hypothesisAcknowledgementChips(for: .authoritative)
+        let confirmed = chips.first { $0.confidence == .confirmed }
+        #expect(confirmed?.label == "Yes — that's the read")
+    }
+
+    @Test func conciseVoiceUsesOneWordLabels() {
+        // The concise coach's chips compress to single tokens so the
+        // verdict reads as fast as the voice expects.
+        let chips = CoachContextBuilder.hypothesisAcknowledgementChips(for: .concise)
+        let labels = chips.map(\.label)
+        #expect(labels.contains("Matches"))
+        #expect(labels.contains("Unsure"))
+        #expect(labels.contains("Adapt"))
+    }
+
+    // MARK: - Snapshot guard
+
+    @Test func appliesToReturnsTrueOnExactHypothesisMatch() {
+        let ack = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "Filler reduction may be the highest-leverage focus because pace is steady; verify over more reps.",
+            acknowledgedAt: Date()
+        )
+        #expect(ack.appliesTo(currentHypothesis: "Filler reduction may be the highest-leverage focus because pace is steady; verify over more reps.") == true)
+    }
+
+    @Test func appliesToReturnsTrueIgnoringSurroundingWhitespace() {
+        // A trim-difference between a Codable round-trip and a freshly
+        // built hypothesis must not invalidate an otherwise-matching ack.
+        let ack = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "Filler reduction is the next lever.",
+            acknowledgedAt: Date()
+        )
+        #expect(ack.appliesTo(currentHypothesis: "   Filler reduction is the next lever.   ") == true)
+    }
+
+    @Test func appliesToReturnsFalseOnHypothesisDrift() {
+        // A memory rebuild that rewrote the hypothesis from a tentative
+        // to a moderate phrasing must invalidate the ack — the user
+        // hasn't yet confirmed the new read.
+        let ack = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "Filler reduction may be the highest-leverage focus; verify over more reps.",
+            acknowledgedAt: Date()
+        )
+        #expect(ack.appliesTo(currentHypothesis: "Filler reduction appears to be the highest-leverage focus; keep checking against future reps.") == false)
+    }
+
+    @Test func appliesToReturnsFalseOnNilOrEmptyCurrentHypothesis() {
+        let ack = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "Filler reduction is the next lever.",
+            acknowledgedAt: Date()
+        )
+        #expect(ack.appliesTo(currentHypothesis: nil) == false)
+        #expect(ack.appliesTo(currentHypothesis: "") == false)
+        #expect(ack.appliesTo(currentHypothesis: "   ") == false)
+    }
+
+    // MARK: - Store mutation + persistence
+
+    @Test func noteHypothesisAcknowledgementPersistsAndReloads() {
+        let suite = "coach-memory-hypAck-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        store.replaceForTesting(makeMemory(workingHypothesis: "Filler reduction is the next lever."))
+
+        store.noteHypothesisAcknowledgement(.confirmed, at: Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(store.currentMemory?.hypothesisAcknowledgement?.confidence == .confirmed)
+        #expect(store.currentMemory?.hypothesisAcknowledgement?.hypothesisSnapshot == "Filler reduction is the next lever.")
+
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.hypothesisAcknowledgement?.confidence == .confirmed)
+        #expect(reloaded.currentMemory?.hypothesisAcknowledgement?.hypothesisSnapshot == "Filler reduction is the next lever.")
+    }
+
+    @Test func noteHypothesisAcknowledgementIsNoOpWithoutWorkingHypothesis() {
+        // Defensive: the chip row never renders without a working
+        // hypothesis, but the store still guards. A no-op write here
+        // prevents a memory with empty `workingHypothesis` from
+        // accidentally persisting a snapshot of "".
+        let suite = "coach-memory-hypAck-nopath-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        store.replaceForTesting(makeMemory(workingHypothesis: nil))
+        store.noteHypothesisAcknowledgement(.confirmed)
+        #expect(store.currentMemory?.hypothesisAcknowledgement == nil)
+    }
+
+    @Test func noteHypothesisAcknowledgementOverwritesPriorVerdict() {
+        // The user reverses their mind on the same hypothesis. The
+        // store carries the LATEST verdict, not a history list — that
+        // pattern would balloon the case file.
+        let suite = "coach-memory-hypAck-overwrite-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        store.replaceForTesting(makeMemory(workingHypothesis: "Filler reduction is the next lever."))
+
+        store.noteHypothesisAcknowledgement(.confirmed, at: Date(timeIntervalSince1970: 1_000))
+        store.noteHypothesisAcknowledgement(.rejected, at: Date(timeIntervalSince1970: 2_000))
+        #expect(store.currentMemory?.hypothesisAcknowledgement?.confidence == .rejected)
+        #expect(store.currentMemory?.hypothesisAcknowledgement?.acknowledgedAt == Date(timeIntervalSince1970: 2_000))
+    }
+
+    // MARK: - User-context surfacing
+
+    @Test func userContextSurfacesAcknowledgementWhenApplied() {
+        // The coach's next reply needs to know the user's verdict.
+        // The context builder emits a CASE FORMULATION line carrying
+        // the confidence label + the next-move instruction.
+        var memory = makeMemory(workingHypothesis: "Filler reduction is the next lever.")
+        memory.hypothesisAcknowledgement = CoachHypothesisAcknowledgement(
+            confidence: .rejected,
+            hypothesisSnapshot: "Filler reduction is the next lever.",
+            acknowledgedAt: Date()
+        )
+        memory.currentLever = .fillerReduction
+
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: SpeakingRating.initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            recentMomentOutcomes: [],
+            forwardPlan: nil,
+            latestRepNote: nil,
+            coachMemory: memory,
+            pendingRecommendation: nil,
+            recommendationOutcomes: [],
+            trends: []
+        )
+        #expect(context.contains("Hypothesis acknowledgement: user said the working hypothesis does not match"))
+        #expect(context.contains("Treat the working hypothesis as falsified"))
+    }
+
+    @Test func userContextDropsStaleAcknowledgement() {
+        // The hypothesis was rewritten after the ack landed. The
+        // context block must NOT surface the stale verdict — it would
+        // lead the coach to reinforce a read the user has not yet
+        // confirmed.
+        var memory = makeMemory(workingHypothesis: "Pace control is the next lever.")
+        memory.hypothesisAcknowledgement = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "Filler reduction is the next lever.",  // OLD hypothesis
+            acknowledgedAt: Date()
+        )
+        memory.currentLever = .paceControl
+
+        let context = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: SpeakingRating.initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            recentProofs: [],
+            bigMoment: nil,
+            recentMomentOutcomes: [],
+            forwardPlan: nil,
+            latestRepNote: nil,
+            coachMemory: memory,
+            pendingRecommendation: nil,
+            recommendationOutcomes: [],
+            trends: []
+        )
+        #expect(!context.contains("Hypothesis acknowledgement"))
+    }
+
+    // MARK: - Backward-compat decode
+
+    @Test func coachMemoryDecodesWithoutAcknowledgementField() throws {
+        // Memories persisted before round 26 must decode without a
+        // `hypothesisAcknowledgement` key. The decoder uses
+        // `decodeIfPresent`; this pins that contract so a future
+        // refactor that flips it to `decode` would surface here.
+        let legacyJSON = """
+        {
+            "updatedAt": 1700000000,
+            "evidenceCount": 5,
+            "evidenceConfidence": "moderate",
+            "goalFit": "noLever",
+            "strengths": [],
+            "blockers": []
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: legacyJSON)
+        #expect(decoded.hypothesisAcknowledgement == nil)
+        #expect(decoded.evidenceCount == 5)
+    }
+
+    // MARK: - Helpers
+
+    private func makeMemory(workingHypothesis: String?) -> CoachMemory {
+        CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis
+        )
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

@@ -81,6 +81,8 @@ struct AskNoumView: View {
                                     messageRow(message: message)
                                         .id(message.id)
                                 }
+                                hypothesisAckRow
+                                    .id("hypothesisAck")
                                 if let chips = followUpChips, !chips.isEmpty {
                                     followUpRow(chips: chips)
                                         .id("followups")
@@ -511,6 +513,133 @@ struct AskNoumView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Hypothesis acknowledgement row (post-case-review reply)
+    //
+    // Renders below the coach's reply to an `interventionReviewOpener`
+    // dispatch (from either the summary card or the empty-state chip).
+    // Three one-tap chips — confirmed / uncertain / rejected — let the
+    // user lodge their verdict on the working hypothesis without typing
+    // a sentence. The tap:
+    //   1. Persists the verdict to `CoachMemoryStore.shared` via
+    //      `noteHypothesisAcknowledgement(_:)`. The ack lands in
+    //      durable case-file storage immediately.
+    //   2. Dispatches the chip's voice-shaped text as a user turn via
+    //      the existing `send(_:)` path. This keeps the chat surface
+    //      continuous — the chip reads as a real reply, the model gets
+    //      a coherent conversation, and the next reply lands with the
+    //      user's verdict reflected in the user-context block (the
+    //      builder reads `memory.hypothesisAcknowledgement` and
+    //      surfaces a coach-direction line).
+    //
+    // Eligibility (`shouldShowHypothesisAcknowledgement`):
+    //   • Most-recent message is a non-pending coach reply.
+    //   • The user turn that triggered it begins with
+    //     `interventionReviewOpenerLead` ("Time to review the active
+    //     case:" — pinned on `CoachContextBuilder`).
+    //   • The current memory's `workingHypothesis` is non-empty
+    //     (otherwise there's nothing for the user to acknowledge).
+    //   • The user hasn't already acknowledged this hypothesis (the
+    //     snapshot guard on `CoachHypothesisAcknowledgement.appliesTo`
+    //     — a stale ack from a prior case read re-prompts).
+    //
+    // Vision alignment:
+    //   • Coach-parity gap closure. Per `docs/VISION.md`, the case
+    //     formulation needs an explicit "reason for changing course."
+    //     The user's hypothesis verdict IS that reason — the next
+    //     `CoachCourseChange` entry can reference whether the user
+    //     confirmed or rejected the read.
+    //   • Pillar #5 (Personalized coaching). A real coach asks "does
+    //     that sound right?" after sharing a read; we owe the same
+    //     structured back-channel.
+    @ViewBuilder
+    private var hypothesisAckRow: some View {
+        if shouldShowHypothesisAck {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Does this read match?")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .padding(.leading, 34)
+                    .accessibilityLabel("Quick verdict on the working hypothesis")
+
+                FlowLayout(spacing: 8, runSpacing: 6) {
+                    ForEach(hypothesisAckChips, id: \.confidence) { chip in
+                        Button {
+                            recordHypothesisAck(chip)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: ackChipGlyph(for: chip.confidence))
+                                    .font(Typography.captionSmall.weight(.semibold))
+                                Text(chip.label)
+                                    .font(Typography.caption.weight(.semibold))
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .foregroundStyle(AppColor.pro)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, 6)
+                            .background(
+                                AppColor.pro.opacity(0.10),
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(AppColor.pro.opacity(0.32), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel("Acknowledge: \(chip.label)")
+                        .accessibilityIdentifier("askNoum.hypothesisAck.\(chip.confidence.rawValue)")
+                    }
+                }
+                .padding(.leading, 34)
+            }
+            .padding(.top, 2)
+            .padding(.bottom, Spacing.xs)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// Eligibility composite for the hypothesis-ack row. The predicate
+    /// from `CoachContextBuilder` covers the chat-shape check; the
+    /// store-level check ensures we don't render a row the user has
+    /// already answered for the currently-carried hypothesis.
+    private var shouldShowHypothesisAck: Bool {
+        guard CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: store.messages) else { return false }
+        guard let memory = coachMemoryStore.currentMemory,
+              let hypothesis = memory.workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return false }
+        // Suppress if the user has already acknowledged THIS hypothesis.
+        // A drift to a different working hypothesis (memory rebuild) drops
+        // the ack via `appliesTo`, which re-enables the row.
+        if let ack = memory.hypothesisAcknowledgement,
+           ack.appliesTo(currentHypothesis: memory.workingHypothesis) {
+            return false
+        }
+        return true
+    }
+
+    private var hypothesisAckChips: [CoachContextBuilder.HypothesisAcknowledgementChip] {
+        CoachContextBuilder.hypothesisAcknowledgementChips(for: voice)
+    }
+
+    private func ackChipGlyph(for confidence: CoachHypothesisConfidence) -> String {
+        switch confidence {
+        case .confirmed: return "checkmark.circle"
+        case .uncertain: return "questionmark.circle"
+        case .rejected: return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private func recordHypothesisAck(_ chip: CoachContextBuilder.HypothesisAcknowledgementChip) {
+        // Persist the verdict first so it lands in case-file storage even
+        // if the dispatched user turn fails to reach the model (no
+        // provider, locale block). The durable record is the priority;
+        // the chat continuation is the courtesy.
+        coachMemoryStore.noteHypothesisAcknowledgement(chip.confidence)
+        send(chip.dispatchText)
     }
 
     private func followUpRow(chips: [String]) -> some View {

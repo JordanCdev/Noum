@@ -279,6 +279,82 @@ struct CoachReflectionReview: Codable, Equatable {
     }
 }
 
+/// The user's one-tap verdict on whether the coach's current working
+/// hypothesis matches what they actually see in themselves. Surfaced by
+/// `AskNoumView`'s hypothesis acknowledgement chip row immediately after
+/// the coach reply to an `interventionReviewOpener` lands. Three explicit
+/// branches so the coach has a clean "user confirmed / user is uncertain /
+/// user pushed back" signal rather than inferring agreement from silence.
+///
+/// Vision alignment: closes a long-standing coach-parity gap. Per
+/// `docs/VISION.md`, "The coaching case is incomplete … one explicit,
+/// revisable case formulation with hypothesis, intervention, success
+/// criterion, review cadence, and reason for changing course." Recording
+/// the user's confirmation / rejection of the hypothesis is the missing
+/// "reason for changing course" signal — the durable coach memory now
+/// carries the user's own verdict on the hypothesis, not just the
+/// coach's read of the evidence.
+enum CoachHypothesisConfidence: String, Codable, Equatable {
+    case confirmed
+    case uncertain
+    case rejected
+
+    /// Coach-context phrase the AI receives in the user-context block. Keep
+    /// short — these lines compete for the model's attention with the rest
+    /// of the case formulation. Brand-voice rules: no exclamation, no
+    /// "Let's", no hype.
+    var contextLabel: String {
+        switch self {
+        case .confirmed:
+            return "user confirmed the working hypothesis matches what they see"
+        case .uncertain:
+            return "user is uncertain whether the working hypothesis matches"
+        case .rejected:
+            return "user said the working hypothesis does not match — adapt the read"
+        }
+    }
+
+    /// Instruction the coach should follow on the next reply. Pinned per
+    /// branch so the model has a concrete next move rather than treating
+    /// the ack as background context.
+    var nextMoveInstruction: String {
+        switch self {
+        case .confirmed:
+            return "Reinforce the working hypothesis and tie the next prescription back to it."
+        case .uncertain:
+            return "Ask one focused question that would resolve the uncertainty before the next prescription."
+        case .rejected:
+            return "Treat the working hypothesis as falsified by user report; open the next reply by acknowledging the adapt and proposing a revised read."
+        }
+    }
+}
+
+/// A bounded snapshot of the user's most-recent hypothesis acknowledgement
+/// held inside durable coach memory. The hypothesis snapshot is carried
+/// alongside the confidence so a later coach rebuild (which may have
+/// rewritten `workingHypothesis` to a fresh phrasing) can still tell
+/// whether the ack still applies to today's read.
+struct CoachHypothesisAcknowledgement: Codable, Equatable {
+    var confidence: CoachHypothesisConfidence
+    /// The hypothesis text the user was acknowledging when they tapped.
+    /// Captured at acknowledgement time so a memory rebuild that
+    /// produces a different `workingHypothesis` phrasing can detect the
+    /// drift and treat the ack as stale.
+    var hypothesisSnapshot: String
+    var acknowledgedAt: Date
+
+    /// Is this acknowledgement still about the same hypothesis the coach
+    /// memory is currently carrying? Pure function — used by the context
+    /// builder and by AskNoumView to decide whether to render the ack
+    /// chip row again (a stale ack should re-prompt).
+    func appliesTo(currentHypothesis: String?) -> Bool {
+        guard let current = currentHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !current.isEmpty else { return false }
+        let snapshot = hypothesisSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        return snapshot == current
+    }
+}
+
 /// The bounded intervention cycle carried in durable coach memory.
 /// RecommendationLearningStore remains the raw evidence owner; this record
 /// holds the coach's current prescription and review state for continuity.
@@ -340,6 +416,13 @@ struct CoachMemory: Codable, Equatable {
     var workingHypothesis: String?
     var activeIntervention: CoachIntervention?
 
+    /// The user's most-recent one-tap verdict on the working hypothesis,
+    /// captured from the `AskNoumView` hypothesis acknowledgement chip
+    /// row that surfaces after the coach's reply to an
+    /// `interventionReviewOpener`. Optional for backward compat: memories
+    /// persisted before round 26 decode without this key.
+    var hypothesisAcknowledgement: CoachHypothesisAcknowledgement?
+
     // Adaptation history — the bounded record of explained course-changes
     // (the "reason for changing course" the case formulation needs).
     // Optional for backward compat; memories persisted before the case file
@@ -392,6 +475,7 @@ struct CoachMemory: Codable, Equatable {
         planMode: PracticeMode? = nil,
         workingHypothesis: String? = nil,
         activeIntervention: CoachIntervention? = nil,
+        hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil,
         adaptationLog: [CoachCourseChange]? = nil,
         lastReflectionSummary: String? = nil,
         lastReflectionReview: CoachReflectionReview? = nil,
@@ -421,6 +505,7 @@ struct CoachMemory: Codable, Equatable {
         self.planMode = planMode
         self.workingHypothesis = workingHypothesis
         self.activeIntervention = activeIntervention
+        self.hypothesisAcknowledgement = hypothesisAcknowledgement
         self.adaptationLog = adaptationLog
         self.lastReflectionSummary = lastReflectionSummary
         self.lastReflectionReview = lastReflectionReview
@@ -441,6 +526,7 @@ struct CoachMemory: Codable, Equatable {
         case strengths, blockers, lastIntentLabel
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
+        case hypothesisAcknowledgement
         case adaptationLog
         case lastReflectionSummary, lastReflectionReview, lastTransferReview
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
@@ -469,6 +555,7 @@ struct CoachMemory: Codable, Equatable {
         planMode = try c.decodeIfPresent(PracticeMode.self, forKey: .planMode)
         workingHypothesis = try c.decodeIfPresent(String.self, forKey: .workingHypothesis)
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
+        hypothesisAcknowledgement = try c.decodeIfPresent(CoachHypothesisAcknowledgement.self, forKey: .hypothesisAcknowledgement)
         adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
         lastReflectionSummary = try c.decodeIfPresent(String.self, forKey: .lastReflectionSummary)
         lastReflectionReview = try c.decodeIfPresent(CoachReflectionReview.self, forKey: .lastReflectionReview)
@@ -596,6 +683,14 @@ enum CoachMemoryEngine {
             )
         )
         memory.adaptationLog = adaptationLog.isEmpty ? nil : adaptationLog
+        // Carry the previous hypothesis acknowledgement forward only when
+        // the freshly-built `workingHypothesis` matches the one the user
+        // was acknowledging — same case-spine contract `successCriterion`
+        // uses. A hypothesis rewrite means the ack is stale and must be
+        // re-requested next time the user lands on a case-review reply.
+        memory.hypothesisAcknowledgement = previous?.hypothesisAcknowledgement.flatMap { ack in
+            ack.appliesTo(currentHypothesis: memory.workingHypothesis) ? ack : nil
+        }
         memory.lastReflectionSummary = latestReflection?.coachClause
             ?? previous?.lastReflectionSummary
         memory.lastReflectionReview = latestReflection.map(CoachReflectionReview.init)
@@ -1086,6 +1181,29 @@ final class CoachMemoryStore: ObservableObject {
         memory.lastReflectionSummary = reflection.coachClause
         memory.lastReflectionReview = CoachReflectionReview(reflection: reflection)
         memory.updatedAt = Date()
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Record the user's one-tap verdict on the working hypothesis from
+    /// the `AskNoumView` acknowledgement chip row. Snapshots the current
+    /// `workingHypothesis` so a later rebuild that rewrites the read can
+    /// detect drift and re-prompt. No-op when no current memory exists or
+    /// no `workingHypothesis` is set (defensive — the chip row never
+    /// renders without a current hypothesis, but the store still guards).
+    func noteHypothesisAcknowledgement(
+        _ confidence: CoachHypothesisConfidence,
+        at now: Date = Date()
+    ) {
+        guard var memory = currentMemory,
+              let hypothesis = memory.workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return }
+        memory.hypothesisAcknowledgement = CoachHypothesisAcknowledgement(
+            confidence: confidence,
+            hypothesisSnapshot: hypothesis,
+            acknowledgedAt: now
+        )
+        memory.updatedAt = now
         currentMemory = memory
         persist(memory)
     }
