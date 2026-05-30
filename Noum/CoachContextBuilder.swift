@@ -743,6 +743,58 @@ enum CoachContextBuilder {
         return "\(lead) \(ask)"
     }
 
+    // MARK: - Intervention-review opener
+    //
+    // Seed message for the post-rep "Review with coach" prompt
+    // (`InterventionReviewPromptCard`). Surfaced when the active
+    // `CoachIntervention.isReviewDue(at:)` predicate returns true —
+    // i.e. the user has logged at least `minimumFollowedRepsForReview`
+    // followed reps AND the `reviewDueAt` cadence has elapsed.
+    //
+    // Shape mirrors `sessionOpener` exactly so the AskNoumView render
+    // logic stays uniform: short fact-lead + voice-shaped ask. The
+    // lead names the case (mode + focus + followed-rep depth) so the
+    // coach reply has the verdict scaffolding already in scope; the
+    // ask gives the voice-aligned question the user wants answered.
+    //
+    // Brand-voice rules: no exclamation, no "Let's", no urgency
+    // framing. The coach is a professional revisiting a plan, not a
+    // notification pinging the user.
+
+    /// Seed opener for the post-rep intervention-review prompt. The
+    /// `intervention.focus` (or `title` fallback) names the case; the
+    /// followed-rep depth gives the model the evidence basis; the
+    /// voice mapping shapes the question the user wants to ask.
+    static func interventionReviewOpener(
+        intervention: CoachIntervention,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        let modeLabel = intervention.mode.displayLabel
+        let focus = (intervention.focus?.isEmpty == false ? intervention.focus : intervention.title)
+            ?? intervention.title
+        let focusLower = focus.lowercased()
+        let repNoun = intervention.followedRepCount == 1 ? "rep" : "reps"
+        let lead = "Time to review the active case: \(modeLabel) for \(focusLower), \(intervention.followedRepCount) followed \(repNoun) in."
+        let ask: String
+        switch voice {
+        case .authoritative:
+            ask = "Is this still the right intervention, or do we adapt?"
+        case .warm:
+            ask = "Is this still feeling like the right work?"
+        case .concise:
+            ask = "Keep, adapt, or replace?"
+        case .persuasive:
+            ask = "Make the case — keep going or change tack?"
+        case .executive:
+            ask = "Verdict: continue, adapt, or replace?"
+        case .storytelling:
+            ask = "Where does this arc go next?"
+        case .none:
+            ask = "Should we keep going, adapt, or change tack?"
+        }
+        return "\(lead) \(ask)"
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the

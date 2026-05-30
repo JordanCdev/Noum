@@ -1,39 +1,46 @@
-# HANDOFF — M24 deferred slate (round 23): `CoachReadCard` observes `PremiumManager` so the daily-budget hint refreshes the same body turn a Pro upgrade lands
+# HANDOFF — M24 deferred slate (round 24): post-rep intervention-review prompt — `SummaryView` surfaces `InterventionReviewPromptCard` when the active case-file intervention's `reviewDueAt` cadence has elapsed AND the followed-rep evidence floor is met
 
 ## Scope
 
-Round 22 (the prior HANDOFF) closed the round-21 "Future move" #3 —
-made `AIRateLimiter` an `ObservableObject` so the Settings AI-usage
-card and the `CoachReadCard` daily-budget hint refresh mid-view as the
-budget is consumed elsewhere. The round-22 HANDOFF added two new
-deferred items to the future-moves list. Round 23 closes one of them:
+Rounds 22 and 23 closed two read-side honesty holes on the post-rep
+`CoachReadCard` (the rate-limiter publication + the `PremiumManager`
+observation for the daily-budget hint). Round 24 picks up the
+highest-impact next-step listed in the 2026-05-29 case-intervention
+HANDOFF:
 
-> **#6 NEW — observe `PremiumManager` in `CoachReadCard` if
-> real-device usage shows mid-summary upgrades.** The round-22
-> doc-comment explicitly skipped this on cost-of-observation grounds
-> (summary card is short-lived, paywall is full-screen, re-mount
-> handles it). Worth a real-device check — if a paywall sheet on top
-> of the summary triggers a Pro upgrade WITHOUT dismissing the
-> summary underneath, the hint stays stale until the user navigates
-> away. Cheap fix if needed: one more `@StateObject` line. No code
-> change this round.
+> 1. `Noum/SummaryView.swift` — add a concise intervention-review
+>    prompt when `CoachIntervention.reviewDueAt` is due and minimum
+>    followed reps are met.
 
-The evidence the round-22 deferral asked for came from code reading,
-not a simulator: `SummaryView.swift` line 795 confirms the paywall
-entry from the summary surface is `.sheet(isPresented: $showPaywall)
-{ PaywallView() }` — a sheet, not a navigation push. When the sheet
-dismisses after a successful purchase, the underlying CoachReadCard
-stays mounted. Without round 23's explicit observation, the daily-
-budget hint would keep reading the pre-upgrade cap (12 against the
-same used count) and continue rendering "1 AI coach note remaining
-today" even though the new cap (40) puts the user back at 30
-remaining.
+The case-file infrastructure already records every field this
+prompt needs: `reviewDueAt`, `followedRepCount`,
+`minimumFollowedRepsForReview`, `focus`, `title`, `mode`. Until
+round 24, those fields fed only the AI context block in
+`CoachContextBuilder.interventionCycleLines(...)` — the user
+themselves never saw a prompt to revisit the intervention at the
+moment the cadence elapsed. The coach silently re-prescribed past
+the agreed review date.
 
-The fix is the one-line `@StateObject` the round-22 future-moves
-list pre-committed to. Round 23 also extracts the threshold
-predicate into a static pure function so the tier-change contract
-can be locked by tests without standing up a real `AIRateLimiter` +
-`PremiumManager`.
+That breaks the coaching contract docs/VISION.md names directly:
+
+> **Coach-parity stage #4 (Adaptation).** Compare response across
+> multiple attempts and either reinforce, vary, or replace the
+> intervention with an explained rationale.
+
+Round 24 closes that gap with the minimum amount of plumbing:
+
+- A pure predicate on `CoachIntervention` so the eligibility math
+  is one home + locked by tests.
+- A new `InterventionReviewPromptCard` SwiftUI surface with pure
+  copy helpers so the headline and body strings are
+  tested-against-string, not against-screenshot.
+- A new `CoachContextBuilder.interventionReviewOpener(...)` seed
+  for the Ask Noum deep-link, voice-mapped on the same
+  SpeakingStyleGoal axis as the existing `sessionOpener`.
+- Two conditional inserts into `SummaryView` (IM path + standard
+  path), placed right before the existing `TalkToNoumCTACard` so
+  the review prompt reads as the coach's specific check-in
+  preceding the general "Talk to Noum" CTA.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -42,255 +49,305 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- The honest gap from round 22 ("a Pro upgrade landing through the
-  paywall sheet leaves the hint stale until navigation") was the
-  smallest remaining mechanical hole on the surfaces the coach
-  voice owns. Round 23 closes it with the minimum amount of
-  plumbing — one `@StateObject`, one doc-comment swap, one
-  predicate extraction — and adds 12 tests locking the threshold-
-  crossing math so a future agent tweaking the 0.75 ratio or
-  refactoring the predicate breaks the test rather than the UX.
-- The contract is narrow on purpose: observe `PremiumManager` so
-  the cap reads fresh in the same body turn; don't try to model
-  premium changes inside the limiter itself. The publication
-  contract on `AIRateLimiter` stays "publish on writes the limiter
-  performs"; tier changes are observed by views that care, the
-  same way `SettingsView` already observes `premium` for the
-  AI-usage card. One pattern, two surfaces, no spooky action at a
-  distance.
-- The redesign-branch invariant: this is a `Redesign`-branch push
-  per the user brief. The branch the agent runs on
-  (`claude/adoring-dijkstra-ksBsS`) is merged forward into
-  `Redesign` so the round-23 work lands on `Redesign` directly. No
-  fork in the lineage.
+- The honest gap from the 2026-05-29 case-intervention HANDOFF —
+  the user never sees the coach honour the review cadence the
+  case engine already records — was the highest-value unblocked
+  next step on the case-file lineage. Round 24 closes it with a
+  contained edit: one pure predicate, one new card, one opener
+  helper, two SummaryView conditionals, and 23 tests pinning the
+  threshold math + copy branches.
+- The contract is narrow on purpose: the predicate accepts a
+  `CoachIntervention` + `Date` and answers one yes/no; the card
+  reads a single `CoachIntervention` and renders one CTA; the
+  opener carries the case scaffolding (mode + focus + followed-
+  rep depth) into Ask Noum so the AI reply has the evidence
+  basis in scope. No new state owner, no new persisted field, no
+  cross-store coupling.
+- The redesign-branch invariant: this is a `Redesign`-branch
+  push per the user brief. The work lands directly on
+  `Redesign` so the round-by-round loop on the redesign lineage
+  is preserved.
 
 ## What shipped
 
-### Track 1 — `CoachReadCard` observes `PremiumManager` (`CoachReadCard.swift`)
+### Track 1 — `CoachIntervention.isReviewDue(at:)` pure predicate (`PrimaryFocusMemory.swift`)
 
-`Noum/CoachReadCard.swift`:
+`Noum/PrimaryFocusMemory.swift:241` — appended after the existing
+case-spine fields:
 
-- New `@StateObject private var premium = PremiumManager.shared`
-  declared right after the round-22 `rateLimiter` observer (line
-  ~63). The doc-comment names the contract: the paywall in
-  `SummaryView` is a `.sheet`, so the post-purchase CoachReadCard
-  stays mounted; explicit observation makes the body-recomputation
-  dependency self-contained so a future `Equatable` optimization
-  on the parent or a refactor that hoists CoachReadCard out of the
-  SummaryView subtree can't silently re-introduce the stale read.
-- The round-22 rationalization that said "Premium tier changes are
-  not observed here" is removed from the `rateLimiter` doc-comment
-  and replaced with the round-23 contract on a separate doc-comment
-  for the `premium` observer. The two contracts are now adjacent
-  in the source so a future agent can read the full read-side
-  honesty story in one place.
-- The `shouldShowDailyBudgetHint` doc-comment updated to name the
-  new cascade: "a mid-day Pro upgrade widens the budget and —
-  because this view observes `PremiumManager` — the threshold
-  recomputes the same body turn, hiding the hint the moment the
-  wider cap pulls the ratio back below the bar."
+- `func isReviewDue(at now: Date) -> Bool` — both gates must hold
+  (`followedRepCount >= minimumFollowedRepsForReview` AND
+  `reviewDueAt != nil && now >= reviewDueAt`). The doc-comment
+  names why both gates exist: the evidence threshold prevents an
+  early prompt on thin observed reps; the cadence threshold
+  prevents the coach silently overriding the review date.
+- Pure function of the intervention's own fields + `now`, so the
+  predicate can be locked by tests without standing up a real
+  `CoachMemoryStore`. Used by `SummaryView` to decide whether to
+  render `InterventionReviewPromptCard`.
 
-### Track 2 — Pure-function predicate (`CoachReadCard.swift`)
+### Track 2 — `InterventionReviewPromptCard` (`InterventionReviewPromptCard.swift`)
 
-- New `static func shouldShowDailyBudgetHint(noteIsAIBacked:cap:remaining:)`
-  carries the threshold math. The instance computed property now
-  routes through the static so the contract has one home and the
-  tests can pin the math directly.
-- Clamping added inside the static: `clampedRemaining = max(0,
-  min(cap, remaining))` so a transient state where the limiter and
-  the cap reader briefly disagree (e.g. mid-flight tier upgrade)
-  cannot invert the ratio and falsely trigger the hint. Defensive
-  but cheap; the existing instance property already returned false
-  on `cap > 0`, the new clamp closes the symmetric edge.
-- Doc-comment names the round-23 anchor explicitly: "at cap=12
-  with used=10 the ratio is ~0.83 (hint shown); after a Pro
-  upgrade widens cap to 40 the ratio is 0.25 (hint hidden) the
-  same body turn, never after re-mount."
+New file `Noum/InterventionReviewPromptCard.swift`:
 
-### Track 3 — `CoachReadCardDailyBudgetHintTests` (12 tests, `NoumTests/NoumTests.swift`)
+- Restrained card: purple eyebrow ("REVIEW DUE"), one-line
+  headline, one-paragraph body, one CTA ("Review with coach").
+  Mirrors `CoachReadCard`'s purple-stroke register so the user
+  reads it as a continuation of the same coach voice rather than
+  a separate system notification.
+- Two pure-function copy helpers — `headlineCopy(for:)` and
+  `bodyCopy(for:)` — so the strings can be locked by tests.
+  Headline names the focus (lower-cased per brand voice, falls
+  back to `title` when `focus` is nil or empty so the noun phrase
+  is never blank). Body names the followed-rep depth so the user
+  sees the basis of the prompt and frames the review question
+  ("keep going, adapt, or replace it?").
+- Brand-voice compliant: no exclamation, no "Let's", no urgency
+  framing, no "running out." The coach is a professional
+  revisiting a plan.
 
-A new `@MainActor struct CoachReadCardDailyBudgetHintTests`
-appended after `AIRateLimiterPublicationTests`. All tests call the
-pure static so they need no test seam — the predicate is a function
-of three Ints + one Bool, deterministic by construction.
+### Track 3 — `CoachContextBuilder.interventionReviewOpener(intervention:voice:)` (`CoachContextBuilder.swift`)
 
-- `hintIsHiddenWhenNoteIsRuleBased` — rule-based notes carry the
-  explicit `RULE-BASED` tag in the card header; the hint would be
-  a second voice saying the same thing.
-- `hintIsHiddenWhenBudgetIsHealthy` — below the 75%-used bar the
-  hint stays silent (cap=12, remaining=9, used=3 → ratio=0.25).
-- `hintAppearsExactlyAtThreshold` — the inclusive-comparison
-  contract (`>= 0.75`, not `> 0.75`). cap=12, remaining=3, used=9
-  → ratio=0.75 exactly, hint appears.
-- `hintIsShownWhenAtZeroRemaining` — cap-reached state. The card
-  has already soft-degraded to a rule-based note for the next rep.
-- `hintIsHiddenWhenCapIsZero` — defensive divide-by-zero guard.
-- `tierUpgradeCrossesBackBelowThreshold` — **the round-23 anchor**.
-  Same `used` count (10), cap goes 12 → 40 on a Pro upgrade.
-  Pre-upgrade ratio ~0.83 → hint shown; post-upgrade ratio 0.25 →
-  hint hidden.
-- `tierDowngradeCrossesAboveThreshold` — symmetric mirror of the
-  upgrade contract so a future refactor can't accidentally make
-  the predicate one-way-only.
-- `remainingOverCapClampsCleanly` — locks the round-23 clamp so
-  a `remaining > cap` value doesn't invert the ratio.
-- `thresholdMatchesDocumentedRatio` — pins the 0.75 constant
-  against the round-22 HANDOFF reference ("crossing the 75%-used
-  threshold mid-view") so a future tweak to a different number
-  surfaces as a documentation-update reminder.
-- `hintCopyAtZeroNamesTomorrowsResume` / `hintCopyAtOneIsSingular`
-  / `hintCopyAtMoreIsPlural` / `hintCopyNegativeClampsToZeroBranch`
-  — pin the four copy branches of `dailyBudgetHintCopy(remaining:)`,
-  including the negative-remaining defensive clamp.
+`Noum/CoachContextBuilder.swift:746` — added after `sessionOpener`:
+
+- Shape mirrors `sessionOpener` exactly so the AskNoumView render
+  logic stays uniform: short fact-lead + voice-shaped ask.
+- Lead: `"Time to review the active case: <mode> for <focus>, <N>
+  followed rep(s) in."` — carries the case scaffolding so the AI
+  reply has the verdict scaffolding already in scope.
+- Voice-shaped ask: maps each `SpeakingStyleGoal` to a single
+  question the user wants to ask. `.authoritative` →
+  `"Is this still the right intervention, or do we adapt?"`,
+  `.warm` → `"Is this still feeling like the right work?"`,
+  `.concise` → `"Keep, adapt, or replace?"`, etc. Falls back to a
+  neutral ask when `voice == nil`.
+
+### Track 4 — `SummaryView` wiring (`SummaryView.swift`)
+
+`Noum/SummaryView.swift`:
+
+- Two new computed helpers right after `sessionAnchoredOpener`:
+  - `activeReviewDueIntervention: CoachIntervention?` — reads
+    `coachMemoryStore.currentMemory`, returns the active
+    intervention iff `isReviewDue(at: Date())` is true.
+  - `interventionReviewOpener(for:)` — thin wrapper that routes
+    through `CoachContextBuilder.interventionReviewOpener` so the
+    voice mapping contract lives next to the existing
+    `sessionOpener` voice mapping (one home for both).
+- Two conditional inserts in the view hierarchy, both placed
+  right before the existing `TalkToNoumCTACard`:
+  - **IM path** (after `BaselineComparisonCard`, line ~632) —
+    the IM summary's coaching-first card stack continues into
+    the case-review prompt before the general Ask Noum CTA.
+  - **Standard path** (after `SessionReflectionInlineCard`, line
+    ~741) — the user's own reflection captures the felt
+    experience for THIS rep; the review prompt then asks the
+    user about the active intervention with that fresh
+    reflection in mind; the general Ask Noum CTA closes.
+- Both call sites pass the same closure: `onReview: {
+  onAskNoumAboutRep?(interventionReviewOpener(for:
+  reviewIntervention)) }` — reusing the existing Ask Noum bridge
+  the round-19 onward summary surfaces already use. No new
+  navigation plumbing.
+
+### Track 5 — `InterventionReviewPromptTests` (23 tests, `NoumTests/NoumTests.swift`)
+
+A new `@MainActor struct InterventionReviewPromptTests` appended
+after `CoachReadCardDailyBudgetHintTests`. All tests call pure
+functions on small value types — no `CoachMemoryStore` or
+`AskNoumStore` is stood up. The helper `makeIntervention(...)`
+fixture builds a baseline `CoachIntervention` where every
+predicate gate is in the negative state by default, and each test
+mutates only the field it asserts against.
+
+**Predicate guards (3):**
+- `reviewIsNotDueWhenReviewDueAtIsNil` — nil cadence stamp
+- `reviewIsNotDueWhenFollowedRepsBelowMinimum` — thin evidence
+- `reviewIsNotDueWhenDueDateInFuture` — cadence not yet elapsed
+
+**Predicate happy path + boundaries (3):**
+- `reviewIsDueWhenDueDateInPast` — happy path
+- `reviewIsDueWhenDueDateExactlyNow` — inclusive `>=` on the
+  cadence axis (round-23-style boundary anchor for date)
+- `reviewIsDueWhenFollowedRepsExactlyAtMinimum` — inclusive `>=`
+  on the evidence axis
+
+**Predicate symmetric mirror (1):**
+- `reviewIsNotDueWhenFollowedRepsOneShortAndCadenceElapsed` —
+  evidence floor wins over an elapsed cadence
+
+**Headline copy branches (3):**
+- `headlineCopyNamesFocus` — lower-cased focus mid-sentence
+- `headlineCopyFallsBackToTitleWhenFocusIsNil` — defensive
+- `headlineCopyFallsBackToTitleWhenFocusIsEmpty` — empty-string edge
+
+**Body copy branches (3):**
+- `bodyCopyUsesSingularRepNoun` — N=1 singular
+- `bodyCopyUsesPluralRepNoun` — N=4 plural
+- `bodyCopyUsesPluralForZeroReps` — defensive 0-rep branch
+
+**Opener lead (3):**
+- `openerLeadNamesModeFocusAndDepth` — mode + focus + N reps in
+- `openerLeadUsesSingularRepNoun` — N=1 singular
+- `openerLeadFallsBackToTitleWhenFocusIsNil` — defensive
+
+**Opener voice mapping (7):**
+- `openerAskByVoiceAuthoritative`
+- `openerAskByVoiceWarm`
+- `openerAskByVoiceConcise`
+- `openerAskByVoicePersuasive`
+- `openerAskByVoiceExecutive`
+- `openerAskByVoiceStorytelling`
+- `openerAskWhenVoiceIsNil`
 
 ### Vision alignment
 
-- **Pillar #4 (Believable progress).** The daily-budget hint is
-  part of the user's honesty-contract surface — it tells the user
-  WHY the AI-polish layer might step aside today. A user who
-  upgrades to Pro mid-summary expecting more headroom and then
-  sees the same "1 AI coach note remaining today" caption is the
-  exact credibility hole the round-22 doc-comment named ("is this
-  broken or is the AI just off?") but rationalized away. Round 23
-  closes it.
-- **Pillar #5 (Personalized coaching).** A real human coach
-  doesn't say "I have 8 hours of work in me today" right after
-  the user buys them a whole new shift. The rate-limiter is the
-  closest the in-app coach has to a "today's energy budget" — it
-  has to read live across tier changes too.
 - **Coach-parity stage #4 (Adaptation).** Per `docs/VISION.md`:
-  "Every recommendation must have evidence, purpose, an
-  observable target, and an honest evidence threshold for
-  changing the plan." The daily-budget hint IS the honest
-  threshold the coach voice exposes for why it's reading rule-
-  based today. The threshold-crossing must refresh the hint as
-  the threshold is actually crossed in either direction — used-
-  count moving (round 22) or cap moving (round 23).
-- **Anti-goal alignment (no "hearts-and-lives gating").** Round 23
-  preserves the soft-degrade promise: the user always gets a
-  coach note. Observing the limiter and the premium tier is a
-  read-side honesty improvement, not a new way to gate practice.
+  "compare response across multiple attempts and either
+  reinforce, vary, or replace the intervention with an
+  explained rationale." Until round 24, the case file recorded
+  the review cadence but the user never saw the coach honour it.
+  The prompt now lands the same body turn the cadence elapses
+  AND the evidence floor is met.
+- **Pillar #5 (Personalized coaching).** A real coach revisits
+  the prescribed plan at the cadence they agreed. Silently re-
+  prescribing the same drill past the agreed review date breaks
+  the coaching contract.
+- **Pillar #4 (Believable progress).** The prompt is a credibility
+  receipt: the user sees the coach honour the review cadence on
+  schedule. That earns the right to keep prescribing.
+- **Anti-goal alignment (no "hearts-and-lives gating").** The
+  prompt never blocks practice; the user can ignore it and keep
+  repping. The only action is the deep-link to Ask Noum.
 
 ### Branch + redesign-alignment notes
 
-- All three edits land on `Redesign`, the redesign-lineage branch
+- All five edits land on `Redesign`, the redesign-lineage branch
   the rolling M24 deferred-slate work has been shipping on since
   round 11. The user brief explicitly calls this out: "ensure
   working on the redesign branch too (very important)." This
-  round preserves the round-by-round loop on the redesign lineage.
-  The draft PR tracking the redesign work into `main` picks up
-  this round's changes automatically.
-- The branch the agent runs on (`claude/adoring-dijkstra-ksBsS`)
-  is merged forward into `Redesign` so the round-23 work lands on
-  `Redesign` directly. No fork in the lineage.
+  round preserves the round-by-round loop on the redesign
+  lineage.
+- The work also unblocks step #2 from the 2026-05-29 HANDOFF
+  ("Ask Noum 'review this case' starter") — the AskNoumView
+  already consumes `onAskNoumAboutRep` openers via the
+  `AskNoumStore.injectUserTurn` bridge wired in
+  `SummaryView.init`, so the round-24 opener flows through that
+  pipe without an AskNoumView change. A future round can add a
+  voice-shaped starter chip on AskNoumView's empty state for
+  users who reach the chat without coming through the summary.
 
 ## Future moves
 
-(Updated priority list — round-22 "Future move" #6 closed this round;
-the rest roll forward.)
+(Updated priority list — the 2026-05-29 HANDOFF's step #1 closed
+this round; the rest roll forward, joined by the round-23 list.)
 
-1. **Peer Sudden Death scores via `FriendsManager`.** Still blocked
+1. **Empty-state "Review this case" starter chip on `AskNoumView`.**
+   Carry forward from the 2026-05-29 HANDOFF (step #2). The round-
+   24 opener already routes correctly through the AskNoum bridge;
+   the chip would let a user who opens Ask Noum directly (not
+   from summary) start the same case-review conversation.
+2. **Record user confirmation / rejection of the working
+   hypothesis.** Carry forward from the 2026-05-29 HANDOFF
+   (step #3). The post-review reply from the coach should be
+   followed by a single-tap acknowledgement that updates
+   `CoachMemory.workingHypothesis` confidence. Requires a
+   PrimaryFocusMemory addition + a small Ask Noum response chip
+   surface — bigger lift than round 24, but the natural follow-on.
+3. **Peer Sudden Death scores via `FriendsManager`.** Still blocked
    on `PublicProfileSnapshot` schema work.
-2. **`coachNoteRevealed` cleanup.** Still risky — animation chain
-   interleaving with celebration timing. Worth a dedicated refactor
-   pass with proper visual QA (and a real device).
-3. **Visual polish pass on the round-19 launch CTA.** Carried forward
-   from rounds 19–22. Pure visual work, not destination logic — the
-   router stays the single source of truth either way.
-4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–22. The current capsule is the minimum-
-   viable shape: IM-tinted, quiet, in register with the existing
-   "Toward your <voice>" chip. A real-device read may want the
-   capsule to grow into a full-width strip across the score ring,
-   or stay a chip but gain a one-shot pulse animation on first
-   render. Pure visual work, not crossing logic — the round-21
-   helper stays the single source of truth either way.
-5. **Extend the crossing helper to the chat-coach context line.**
-   Carried forward from round 21 as a note for the record (not an
-   action item): `CoachContextBuilder.toneDrillResolvedLines(for:)`
-   currently calls the cross-scenario read; if a future chat-coach
-   surface ever wants to read only "fresh crossings from this
-   session," the helper is there to route through.
-6. **Day-rollover refresh for long-mounted observers.** Carried
+4. **`coachNoteRevealed` cleanup.** Still risky — animation chain
+   interleaving with celebration timing. Worth a dedicated
+   refactor pass with proper visual QA (and a real device).
+5. **Visual polish pass on the round-19 launch CTA.** Carried
+   forward from rounds 19–23. Pure visual work, not destination
+   logic — the router stays the single source of truth either way.
+6. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
+   forward from rounds 20–23. Pure visual work, not crossing logic.
+7. **Extend the crossing helper to the chat-coach context line.**
+   Carried forward from round 21 as a note for the record (not
+   an action item).
+8. **Day-rollover refresh for long-mounted observers.** Carried
    forward from round 22. The `AIRateLimiter` publication only
    fires on writes. A user who pins Settings open across midnight
    would still see yesterday's counters until the next consume
-   bumps the token. The `dayKey(for:)` rollover doesn't auto-
-   publish. Real-world relevance is low (nobody actually leaves
-   Settings open across midnight), but worth a note. A future
-   round could subscribe to
-   `UIApplication.significantTimeChangeNotification` and bump the
-   token from there, or add a `.task(id: Calendar.current.dayKey)`
-   to the observing views. Premature optimization without real-
-   device evidence; no code change this round.
-7. **NEW — extend tier-change observation symmetry to other surfaces
-   that read `AIRateLimiter.currentCap()` directly.** Round 23 makes
-   `CoachReadCard` self-contained on tier changes; the
-   `SettingsView.aiUsageCard` already covers itself via its own
-   `@StateObject premium`. Any future surface that adds a third
-   read site for `currentCap()` should default to either observing
-   `PremiumManager` directly OR be a child of a view that does, so
-   the same body-turn refresh is preserved. No code change this
-   round — this is a note for the next agent so the pattern doesn't
-   drift.
+   bumps the token. A future round could subscribe to
+   `Notification.Name.NSCalendarDayChanged` and bump the token
+   from there.
+9. **Tier-change observation symmetry to other surfaces that read
+   `AIRateLimiter.currentCap()` directly.** Carried forward from
+   round 23 as a note for the record.
 
 ## Build-host limitation (honest note for the next agent)
 
-This environment has **no Xcode and no Swift toolchain**, so nothing
-in this round was compiled or run — not the app, not the test suite.
-The changes are a one-line `@StateObject` addition + a pure-function
-predicate extraction + 12 tests on the predicate's algebra:
+This environment has **no Xcode and no Swift toolchain**, so
+nothing in this round was compiled or run — not the app, not the
+test suite. The changes are:
 
-- `CoachReadCard` already imports `SwiftUI` (the existing
-  `@StateObject` declarations on `BaselineStore.shared`,
-  `RatingStore.shared`, etc., confirm the import is in scope).
-  Adding `@StateObject private var premium = PremiumManager.shared`
-  follows the exact same pattern — `PremiumManager` is already
-  `final class PremiumManager: ObservableObject` with
-  `@Published private(set) var isPremium: Bool` (verified by grep
-  on `Noum/PremiumManager.swift`).
-- The pure static `shouldShowDailyBudgetHint(noteIsAIBacked:cap:remaining:)`
-  is a refactor of the existing instance-property body with one
-  defensive clamp added (`max(0, min(cap, remaining))`). The
-  instance property now delegates to the static so the
-  call-site behavior is byte-identical for the happy path and
-  strictly more defensive on the over-cap edge.
-- The 12 `CoachReadCardDailyBudgetHintTests` mirror the
-  `AIRateLimiterPublicationTests` pattern: same `@MainActor
-  struct`, same `@Test` annotations, no test seam needed (the
-  predicate is pure). They lock the threshold math, the inclusive-
-  comparison contract, the clamp, the tier-change anchors in both
-  directions, and the four copy branches.
+- A pure predicate addition on an existing `Codable, Equatable`
+  struct (`CoachIntervention.isReviewDue(at:)`) — six lines, two
+  guards, one `>=` comparison. No new fields, no codable changes.
+- A new SwiftUI view file (`InterventionReviewPromptCard.swift`)
+  that uses only design tokens already in scope: `Typography.*`,
+  `AppColor.pro`, `AppColor.cardBackground`, `AppColor.textPrimary`,
+  `AppColor.textSecondary`, `CornerRadius.medium`, and the
+  `.pressable` button style — every one referenced in nearby
+  cards (`CoachReadCard.swift` uses the same set).
+- A new pure static func on `CoachContextBuilder` next to the
+  existing `sessionOpener` — same SpeakingStyleGoal exhaustive
+  switch pattern, so the compiler enforces all six cases plus
+  the optional nil.
+- Two computed helpers + two conditional inserts in
+  `SummaryView` — both inserts use the same `if let
+  reviewIntervention = activeReviewDueIntervention` pattern as
+  other conditional cards in the same view (the prior
+  `if let details = imConversationDetails` is the immediate
+  neighbour for the IM insert).
+- 23 new tests on three pure functions plus one pure-pure copy
+  helper. They mirror the round-23
+  `CoachReadCardDailyBudgetHintTests` shape (same
+  `@MainActor struct`, same `@Test` annotations, no test seam
+  needed).
+- The `Noum.xcodeproj` uses Xcode 16
+  `fileSystemSynchronizedGroups` for the `Noum/` folder
+  (verified via `grep fileSystemSynchronizedGroups
+  Noum.xcodeproj/project.pbxproj`), so the new
+  `InterventionReviewPromptCard.swift` is auto-included in the
+  target without a pbxproj edit.
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter CoachReadCardDailyBudgetHintTests` — the 12
+1. `swift test --filter InterventionReviewPromptTests` — the 23
    new tests should all pass.
-2. `swift test --filter AIRateLimiterPublicationTests` — the round-22
-   tests should still pass (no changes to `AIRateLimiter` this round).
-3. `swift test --filter PostRepCoachNoteStoreTests` — the sibling
-   ObservableObject-style tests should still pass.
+2. `swift test --filter CoachReadCardDailyBudgetHintTests` — the
+   round-23 tests should still pass.
+3. `swift test --filter AIRateLimiterPublicationTests` — the
+   round-22 tests should still pass.
 4. `swift test --filter IMToneDrillCrossingTests` — the round-21
    helper tests should still pass.
 5. `swift test --filter HeroScoreCardToneDrillRibbonContractTests`
    — the round-20 ribbon-contract tests should still pass.
 6. `swift test --filter LookingAheadCardStartCTAContractTests` —
    the round-19 launch-CTA tests should still pass.
-7. Boot the app on simulator, finish a rep so the AI-backed coach
-   note + the daily-budget hint render (e.g. by repping 9 times so
-   3 remaining out of 12), then tap the Pro CTA inside the AI-usage
-   card OR the inline "Pro" entry on the summary to open the
-   paywall sheet. Use the simulator's StoreKit configuration to
-   complete a sandbox purchase. Confirm:
-   - The paywall sheet dismisses cleanly.
-   - The CoachReadCard underneath has NOT been re-mounted (the
-     deep-analysis reveal state, if expanded, is preserved).
-   - The daily-budget hint either disappears (if the new ratio
-     drops below 0.75 — at cap=40 with used=9 the ratio is 0.225
-     so it should) or refreshes its number (if the new ratio is
-     still above 0.75).
-   - Equivalent flow on subscription lapse if possible to
-     simulate — confirms the downgrade direction also refreshes.
-   - Sign-out → sign-back-in with the same account: the hint
-     reads honestly against the persisted counter at the active
-     tier.
+7. Boot the app on simulator, seed a `CoachMemory.activeIntervention`
+   where `followedRepCount == minimumFollowedRepsForReview` and
+   `reviewDueAt` is a date in the past (the case-file engine
+   stamps these naturally after a few followed reps on a
+   recommendation), then finish a rep to land on SummaryView.
+   Confirm:
+   - `InterventionReviewPromptCard` renders between the
+     `SessionReflectionInlineCard` and `TalkToNoumCTACard`
+     (standard path) or between `BaselineComparisonCard` and
+     `TalkToNoumCTACard` (IM path).
+   - Headline names the active focus, lower-cased.
+   - Body names the followed-rep count with correct singular /
+     plural noun.
+   - Tap "Review with coach" → Ask Noum opens with the
+     case-anchored opener already in the thread, the model
+     reply lands.
+   - With `voice == .authoritative` set in coaching profile,
+     the opener ends with "Is this still the right intervention,
+     or do we adapt?"; with `.warm`, "Is this still feeling like
+     the right work?"; etc.
+   - When `followedRepCount` is one short OR `reviewDueAt` is
+     in the future, the card does NOT render.

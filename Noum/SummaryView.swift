@@ -629,6 +629,14 @@ struct SummaryView: View {
                                 rating: ratingStore.rating,
                                 pressureLevel: recentSessions.first?.pressureLevel ?? .standard
                             )
+                            if let reviewIntervention = activeReviewDueIntervention {
+                                InterventionReviewPromptCard(
+                                    intervention: reviewIntervention,
+                                    onReview: {
+                                        onAskNoumAboutRep?(interventionReviewOpener(for: reviewIntervention))
+                                    }
+                                )
+                            }
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
@@ -730,6 +738,14 @@ struct SummaryView: View {
                             SessionReflectionInlineCard(
                                 sessionID: sessionStore.sessions.first?.id
                             )
+                            if let reviewIntervention = activeReviewDueIntervention {
+                                InterventionReviewPromptCard(
+                                    intervention: reviewIntervention,
+                                    onReview: {
+                                        onAskNoumAboutRep?(interventionReviewOpener(for: reviewIntervention))
+                                    }
+                                )
+                            }
                             TalkToNoumCTACard(
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
@@ -1947,6 +1963,34 @@ struct SummaryView: View {
             score: isSuddenDeathSummary ? nil : score,
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
+            voice: coachingProfileStore.profile?.speakingStyleGoal
+        )
+    }
+
+    // MARK: - Intervention-review prompt
+    //
+    // Returns the active case-file intervention when the review
+    // cadence has elapsed AND the followed-rep evidence threshold is
+    // met. Both gates are inside `CoachIntervention.isReviewDue(at:)`
+    // — this surface stays a thin reader so a future tweak to the
+    // predicate (e.g. an additional confidence floor) lands in one
+    // place. Returns nil when there is no memory, no active
+    // intervention, or the predicate falls.
+
+    private var activeReviewDueIntervention: CoachIntervention? {
+        guard let memory = coachMemoryStore.currentMemory,
+              let intervention = memory.activeIntervention,
+              intervention.isReviewDue(at: Date()) else { return nil }
+        return intervention
+    }
+
+    /// Build the case-anchored opener for the review CTA. Routes
+    /// through `CoachContextBuilder.interventionReviewOpener` so the
+    /// voice-mapping contract lives next to the existing
+    /// `sessionOpener` voice mapping — one home for both.
+    private func interventionReviewOpener(for intervention: CoachIntervention) -> String {
+        CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
             voice: coachingProfileStore.profile?.speakingStyleGoal
         )
     }

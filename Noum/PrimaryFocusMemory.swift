@@ -238,6 +238,23 @@ struct CoachIntervention: Codable, Equatable {
     var successCriterion: CoachSuccessCriterion? = nil
     var criterionStatus: CoachCriterionStatus? = nil
     var reviewDueAt: Date? = nil
+
+    /// Has the user accumulated enough followed reps AND has the
+    /// review-due date passed? Both conditions must hold so the
+    /// post-rep summary never surfaces a review prompt before the
+    /// case has enough observed evidence for the coach to review
+    /// honestly — and never holds the prompt past the agreed-upon
+    /// cadence once the threshold is met.
+    ///
+    /// Pure function of the intervention's own fields + `now`, so the
+    /// predicate can be locked by tests without standing up a real
+    /// `CoachMemoryStore`. Used by `SummaryView` to decide whether to
+    /// render `InterventionReviewPromptCard`.
+    func isReviewDue(at now: Date) -> Bool {
+        guard followedRepCount >= minimumFollowedRepsForReview else { return false }
+        guard let due = reviewDueAt else { return false }
+        return now >= due
+    }
 }
 
 struct CoachMemory: Codable, Equatable {

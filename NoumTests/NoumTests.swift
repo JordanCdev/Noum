@@ -18939,3 +18939,349 @@ struct CoachReadCardDailyBudgetHintTests {
         )
     }
 }
+
+// MARK: - M24 deferred slate round 24 — intervention-review prompt
+//
+// Rounds 22 + 23 closed two read-side honesty holes on
+// `CoachReadCard`. Round 24 picks up the highest-impact next-step
+// from the 2026-05-29 case-intervention HANDOFF: post-rep
+// intervention review.
+//
+// The case-file infrastructure already records `reviewDueAt`,
+// `followedRepCount`, and `minimumFollowedRepsForReview` on the
+// active `CoachIntervention`. Until round 24, those fields fed only
+// the AI context block in `CoachContextBuilder.interventionCycleLines`
+// — the user themselves never saw a prompt to revisit the
+// intervention at the moment the cadence elapsed. Vision pillar #5
+// (Personalized coaching) and coach-parity stage #4 (Adaptation)
+// both call this out: "compare response across multiple attempts
+// and either reinforce, vary, or replace the intervention with an
+// explained rationale."
+//
+// Round 24:
+//   • `CoachIntervention.isReviewDue(at:)` — pure predicate; both
+//     gates (followed-rep threshold AND reviewDueAt elapsed) must
+//     hold so an early prompt never lands on thin evidence and a
+//     late prompt never holds past the agreed cadence.
+//   • `InterventionReviewPromptCard` — restrained Summary card,
+//     pure-function copy helpers so the strings can be locked.
+//   • `CoachContextBuilder.interventionReviewOpener(...)` — seed
+//     opener for the "Review with coach" CTA, voice-mapped on the
+//     same SpeakingStyleGoal axis as `sessionOpener`.
+//
+// These tests lock the predicate's three boundary conditions,
+// the headline / body copy branches, and the per-voice opener
+// shapes. All three layers are pure functions of small value
+// types so no `CoachMemoryStore` or `AskNoumStore` is required.
+
+@MainActor
+struct InterventionReviewPromptTests {
+
+    // MARK: - Helpers
+
+    /// Build a baseline intervention the tests can mutate field-by-
+    /// field. Default values are tuned so `isReviewDue(at:)` returns
+    /// false out of the box (no `reviewDueAt`, followed reps below
+    /// threshold) — every test explicitly sets the field it's
+    /// asserting against.
+    private func makeIntervention(
+        focus: String? = "filler reduction",
+        title: String = "Filler reduction drill",
+        followedRepCount: Int = 0,
+        minimumFollowedRepsForReview: Int = 3,
+        reviewDueAt: Date? = nil
+    ) -> CoachIntervention {
+        CoachIntervention(
+            title: title,
+            focus: focus,
+            target: "Cut fillers per minute below 4.",
+            mode: .timed,
+            prescribedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            lastObservedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            followedRepCount: followedRepCount,
+            minimumFollowedRepsForReview: minimumFollowedRepsForReview,
+            reviewStatus: .formingEvidence,
+            reviewBasis: "Evidence is forming across followed reps.",
+            successCriterion: nil,
+            criterionStatus: nil,
+            reviewDueAt: reviewDueAt
+        )
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    // MARK: - Predicate guards
+
+    @Test func reviewIsNotDueWhenReviewDueAtIsNil() {
+        // The case file may carry an active intervention without a
+        // cadence stamp (early in the cycle, before the case engine
+        // chooses a review date). The predicate must return false so
+        // the prompt never surfaces without a coach-stamped cadence.
+        let intervention = makeIntervention(
+            followedRepCount: 5,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: nil
+        )
+        #expect(intervention.isReviewDue(at: now) == false)
+    }
+
+    @Test func reviewIsNotDueWhenFollowedRepsBelowMinimum() {
+        // Cadence elapsed, but evidence floor not yet met. A real
+        // coach doesn't ask "is this working?" two reps in — they
+        // wait for enough observed reps to have a basis. The
+        // predicate honours that.
+        let intervention = makeIntervention(
+            followedRepCount: 1,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: now.addingTimeInterval(-86_400)  // one day ago
+        )
+        #expect(intervention.isReviewDue(at: now) == false)
+    }
+
+    @Test func reviewIsNotDueWhenDueDateInFuture() {
+        // Evidence floor met, cadence not yet elapsed. The prompt
+        // must wait — surfacing it before the agreed review date
+        // would frame "we're checking in" as a coach-initiated
+        // override of the cadence.
+        let intervention = makeIntervention(
+            followedRepCount: 5,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: now.addingTimeInterval(86_400)  // one day from now
+        )
+        #expect(intervention.isReviewDue(at: now) == false)
+    }
+
+    // MARK: - Predicate happy path + boundaries
+
+    @Test func reviewIsDueWhenDueDateInPast() {
+        // Both gates met — happy path. The summary surfaces the
+        // prompt this rep.
+        let intervention = makeIntervention(
+            followedRepCount: 5,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: now.addingTimeInterval(-86_400)
+        )
+        #expect(intervention.isReviewDue(at: now) == true)
+    }
+
+    @Test func reviewIsDueWhenDueDateExactlyNow() {
+        // Boundary: the predicate uses `>=`, not `>`. The instant
+        // the cadence elapses, the prompt is eligible. Pins the
+        // inclusive-comparison contract so a future refactor
+        // flipping `>=` to `>` would surface as a test failure
+        // rather than as a quietly-late prompt the day after.
+        let intervention = makeIntervention(
+            followedRepCount: 5,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: now
+        )
+        #expect(intervention.isReviewDue(at: now) == true)
+    }
+
+    @Test func reviewIsDueWhenFollowedRepsExactlyAtMinimum() {
+        // Boundary: the predicate uses `>=`, not `>`. The instant
+        // the user lands their Nth followed rep — N being the
+        // configured minimum — the evidence threshold is met. A
+        // refactor that flips `>=` to `>` would silently delay the
+        // prompt by one rep.
+        let intervention = makeIntervention(
+            followedRepCount: 3,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: now.addingTimeInterval(-3600)
+        )
+        #expect(intervention.isReviewDue(at: now) == true)
+    }
+
+    @Test func reviewIsNotDueWhenFollowedRepsOneShortAndCadenceElapsed() {
+        // Symmetric mirror of the boundary test: one rep short,
+        // cadence elapsed → still not due. The evidence floor wins
+        // over an elapsed cadence; the prompt waits.
+        let intervention = makeIntervention(
+            followedRepCount: 2,
+            minimumFollowedRepsForReview: 3,
+            reviewDueAt: now.addingTimeInterval(-3600)
+        )
+        #expect(intervention.isReviewDue(at: now) == false)
+    }
+
+    // MARK: - Headline copy
+
+    @Test func headlineCopyNamesFocus() {
+        // The headline names the active focus so the user reads the
+        // subject of the review in one beat. Lower-cased per the
+        // brand voice (the focus is mid-sentence after a verb, not
+        // a proper noun).
+        let intervention = makeIntervention(focus: "Filler reduction", title: "Filler drill")
+        #expect(
+            InterventionReviewPromptCard.headlineCopy(for: intervention)
+                == "Time to check in on filler reduction."
+        )
+    }
+
+    @Test func headlineCopyFallsBackToTitleWhenFocusIsNil() {
+        // Defensive — early in the case cycle, an intervention may
+        // not yet have a focus phrase. The headline falls back to
+        // the title so the user never sees "Time to check in on ."
+        let intervention = makeIntervention(focus: nil, title: "Authority practice")
+        #expect(
+            InterventionReviewPromptCard.headlineCopy(for: intervention)
+                == "Time to check in on authority practice."
+        )
+    }
+
+    @Test func headlineCopyFallsBackToTitleWhenFocusIsEmpty() {
+        // Same fallback for the empty-string edge — case-engine
+        // refactors that write `""` instead of `nil` shouldn't
+        // produce an empty noun phrase.
+        let intervention = makeIntervention(focus: "", title: "Pace control")
+        #expect(
+            InterventionReviewPromptCard.headlineCopy(for: intervention)
+                == "Time to check in on pace control."
+        )
+    }
+
+    // MARK: - Body copy
+
+    @Test func bodyCopyUsesSingularRepNoun() {
+        let intervention = makeIntervention(followedRepCount: 1)
+        #expect(
+            InterventionReviewPromptCard.bodyCopy(for: intervention)
+                == "Your coach scheduled this review after 1 followed rep. One question: keep going, adapt, or replace it?"
+        )
+    }
+
+    @Test func bodyCopyUsesPluralRepNoun() {
+        let intervention = makeIntervention(followedRepCount: 4)
+        #expect(
+            InterventionReviewPromptCard.bodyCopy(for: intervention)
+                == "Your coach scheduled this review after 4 followed reps. One question: keep going, adapt, or replace it?"
+        )
+    }
+
+    @Test func bodyCopyUsesPluralForZeroReps() {
+        // Defensive — the predicate guarantees followedRepCount >=
+        // minimumFollowedRepsForReview before the card renders, but
+        // the pure copy helper still has to handle 0 cleanly. "0
+        // followed reps" is the right plural for English count
+        // nouns.
+        let intervention = makeIntervention(followedRepCount: 0)
+        #expect(
+            InterventionReviewPromptCard.bodyCopy(for: intervention)
+                == "Your coach scheduled this review after 0 followed reps. One question: keep going, adapt, or replace it?"
+        )
+    }
+
+    // MARK: - Opener lead
+
+    @Test func openerLeadNamesModeFocusAndDepth() {
+        // The lead is the half of the opener that doesn't depend on
+        // voice. It must carry mode + focus + followed-rep depth so
+        // the AI reply has the evidence scaffolding in scope.
+        let intervention = makeIntervention(
+            focus: "Filler reduction",
+            followedRepCount: 4
+        )
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: nil
+        )
+        #expect(opener.hasPrefix("Time to review the active case: Timed for filler reduction, 4 followed reps in."))
+    }
+
+    @Test func openerLeadUsesSingularRepNoun() {
+        // Singular boundary at 1 followed rep.
+        let intervention = makeIntervention(
+            focus: "Pace",
+            followedRepCount: 1
+        )
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: nil
+        )
+        #expect(opener.contains("1 followed rep in."))
+        #expect(!opener.contains("1 followed reps in."))
+    }
+
+    @Test func openerLeadFallsBackToTitleWhenFocusIsNil() {
+        // Defensive — same fallback the card headline carries. The
+        // opener must never read "for ," to the model.
+        let intervention = makeIntervention(
+            focus: nil,
+            title: "Authority practice",
+            followedRepCount: 3
+        )
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: nil
+        )
+        #expect(opener.contains("for authority practice,"))
+    }
+
+    // MARK: - Opener voice mapping
+
+    @Test func openerAskByVoiceAuthoritative() {
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .authoritative
+        )
+        #expect(opener.hasSuffix("Is this still the right intervention, or do we adapt?"))
+    }
+
+    @Test func openerAskByVoiceWarm() {
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .warm
+        )
+        #expect(opener.hasSuffix("Is this still feeling like the right work?"))
+    }
+
+    @Test func openerAskByVoiceConcise() {
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .concise
+        )
+        #expect(opener.hasSuffix("Keep, adapt, or replace?"))
+    }
+
+    @Test func openerAskByVoicePersuasive() {
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .persuasive
+        )
+        #expect(opener.hasSuffix("Make the case — keep going or change tack?"))
+    }
+
+    @Test func openerAskByVoiceExecutive() {
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .executive
+        )
+        #expect(opener.hasSuffix("Verdict: continue, adapt, or replace?"))
+    }
+
+    @Test func openerAskByVoiceStorytelling() {
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .storytelling
+        )
+        #expect(opener.hasSuffix("Where does this arc go next?"))
+    }
+
+    @Test func openerAskWhenVoiceIsNil() {
+        // Voice nil → neutral ask. The fallback covers users who
+        // haven't completed the coaching profile yet — the opener
+        // still produces a coherent review question.
+        let intervention = makeIntervention(followedRepCount: 3)
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: nil
+        )
+        #expect(opener.hasSuffix("Should we keep going, adapt, or change tack?"))
+    }
+}
