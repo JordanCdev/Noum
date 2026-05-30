@@ -19720,3 +19720,209 @@ struct ComposureReadEngineTests {
         #expect(decoded == original)
     }
 }
+
+// MARK: - M28 Confidence Marker Engine Tests
+//
+// ConfidenceMarkerEngine composes hedging density + filler density +
+// pace consistency + composure carryover into a 0-1 confidence-marker
+// score. Tests pin:
+//   - 2-channel minimum (returns nil below)
+//   - Per-channel score mapping
+//   - Pace-consistency channel skips on too-short / too-few-words reps
+//   - Qualitative label coverage
+//   - Channel-list readout
+//   - Codable round-trip
+//
+// Per VISION: reads MARKERS, not the person. Copy never asserts
+// "the user is unconfident" — only "this rep read as tentative".
+
+@Suite("ConfidenceMarkerEngine")
+@available(iOS 17.0, macOS 13.0, *)
+struct ConfidenceMarkerEngineTests {
+
+    private func makeSession(
+        transcript: String = "hello this is a test rep with several words to compute pace from honestly",
+        fillerCount: Int = 0,
+        duration: TimeInterval = 60
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: transcript,
+            fillerWordCount: fillerCount,
+            duration: duration,
+            date: Date(),
+            mode: .timed
+        )
+    }
+
+    @Test func returnsNilWhenOnlyOneChannelContributes() {
+        let session = PracticeSession(
+            transcript: "x",
+            fillerWordCount: 0,
+            duration: 0,
+            date: Date(),
+            mode: .timed
+        )
+        // duration 0 → filler density channel skips. transcript empty
+        // + duration 0 → pace channel skips. No hedging, no composure.
+        // No channels available → nil.
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: nil,
+            paceWPM: nil,
+            composure: nil
+        )
+        #expect(read == nil)
+    }
+
+    @Test func twoChannelsProduceRead() {
+        // Hedging + filler density (duration > 0 → filler density
+        // contributes).
+        let session = makeSession(fillerCount: 2, duration: 60)
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 2.0,
+            paceWPM: nil,
+            composure: nil
+        )
+        #expect(read != nil)
+        #expect(read?.contributingChannels == 2)
+        #expect(read?.inputs.hedgingContributed == true)
+        #expect(read?.inputs.fillerDensityContributed == true)
+        #expect(read?.inputs.paceConsistencyContributed == false)
+        #expect(read?.inputs.composureContributed == false)
+    }
+
+    @Test func cleanRepReadsAsHighConfidence() {
+        // 0 hedging, 0 fillers, on-baseline pace, high composure
+        let energy = VocalEnergyMetrics(meanLevel: 0.45, peakLevel: 0.55, stdDeviation: 0.03, coefficientOfVariation: 0.07, steadiness: 0.93, sampleCount: 100)
+        let session = PracticeSession(
+            transcript: "this is a clean delivery with about thirteen words spoken at a steady pace",
+            fillerWordCount: 0,
+            duration: 60,
+            date: Date(),
+            mode: .timed,
+            vocalEnergyMetrics: energy
+        )
+        // Estimated WPM ~14/min → far from any realistic baseline.
+        // Skip pace channel by passing nil baseline. Composure 0.93.
+        let composure = ComposureRead(
+            score: 0.93,
+            contributingChannels: 2,
+            inputs: ComposureRead.Inputs(vocalEnergyContributed: true, pitchContributed: false, pauseQualityContributed: false, hedgingContributed: true),
+            readout: "test"
+        )
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 0,
+            paceWPM: nil,
+            composure: composure
+        )
+        // Channels: hedging 1.0 + filler 1.0 + composure 0.93 → mean ≈ 0.977
+        #expect(read?.score ?? 0 > 0.90)
+        #expect(read?.contributingChannels == 3)
+    }
+
+    @Test func heavyHedgingPenalizesScore() {
+        let session = makeSession(fillerCount: 0, duration: 60)
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 7.0,
+            paceWPM: nil,
+            composure: nil
+        )
+        // hedging 0.10 + filler 1.0 → mean 0.55
+        #expect(read?.score ?? 0 < 0.60)
+        #expect(read?.score ?? 0 > 0.50)
+    }
+
+    @Test func heavyFillerDensityPenalizesScore() {
+        let session = makeSession(fillerCount: 8, duration: 60)
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 0,
+            paceWPM: nil,
+            composure: nil
+        )
+        // hedging 1.0 + filler 0.15 → mean 0.575
+        #expect(read?.score ?? 0 < 0.60)
+        #expect(read?.score ?? 0 > 0.55)
+    }
+
+    @Test func paceChannelSkipsOnShortReps() {
+        // Duration below the 15s floor — pace channel must NOT contribute
+        let session = makeSession(transcript: "a few words", fillerCount: 1, duration: 5)
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 1.0,
+            paceWPM: 150,
+            composure: nil
+        )
+        #expect(read?.inputs.paceConsistencyContributed == false)
+    }
+
+    @Test func paceChannelContributesOnLongerReps() {
+        // Long enough + words enough that pace channel can contribute
+        let manyWords = Array(repeating: "word", count: 50).joined(separator: " ")
+        let session = makeSession(transcript: manyWords, fillerCount: 0, duration: 30)
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 1.0,
+            paceWPM: 100,  // baseline ~100 wpm; session = 50 words / 0.5 min = 100 wpm → perfect match
+            composure: nil
+        )
+        #expect(read?.inputs.paceConsistencyContributed == true)
+    }
+
+    @Test func paceDriftPenalizesPaceChannelScore() {
+        let manyWords = Array(repeating: "x", count: 30).joined(separator: " ")
+        let session = makeSession(transcript: manyWords, fillerCount: 0, duration: 60)
+        // 30 words / 60s = 30 wpm; baseline = 150 wpm → 80% delta → score 0.20
+        let read = ConfidenceMarkerEngine.derive(
+            session: session,
+            hedgingPerMinute: 0,
+            paceWPM: 150,
+            composure: nil
+        )
+        // hedging 1.0 + filler 1.0 + pace 0.20 → mean ≈ 0.733
+        #expect(read?.contributingChannels == 3)
+        #expect(read?.score ?? 0 > 0.65)
+        #expect(read?.score ?? 0 < 0.80)
+    }
+
+    @Test func qualitativeLabelCoversAllBuckets() {
+        #expect(ConfidenceMarkerEngine.qualitativeLabel(score: 0.95).contains("clean"))
+        #expect(ConfidenceMarkerEngine.qualitativeLabel(score: 0.70).contains("mostly clean"))
+        #expect(ConfidenceMarkerEngine.qualitativeLabel(score: 0.50).contains("mixed"))
+        #expect(ConfidenceMarkerEngine.qualitativeLabel(score: 0.30).contains("heavy"))
+        #expect(ConfidenceMarkerEngine.qualitativeLabel(score: 0.10).contains("very heavy"))
+    }
+
+    @Test func channelListReadout() {
+        let two = ConfidenceMarkerRead.Inputs(hedgingContributed: true, fillerDensityContributed: true, paceConsistencyContributed: false, composureContributed: false)
+        #expect(ConfidenceMarkerEngine.channelList(inputs: two) == "hedging density + filler density")
+        let all = ConfidenceMarkerRead.Inputs(hedgingContributed: true, fillerDensityContributed: true, paceConsistencyContributed: true, composureContributed: true)
+        let listAll = ConfidenceMarkerEngine.channelList(inputs: all)
+        #expect(listAll.contains("hedging") && listAll.contains("filler") && listAll.contains("pace") && listAll.contains("composure"))
+    }
+
+    @Test func readoutDoesNotMakePersonalAssertions() {
+        // Anti-overclaim: the readout must say "this rep" or "markers",
+        // never "you sound" or "the user is". Per VISION:
+        // "Inferred psychological or interpersonal patterns must be
+        // framed as coach hypotheses, never facts or diagnoses."
+        let allInputs = ConfidenceMarkerRead.Inputs(hedgingContributed: true, fillerDensityContributed: true, paceConsistencyContributed: true, composureContributed: true)
+        let readout = ConfidenceMarkerEngine.readoutCopy(score: 0.2, inputs: allInputs)
+        #expect(!readout.lowercased().contains("you sound"), "Readout must read markers, not the person")
+        #expect(!readout.lowercased().contains("you are"), "Readout must read markers, not the person")
+        #expect(!readout.lowercased().contains("you're"), "Readout must read markers, not the person")
+        #expect(readout.lowercased().contains("markers"), "Readout names the markers explicitly")
+    }
+
+    @Test func codableRoundTripPreservesAllFields() throws {
+        let inputs = ConfidenceMarkerRead.Inputs(hedgingContributed: true, fillerDensityContributed: false, paceConsistencyContributed: true, composureContributed: true)
+        let original = ConfidenceMarkerRead(score: 0.65, contributingChannels: 3, inputs: inputs, readout: "Confidence markers: mostly clean")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(ConfidenceMarkerRead.self, from: data)
+        #expect(decoded == original)
+    }
+}

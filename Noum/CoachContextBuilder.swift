@@ -571,13 +571,32 @@ enum CoachContextBuilder {
         // metrics.
         if let latest = recent.first {
             let hedgingPerMinute: Double? = baseline.hedgingRate.value
-            if let composure = ComposureReadEngine.derive(
+            let composure = ComposureReadEngine.derive(
                 session: latest,
                 hedgingPerMinute: hedgingPerMinute
-            ) {
+            )
+            if let composure {
                 lines.append("")
                 lines.append("COMPOSURE READ (most-recent rep)")
                 lines.append("- \(composure.readout). Composite \(String(format: "%.2f", composure.score))/1.0 from \(composure.contributingChannels) channels.")
+            }
+
+            // M28 — Confidence markers. Pure-function read composing
+            // hedging density + filler density + pace consistency +
+            // composure carryover. Reads MARKERS, not the person —
+            // copy says "this rep read as tentative" never "you sound
+            // unconfident". Omitted silently when fewer than 2
+            // channels are available.
+            let paceBaseline: Double? = baseline.pace.value
+            if let confidence = ConfidenceMarkerEngine.derive(
+                session: latest,
+                hedgingPerMinute: hedgingPerMinute,
+                paceWPM: paceBaseline,
+                composure: composure
+            ) {
+                lines.append("")
+                lines.append("CONFIDENCE MARKERS (most-recent rep)")
+                lines.append("- \(confidence.readout). Composite \(String(format: "%.2f", confidence.score))/1.0 from \(confidence.contributingChannels) channels.")
             }
         }
 
