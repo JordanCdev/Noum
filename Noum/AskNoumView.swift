@@ -250,6 +250,21 @@ struct AskNoumView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // Review-due chip — surfaces ABOVE the generic starters
+            // when the active case-file intervention has hit the
+            // `isReviewDue(at:)` threshold (followed-rep floor met AND
+            // cadence elapsed). Lets users who reach Ask Noum directly
+            // (not via the Summary `InterventionReviewPromptCard`
+            // bridge) start the same case-review conversation at the
+            // same cadence the coach agreed to honour. Same opener as
+            // the summary card so the AI reply has the case scaffolding
+            // already in scope. Distinct purple eyebrow + calendar
+            // icon so the chip reads as a coach-priority prompt rather
+            // than yet-another generic starter.
+            if let reviewIntervention = activeReviewDueIntervention {
+                reviewDueChip(intervention: reviewIntervention)
+            }
+
             Text("Starters")
                 .font(Typography.micro.weight(.bold))
                 .foregroundStyle(.secondary)
@@ -332,6 +347,82 @@ struct AskNoumView: View {
         case .none:
             return "Ask me anything about your speaking practice. I read your goal, baseline, and last 30 days before every reply."
         }
+    }
+
+    // MARK: - Review-due chip
+    //
+    // Mirrors `SummaryView.activeReviewDueIntervention` so the same
+    // predicate gate decides whether the case-review surface appears
+    // here (chip on empty state) or there (full card on summary).
+    // Returns nil whenever there's no memory, no active intervention,
+    // or the predicate falls. One source of truth for the gate: the
+    // pure `CoachIntervention.isReviewDue(at:)` predicate, locked by
+    // `InterventionReviewPromptTests` in `NoumTests.swift`.
+    private var activeReviewDueIntervention: CoachIntervention? {
+        guard let memory = coachMemoryStore.currentMemory,
+              let intervention = memory.activeIntervention,
+              intervention.isReviewDue(at: Date()) else { return nil }
+        return intervention
+    }
+
+    /// Empty-state chip that opens the same review conversation as
+    /// the Summary `InterventionReviewPromptCard`. Tap → seed the
+    /// case-anchored opener (`CoachContextBuilder.interventionReviewOpener`)
+    /// as a user turn and let the existing `send` pipeline fire the
+    /// model reply. Uses the same purple eyebrow + calendar icon as
+    /// the summary card so the user reads the two surfaces as a
+    /// single coach-priority register, not two unrelated nudges.
+    @ViewBuilder
+    private func reviewDueChip(intervention: CoachIntervention) -> some View {
+        let label = InterventionReviewPromptCard.emptyStateChipLabel(for: intervention)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                Text("REVIEW DUE")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer(minLength: 0)
+            }
+            Button {
+                send(CoachContextBuilder.interventionReviewOpener(
+                    intervention: intervention,
+                    voice: voice
+                ))
+            } label: {
+                HStack(spacing: 8) {
+                    Text(label)
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: Spacing.xs)
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(AppColor.pro)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.cardBackground,
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.pro.opacity(0.32), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityHint("Reviews whether the active coaching intervention is working.")
+            .accessibilityIdentifier("askNoum.reviewChip.cta")
+        }
+        .padding(.top, Spacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("askNoum.reviewChip.card")
     }
 
     // MARK: - Follow-up chips

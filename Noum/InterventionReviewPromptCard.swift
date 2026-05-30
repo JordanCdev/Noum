@@ -124,6 +124,21 @@ struct InterventionReviewPromptCard: View {
         let repNoun = intervention.followedRepCount == 1 ? "rep" : "reps"
         return "Your coach scheduled this review after \(intervention.followedRepCount) followed \(repNoun). One question: keep going, adapt, or replace it?"
     }
+
+    /// Pure-function chip label for the `AskNoumView` empty state. The
+    /// chip surfaces the same review CTA the summary card does for
+    /// users who reach Ask Noum directly (not via Summary) at the
+    /// moment `isReviewDue(at:)` holds — so the coach's review cadence
+    /// is honoured regardless of entry point. Punchier than the card
+    /// headline (a chip is read in one glance, not a paragraph) and
+    /// no trailing period — chip strings read better without one.
+    /// Same focus-lower-cased / title-fallback contract as
+    /// `headlineCopy(for:)` so the two surfaces stay in voice register.
+    static func emptyStateChipLabel(for intervention: CoachIntervention) -> String {
+        let focus = (intervention.focus?.isEmpty == false ? intervention.focus : intervention.title)
+            ?? intervention.title
+        return "Review my work on \(focus.lowercased())"
+    }
 }
 
 #endif
