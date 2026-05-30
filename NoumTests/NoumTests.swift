@@ -19583,3 +19583,140 @@ struct VocalEnergyMetricsTests {
         #expect(decoded.fillerWordCount == 2)
     }
 }
+
+// MARK: - M27 Composure Read Tests
+//
+// ComposureReadEngine composes vocal energy steadiness + pitch
+// variation + pause filled-ratio + hedging rate into a single
+// 0-1 composure score. Pure function over what the rep already
+// produced. Tests pin:
+//   - Score math at the channel-mixing level
+//   - Honest-about-thin-data gate (returns nil below 2 channels)
+//   - Pitch CV bucket mapping
+//   - Qualitative label coverage
+//   - Channel-list readout when N channels contribute
+
+@Suite("ComposureReadEngine")
+@available(iOS 17.0, macOS 13.0, *)
+struct ComposureReadEngineTests {
+
+    private func makeSession(
+        vocalEnergy: VocalEnergyMetrics? = nil,
+        pitch: PitchMetrics? = nil,
+        pause: PauseMetrics? = nil
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "test rep",
+            fillerWordCount: 0,
+            duration: 60,
+            date: Date(),
+            mode: .timed,
+            pauseMetrics: pause,
+            pitchMetrics: pitch,
+            vocalEnergyMetrics: vocalEnergy
+        )
+    }
+
+    @Test func returnsNilWhenNoChannelsContribute() {
+        let session = makeSession()
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: nil)
+        #expect(read == nil, "Zero channels → nil; engine must not fabricate")
+    }
+
+    @Test func returnsNilWhenOnlyOneChannelContributes() {
+        // Only vocal energy present — below the 2-channel floor.
+        let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.6, stdDeviation: 0.05, coefficientOfVariation: 0.12, steadiness: 0.88, sampleCount: 100)
+        let session = makeSession(vocalEnergy: energy)
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: nil)
+        #expect(read == nil, "1 channel < 2-channel floor → nil")
+    }
+
+    @Test func twoChannelsProduceRead() {
+        let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.6, stdDeviation: 0.05, coefficientOfVariation: 0.12, steadiness: 0.88, sampleCount: 100)
+        let session = makeSession(vocalEnergy: energy)
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: 2.0)
+        #expect(read != nil)
+        #expect(read?.contributingChannels == 2)
+        #expect(read?.inputs.vocalEnergyContributed == true)
+        #expect(read?.inputs.hedgingContributed == true)
+    }
+
+    @Test func allFourChannelsContributeWhenAvailable() {
+        let energy = VocalEnergyMetrics(meanLevel: 0.45, peakLevel: 0.7, stdDeviation: 0.06, coefficientOfVariation: 0.13, steadiness: 0.87, sampleCount: 100)
+        let pitch = PitchMetrics(meanHz: 150, stdHz: 30, voicedFraction: 0.7)
+        let pause = PauseMetrics(count: 5, meanSeconds: 1.2, longestSeconds: 2.5, filledRatio: 0.20)
+        let session = makeSession(vocalEnergy: energy, pitch: pitch, pause: pause)
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: 1.0)
+        #expect(read?.contributingChannels == 4)
+        // All four contribute; score is the mean of 4 channel scores.
+        #expect(read?.score ?? 0 > 0.7, "All-channels-good session reads as high composure")
+    }
+
+    @Test func monotonePitchPenalizesScore() {
+        let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.5, stdDeviation: 0.02, coefficientOfVariation: 0.05, steadiness: 0.95, sampleCount: 100)
+        // Very monotone — CV ≈ 0.05 → pitch channel scores 0.4
+        let monotonePitch = PitchMetrics(meanHz: 150, stdHz: 7.5, voicedFraction: 0.8)
+        let session = makeSession(vocalEnergy: energy, pitch: monotonePitch)
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: nil)
+        // Channels: vocal energy 0.95 + pitch 0.4 → mean ≈ 0.675
+        #expect(read?.score ?? 0 < 0.75)
+        #expect(read?.score ?? 0 > 0.6)
+    }
+
+    @Test func highFilledPauseRatioPenalizesScore() {
+        // 80% of pauses filled → pause channel scores 0.20.
+        let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.5, stdDeviation: 0.02, coefficientOfVariation: 0.05, steadiness: 0.95, sampleCount: 100)
+        let pause = PauseMetrics(count: 5, meanSeconds: 0.8, longestSeconds: 1.5, filledRatio: 0.80)
+        let session = makeSession(vocalEnergy: energy, pause: pause)
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: nil)
+        // 0.95 + 0.20 → mean ≈ 0.575
+        #expect(read?.score ?? 0 < 0.65)
+        #expect(read?.score ?? 0 > 0.50)
+    }
+
+    @Test func highHedgingPenalizesScore() {
+        let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.5, stdDeviation: 0.02, coefficientOfVariation: 0.05, steadiness: 0.95, sampleCount: 100)
+        let session = makeSession(vocalEnergy: energy)
+        // 7 hedges/min → hedge score 0.10
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: 7.0)
+        #expect(read?.contributingChannels == 2)
+        // 0.95 + 0.10 → mean ≈ 0.525
+        #expect(read?.score ?? 0 < 0.60)
+    }
+
+    @Test func qualitativeLabelCoversAllBuckets() {
+        #expect(ComposureReadEngine.qualitativeLabel(score: 0.95).contains("held"))
+        #expect(ComposureReadEngine.qualitativeLabel(score: 0.70).contains("mostly held"))
+        #expect(ComposureReadEngine.qualitativeLabel(score: 0.50).contains("mixed"))
+        #expect(ComposureReadEngine.qualitativeLabel(score: 0.30).contains("thin"))
+        #expect(ComposureReadEngine.qualitativeLabel(score: 0.10).contains("unsettled"))
+    }
+
+    @Test func channelListReadoutHandlesMultipleChannels() {
+        let oneChannel = ComposureRead.Inputs(vocalEnergyContributed: true, pitchContributed: false, pauseQualityContributed: false, hedgingContributed: false)
+        #expect(ComposureReadEngine.readChannelList(inputs: oneChannel) == "vocal energy")
+
+        let twoChannels = ComposureRead.Inputs(vocalEnergyContributed: true, pitchContributed: true, pauseQualityContributed: false, hedgingContributed: false)
+        #expect(ComposureReadEngine.readChannelList(inputs: twoChannels) == "vocal energy + pitch")
+
+        let allFour = ComposureRead.Inputs(vocalEnergyContributed: true, pitchContributed: true, pauseQualityContributed: true, hedgingContributed: true)
+        let list = ComposureReadEngine.readChannelList(inputs: allFour)
+        #expect(list.contains("vocal energy") && list.contains("pitch") && list.contains("pause quality") && list.contains("hedging rate"))
+    }
+
+    @Test func readoutPrefixIsTentativeWhenFewerChannelsContribute() {
+        let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.5, stdDeviation: 0.02, coefficientOfVariation: 0.05, steadiness: 0.95, sampleCount: 100)
+        let session = makeSession(vocalEnergy: energy)
+        let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: 2.0)
+        // 2 channels → "Early composure read" (tentative prefix)
+        #expect(read?.readout.contains("Early composure read") == true)
+    }
+
+    @Test func codableRoundTripPreservesAllFields() throws {
+        let inputs = ComposureRead.Inputs(vocalEnergyContributed: true, pitchContributed: false, pauseQualityContributed: true, hedgingContributed: true)
+        let original = ComposureRead(score: 0.72, contributingChannels: 3, inputs: inputs, readout: "Composure: mostly held — a couple of channels wobbled (from vocal energy, pause quality + hedging rate)")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(ComposureRead.self, from: data)
+        #expect(decoded == original)
+    }
+}

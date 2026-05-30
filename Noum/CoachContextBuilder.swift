@@ -560,6 +560,27 @@ enum CoachContextBuilder {
             }
         }
 
+        // M27 — COMPOSURE READ. Derived signal that composes vocal
+        // energy steadiness + pitch variation + pause filled-ratio +
+        // hedging rate into one coach-facing read. Pure function over
+        // signals the rep already produced — no new sensing. Engine
+        // returns nil when fewer than 2 channels contributed (honest
+        // about thin signal), so this block silently omits when the
+        // read isn't credible. When present, the coach can comment on
+        // composure across channels rather than only on isolated
+        // metrics.
+        if let latest = recent.first {
+            let hedgingPerMinute: Double? = baseline.hedgingRate.value
+            if let composure = ComposureReadEngine.derive(
+                session: latest,
+                hedgingPerMinute: hedgingPerMinute
+            ) {
+                lines.append("")
+                lines.append("COMPOSURE READ (most-recent rep)")
+                lines.append("- \(composure.readout). Composite \(String(format: "%.2f", composure.score))/1.0 from \(composure.contributingChannels) channels.")
+            }
+        }
+
         // LAST REP NOTE — the coach's own short read of the most-recent
         // rep, persisted by `PostRepCoachNoteStore` after each session
         // finalizes. Lets the chat coach build on its own earlier read
