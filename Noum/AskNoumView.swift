@@ -927,7 +927,8 @@ struct AskNoumView: View {
         // current snapshot store. Lets the coach quote direction
         // ("filler reduction declining for 3 weeks") not just the noun
         // labels in baseline strengths/blockers.
-        let trends = TrendAnalyzer.analyze(snapshots: SkillTrendStore.shared.snapshots)
+        let snapshots = SkillTrendStore.shared.snapshots
+        let trends = TrendAnalyzer.analyze(snapshots: snapshots)
         let context = CoachContextBuilder.userContext(
             profile: coachingProfileStore.profile,
             baseline: baselineStore.baseline,
@@ -944,7 +945,8 @@ struct AskNoumView: View {
             coachMemory: coachMemoryStore.currentMemory,
             pendingRecommendation: recommendationLearningStore.pendingExposure,
             recommendationOutcomes: recommendationLearningStore.outcomes,
-            trends: trends
+            trends: trends,
+            latestSnapshot: snapshots.last
         )
         let history = await MainActor.run { store.replayForModel }
         let outcome = await AICoachChatService.shared.reply(

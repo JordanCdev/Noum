@@ -236,7 +236,13 @@ enum CoachContextBuilder {
         coachMemory: CoachMemory? = nil,
         pendingRecommendation: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
-        trends: [SkillTrend] = []
+        trends: [SkillTrend] = [],
+        // M29 — Optional most-recent SkillSnapshot. When provided, the
+        // structural read engine composes the per-rep dimension
+        // ratings (Opening / Structure / Depth / Close) into a STRUCTURAL
+        // READ section. Defaults to nil so existing callers compile
+        // unchanged.
+        latestSnapshot: SkillSnapshot? = nil
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -597,6 +603,20 @@ enum CoachContextBuilder {
                 lines.append("")
                 lines.append("CONFIDENCE MARKERS (most-recent rep)")
                 lines.append("- \(confidence.readout). Composite \(String(format: "%.2f", confidence.score))/1.0 from \(confidence.contributingChannels) channels.")
+            }
+
+            // M29 — Structural read. Pure-function over the per-rep
+            // categoryRatings (Opening / Structure / Depth / Close)
+            // already captured by FeedbackEngine. When the most-recent
+            // SkillSnapshot is available, composes the four dimensions
+            // into one structural score so the coach can comment on
+            // the "bones" of the rep — what held, what faltered — not
+            // just isolated metrics. Engine returns nil when fewer
+            // than 2 dimensions are present.
+            if let structural = StructuralReadEngine.derive(snapshot: latestSnapshot) {
+                lines.append("")
+                lines.append("STRUCTURAL READ (most-recent rep)")
+                lines.append("- \(structural.readout). Composite \(String(format: "%.2f", structural.score))/1.0 from \(structural.contributingDimensions) dimensions.")
             }
         }
 

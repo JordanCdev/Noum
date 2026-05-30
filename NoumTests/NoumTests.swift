@@ -19926,3 +19926,166 @@ struct ConfidenceMarkerEngineTests {
         #expect(decoded == original)
     }
 }
+
+// MARK: - M29 Structural Read Engine Tests
+//
+// StructuralReadEngine composes per-rep categoryRatings (Opening /
+// Structure / Depth / Close, each Good/OK/Could improve) into a 0-1
+// structural-quality score. Tests pin:
+//   - 2-dimension minimum (returns nil below)
+//   - FeedbackRating → numeric score mapping
+//   - All-Good composite + all-Could-improve composite
+//   - strongestAndWeakest attribution
+//   - Qualitative label coverage
+//   - Tentative prefix on ≤2 dimensions
+
+@Suite("StructuralReadEngine")
+@available(iOS 17.0, macOS 13.0, *)
+struct StructuralReadEngineTests {
+
+    @Test func returnsNilWhenZeroDimensionsContribute() {
+        let read = StructuralReadEngine.derive(categoryRatings: [:])
+        #expect(read == nil)
+    }
+
+    @Test func returnsNilWhenOnlyOneDimensionContributes() {
+        let read = StructuralReadEngine.derive(categoryRatings: ["Opening": "Good"])
+        #expect(read == nil, "1 dimension < 2 minimum")
+    }
+
+    @Test func ignoresUnknownRatingStrings() {
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening": "Mediocre",       // not a FeedbackRating raw value
+            "Structure": "BadValue",     // not a FeedbackRating raw value
+        ])
+        #expect(read == nil, "Unknown rating strings should not count as contributing")
+    }
+
+    @Test func twoDimensionsProduceReadWithTentativePrefix() {
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening": "Good",
+            "Close":   "OK",
+        ])
+        #expect(read != nil)
+        #expect(read?.contributingDimensions == 2)
+        #expect(read?.readout.contains("Early structural read") == true,
+                "≤2 dimensions reads as tentative per VISION dev rule")
+    }
+
+    @Test func threeDimensionsProduceConfidentPrefix() {
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening": "Good",
+            "Structure": "Good",
+            "Close":   "Good",
+        ])
+        #expect(read?.readout.contains("Early") == false,
+                "≥3 dimensions should drop the 'Early' prefix")
+        #expect(read?.readout.contains("Structural read") == true)
+    }
+
+    @Test func allGoodProducesMaxScore() {
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening":   "Good",
+            "Structure": "Good",
+            "Depth":     "Good",
+            "Close":     "Good",
+        ])
+        #expect(read?.score == 1.0)
+        #expect(read?.contributingDimensions == 4)
+    }
+
+    @Test func allCouldImproveProducesMinScore() {
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening":   "Could improve",
+            "Structure": "Could improve",
+            "Depth":     "Could improve",
+            "Close":     "Could improve",
+        ])
+        #expect(read?.score == 0.0)
+    }
+
+    @Test func mixedRatingsAverageCorrectly() {
+        // Good (1.0) + OK (0.5) + Could improve (0.0) → mean 0.5
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening":   "Good",
+            "Structure": "OK",
+            "Close":     "Could improve",
+        ])
+        #expect(read?.score == 0.5)
+    }
+
+    @Test func scoreFunctionMapsRatingsCorrectly() {
+        #expect(StructuralReadEngine.score(forRating: "Good") == 1.0)
+        #expect(StructuralReadEngine.score(forRating: "OK") == 0.5)
+        #expect(StructuralReadEngine.score(forRating: "Could improve") == 0.0)
+        #expect(StructuralReadEngine.score(forRating: nil) == nil)
+        #expect(StructuralReadEngine.score(forRating: "Unknown") == nil)
+    }
+
+    @Test func strongestAndWeakestIdentifiesExtremes() {
+        let inputs = StructuralRead.Inputs(
+            openingRating: "Good",
+            structureRating: "Could improve",
+            depthRating: "OK",
+            closeRating: "Good"
+        )
+        let pair = StructuralReadEngine.strongestAndWeakest(inputs: inputs)
+        #expect(pair?.strongest == "opening", "First-encountered tied-Good wins")
+        #expect(pair?.weakest == "structure")
+    }
+
+    @Test func strongestAndWeakestReturnsNilWhenNoDimensions() {
+        let inputs = StructuralRead.Inputs(
+            openingRating: nil,
+            structureRating: nil,
+            depthRating: nil,
+            closeRating: nil
+        )
+        #expect(StructuralReadEngine.strongestAndWeakest(inputs: inputs) == nil)
+    }
+
+    @Test func qualitativeLabelCoversAllBuckets() {
+        #expect(StructuralReadEngine.qualitativeLabel(score: 0.95).contains("bones held"))
+        #expect(StructuralReadEngine.qualitativeLabel(score: 0.75).contains("mostly held"))
+        #expect(StructuralReadEngine.qualitativeLabel(score: 0.55).contains("mixed"))
+        #expect(StructuralReadEngine.qualitativeLabel(score: 0.35).contains("thin"))
+        #expect(StructuralReadEngine.qualitativeLabel(score: 0.10).contains("weak shape"))
+    }
+
+    @Test func readoutNamesStrongestAndWeakestWhenTheyDiffer() {
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening":   "Good",
+            "Structure": "Could improve",
+            "Close":     "OK",
+        ])
+        let readout = read?.readout ?? ""
+        #expect(readout.contains("opening") && readout.contains("structure"),
+                "Readout should name the strongest + weakest dimensions explicitly")
+    }
+
+    @Test func readoutFallsBackWhenAllDimensionsTie() {
+        // All Good → strongest == weakest. Readout should say "carried"
+        // not "X held, Y faltered".
+        let read = StructuralReadEngine.derive(categoryRatings: [
+            "Opening":   "Good",
+            "Structure": "Good",
+            "Close":     "Good",
+        ])
+        let readout = read?.readout ?? ""
+        #expect(readout.contains("carried"), "Tied dimensions take the carried-the-rep fallback")
+        #expect(!readout.contains("faltered"))
+    }
+
+    @Test func codableRoundTripPreservesAllFields() throws {
+        let inputs = StructuralRead.Inputs(
+            openingRating: "Good",
+            structureRating: nil,
+            depthRating: "OK",
+            closeRating: "Could improve"
+        )
+        let original = StructuralRead(score: 0.5, contributingDimensions: 3, inputs: inputs, readout: "test readout")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(StructuralRead.self, from: data)
+        #expect(decoded == original)
+    }
+}
