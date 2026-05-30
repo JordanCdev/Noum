@@ -1,46 +1,49 @@
-# HANDOFF — M24 deferred slate (round 24): post-rep intervention-review prompt — `SummaryView` surfaces `InterventionReviewPromptCard` when the active case-file intervention's `reviewDueAt` cadence has elapsed AND the followed-rep evidence floor is met
+# HANDOFF — M24 deferred slate (round 25): empty-state "Review this case" starter chip on `AskNoumView` — surfaces the same review prompt the SummaryView card surfaces when the user reaches Ask Noum directly (not via the post-rep bridge)
 
 ## Scope
 
-Rounds 22 and 23 closed two read-side honesty holes on the post-rep
-`CoachReadCard` (the rate-limiter publication + the `PremiumManager`
-observation for the daily-budget hint). Round 24 picks up the
-highest-impact next-step listed in the 2026-05-29 case-intervention
-HANDOFF:
+Round 24 closed the post-rep summary side of the case-file review-
+cadence gap: when `CoachIntervention.isReviewDue(at:)` holds, the
+`InterventionReviewPromptCard` surfaces on Summary and tapping
+"Review with coach" hands a case-anchored opener to Ask Noum via
+the existing `onAskNoumAboutRep` bridge.
 
-> 1. `Noum/SummaryView.swift` — add a concise intervention-review
->    prompt when `CoachIntervention.reviewDueAt` is due and minimum
->    followed reps are met.
+Round 25 picks up the highest-impact next-step listed in the
+round-24 HANDOFF (`Future moves` #1):
 
-The case-file infrastructure already records every field this
-prompt needs: `reviewDueAt`, `followedRepCount`,
-`minimumFollowedRepsForReview`, `focus`, `title`, `mode`. Until
-round 24, those fields fed only the AI context block in
-`CoachContextBuilder.interventionCycleLines(...)` — the user
-themselves never saw a prompt to revisit the intervention at the
-moment the cadence elapsed. The coach silently re-prescribed past
-the agreed review date.
+> 1. **Empty-state "Review this case" starter chip on `AskNoumView`.**
+>    Carry forward from the 2026-05-29 HANDOFF (step #2). The round-
+>    24 opener already routes correctly through the AskNoum bridge;
+>    the chip would let a user who opens Ask Noum directly (not
+>    from summary) start the same case-review conversation.
 
-That breaks the coaching contract docs/VISION.md names directly:
+That gap matters: round 24 only honours the review cadence at the
+moment a rep finalizes. A user who finishes their training day,
+closes the app, then re-opens it the next morning and taps Ask
+Noum from the home surface never sees the prompt — even though
+the case file is now even more overdue. The coach silently re-
+prescribes past the agreed review date for everyone who doesn't
+re-enter through Summary.
+
+That breaks the same contract round 24 closed, on a different
+entry path:
 
 > **Coach-parity stage #4 (Adaptation).** Compare response across
 > multiple attempts and either reinforce, vary, or replace the
 > intervention with an explained rationale.
 
-Round 24 closes that gap with the minimum amount of plumbing:
+Round 25 closes the second half of that gap with the minimum
+amount of plumbing:
 
-- A pure predicate on `CoachIntervention` so the eligibility math
-  is one home + locked by tests.
-- A new `InterventionReviewPromptCard` SwiftUI surface with pure
-  copy helpers so the headline and body strings are
-  tested-against-string, not against-screenshot.
-- A new `CoachContextBuilder.interventionReviewOpener(...)` seed
-  for the Ask Noum deep-link, voice-mapped on the same
-  SpeakingStyleGoal axis as the existing `sessionOpener`.
-- Two conditional inserts into `SummaryView` (IM path + standard
-  path), placed right before the existing `TalkToNoumCTACard` so
-  the review prompt reads as the coach's specific check-in
-  preceding the general "Talk to Noum" CTA.
+- One new pure copy helper on `InterventionReviewPromptCard`
+  (`emptyStateChipLabel(for:)`).
+- One new `activeReviewDueIntervention` computed on `AskNoumView`,
+  mirroring the round-24 helper on `SummaryView` exactly so both
+  surfaces share the same gating contract.
+- One new `reviewDueChip(intervention:)` `@ViewBuilder` on
+  `AskNoumView` rendered above the generic "Starters" list when
+  the predicate holds.
+- 5 new tests pinning the chip-copy contract.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -49,20 +52,18 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- The honest gap from the 2026-05-29 case-intervention HANDOFF —
-  the user never sees the coach honour the review cadence the
-  case engine already records — was the highest-value unblocked
-  next step on the case-file lineage. Round 24 closes it with a
-  contained edit: one pure predicate, one new card, one opener
-  helper, two SummaryView conditionals, and 23 tests pinning the
-  threshold math + copy branches.
-- The contract is narrow on purpose: the predicate accepts a
-  `CoachIntervention` + `Date` and answers one yes/no; the card
-  reads a single `CoachIntervention` and renders one CTA; the
-  opener carries the case scaffolding (mode + focus + followed-
-  rep depth) into Ask Noum so the AI reply has the evidence
-  basis in scope. No new state owner, no new persisted field, no
-  cross-store coupling.
+- The honest gap from round 24 — review-cadence honour only on the
+  Summary entry path — was the round-24 HANDOFF's #1 future-move.
+  Round 25 closes the second half with a contained edit: one new
+  pure copy helper, one new computed (same pattern as the
+  SummaryView mirror), one new chip view, 5 tests pinning the
+  copy branches.
+- The contract is narrow on purpose: the chip uses the same
+  predicate (`CoachIntervention.isReviewDue(at:)`) as the summary
+  card, so the two surfaces never disagree about whether a review
+  is due. The chip tap fires the same `interventionReviewOpener`
+  the summary card fires, so the AI reply gets the same case
+  scaffolding regardless of entry path.
 - The redesign-branch invariant: this is a `Redesign`-branch
   push per the user brief. The work lands directly on
   `Redesign` so the round-by-round loop on the redesign lineage
@@ -70,213 +71,166 @@ Translation, this round:
 
 ## What shipped
 
-### Track 1 — `CoachIntervention.isReviewDue(at:)` pure predicate (`PrimaryFocusMemory.swift`)
+### Track 1 — `InterventionReviewPromptCard.emptyStateChipLabel(for:)` pure helper (`InterventionReviewPromptCard.swift`)
 
-`Noum/PrimaryFocusMemory.swift:241` — appended after the existing
-case-spine fields:
+`Noum/InterventionReviewPromptCard.swift` — appended after the
+existing `bodyCopy(for:)` pure helper:
 
-- `func isReviewDue(at now: Date) -> Bool` — both gates must hold
-  (`followedRepCount >= minimumFollowedRepsForReview` AND
-  `reviewDueAt != nil && now >= reviewDueAt`). The doc-comment
-  names why both gates exist: the evidence threshold prevents an
-  early prompt on thin observed reps; the cadence threshold
-  prevents the coach silently overriding the review date.
-- Pure function of the intervention's own fields + `now`, so the
-  predicate can be locked by tests without standing up a real
-  `CoachMemoryStore`. Used by `SummaryView` to decide whether to
-  render `InterventionReviewPromptCard`.
+- `static func emptyStateChipLabel(for intervention: CoachIntervention) -> String`
+  — returns `"Review my work on \(focus.lowercased())"` where
+  `focus` falls back to `title` on nil/empty (same fallback
+  contract as `headlineCopy(for:)`). No trailing period — chip
+  strings read better without one.
+- Lives next to `headlineCopy(for:)` and `bodyCopy(for:)` so all
+  three copy surfaces have one home and one set of fallback
+  rules. Pure function, locked by tests on the same struct.
+- Does NOT name followed-rep count or cadence stamps — the chip
+  is a one-glance CTA, not a paragraph. The followed-rep depth
+  lives in the opener (which carries the evidence scaffolding to
+  the model). Pinned by `chipLabelDoesNotDependOnFollowedRepCount`.
 
-### Track 2 — `InterventionReviewPromptCard` (`InterventionReviewPromptCard.swift`)
+### Track 2 — `AskNoumView.activeReviewDueIntervention` computed (`AskNoumView.swift`)
 
-New file `Noum/InterventionReviewPromptCard.swift`:
+`Noum/AskNoumView.swift` — added after `emptyStateBody`:
 
-- Restrained card: purple eyebrow ("REVIEW DUE"), one-line
-  headline, one-paragraph body, one CTA ("Review with coach").
-  Mirrors `CoachReadCard`'s purple-stroke register so the user
-  reads it as a continuation of the same coach voice rather than
-  a separate system notification.
-- Two pure-function copy helpers — `headlineCopy(for:)` and
-  `bodyCopy(for:)` — so the strings can be locked by tests.
-  Headline names the focus (lower-cased per brand voice, falls
-  back to `title` when `focus` is nil or empty so the noun phrase
-  is never blank). Body names the followed-rep depth so the user
-  sees the basis of the prompt and frames the review question
-  ("keep going, adapt, or replace it?").
-- Brand-voice compliant: no exclamation, no "Let's", no urgency
-  framing, no "running out." The coach is a professional
-  revisiting a plan.
+- Mirrors `SummaryView.activeReviewDueIntervention` byte-for-
+  byte. Same `coachMemoryStore.currentMemory` read, same
+  `intervention.isReviewDue(at: Date())` gate, same nil
+  fall-through. One source of truth for the gate — the pure
+  predicate — locked by `InterventionReviewPromptTests` (round 24)
+  in `NoumTests.swift`.
+- The mirror is deliberate: if the predicate gate ever evolves
+  (e.g. an additional confidence floor on top of the followed-
+  rep + cadence gates), both readers get the new behaviour the
+  same body turn. Pinning the same helper shape on both views
+  also makes future consolidation (e.g. lifting the helper into
+  `CoachMemoryStore`) a one-step move.
 
-### Track 3 — `CoachContextBuilder.interventionReviewOpener(intervention:voice:)` (`CoachContextBuilder.swift`)
+### Track 3 — `AskNoumView.reviewDueChip(intervention:)` view (`AskNoumView.swift`)
 
-`Noum/CoachContextBuilder.swift:746` — added after `sessionOpener`:
+`Noum/AskNoumView.swift` — new private `@ViewBuilder` below
+`activeReviewDueIntervention`:
 
-- Shape mirrors `sessionOpener` exactly so the AskNoumView render
-  logic stays uniform: short fact-lead + voice-shaped ask.
-- Lead: `"Time to review the active case: <mode> for <focus>, <N>
-  followed rep(s) in."` — carries the case scaffolding so the AI
-  reply has the verdict scaffolding already in scope.
-- Voice-shaped ask: maps each `SpeakingStyleGoal` to a single
-  question the user wants to ask. `.authoritative` →
-  `"Is this still the right intervention, or do we adapt?"`,
-  `.warm` → `"Is this still feeling like the right work?"`,
-  `.concise` → `"Keep, adapt, or replace?"`, etc. Falls back to a
-  neutral ask when `voice == nil`.
+- Rendered conditionally in `emptyState` ABOVE the existing
+  "Starters" eyebrow (round 19 onward), so the review prompt
+  reads as the coach's priority CTA rather than one suggestion
+  among several. Generic starter chips remain below.
+- Visual register matches the `InterventionReviewPromptCard`:
+  - Purple eyebrow ("REVIEW DUE", tracked caps).
+  - `calendar.badge.clock` SF Symbol on the eyebrow row.
+  - Card body shows the chip label with a `Spacer` + trailing
+    `arrow.right` so the row reads as a tap target.
+  - `AppColor.pro` stroke at 0.32 opacity (slightly stronger
+    than the generic starter chip stroke at 0.18) — the review
+    chip has a louder visual register so the user reads it as
+    priority.
+- Tap fires `send(CoachContextBuilder.interventionReviewOpener(
+  intervention: intervention, voice: voice))` — the same opener
+  helper the summary card routes through. The existing `send`
+  pipeline appends the user turn and fires `runReply` for the
+  coach reply. No new navigation plumbing, no new store seam,
+  no new bridge contract.
 
-### Track 4 — `SummaryView` wiring (`SummaryView.swift`)
+### Track 4 — `AskNoumReviewChipCopyTests` (5 tests, `NoumTests/NoumTests.swift`)
 
-`Noum/SummaryView.swift`:
+Appended inside the existing `InterventionReviewPromptTests`
+struct (after the opener voice-mapping tests) — same fixture,
+same `@MainActor` register, same value-only test discipline (no
+`CoachMemoryStore` or `AskNoumStore` stood up).
 
-- Two new computed helpers right after `sessionAnchoredOpener`:
-  - `activeReviewDueIntervention: CoachIntervention?` — reads
-    `coachMemoryStore.currentMemory`, returns the active
-    intervention iff `isReviewDue(at: Date())` is true.
-  - `interventionReviewOpener(for:)` — thin wrapper that routes
-    through `CoachContextBuilder.interventionReviewOpener` so the
-    voice mapping contract lives next to the existing
-    `sessionOpener` voice mapping (one home for both).
-- Two conditional inserts in the view hierarchy, both placed
-  right before the existing `TalkToNoumCTACard`:
-  - **IM path** (after `BaselineComparisonCard`, line ~632) —
-    the IM summary's coaching-first card stack continues into
-    the case-review prompt before the general Ask Noum CTA.
-  - **Standard path** (after `SessionReflectionInlineCard`, line
-    ~741) — the user's own reflection captures the felt
-    experience for THIS rep; the review prompt then asks the
-    user about the active intervention with that fresh
-    reflection in mind; the general Ask Noum CTA closes.
-- Both call sites pass the same closure: `onReview: {
-  onAskNoumAboutRep?(interventionReviewOpener(for:
-  reviewIntervention)) }` — reusing the existing Ask Noum bridge
-  the round-19 onward summary surfaces already use. No new
-  navigation plumbing.
+**Chip copy branches (3):**
+- `chipLabelNamesFocusLowerCased` — happy path, focus is lower-
+  cased mid-phrase per the brand voice.
+- `chipLabelFallsBackToTitleWhenFocusIsNil` — defensive nil
+  fallback.
+- `chipLabelFallsBackToTitleWhenFocusIsEmpty` — defensive empty-
+  string fallback.
 
-### Track 5 — `InterventionReviewPromptTests` (23 tests, `NoumTests/NoumTests.swift`)
-
-A new `@MainActor struct InterventionReviewPromptTests` appended
-after `CoachReadCardDailyBudgetHintTests`. All tests call pure
-functions on small value types — no `CoachMemoryStore` or
-`AskNoumStore` is stood up. The helper `makeIntervention(...)`
-fixture builds a baseline `CoachIntervention` where every
-predicate gate is in the negative state by default, and each test
-mutates only the field it asserts against.
-
-**Predicate guards (3):**
-- `reviewIsNotDueWhenReviewDueAtIsNil` — nil cadence stamp
-- `reviewIsNotDueWhenFollowedRepsBelowMinimum` — thin evidence
-- `reviewIsNotDueWhenDueDateInFuture` — cadence not yet elapsed
-
-**Predicate happy path + boundaries (3):**
-- `reviewIsDueWhenDueDateInPast` — happy path
-- `reviewIsDueWhenDueDateExactlyNow` — inclusive `>=` on the
-  cadence axis (round-23-style boundary anchor for date)
-- `reviewIsDueWhenFollowedRepsExactlyAtMinimum` — inclusive `>=`
-  on the evidence axis
-
-**Predicate symmetric mirror (1):**
-- `reviewIsNotDueWhenFollowedRepsOneShortAndCadenceElapsed` —
-  evidence floor wins over an elapsed cadence
-
-**Headline copy branches (3):**
-- `headlineCopyNamesFocus` — lower-cased focus mid-sentence
-- `headlineCopyFallsBackToTitleWhenFocusIsNil` — defensive
-- `headlineCopyFallsBackToTitleWhenFocusIsEmpty` — empty-string edge
-
-**Body copy branches (3):**
-- `bodyCopyUsesSingularRepNoun` — N=1 singular
-- `bodyCopyUsesPluralRepNoun` — N=4 plural
-- `bodyCopyUsesPluralForZeroReps` — defensive 0-rep branch
-
-**Opener lead (3):**
-- `openerLeadNamesModeFocusAndDepth` — mode + focus + N reps in
-- `openerLeadUsesSingularRepNoun` — N=1 singular
-- `openerLeadFallsBackToTitleWhenFocusIsNil` — defensive
-
-**Opener voice mapping (7):**
-- `openerAskByVoiceAuthoritative`
-- `openerAskByVoiceWarm`
-- `openerAskByVoiceConcise`
-- `openerAskByVoicePersuasive`
-- `openerAskByVoiceExecutive`
-- `openerAskByVoiceStorytelling`
-- `openerAskWhenVoiceIsNil`
+**Chip contract (2):**
+- `chipLabelHasNoTrailingPeriod` — pins the no-trailing-period
+  contract so a future refactor that adds one (to match the card
+  headline) surfaces as a test failure rather than as a quietly-
+  styled chip.
+- `chipLabelDoesNotDependOnFollowedRepCount` — pins the voice-
+  stable contract so a refactor that smuggles rep counts into
+  the chip (e.g. "Review my work on filler reduction (4 reps in)")
+  surfaces as a test failure.
 
 ### Vision alignment
 
 - **Coach-parity stage #4 (Adaptation).** Per `docs/VISION.md`:
   "compare response across multiple attempts and either
-  reinforce, vary, or replace the intervention with an
-  explained rationale." Until round 24, the case file recorded
-  the review cadence but the user never saw the coach honour it.
-  The prompt now lands the same body turn the cadence elapses
-  AND the evidence floor is met.
+  reinforce, vary, or replace the intervention with an explained
+  rationale." Round 24 closed the post-rep entry path. Round 25
+  closes the second entry path — the user who reaches Ask Noum
+  directly. Together, the two surfaces guarantee the coach
+  honours the review cadence regardless of how the user enters
+  the chat.
 - **Pillar #5 (Personalized coaching).** A real coach revisits
-  the prescribed plan at the cadence they agreed. Silently re-
-  prescribing the same drill past the agreed review date breaks
-  the coaching contract.
-- **Pillar #4 (Believable progress).** The prompt is a credibility
-  receipt: the user sees the coach honour the review cadence on
-  schedule. That earns the right to keep prescribing.
+  the prescribed plan at the cadence they agreed, whether the
+  user comes through the front door or the side door. The chip
+  honours that on the side door.
+- **Pillar #4 (Believable progress).** The chip is a credibility
+  receipt the same way the card is: the user sees the coach
+  honour the review cadence the moment they open the chat,
+  not weeks later when the next session ends.
 - **Anti-goal alignment (no "hearts-and-lives gating").** The
-  prompt never blocks practice; the user can ignore it and keep
-  repping. The only action is the deep-link to Ask Noum.
+  chip never blocks the chat; the user can ignore it and use
+  the regular starters or type their own question. The chip is
+  one tap path, not the only path.
 
 ### Branch + redesign-alignment notes
 
-- All five edits land on `Redesign`, the redesign-lineage branch
-  the rolling M24 deferred-slate work has been shipping on since
+- All edits land on `Redesign`, the redesign-lineage branch the
+  rolling M24 deferred-slate work has been shipping on since
   round 11. The user brief explicitly calls this out: "ensure
   working on the redesign branch too (very important)." This
   round preserves the round-by-round loop on the redesign
   lineage.
-- The work also unblocks step #2 from the 2026-05-29 HANDOFF
-  ("Ask Noum 'review this case' starter") — the AskNoumView
-  already consumes `onAskNoumAboutRep` openers via the
-  `AskNoumStore.injectUserTurn` bridge wired in
-  `SummaryView.init`, so the round-24 opener flows through that
-  pipe without an AskNoumView change. A future round can add a
-  voice-shaped starter chip on AskNoumView's empty state for
-  users who reach the chat without coming through the summary.
 
 ## Future moves
 
-(Updated priority list — the 2026-05-29 HANDOFF's step #1 closed
-this round; the rest roll forward, joined by the round-23 list.)
+(Updated priority list — round 25 closes the round-24 #1
+future-move; the rest roll forward.)
 
-1. **Empty-state "Review this case" starter chip on `AskNoumView`.**
-   Carry forward from the 2026-05-29 HANDOFF (step #2). The round-
-   24 opener already routes correctly through the AskNoum bridge;
-   the chip would let a user who opens Ask Noum directly (not
-   from summary) start the same case-review conversation.
-2. **Record user confirmation / rejection of the working
+1. **Record user confirmation / rejection of the working
    hypothesis.** Carry forward from the 2026-05-29 HANDOFF
-   (step #3). The post-review reply from the coach should be
-   followed by a single-tap acknowledgement that updates
-   `CoachMemory.workingHypothesis` confidence. Requires a
+   (step #3) and round 24. The post-review reply from the coach
+   should be followed by a single-tap acknowledgement that
+   updates `CoachMemory.workingHypothesis` confidence. Requires a
    PrimaryFocusMemory addition + a small Ask Noum response chip
-   surface — bigger lift than round 24, but the natural follow-on.
-3. **Peer Sudden Death scores via `FriendsManager`.** Still blocked
+   surface — bigger lift than rounds 24/25, but the natural
+   follow-on.
+2. **Peer Sudden Death scores via `FriendsManager`.** Still blocked
    on `PublicProfileSnapshot` schema work.
-4. **`coachNoteRevealed` cleanup.** Still risky — animation chain
+3. **`coachNoteRevealed` cleanup.** Still risky — animation chain
    interleaving with celebration timing. Worth a dedicated
    refactor pass with proper visual QA (and a real device).
-5. **Visual polish pass on the round-19 launch CTA.** Carried
-   forward from rounds 19–23. Pure visual work, not destination
+4. **Visual polish pass on the round-19 launch CTA.** Carried
+   forward from rounds 19–24. Pure visual work, not destination
    logic — the router stays the single source of truth either way.
-6. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–23. Pure visual work, not crossing logic.
-7. **Extend the crossing helper to the chat-coach context line.**
+5. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
+   forward from rounds 20–24. Pure visual work, not crossing logic.
+6. **Extend the crossing helper to the chat-coach context line.**
    Carried forward from round 21 as a note for the record (not
    an action item).
-8. **Day-rollover refresh for long-mounted observers.** Carried
+7. **Day-rollover refresh for long-mounted observers.** Carried
    forward from round 22. The `AIRateLimiter` publication only
    fires on writes. A user who pins Settings open across midnight
    would still see yesterday's counters until the next consume
    bumps the token. A future round could subscribe to
    `Notification.Name.NSCalendarDayChanged` and bump the token
    from there.
-9. **Tier-change observation symmetry to other surfaces that read
+8. **Tier-change observation symmetry to other surfaces that read
    `AIRateLimiter.currentCap()` directly.** Carried forward from
    round 23 as a note for the record.
+9. **Lift `activeReviewDueIntervention` into `CoachMemoryStore`.**
+   New note from round 25. Both `SummaryView` and `AskNoumView`
+   now carry a byte-identical helper. A future round could lift
+   it into `CoachMemoryStore` (e.g. `currentReviewDueIntervention(
+   at: Date()) -> CoachIntervention?`) and have both surfaces
+   read through the store. Low value today (the duplication is
+   four lines), worth doing if a third reader appears.
 
 ## Build-host limitation (honest note for the next agent)
 
@@ -284,41 +238,38 @@ This environment has **no Xcode and no Swift toolchain**, so
 nothing in this round was compiled or run — not the app, not the
 test suite. The changes are:
 
-- A pure predicate addition on an existing `Codable, Equatable`
-  struct (`CoachIntervention.isReviewDue(at:)`) — six lines, two
-  guards, one `>=` comparison. No new fields, no codable changes.
-- A new SwiftUI view file (`InterventionReviewPromptCard.swift`)
-  that uses only design tokens already in scope: `Typography.*`,
-  `AppColor.pro`, `AppColor.cardBackground`, `AppColor.textPrimary`,
-  `AppColor.textSecondary`, `CornerRadius.medium`, and the
-  `.pressable` button style — every one referenced in nearby
-  cards (`CoachReadCard.swift` uses the same set).
-- A new pure static func on `CoachContextBuilder` next to the
-  existing `sessionOpener` — same SpeakingStyleGoal exhaustive
-  switch pattern, so the compiler enforces all six cases plus
-  the optional nil.
-- Two computed helpers + two conditional inserts in
-  `SummaryView` — both inserts use the same `if let
-  reviewIntervention = activeReviewDueIntervention` pattern as
-  other conditional cards in the same view (the prior
-  `if let details = imConversationDetails` is the immediate
-  neighbour for the IM insert).
-- 23 new tests on three pure functions plus one pure-pure copy
-  helper. They mirror the round-23
-  `CoachReadCardDailyBudgetHintTests` shape (same
-  `@MainActor struct`, same `@Test` annotations, no test seam
-  needed).
+- A pure copy helper on `InterventionReviewPromptCard` —
+  `static func emptyStateChipLabel(for:) -> String`. Three
+  lines, one fallback ternary, no I/O. Uses the same lookup
+  pattern as `headlineCopy(for:)` which is already locked by
+  round-24 tests.
+- A new computed helper + new private `@ViewBuilder` on
+  `AskNoumView`. The computed reads
+  `coachMemoryStore.currentMemory?.activeIntervention?.isReviewDue(at:)`
+  — every property already in scope (the `@StateObject` was
+  already wired in line 41 of `AskNoumView.swift`). The view
+  uses only design tokens already in scope: `Typography.body`,
+  `Typography.micro`, `AppColor.pro`, `AppColor.cardBackground`,
+  `AppColor.textPrimary`, `CornerRadius.medium`, `Spacing.xs`,
+  `Spacing.sm`, `Spacing.md` — every one referenced in the
+  surrounding `emptyState`.
+- One conditional insert above the "Starters" eyebrow on
+  `emptyState` — same `if let` pattern as `SummaryView` uses.
+- 5 new tests appended inside the existing
+  `InterventionReviewPromptTests` struct. They reuse the
+  `makeIntervention(...)` fixture from rounds 24 — no new
+  fixture, no new test scaffolding.
 - The `Noum.xcodeproj` uses Xcode 16
-  `fileSystemSynchronizedGroups` for the `Noum/` folder
-  (verified via `grep fileSystemSynchronizedGroups
-  Noum.xcodeproj/project.pbxproj`), so the new
-  `InterventionReviewPromptCard.swift` is auto-included in the
-  target without a pbxproj edit.
+  `fileSystemSynchronizedGroups` for the `Noum/` folder, so the
+  edited `InterventionReviewPromptCard.swift` and
+  `AskNoumView.swift` continue to be auto-included in the target
+  without a pbxproj edit.
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter InterventionReviewPromptTests` — the 23
-   new tests should all pass.
+1. `swift test --filter InterventionReviewPromptTests` — the
+   round-24 tests (23) + round-25 chip tests (5) should all pass
+   in the same struct.
 2. `swift test --filter CoachReadCardDailyBudgetHintTests` — the
    round-23 tests should still pass.
 3. `swift test --filter AIRateLimiterPublicationTests` — the
@@ -331,23 +282,21 @@ All checks the next agent should run on a real build host:
    the round-19 launch-CTA tests should still pass.
 7. Boot the app on simulator, seed a `CoachMemory.activeIntervention`
    where `followedRepCount == minimumFollowedRepsForReview` and
-   `reviewDueAt` is a date in the past (the case-file engine
-   stamps these naturally after a few followed reps on a
-   recommendation), then finish a rep to land on SummaryView.
-   Confirm:
-   - `InterventionReviewPromptCard` renders between the
-     `SessionReflectionInlineCard` and `TalkToNoumCTACard`
-     (standard path) or between `BaselineComparisonCard` and
-     `TalkToNoumCTACard` (IM path).
-   - Headline names the active focus, lower-cased.
-   - Body names the followed-rep count with correct singular /
-     plural noun.
-   - Tap "Review with coach" → Ask Noum opens with the
-     case-anchored opener already in the thread, the model
-     reply lands.
-   - With `voice == .authoritative` set in coaching profile,
-     the opener ends with "Is this still the right intervention,
-     or do we adapt?"; with `.warm`, "Is this still feeling like
-     the right work?"; etc.
+   `reviewDueAt` is a date in the past, then open Ask Noum
+   directly (e.g. from the home surface, not via the post-rep
+   Summary). Confirm:
+   - The "REVIEW DUE" chip renders ABOVE the "Starters" eyebrow
+     on the empty state.
+   - Chip label reads "Review my work on <focus>" with focus
+     lower-cased (e.g. "Review my work on filler reduction").
+   - Tap → the chat appends the case-anchored opener as a user
+     turn and the model reply lands inline, with the same case
+     scaffolding the summary card's CTA produces.
    - When `followedRepCount` is one short OR `reviewDueAt` is
-     in the future, the card does NOT render.
+     in the future, the chip does NOT render.
+   - When the active intervention has no focus AND no title,
+     the fallback path runs without crashing (defensive — the
+     pure helper handles this; the view path should too).
+   - Same Ask Noum thread, returning after a reply has landed:
+     the chip is hidden (the empty state itself is hidden once
+     `store.messages.isEmpty == false`).

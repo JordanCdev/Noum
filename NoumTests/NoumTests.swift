@@ -19284,4 +19284,75 @@ struct InterventionReviewPromptTests {
         )
         #expect(opener.hasSuffix("Should we keep going, adapt, or change tack?"))
     }
+
+    // MARK: - Ask Noum empty-state chip label
+    //
+    // The chip surfaces on `AskNoumView.emptyState` whenever the same
+    // `isReviewDue(at:)` predicate that gates the summary card holds,
+    // so a user who reaches Ask Noum directly (not via Summary) still
+    // sees the coach honour the review cadence. Copy is punchier than
+    // the card headline (a chip is read in one glance) and carries no
+    // trailing period — chip strings read better without one. Same
+    // focus-lower-cased / title-fallback contract as `headlineCopy(for:)`
+    // so the two surfaces stay in voice register.
+
+    @Test func chipLabelNamesFocusLowerCased() {
+        // Happy path — focus is named, lower-cased mid-phrase per the
+        // brand voice (the focus reads as a noun phrase, not a proper
+        // noun). No trailing period — the chip strings read better
+        // without one (chips aren't sentences).
+        let intervention = makeIntervention(focus: "Filler reduction", title: "Filler drill")
+        #expect(
+            InterventionReviewPromptCard.emptyStateChipLabel(for: intervention)
+                == "Review my work on filler reduction"
+        )
+    }
+
+    @Test func chipLabelFallsBackToTitleWhenFocusIsNil() {
+        // Defensive — early in the case cycle, an intervention may
+        // not yet have a focus phrase. The chip falls back to the
+        // title so the user never sees "Review my work on " with an
+        // empty noun phrase.
+        let intervention = makeIntervention(focus: nil, title: "Authority practice")
+        #expect(
+            InterventionReviewPromptCard.emptyStateChipLabel(for: intervention)
+                == "Review my work on authority practice"
+        )
+    }
+
+    @Test func chipLabelFallsBackToTitleWhenFocusIsEmpty() {
+        // Same fallback for the empty-string edge — case-engine
+        // refactors that write `""` instead of `nil` shouldn't
+        // produce an empty noun phrase on the chip.
+        let intervention = makeIntervention(focus: "", title: "Pace control")
+        #expect(
+            InterventionReviewPromptCard.emptyStateChipLabel(for: intervention)
+                == "Review my work on pace control"
+        )
+    }
+
+    @Test func chipLabelHasNoTrailingPeriod() {
+        // Contract — chip strings carry no trailing period. Pins the
+        // contract so a future refactor that adds one (to match the
+        // card headline) would surface as a test failure rather than
+        // a quietly-styled chip.
+        let intervention = makeIntervention(focus: "Pace")
+        let chip = InterventionReviewPromptCard.emptyStateChipLabel(for: intervention)
+        #expect(chip.hasSuffix(".") == false)
+    }
+
+    @Test func chipLabelDoesNotDependOnFollowedRepCount() {
+        // The chip is intentionally voice-stable — no rep counts, no
+        // cadence stamps, no time-based phrasing. It's a one-glance
+        // CTA. The followed-rep depth lives in the opener (which
+        // carries the evidence scaffolding to the model); the chip
+        // just names the subject of the review. Pins this contract
+        // so a refactor that smuggles rep counts into the chip would
+        // surface as a test failure.
+        let oneRep = makeIntervention(focus: "Pace", followedRepCount: 1)
+        let fiveReps = makeIntervention(focus: "Pace", followedRepCount: 5)
+        let chipOne = InterventionReviewPromptCard.emptyStateChipLabel(for: oneRep)
+        let chipFive = InterventionReviewPromptCard.emptyStateChipLabel(for: fiveReps)
+        #expect(chipOne == chipFive)
+    }
 }
