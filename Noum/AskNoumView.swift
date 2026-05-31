@@ -83,6 +83,8 @@ struct AskNoumView: View {
                                 }
                                 hypothesisAckRow
                                     .id("hypothesisAck")
+                                revisedReadFollowUpRow
+                                    .id("revisedReadFollowUp")
                                 if let chips = followUpChips, !chips.isEmpty {
                                     followUpRow(chips: chips)
                                         .id("followups")
@@ -640,6 +642,129 @@ struct AskNoumView: View {
         // the chat continuation is the courtesy.
         coachMemoryStore.noteHypothesisAcknowledgement(chip.confidence)
         send(chip.dispatchText)
+    }
+
+    // MARK: - Revised-read follow-up row (post-rebuild reply)
+    //
+    // Renders below the coach's reply to a `revisedReadOpener` dispatch
+    // (the round-29 seed routed by `SummaryView.talkToNoumOpener` when the
+    // post-rep `RevisedReadCard` is showing). Three voice-shaped one-tap
+    // chips — stick / add / push back — let the user land a verdict on
+    // the rebuilt working hypothesis without typing a sentence. The tap
+    // path mirrors the round-26 `hypothesisAckRow` exactly:
+    //
+    //   1. Persists the verdict to `CoachMemoryStore.shared` via
+    //      `noteHypothesisAcknowledgement(_:)`. The ack is tagged to the
+    //      NEW (rebuilt) working hypothesis snapshot — `appliesTo` will
+    //      preserve it across re-renders until the next memory rebuild.
+    //   2. Dispatches the chip's voice-shaped text as a user turn via the
+    //      existing `send(_:)` path. The chat thread stays continuous —
+    //      the chip reads as a real reply, the model gets a coherent
+    //      conversation, the next coach reply lands with the user's
+    //      verdict reflected in the user-context block (the builder reads
+    //      `memory.hypothesisAcknowledgement`).
+    //
+    // Eligibility (`shouldShowRevisedReadFollowUp`):
+    //   • Most-recent message is a non-pending coach reply.
+    //   • The user turn that triggered it begins with `revisedReadOpenerLead`
+    //     ("Picking up the case file — I flagged the prior read as off." —
+    //     pinned on `CoachContextBuilder` since round 29).
+    //   • The current memory's `workingHypothesis` is non-empty.
+    //   • The user hasn't already lodged a verdict on this rebuild (same
+    //     `CoachHypothesisAcknowledgement.appliesTo` snapshot guard as the
+    //     round-26 row — a memory rebuild that rewrote the hypothesis again
+    //     re-prompts).
+    //
+    // The two acknowledgement predicates (round-26 case-review and round-30
+    // revised-read) are mutually exclusive at the chat-shape level: a single
+    // user turn can only begin with one opener lead. The UI layer doesn't
+    // need a tiebreaker — both rows can sit back-to-back in the body and
+    // only one will ever render for a given coach reply.
+    //
+    // Vision alignment:
+    //   • Coach-parity stage #4 (Adaptation). Per `docs/VISION.md`, the
+    //     case formulation needs a "reason for changing course" AND a way
+    //     to confirm a rebuild has landed before the next adaptation
+    //     cycle fires. Round 29 closed the seed half (chat thread names
+    //     the user's pushback); round 30 closes the verdict half (chat
+    //     thread records whether the rebuild stuck, needs refining, or
+    //     needs another adaptation).
+    //   • Pillar #5 (Personalized coaching). A human coach who rebuilt
+    //     their read at the user's pushback would not move on without
+    //     asking "does this new read land?" — they'd want the user's
+    //     verdict on the revised hypothesis, not just the original one.
+    @ViewBuilder
+    private var revisedReadFollowUpRow: some View {
+        if shouldShowRevisedReadFollowUp {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Where does the new read land?")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .padding(.leading, 34)
+                    .accessibilityLabel("Quick verdict on the rebuilt working hypothesis")
+
+                FlowLayout(spacing: 8, runSpacing: 6) {
+                    ForEach(revisedReadFollowUpChips, id: \.confidence) { chip in
+                        Button {
+                            recordHypothesisAck(chip)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: ackChipGlyph(for: chip.confidence))
+                                    .font(Typography.captionSmall.weight(.semibold))
+                                Text(chip.label)
+                                    .font(Typography.caption.weight(.semibold))
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .foregroundStyle(AppColor.pro)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, 6)
+                            .background(
+                                AppColor.pro.opacity(0.10),
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(AppColor.pro.opacity(0.32), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel("Land verdict: \(chip.label)")
+                        .accessibilityIdentifier("askNoum.revisedReadFollowUp.\(chip.confidence.rawValue)")
+                    }
+                }
+                .padding(.leading, 34)
+            }
+            .padding(.top, 2)
+            .padding(.bottom, Spacing.xs)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// Eligibility composite for the revised-read follow-up row. The
+    /// predicate from `CoachContextBuilder` covers the chat-shape check;
+    /// the store-level check ensures we don't render a row the user has
+    /// already answered for the currently-carried (rebuilt) hypothesis.
+    /// Same composite shape as `shouldShowHypothesisAck`.
+    private var shouldShowRevisedReadFollowUp: Bool {
+        guard CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: store.messages) else { return false }
+        guard let memory = coachMemoryStore.currentMemory,
+              let hypothesis = memory.workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return false }
+        // Suppress if the user has already acknowledged THIS rebuilt
+        // hypothesis. A subsequent memory rebuild (e.g. another `.rejected`
+        // ack folded into a new course change) will rewrite the hypothesis
+        // and drop the ack via `appliesTo`, which re-enables the row.
+        if let ack = memory.hypothesisAcknowledgement,
+           ack.appliesTo(currentHypothesis: memory.workingHypothesis) {
+            return false
+        }
+        return true
+    }
+
+    private var revisedReadFollowUpChips: [CoachContextBuilder.HypothesisAcknowledgementChip] {
+        CoachContextBuilder.revisedReadFollowUpChips(for: voice)
     }
 
     private func followUpRow(chips: [String]) -> some View {

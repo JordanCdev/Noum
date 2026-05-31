@@ -21321,3 +21321,279 @@ struct RevisedReadOpenerTests {
         )
     }
 }
+
+// MARK: - RevisedReadFollowUpTests
+//
+// Round 30 closes the chat-surface adaptation loop opened by round 29.
+// Round 29 shipped `CoachContextBuilder.revisedReadOpener(...)` — the
+// case-anchored seed `SummaryView.talkToNoumOpener` dispatches when the
+// post-rep `RevisedReadCard` is showing. The user lands in Ask Noum with
+// their pushback already named in the user turn. The coach replies with
+// their take on the rebuilt read. Round 30 surfaces a one-tap follow-up
+// chip row below that reply so the user can record where they land on
+// the rebuild — stick / add / push back — without typing.
+//
+// Pure-helper layers under test:
+//   • `CoachContextBuilder.shouldShowRevisedReadFollowUp(messages:)` —
+//     predicate that decides when the row renders. Matches the lead of
+//     `revisedReadOpenerLead`. Pure mirror of round 26's
+//     `shouldShowHypothesisAcknowledgement` — same shape, different lead.
+//   • `CoachContextBuilder.revisedReadFollowUpChips(for:)` — the voice-
+//     shaped chip catalog; three branches per voice, all carrying the
+//     same `CoachHypothesisConfidence` enum the round-26 chips use so
+//     the durable record path is shared.
+//
+// The two acknowledgement predicates are mutually exclusive at the
+// chat-shape level — a single user turn can only begin with one opener
+// lead — so both chip rows can sit back-to-back in the AskNoumView body
+// without a tiebreaker. The MutualExclusion test pins that contract.
+//
+// Vision alignment: closes the second half of the round-29 round-30
+// "rebuild seed → rebuild verdict" pair. The case file gains a durable
+// signal on whether the user thinks the rebuild landed; that signal
+// drives the next `CoachCourseChange` decision (stick → no fresh
+// adaptation entry; push back → next adaptation cycle gets another
+// `.rejected` ack with a fresh pushback marker).
+
+@MainActor
+@Suite("RevisedReadFollowUpTests")
+struct RevisedReadFollowUpTests {
+
+    // MARK: - Predicate
+
+    @Test func shouldShowReturnsTrueWhenCoachRepliedToRevisedReadOpener() {
+        // Happy path: the user dispatched a revised-read seed (the round-29
+        // opener routed by `SummaryView.talkToNoumOpener`), the coach replied
+        // (most-recent message), no later user turn. The chip row eligible.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace appears to be the highest-leverage focus; keep checking against future reps.",
+            voice: .authoritative
+        )
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: opener),
+            CoachMessage(role: .coach, text: "Fair pushback. The pace shift this rep makes the rebuild defensible; one more clean rep and I'd call it.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == true)
+    }
+
+    @Test func shouldShowReturnsTrueWhenUserTurnStartsWithLeadEvenIfRestDiffers() {
+        // Prefix-match contract: the predicate must match on the pinned
+        // lead constant, not on the full composed opener. A future copy
+        // edit to the body or ask should not break detection.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerLead) Some future body. Some future ask?"),
+            CoachMessage(role: .coach, text: "Reply.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == true)
+    }
+
+    @Test func shouldShowReturnsFalseWhenLastMessageIsUserTurn() {
+        // After the user replies to the rebuild thread, the chip row must
+        // collapse — the conversation has moved on and a late verdict on
+        // a stale coach reply would land out of order.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerLead) The revised read you're holding is: X. Where does this go?"),
+            CoachMessage(role: .coach, text: "Here's where the rebuild lands."),
+            CoachMessage(role: .user, text: "Tell me more about the pace shift."),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseWhenCoachReplyIsPending() {
+        // While the model is composing the rebuild reply, the chip row must
+        // not render — there's no answer to land a verdict on. Pinning the
+        // pending guard stops a flash-of-chips on the typing dots.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerLead) The revised read is X."),
+            CoachMessage(role: .coach, text: "", isPending: true),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseWhenUserTurnIsOrganicQuestion() {
+        // A coach reply to a regular question (not the rebuild opener) must
+        // not surface the chip row — the row is the rebuild-verdict surface,
+        // not a generic "do you agree with me?" pestering pattern.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "What was my filler rate this week?"),
+            CoachMessage(role: .coach, text: "Your filler rate landed at 3.4 per minute this week.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseWhenUserTurnIsCaseReviewOpener() {
+        // Cross-predicate exclusion: a user turn that starts with the
+        // round-26 `interventionReviewOpenerLead` must NOT trigger the
+        // round-30 revised-read follow-up row. The round-26 hypothesis-ack
+        // row owns that opener; this predicate covers only the round-29
+        // rebuild seed.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.interventionReviewOpenerLead) Timed for filler reduction, 4 followed reps in."),
+            CoachMessage(role: .coach, text: "Three reps in, your filler rate is down by 30%.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseOnEmptyMessages() {
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: []) == false)
+    }
+
+    // MARK: - Predicate mutual exclusion with round-26 hypothesis ack
+
+    @Test func revisedReadAndHypothesisAckPredicatesAreMutuallyExclusive() {
+        // A single user turn can only begin with one opener lead — the
+        // two leads have no shared prefix — so the two predicates can
+        // never both fire on the same thread. The UI layer relies on
+        // this: `hypothesisAckRow` and `revisedReadFollowUpRow` sit
+        // back-to-back in the body, only ever rendering one chip row
+        // per coach reply.
+
+        // Case 1: revised-read opener → only round-30 predicate hot.
+        let revisedMessages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerLead) X."),
+            CoachMessage(role: .coach, text: "Reply.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: revisedMessages) == true)
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: revisedMessages) == false)
+
+        // Case 2: case-review opener → only round-26 predicate hot.
+        let reviewMessages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.interventionReviewOpenerLead) X."),
+            CoachMessage(role: .coach, text: "Reply.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: reviewMessages) == false)
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: reviewMessages) == true)
+
+        // Case 3: organic user turn → neither predicate hot.
+        let organicMessages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "Why did my score change this week?"),
+            CoachMessage(role: .coach, text: "Reply.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: organicMessages) == false)
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: organicMessages) == false)
+    }
+
+    // MARK: - Chip catalog
+
+    @Test func chipCatalogIsThreeChipsPerVoice() {
+        // The verdict palette must always offer the full three branches —
+        // confirmed / uncertain / rejected — so the user has the same
+        // expressive surface regardless of voice tone. A voice that
+        // collapsed the catalog to two would deny the user the
+        // "uncertain" middle option ("Here's what I'd add" — the refinement
+        // path that's neither a full stick nor a full pushback).
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling] {
+            let chips = CoachContextBuilder.revisedReadFollowUpChips(for: voice)
+            #expect(chips.count == 3, "voice \(voice) chip catalog missing branches")
+            #expect(Set(chips.map(\.confidence)) == Set([.confirmed, .uncertain, .rejected]))
+        }
+        let nilChips = CoachContextBuilder.revisedReadFollowUpChips(for: nil)
+        #expect(nilChips.count == 3)
+        #expect(Set(nilChips.map(\.confidence)) == Set([.confirmed, .uncertain, .rejected]))
+    }
+
+    @Test func chipDispatchTextIsNeverEmpty() {
+        // Defensive: the dispatched user turn lands in the chat thread.
+        // An empty dispatch would create a blank user bubble and an
+        // orphan coach turn.
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil] as [SpeakingStyleGoal?] {
+            let chips = CoachContextBuilder.revisedReadFollowUpChips(for: voice)
+            for chip in chips {
+                #expect(!chip.dispatchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        "voice \(String(describing: voice)) confidence \(chip.confidence) has empty dispatch")
+                #expect(!chip.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        "voice \(String(describing: voice)) confidence \(chip.confidence) has empty label")
+            }
+        }
+    }
+
+    @Test func chipLabelsAvoidBannedPhrasings() {
+        // Brand-voice rule scan — no exclamation marks, no "Let's" in the
+        // user-facing chip label, no urgency framing. The chips are a
+        // verdict surface, not a CTA chorus. The dispatched text may
+        // contain "let's" in the warm voice (an inside-thread aside is
+        // brand-compliant) but the label the user TAPS must stay flat.
+        let bannedAlways = ["!", "hurry", "now or never"]
+        let bannedInLabel = ["Let's", "let's"]
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil] as [SpeakingStyleGoal?] {
+            let chips = CoachContextBuilder.revisedReadFollowUpChips(for: voice)
+            for chip in chips {
+                for phrase in bannedAlways {
+                    #expect(!chip.label.contains(phrase),
+                            "voice \(String(describing: voice)) chip label contains banned phrase \(phrase)")
+                    #expect(!chip.dispatchText.contains(phrase),
+                            "voice \(String(describing: voice)) chip dispatch contains banned phrase \(phrase)")
+                }
+                for phrase in bannedInLabel {
+                    #expect(!chip.label.contains(phrase),
+                            "voice \(String(describing: voice)) chip label contains banned phrase \(phrase)")
+                }
+            }
+        }
+    }
+
+    // MARK: - Voice-shape sanity
+
+    @Test func authoritativeVoiceUsesDecisionRegister() {
+        // Voice-shape sanity: the authoritative coach's chips read as
+        // decisions ("Lock the new read in"), not as collaborative agreement
+        // ("This one fits" is the warm coach's register). Catches a
+        // copy-paste of the warm chips into the authoritative slot.
+        let chips = CoachContextBuilder.revisedReadFollowUpChips(for: .authoritative)
+        let confirmed = chips.first { $0.confidence == .confirmed }
+        #expect(confirmed?.label == "Lock the new read in")
+    }
+
+    @Test func warmVoiceUsesCollaborativeRegister() {
+        // Voice-shape sanity: warm coach uses "fits" language for confirm,
+        // first-person collaborative phrasing throughout.
+        let chips = CoachContextBuilder.revisedReadFollowUpChips(for: .warm)
+        let confirmed = chips.first { $0.confidence == .confirmed }
+        #expect(confirmed?.label == "This one fits")
+    }
+
+    @Test func conciseVoiceUsesOneWordLabels() {
+        // The concise coach's chips compress to single tokens so the
+        // verdict reads as fast as the voice expects — mirror of the
+        // round-26 concise catalog ("Matches" / "Unsure" / "Adapt").
+        let chips = CoachContextBuilder.revisedReadFollowUpChips(for: .concise)
+        let labels = chips.map(\.label)
+        #expect(labels.contains("Stick"))
+        #expect(labels.contains("Add"))
+        #expect(labels.contains("Reframe"))
+    }
+
+    @Test func executiveVoiceUsesApprovalRegister() {
+        // Voice-shape sanity: executive coach uses "approve / amend / reject"
+        // — the verdict palette of a board meeting, not a chat. Catches a
+        // copy-paste of the authoritative chips into the executive slot.
+        let chips = CoachContextBuilder.revisedReadFollowUpChips(for: .executive)
+        let labels = chips.map(\.label)
+        #expect(labels.contains("Approve the rebuild"))
+        #expect(labels.contains("Reject — try again"))
+    }
+
+    @Test func storytellingVoiceUsesChapterMetaphor() {
+        // Voice-shape sanity: storytelling coach uses narrative-arc framing
+        // — "chapter" / "scene" — so the verdict feels like an editorial
+        // call on a story-in-progress. Mirror of the round-26 storytelling
+        // catalog's "arc" / "chapter" phrasing.
+        let chips = CoachContextBuilder.revisedReadFollowUpChips(for: .storytelling)
+        let labels = chips.map(\.label)
+        #expect(labels.contains("That's the chapter"))
+        #expect(labels.contains("Add a scene"))
+        #expect(labels.contains("A different chapter"))
+    }
+
+    @Test func nilVoiceProducesVoiceNeutralLabels() {
+        // No voice set yet (user hasn't completed the coaching profile)
+        // → neutral labels that name the verdict without leaning on any
+        // particular voice register. Defensive against a half-onboarded
+        // user landing the rebuild seed.
+        let chips = CoachContextBuilder.revisedReadFollowUpChips(for: nil)
+        let labels = chips.map(\.label)
+        #expect(labels.contains("Stick with the new read"))
+        #expect(labels.contains("Here's what I'd add"))
+        #expect(labels.contains("Try a different read"))
+    }
+}

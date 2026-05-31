@@ -1148,6 +1148,126 @@ enum CoachContextBuilder {
         }
     }
 
+    // MARK: - Revised-read follow-up chips (post-rebuild reply)
+    //
+    // Round 30 — the chat-surface complement to round 29's `revisedReadOpener`.
+    // After the user dispatches a revised-read seed (the post-rep summary's
+    // `TalkToNoumCTACard` routes through `talkToNoumOpener` and lands the
+    // round-29 `revisedReadOpenerLead` clause as the user turn) and the coach
+    // replies with their take on the rebuilt read, surface a single row of
+    // one-tap follow-up chips so the user can record where they land on the
+    // rebuild without typing a sentence. Three branches —
+    //
+    //   • stick with the new read   (durable verdict: `.confirmed`)
+    //   • add to the new read       (durable verdict: `.uncertain`)
+    //   • push back again           (durable verdict: `.rejected`)
+    //
+    // — land on the same `CoachHypothesisAcknowledgement` storage the
+    // hypothesis-ack chips write to. The rebuild rewrote the working
+    // hypothesis, so the previous ack snapshot no longer applies (per
+    // `appliesTo`); this row prompts the user to land a verdict on the NEW
+    // hypothesis without re-routing through a case-review opener. The
+    // adaptation lineage stays continuous: a `.rejected` reply on the
+    // rebuild becomes the next `CoachCourseChange` entry's pushback marker;
+    // a `.confirmed` reply locks the rebuild in without forcing another
+    // `interventionReviewPromptCard` cadence to fire.
+    //
+    // Mirror of `shouldShowHypothesisAcknowledgement` /
+    // `hypothesisAcknowledgementChips(for:)` (round 26):
+    //   • Same predicate shape — last message is a non-pending coach reply,
+    //     prior user turn begins with the opener lead. Only the lead
+    //     constant differs (`revisedReadOpenerLead` instead of
+    //     `interventionReviewOpenerLead`).
+    //   • Same chip type — `HypothesisAcknowledgementChip` carries the
+    //     verdict + label + dispatched user-turn text.
+    //   • Same record path on the view side —
+    //     `recordHypothesisAck(_:)` writes to
+    //     `CoachMemoryStore.noteHypothesisAcknowledgement(_:)`. One storage
+    //     home for both surfaces.
+    //
+    // The two predicates are mutually exclusive at the chat-shape level —
+    // a single user turn can only begin with one opener lead — so the two
+    // chip rows never render side-by-side. The UI layer doesn't need a
+    // tiebreaker.
+
+    /// Should the AskNoumView render the revised-read follow-up chip row?
+    /// True when the thread's most-recent message is a non-pending coach
+    /// reply AND the user turn that triggered it begins with the
+    /// `revisedReadOpenerLead` prefix. Pure-function mirror of
+    /// `shouldShowHypothesisAcknowledgement(messages:)` — same shape,
+    /// different lead constant.
+    ///
+    /// Why both conditions: we only want the chip row after the coach has
+    /// actually answered the rebuild seed — not on the user turn (which is
+    /// the seed itself) and not while the reply is pending (premature
+    /// follow-up). A later user turn means the conversation has moved on;
+    /// the chip row stops rendering.
+    static func shouldShowRevisedReadFollowUp(messages: [CoachMessage]) -> Bool {
+        guard let last = messages.last,
+              last.role == .coach,
+              !last.isPending,
+              !last.text.isEmpty else { return false }
+        let prior = messages.dropLast()
+        guard let userTurn = prior.last(where: { $0.role == .user }) else { return false }
+        return userTurn.text.hasPrefix(revisedReadOpenerLead)
+    }
+
+    /// Three voice-shaped follow-up chips — confirmed / uncertain /
+    /// rejected — for the rep where the user just received a coach reply
+    /// to a revised-read opener. The user can stick with the rebuild,
+    /// refine it, or push back again. The chip set is fixed at three so
+    /// the row reads as a complete verdict palette; labels shift per
+    /// voice so the authoritative coach's read as decisions ("Lock the
+    /// new read in") while the warm coach's read as collaboration ("This
+    /// feels right — let's stay here") — same three durable
+    /// `CoachHypothesisConfidence` branches under the hood.
+    static func revisedReadFollowUpChips(for voice: SpeakingStyleGoal?) -> [HypothesisAcknowledgementChip] {
+        switch voice {
+        case .authoritative:
+            return [
+                .init(confidence: .confirmed, label: "Lock the new read in", dispatchText: "Lock the new read in."),
+                .init(confidence: .uncertain, label: "Here's what I'd add", dispatchText: "Here's what I'd add to the new read."),
+                .init(confidence: .rejected, label: "Try a third angle", dispatchText: "Try a third angle."),
+            ]
+        case .warm:
+            return [
+                .init(confidence: .confirmed, label: "This one fits", dispatchText: "This one fits — I'd stay with it."),
+                .init(confidence: .uncertain, label: "I'd add to it", dispatchText: "I'd add something to it."),
+                .init(confidence: .rejected, label: "Still not quite there", dispatchText: "Still not quite there — try another angle."),
+            ]
+        case .concise:
+            return [
+                .init(confidence: .confirmed, label: "Stick", dispatchText: "Stick with it."),
+                .init(confidence: .uncertain, label: "Add", dispatchText: "Add this."),
+                .init(confidence: .rejected, label: "Reframe", dispatchText: "Reframe."),
+            ]
+        case .persuasive:
+            return [
+                .init(confidence: .confirmed, label: "I'll make this case", dispatchText: "I'll make this case."),
+                .init(confidence: .uncertain, label: "I'd refine the claim", dispatchText: "I'd refine the claim."),
+                .init(confidence: .rejected, label: "Argue a third angle", dispatchText: "Argue a third angle."),
+            ]
+        case .executive:
+            return [
+                .init(confidence: .confirmed, label: "Approve the rebuild", dispatchText: "Approve the rebuild."),
+                .init(confidence: .uncertain, label: "Amend — one addition", dispatchText: "Amend — one addition."),
+                .init(confidence: .rejected, label: "Reject — try again", dispatchText: "Reject — try a third read."),
+            ]
+        case .storytelling:
+            return [
+                .init(confidence: .confirmed, label: "That's the chapter", dispatchText: "That's the chapter."),
+                .init(confidence: .uncertain, label: "Add a scene", dispatchText: "I'd add a scene."),
+                .init(confidence: .rejected, label: "A different chapter", dispatchText: "A different chapter."),
+            ]
+        case .none:
+            return [
+                .init(confidence: .confirmed, label: "Stick with the new read", dispatchText: "Stick with the new read."),
+                .init(confidence: .uncertain, label: "Here's what I'd add", dispatchText: "Here's what I'd add."),
+                .init(confidence: .rejected, label: "Try a different read", dispatchText: "Try a different read."),
+            ]
+        }
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
