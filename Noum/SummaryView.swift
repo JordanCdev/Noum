@@ -629,6 +629,12 @@ struct SummaryView: View {
                                 rating: ratingStore.rating,
                                 pressureLevel: recentSessions.first?.pressureLevel ?? .standard
                             )
+                            if let revisedChange = freshRevisedReadChange {
+                                RevisedReadCard(
+                                    change: revisedChange,
+                                    workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis
+                                )
+                            }
                             if let reviewIntervention = activeReviewDueIntervention {
                                 InterventionReviewPromptCard(
                                     intervention: reviewIntervention,
@@ -738,6 +744,12 @@ struct SummaryView: View {
                             SessionReflectionInlineCard(
                                 sessionID: sessionStore.sessions.first?.id
                             )
+                            if let revisedChange = freshRevisedReadChange {
+                                RevisedReadCard(
+                                    change: revisedChange,
+                                    workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis
+                                )
+                            }
                             if let reviewIntervention = activeReviewDueIntervention {
                                 InterventionReviewPromptCard(
                                     intervention: reviewIntervention,
@@ -1982,6 +1994,26 @@ struct SummaryView: View {
               let intervention = memory.activeIntervention,
               intervention.isReviewDue(at: Date()) else { return nil }
         return intervention
+    }
+
+    // MARK: - Revised-read card (post-rep user-pushback surface)
+    //
+    // Returns the latest `CoachCourseChange` iff it both (a) documents a
+    // user-tapped rejection of the prior working hypothesis and (b) was
+    // appended on the same rebuild that produced the current memory.
+    // Both predicates live on `CoachCourseChange` as pure-function
+    // properties so the eligibility contract is locked by the engine
+    // tests, not duplicated here. Returns nil when there is no memory,
+    // no adaptation log, or the latest entry is engine-only / older
+    // than this rebuild. See `RevisedReadCard` for the rendering
+    // contract.
+
+    private var freshRevisedReadChange: CoachCourseChange? {
+        guard let memory = coachMemoryStore.currentMemory,
+              let latest = memory.adaptationLog?.last,
+              latest.documentsUserPushback,
+              latest.isFresh(comparedTo: memory.updatedAt) else { return nil }
+        return latest
     }
 
     /// Build the case-anchored opener for the review CTA. Routes

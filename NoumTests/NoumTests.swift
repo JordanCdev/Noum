@@ -10910,6 +10910,136 @@ struct CoachMemoryEngineTests {
                 "trimmed evidence basis stays short and readable")
     }
 
+    // MARK: - Round-28: `CoachCourseChange` predicates for the
+    // post-rep `RevisedReadCard` eligibility contract. Pure-function
+    // tests; no engine round-trip required.
+
+    @Test func courseChangeDocumentsUserPushbackOnRejectionAck() {
+        // The `(nil, ack?)` switch arm in `CoachMemoryEngine.build(...)`
+        // — a user-pushback rejection that rewrote the hypothesis text
+        // inside the same lever — must mark `documentsUserPushback`.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+        #expect(change.documentsUserPushback == true)
+    }
+
+    @Test func courseChangeDocumentsUserPushbackOnCombinedShiftAndRejection() {
+        // The `(prior?, ack?)` switch arm — both lever shifted AND the
+        // user rejected the prior hypothesis — also marks pushback so
+        // the post-rep card surfaces on a same-rebuild combined branch.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .answerDevelopment,
+            reason: "Shifted focus from Pace to Depth after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+        #expect(change.documentsUserPushback == true)
+    }
+
+    @Test func courseChangeDoesNotDocumentUserPushbackOnEngineOnlyShift() {
+        // The `(prior?, nil)` switch arm — engine inference only, no
+        // user ack — must NOT mark pushback. The post-rep card stays
+        // hidden on these; the Profile-tab `CaseReviewCard` keeps the
+        // long-term history.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .answerDevelopment,
+            reason: "Shifted focus from Pace to Depth.",
+            evidenceBasis: "updated read across recent reps"
+        )
+        #expect(change.documentsUserPushback == false)
+    }
+
+    @Test func courseChangeIsFreshWhenStampedAtMemoryUpdate() {
+        // Both `changedAt` and `CoachMemory.updatedAt` are written from
+        // the same `now` in `CoachMemoryEngine.build(...)`, so equality
+        // must read as fresh.
+        let now = Date(timeIntervalSince1970: 1_000)
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: now,
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: ""
+        )
+        #expect(change.isFresh(comparedTo: now) == true)
+    }
+
+    @Test func courseChangeIsNotFreshAcrossMultipleSessions() {
+        // The carried-forward entry on a later rebuild (memory.updatedAt
+        // moved on, but the bounded history still holds the older
+        // change) must read as stale so the post-rep card does not
+        // re-show on every subsequent rep.
+        let changedAt = Date(timeIntervalSince1970: 1_000)
+        let laterMemoryUpdate = Date(timeIntervalSince1970: 2_000)
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: ""
+        )
+        #expect(change.isFresh(comparedTo: laterMemoryUpdate) == false)
+    }
+
+    @Test func freshlyBuiltMemoryMarksRejectedAckEntryAsFreshAndPushback() {
+        // End-to-end pin: a single `CoachMemoryEngine.build(...)` pass
+        // that folds a `.rejected` ack into a course-change entry must
+        // produce an entry whose `documentsUserPushback` is true AND
+        // whose `changedAt` is fresh against the returned memory's
+        // `updatedAt`. Round-trips the contract the `RevisedReadCard`
+        // gate reads on the post-rep summary.
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 2,
+            evidenceConfidence: .tentative,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Pace may be the highest-leverage focus because stable at developing; verify over more reps.",
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .rejected,
+                hypothesisSnapshot: "Pace may be the highest-leverage focus because stable at developing; verify over more reps.",
+                acknowledgedAt: Date(timeIntervalSince1970: 950)
+            )
+        )
+        let trend = SkillTrend(
+            skillArea: .paceControl,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 10,
+            currentLevel: .developing
+        )
+        let now = Date(timeIntervalSince1970: 1_000)
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .warm),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: now
+        )
+        let entry = memory?.adaptationLog?.last
+        #expect(entry?.documentsUserPushback == true)
+        #expect(entry?.isFresh(comparedTo: memory?.updatedAt ?? .distantPast) == true)
+        #expect(memory?.updatedAt == now)
+    }
+
     private func ahCounterSession(fillers: Int, at time: TimeInterval) -> PracticeSession {
         PracticeSession(
             transcript: "rep",
@@ -20923,5 +21053,68 @@ struct DerivedReadsTrendEngineTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(DerivedReadTrend.self, from: data)
         #expect(decoded == original)
+    }
+}
+
+// MARK: - RevisedReadCardTests
+//
+// Round-28 pure-copy tests for the post-rep "REVISED READ" surface.
+// The card renders only when (1) the latest `CoachCourseChange`
+// documents user pushback AND (2) the entry is fresh against the
+// carrying memory's `updatedAt`. Both predicates live on
+// `CoachCourseChange` and are pinned by `CoachMemoryEngineTests` —
+// this suite pins the user-facing copy itself so a future edit to
+// `bodyCopy` doesn't quietly drift away from the engine's
+// `workingHypothesis` clause shape.
+
+@available(iOS 17.0, *)
+@MainActor
+@Suite("RevisedReadCardTests")
+struct RevisedReadCardTests {
+
+    @Test func headlineCopyNamesUserAction() {
+        // The user reads their own action ("you flagged") so the card
+        // lands as an acknowledgement, not a generic plan-change ping.
+        #expect(RevisedReadCard.headlineCopy == "You flagged the prior read as off.")
+    }
+
+    @Test func bodyCopyQuotesRevisedHypothesisInline() {
+        // Names the revised working hypothesis so the user reads
+        // exactly what the coach has updated to. Mirrors the
+        // `workingHypothesis(lever:evidenceConfidence:)` clause shape.
+        let hypothesis = "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+        let body = RevisedReadCard.bodyCopy(workingHypothesis: hypothesis)
+        #expect(body.hasPrefix("Here's the revised read: "))
+        #expect(body.contains("Pace appears to be the highest-leverage focus"))
+    }
+
+    @Test func bodyCopyStripsTrailingPeriodToAvoidDoubleStop() {
+        // The engine's hypothesis clause already ends with `.`; the
+        // card's "Here's the revised read: …" wrapper adds another.
+        // The body must drop the inner period so the line never reads
+        // as two sentences ending in one.
+        let hypothesis = "Pace appears to be the highest-leverage focus; keep checking against future reps."
+        let body = RevisedReadCard.bodyCopy(workingHypothesis: hypothesis)
+        // Should not contain `..` (which would mean both periods landed).
+        #expect(!body.contains(".."))
+        // Should still end with exactly one period.
+        #expect(body.hasSuffix("."))
+    }
+
+    @Test func bodyCopyFallsBackWhenNoHypothesis() {
+        // Defensive: a memory rebuild with no current lever produces
+        // `workingHypothesis == nil`. The card must still read as a
+        // calm acknowledgement rather than rendering an empty line.
+        let body = RevisedReadCard.bodyCopy(workingHypothesis: nil)
+        #expect(body == "The coach noted it and is forming the next read.")
+    }
+
+    @Test func bodyCopyFallsBackWhenHypothesisIsBlank() {
+        // Whitespace-only hypothesis takes the same fallback as nil so
+        // the card never renders "Here's the revised read: ." Either
+        // boundary should be unreachable through the store, but the
+        // Codable round-trip could deliver a bad value; defend here.
+        let body = RevisedReadCard.bodyCopy(workingHypothesis: "   \n  ")
+        #expect(body == "The coach noted it and is forming the next read.")
     }
 }

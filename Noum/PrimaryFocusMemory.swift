@@ -158,6 +158,38 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     var toLever: SkillArea?
     var reason: String
     var evidenceBasis: String
+
+    /// Marker phrase shared with `CoachMemoryEngine.build(...)`'s rejection-
+    /// aware adaptation branch. Both the `(prior?, ack?)` and `(nil, ack?)`
+    /// switch arms write this clause into `reason`, so the predicate below
+    /// matches whenever the documented reason is a user-tapped rejection.
+    /// Lifted as a constant so a copy edit in the engine forces the predicate
+    /// to follow in one place.
+    static let userPushbackMarker = "user reported the prior hypothesis did not match"
+
+    /// True iff this course change documents a user-tapped rejection of the
+    /// prior working hypothesis (as opposed to an engine-only lever shift).
+    /// Pure function of the persisted `reason` — no extra state to round-trip
+    /// through Codable, so memories persisted before this lift decode and
+    /// behave correctly without a schema bump.
+    var documentsUserPushback: Bool {
+        reason.range(of: CoachCourseChange.userPushbackMarker, options: .caseInsensitive) != nil
+    }
+
+    /// Was this course change appended on the same rebuild that produced
+    /// the carrying `CoachMemory`? Used by `RevisedReadCard` (post-rep
+    /// summary) to surface "you flagged the prior read as off" only when
+    /// the pushback was just folded in — not on every subsequent rep when
+    /// the entry persists in the bounded adaptation history.
+    ///
+    /// Both `CoachCourseChange.changedAt` and `CoachMemory.updatedAt` are
+    /// stamped from the same `now` in `CoachMemoryEngine.build(...)`, so
+    /// equality holds round-trip after Codable. The 1-second tolerance is
+    /// defensive against test fixtures that pass slightly-different `Date`
+    /// instances.
+    func isFresh(comparedTo memoryUpdatedAt: Date) -> Bool {
+        abs(changedAt.timeIntervalSince(memoryUpdatedAt)) <= 1.0
+    }
 }
 
 /// The next coaching move implied by a user's real-world outcome report.
