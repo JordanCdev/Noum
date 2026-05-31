@@ -21597,3 +21597,392 @@ struct RevisedReadFollowUpTests {
         #expect(labels.contains("Try a different read"))
     }
 }
+
+// MARK: - FreshRevisedReadContextTests
+//
+// Round 31 closes the user-context-block half of the rebuild loop opened
+// by round 28 (`RevisedReadCard`), continued by round 29
+// (`revisedReadOpener`), and recorded by round 30
+// (`revisedReadFollowUpChips`). Round 28 surfaced the rebuild on the
+// post-rep summary; round 29 named the user's pushback in the dispatched
+// chat seed; round 30 collected the user's verdict on the rebuild.
+//
+// The chat-coach context block — the user-context payload the model reads
+// on every reply — has been carrying the generic "Last course change:
+// <reason> (<basis>)" line from `interventionCycleLines` all along. That
+// line is honest but flat: the model has to parse the reason text to know
+// the change was a user-pushback rebuild AND that the rebuild is still
+// fresh. Round 31 lifts the predicate pair `documentsUserPushback` +
+// `isFresh(comparedTo:)` (already pure-functions on `CoachCourseChange`,
+// already used by `SummaryView.freshRevisedReadChange` to gate
+// `RevisedReadCard`) into a shared helper on `CoachContextBuilder`, then
+// surfaces a dedicated two-line block when the predicate fires so the
+// model can speak to the rebuild as the operating read across the whole
+// window between rebuild and the next followed rep.
+//
+// Pure-helper layers under test:
+//   • `CoachContextBuilder.freshRevisedReadChange(in:)` — predicate that
+//     returns the latest pushback rebuild iff it is also fresh against
+//     the current `CoachMemory.updatedAt`. Pure mirror of the SummaryView
+//     gate, lifted into shared code.
+//   • `CoachContextBuilder.freshRevisedReadContextLines(memory:)` — the
+//     two context-block lines emitted when the predicate fires AND the
+//     carrying `workingHypothesis` is non-empty.
+//
+// Integration layer under test:
+//   • `CoachContextBuilder.userContext(...)` wiring — when the predicate
+//     fires, the dedicated two-line block replaces the generic
+//     "Last course change" line inside INTERVENTION CYCLE. When the
+//     predicate does not fire, the generic line still surfaces unchanged.
+//
+// Vision alignment: closes the round-28/29/30 lineage by carrying the
+// rebuild state into EVERY chat turn through the next followed rep.
+// Coach-parity stage #4 (Adaptation): a coach who'd just rebuilt their
+// read at the user's pushback would not speak to the next chat turn as if
+// the current hypothesis had always been there — they'd remember they
+// just changed it, name the change, and check whether the user is
+// settling into it. The new context lines give the model the same memory.
+
+@MainActor
+@Suite("FreshRevisedReadContextTests")
+struct FreshRevisedReadContextTests {
+
+    // MARK: - Fixtures
+
+    private static func pushbackChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "user marked the prior hypothesis as off across 3 followed reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func engineOnlyChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "declining trend in recent reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func memory(
+        updatedAt: Date = Date(),
+        adaptationLog: [CoachCourseChange]?,
+        workingHypothesis: String? = "Pace appears to be the highest-leverage focus across recent reps."
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            voice: .authoritative,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "rebuilt after user pushback",
+            previousLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis,
+            adaptationLog: adaptationLog
+        )
+    }
+
+    private func sampleProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .authoritative,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    // MARK: - Predicate
+
+    @Test func freshRevisedReadChangeReturnsLatestPushbackWhenFreshAndPushback() {
+        // Happy path: the latest adaptation entry documents user pushback
+        // (reason carries `userPushbackMarker`) AND was appended on the
+        // same rebuild that produced `memory.updatedAt` (changedAt drift
+        // ≤ 1s). Predicate returns the entry.
+        let now = Date()
+        let change = Self.pushbackChange(at: now)
+        let mem = Self.memory(updatedAt: now, adaptationLog: [change])
+        let result = CoachContextBuilder.freshRevisedReadChange(in: mem)
+        #expect(result?.id == change.id)
+    }
+
+    @Test func freshRevisedReadChangeReturnsNilForEngineOnlyChange() {
+        // Engine-only lever shifts (the reason does NOT carry the
+        // pushback marker) must NOT trip the predicate. The dedicated
+        // rebuild lines only apply when the user explicitly rejected
+        // the prior read — engine drift gets the generic line.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(at: now)]
+        )
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    @Test func freshRevisedReadChangeReturnsNilWhenStale() {
+        // A pushback rebuild that landed on a PRIOR rep (changedAt drift
+        // > 1s from memory.updatedAt) is no longer fresh — a followed
+        // rep has rewritten memory since. The predicate must drop it so
+        // the dedicated lines don't outlive the rep they were tagged to.
+        let memUpdated = Date()
+        let staleChange = Self.pushbackChange(at: memUpdated.addingTimeInterval(-300))
+        let mem = Self.memory(updatedAt: memUpdated, adaptationLog: [staleChange])
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    @Test func freshRevisedReadChangeReturnsNilForNilAdaptationLog() {
+        // No adaptation history → predicate returns nil. Defensive
+        // against the round-trip path for memories persisted before the
+        // adaptation log existed.
+        let mem = Self.memory(adaptationLog: nil)
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    @Test func freshRevisedReadChangeReturnsNilForEmptyAdaptationLog() {
+        let mem = Self.memory(adaptationLog: [])
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    @Test func freshRevisedReadChangeIgnoresEarlierPushbackWhenLatestIsEngineOnly() {
+        // The predicate reads the LATEST entry only. A historic pushback
+        // followed by a fresh engine-only shift must not trip the
+        // dedicated lines — the rebuild context belongs to the prior
+        // rep, not the current one.
+        let now = Date()
+        let earlierPushback = Self.pushbackChange(at: now.addingTimeInterval(-600))
+        let latestEngineShift = Self.engineOnlyChange(at: now)
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [earlierPushback, latestEngineShift]
+        )
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    // MARK: - Context lines
+
+    @Test func contextLinesEmitTwoLinesWhenPredicateFiresAndHypothesisPresent() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            workingHypothesis: "Pace appears to be the highest-leverage focus."
+        )
+        let lines = CoachContextBuilder.freshRevisedReadContextLines(memory: mem)
+        #expect(lines.count == 2)
+    }
+
+    @Test func contextLinesEmitNothingWhenPredicateFiresButHypothesisIsNil() {
+        // The dedicated lines reference "the working hypothesis above" — a
+        // missing hypothesis would point at nothing and read incoherently
+        // to the model. Suppress the lines; the generic "Last course
+        // change" fallback still surfaces via `interventionCycleLines`.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            workingHypothesis: nil
+        )
+        #expect(CoachContextBuilder.freshRevisedReadContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func contextLinesEmitNothingWhenHypothesisIsWhitespaceOnly() {
+        // Whitespace-only hypothesis treated as empty after trim. Same
+        // restraint as the round-28 `RevisedReadCard.bodyCopy` contract:
+        // a blank hypothesis is not a rebuild to speak to.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            workingHypothesis: "   \n  "
+        )
+        #expect(CoachContextBuilder.freshRevisedReadContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func contextLinesEmitNothingWhenPredicateDoesNotFire() {
+        // No pushback marker on the latest entry → no dedicated lines.
+        // The generic "Last course change" line carries the engine-only
+        // shift in `interventionCycleLines` instead.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(at: now)]
+        )
+        #expect(CoachContextBuilder.freshRevisedReadContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func contextLinesCaseStateEchoesRevisedReadCardPhrasing() {
+        // Cross-surface read consistency: the line the model reads
+        // ("flagged the prior read as off") echoes the line the user
+        // reads on `RevisedReadCard` ("You flagged the prior read as
+        // off.") and the user-turn opener
+        // (`revisedReadOpenerLead`: "Picking up the case file — I
+        // flagged the prior read as off."). One phrase across three
+        // surfaces — the rebuild reads as the same event everywhere.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)]
+        )
+        let lines = CoachContextBuilder.freshRevisedReadContextLines(memory: mem)
+        #expect(lines.first?.contains("flagged the prior read as off") == true)
+        #expect(lines.first?.contains("the working hypothesis above is the rebuilt one") == true)
+    }
+
+    @Test func contextLinesCaseStateCarriesEvidenceBasisInParentheses() {
+        // The engine documents an evidence basis on every course change
+        // (e.g., "user marked the prior hypothesis as off across 3
+        // followed reps"). The dedicated line surfaces that basis in
+        // parentheses so the model knows what evidence the rebuild rests
+        // on — never overclaiming, never inventing evidence.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(
+                at: now,
+                evidenceBasis: "user marked the prior hypothesis as off across 3 followed reps"
+            )]
+        )
+        let lines = CoachContextBuilder.freshRevisedReadContextLines(memory: mem)
+        #expect(lines.first?.contains("(user marked the prior hypothesis as off across 3 followed reps)") == true)
+    }
+
+    @Test func contextLinesCaseStateOmitsParensWhenEvidenceBasisIsEmpty() {
+        // Defensive: a course change with an empty evidence basis (the
+        // `(nil, nil)` arm of `CoachMemoryEngine.build`) must not render
+        // "(  )" or a dangling empty parens tail. Suppress the tail.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now, evidenceBasis: "")]
+        )
+        let lines = CoachContextBuilder.freshRevisedReadContextLines(memory: mem)
+        #expect(lines.first?.contains("the rebuilt one.") == true)
+        #expect(lines.first?.contains("(") == false)
+    }
+
+    @Test func contextLinesCoachMoveTellsModelToSpeakToRebuild() {
+        // The second line is the coach-move instruction. It must tell
+        // the model to speak to the rebuild as the live operating read
+        // AND leave room for the user to settle into it or push back
+        // again — the anti-overclaim and anti-fake-certainty rules from
+        // CLAUDE.md applied to the rebuild context.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)]
+        )
+        let lines = CoachContextBuilder.freshRevisedReadContextLines(memory: mem)
+        #expect(lines.count == 2)
+        let move = lines.last ?? ""
+        #expect(move.contains("speak to it as the live operating read"))
+        #expect(move.contains("not the original"))
+        #expect(move.contains("settle into the rebuild or push back again"))
+    }
+
+    // MARK: - userContext wiring
+
+    @Test func userContextSurfacesDedicatedLinesAndSuppressesGenericLineOnFreshRebuild() {
+        // Integration: when the fresh-pushback predicate fires, the
+        // dedicated two-line block surfaces inside INTERVENTION CYCLE
+        // AND the generic "Last course change:" line is suppressed.
+        // Surfacing both would be a redundancy; the dedicated lines
+        // describe the same change with more precision.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)]
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
+        #expect(ctx.contains("Case file just shifted: the user flagged the prior read as off"))
+        #expect(ctx.contains("Coach move on the rebuild: speak to it as the live operating read"))
+        // The generic "Last course change:" prefix must NOT appear when
+        // the dedicated lines are emitted — that's the suppression
+        // contract `interventionCycleLines` is gating on.
+        #expect(ctx.contains("Last course change:") == false)
+    }
+
+    @Test func userContextStillSurfacesGenericLineForEngineOnlyChange() {
+        // Inverse contract: an engine-only lever shift (the round-19
+        // pre-pushback adaptation lineage) still surfaces the generic
+        // "Last course change" line as before. No regression on
+        // engine-only adaptation context.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(
+                at: now,
+                evidenceBasis: "declining trend in recent reps"
+            )]
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words. (declining trend in recent reps)."))
+        #expect(ctx.contains("Case file just shifted:") == false)
+    }
+
+    @Test func userContextSurfacesGenericLineWhenPushbackIsStale() {
+        // A pushback rebuild that landed on a prior rep (changedAt drift
+        // > 1s from memory.updatedAt) is no longer fresh — a followed
+        // rep has rewritten memory since. The dedicated lines drop; the
+        // generic line still names the historic course change, preserving
+        // the case-formulation read.
+        let memUpdated = Date()
+        let stale = Self.pushbackChange(
+            at: memUpdated.addingTimeInterval(-600),
+            evidenceBasis: "user marked the prior hypothesis as off across 3 followed reps"
+        )
+        let mem = Self.memory(updatedAt: memUpdated, adaptationLog: [stale])
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words after the user reported the prior hypothesis did not match what they saw. (user marked the prior hypothesis as off across 3 followed reps)."))
+        #expect(ctx.contains("Case file just shifted:") == false)
+    }
+}

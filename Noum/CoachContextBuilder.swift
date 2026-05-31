@@ -1268,6 +1268,81 @@ enum CoachContextBuilder {
         }
     }
 
+    // MARK: - Fresh revised-read context (carries the rebuild into every chat turn)
+    //
+    // Round 31 — the context-block complement to rounds 28/29/30. Round 28
+    // surfaced `RevisedReadCard` on the post-rep summary when the user's
+    // pushback was just folded into a rebuilt working hypothesis. Round 29
+    // dispatched a case-anchored seed into Ask Noum so the chat thread
+    // opened with the user's pushback named. Round 30 collected the user's
+    // verdict on the rebuild via a one-tap chip row.
+    //
+    // The chat-coach user-context block — the payload the model reads on
+    // every reply — has been carrying the generic
+    // "Last course change: <reason> (<evidenceBasis>)" line from
+    // `interventionCycleLines` all along. That line is honest but flat:
+    // the model has to parse the `reason` text to know this was a
+    // user-pushback rebuild AND that the rebuild is still fresh (i.e.,
+    // no followed rep has rewritten memory since the pushback landed).
+    // A clearer, predicate-gated line means the model can speak to the
+    // rebuild state directly across the whole window between rebuild
+    // and the next followed rep — not only on the round-29 seed turn.
+    //
+    // Both predicates already live on `CoachCourseChange` as pure-function
+    // properties (`documentsUserPushback`, `isFresh(comparedTo:)`). The
+    // `SummaryView.freshRevisedReadChange` private property gates
+    // `RevisedReadCard` on the same pair. Round 31 lifts that pair into a
+    // shared pure helper on `CoachContextBuilder` so the eligibility
+    // contract is one call site away from the chat context block, the
+    // summary card, the round-29 opener, and the round-30 follow-up row.
+
+    /// Returns the latest `CoachCourseChange` iff it both documents a
+    /// user-tapped rejection of the prior hypothesis (a pushback rebuild)
+    /// AND was appended on the same rebuild that produced the current
+    /// `CoachMemory`. Pure-function mirror of
+    /// `SummaryView.freshRevisedReadChange` — same shape, lifted so the
+    /// chat-coach context block can read the same gate without
+    /// duplicating the predicate.
+    static func freshRevisedReadChange(in memory: CoachMemory) -> CoachCourseChange? {
+        guard let latest = memory.adaptationLog?.last,
+              latest.documentsUserPushback,
+              latest.isFresh(comparedTo: memory.updatedAt) else { return nil }
+        return latest
+    }
+
+    /// Context-block lines for a fresh revised-read rebuild. Surfaced in
+    /// `interventionCycleLines` in place of the generic "Last course
+    /// change" line whenever `freshRevisedReadChange(in:)` returns
+    /// non-nil AND `memory.workingHypothesis` is non-empty.
+    ///
+    /// Two lines:
+    ///   1. The case-state line — names the pushback in the user's own
+    ///      verdict (echoes `RevisedReadCard.headlineCopy` phrasing so
+    ///      the cross-surface read is consistent) and carries the
+    ///      evidence basis the engine documented on the change.
+    ///   2. The coach-move line — tells the model to speak to the
+    ///      rebuild as the operating read, not the original; leaves
+    ///      room for the user to settle into it or push back again
+    ///      before strengthening the new hypothesis.
+    ///
+    /// When the predicate does not fire, returns an empty array so the
+    /// caller falls through to the generic "Last course change" line.
+    /// When the predicate fires but `workingHypothesis` is empty, also
+    /// returns an empty array — the lines would name a rebuild against
+    /// a missing hypothesis and read incoherently to the model.
+    static func freshRevisedReadContextLines(memory: CoachMemory) -> [String] {
+        guard let change = freshRevisedReadChange(in: memory) else { return [] }
+        guard let hypothesis = memory.workingHypothesis?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return [] }
+        let basis = change.evidenceBasis.trimmingCharacters(in: .whitespacesAndNewlines)
+        let basisTail = basis.isEmpty ? "" : " (\(basis))"
+        return [
+            "- Case file just shifted: the user flagged the prior read as off; the working hypothesis above is the rebuilt one\(basisTail).",
+            "- Coach move on the rebuild: speak to it as the live operating read, not the original. Leave room for the user to settle into the rebuild or push back again before strengthening it.",
+        ]
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -2058,7 +2133,19 @@ enum CoachContextBuilder {
             }
         }
 
-        if let change = memory.adaptationLog?.last {
+        // Round 31 — when the latest course change is a fresh user-pushback
+        // rebuild (the same pair `RevisedReadCard` and the round-29 opener
+        // gate on), surface the dedicated revised-read lines instead of the
+        // generic "Last course change" line. The two describe the same
+        // change; the dedicated lines name the rebuild state in language
+        // the model can act on across the whole window between rebuild and
+        // the next followed rep. Older changes — engine-only lever shifts
+        // OR pushback rebuilds that have already aged past this rep — fall
+        // through to the generic line unchanged.
+        let revisedReadLines = freshRevisedReadContextLines(memory: memory)
+        if !revisedReadLines.isEmpty {
+            lines.append(contentsOf: revisedReadLines)
+        } else if let change = memory.adaptationLog?.last {
             lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
         }
 
