@@ -167,13 +167,40 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// to follow in one place.
     static let userPushbackMarker = "user reported the prior hypothesis did not match"
 
+    /// Round-33 second-cycle marker. Written in place of `userPushbackMarker`
+    /// when the dropped `.rejected` ack was lodged on a hypothesis that was
+    /// itself the rebuilt read from a prior pushback. Closes the rejection-
+    /// rebuild-rejection-rebuild chain in the engine: a second pushback no
+    /// longer reads identically to a first one in the bounded adaptation log.
+    /// Distinct phrasing ("rebuilt hypothesis" not "prior hypothesis") so a
+    /// future analytics surface can count rebuild-cycles separately from the
+    /// first cycle without parsing the surrounding reason text.
+    static let userRebuildPushbackMarker = "user reported the rebuilt hypothesis did not match"
+
     /// True iff this course change documents a user-tapped rejection of the
-    /// prior working hypothesis (as opposed to an engine-only lever shift).
-    /// Pure function of the persisted `reason` — no extra state to round-trip
-    /// through Codable, so memories persisted before this lift decode and
-    /// behave correctly without a schema bump.
+    /// working hypothesis at the time — either the original ("prior") or a
+    /// rebuilt ("rebuilt") read. Round 31's `freshRevisedReadContextLines`
+    /// and round 32's `rebuildVerdictPair` both consume this predicate, so
+    /// the round-33 second-cycle marker must also satisfy it (a second
+    /// pushback IS still a pushback). Pure function of the persisted
+    /// `reason` — no extra state to round-trip through Codable, so memories
+    /// persisted before this lift decode and behave correctly without a
+    /// schema bump.
     var documentsUserPushback: Bool {
         reason.range(of: CoachCourseChange.userPushbackMarker, options: .caseInsensitive) != nil
+            || reason.range(of: CoachCourseChange.userRebuildPushbackMarker, options: .caseInsensitive) != nil
+    }
+
+    /// Round-33: true iff this course change documents the SECOND cycle of a
+    /// user pushback — the dropped `.rejected` ack was lodged on a hypothesis
+    /// that was itself the rebuilt read from a prior pushback. Distinct from
+    /// `documentsUserPushback` (which is true for both cycles) so surfaces
+    /// that want to name the second cycle specifically — the round-32
+    /// "second pushback" language in context, a future trend view, or a
+    /// debug log — can read a single predicate. Pure function of the
+    /// persisted `reason`.
+    var documentsRebuildPushback: Bool {
+        reason.range(of: CoachCourseChange.userRebuildPushbackMarker, options: .caseInsensitive) != nil
     }
 
     /// Was this course change appended on the same rebuild that produced
@@ -689,6 +716,23 @@ enum CoachMemoryEngine {
             return ack
         }()
 
+        // Round-33: second-cycle pushback detection. When the dropped
+        // `.rejected` ack was lodged on a hypothesis that was ITSELF the
+        // rebuilt read from a prior user-pushback course change, the new
+        // course change represents the SECOND cycle of the rejection-
+        // rebuild loop. The engine writes a distinct marker into the
+        // appended `reason` so a future surface (analytics, debug logs,
+        // a richer context line) can name the second cycle without
+        // parsing surrounding prose. Signal: the previous memory's
+        // `adaptationLog.last` already documents a user pushback — meaning
+        // `previous.workingHypothesis` was itself the rebuild from that
+        // entry. The dropped `.rejected` ack therefore landed on the
+        // rebuilt read, not on an original-cycle read.
+        let isSecondCyclePushback: Bool = {
+            guard droppedRejectedAck != nil else { return false }
+            return previous?.adaptationLog?.last?.documentsUserPushback == true
+        }()
+
         let previousLever: SkillArea?
         let focusShiftedAt: Date?
         var adaptationLog = previous?.adaptationLog ?? []
@@ -710,15 +754,28 @@ enum CoachMemoryEngine {
         if priorLeverShift != nil || droppedRejectedAck != nil {
             let reason: String
             let evidenceBasis: String
+            // Round-33: pick the cycle-appropriate marker phrase. The
+            // second-cycle phrase substitutes "rebuilt hypothesis" for
+            // "prior hypothesis" so `CoachCourseChange.documentsRebuildPushback`
+            // can identify the second cycle without re-parsing the reason
+            // text. The cycle adjective ("again") is appended to the
+            // first-person clause so the model reads it as a distinct
+            // event in the log, not a duplicate.
+            let pushbackClause: String = isSecondCyclePushback
+                ? "the user reported the rebuilt hypothesis did not match what they saw"
+                : "the user reported the prior hypothesis did not match what they saw"
+            let standaloneClause: String = isSecondCyclePushback
+                ? "User reported the rebuilt hypothesis did not match what they saw; revising the read again."
+                : "User reported the prior hypothesis did not match what they saw; revising the read."
             switch (priorLeverShift, droppedRejectedAck) {
             case let (prior?, ack?):
-                reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read") after the user reported the prior hypothesis did not match what they saw."
+                reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read") after \(pushbackClause)."
                 evidenceBasis = rejectedAckEvidenceBasis(ack: ack)
             case let (prior?, nil):
                 reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read")."
                 evidenceBasis = lever?.basis ?? "updated read across recent reps"
             case let (nil, ack?):
-                reason = "User reported the prior hypothesis did not match what they saw; revising the read."
+                reason = standaloneClause
                 evidenceBasis = rejectedAckEvidenceBasis(ack: ack)
             case (nil, nil):
                 reason = ""

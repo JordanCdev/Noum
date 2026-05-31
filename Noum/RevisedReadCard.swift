@@ -50,7 +50,9 @@ struct RevisedReadCard: View {
     let workingHypothesis: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let headline = RevisedReadCard.headlineCopy(for: change)
+        let bodyLine = RevisedReadCard.bodyCopy(workingHypothesis: workingHypothesis)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.subheadline.weight(.semibold))
@@ -62,12 +64,12 @@ struct RevisedReadCard: View {
                 Spacer(minLength: 0)
             }
 
-            Text(RevisedReadCard.headlineCopy)
+            Text(headline)
                 .font(Typography.subheadline.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(RevisedReadCard.bodyCopy(workingHypothesis: workingHypothesis))
+            Text(bodyLine)
                 .font(Typography.caption)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -84,17 +86,36 @@ struct RevisedReadCard: View {
         )
         .shadow(color: AppColor.pro.opacity(0.06), radius: 8, y: 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Revised coaching read. \(RevisedReadCard.headlineCopy) \(RevisedReadCard.bodyCopy(workingHypothesis: workingHypothesis))")
+        .accessibilityLabel("Revised coaching read. \(headline) \(bodyLine)")
         .accessibilityIdentifier("summary.revisedRead.card")
     }
 
     // MARK: - Copy (pure, locked by tests)
 
-    /// Headline copy. The user sees their own action named ("you flagged")
-    /// so the line reads as the coach acknowledging the pushback, not as a
-    /// generic "your plan changed" notification. Brand-voice compliant: no
-    /// exclamation, no apology, no "we", no "Let's".
+    /// Headline copy on the FIRST-cycle pushback. The user sees their own
+    /// action named ("you flagged") so the line reads as the coach
+    /// acknowledging the pushback, not as a generic "your plan changed"
+    /// notification. Brand-voice compliant: no exclamation, no apology,
+    /// no "we", no "Let's". Kept as a static constant for back-compat
+    /// with surfaces that test the canonical first-cycle phrase.
     static let headlineCopy: String = "You flagged the prior read as off."
+
+    /// Round-33 headline picker. When the carrying course change is the
+    /// SECOND cycle of a user pushback (the dropped `.rejected` ack was
+    /// on a hypothesis that was itself the rebuilt read from a prior
+    /// pushback), the user sees a second-cycle phrase that acknowledges
+    /// "you flagged the rebuilt read as off TOO." The first-cycle phrase
+    /// would read as if this were a fresh pushback — and the user would
+    /// notice the discrepancy, because their last rebuild already had a
+    /// REVISED READ card on it. Closes the loop honestly: the card names
+    /// the second pushback as the second pushback.
+    /// Brand-voice compliant: no exclamation, no apology, no "we", no
+    /// "Let's", no celebratory framing of a second adapt.
+    static func headlineCopy(for change: CoachCourseChange) -> String {
+        change.documentsRebuildPushback
+            ? "You flagged the rebuilt read as off too."
+            : headlineCopy
+    }
 
     /// Body copy. Names the revised working hypothesis when one exists so
     /// the user reads what the coach has updated to. Falls back to a calm

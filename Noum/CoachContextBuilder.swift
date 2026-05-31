@@ -1337,8 +1337,20 @@ enum CoachContextBuilder {
               !hypothesis.isEmpty else { return [] }
         let basis = change.evidenceBasis.trimmingCharacters(in: .whitespacesAndNewlines)
         let basisTail = basis.isEmpty ? "" : " (\(basis))"
+        // Round-33: when the engine has marked the latest change as a SECOND
+        // cycle of pushback (the dropped `.rejected` ack was on a hypothesis
+        // that was itself a rebuild from a prior pushback), the case-state
+        // line names the second cycle explicitly so the model speaks to a
+        // user who has pushed back twice — not a user pushing back for the
+        // first time. The coach-move line is left unchanged: "leave room
+        // for the user to settle into the rebuild or push back again" still
+        // applies, but the case-state framing already tells the model this
+        // IS the second rebuild.
+        let caseStateLine: String = change.documentsRebuildPushback
+            ? "- Case file just shifted again: the user flagged the rebuilt read as off too; the working hypothesis above is the next rebuilt one\(basisTail)."
+            : "- Case file just shifted: the user flagged the prior read as off; the working hypothesis above is the rebuilt one\(basisTail)."
         return [
-            "- Case file just shifted: the user flagged the prior read as off; the working hypothesis above is the rebuilt one\(basisTail).",
+            caseStateLine,
             "- Coach move on the rebuild: speak to it as the live operating read, not the original. Leave room for the user to settle into the rebuild or push back again before strengthening it.",
         ]
     }
