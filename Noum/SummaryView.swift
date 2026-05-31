@@ -647,7 +647,7 @@ struct SummaryView: View {
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
                                 onAskNoum: {
-                                    onAskNoumAboutRep?(sessionAnchoredOpener)
+                                    onAskNoumAboutRep?(talkToNoumOpener)
                                 },
                                 onUpgradePrompt: {
                                     showPaywall = true
@@ -762,7 +762,7 @@ struct SummaryView: View {
                                 isPremium: premium.isPremium,
                                 speakingStyleGoal: coachingProfileStore.profile?.speakingStyleGoal,
                                 onAskNoum: {
-                                    onAskNoumAboutRep?(sessionAnchoredOpener)
+                                    onAskNoumAboutRep?(talkToNoumOpener)
                                 },
                                 onUpgradePrompt: {
                                     showPaywall = true
@@ -1977,6 +1977,32 @@ struct SummaryView: View {
             duration: effectiveDuration,
             voice: coachingProfileStore.profile?.speakingStyleGoal
         )
+    }
+
+    // MARK: - Talk-to-Noum opener gate
+    //
+    // Round 29 — when the same `freshRevisedReadChange` gate that mounts the
+    // `RevisedReadCard` on the summary screen is hot, a tap on the
+    // `TalkToNoumCTACard` dispatches the case-anchored revised-read opener
+    // instead of the generic `sessionOpener`. Picking up the chat thread
+    // where the post-rep card left off — the user already saw "you flagged
+    // the prior read as off; here's the revised one" on the summary; the
+    // chat seed names the same shift and invites the coach to pick up the
+    // case file. Falls back to `sessionAnchoredOpener` on any rep where no
+    // fresh user-pushback adaptation landed, so the generic-rep behaviour
+    // is unchanged. Pure routing — eligibility logic lives in one place
+    // (`freshRevisedReadChange`), the opener composition lives on
+    // `CoachContextBuilder`, this property is the one home that picks
+    // between them.
+
+    private var talkToNoumOpener: String {
+        if freshRevisedReadChange != nil {
+            return CoachContextBuilder.revisedReadOpener(
+                workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
+                voice: coachingProfileStore.profile?.speakingStyleGoal
+            )
+        }
+        return sessionAnchoredOpener
     }
 
     // MARK: - Intervention-review prompt

@@ -926,6 +926,104 @@ enum CoachContextBuilder {
         return "Review the active case — \(focus.lowercased())"
     }
 
+    // MARK: - Revised-read opener (post-rep user-pushback Ask Noum seed)
+    //
+    // Round 29 — closes Future Move #11 from the round-28 HANDOFF. The
+    // `RevisedReadCard` surfaces the user-pushback line as a visual
+    // acknowledgement on the post-rep `SummaryView`. Without this lift, a
+    // tap on the existing `TalkToNoumCTACard` on the same rep still
+    // dispatches the generic `sessionOpener` ("Just finished a Timed rep
+    // — 60s, 3 fillers, 8/10. Give me your read."), and the chat thread
+    // starts from a clean rep summary as if the user had never tapped
+    // `.rejected`. The case-file turn that `RevisedReadCard` named on the
+    // summary screen drops on the floor the instant the user opens the
+    // conversation.
+    //
+    // This opener replaces the generic seed on exactly the rep where
+    // `RevisedReadCard` is showing (the `freshRevisedReadChange` gate in
+    // `SummaryView`) so the chat thread starts where the card left off:
+    // the user names the pushback, quotes the coach's revised read, and
+    // invites the coach to pick up the case file in their voice.
+    //
+    // Shape mirrors `sessionOpener` and `interventionReviewOpener`:
+    // pure function, voice-mapped ask, short fact-lead. The lead is
+    // pinned as a static constant for the same reason
+    // `interventionReviewOpenerLead` is — a future predicate (e.g. a
+    // chat-thread classifier that wants to detect a revised-read opener
+    // for analytics or for showing a follow-up chip row) can match the
+    // prefix without re-running the full string composition.
+    //
+    // Brand-voice rules: no exclamation, no "Let's", no urgency framing.
+    // The user is the one typing the message into the thread, so the
+    // first-person framing ("I flagged") matches every other opener that
+    // gets dispatched from a tap — `sessionOpener` ("Just finished..."),
+    // `interventionReviewOpener` ("Time to review..."), and the
+    // hypothesis ack chips ("Yes — that's the read", "Adapt the read").
+
+    /// Lead prefix on every `revisedReadOpener`. Lifted as a constant so a
+    /// future predicate (e.g. a chat-thread classifier that detects a
+    /// revised-read seed for a follow-up chip row, mirroring the round-26
+    /// `shouldShowHypothesisAcknowledgement` predicate) can match the
+    /// prefix without depending on the voice-shaped ask suffix.
+    static let revisedReadOpenerLead = "Picking up the case file — I flagged the prior read as off."
+
+    /// Seed opener for the post-rep "Talk to Noum" CTA when the just-
+    /// finished rep produced a fresh `.rejected`-driven adaptation entry
+    /// (the same gate the `RevisedReadCard` reads). Names the user's
+    /// pushback, quotes where the coach's revised read sits, and ends
+    /// with a voice-shaped invitation for the coach to pick up the case
+    /// file. Pure function — no store reads.
+    ///
+    /// Why the gate lives in `SummaryView`, not here: this helper has no
+    /// way to know whether the carrying memory's adaptation log is fresh.
+    /// `SummaryView.talkToNoumOpener` walks the predicates and decides
+    /// whether to call this function or fall back to the generic
+    /// `sessionOpener`. One home for the eligibility logic.
+    ///
+    /// The trimmed-period treatment of `workingHypothesis` mirrors
+    /// `RevisedReadCard.bodyCopy(workingHypothesis:)` so the same
+    /// hypothesis text reads as a single sentence on both surfaces (the
+    /// post-rep card and the chat seed). A nil or whitespace-only
+    /// hypothesis falls back to a "still forming" line so the seed never
+    /// reads "The revised read you're holding is: ." to the model.
+    static func revisedReadOpener(
+        workingHypothesis: String?,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        let lead = revisedReadOpenerLead
+        let body: String
+        if let raw = workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty {
+            let stripped: String
+            if raw.hasSuffix(".") {
+                stripped = String(raw.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                stripped = raw
+            }
+            body = "The revised read you're holding is: \(stripped)."
+        } else {
+            body = "The revised read is still forming."
+        }
+        let ask: String
+        switch voice {
+        case .authoritative:
+            ask = "Where does the read land now?"
+        case .warm:
+            ask = "What does this open up?"
+        case .concise:
+            ask = "Where does this go?"
+        case .persuasive:
+            ask = "Make the case for the new read."
+        case .executive:
+            ask = "Brief me on what shifted."
+        case .storytelling:
+            ask = "What chapter does this start?"
+        case .none:
+            ask = "Where does this go from here?"
+        }
+        return "\(lead) \(body) \(ask)"
+    }
+
     // MARK: - Hypothesis acknowledgement chips (post-case-review reply)
     //
     // Round 26 — the case-parity adaptation move. After the coach replies

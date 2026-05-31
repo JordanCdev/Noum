@@ -21118,3 +21118,206 @@ struct RevisedReadCardTests {
         #expect(body == "The coach noted it and is forming the next read.")
     }
 }
+
+// MARK: - Round 29 — Revised-read opener tests (CoachContextBuilder)
+//
+// Round 29 closes Future Move #11 from the round-28 HANDOFF: a tap on
+// the post-rep `TalkToNoumCTACard` no longer dispatches the generic
+// `sessionOpener` on the rep where `RevisedReadCard` is showing.
+// Instead it dispatches `CoachContextBuilder.revisedReadOpener(...)`,
+// which names the user's pushback ("I flagged the prior read as off"),
+// quotes the coach's revised working hypothesis, and ends with a
+// voice-shaped invitation.
+//
+// These tests pin the pure-function contract `SummaryView.talkToNoumOpener`
+// reads. The gate decision (revised-read opener vs `sessionOpener`)
+// lives in `SummaryView`; this suite covers only the opener composition
+// itself — lead, body (with hypothesis present, with trailing-period
+// strip, with nil/blank fallbacks), and the seven voice-mapped ask
+// branches.
+//
+// The lead is pinned as a static constant on `CoachContextBuilder`
+// (`revisedReadOpenerLead`) so a future predicate (e.g. a chat-thread
+// classifier that fires a revised-read follow-up chip row, mirror of
+// the round-26 `shouldShowHypothesisAcknowledgement` predicate) can
+// match the prefix without composing the full opener.
+
+@Suite("RevisedReadOpenerTests")
+struct RevisedReadOpenerTests {
+
+    // MARK: - Lead
+
+    @Test func openerLeadNamesUserPushbackInFirstPerson() {
+        // The lead is the user-voice clause that names the pushback.
+        // First-person ("I flagged") matches every other dispatched
+        // opener — `sessionOpener` ("Just finished..."),
+        // `interventionReviewOpener` ("Time to review..."), and the
+        // hypothesis ack chips ("Yes — that's the read"). The user is
+        // the one typing the message; the perspective stays continuous.
+        #expect(
+            CoachContextBuilder.revisedReadOpenerLead
+                == "Picking up the case file — I flagged the prior read as off."
+        )
+    }
+
+    @Test func openerStartsWithTheLeadConstant() {
+        // Composition contract: the full opener must begin with the
+        // pinned lead so a future predicate can match the prefix
+        // without depending on the voice-shaped suffix.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace appears to be the highest-leverage focus.",
+            voice: nil
+        )
+        #expect(opener.hasPrefix(CoachContextBuilder.revisedReadOpenerLead))
+    }
+
+    // MARK: - Body
+
+    @Test func openerBodyQuotesRevisedHypothesisInline() {
+        // The body names the revised working hypothesis so the coach
+        // reply has the case-anchored read in scope from the first
+        // turn. Same hypothesis text the post-rep `RevisedReadCard`
+        // quotes — the chat thread and the card read as continuous
+        // voice.
+        let hypothesis = "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: hypothesis,
+            voice: nil
+        )
+        #expect(opener.contains("The revised read you're holding is: "))
+        #expect(opener.contains("Pace appears to be the highest-leverage focus"))
+    }
+
+    @Test func openerBodyStripsTrailingPeriodToAvoidDoubleStop() {
+        // Mirrors `RevisedReadCard.bodyCopy(workingHypothesis:)` — the
+        // engine's hypothesis clause already ends with `.`, and the
+        // opener wraps it in "The revised read you're holding is: …"
+        // which appends another. The strip step keeps the seed as
+        // three discrete sentences (lead, body, ask) with no `..`.
+        let hypothesis = "Pace appears to be the highest-leverage focus; keep checking against future reps."
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: hypothesis,
+            voice: nil
+        )
+        #expect(!opener.contains(".."))
+    }
+
+    @Test func openerBodyFallsBackWhenNoHypothesis() {
+        // Defensive: a memory rebuild with no current lever produces
+        // `workingHypothesis == nil`. The seed must never read "The
+        // revised read you're holding is: ." to the model.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: nil,
+            voice: nil
+        )
+        #expect(opener.contains("The revised read is still forming."))
+        #expect(!opener.contains("The revised read you're holding is:"))
+    }
+
+    @Test func openerBodyFallsBackWhenHypothesisIsBlank() {
+        // Whitespace-only hypothesis takes the same fallback as nil so
+        // the seed never renders "The revised read you're holding is: ."
+        // Either boundary should be unreachable through the store, but
+        // the Codable round-trip could deliver a bad value; defend here.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "   \n  ",
+            voice: nil
+        )
+        #expect(opener.contains("The revised read is still forming."))
+        #expect(!opener.contains("The revised read you're holding is:"))
+    }
+
+    // MARK: - Voice mapping
+
+    @Test func openerAskByVoiceAuthoritative() {
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .authoritative
+        )
+        #expect(opener.hasSuffix("Where does the read land now?"))
+    }
+
+    @Test func openerAskByVoiceWarm() {
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .warm
+        )
+        #expect(opener.hasSuffix("What does this open up?"))
+    }
+
+    @Test func openerAskByVoiceConcise() {
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .concise
+        )
+        #expect(opener.hasSuffix("Where does this go?"))
+    }
+
+    @Test func openerAskByVoicePersuasive() {
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .persuasive
+        )
+        #expect(opener.hasSuffix("Make the case for the new read."))
+    }
+
+    @Test func openerAskByVoiceExecutive() {
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .executive
+        )
+        #expect(opener.hasSuffix("Brief me on what shifted."))
+    }
+
+    @Test func openerAskByVoiceStorytelling() {
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .storytelling
+        )
+        #expect(opener.hasSuffix("What chapter does this start?"))
+    }
+
+    @Test func openerAskWhenVoiceIsNil() {
+        // Voice nil → neutral ask. Covers users who haven't completed
+        // the coaching profile yet — the opener still produces a
+        // coherent case-anchored seed.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: nil
+        )
+        #expect(opener.hasSuffix("Where does this go from here?"))
+    }
+
+    // MARK: - Composition
+
+    @Test func openerComposesLeadBodyAndAskWithSingleSpaces() {
+        // Lock the surface contract: the opener is exactly three
+        // sentences joined by single spaces (lead + body + ask). No
+        // double spaces, no newlines, no missing separators.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .concise
+        )
+        #expect(!opener.contains("  "))
+        #expect(!opener.contains("\n"))
+        #expect(
+            opener
+                == "Picking up the case file — I flagged the prior read as off. The revised read you're holding is: Pace is the highest-leverage focus. Where does this go?"
+        )
+    }
+
+    @Test func openerFallbackComposesLeadAndFallbackBodyWithAsk() {
+        // Same composition contract for the nil-hypothesis fallback —
+        // the seed is still three discrete sentences (lead + fallback
+        // body + ask) with single-space joins, ready for the chat
+        // surface without further trimming.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: nil,
+            voice: .warm
+        )
+        #expect(
+            opener
+                == "Picking up the case file — I flagged the prior read as off. The revised read is still forming. What does this open up?"
+        )
+    }
+}

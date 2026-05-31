@@ -1,39 +1,34 @@
-# HANDOFF — M24 deferred slate (round 28): the user-pushback line lands in the post-rep `SummaryView` — when the rebuild folds a `.rejected` ack into the case file, the user themselves sees "you flagged the prior read as off; here's the revised one."
+# HANDOFF — M24 deferred slate (round 29): the post-rep `TalkToNoumCTACard` no longer dispatches a generic `sessionOpener` on the rep where `RevisedReadCard` is showing — the chat seed now names the user's pushback, quotes the coach's revised read, and invites the coach to pick up the case file.
 
 ## Scope
 
-Round 27 closed the round-26 step #1 — when the user lodged a
-`.rejected` acknowledgement on the working hypothesis and the next
-memory rebuild silently dropped the ack via the snapshot guard, the
-engine now appends a `CoachCourseChange` to the adaptation log whose
-`reason` carries the user-reported pushback ("user reported the
-prior hypothesis did not match") and whose `evidenceBasis` quotes
-the user's own snapshot. The bounded case-file history now carries
-the user's pushback rather than a silent engine inference.
+Round 28 landed `RevisedReadCard` on the post-rep `SummaryView` —
+when the rebuild folds a `.rejected` ack into the case file, the
+user themselves sees "you flagged the prior read as off; here's the
+revised one." The visual acknowledgement is in place.
 
-The honest gap that left open: the chat-coach context block already
-reads the latest adaptation entry through `coachAdaptationLogLine`
-("Last course change: …"), and the Profile-tab `CaseReviewCard`
-already surfaces `adaptationLog.last.reason` under "Last shift" —
-but the post-rep `SummaryView` does NOT yet show the user
-themselves "the coach noticed your pushback and revised the read."
-The user taps `.rejected` in Ask Noum, finishes their next rep, and
-the summary screen acts as if nothing happened — even though the
-case file has just been rewritten as a direct consequence of their
-verdict. A human coach would say "okay, you flagged the prior read
-as off — here's the revised one"; round 27 left that turn off the
-post-rep surface.
+The honest gap that left open: on the same rep, a tap on the
+existing `TalkToNoumCTACard` (a few rows below the new card) still
+dispatches `CoachContextBuilder.sessionOpener(...)` — the generic
+"Just finished a Timed rep — 60s, 3 fillers, 8/10. Give me your
+read." seed. The chat thread starts as if the user had never
+tapped `.rejected`. The case-file turn that `RevisedReadCard`
+named on the summary drops on the floor the instant the user opens
+the conversation. The Ask Noum thread loses continuity with the
+card the user just saw.
 
-Round 28 picks up step #1 from the round-27 "Future moves" list:
+Round 29 picks up step #11 from the round-28 "Future moves" list:
 
-> 1. **Surface the user-pushback line in the post-rep summary.**
->    The adaptation log now carries the rejection, and the
->    `coachAdaptationLogLine` already surfaces "Last course
->    change: ..." in the coach context block, but the post-rep
->    SummaryView does not yet show this to the user themselves
->    ("you flagged the prior read as off; here's the revised
->    one"). Pure UI lift, no new state — the data is already in
->    `CoachMemoryStore.shared.currentMemory?.adaptationLog?.last`.
+> **Reflect the revised read in the post-rep AI coach
+> conversation seed.** The `RevisedReadCard` surfaces the user-
+> pushback line as a visual acknowledgement, but a tap on the
+> existing `TalkToNoumCTACard` still dispatches the generic
+> `sessionAnchoredOpener` rather than a revised-read-aware opener
+> ("you flagged the prior read; here's where my updated read sits
+> — anything to add?"). Pure-function lift on `CoachContextBuilder`
+> similar to `interventionReviewOpener`. Would only fire when the
+> same `freshRevisedReadChange` gate is true, so the conversation
+> opener stays case-anchored on the rep that drove the rebuild.
 
 User brief, unchanged round to round: "continue from the existing
 TO-DO, ensure working towards getting the app towards the vision
@@ -42,241 +37,180 @@ working on the redesign branch too (very important)."
 
 Translation, this round:
 
-- `CoachCourseChange` gains two pure-function derived properties.
-  `documentsUserPushback` matches the engine's lifted marker phrase
-  (`"user reported the prior hypothesis did not match"`) so the
-  predicate stays locked to the engine's `(prior?, ack?)` /
-  `(nil, ack?)` switch arms — both write the marker into `reason`.
-  `isFresh(comparedTo memoryUpdatedAt:)` answers "was this entry
-  appended on the rebuild that produced the carrying memory?" with
-  a 1-second tolerance so the same-`now` stamp in
-  `CoachMemoryEngine.build(...)` reads as fresh while a carried-
-  forward entry from an earlier rebuild reads as stale. Both
-  predicates are pure functions of fields already on the persisted
-  shape — no Codable schema bump.
-- A new `RevisedReadCard` view (`RevisedReadCard.swift`) renders
-  the post-rep surface. Eyebrow: "REVISED READ". Headline: the
-  user-action clause ("You flagged the prior read as off."). Body:
-  "Here's the revised read: <workingHypothesis>", with the trailing
-  period of the hypothesis clause stripped so the line never reads
-  as two sentences ending in one. Restrained — no CTA (the
-  `TalkToNoumCTACard` already routes the user into Ask Noum with
-  the session-anchored opener a few rows below). Brand-voice
-  compliant: no exclamation, no "Let's", no urgency framing. Mirror
-  of the `InterventionReviewPromptCard` register so the user reads
-  it as a continuation of the same coach voice.
-- `SummaryView` gains `freshRevisedReadChange: CoachCourseChange?`,
-  a private computed property that walks
-  `coachMemoryStore.currentMemory?.adaptationLog?.last`, runs both
-  derived predicates, and returns the entry iff both gates hold.
-  Mirror of the existing `activeReviewDueIntervention` pattern —
-  one home for the eligibility logic, the view is a thin reader.
-- The card lands at both render sites — the IM/PREP path and the
-  TIMED / Ah-Counter / Sudden Death path — immediately above the
-  existing `InterventionReviewPromptCard`. The two coach-voice
-  cards now cluster (revised read + review prompt) so the user
-  reads the case-file turn in one visual beat before the
-  `TalkToNoumCTACard`.
+- A new pure function `CoachContextBuilder.revisedReadOpener(
+  workingHypothesis:voice:)` composes the case-anchored seed.
+  Shape mirrors `sessionOpener` and `interventionReviewOpener`
+  exactly — short fact-lead + voice-mapped ask. The lead is a
+  static constant (`revisedReadOpenerLead`) so a future predicate
+  (e.g. a chat-thread classifier that fires a revised-read
+  follow-up chip row, mirror of the round-26
+  `shouldShowHypothesisAcknowledgement` predicate) can match the
+  prefix without composing the full opener.
+- `SummaryView` gains a `talkToNoumOpener` computed property that
+  routes between the two openers — revised-read opener when
+  `freshRevisedReadChange != nil`, generic `sessionAnchoredOpener`
+  otherwise. Both `TalkToNoumCTACard` call sites (IM/PREP path
+  and TIMED / Ah-Counter / Sudden Death path) now dispatch
+  `talkToNoumOpener` instead of `sessionAnchoredOpener`. The gate
+  logic lives in one home; the call sites stay identical to each
+  other.
+- The opener body trims and strips a trailing period from
+  `workingHypothesis` the same way `RevisedReadCard.bodyCopy(
+  workingHypothesis:)` does, so the same hypothesis text reads as
+  a single sentence on both surfaces (card and chat seed). A nil
+  or whitespace-only hypothesis falls back to a "still forming"
+  line so the seed never reads "The revised read you're holding
+  is: ." to the model.
+- The opener is user-voice, first-person ("I flagged"), matching
+  every other dispatched opener — `sessionOpener` ("Just
+  finished..."), `interventionReviewOpener` ("Time to review..."),
+  the hypothesis ack chips ("Yes — that's the read"). The user is
+  the one typing the message; perspective stays continuous.
 - The redesign-branch invariant: this is a `Redesign`-branch push
   per the user brief. The work lands directly on `Redesign`,
   preserving the round-by-round loop on the redesign lineage that
-  has been the home of rounds 11–27.
+  has been the home of rounds 11–28.
 
 ## What shipped
 
-### Track 1 — `CoachCourseChange` derived predicates (`PrimaryFocusMemory.swift`)
+### Track 1 — `CoachContextBuilder.revisedReadOpener(...)` (`CoachContextBuilder.swift`)
 
-- New `static let userPushbackMarker` constant
-  (`"user reported the prior hypothesis did not match"`). Lifted as
-  a constant on `CoachCourseChange` so the engine's
-  `(prior?, ack?)` / `(nil, ack?)` switch-arm `reason` copy and the
-  `documentsUserPushback` predicate share the marker phrase in one
-  place. A future copy edit in the engine forces the predicate to
-  follow.
-- New `documentsUserPushback: Bool` computed property. Pure
-  function of `reason`; case-insensitive `range(of:)` match against
-  the marker. Returns true on both the user-only `(nil, ack?)` arm
-  ("User reported the prior hypothesis did not match what they
-  saw; revising the read.") and the combined `(prior?, ack?)` arm
-  ("Shifted focus from X to Y after the user reported the prior
-  hypothesis did not match what they saw."). Returns false on the
-  engine-only `(prior?, nil)` arm ("Shifted focus from X to Y.").
-- New `isFresh(comparedTo memoryUpdatedAt:) -> Bool` predicate.
-  `abs(changedAt.timeIntervalSince(memoryUpdatedAt)) <= 1.0`. Both
-  `CoachCourseChange.changedAt` and `CoachMemory.updatedAt` are
-  written from the same `now` in `CoachMemoryEngine.build(...)`, so
-  equality holds across Codable round-trips. The 1-second tolerance
-  is defensive against test fixtures that pass slightly-different
-  `Date` instances (sub-millisecond precision differences). On
-  every subsequent rep the entry persists in the bounded history
-  but `isFresh` returns false — the card stays hidden after one
-  rep, the long-term history surface is the Profile-tab
-  `CaseReviewCard`.
+- New `static let revisedReadOpenerLead`
+  (`"Picking up the case file — I flagged the prior read as off."`).
+  Lifted as a constant on `CoachContextBuilder` so the predicate
+  surface and the opener composition share the lead phrase in one
+  place. Same pattern as `interventionReviewOpenerLead` (round 26,
+  used by `shouldShowHypothesisAcknowledgement`).
+- New `static func revisedReadOpener(workingHypothesis:voice:)
+  -> String`. Pure function — no store reads, no `Date`
+  dependencies. Returns the three-sentence composition:
+  lead + body + voice-mapped ask, joined by single spaces.
+- Body composition:
+  - `workingHypothesis` is non-nil and non-blank →
+    `"The revised read you're holding is: <stripped hypothesis>."`
+    where `<stripped hypothesis>` has the trailing period removed
+    if present, so the wrapper's terminal `.` is the only one in
+    the sentence. Same strip pattern as
+    `RevisedReadCard.bodyCopy(workingHypothesis:)`.
+  - `workingHypothesis` nil or whitespace-only →
+    `"The revised read is still forming."`. The seed still reads
+    as a coherent case-anchored opener; the model isn't asked
+    "is: ." with an empty noun.
+- Voice mapping (seven branches — `.authoritative`, `.warm`,
+  `.concise`, `.persuasive`, `.executive`, `.storytelling`, `nil`):
+  - `.authoritative` → "Where does the read land now?"
+  - `.warm` → "What does this open up?"
+  - `.concise` → "Where does this go?"
+  - `.persuasive` → "Make the case for the new read."
+  - `.executive` → "Brief me on what shifted."
+  - `.storytelling` → "What chapter does this start?"
+  - `nil` → "Where does this go from here?"
+- Brand-voice compliant — no exclamation, no "Let's", no urgency
+  framing, no celebration. The coach is being asked to pick up a
+  case file the user has already named.
 
-### Track 2 — `RevisedReadCard` post-rep surface (`RevisedReadCard.swift`, new file)
+### Track 2 — `SummaryView.talkToNoumOpener` gate + CTA wiring (`SummaryView.swift`)
 
-- `struct RevisedReadCard: View` mirrors the existing
-  `InterventionReviewPromptCard` shape: purple eyebrow + outer
-  stroke + soft shadow. `AppColor.pro` accent so the card reads
-  as a coach-voice surface (same accent as the review prompt and
-  the `CoachReadCard` eyebrow).
-- Two static pure-function copy generators so the strings can be
-  locked by tests without standing up a SwiftUI view.
-  `headlineCopy` is a constant; `bodyCopy(workingHypothesis:)`
-  takes the memory's current hypothesis and returns
-  `"Here's the revised read: <trimmed hypothesis>."` with the
-  trailing `.` of the hypothesis stripped first so the line ends
-  with exactly one period.
-- Defensive fallbacks: a nil or whitespace-only `workingHypothesis`
-  falls back to `"The coach noted it and is forming the next read."`
-  so the card never renders an empty or `"Here's the revised
-  read: ."` line. The store's persistence path always trims, but
-  the Codable boundary could deliver a bad value; the fallback is
-  unreachable in practice.
-- No CTA, no countdown, no badge. The existing `TalkToNoumCTACard`
-  sits a few rows below in the same `VStack` and already routes
-  the user into Ask Noum with the session-anchored opener if they
-  want to discuss the revised read in voice. Keeping the card
-  read-only honours the restraint rules (`CaseReviewCard` is also
-  read-only).
-- Accessibility: card-level label combines headline + body so a
-  screen reader reads the line as one continuous sentence. Identifier
-  `summary.revisedRead.card` so a UI test can locate the surface
-  without scraping the rendered text.
+- New `talkToNoumOpener: String` private computed property,
+  placed immediately after `sessionAnchoredOpener`. Walks the
+  same `freshRevisedReadChange` gate the `RevisedReadCard` reads
+  — when non-nil it returns
+  `CoachContextBuilder.revisedReadOpener(...)`, otherwise it
+  falls through to `sessionAnchoredOpener`. One home for the
+  routing decision.
+- Both `TalkToNoumCTACard.onAskNoum` closures now dispatch
+  `onAskNoumAboutRep?(talkToNoumOpener)` instead of
+  `onAskNoumAboutRep?(sessionAnchoredOpener)`. The two call sites
+  (IM/PREP path at line 650 and TIMED / Ah-Counter / Sudden Death
+  path at line 765) stay identical to each other; the routing
+  decision is invisible at the call site.
+- No layout change. No new component. The `TalkToNoumCTACard`
+  visual contract is unchanged — only the seed text it dispatches
+  on tap shifts when the gate is hot.
 
-### Track 3 — `SummaryView` wiring (`SummaryView.swift`)
+### Track 3 — `RevisedReadOpenerTests` suite (`NoumTests/NoumTests.swift`)
 
-- New `freshRevisedReadChange: CoachCourseChange?` private computed
-  property. Walks `coachMemoryStore.currentMemory?.adaptationLog
-  ?.last`; returns the entry iff `documentsUserPushback` is true
-  AND `isFresh(comparedTo: memory.updatedAt)` is true. Mirror of
-  the existing `activeReviewDueIntervention` pattern — the view
-  reads the property, the eligibility logic lives once.
-- Card wired into both render sites:
-  - IM/PREP path (line ~632): rendered immediately above
-    `InterventionReviewPromptCard` when both surfaces fire on the
-    same rep (rare but legal — a `.rejected` ack on a hypothesis
-    whose intervention also reaches review cadence). The user
-    reads the revised read first ("here's the new read"), then
-    the review prompt ("let's verify it").
-  - TIMED / Ah-Counter / Sudden Death path (line ~747): same
-    placement immediately above `InterventionReviewPromptCard`.
-- No state changes. The card mounts when `freshRevisedReadChange`
-  becomes non-nil, unmounts on the next rep (when `isFresh`
-  flips). The post-rep summary is rebuilt per rep; the eligibility
-  check runs on every paint cycle.
+New top-level `@Suite("RevisedReadOpenerTests")` at the end of the
+file (after the round-28 `RevisedReadCardTests`). Twelve `@Test`
+methods pin the pure-function contract:
 
-### Track 4 — `CoachMemoryEngineTests` round-28 predicate suite (`NoumTests/NoumTests.swift`)
-
-Six new `@Test` methods land in the existing `CoachMemoryEngineTests`
-suite (immediately after the round-27 `buildTrimsLongRejectedSnapshotInEvidenceBasis`,
-before the private helper functions). Independent fixtures — no
-helpers borrowed from the round-27 suite.
-
-- **`courseChangeDocumentsUserPushbackOnRejectionAck`.** The
-  `(nil, ack?)` switch arm — user pushback rewrote the hypothesis
-  text inside the same lever. Asserts `documentsUserPushback ==
-  true`.
-- **`courseChangeDocumentsUserPushbackOnCombinedShiftAndRejection`.**
-  The `(prior?, ack?)` arm — both lever shifted AND the user
-  rejected the prior hypothesis. Asserts `documentsUserPushback ==
-  true` so the post-rep card fires on the combined branch too.
-- **`courseChangeDoesNotDocumentUserPushbackOnEngineOnlyShift`.**
-  The `(prior?, nil)` arm — engine inference only. Asserts
-  `documentsUserPushback == false`. Pins the contract that the
-  post-rep card never surfaces on a silent engine-inferred shift —
-  only when the user themselves drove the change.
-- **`courseChangeIsFreshWhenStampedAtMemoryUpdate`.** A change
-  whose `changedAt == memory.updatedAt` (same `now`) reads as fresh.
-- **`courseChangeIsNotFreshAcrossMultipleSessions`.** A change
-  whose `changedAt` is 1000 seconds before `memory.updatedAt` (a
-  carried-forward entry on a later rebuild) reads as stale.
-- **`freshlyBuiltMemoryMarksRejectedAckEntryAsFreshAndPushback`.**
-  End-to-end pin: a real `CoachMemoryEngine.build(...)` pass that
-  folds a `.rejected` ack into a course-change entry produces an
-  entry whose `documentsUserPushback == true` AND whose
-  `isFresh(comparedTo: memory.updatedAt) == true`. Locks the
-  contract the `RevisedReadCard` eligibility gate reads on the
-  post-rep summary; if a future engine restructure shifts the
-  `now` stamp on either side, this test catches it.
-
-### Track 5 — `RevisedReadCardTests` copy suite (`NoumTests/NoumTests.swift`)
-
-New top-level `@Suite("RevisedReadCardTests")` at the end of the
-file. Five `@Test` methods pin the static pure-function copy:
-
-- **`headlineCopyNamesUserAction`.** Asserts the headline reads
-  `"You flagged the prior read as off."`. Pins the user-action
-  clause so the card lands as an acknowledgement, not a generic
-  "your plan changed" notification.
-- **`bodyCopyQuotesRevisedHypothesisInline`.** Asserts the body
-  begins with `"Here's the revised read: "` and contains the
-  revised hypothesis text inline. Names what the coach updated to.
-- **`bodyCopyStripsTrailingPeriodToAvoidDoubleStop`.** Asserts the
-  body never contains `".."` (which would mean both periods landed
-  side-by-side) and still ends with exactly one period.
-  `workingHypothesis(lever:evidenceConfidence:)` always emits a
-  clause ending with `.`; the card's wrapper adds another. The
-  strip step keeps the line a single readable sentence.
-- **`bodyCopyFallsBackWhenNoHypothesis`.** Asserts a nil hypothesis
-  produces the fallback `"The coach noted it and is forming the
-  next read."`.
-- **`bodyCopyFallsBackWhenHypothesisIsBlank`.** Asserts a
-  whitespace-only hypothesis takes the same fallback as nil so the
-  card never renders `"Here's the revised read: ."`.
+- **Lead constant + composition contract (2 tests):**
+  - `openerLeadNamesUserPushbackInFirstPerson` — pins the lead
+    constant verbatim. Locks the first-person framing that
+    matches every other dispatched opener.
+  - `openerStartsWithTheLeadConstant` — pins the prefix-match
+    contract a future classifier predicate would read.
+- **Body composition (4 tests):**
+  - `openerBodyQuotesRevisedHypothesisInline` — names the
+    revised working hypothesis verbatim.
+  - `openerBodyStripsTrailingPeriodToAvoidDoubleStop` — locks the
+    strip-trailing-period contract; mirrors the same test in
+    `RevisedReadCardTests` so card and seed never diverge.
+  - `openerBodyFallsBackWhenNoHypothesis` — nil hypothesis takes
+    the "still forming" fallback.
+  - `openerBodyFallsBackWhenHypothesisIsBlank` — whitespace-only
+    hypothesis takes the same fallback.
+- **Voice mapping (7 tests, one per voice branch + nil):**
+  - `openerAskByVoiceAuthoritative`, `…Warm`, `…Concise`,
+    `…Persuasive`, `…Executive`, `…Storytelling`, `openerAskWhenVoiceIsNil`.
+    Each pins the suffix of the composed opener so a future copy
+    edit on any one ask forces the test to follow.
+- **End-to-end composition (2 tests):**
+  - `openerComposesLeadBodyAndAskWithSingleSpaces` — locks the
+    exact composed string for a `.concise` voice + present
+    hypothesis. Asserts no double spaces, no newlines.
+  - `openerFallbackComposesLeadAndFallbackBodyWithAsk` — same
+    lock for the nil-hypothesis fallback with a `.warm` voice.
 
 ### Vision alignment
 
 - **Coach-parity stage #4 (Adaptation).** Per `docs/VISION.md`:
   the case formulation needs a "reason for changing course." Round
-  27 landed the adaptation-log entry. Round 28 closes the loop by
-  surfacing it to the user on the rep that drove the rebuild. The
-  user sees that their pushback became case-file history, not a
-  transient tap that disappeared into the void. A real coach
-  acknowledges when the client pushes back ("okay, you flagged
-  that — here's the revised read"); the post-rep card now lands
-  that turn.
+  27 landed the adaptation-log entry. Round 28 surfaced it as a
+  visual acknowledgement on the post-rep summary. Round 29 closes
+  the loop by making the chat thread continuous with the card —
+  when the user opens Ask Noum from the same rep, the seed names
+  the same pushback, quotes the same revised hypothesis, and the
+  conversation starts where the card left off. The user does not
+  re-enter the case from a generic rep summary.
 - **Pillar #5 (Personalized coaching).** A coach who silently
   revises a read without naming the pushback breaks the coaching
-  contract. The card names the user's action ("You flagged the
-  prior read as off.") so the revised read reads as a response to
-  the user, not a system-driven plan change.
+  contract on the SUMMARY surface (round 28 fix). A coach whose
+  chat seed forgets the pushback the instant the user opens the
+  conversation breaks the same contract on the CHAT surface
+  (round 29 fix). Both surfaces now name the user's action.
 - **Pillar #4 (Believable progress).** The body quotes the actual
-  revised `workingHypothesis` — the same clause the coach context
-  block carries, the same one `CaseReviewCard` surfaces under
-  "Working read". The user reads continuous voice across surfaces.
-- **Anti-overclaim.** The card never claims the prior read was
+  revised `workingHypothesis` — the same clause the card carries,
+  the same one `CaseReviewCard` surfaces under "Working read",
+  the same one the coach context block reads. Continuous voice
+  across all four surfaces.
+- **Anti-overclaim.** The seed never claims the prior read was
   *wrong* — it says the user *flagged* it as off. Same restraint
-  pattern the round-27 `evidenceBasis` carries ("user-tapped
-  rejection of: …" rather than "the prior hypothesis was
-  incorrect").
-- **Anti-goal alignment (no hearts-and-lives gating).** The card
-  doesn't block, punish, or celebrate. It's a quiet
-  acknowledgement; the practice loop continues unchanged.
+  pattern the round-27 `evidenceBasis`, the round-28 card
+  headline, and the existing adaptation-log copy carry.
+- **Anti-goal alignment (no hearts-and-lives gating).** The
+  opener doesn't block, punish, or celebrate. It is a quiet
+  case-anchored seed; the chat loop continues unchanged.
 
 ### Branch + redesign-alignment notes
 
-- All five tracks land on `Redesign`, the redesign-lineage branch
+- All three tracks land on `Redesign`, the redesign-lineage branch
   the rolling M24 deferred-slate work has been shipping on since
   round 11. The user brief explicitly calls this out: "ensure
-  working on the redesign branch too (very important)." Round 28
+  working on the redesign branch too (very important)." Round 29
   preserves the round-by-round loop on the redesign lineage.
-- Round 28 does not change the round-27 engine restructure (the
-  hoisted `newWorkingHypothesis`, `droppedRejectedAck`,
-  `priorLeverShift` locals stay exactly as they were), does not
-  change the round-26 chip catalog or `appliesTo(...)` guard, and
-  does not change the round-24 / round-25 `InterventionReviewPromptCard`
-  surface. The round-27 5-test additions remain unchanged; the
-  round-28 6 engine-predicate tests + 5 copy tests sit alongside
-  them. The existing 26-test review suite, 19-test ack suite,
-  CoachMemoryStore tests, daily-budget tests, AIRateLimiter tests,
-  IM-tone-drill tests, hero ribbon contract tests, and looking-ahead
-  CTA contract tests all remain untouched.
+- Round 29 does not change the round-28 `RevisedReadCard` view,
+  does not change the round-28 `freshRevisedReadChange` predicate,
+  does not change the round-27 engine restructure, does not change
+  the round-26 chip catalog, and does not change the round-24 /
+  round-25 `InterventionReviewPromptCard` surface. The round-28
+  6 engine-predicate tests + 5 copy tests remain unchanged; the
+  round-29 12 opener tests sit alongside them.
 
 ## Future moves
 
-(Updated priority list — round-28 closed the round-27 step #1; the
-rest roll forward, plus a new note from round 28.)
+(Updated priority list — round-29 closed the round-28 step #11;
+the rest roll forward, plus one new note from round 29.)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still
    blocked on `PublicProfileSnapshot` schema work.
@@ -284,10 +218,10 @@ rest roll forward, plus a new note from round 28.)
    interleaving with celebration timing. Worth a dedicated refactor
    pass with proper visual QA (and a real device).
 3. **Visual polish pass on the round-19 launch CTA.** Carried
-   forward from rounds 19–27. Pure visual work, not destination
+   forward from rounds 19–28. Pure visual work, not destination
    logic.
 4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–27. Pure visual work, not crossing logic.
+   forward from rounds 20–28. Pure visual work, not crossing logic.
 5. **Extend the crossing helper to the chat-coach context line.**
    Carried forward from round 21 as a note for the record.
 6. **Day-rollover refresh for long-mounted observers.** Carried
@@ -303,18 +237,33 @@ rest roll forward, plus a new note from round 28.)
     intervention.** Carried forward from round 27. Flip side of
     rejection-becomes-course-change: a `.confirmed` ack on a held
     hypothesis could nudge `CoachIntervention.criterionStatus`
-    toward "met" or extend the `reviewDueAt` cadence.
-11. **Reflect the revised read in the post-rep AI coach
-    conversation seed.** New note from round 28. The
-    `RevisedReadCard` surfaces the user-pushback line as a visual
-    acknowledgement, but a tap on the existing `TalkToNoumCTACard`
-    still dispatches the generic `sessionAnchoredOpener` rather
-    than a revised-read-aware opener ("you flagged the prior read;
-    here's where my updated read sits — anything to add?"). Pure-
-    function lift on `CoachContextBuilder` similar to
-    `interventionReviewOpener`. Would only fire when the same
-    `freshRevisedReadChange` gate is true, so the conversation
-    opener stays case-anchored on the rep that drove the rebuild.
+    toward "met" or extend the `reviewDueAt` cadence. The natural
+    follow-on to the round-27/28/29 rejection lineage.
+11. **Revised-read follow-up chip row on `AskNoumView`.** New note
+    from round 29. After the coach replies to a
+    `revisedReadOpener` (the new round-29 dispatched seed), the
+    user could be offered a one-tap follow-up — "Here's what I'd
+    add", "Stick with the new read", or "Try a third angle" — that
+    lands as a durable signal on the case file. Mirror of the
+    round-26 `shouldShowHypothesisAcknowledgement` predicate:
+    detect that the most-recent user turn begins with
+    `revisedReadOpenerLead` and that the coach has answered, then
+    surface a voice-mapped chip row. Pure-helper lift on
+    `CoachContextBuilder` and a new render block in `AskNoumView`.
+    The round-29 lead constant is already in place for the
+    predicate to match against — no further engine work needed.
+12. **Carry the revised-read context into the chat-coach context
+    block.** Also new from round 29. The
+    `CoachContextBuilder.buildContextBlock(...)` user-block could
+    surface the fresh adaptation entry ("Case file just shifted:
+    user flagged the prior read; new working hypothesis is X")
+    when the latest `CoachCourseChange` is both
+    `documentsUserPushback` and `isFresh`. The model would then
+    know the case state on EVERY chat turn through the next rep,
+    not only on the seed message that opened the thread. Pure-
+    function lift on the existing context-block builder; gate on
+    the same `freshRevisedReadChange` predicate the summary card
+    and the round-29 opener already read.
 
 ## Build-host limitation (honest note for the next agent)
 
@@ -322,76 +271,72 @@ This environment has **no Xcode and no Swift toolchain**, so
 nothing in this round was compiled or run — not the app, not the
 test suite. The changes are:
 
-- Two new derived properties on `CoachCourseChange`
-  (PrimaryFocusMemory.swift), placed inside the existing struct
-  next to the existing stored fields. The `userPushbackMarker`
-  constant is a static let alongside.
-- One new file `RevisedReadCard.swift` containing the
-  `RevisedReadCard` SwiftUI view + two static copy generators.
-  Same `#if canImport(SwiftUI)` / `@available(iOS 17.0, *)` /
-  `AppColor.pro` / `Typography.captionSmall` / `CornerRadius.medium`
-  conventions as the sibling `InterventionReviewPromptCard.swift`.
-  The Xcode project uses `fileSystemSynchronizedGroups` so a new
-  file in `Noum/` is automatically picked up — no project.pbxproj
-  edit required.
-- One new computed property + two new `RevisedReadCard(...)` call
-  sites in SummaryView.swift. Both call sites land immediately
-  above the existing `InterventionReviewPromptCard` conditional —
-  no other layout changed.
-- Six new `@Test` methods in `CoachMemoryEngineTests`, inserted
-  after the existing `buildTrimsLongRejectedSnapshotInEvidenceBasis`
-  test, before the private `ahCounterSession` helper.
-- One new `@Suite("RevisedReadCardTests")` at the end of the file
-  with five `@Test` methods. Marked `@available(iOS 17.0, *)` and
-  `@MainActor` to match the view's annotations.
+- One new `static let` constant + one new `static func` on
+  `CoachContextBuilder` (`CoachContextBuilder.swift`), placed
+  inside the existing struct immediately after
+  `interventionReviewStarterHeadline(for:)` and before the
+  hypothesis-acknowledgement-chips section. Self-contained — no
+  new imports, no new dependencies.
+- One new `talkToNoumOpener` private computed property on
+  `SummaryView` (`SummaryView.swift`), placed immediately after
+  `sessionAnchoredOpener`. Two call-site edits: line 650 and
+  line 765 swap `sessionAnchoredOpener` for `talkToNoumOpener`.
+  No other layout change, no new state, no new bindings.
+- One new `@Suite("RevisedReadOpenerTests")` at the end of
+  `NoumTests/NoumTests.swift` with twelve `@Test` methods. The
+  suite is plain `struct`, no `@MainActor` (the function under
+  test is a pure static function with no UI dependencies).
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter CoachMemoryEngineTests` — the new round-28
-   6 predicate tests should all pass, and the pre-28 tests (including
-   the round-27 adaptation-log additions and the rest of the suite)
-   should still pass.
-2. `swift test --filter RevisedReadCardTests` — the new round-28
-   5 copy-generator tests should all pass.
-3. `swift test --filter HypothesisAcknowledgementTests` — the
-   round-26 tests (19 total) should still pass. No round-26
+1. `swift test --filter RevisedReadOpenerTests` — the new
+   round-29 12 opener tests should all pass.
+2. `swift test --filter RevisedReadCardTests` — the round-28
+   5 copy-generator tests should still pass. No round-28
    surface was changed.
-4. `swift test --filter InterventionReviewPromptTests` — the
+3. `swift test --filter CoachMemoryEngineTests` — the round-28
+   6 predicate tests + the pre-28 suite should still pass.
+4. `swift test --filter HypothesisAcknowledgementTests` — the
+   round-26 tests (19 total) should still pass.
+5. `swift test --filter InterventionReviewPromptTests` — the
    round-24 + round-25 tests (26 total) should still pass.
-5. `swift test --filter CoachMemoryStoreTests` — the existing
-   memory-store tests should still pass (no schema change on
-   `CoachCourseChange`).
-6. `swift test --filter CoachReadCardDailyBudgetHintTests` —
+6. `swift test --filter CoachMemoryStoreTests` — the existing
+   memory-store tests should still pass.
+7. `swift test --filter CoachReadCardDailyBudgetHintTests` —
    round-23 tests should still pass.
-7. `swift test --filter AIRateLimiterPublicationTests` — round-22
+8. `swift test --filter AIRateLimiterPublicationTests` — round-22
    tests should still pass.
-8. `swift test --filter IMToneDrillCrossingTests` — round-21
+9. `swift test --filter IMToneDrillCrossingTests` — round-21
    helper tests should still pass.
-9. `swift test --filter HeroScoreCardToneDrillRibbonContractTests`
-   — round-20 ribbon-contract tests should still pass.
-10. `swift test --filter LookingAheadCardStartCTAContractTests` —
+10. `swift test --filter HeroScoreCardToneDrillRibbonContractTests`
+    — round-20 ribbon-contract tests should still pass.
+11. `swift test --filter LookingAheadCardStartCTAContractTests` —
     round-19 launch-CTA tests should still pass.
-11. Boot the app on simulator, seed a
+12. Boot the app on simulator, seed a
     `CoachMemory.activeIntervention` with a working hypothesis,
     open Ask Noum via the round-24 `InterventionReviewPromptCard`
     or the round-25 empty-state chip, wait for the coach reply,
     tap the **Adapt / rejected** ack chip. Then finish a new rep
     where either the lever changes OR the hypothesis text rewrites
     (e.g. `evidenceCount` crosses a `BaselineConfidence` threshold).
-    Confirm on the post-rep summary screen:
-    - `RevisedReadCard` renders immediately above
-      `InterventionReviewPromptCard` (or alone if no review is
-      due), with the purple-pro eyebrow + headline + body.
-    - Headline reads "You flagged the prior read as off."
-    - Body reads "Here's the revised read: <new hypothesis>."
-      (single trailing period, no double dots).
-    - Open Profile → `CaseReviewCard` "Last shift" row carries the
-      same `reason` text the engine wrote.
-    - Finish another rep WITHOUT a fresh `.rejected` ack — the
-      `RevisedReadCard` must NOT re-render (the carried-forward
-      entry is no longer fresh).
+    On the post-rep summary, confirm `RevisedReadCard` renders
+    (round-28 contract). Now tap **Talk to Noum** on the
+    `TalkToNoumCTACard` below. Confirm in the chat thread:
+    - The user-turn seed reads "Picking up the case file — I
+      flagged the prior read as off. The revised read you're
+      holding is: <hypothesis>. <voice-shaped ask>" — three
+      discrete sentences, single-space joined.
+    - The voice-shaped ask matches the current
+      `coachingProfileStore.profile?.speakingStyleGoal`.
+    - The coach reply lands case-anchored (mentions the revised
+      read, not a generic rep verdict).
+    - Finish another rep WITHOUT a fresh `.rejected` ack — open
+      Ask Noum from the `TalkToNoumCTACard` again — the seed
+      MUST be the generic `sessionOpener` ("Just finished a
+      Timed rep — ...") because `freshRevisedReadChange` is now
+      nil. The revised-read opener is one-shot per pushback.
     - Repeat with a `.confirmed` or `.uncertain` ack across a
-      hypothesis rewrite — the `RevisedReadCard` must NOT render
-      (the entry is dropped by the snapshot guard but no
-      adaptation-log entry is appended; `documentsUserPushback`
-      stays false on whatever last entry exists).
+      hypothesis rewrite — the `TalkToNoumCTACard` MUST dispatch
+      the generic `sessionOpener` (the adaptation-log entry is
+      either absent or doesn't carry the pushback marker, so the
+      gate falls).
