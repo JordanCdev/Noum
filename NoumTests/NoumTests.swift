@@ -21986,3 +21986,588 @@ struct FreshRevisedReadContextTests {
         #expect(ctx.contains("Case file just shifted:") == false)
     }
 }
+
+// MARK: - RebuildVerdictContextTests
+//
+// Round 32 closes the verdict half of the rebuild loop. Round 28 surfaced
+// the rebuild on the post-rep summary; round 29 named the user's pushback in
+// the chat seed; round 30 collected the user's verdict on the rebuild via a
+// one-tap chip row; round 31 carried the rebuild context into the chat-coach
+// user-context block on every reply through the next followed rep — UNTIL
+// the user taps a verdict chip and `CoachMemoryStore.noteHypothesisAcknowledgement(_:)`
+// bumps `memory.updatedAt`, closing round 31's `isFresh` window.
+//
+// Round 32 detects this state with a sibling predicate that pairs the latest
+// pushback rebuild with a `CoachHypothesisAcknowledgement` whose snapshot
+// still applies AND whose `acknowledgedAt` post-dates the rebuild's
+// `changedAt`. The pair means "the user has lodged a verdict on the rebuilt
+// read." The dedicated rebuild-verdict lines surface in INTERVENTION CYCLE
+// AHEAD of round-31's fresh-revised-read lines, replacing the generic
+// "Last course change" line. The model gets the rebuild context AND the
+// user's verdict on it, in one block, on every chat turn through the next
+// followed rep — not only on the seed turn before the chip tap.
+//
+// Pure-helper layers under test:
+//   • `CoachContextBuilder.rebuildVerdictPair(in:)` — predicate that returns
+//     the (change, ack) pair iff the rebuild has been acknowledged.
+//   • `CoachContextBuilder.rebuildVerdictContextLines(memory:)` — the two
+//     context-block lines emitted when the predicate fires AND the working
+//     hypothesis is non-empty.
+//   • `CoachHypothesisConfidence.rebuildVerdictLabel` and
+//     `.rebuildVerdictInstruction` — per-confidence rebuild-specific verdict
+//     label and coach-move instruction. Distinct from `nextMoveInstruction`
+//     (hypothesis-agnostic) because the rebuild context demands the coach
+//     name the second cycle: `.confirmed` reinforces the *rebuild*;
+//     `.rejected` is a *second* pushback.
+//
+// Integration layer under test:
+//   • `CoachContextBuilder.userContext(...)` wiring — three-tier precedence
+//     in `interventionCycleLines`: round-32 verdict block wins over
+//     round-31 fresh-rebuild block, which wins over the generic
+//     "Last course change" line. The chat context carries one canonical
+//     course-change block at any time.
+//
+// Vision alignment: closes the round-28/29/30/31 lineage by carrying the
+// USER'S verdict on the rebuild into every chat turn AFTER the chip tap.
+// Coach-parity stage #4 (Adaptation): a coach who'd just rebuilt their read
+// AND received the user's verdict on the rebuild would speak to the next
+// turn knowing both — they'd reinforce a `.confirmed` rebuild, probe an
+// `.uncertain` one, and acknowledge a `.rejected` rebuild as a second adapt.
+// The new context lines give the model the same memory.
+
+@MainActor
+@Suite("RebuildVerdictContextTests")
+struct RebuildVerdictContextTests {
+
+    // MARK: - Fixtures
+
+    private static let rebuiltHypothesis =
+        "Pace appears to be the highest-leverage focus across recent reps."
+
+    private static func pushbackChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "user marked the prior hypothesis as off across 3 followed reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func engineOnlyChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "declining trend in recent reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func ack(
+        _ confidence: CoachHypothesisConfidence,
+        at acknowledgedAt: Date,
+        snapshot: String = rebuiltHypothesis
+    ) -> CoachHypothesisAcknowledgement {
+        CoachHypothesisAcknowledgement(
+            confidence: confidence,
+            hypothesisSnapshot: snapshot,
+            acknowledgedAt: acknowledgedAt
+        )
+    }
+
+    private static func memory(
+        updatedAt: Date = Date(),
+        adaptationLog: [CoachCourseChange]?,
+        workingHypothesis: String? = rebuiltHypothesis,
+        hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            voice: .authoritative,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "rebuilt after user pushback",
+            previousLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis,
+            hypothesisAcknowledgement: hypothesisAcknowledgement,
+            adaptationLog: adaptationLog
+        )
+    }
+
+    private func sampleProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .authoritative,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    // MARK: - rebuildVerdictPair predicate
+
+    @Test func rebuildVerdictPairReturnsPairWhenAckPostDatesPushbackRebuild() {
+        // Happy path: latest adaptation entry is a user-pushback rebuild;
+        // the carried ack was lodged AFTER the rebuild; ack snapshot
+        // matches current hypothesis. Predicate returns the pair.
+        let changedAt = Date()
+        let ackAt = changedAt.addingTimeInterval(60)
+        let change = Self.pushbackChange(at: changedAt)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [change],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let result = CoachContextBuilder.rebuildVerdictPair(in: mem)
+        #expect(result?.change.id == change.id)
+        #expect(result?.ack.confidence == .confirmed)
+    }
+
+    @Test func rebuildVerdictPairReturnsNilForEngineOnlyChangeEvenWithAck() {
+        // Engine-only lever shifts are not user pushback. Even if the user
+        // has lodged an ack on the current hypothesis, the rebuild-verdict
+        // block must NOT fire — the rebuild signal is not present.
+        let changedAt = Date()
+        let ackAt = changedAt.addingTimeInterval(60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.engineOnlyChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairReturnsNilWhenNoAckLodged() {
+        // Pushback rebuild but no ack carried — round 32 has not been
+        // triggered yet. Round 31 covers this window; round 32 must not
+        // fire and cause double-coverage.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: nil
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairReturnsNilWhenAckPreDatesRebuild() {
+        // Defensive: an ack that landed BEFORE the rebuild's changedAt is
+        // a stale ack from before the rebuild — even if it happens to
+        // share the same hypothesis text by coincidence, the user did NOT
+        // lodge it on the rebuild as a deliberate verdict on the rebuilt
+        // read. The predicate requires ack-after-rebuild ordering.
+        let changedAt = Date()
+        let priorAckAt = changedAt.addingTimeInterval(-300)
+        let mem = Self.memory(
+            updatedAt: changedAt,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: priorAckAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairReturnsPairWhenAckExactlyAtRebuild() {
+        // Edge case: ack timestamp equals the rebuild's changedAt. Treated
+        // as a valid post-rebuild ack — the `>=` ordering is inclusive on
+        // equality. Defensive against fixtures (and real clock skew) where
+        // the two times are within the same millisecond.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: now)
+        )
+        let result = CoachContextBuilder.rebuildVerdictPair(in: mem)
+        #expect(result?.ack.confidence == .uncertain)
+    }
+
+    @Test func rebuildVerdictPairReturnsNilWhenAckSnapshotNoLongerApplies() {
+        // The ack snapshot is the rebuilt hypothesis from when the chip
+        // was tapped. If a later memory rebuild rewrites the working
+        // hypothesis, the ack no longer applies — the user's verdict was
+        // on a hypothesis that has since been replaced. The pair must
+        // drop so the rebuild-verdict block doesn't mis-attribute the
+        // verdict to a hypothesis the user never saw.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            workingHypothesis: "An entirely different read after a later rebuild.",
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairReturnsNilForEmptyAdaptationLog() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairReturnsNilForNilAdaptationLog() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: nil,
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairReadsLatestEntryOnlyForRebuildBranch() {
+        // Mixed history: earlier pushback, latest engine-only shift, ack
+        // that post-dates everything. The predicate reads `.last` — the
+        // latest is engine-only — so the pair must drop. The user's ack
+        // applies to the current (engine-shifted) hypothesis but the
+        // CHANGE that produced the current hypothesis was not a rebuild.
+        let now = Date()
+        let earlier = Self.pushbackChange(at: now.addingTimeInterval(-600))
+        let latest = Self.engineOnlyChange(at: now)
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [earlier, latest],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    // MARK: - rebuildVerdictContextLines shape and content
+
+    @Test func contextLinesEmitTwoLinesWhenPredicateFiresAndHypothesisPresent() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        #expect(lines.count == 2)
+    }
+
+    @Test func contextLinesEmitNothingWhenPredicateDoesNotFire() {
+        // No ack lodged → predicate dark → no lines. The caller falls
+        // through to round 31 (if fresh) or the generic line.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: nil
+        )
+        #expect(CoachContextBuilder.rebuildVerdictContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func contextLinesEmitNothingWhenHypothesisIsNil() {
+        // The dedicated lines reference "the rebuilt working hypothesis
+        // above" — a missing hypothesis would point at nothing.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            workingHypothesis: nil,
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now, snapshot: "")
+        )
+        #expect(CoachContextBuilder.rebuildVerdictContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func contextLinesEmitNothingWhenHypothesisIsWhitespaceOnly() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            workingHypothesis: "   \n  ",
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now, snapshot: "   \n  ")
+        )
+        #expect(CoachContextBuilder.rebuildVerdictContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func contextLinesCaseStateNamesConfirmedVerdict() {
+        // The case-state line names the verdict using the per-confidence
+        // `rebuildVerdictLabel`. `.confirmed` → "confirmed verdict".
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        #expect(lines.first?.contains("confirmed verdict") == true)
+        #expect(lines.first?.contains("the rebuilt working hypothesis above") == true)
+    }
+
+    @Test func contextLinesCaseStateNamesUncertainVerdict() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        #expect(lines.first?.contains("uncertain verdict") == true)
+    }
+
+    @Test func contextLinesCaseStateNamesSecondPushback() {
+        // `.rejected` on a rebuilt read is a SECOND pushback — the user
+        // pushed back twice. The label must read "second pushback" so the
+        // model recognises the second cycle, not a first-time rejection.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        #expect(lines.first?.contains("second pushback") == true)
+    }
+
+    @Test func contextLinesCaseStateCarriesEvidenceBasisInParentheses() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(
+                at: now,
+                evidenceBasis: "user marked the prior hypothesis as off across 3 followed reps"
+            )],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        #expect(lines.first?.contains("(user marked the prior hypothesis as off across 3 followed reps)") == true)
+    }
+
+    @Test func contextLinesCaseStateOmitsParensWhenEvidenceBasisIsEmpty() {
+        // Defensive: empty evidence basis must not render "(  )" tail.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now, evidenceBasis: "")],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        #expect(lines.first?.contains("the rebuilt working hypothesis above.") == true)
+        #expect(lines.first?.contains("(") == false)
+    }
+
+    @Test func contextLinesCoachMoveCarriesConfirmedInstruction() {
+        // The coach-move line uses `rebuildVerdictInstruction`, which is
+        // distinct from the generic `nextMoveInstruction`. `.confirmed`
+        // tells the model to treat the rebuild as the accepted read AND
+        // not to re-litigate the original.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        let move = lines.last ?? ""
+        #expect(move.contains("Coach move on the rebuild verdict"))
+        #expect(move.contains("accepted the rebuilt read"))
+        #expect(move.contains("Do not re-litigate the original read"))
+    }
+
+    @Test func contextLinesCoachMoveCarriesUncertainInstruction() {
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        let move = lines.last ?? ""
+        #expect(move.contains("still settling into the rebuilt read"))
+        #expect(move.contains("Ask one focused question"))
+        #expect(move.contains("do not strengthen the rebuild ahead of the user"))
+    }
+
+    @Test func contextLinesCoachMoveCarriesRejectedInstruction() {
+        // Anti-overclaim: the second pushback must not be treated as
+        // simple noise. The instruction names the second adapt
+        // explicitly AND forbids retrying the same rebuild.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now)
+        )
+        let lines = CoachContextBuilder.rebuildVerdictContextLines(memory: mem)
+        let move = lines.last ?? ""
+        #expect(move.contains("pushed back on the rebuilt read too"))
+        #expect(move.contains("Acknowledge the second adapt explicitly"))
+        #expect(move.contains("do not retry the same rebuilt hypothesis"))
+        #expect(move.contains("propose a third angle"))
+    }
+
+    // MARK: - userContext wiring (three-tier precedence)
+
+    @Test func userContextSurfacesRebuildVerdictLinesWhenAckPostDatesPushback() {
+        // Integration: predicate fires → INTERVENTION CYCLE carries the
+        // dedicated rebuild-verdict block. Neither round 31's case-state
+        // line nor the generic "Last course change:" line surfaces.
+        let changedAt = Date()
+        let ackAt = changedAt.addingTimeInterval(60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
+        #expect(ctx.contains("Case file rebuild verdict: the user lodged a confirmed verdict on the rebuilt working hypothesis above"))
+        #expect(ctx.contains("Coach move on the rebuild verdict:"))
+        // Round-31 lines must NOT also surface — three-tier precedence.
+        #expect(ctx.contains("Case file just shifted:") == false)
+        // Generic "Last course change:" must NOT surface — the rebuild-
+        // verdict block describes the same course change with the verdict
+        // folded in.
+        #expect(ctx.contains("Last course change:") == false)
+    }
+
+    @Test func userContextFallsThroughToFreshRevisedReadWhenNoAckLodged() {
+        // Round-31 path: pushback rebuild is fresh, no ack carried yet
+        // (the window between rebuild and the user's chip tap). The
+        // round-32 predicate is dark, round 31 fires.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: nil
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Case file just shifted: the user flagged the prior read as off"))
+        #expect(ctx.contains("Case file rebuild verdict:") == false)
+        #expect(ctx.contains("Last course change:") == false)
+    }
+
+    @Test func userContextSurfacesVerdictLinesEvenWhenRound31FreshnessWindowHasExpired() {
+        // No fresh rebuild (changedAt drift > 1s), ack applies but pushback
+        // rebuild has aged past this rep. Round 32 still fires because the
+        // rebuild-verdict predicate is NOT gated on `isFresh` — the
+        // ack-after-rebuild ordering survives the rep boundary, so the
+        // model knows the user's verdict on the rebuild even after a
+        // later rebuild has not yet rewritten the hypothesis.
+        //
+        // This is the durable-context contract: the verdict on the
+        // rebuild outlives the freshness window, because the verdict is
+        // the user's own report, not a transient rebuild signal.
+        let memUpdated = Date()
+        let changedAt = memUpdated.addingTimeInterval(-600)
+        let ackAt = memUpdated.addingTimeInterval(-300)
+        let mem = Self.memory(
+            updatedAt: memUpdated,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        // Round 32 fires (verdict survives) — generic + round 31 dark.
+        #expect(ctx.contains("Case file rebuild verdict:"))
+        #expect(ctx.contains("Case file just shifted:") == false)
+        #expect(ctx.contains("Last course change:") == false)
+    }
+
+    @Test func userContextFallsThroughToGenericForEngineOnlyChangeEvenWithAck() {
+        // Engine-only lever shift, even with an ack lodged on the current
+        // hypothesis — round 32 must NOT fire (the rebuild signal is
+        // absent), round 31 must NOT fire (no pushback rebuild), the
+        // generic line carries the engine-only shift.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(
+                at: now,
+                evidenceBasis: "declining trend in recent reps"
+            )],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Last course change: Shifted focus from Pace to Filler Words. (declining trend in recent reps)."))
+        #expect(ctx.contains("Case file rebuild verdict:") == false)
+        #expect(ctx.contains("Case file just shifted:") == false)
+    }
+
+    @Test func userContextSurfacesSecondPushbackLineOnRejectedRebuildAck() {
+        // The headline behavioural contract: a `.rejected` verdict on a
+        // rebuilt read surfaces as "second pushback" in INTERVENTION
+        // CYCLE. The model is told explicitly NOT to retry the same
+        // rebuilt hypothesis — the anti-overclaim rail that closes the
+        // pushback-rebuild-pushback chain in context, not in code.
+        let changedAt = Date()
+        let ackAt = changedAt.addingTimeInterval(60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Case file rebuild verdict: the user lodged a second pushback on the rebuilt working hypothesis above"))
+        #expect(ctx.contains("pushed back on the rebuilt read too"))
+        #expect(ctx.contains("do not retry the same rebuilt hypothesis"))
+        #expect(ctx.contains("propose a third angle"))
+    }
+}

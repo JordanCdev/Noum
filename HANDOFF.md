@@ -1,50 +1,66 @@
-# HANDOFF — M24 deferred slate (round 31): the chat-coach user-context block now carries a dedicated two-line REVISED-READ block whenever the latest `CoachCourseChange` is BOTH a user-pushback rebuild AND fresh against `CoachMemory.updatedAt`, so the model speaks to the rebuilt hypothesis as the live operating read on every chat turn — not only on the round-29 dispatched seed.
+# HANDOFF — M24 deferred slate (round 32): the rebuild-verdict block now surfaces in the chat-coach user-context block whenever the user has lodged a `confirmed` / `uncertain` / `rejected` verdict on the rebuilt working hypothesis via the round-30 follow-up chip row, so the model knows the rebuild has been INHABITED (not just delivered) on every chat turn after the chip tap — closing the silent-context bug round 31 left on the post-ack window.
 
 ## Scope
 
-Round 30 closed the chat-surface adaptation loop opened by round 29: after
-the coach replies to the round-29 `revisedReadOpener` seed, a one-tap
-follow-up chip row lands the user's verdict on the rebuild without
-typing. Three rounds — 28 (`RevisedReadCard` post-rep surface), 29
-(case-anchored chat seed), 30 (chip-row verdict) — gave the rebuild a
-visible spine across the post-rep summary, the chat thread opener, and
-the chat-thread verdict.
+Round 31 carried the rebuild context into the chat-coach user-context block
+on every reply through the next followed rep. The two dedicated lines
+fired whenever `freshRevisedReadChange(in:)` returned a pushback rebuild
+that was fresh against `memory.updatedAt` (drift ≤ 1s) AND the carrying
+`workingHypothesis` was non-empty.
 
-The honest gap that left open: **the model's user-context block doesn't
-explicitly name the rebuild state on chat turns AFTER the round-29 seed.**
-The seed lands the pushback in the user turn ("Picking up the case file —
-I flagged the prior read as off."), and the model's first reply is
-case-anchored. But on the SECOND, third, fourth user turn in the same
-thread — before the next followed rep rewrites memory — the user-context
-block goes flat:
+The honest gap that left open: **the round-30 chip row writes the user's
+verdict via `CoachMemoryStore.noteHypothesisAcknowledgement(_:)`, which
+bumps `memory.updatedAt = now`.** The moment the user taps a chip, the
+`isFresh` window slams shut: `change.changedAt` (the rebuild) is now > 1s
+behind `memory.updatedAt` (the ack bump). Round 31's dedicated lines stop
+firing on the VERY NEXT chat turn — exactly when the model most needs to
+know the rebuild has been INHABITED with a `confirmed` / `uncertain` /
+`rejected` verdict, not just delivered.
 
-- The `CASE FORMULATION` section names "Working hypothesis (tentative): X"
-  with no marker that X is a rebuild rather than the original.
-- The `INTERVENTION CYCLE` section's "Last course change: <reason>
-  (<basis>)" line carries the rebuild as one of many possible reason
-  shapes. The model has to PARSE the reason text to know this was a
-  user-pushback rebuild AND that the rebuild is still fresh.
-- The hypothesis acknowledgement reflection (round 26) covers the user's
-  verdict on the CURRENT hypothesis, but reads identically whether that
-  hypothesis is the original or a rebuild — no distinguishing tag.
+The model falls back to the generic "Last course change: <reason>
+(<basis>)" line. Honest, but flat: the line names a course change but
+does not name the user's verdict on it. The round-26 hypothesis-ack
+reflection in `coachCaseFormulationLines` does surface the verdict
+generically ("user confirmed the working hypothesis matches what they
+see") — but reads identically whether the hypothesis is the original or
+the rebuild, and the model has no signal that the verdict was lodged
+on a REBUILT read specifically (which would change the coach move:
+`.confirmed` reinforces the *rebuild*; `.rejected` is a SECOND pushback,
+not a first-time rejection).
 
-A coach who'd just rebuilt their read at the user's pushback would not
-speak to chat turn #3 as if the current hypothesis had always been there.
-They'd remember they JUST changed it, name the change, and check whether
-the user is settling into it. Round 31 gives the model the same memory.
+Round 32 picks up step #11 from the round-31 "Future moves" list AND the
+note for round 31 from step #11:
 
-Round 31 picks up step #11 from the round-30 "Future moves" list:
+> **Reflect the revised-read follow-up verdict in the next user-context
+> block.** From round 30. After the user lands a verdict on the rebuild
+> via the round-30 chip row, the next user-context block could surface
+> a one-line summary line ("User accepted the rebuilt read on <date>;
+> treat as the operating hypothesis") so the model knows whether the
+> rebuilt read is the live one or the user is still pushing back. Mirror
+> of the round-26 hypothesis-ack reflection in the existing builder, but
+> tagged to the *rebuild* verdict for analytic purposes (so a future
+> trend view can distinguish "user accepted the first read" from "user
+> accepted the rebuilt read").
+>
+> Note for round 31: this would dovetail with the new
+> `freshRevisedReadContextLines` block — when the predicate fires AND
+> the user has already lodged a rebuild verdict via round 30, the
+> coach-move line could swap in a "user already lodged X verdict on the
+> rebuild" tail so the model knows the rebuild has been inhabited, not
+> just delivered.
 
-> **Carry the revised-read context into the chat-coach context block.**
-> From round 29. The `CoachContextBuilder.buildContextBlock(...)`
-> user-block could surface the fresh adaptation entry ("Case file just
-> shifted: user flagged the prior read; new working hypothesis is X")
-> when the latest `CoachCourseChange` is both `documentsUserPushback`
-> and `isFresh`. The model would then know the case state on EVERY chat
-> turn through the next rep, not only on the seed message that opened
-> the thread. Pure-function lift on the existing context-block builder;
-> gate on the same `freshRevisedReadChange` predicate the summary card
-> and the round-29 opener already read.
+The note for round 31 is what made the bug visible in the first place:
+round 31's predicate goes dark the moment the user lodges a verdict,
+because `noteHypothesisAcknowledgement` bumps `updatedAt`. A "tail on
+the round-31 coach-move line" approach would still depend on the
+`isFresh` window — and would never fire, because the window closes
+synchronously with the ack write. Round 32 takes the cleaner path:
+a SIBLING predicate that does NOT depend on `isFresh` but on the
+ordering between `ack.acknowledgedAt` and `change.changedAt`, with the
+shared `appliesTo` snapshot guard. The two predicates are mutually
+exclusive at the memory level (round 30's ack bump that satisfies
+round 32 is the same write that closes round 31's window), so the chat
+context carries one canonical course-change block at any time.
 
 User brief, unchanged round to round: "continue from the existing TO-DO,
 ensure working towards getting the app towards the vision plan, and all
@@ -53,217 +69,290 @@ redesign branch too (very important)."
 
 Translation, this round:
 
-- Two new pure functions on `CoachContextBuilder`:
-  - `freshRevisedReadChange(in: CoachMemory) -> CoachCourseChange?` —
-    pure-function lift of `SummaryView.freshRevisedReadChange`. Returns
-    the latest adaptation entry iff it both `documentsUserPushback` AND
-    `isFresh(comparedTo: memory.updatedAt)`. Identical semantics to the
-    SummaryView gate, lifted so the chat context block reads the same
-    predicate as the summary card, the round-29 opener, and the round-30
-    chip row.
-  - `freshRevisedReadContextLines(memory:) -> [String]` — the two
-    context-block lines emitted when the predicate fires AND the
-    carrying `workingHypothesis` is non-empty. Case-state line +
-    coach-move line. Returns `[]` when the predicate doesn't fire, OR
-    when it fires but the hypothesis is missing/whitespace-only (the
-    lines reference "the working hypothesis above" — pointing at
-    nothing would read incoherently).
-- `interventionCycleLines` now branches: when
-  `freshRevisedReadContextLines` is non-empty, emit those lines AND
-  SUPPRESS the generic "Last course change: <reason> (<basis>)" line.
-  The two would describe the same change; the dedicated lines name the
-  rebuild state with more precision. When the predicate doesn't fire
-  (engine-only shifts, stale rebuilds), the generic line surfaces
-  unchanged — no regression on the round-19 pre-pushback adaptation
-  lineage.
-- The case-state line reads: `"- Case file just shifted: the user
-  flagged the prior read as off; the working hypothesis above is the
-  rebuilt one (<evidenceBasis>)."` The phrase "flagged the prior read
-  as off" echoes `RevisedReadCard.headlineCopy` (round 28) AND the
-  `revisedReadOpenerLead` (round 29) — one phrase across three
-  surfaces, so the rebuild reads as the same event everywhere the
-  user (and model) encounter it.
-- The coach-move line reads: `"- Coach move on the rebuild: speak to it
-  as the live operating read, not the original. Leave room for the
-  user to settle into the rebuild or push back again before
-  strengthening it."` Anti-overclaim restraint: the model is told to
-  treat the rebuild as live BUT not to strengthen it before the user
-  has had a chance to settle into it or push back again. Mirror of
-  the round-26/30 verdict-surface restraint ("the user records THEIR
-  verdict; the coach doesn't claim correctness").
+- New `CoachContextBuilder.rebuildVerdictPair(in:)` — pure predicate
+  that returns the (change, ack) pair iff the latest course change is a
+  user-pushback rebuild, the carried `hypothesisAcknowledgement` was
+  lodged at or after the rebuild's `changedAt`, AND the ack's
+  `hypothesisSnapshot` still matches the current `workingHypothesis`
+  (`appliesTo`). NOT gated on `isFresh` — the verdict is the user's own
+  report and should survive the freshness window, the rep boundary, and
+  any clock-skew tolerances.
+- New `CoachContextBuilder.rebuildVerdictContextLines(memory:)` — the
+  two context-block lines emitted when the predicate fires AND
+  `workingHypothesis` is non-empty:
+  - Case-state line: `"- Case file rebuild verdict: the user lodged a
+    <confirmed verdict | uncertain verdict | second pushback> on the
+    rebuilt working hypothesis above (<evidenceBasis>)."` The "the
+    rebuilt working hypothesis above" anchor matches round 31's case-
+    state phrasing — the model sees one cross-line referent across the
+    rebuild lifecycle.
+  - Coach-move line: `"- Coach move on the rebuild verdict:
+    <rebuildVerdictInstruction>"` — confidence-specific instruction
+    from a new `CoachHypothesisConfidence.rebuildVerdictInstruction`
+    computed property. `.confirmed` tells the model to treat the
+    rebuild as the user's accepted read and not re-litigate the
+    original; `.uncertain` tells it the user is still settling and to
+    ask one focused question without strengthening the rebuild ahead
+    of them; `.rejected` tells it the user pushed back twice and to
+    propose a third angle without retrying the same rebuilt
+    hypothesis.
+- New `CoachHypothesisConfidence.rebuildVerdictLabel` and
+  `.rebuildVerdictInstruction` — per-branch rebuild-specific phrases.
+  Distinct from the existing `contextLabel` (flat ack statement) and
+  `nextMoveInstruction` (hypothesis-agnostic) because the rebuild
+  context demands the coach name the SECOND cycle:
+  - `.confirmed` label = "confirmed verdict"; instruction reinforces
+    the *rebuild* (not the original).
+  - `.uncertain` label = "uncertain verdict"; instruction asks one
+    focused question, does not strengthen the rebuild yet.
+  - `.rejected` label = "second pushback"; instruction acknowledges
+    the second adapt, forbids retrying the same rebuild, asks for a
+    third angle plus a discriminating-evidence ask.
+- `interventionCycleLines` now branches THREE WAYS, most-specific first:
+  - Round 32: `rebuildVerdictContextLines` (ack-after-rebuild).
+  - Round 31: `freshRevisedReadContextLines` (fresh rebuild, no ack).
+  - Generic: `"Last course change: <reason> (<basis>)."`.
+  Mutual exclusion at the memory level: the round-30 ack bump that
+  satisfies round 32 closes round 31's `isFresh` window. The two
+  dedicated blocks never both fire.
 - The redesign-branch invariant: this is a `Redesign`-branch push per
   the user brief. The work lands directly on `Redesign`, preserving
   the round-by-round loop on the redesign lineage that has been the
-  home of rounds 11–30.
+  home of rounds 11–31.
 
 ## What shipped
 
-### Track 1 — `CoachContextBuilder.freshRevisedReadChange(in:)` + `freshRevisedReadContextLines(memory:)` (`CoachContextBuilder.swift`)
+### Track 1 — `CoachHypothesisConfidence.rebuildVerdictLabel` + `.rebuildVerdictInstruction` (`PrimaryFocusMemory.swift`)
 
-- New `static func freshRevisedReadChange(in memory: CoachMemory) -> CoachCourseChange?`.
-  Pure-function lift of `SummaryView.freshRevisedReadChange`. Same guard
-  structure:
-  - `memory.adaptationLog?.last` must exist.
-  - `latest.documentsUserPushback` must be true.
-  - `latest.isFresh(comparedTo: memory.updatedAt)` must be true.
-  - Returns the matching entry, or nil otherwise.
-- New `static func freshRevisedReadContextLines(memory: CoachMemory) -> [String]`.
-  Two-step gate:
-  - `freshRevisedReadChange(in:)` must return non-nil.
+- New computed property `var rebuildVerdictLabel: String` on
+  `CoachHypothesisConfidence` — three branches:
+  - `.confirmed` → `"confirmed verdict"`
+  - `.uncertain` → `"uncertain verdict"`
+  - `.rejected` → `"second pushback"`
+- New computed property `var rebuildVerdictInstruction: String` on
+  `CoachHypothesisConfidence` — three branches:
+  - `.confirmed` → `"The user accepted the rebuilt read. Treat the
+    rebuild as the operating hypothesis; reinforce it and tie the next
+    prescription to it. Do not re-litigate the original read."`
+  - `.uncertain` → `"The user is still settling into the rebuilt read.
+    Ask one focused question that would resolve the uncertainty before
+    reinforcing the rebuild further; do not strengthen the rebuild
+    ahead of the user."`
+  - `.rejected` → `"The user pushed back on the rebuilt read too.
+    Acknowledge the second adapt explicitly; do not retry the same
+    rebuilt hypothesis; propose a third angle and name what evidence
+    would resolve which read fits."`
+- Both properties are pure functions of the enum case. No state, no
+  storage, no schema bump. Memories persisted before round 32 decode
+  unchanged — the new properties read off the existing enum value.
+- Brand-voice compliant: no exclamation, no "Let's", no urgency. The
+  `.rejected` branch names the SECOND pushback explicitly so the
+  model recognises the second cycle. The `.confirmed` branch's "Do
+  not re-litigate the original read" is the anti-overclaim rail: the
+  user's verdict on the rebuild does not erase the original hypothesis
+  from the case file, but the coach should not reopen it.
+- Doc comments placed inline with `contextLabel` and
+  `nextMoveInstruction` so a future reader sees the three sibling
+  computed properties together.
+
+### Track 2 — `CoachContextBuilder.rebuildVerdictPair(in:)` + `rebuildVerdictContextLines(memory:)` (`CoachContextBuilder.swift`)
+
+- New `static func rebuildVerdictPair(in memory: CoachMemory) ->
+  (change: CoachCourseChange, ack: CoachHypothesisAcknowledgement)?`
+  — pure predicate with three gates:
+  - `memory.adaptationLog?.last` must exist AND
+    `documentsUserPushback` must be true.
+  - `memory.hypothesisAcknowledgement` must exist AND
+    `acknowledgedAt >= change.changedAt`.
+  - `ack.appliesTo(currentHypothesis: memory.workingHypothesis)` must
+    be true.
+  - Returns the matching pair, or nil otherwise.
+- Critically NOT gated on `change.isFresh(comparedTo:)` — the verdict
+  is the user's own report; it should survive the freshness window
+  and the rep boundary until either (a) a later memory rebuild
+  rewrites `workingHypothesis` so the ack snapshot no longer applies,
+  or (b) a later course change supersedes the rebuild in
+  `adaptationLog.last`.
+- New `static func rebuildVerdictContextLines(memory: CoachMemory) ->
+  [String]` — two-step gate:
+  - `rebuildVerdictPair(in:)` must return non-nil.
   - `memory.workingHypothesis` (trimmed) must be non-empty.
   - Returns two lines: case-state line (with evidence-basis tail) +
     coach-move line. Returns `[]` if either gate fails.
-- Brand-voice compliant — no exclamation, no "Let's", no urgency framing.
-  The case-state line is a verdict-surface description; the coach-move
-  line is a model instruction. Both lean on the anti-overclaim rules
-  from CLAUDE.md.
 - Empty `evidenceBasis` defensive: the case-state line omits the
   `(<basis>)` parenthetical when the basis is empty/whitespace-only,
-  so no dangling `(  )` tail surfaces in the prompt.
-- Section comment block placed between the round-30 revised-read
-  follow-up chips section and the per-voice starter-prompts section.
-  Same MARK convention as rounds 26/30. No reordering of existing code.
+  so no dangling `(  )` tail surfaces in the prompt. Same defence as
+  round 31.
+- Section comment block placed between the round-31
+  `freshRevisedReadContextLines` and the per-voice starter-prompts
+  section. Same MARK convention as rounds 26/30/31. No reordering of
+  existing code.
 
-### Track 2 — `interventionCycleLines` wiring (`CoachContextBuilder.swift`)
+### Track 3 — `interventionCycleLines` three-tier wiring (`CoachContextBuilder.swift`)
 
-- The existing `if let change = memory.adaptationLog?.last` branch is
-  now wrapped in a two-arm conditional:
-  - If `freshRevisedReadContextLines` returns non-empty, append those
-    lines and suppress the generic "Last course change" line.
-  - Else if the adaptation log has a last entry, append the generic
+- The round-31 two-arm conditional becomes a three-arm conditional:
+  - If `rebuildVerdictContextLines` returns non-empty → append those
+    lines, skip the rest.
+  - Else if `freshRevisedReadContextLines` returns non-empty → append
+    those lines (round 31 behaviour preserved).
+  - Else if the adaptation log has a last entry → append the generic
     line unchanged.
-- The `prefix(9)` cap on `interventionCycleLines` still holds. The
-  fresh revised-read path adds at most 7 lines total to the section
-  (5 from `activeIntervention` + 2 from the dedicated block); the
-  engine-only path stays at 6 lines (5 + 1). Both fit under the cap.
-- Comment block on the branch explains the suppression contract so a
-  future reader understands why a fresh-pushback memory drops the
-  generic line.
-- The existing test
-  `userContextSurfacesCaseSpineCriterionReviewAndCourseChange` still
-  passes: it uses an engine-only adaptation entry (no
-  `userPushbackMarker` in reason) with `workingHypothesis: nil`. Both
-  gates of `freshRevisedReadContextLines` fail, the function returns
-  `[]`, the else-branch fires, the generic "Last course change:" line
-  surfaces as before.
+- The `prefix(9)` cap still holds. Round 32 adds at most 2 lines
+  (same as round 31, which already replaced 1 generic line). Engine-
+  only path stays at 6 lines (5 + 1). All paths fit under the cap.
+- Comment block on the branch explains the three-tier precedence and
+  the mutual-exclusion property (round 30's ack bump simultaneously
+  fires round 32 AND closes round 31's window).
 
-### Track 3 — `FreshRevisedReadContextTests` suite (`NoumTests/NoumTests.swift`)
+### Track 4 — `RebuildVerdictContextTests` suite (`NoumTests/NoumTests.swift`)
 
-New top-level `@Suite("FreshRevisedReadContextTests")` at the end of
-the file (after the round-30 `RevisedReadFollowUpTests`). Sixteen
+New top-level `@Suite("RebuildVerdictContextTests")` at the end of the
+file (after the round-31 `FreshRevisedReadContextTests`). Twenty
 `@Test` methods pin the predicate contract, the context-line shape,
-and the `userContext` integration:
+per-confidence label and instruction, and the `userContext` three-tier
+integration:
 
-- **Predicate happy + negative paths (6 tests):**
-  - `freshRevisedReadChangeReturnsLatestPushbackWhenFreshAndPushback` —
-    pushback rebuild stamped at memory.updatedAt → returns the entry.
-  - `freshRevisedReadChangeReturnsNilForEngineOnlyChange` — reason
-    without the `userPushbackMarker` → returns nil.
-  - `freshRevisedReadChangeReturnsNilWhenStale` — changedAt 300s before
-    memory.updatedAt → fails `isFresh` → returns nil.
-  - `freshRevisedReadChangeReturnsNilForNilAdaptationLog` — defensive
-    against round-trip from pre-adaptation-log memories.
-  - `freshRevisedReadChangeReturnsNilForEmptyAdaptationLog` — empty
-    array short-circuit.
-  - `freshRevisedReadChangeIgnoresEarlierPushbackWhenLatestIsEngineOnly` —
-    the predicate reads `.last` ONLY; historic pushback + fresh
-    engine-only shift returns nil.
-- **Context-line shape (7 tests):**
-  - `contextLinesEmitTwoLinesWhenPredicateFiresAndHypothesisPresent` —
-    happy path emits exactly two lines.
-  - `contextLinesEmitNothingWhenPredicateFiresButHypothesisIsNil` —
-    missing hypothesis → empty array.
-  - `contextLinesEmitNothingWhenHypothesisIsWhitespaceOnly` — trim
-    treats whitespace as empty.
-  - `contextLinesEmitNothingWhenPredicateDoesNotFire` — engine-only
-    change with hypothesis still returns empty.
-  - `contextLinesCaseStateEchoesRevisedReadCardPhrasing` — cross-surface
-    contract: the case-state line contains "flagged the prior read as
-    off" (the round-28 `RevisedReadCard.headlineCopy` phrase) AND
-    "the working hypothesis above is the rebuilt one".
-  - `contextLinesCaseStateCarriesEvidenceBasisInParentheses` — basis
-    surfaces in `(...)` so the model knows what evidence the rebuild
-    rests on.
-  - `contextLinesCaseStateOmitsParensWhenEvidenceBasisIsEmpty` —
-    defensive against the `(nil, nil)` arm of `CoachMemoryEngine.build`;
-    no dangling `(  )` tail.
-- **Coach-move line contract (1 test):**
-  - `contextLinesCoachMoveTellsModelToSpeakToRebuild` — line 2 contains
-    "speak to it as the live operating read", "not the original", AND
-    "settle into the rebuild or push back again". The anti-overclaim
-    instruction lives in the test, not just the implementation.
-- **`userContext` integration (3 tests):**
-  - `userContextSurfacesDedicatedLinesAndSuppressesGenericLineOnFreshRebuild`
-    — the dedicated lines surface AND the generic "Last course change:"
-    prefix does NOT surface. Locks the suppression contract.
-  - `userContextStillSurfacesGenericLineForEngineOnlyChange` — engine-
-    only shifts still get the generic line, no regression on the
-    round-19 pre-pushback adaptation lineage.
-  - `userContextSurfacesGenericLineWhenPushbackIsStale` — a pushback
-    rebuild that aged past this rep falls through to the generic line,
-    preserving the case-formulation read on historic adaptations.
+- **Predicate happy + negative paths (9 tests):**
+  - `rebuildVerdictPairReturnsPairWhenAckPostDatesPushbackRebuild` —
+    happy path: pushback + ack post-dates change + ack applies →
+    returns pair.
+  - `rebuildVerdictPairReturnsNilForEngineOnlyChangeEvenWithAck` —
+    engine-only shifts are not user pushback; predicate dark.
+  - `rebuildVerdictPairReturnsNilWhenNoAckLodged` — pushback rebuild
+    with nil ack → predicate dark (round 31 covers this window).
+  - `rebuildVerdictPairReturnsNilWhenAckPreDatesRebuild` — defensive:
+    an ack from before the rebuild is a stale ack on a prior read,
+    not a verdict on the rebuild.
+  - `rebuildVerdictPairReturnsPairWhenAckExactlyAtRebuild` — edge:
+    ack timestamp equals changedAt → `>=` inclusive, predicate fires.
+  - `rebuildVerdictPairReturnsNilWhenAckSnapshotNoLongerApplies` —
+    `appliesTo` snapshot guard fires when a later rebuild has
+    rewritten `workingHypothesis`.
+  - `rebuildVerdictPairReturnsNilForEmptyAdaptationLog`.
+  - `rebuildVerdictPairReturnsNilForNilAdaptationLog`.
+  - `rebuildVerdictPairReadsLatestEntryOnlyForRebuildBranch` — a
+    historic pushback followed by an engine-only shift is NOT a
+    rebuild context for an ack lodged after the engine shift.
+- **Context-line shape (5 tests):**
+  - `contextLinesEmitTwoLinesWhenPredicateFiresAndHypothesisPresent`.
+  - `contextLinesEmitNothingWhenPredicateDoesNotFire`.
+  - `contextLinesEmitNothingWhenHypothesisIsNil`.
+  - `contextLinesEmitNothingWhenHypothesisIsWhitespaceOnly`.
+  - `contextLinesCaseStateCarriesEvidenceBasisInParentheses` and
+    `contextLinesCaseStateOmitsParensWhenEvidenceBasisIsEmpty` — basis
+    surfaces in `(...)` AND empty basis suppresses parens tail.
+- **Per-confidence label + instruction (6 tests):**
+  - `contextLinesCaseStateNamesConfirmedVerdict` —
+    `.confirmed` → "confirmed verdict".
+  - `contextLinesCaseStateNamesUncertainVerdict` —
+    `.uncertain` → "uncertain verdict".
+  - `contextLinesCaseStateNamesSecondPushback` —
+    `.rejected` → "second pushback" (the SECOND cycle phrasing).
+  - `contextLinesCoachMoveCarriesConfirmedInstruction` — `.confirmed`
+    instruction names the rebuild, anti-relitigation clause present.
+  - `contextLinesCoachMoveCarriesUncertainInstruction` —
+    `.uncertain` instruction names "still settling", asks one focused
+    question, anti-strengthening clause present.
+  - `contextLinesCoachMoveCarriesRejectedInstruction` — `.rejected`
+    instruction names "pushed back too", anti-retry clause present,
+    "third angle" present.
+- **`userContext` three-tier integration (5 tests):**
+  - `userContextSurfacesRebuildVerdictLinesWhenAckPostDatesPushback` —
+    round 32 fires; round-31 case-state line is absent; generic
+    "Last course change:" is absent. Locks the three-tier precedence
+    contract.
+  - `userContextFallsThroughToFreshRevisedReadWhenNoAckLodged` —
+    round-31 path: pushback rebuild is fresh, no ack carried yet.
+    Round 32 dark, round 31 fires, generic absent.
+  - `userContextSurfacesVerdictLinesEvenWhenRound31FreshnessWindowHasExpired`
+    — the headline contract: round 32 fires even when `isFresh` would
+    have failed. The verdict is the user's own report and survives
+    the freshness window.
+  - `userContextFallsThroughToGenericForEngineOnlyChangeEvenWithAck` —
+    engine-only shift with ack: rebuild signal absent, round 32 dark,
+    round 31 dark (no pushback marker), generic line surfaces.
+  - `userContextSurfacesSecondPushbackLineOnRejectedRebuildAck` —
+    the second-pushback contract: `.rejected` on a rebuild surfaces
+    as "second pushback" + anti-retry instruction.
 
 ### Vision alignment
 
 - **Coach-parity stage #4 (Adaptation).** Per `docs/VISION.md`: the
   case formulation needs "the reason for changing course" carried as
-  active coaching state, not buried in a log. Round 28 surfaced it on
-  the post-rep summary; round 29 named it in the chat seed; round 30
-  recorded the user's verdict on the rebuild. Round 31 carries the
-  rebuild state into EVERY user-context block read by the model on
-  the rebuild thread, so the model's coaching judgment on chat turn #4
-  doesn't drift back to a flat read of the original hypothesis.
+  active coaching state, not buried in a log. Round 28 surfaced the
+  rebuild on the post-rep summary; round 29 named it in the chat seed;
+  round 30 collected the user's verdict; round 31 carried the rebuild
+  into the chat-coach context until the user tapped a chip. Round 32
+  carries BOTH the rebuild AND the verdict into the chat-coach context
+  AFTER the chip tap, so the model's coaching judgment on chat turn #5
+  doesn't drift back to a flat read of the rebuilt hypothesis as if
+  the user had never weighed in.
 - **Pillar #5 (Personalized coaching).** A coach who'd just rebuilt
-  their read at the user's pushback would speak to chat turn #3 with
-  the rebuild in their head — "since you flagged the prior read,
-  here's where I land" — not as if the rebuilt hypothesis had always
-  been the operating read. Round 31 gives the model the same memory.
-- **Anti-overclaim.** The coach-move line tells the model to speak to
-  the rebuild as the live read, BUT NOT to strengthen it before the
-  user has had a chance to settle into it or push back again. Same
-  restraint as the round-26/30 verdict surface ("user records THEIR
-  verdict; the coach doesn't claim correctness").
-- **Cross-surface read consistency.** The phrase "flagged the prior
-  read as off" lives in three surfaces now — the round-28 RevisedReadCard
-  headline the user reads, the round-29 opener the user dispatches,
-  and the round-31 context line the model reads. One phrase across
-  three surfaces; the rebuild reads as the same event everywhere.
+  their read AND received the user's verdict on the rebuild would
+  speak to the next turn knowing both — they'd reinforce a
+  `.confirmed` rebuild ("since you confirmed the new read, here's
+  how we build on it"), probe an `.uncertain` rebuild ("what's still
+  not clicking on the new read?"), and acknowledge a `.rejected`
+  rebuild as a second adapt ("you've now pushed back twice — let's
+  try a third angle"). Round 32 gives the model the same memory.
+- **Anti-overclaim.** The `.confirmed` rebuild-verdict instruction
+  forbids re-litigating the original read. The `.uncertain` rebuild-
+  verdict instruction forbids strengthening the rebuild ahead of the
+  user. The `.rejected` rebuild-verdict instruction forbids retrying
+  the same rebuilt hypothesis. Three anti-overclaim rails, one per
+  branch, in the same coach-move line the model reads on every chat
+  turn.
+- **Verdict survives the rep boundary.** The round-32 predicate is
+  NOT gated on `isFresh` — the rebuild-verdict context outlives the
+  freshness window. The verdict is the user's own report and remains
+  carried by the case file until a later rebuild rewrites the
+  hypothesis (at which point the `appliesTo` snapshot guard drops
+  the ack honestly). Mirror of the round-26 ack reflection's
+  durability rule, but tagged to the *rebuild* lineage.
 - **Engineering bans.** No placeholder logic. No dead toggles. No
-  fragmented state — the new helpers READ existing memory fields; no
-  new storage, no schema bump, no migration. Pure-function lift on
-  pure-function inputs.
+  fragmented state — the new helpers READ existing memory fields
+  (`adaptationLog`, `hypothesisAcknowledgement`, `workingHypothesis`).
+  No new storage, no schema bump, no migration. Pure-function lift on
+  pure-function inputs. Memories persisted before round 32 decode
+  identically and behave identically until a user-pushback rebuild +
+  post-rebuild ack pair lands in memory.
 
 ### Branch + redesign-alignment notes
 
-- All three tracks land on `Redesign`, the redesign-lineage branch the
+- All four tracks land on `Redesign`, the redesign-lineage branch the
   rolling M24 deferred-slate work has been shipping on since round 11.
   The user brief explicitly calls this out: "ensure working on the
-  redesign branch too (very important)." Round 31 preserves the
+  redesign branch too (very important)." Round 32 preserves the
   round-by-round loop on the redesign lineage.
-- Round 31 does not change the round-30 chip-row predicate or catalog,
-  does not change the round-29 `revisedReadOpener` function, does not
+- Round 32 does not change the round-31 `freshRevisedReadChange` or
+  `freshRevisedReadContextLines` (kept as the round-31 fall-through),
+  does not change the round-30 chip-row predicate or catalog, does
+  not change the round-29 `revisedReadOpener` function, does not
   change the round-29 `talkToNoumOpener` gate, does not change the
   round-28 `RevisedReadCard` view, does not change the round-27
   engine restructure, does not change the round-26 chip catalog or
   hypothesis-ack row, and does not change the round-24 / round-25
-  `InterventionReviewPromptCard` surface. The round-30 15 follow-up
-  tests + round-29 12 opener tests + round-28 5 copy tests + round-26
-  19 ack tests all remain unchanged; the round-31 16 fresh-revised-
-  read tests sit alongside them.
-- `SummaryView.freshRevisedReadChange` is intentionally left in place
-  as a private computed property — not refactored to call through to
-  `CoachContextBuilder.freshRevisedReadChange(in:)`. Both predicates
-  are now expressed in shared code and read the same `CoachCourseChange`
-  predicates (`documentsUserPushback`, `isFresh(comparedTo:)`), so the
-  two stay in lockstep without a forced edit on the view layer this
-  round. A future round can collapse the SummaryView private property
-  into a call through `CoachContextBuilder` once a real-device QA pass
-  is available to verify the view binding stays identical.
+  `InterventionReviewPromptCard` surface. The round-31 16 fresh
+  revised-read tests + round-30 15 follow-up tests + round-29 12
+  opener tests + round-28 5 copy tests + round-26 19 ack tests all
+  remain unchanged; the round-32 25 rebuild-verdict tests sit
+  alongside them.
+- The round-26 hypothesis-ack reflection in
+  `coachCaseFormulationLines` is intentionally left in place. It
+  surfaces in CASE FORMULATION (the section that names the hypothesis
+  itself); the round-32 verdict block surfaces in INTERVENTION CYCLE
+  (the section that names the course-change lineage). The two read as
+  complementary: the round-26 line names the user's verdict on the
+  current hypothesis generically; the round-32 lines name the
+  hypothesis as a REBUILD and tie the coach move to the second
+  cycle. A future round can collapse the round-26 line into the
+  round-32 block when the predicate fires, but only after a real-
+  device QA pass to verify the model's reading of one block vs two.
 
 ## Future moves
 
-(Updated priority list — round-31 closed the round-30 step #11; the
-rest roll forward, plus one new note from round 31.)
+(Updated priority list — round-32 closed the round-31 step #11; the
+rest roll forward, plus one new note from round 32.)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
    `PublicProfileSnapshot` schema work.
@@ -271,9 +360,9 @@ rest roll forward, plus one new note from round 31.)
    interleaving with celebration timing. Worth a dedicated refactor
    pass with proper visual QA (and a real device).
 3. **Visual polish pass on the round-19 launch CTA.** Carried forward
-   from rounds 19–30. Pure visual work, not destination logic.
+   from rounds 19–31. Pure visual work, not destination logic.
 4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–30. Pure visual work, not crossing logic.
+   forward from rounds 20–31. Pure visual work, not crossing logic.
 5. **Extend the crossing helper to the chat-coach context line.**
    Carried forward from round 21 as a note for the record.
 6. **Day-rollover refresh for long-mounted observers.** Carried forward
@@ -284,53 +373,50 @@ rest roll forward, plus one new note from round 31.)
 8. **Refresh-on-rotate for the empty-state chip when the
    `CoachMemoryStore` mutates while AskNoumView is mounted.** Carried
    forward from round 25.
-9. **Voice-tuned ack-chip glyphs.** Carried forward from round 26. Note
-   for round 30: any voice-tuned glyph work that lands on round-26's
-   chip row should be lifted into the shared `ackChipGlyph(for:)`
-   helper so the round-30 row picks up the same per-voice glyph
-   mapping.
+9. **Voice-tuned ack-chip glyphs.** Carried forward from round 26.
 10. **`.confirmed` confidence amplification on the active intervention.**
-    Carried forward from round 27. Flip side of rejection-becomes-
-    course-change: a `.confirmed` ack on a held hypothesis could nudge
-    `CoachIntervention.criterionStatus` toward "met" or extend the
-    `reviewDueAt` cadence. The natural follow-on to the round-27/28/29/30
-    rejection lineage — and round 30 makes this more valuable, because
-    BOTH rows now write `.confirmed` acks to the same store; a single
-    amplification helper would lift verdicts from both surfaces.
-11. **Reflect the revised-read follow-up verdict in the next
-    user-context block.** From round 30. After the user lands a verdict
-    on the rebuild via the round-30 chip row, the next user-context
-    block could surface a one-line summary line ("User accepted the
-    rebuilt read on <date>; treat as the operating hypothesis") so the
-    model knows whether the rebuilt read is the live one or the user is
-    still pushing back. Mirror of the round-26 hypothesis-ack reflection
-    in the existing builder, but tagged to the *rebuild* verdict for
-    analytic purposes (so a future trend view can distinguish "user
-    accepted the first read" from "user accepted the rebuilt read").
-    Note for round 31: this would dovetail with the new
-    `freshRevisedReadContextLines` block — when the predicate fires
-    AND the user has already lodged a rebuild verdict via round 30,
-    the coach-move line could swap in a "user already lodged X verdict
-    on the rebuild" tail so the model knows the rebuild has been
-    inhabited, not just delivered.
-12. **Adaptation-log entry on a round-30 `.rejected` verdict.** From
-    round 30. A `.rejected` verdict on a rebuilt read is functionally
-    equivalent to the round-27 trigger — the user is pushing back on
-    the coach's read again, this time on the revised one. The natural
-    next step: record a fresh `CoachCourseChange` adaptation-log entry
-    on the second rejection, with the rebuilt hypothesis as the prior
-    and the next rebuild as the revised. Closes the loop on the
-    rejection-rebuild-rejection-rebuild chain so the case file captures
-    the full adaptation history, not just the first cycle.
-13. **Collapse `SummaryView.freshRevisedReadChange` into a call through
-    `CoachContextBuilder.freshRevisedReadChange(in:)`.** New note from
-    round 31. The predicate lift this round preserved the view-private
-    property to avoid forcing a SwiftUI binding refactor without
-    real-device QA. A future round with QA bandwidth can collapse the
-    view-private property into a single call site through the shared
-    helper, so a copy edit to the predicate (a future tightening of
-    the freshness tolerance, say) lands on one expression rather than
-    two.
+    Carried forward from round 27. Note for round 32: the round-32
+    `.confirmed` rebuild-verdict path is the natural integration site
+    — when the predicate fires AND the engine has not yet bumped
+    `CoachIntervention.criterionStatus`, the same `.confirmed`
+    branch could nudge the criterion toward "met" or extend the
+    `reviewDueAt` cadence by one rep. Round 32 surfaces the verdict
+    in CONTEXT; round-27 follow-on would let it AMPLIFY the
+    intervention as well.
+11. **Adaptation-log entry on a round-32 `.rejected` rebuild verdict.**
+    Promoted from round-30 step #12 and made specific by round 32.
+    A `.rejected` rebuild verdict surfaces as a "second pushback" in
+    context. The natural next step: on the next memory rebuild,
+    `CoachMemoryEngine.build(...)` could detect the dropped
+    `.rejected` rebuild-verdict ack (same shape as the round-27
+    `droppedRejectedAck` arm, but tagged to the rebuilt hypothesis)
+    and append a fresh `CoachCourseChange` with the rebuild as the
+    prior and the next read as the revised. Closes the rejection-
+    rebuild-rejection-rebuild chain in the engine, so the
+    adaptation log carries the full lineage, not just the first
+    cycle.
+12. **Collapse `SummaryView.freshRevisedReadChange` into a call through
+    `CoachContextBuilder.freshRevisedReadChange(in:)`.** Carried
+    forward from round 31.
+13. **Collapse the round-26 hypothesis-ack reflection in
+    `coachCaseFormulationLines` into a single block with the round-32
+    rebuild-verdict lines when the predicate fires.** New note from
+    round 32. The two lines currently surface in different sections
+    (CASE FORMULATION vs INTERVENTION CYCLE) — the round-26 line
+    names the generic ack, the round-32 lines name the rebuild + the
+    verdict on it. A future round with real-device QA can collapse
+    the round-26 line into the round-32 block when round 32 fires,
+    so the model reads one canonical verdict block per rebuild
+    cycle instead of two complementary ones. Hold for QA.
+14. **Trend-view distinction between "user accepted the first read"
+    and "user accepted the rebuilt read".** From round 30's step #11
+    original description. Round 32 surfaces the rebuild-verdict
+    in CONTEXT (the model's read). A future analytics surface could
+    use the same `rebuildVerdictPair` predicate to count rebuild-
+    verdict events separately from first-read acks, so a future
+    insights view can show the user "you confirmed your coach's
+    rebuilt read 3 times this month" — durable feedback on the
+    Adaptation loop.
 
 ## Build-host limitation (honest note for the next agent)
 
@@ -338,62 +424,75 @@ This environment has **no Xcode and no Swift toolchain**, so nothing in
 this round was compiled or run — not the app, not the test suite. The
 changes are:
 
+- Two new computed properties on `CoachHypothesisConfidence` —
+  `rebuildVerdictLabel` and `rebuildVerdictInstruction` — placed in
+  `PrimaryFocusMemory.swift` immediately after `nextMoveInstruction`.
+  Self-contained — no new imports, no new dependencies, no new types.
 - Two new `static func`s on `CoachContextBuilder` —
-  `freshRevisedReadChange(in:)` and `freshRevisedReadContextLines(memory:)`
+  `rebuildVerdictPair(in:)` and `rebuildVerdictContextLines(memory:)`
   — placed in `CoachContextBuilder.swift` immediately after
-  `revisedReadFollowUpChips(for:)` and before the "Starter prompts"
-  MARK. Self-contained — no new imports, no new dependencies, no new
-  types (reads only `CoachMemory`, `CoachCourseChange`, both already in
-  scope via `PrimaryFocusMemory.swift`).
-- One edit to `interventionCycleLines` — the existing single-arm
-  `if let change = memory.adaptationLog?.last` branch becomes a
-  two-arm `if-else if` conditional. Behaviour unchanged when the new
-  predicate doesn't fire (the else-arm preserves the original line
-  exactly); new behaviour only when the predicate fires (the
-  dedicated lines surface and the generic line is suppressed).
-- One new `@Suite("FreshRevisedReadContextTests")` at the end of
-  `NoumTests/NoumTests.swift` with sixteen `@Test` methods. The suite
+  `freshRevisedReadContextLines(memory:)` and before the "Starter
+  prompts" MARK. Self-contained — no new imports, no new dependencies,
+  no new types (reads only `CoachMemory`, `CoachCourseChange`,
+  `CoachHypothesisAcknowledgement`, all already in scope via
+  `PrimaryFocusMemory.swift`).
+- One edit to `interventionCycleLines` — the existing two-arm
+  conditional becomes a three-arm conditional. Behaviour unchanged
+  when neither new predicate fires (the round-31 else-arm and the
+  generic else-arm preserve the original behaviour exactly); new
+  behaviour only when round 32 fires (the dedicated verdict lines
+  surface and both the round-31 lines AND the generic line are
+  suppressed).
+- One new `@Suite("RebuildVerdictContextTests")` at the end of
+  `NoumTests/NoumTests.swift` with twenty `@Test` methods. The suite
   is plain `struct`, `@MainActor` (mirror of `RevisedReadFollowUpTests`
-  attribute, defensive against any future `MainActor`-only reads in
-  `CoachContextBuilder`).
+  and `FreshRevisedReadContextTests` attribute, defensive against any
+  future `MainActor`-only reads in `CoachContextBuilder`).
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter FreshRevisedReadContextTests` — the new
-   round-31 16 fresh-revised-read tests should all pass.
-2. `swift test --filter RevisedReadFollowUpTests` — the round-30 15
-   follow-up tests should still pass. No round-30 surface was changed.
-3. `swift test --filter RevisedReadOpenerTests` — the round-29 12
+1. `swift test --filter RebuildVerdictContextTests` — the new round-32
+   25 rebuild-verdict tests should all pass.
+2. `swift test --filter FreshRevisedReadContextTests` — the round-31
+   16 fresh-revised-read tests should still pass. No round-31 surface
+   was changed; round 32 only ADDS a higher-precedence branch above
+   it. Round-31 tests all set `hypothesisAcknowledgement = nil`
+   (default), so `rebuildVerdictPair` returns nil and round-31
+   behaviour is preserved.
+3. `swift test --filter RevisedReadFollowUpTests` — the round-30 15
+   follow-up tests should still pass.
+4. `swift test --filter RevisedReadOpenerTests` — the round-29 12
    opener tests should still pass.
-4. `swift test --filter RevisedReadCardTests` — the round-28 5
+5. `swift test --filter RevisedReadCardTests` — the round-28 5
    copy-generator tests should still pass.
-5. `swift test --filter CoachContextBuilderTests` (or whatever the
-   existing context-builder suite is named) — the existing test
-   `userContextSurfacesCaseSpineCriterionReviewAndCourseChange` MUST
-   still pass. It uses an engine-only adaptation entry with nil
-   working hypothesis, so the new predicate fails on both gates and
-   the generic "Last course change:" line still surfaces. The
-   round-31 work is gated behind a strict double-predicate, so no
-   existing test that doesn't satisfy both predicates should change.
-6. `swift test --filter CoachMemoryEngineTests` — the round-28 6
+6. `swift test --filter CoachContextBuilderBigMomentTests` — the
+   existing `userContextSurfacesCaseSpineCriterionReviewAndCourseChange`
+   test (engine-only adaptation entry with nil hypothesis, nil ack)
+   MUST still pass. Round 32's predicate requires both
+   `documentsUserPushback` AND `hypothesisAcknowledgement`; both fail
+   on that fixture; the three-tier wiring falls through to round 31
+   (which also fails on `documentsUserPushback`) and then to the
+   generic line.
+7. `swift test --filter CoachMemoryEngineTests` — the round-28 6
    predicate tests + the pre-28 suite should still pass.
-7. `swift test --filter HypothesisAcknowledgementTests` — the round-26
-   tests (19 total) should still pass.
-8. `swift test --filter InterventionReviewPromptTests` — the round-24 +
+8. `swift test --filter HypothesisAcknowledgementTests` — the round-26
+   tests (19 total) should still pass. No round-26 surface was changed.
+9. `swift test --filter InterventionReviewPromptTests` — the round-24 +
    round-25 tests (26 total) should still pass.
-9. `swift test --filter CoachMemoryStoreTests` — the existing
-   memory-store tests should still pass.
-10. `swift test --filter CoachReadCardDailyBudgetHintTests` —
+10. `swift test --filter CoachMemoryStoreTests` — the existing
+    memory-store tests should still pass. No `noteHypothesisAcknowledgement`
+    behaviour was changed.
+11. `swift test --filter CoachReadCardDailyBudgetHintTests` —
     round-23 tests should still pass.
-11. `swift test --filter AIRateLimiterPublicationTests` — round-22
+12. `swift test --filter AIRateLimiterPublicationTests` — round-22
     tests should still pass.
-12. `swift test --filter IMToneDrillCrossingTests` — round-21 helper
+13. `swift test --filter IMToneDrillCrossingTests` — round-21 helper
     tests should still pass.
-13. `swift test --filter HeroScoreCardToneDrillRibbonContractTests` —
+14. `swift test --filter HeroScoreCardToneDrillRibbonContractTests` —
     round-20 ribbon-contract tests should still pass.
-14. `swift test --filter LookingAheadCardStartCTAContractTests` —
+15. `swift test --filter LookingAheadCardStartCTAContractTests` —
     round-19 launch-CTA tests should still pass.
-15. Boot the app on simulator, seed a `CoachMemory.activeIntervention`
+16. Boot the app on simulator, seed a `CoachMemory.activeIntervention`
     with a working hypothesis, open Ask Noum via the round-24
     `InterventionReviewPromptCard` or the round-25 empty-state chip,
     wait for the coach reply, tap the **Adapt / rejected** ack chip.
@@ -404,30 +503,44 @@ All checks the next agent should run on a real build host:
     Ask Noum via the **Talk to Noum** CTA on the `TalkToNoumCTACard`.
     Confirm in the chat thread:
     - The user-turn seed is the round-29 revised-read opener.
-    - The coach reply lands case-anchored. **NEW (round 31):** the
-      coach reply should ALREADY speak to the rebuilt hypothesis as
-      the live operating read, because the user-context block now
-      carries the dedicated revised-read block.
-    - Send a follow-up free-text message ("ok so what should I work
-      on first?"). Confirm the coach's reply STILL frames the
-      hypothesis as a rebuild — not as the original. This is the
-      round-31 contract: the rebuild context lives across the whole
-      window between rebuild and the next followed rep.
+    - The coach reply lands case-anchored.
     - Open the chat thread debug log (or instrument
-      `AICoachChatService` locally) to confirm the
-      USER CONTEXT payload sent to the model contains the line
-      starting "Case file just shifted: the user flagged the prior
-      read as off" AND DOES NOT contain a generic
-      "Last course change:" line on the same turn.
-16. Now finish a NEXT followed rep so memory rewrites with a fresh
-    `updatedAt`. The adaptation entry's `changedAt` is now > 1s
-    earlier than `memory.updatedAt`, so `isFresh` fails. Open Ask
+      `AICoachChatService` locally) to confirm the USER CONTEXT
+      payload sent to the model contains the line starting
+      "Case file just shifted: the user flagged the prior read as
+      off" (round 31).
+    - Tap the **Lock the new read in** / **Stick** / equivalent
+      `.confirmed` chip on the round-30 follow-up row.
+    - **NEW (round 32):** send a free-text follow-up message ("ok so
+      where do we go next?"). Confirm the coach's reply now treats
+      the rebuild as the user's ACCEPTED read, not as a rebuild
+      awaiting verdict. Open the debug log; confirm the USER CONTEXT
+      payload contains the line "Case file rebuild verdict: the user
+      lodged a confirmed verdict on the rebuilt working hypothesis
+      above ..." AND DOES NOT contain the round-31 "Case file just
+      shifted" line OR the generic "Last course change:" line on the
+      same turn. Three-tier precedence locked.
+17. Repeat the flow with the `.uncertain` chip. Confirm the coach's
+    follow-up reply asks one focused question instead of reinforcing
+    the rebuild. Debug log: USER CONTEXT contains "Case file rebuild
+    verdict: the user lodged an uncertain verdict ..." AND the
+    coach-move line contains "still settling into the rebuilt read".
+18. Repeat the flow with the `.rejected` chip — the "second
+    pushback" path. Confirm the coach's follow-up reply
+    acknowledges the second adapt AND proposes a third angle
+    WITHOUT retrying the same rebuilt hypothesis. Debug log: USER
+    CONTEXT contains "Case file rebuild verdict: the user lodged a
+    second pushback ..." AND the coach-move line contains "do not
+    retry the same rebuilt hypothesis" AND "propose a third angle".
+19. Now finish a NEXT followed rep so memory rewrites with a fresh
+    `updatedAt` AND a new `workingHypothesis`. The ack's
+    `appliesTo(currentHypothesis:)` now returns false. Open Ask
     Noum again — confirm the user-context payload now DROPS the
-    "Case file just shifted" block and falls back to the generic
-    "Last course change:" line. The rebuild context aged out
-    correctly with the rep.
-17. Trigger an engine-only lever shift (e.g. let evidenceCount cross
-    a threshold without a `.rejected` ack present). Confirm the
-    user-context payload carries the generic "Last course change:"
-    line — NOT the dedicated revised-read block. The engine-only
-    path is not a rebuild and shouldn't read as one.
+    "Case file rebuild verdict" block. The verdict aged out
+    correctly with the rebuild that replaced it.
+20. Trigger an engine-only lever shift with an ack present (e.g.
+    evidence threshold crossing while the user has lodged a
+    `.confirmed` ack on the prior hypothesis). Confirm the user-
+    context payload carries the generic "Last course change:" line
+    — NOT the rebuild-verdict block. The engine-only path is not a
+    rebuild and shouldn't read as one even with an ack present.

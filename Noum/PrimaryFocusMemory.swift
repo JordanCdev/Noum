@@ -359,6 +359,41 @@ enum CoachHypothesisConfidence: String, Codable, Equatable {
             return "Treat the working hypothesis as falsified by user report; open the next reply by acknowledging the adapt and proposing a revised read."
         }
     }
+
+    /// Round-32 verdict phrase for the rebuild-specific context line. The
+    /// generic `contextLabel` carries the same three branches as a flat
+    /// statement of fact; this phrase reads as a labelled outcome on a
+    /// rebuild ("confirmed verdict", "uncertain verdict", "second
+    /// pushback"). Used in `CoachContextBuilder.rebuildVerdictContextLines`
+    /// so the model sees the rebuild-and-verdict pair as a single named
+    /// event, not as a generic ack happening to follow a rebuild.
+    var rebuildVerdictLabel: String {
+        switch self {
+        case .confirmed:
+            return "confirmed verdict"
+        case .uncertain:
+            return "uncertain verdict"
+        case .rejected:
+            return "second pushback"
+        }
+    }
+
+    /// Round-32 coach-move instruction tied specifically to a verdict on a
+    /// rebuilt hypothesis. Distinct from `nextMoveInstruction` (which is
+    /// hypothesis-agnostic) because the rebuild context demands the coach
+    /// name the second cycle: a `.confirmed` ack reinforces the *rebuild*;
+    /// a `.rejected` ack is the user pushing back twice, not once.
+    /// Brand-voice compliant — no exclamation, no "Let's", no hype.
+    var rebuildVerdictInstruction: String {
+        switch self {
+        case .confirmed:
+            return "The user accepted the rebuilt read. Treat the rebuild as the operating hypothesis; reinforce it and tie the next prescription to it. Do not re-litigate the original read."
+        case .uncertain:
+            return "The user is still settling into the rebuilt read. Ask one focused question that would resolve the uncertainty before reinforcing the rebuild further; do not strengthen the rebuild ahead of the user."
+        case .rejected:
+            return "The user pushed back on the rebuilt read too. Acknowledge the second adapt explicitly; do not retry the same rebuilt hypothesis; propose a third angle and name what evidence would resolve which read fits."
+        }
+    }
 }
 
 /// A bounded snapshot of the user's most-recent hypothesis acknowledgement

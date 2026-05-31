@@ -1343,6 +1343,96 @@ enum CoachContextBuilder {
         ]
     }
 
+    // MARK: - Rebuild-verdict context (the round-30 chip-row ack, reflected into context)
+    //
+    // Round 32 — the context-block complement to round 30. Round 28 surfaced
+    // the rebuild on the post-rep summary; round 29 named the user's pushback
+    // in the chat seed; round 30 collected the user's verdict on the rebuild
+    // via a one-tap chip row; round 31 carried the rebuild context into the
+    // chat-coach user-context block on every reply through the next followed
+    // rep — UNTIL the user taps a verdict chip.
+    //
+    // The round-31 lines gate on `change.isFresh(comparedTo: memory.updatedAt)`,
+    // which has a one-second tolerance. The round-30 chip row writes the
+    // verdict via `CoachMemoryStore.noteHypothesisAcknowledgement(_:)`, which
+    // bumps `memory.updatedAt = now`. The `isFresh` window slams shut, the
+    // round-31 lines stop firing, and the model loses the rebuild context the
+    // moment the user lodges a verdict on it — exactly when the model most
+    // needs to know the rebuild has been INHABITED, not just delivered.
+    //
+    // Round 32 detects this state with a sibling predicate that does NOT
+    // depend on `isFresh`. Instead it pairs the latest pushback rebuild with
+    // a user acknowledgement whose snapshot still applies AND whose
+    // `acknowledgedAt` post-dates the rebuild's `changedAt`. The pair means:
+    // "the user has lodged a verdict on the rebuilt read, specifically."
+    //
+    // The two paths are mutually exclusive at the memory level: the round-30
+    // ack bump that fires round 32 also closes round 31's `isFresh` window.
+    // The `interventionCycleLines` branch reads round 32 first, falls
+    // through to round 31, falls through to the generic line — so the chat
+    // context carries one canonical course-change line at any time.
+
+    /// Pure-function pair: the latest course change + the user's
+    /// acknowledgement on the rebuilt read, returned together iff:
+    ///   1. The latest adaptation entry documents a user-pushback rebuild
+    ///      (`documentsUserPushback`).
+    ///   2. The current memory carries a `hypothesisAcknowledgement` whose
+    ///      `acknowledgedAt` is at or after the change's `changedAt`
+    ///      (ack was lodged after the rebuild was folded in).
+    ///   3. The ack's `hypothesisSnapshot` still matches the current
+    ///      `workingHypothesis` (`appliesTo` — same case-spine contract as
+    ///      `coachCaseFormulationLines` round 26).
+    ///
+    /// Returns nil otherwise. Same shape as `freshRevisedReadChange(in:)`
+    /// (pure read of memory fields, no UI dependency), so the chat context,
+    /// the post-rep summary, and any future surface can read the same
+    /// predicate without duplicating the gate.
+    static func rebuildVerdictPair(
+        in memory: CoachMemory
+    ) -> (change: CoachCourseChange, ack: CoachHypothesisAcknowledgement)? {
+        guard let change = memory.adaptationLog?.last,
+              change.documentsUserPushback,
+              let ack = memory.hypothesisAcknowledgement,
+              ack.acknowledgedAt >= change.changedAt,
+              ack.appliesTo(currentHypothesis: memory.workingHypothesis) else { return nil }
+        return (change, ack)
+    }
+
+    /// Context-block lines for a rebuilt read that has been acknowledged by
+    /// the user. Surfaced in `interventionCycleLines` AHEAD of
+    /// `freshRevisedReadContextLines` whenever `rebuildVerdictPair(in:)`
+    /// returns a pair AND `memory.workingHypothesis` is non-empty.
+    ///
+    /// Two lines:
+    ///   1. Case-state line — names the rebuild AND the user's verdict on
+    ///      it in one sentence, with the evidence basis carried in
+    ///      parentheses. Echoes "the working hypothesis above" so the
+    ///      anchor reads the same as round-31's case-state line — the
+    ///      model sees one cross-line referent across the rebuild lifecycle.
+    ///   2. Coach-move line — `confidence`-specific instruction from
+    ///      `CoachHypothesisConfidence.rebuildVerdictInstruction`. The
+    ///      `.confirmed` branch tells the model to treat the rebuild as
+    ///      the accepted read; the `.uncertain` branch tells it to ask a
+    ///      focused question; the `.rejected` branch tells it the user
+    ///      pushed back twice and to propose a third angle without
+    ///      retrying the same rebuild.
+    ///
+    /// Returns `[]` when the predicate does not fire, OR when the working
+    /// hypothesis is empty/whitespace-only (the lines reference "the working
+    /// hypothesis above" — pointing at nothing would read incoherently).
+    static func rebuildVerdictContextLines(memory: CoachMemory) -> [String] {
+        guard let pair = rebuildVerdictPair(in: memory) else { return [] }
+        guard let hypothesis = memory.workingHypothesis?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return [] }
+        let basis = pair.change.evidenceBasis.trimmingCharacters(in: .whitespacesAndNewlines)
+        let basisTail = basis.isEmpty ? "" : " (\(basis))"
+        return [
+            "- Case file rebuild verdict: the user lodged a \(pair.ack.confidence.rebuildVerdictLabel) on the rebuilt working hypothesis above\(basisTail).",
+            "- Coach move on the rebuild verdict: \(pair.ack.confidence.rebuildVerdictInstruction)",
+        ]
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -2133,20 +2223,39 @@ enum CoachContextBuilder {
             }
         }
 
-        // Round 31 — when the latest course change is a fresh user-pushback
-        // rebuild (the same pair `RevisedReadCard` and the round-29 opener
-        // gate on), surface the dedicated revised-read lines instead of the
-        // generic "Last course change" line. The two describe the same
-        // change; the dedicated lines name the rebuild state in language
-        // the model can act on across the whole window between rebuild and
-        // the next followed rep. Older changes — engine-only lever shifts
-        // OR pushback rebuilds that have already aged past this rep — fall
-        // through to the generic line unchanged.
-        let revisedReadLines = freshRevisedReadContextLines(memory: memory)
-        if !revisedReadLines.isEmpty {
-            lines.append(contentsOf: revisedReadLines)
-        } else if let change = memory.adaptationLog?.last {
-            lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+        // Three-tier course-change surface, most-specific first:
+        //
+        //   1. Round 32 — `rebuildVerdictContextLines`. Fires when the
+        //      latest pushback rebuild has been ACKNOWLEDGED by the user
+        //      via the round-30 follow-up chip row (the ack post-dates the
+        //      rebuild AND still applies to the current hypothesis). Names
+        //      the rebuild AND the user's verdict on it in one block.
+        //   2. Round 31 — `freshRevisedReadContextLines`. Fires when the
+        //      latest pushback rebuild is fresh against memory.updatedAt
+        //      but no verdict has been lodged yet — the window between the
+        //      rebuild folding in and the user tapping a chip. Same case-
+        //      state phrasing, different coach-move (leave room to settle).
+        //   3. Generic — `"Last course change: ..."`. Fires when neither
+        //      dedicated path applies: engine-only lever shifts (round-19
+        //      adaptation lineage), stale pushback rebuilds that aged
+        //      past this rep AND were never acknowledged, or rebuilds
+        //      whose ack has already been dropped by a later memory
+        //      rebuild that rewrote the working hypothesis.
+        //
+        // The three are mutually exclusive at the memory level: the round-30
+        // ack bump that satisfies round 32 also closes round 31's `isFresh`
+        // window, so the two dedicated blocks never both fire. The chat
+        // context carries one canonical course-change block at any time.
+        let verdictLines = rebuildVerdictContextLines(memory: memory)
+        if !verdictLines.isEmpty {
+            lines.append(contentsOf: verdictLines)
+        } else {
+            let revisedReadLines = freshRevisedReadContextLines(memory: memory)
+            if !revisedReadLines.isEmpty {
+                lines.append(contentsOf: revisedReadLines)
+            } else if let change = memory.adaptationLog?.last {
+                lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+            }
         }
 
         return Array(lines.prefix(9))
