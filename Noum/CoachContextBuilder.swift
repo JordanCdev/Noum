@@ -1580,6 +1580,35 @@ enum CoachContextBuilder {
         ]
     }
 
+    /// Round-37 pure-function gate for the post-rep
+    /// `RevisedReadConfirmationCard`. Symmetric closure of
+    /// `freshRevisedReadChange(in:)`: returns the latest
+    /// `CoachCourseChange` iff it both documents a user-confirmed
+    /// rebuild lock-in (`documentsRebuildConfirmation`) AND was appended
+    /// on the same rebuild that produced the current `CoachMemory`
+    /// (`isFresh(comparedTo: memory.updatedAt)`).
+    ///
+    /// Mutual exclusion with `freshRevisedReadChange(in:)` holds at the
+    /// data primitive: a confirmation entry's `reason` carries the
+    /// round-36 marker only, so `documentsUserPushback == false`; a
+    /// pushback entry never carries the confirmation marker, so
+    /// `documentsRebuildConfirmation == false`. The two helpers can
+    /// never return non-nil on the same memory.
+    ///
+    /// Freshness slams shut on the next memory rebuild: the round-36
+    /// engine arm appends the confirmation entry exactly once (the
+    /// `confirmedRebuildAck` predicate's
+    /// `lastChange.documentsUserPushback` guard returns false on the
+    /// new tail), so on the rep AFTER the lock-in the entry is still
+    /// in the log but `change.changedAt < memory.updatedAt` and the
+    /// card stays hidden. Same one-rep window as the pushback card.
+    static func freshRebuildConfirmationChange(in memory: CoachMemory) -> CoachCourseChange? {
+        guard let latest = memory.adaptationLog?.last,
+              latest.documentsRebuildConfirmation,
+              latest.isFresh(comparedTo: memory.updatedAt) else { return nil }
+        return latest
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
