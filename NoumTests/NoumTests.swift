@@ -23300,3 +23300,242 @@ struct SecondCyclePushbackAdaptationTests {
         #expect(ctx.contains("Last course change:") == false)
     }
 }
+
+// MARK: - CaseFileHeadlineTests
+//
+// Round 34 pins the user-facing headline picker on `CoachCourseChange`
+// (`caseFileHeadline`). The picker lives on the data model so the
+// post-rep `RevisedReadCard` AND the Profile-tab `CaseReviewCard`
+// "Last shift" row land the SAME user-voiced phrase for the rebuild
+// lineage — closing a cross-surface drift: prior to round 34 the
+// Profile card surfaced the third-person engine `reason` text
+// ("User reported the rebuilt hypothesis did not match what they
+// saw...") while the summary card already named the user's action
+// ("You flagged the rebuilt read as off too.").
+//
+// The picker is strict about user-voice fallback: an engine-only
+// shift entry (no pushback marker) returns the existing third-person
+// `reason` unchanged — rewriting "Shifted focus from X to Y." as
+// second-person ("Your focus shifted...") would over-claim a user
+// action that did not happen. The picker is also defensive against
+// a Codable round-trip that delivered an empty `reason` (it returns
+// the empty string; the engine never writes one on the append path).
+//
+// Cross-surface contract: `RevisedReadCard.headlineCopy(for:)` is
+// now a thin alias for `change.caseFileHeadline`. A copy edit on the
+// data-model property propagates to BOTH surfaces in one step;
+// `RevisedReadCard.headlineCopy` (the constant) is preserved
+// unchanged for back-compat with the round-28 test that pins it.
+
+@available(iOS 17.0, *)
+@MainActor
+@Suite("CaseFileHeadlineTests")
+struct CaseFileHeadlineTests {
+
+    @Test func caseFileHeadlineNamesFirstCyclePushbackInSecondPerson() {
+        // Round 27 / round 28 / round 34 contract: a first-cycle pushback
+        // entry surfaces as "You flagged the prior read as off." on every
+        // user-facing surface that reads the picker. The third-person
+        // engine reason ("User reported the prior hypothesis...") is the
+        // payload the model sees; the picker is the user voice for the
+        // same event.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"...\""
+        )
+        #expect(change.caseFileHeadline == "You flagged the prior read as off.")
+    }
+
+    @Test func caseFileHeadlineNamesSecondCyclePushbackInSecondPerson() {
+        // Round 33 / round 34 contract: a second-cycle pushback entry
+        // surfaces as "You flagged the rebuilt read as off too." across
+        // surfaces. The "too" carries the second-cycle acknowledgement
+        // without escalating tone — brand-voice compliant on the
+        // Profile card the same way it is on the post-rep card.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: "user-tapped rejection of: \"...\""
+        )
+        #expect(change.caseFileHeadline == "You flagged the rebuilt read as off too.")
+    }
+
+    @Test func caseFileHeadlineNamesCombinedShiftSecondCycleInSecondPerson() {
+        // The `(prior?, ack?)` switch arm on the second cycle: the engine
+        // writes a reason carrying BOTH the focus-shift clause AND the
+        // rebuilt-hypothesis marker. The picker still reads the second-
+        // cycle pushback (the user's verdict on the rebuild is the lead
+        // signal; the lever swap is the engine's read of why).
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .answerDevelopment,
+            reason: "Shifted focus from Pace to Depth after the user reported the rebuilt hypothesis did not match what they saw.",
+            evidenceBasis: "user-tapped rejection of: \"...\""
+        )
+        #expect(change.caseFileHeadline == "You flagged the rebuilt read as off too.")
+    }
+
+    @Test func caseFileHeadlineNamesCombinedShiftFirstCycleInSecondPerson() {
+        // The `(prior?, ack?)` switch arm on the first cycle: the picker
+        // reads the first-cycle pushback even though the reason also
+        // names the lever swap. Symmetric with the second-cycle combined
+        // arm — user's verdict leads, engine's read of why follows.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .answerDevelopment,
+            reason: "Shifted focus from Pace to Depth after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: "user-tapped rejection of: \"...\""
+        )
+        #expect(change.caseFileHeadline == "You flagged the prior read as off.")
+    }
+
+    @Test func caseFileHeadlineFallsThroughToReasonForEngineOnlyShift() {
+        // Defensive: an engine-only `(prior?, nil)` shift carries neither
+        // pushback marker. The picker returns the persisted third-person
+        // `reason` unchanged — rewriting "Shifted focus..." as second-
+        // person ("Your focus shifted...") would over-claim a user
+        // action that did not happen. The existing `CaseReviewCard`
+        // behavior pre-round-34 is preserved on this branch.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .answerDevelopment,
+            reason: "Shifted focus from Pace to Depth.",
+            evidenceBasis: "updated read across recent reps"
+        )
+        #expect(change.caseFileHeadline == "Shifted focus from Pace to Depth.")
+    }
+
+    @Test func caseFileHeadlineFallsThroughToReasonForEmptyReason() {
+        // Defensive: a Codable round-trip from an older version that
+        // delivered an empty `reason` returns the empty string. The
+        // engine never writes an empty reason on the append path
+        // (`CoachMemoryEngine.build(...)` gates appends on
+        // `priorLeverShift != nil || droppedRejectedAck != nil`), but
+        // the picker must not crash or invent copy on the boundary.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: nil,
+            toLever: nil,
+            reason: "",
+            evidenceBasis: ""
+        )
+        #expect(change.caseFileHeadline == "")
+    }
+
+    // MARK: - Cross-surface consistency: RevisedReadCard.headlineCopy(for:)
+
+    @Test func revisedReadCardHeadlineMatchesCaseFileHeadlineOnFirstCycle() {
+        // Round 34 contract: `RevisedReadCard.headlineCopy(for:)` is now
+        // a thin alias for `change.caseFileHeadline`. The summary card
+        // and the Profile card MUST land the same string on a first-cycle
+        // pushback so a user who reads both surfaces sees one consistent
+        // acknowledgement of their action.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: ""
+        )
+        #expect(RevisedReadCard.headlineCopy(for: change) == change.caseFileHeadline)
+        #expect(RevisedReadCard.headlineCopy(for: change) == "You flagged the prior read as off.")
+    }
+
+    @Test func revisedReadCardHeadlineMatchesCaseFileHeadlineOnSecondCycle() {
+        // Same cross-surface contract on the second cycle: a user who
+        // pushed back twice sees "You flagged the rebuilt read as off
+        // too." on the post-rep summary AND on the Profile card's "Last
+        // shift" row. No drift between the two surfaces.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: ""
+        )
+        #expect(RevisedReadCard.headlineCopy(for: change) == change.caseFileHeadline)
+        #expect(RevisedReadCard.headlineCopy(for: change) == "You flagged the rebuilt read as off too.")
+    }
+
+    @Test func revisedReadCardHeadlineConstantStillReturnsFirstCyclePhrasing() {
+        // Round 28 back-compat: the static `headlineCopy` constant
+        // (which the round-28 `headlineCopyNamesUserAction` test pins
+        // directly) MUST still return the canonical first-cycle phrase.
+        // Round 34's delegation only touches the picker function; the
+        // constant is preserved unchanged. Surfaces that read the
+        // constant directly continue to behave as before.
+        #expect(RevisedReadCard.headlineCopy == "You flagged the prior read as off.")
+    }
+}
+
+// MARK: - FreshRevisedReadChangeSecondCycleDelegationTests
+//
+// Round 34 collapses `SummaryView.freshRevisedReadChange` (the private
+// computed property that gates `RevisedReadCard` and the round-29
+// `talkToNoumOpener`) into a call through
+// `CoachContextBuilder.freshRevisedReadChange(in:)` — closing the
+// round-31 future-move note about duplicate-state risk. The summary
+// surface, the chat-coach context block, and the round-30 chip-row
+// gate are now all driven off ONE canonical predicate.
+//
+// The helper's first-cycle / engine-only / stale / nil-log / empty-log
+// branches are fully pinned by the existing `FreshRevisedReadContextTests`
+// suite. This suite adds the one cross-cycle contract round 34 introduces:
+// a SECOND-cycle pushback entry must resolve through the helper too, so
+// the collapsed `SummaryView` mount path lights up on the second pushback
+// the same way it lights up on the first. The contract is the OR-match
+// inside `CoachCourseChange.documentsUserPushback` (round 33) flowing
+// through `CoachContextBuilder.freshRevisedReadChange(in:)` (round 31)
+// — round 34 pins that the wiring still composes.
+
+@MainActor
+@Suite("FreshRevisedReadChangeSecondCycleDelegationTests")
+struct FreshRevisedReadChangeSecondCycleDelegationTests {
+
+    @Test func helperReturnsSecondCycleEntryUnchangedThroughTheCollapse() {
+        // A second-cycle pushback entry resolves through the helper. The
+        // `documentsUserPushback` predicate (which round 33 extended to
+        // match either marker) is the OR the helper reads, so both
+        // first-cycle and second-cycle entries surface — preserving the
+        // round-33 contract through the round-34 SummaryView collapse.
+        let now = Date()
+        let secondCycle = CoachCourseChange(
+            id: UUID(),
+            changedAt: now,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: "user-tapped rejection of: \"Pace appears...\""
+        )
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Filler reduction appears to be the highest-leverage focus.",
+            adaptationLog: [secondCycle]
+        )
+        let resolved = CoachContextBuilder.freshRevisedReadChange(in: mem)
+        #expect(resolved?.id == secondCycle.id)
+        #expect(resolved?.documentsRebuildPushback == true)
+    }
+}

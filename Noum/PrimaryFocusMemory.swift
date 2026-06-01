@@ -217,6 +217,52 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     func isFresh(comparedTo memoryUpdatedAt: Date) -> Bool {
         abs(changedAt.timeIntervalSince(memoryUpdatedAt)) <= 1.0
     }
+
+    /// Round-34 user-facing headline for this course change. The engine
+    /// writes a third-person `reason` so the chat-coach context block reads
+    /// as a neutral case note ("User reported the prior hypothesis did not
+    /// match what they saw; revising the read."). That reason is the right
+    /// payload for the model, but it reads as engine voice when the user
+    /// sees it on `CaseReviewCard`'s "Last shift" row. This computed
+    /// property names the same event in the user's own second-person voice
+    /// — the SAME phrase `RevisedReadCard.headlineCopy(for:)` lands on the
+    /// post-rep summary — so the cross-surface read of the rebuild lineage
+    /// is consistent.
+    ///
+    /// Resolution order (mutually exclusive — predicates are gated by the
+    /// engine arms in `CoachMemoryEngine.build(...)`):
+    ///   1. Second-cycle pushback (`documentsRebuildPushback`):
+    ///      "You flagged the rebuilt read as off too." — same string the
+    ///      round-33 `RevisedReadCard.headlineCopy(for:)` picker returns.
+    ///   2. First-cycle pushback (`documentsUserPushback` only):
+    ///      "You flagged the prior read as off." — same string the
+    ///      back-compat `RevisedReadCard.headlineCopy` constant returns.
+    ///   3. Engine-only shift (`fromLever != toLever`, neither pushback
+    ///      marker present): the existing third-person `reason` text. The
+    ///      "Shifted focus from X to Y." line is engine voice but is
+    ///      already neutral; rewriting it as second-person ("Your focus
+    ///      shifted...") would over-claim a user action that did not
+    ///      happen. Falling through keeps the line honest.
+    ///   4. Empty/malformed reason: the literal `reason` (which may be
+    ///      empty). Defensive — the engine never writes an empty reason
+    ///      on the append path, but a Codable round-trip from an older
+    ///      version could theoretically deliver one.
+    ///
+    /// Pure-function read over the persisted `reason` field — no schema
+    /// bump, no extra state to round-trip, no migration. Memories
+    /// persisted before round 34 behave correctly: `documentsRebuildPushback`
+    /// is round 33's predicate (already in the schema); `documentsUserPushback`
+    /// is round 27's; falling through to `reason` is the existing behavior
+    /// every prior version of `CaseReviewCard` rendered.
+    var caseFileHeadline: String {
+        if documentsRebuildPushback {
+            return "You flagged the rebuilt read as off too."
+        }
+        if documentsUserPushback {
+            return "You flagged the prior read as off."
+        }
+        return reason
+    }
 }
 
 /// The next coaching move implied by a user's real-world outcome report.

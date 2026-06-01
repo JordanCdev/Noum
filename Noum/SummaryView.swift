@@ -2027,19 +2027,21 @@ struct SummaryView: View {
     // Returns the latest `CoachCourseChange` iff it both (a) documents a
     // user-tapped rejection of the prior working hypothesis and (b) was
     // appended on the same rebuild that produced the current memory.
-    // Both predicates live on `CoachCourseChange` as pure-function
-    // properties so the eligibility contract is locked by the engine
-    // tests, not duplicated here. Returns nil when there is no memory,
-    // no adaptation log, or the latest entry is engine-only / older
-    // than this rebuild. See `RevisedReadCard` for the rendering
-    // contract.
+    //
+    // Round-34: the predicate body now lives entirely on
+    // `CoachContextBuilder.freshRevisedReadChange(in:)` — the same helper
+    // the chat-coach user-context block (`freshRevisedReadContextLines`)
+    // and the round-30 follow-up chip-row gate already read. The summary
+    // surface now reads through that helper so a future edit to the
+    // eligibility contract (e.g., a `documentsRebuildPushback` branch,
+    // an evidence-floor gate) lands in one place rather than two. Closes
+    // the round-31 carry-over note about duplicate-state risk: the
+    // post-rep summary, the chat-coach context, and the round-30 chip
+    // row are now driven off one canonical predicate.
 
     private var freshRevisedReadChange: CoachCourseChange? {
-        guard let memory = coachMemoryStore.currentMemory,
-              let latest = memory.adaptationLog?.last,
-              latest.documentsUserPushback,
-              latest.isFresh(comparedTo: memory.updatedAt) else { return nil }
-        return latest
+        guard let memory = coachMemoryStore.currentMemory else { return nil }
+        return CoachContextBuilder.freshRevisedReadChange(in: memory)
     }
 
     /// Build the case-anchored opener for the review CTA. Routes

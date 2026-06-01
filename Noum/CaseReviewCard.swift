@@ -50,11 +50,22 @@ struct CaseReviewCard: View {
             }
 
             // 3. Latest adaptation — why the focus shifted
+            //
+            // Round-34: the user-facing "Last shift" row reads through
+            // `CoachCourseChange.caseFileHeadline` so a user-pushback
+            // entry surfaces in the user's own second-person voice
+            // ("You flagged the prior read as off." / "You flagged the
+            // rebuilt read as off too.") — the SAME phrase the post-rep
+            // `RevisedReadCard` lands. Engine-only shifts (no pushback
+            // marker on the reason) fall through to the persisted
+            // third-person `reason` text unchanged. The cross-surface
+            // read of the rebuild lineage is now consistent across the
+            // post-rep summary and the Profile case review.
             if let latest = memory.adaptationLog?.last {
                 caseRow(
                     icon: "arrow.triangle.branch",
                     label: "Last shift",
-                    text: latest.reason
+                    text: latest.caseFileHeadline
                 )
             }
 

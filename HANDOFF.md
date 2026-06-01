@@ -1,38 +1,35 @@
-# HANDOFF — M24 deferred slate (round 33): second-cycle pushback marker on the adaptation log, surfaced through `RevisedReadCard`, the chat-coach context, and the durable case file — closing the rejection-rebuild-rejection-rebuild loop honestly in the engine.
+# HANDOFF — M24 deferred slate (round 34): cross-surface case-file pushback acknowledgement — `CoachCourseChange.caseFileHeadline` lands the user-voiced rebuild headline on the Profile-tab `CaseReviewCard` "Last shift" row in the same phrasing the post-rep `RevisedReadCard` already uses, plus a future-move #11 collapse of `SummaryView.freshRevisedReadChange` through `CoachContextBuilder.freshRevisedReadChange(in:)`.
 
 ## Scope
 
-Round 32 closed the verdict half of the rebuild loop: when the user lands
-a `confirmed` / `uncertain` / `rejected` verdict on the rebuilt working
-hypothesis via the round-30 chip row, the chat-coach user-context block
-carries a dedicated REBUILD VERDICT block on every chat turn through to
-the next followed rep.
+Round 33 closed the second-cycle pushback chain in the engine and the
+post-rep `RevisedReadCard`: a user who pushed back twice now reads
+"You flagged the rebuilt read as off too." on the summary card after
+the second-cycle rebuild folds. The chat-coach user-context block
+(`freshRevisedReadContextLines`) was lifted to name the second cycle
+explicitly the same round.
 
-The honest gap that left open: when the user lodges `.rejected` on a
-rebuilt read (the "second pushback" branch named in round 32), the next
-memory rebuild folds the dropped `.rejected` ack into a new
-`CoachCourseChange` via the round-27 engine arm. But the appended entry
-reads IDENTICALLY to a first-cycle pushback. The `reason` carries
-`"user reported the prior hypothesis did not match what they saw"` — the
-same marker the round-27 first-cycle path writes. The bounded adaptation
-log shows two indistinguishable pushback entries; downstream surfaces
-(post-rep `RevisedReadCard`, chat-coach context line on the next
-followed rep, a future trend view that counts rebuild cycles) cannot
-tell the second cycle from the first without parsing prose.
+The honest gap that left open: the Profile-tab `CaseReviewCard` "Last
+shift" row reads the raw engine `reason` field unchanged. On a first-
+cycle pushback the user sees "User reported the prior hypothesis did
+not match what they saw; revising the read." (third-person engine
+voice). On a second-cycle pushback they see "User reported the
+rebuilt hypothesis did not match what they saw; revising the read
+again." Same event, different voice, different surface. A user
+flicking between the post-rep summary ("You flagged the rebuilt read
+as off too.") and the Profile card ("User reported the rebuilt
+hypothesis did not match...") sees two readings of the same case
+event — one in their own voice, one in the engine's. Cross-surface
+drift.
 
-Round 33 picks up step #11 from the round-32 "Future moves" list:
+The collapse note rounds 31 and 33 carried as future move #11 is also
+still standing: `SummaryView.freshRevisedReadChange` duplicates the
+predicate body `CoachContextBuilder.freshRevisedReadChange(in:)`
+already owns. The chat-coach context block reads the helper; the
+post-rep summary inlines the same gate. Duplicate-state risk that
+the engineering bans (`No fragmented state`) explicitly call out.
 
-> **Adaptation-log entry on a round-32 `.rejected` rebuild verdict.**
-> Promoted from round-30 step #12 and made specific by round 32.
-> A `.rejected` rebuild verdict surfaces as a "second pushback" in
-> context. The natural next step: on the next memory rebuild,
-> `CoachMemoryEngine.build(...)` could detect the dropped `.rejected`
-> rebuild-verdict ack (same shape as the round-27 `droppedRejectedAck`
-> arm, but tagged to the rebuilt hypothesis) and append a fresh
-> `CoachCourseChange` with the rebuild as the prior and the next read
-> as the revised. Closes the rejection-rebuild-rejection-rebuild chain
-> in the engine, so the adaptation log carries the full lineage, not
-> just the first cycle.
+Round 34 picks up BOTH:
 
 User brief, unchanged round to round: "continue from the existing TO-DO,
 ensure working towards getting the app towards the vision plan, and all
@@ -41,273 +38,257 @@ redesign branch too (very important)."
 
 Translation, this round:
 
-- New `CoachCourseChange.userRebuildPushbackMarker` constant — distinct
-  marker phrase `"user reported the rebuilt hypothesis did not match"`
-  written in place of `userPushbackMarker` on second-cycle pushback
-  entries. Pure copy lift on the engine; no schema bump.
-- New `CoachCourseChange.documentsRebuildPushback` computed property —
-  predicate that fires only on the second-cycle marker. Used by
-  `RevisedReadCard.headlineCopy(for:)`, `freshRevisedReadContextLines`,
-  and any future analytics surface that wants to count rebuild cycles
-  without parsing the surrounding reason text.
-- `CoachCourseChange.documentsUserPushback` now matches EITHER marker
-  (first-cycle OR second-cycle). A second pushback IS still a pushback,
-  so round-31 `freshRevisedReadContextLines`, round-32 `rebuildVerdictPair`,
-  and the `SummaryView.freshRevisedReadChange` gate continue to fire on
-  the second cycle without code edits at the call sites.
-- New `isSecondCyclePushback` detection in `CoachMemoryEngine.build(...)` —
-  pure-function read over `previous?.adaptationLog?.last?.documentsUserPushback`.
-  The dropped `.rejected` ack arm writes the rebuild marker when the
-  prior log entry was itself a user pushback; otherwise the existing
-  first-cycle marker stands.
-- `RevisedReadCard` now picks its headline via a new
-  `headlineCopy(for: CoachCourseChange)` function. First-cycle entries
-  read "You flagged the prior read as off." (the back-compat constant);
-  second-cycle entries read "You flagged the rebuilt read as off too."
-  The user sees the second pushback acknowledged explicitly on the
-  post-rep summary, not silently re-labelled as a first pushback.
-- `CoachContextBuilder.freshRevisedReadContextLines` (round 31) now
-  branches on `documentsRebuildPushback` for the case-state line. Second
-  cycles read "Case file just shifted AGAIN: the user flagged the
-  rebuilt read as off TOO ..."; first cycles read the round-31 line
-  unchanged. The coach-move line is identical on both cycles — the
-  case-state framing already tells the model which cycle this is.
+- New `CoachCourseChange.caseFileHeadline` computed property — pure
+  function of the persisted `reason` field. Returns "You flagged the
+  rebuilt read as off too." on second-cycle pushback entries (round-33
+  marker), "You flagged the prior read as off." on first-cycle entries
+  (round-27 marker), or falls through to the engine `reason` text on
+  engine-only shifts. Same picker the post-rep card uses, now lifted
+  to the data model so multiple surfaces read the same picker.
+- `RevisedReadCard.headlineCopy(for:)` is now a thin delegate
+  (`change.caseFileHeadline`) so the post-rep summary AND the Profile
+  card land the SAME user-voiced phrase. Round-33's two-branch picker
+  body moves to the data model in one line; the card's static
+  `headlineCopy` constant stays unchanged for back-compat.
+- `CaseReviewCard` "Last shift" row reads `latest.caseFileHeadline`
+  instead of `latest.reason`. The user-voiced phrase lands on the
+  Profile card. Engine-only entries fall through unchanged — no
+  over-claim of user action on a `(prior?, nil)` engine-only shift.
+- `SummaryView.freshRevisedReadChange` collapses to call through
+  `CoachContextBuilder.freshRevisedReadChange(in:)`. The predicate
+  body is no longer duplicated; the chat-coach context block, the
+  round-30 chip-row gate, and the post-rep card all read ONE
+  canonical predicate. Closes future-move #11.
 - The redesign-branch invariant: this is a `Redesign`-branch push per
   the user brief. The work lands directly on `Redesign`, preserving
   the round-by-round loop on the redesign lineage that has been the
-  home of rounds 11–32.
+  home of rounds 11–33.
 
 ## What shipped
 
-### Track 1 — `CoachCourseChange.userRebuildPushbackMarker` + `documentsRebuildPushback` (`PrimaryFocusMemory.swift`)
+### Track 1 — `CoachCourseChange.caseFileHeadline` (`PrimaryFocusMemory.swift`)
 
-- New `static let userRebuildPushbackMarker = "user reported the rebuilt hypothesis did not match"`.
-  Distinct from `userPushbackMarker` so an engine-side predicate can
-  identify the second cycle without prose parsing AND a copy edit on
-  one marker does not silently regress the other.
-- `documentsUserPushback` now reads `userPushbackMarker || userRebuildPushbackMarker`.
-  A second-cycle entry IS still a pushback; round-31
-  `freshRevisedReadContextLines` and round-32 `rebuildVerdictPair`
-  must continue to fire on it. The OR is intentional and locked by
-  tests on both branches.
-- New `documentsRebuildPushback: Bool` — true iff `reason` contains the
-  rebuild marker (case-insensitive). Pure function of the persisted
-  `reason`; no schema bump, no state to round-trip, no migration.
-- Memories persisted before round 33 decode unchanged. The new computed
-  property reads off the existing `reason` field and returns false on
-  every legacy entry (none of which contain the rebuild marker).
+- New computed property: pure function of the persisted `reason`,
+  reading `documentsRebuildPushback` and `documentsUserPushback`
+  (both round-33 predicates already in the schema).
+- Three-arm resolution, mutually exclusive at the engine append site:
+  - `documentsRebuildPushback == true` (round-33 second-cycle marker
+    present) → "You flagged the rebuilt read as off too." — same
+    string `RevisedReadCard.headlineCopy(for:)` returned for the
+    second cycle pre-round-34.
+  - `documentsUserPushback == true` (round-27 first-cycle marker
+    present, second-cycle absent) → "You flagged the prior read as
+    off." — same string the back-compat `RevisedReadCard.headlineCopy`
+    constant returns.
+  - Neither marker present → the persisted `reason` field unchanged.
+    Engine-only `(prior?, nil)` shifts already carry a neutral
+    third-person clause ("Shifted focus from X to Y."); rewriting
+    that as second-person ("Your focus shifted...") would over-claim
+    a user action that did not happen. Falling through keeps the
+    line honest.
+- Defensive on Codable round-trip: an empty `reason` returns the
+  empty string. The engine never writes an empty reason on the
+  append path (`CoachMemoryEngine.build(...)` gates appends on
+  `priorLeverShift != nil || droppedRejectedAck != nil`), but the
+  picker must not crash on the boundary.
+- No schema bump. The picker reads off the existing `reason` field;
+  memories persisted before round 34 decode and behave correctly.
+  Pre-round-27 memories (no adaptation log) never reach the picker
+  (the call sites already short-circuit on `adaptationLog?.last`).
 
-### Track 2 — `CoachMemoryEngine.build(...)` second-cycle detection (`PrimaryFocusMemory.swift`)
+### Track 2 — `RevisedReadCard.headlineCopy(for:)` delegates (`RevisedReadCard.swift`)
 
-- New `isSecondCyclePushback: Bool` local in the build function — pure
-  read over `previous?.adaptationLog?.last?.documentsUserPushback ==
-  true && droppedRejectedAck != nil`. Signal: the prior log entry is
-  itself a user-pushback rebuild, so `previous.workingHypothesis` was
-  the rebuilt read; the dropped `.rejected` ack therefore landed on the
-  rebuilt read, not on an original-cycle read.
-- The switch arms `(prior?, ack?)` and `(nil, ack?)` now pick the
-  cycle-appropriate clause via local `pushbackClause` /
-  `standaloneClause` bindings:
-  - First cycle: `"...the user reported the prior hypothesis did not match..."`.
-  - Second cycle: `"...the user reported the rebuilt hypothesis did not match..."`,
-    standalone variant ends with `"; revising the read again."` so the
-    model reads the entry as a SECOND adapt, not a duplicate of the
-    first.
-- The `(prior?, nil)` engine-only arm is unchanged — no user-pushback
-  marker on either side. The `(nil, nil)` no-op arm is unchanged.
-- Detection is robust to the bounded `suffix(8)` truncation in the
-  adaptation log: the lookup reads `previous?.adaptationLog?.last`,
-  which always reflects the most-recent entry the prior memory carried
-  regardless of how many cycles preceded it.
-- The detection breaks honestly the moment any non-pushback entry is
-  appended to the log: an engine-only lever shift between two pushback
-  cycles resets the chain. Future rebuilds read the engine-only entry
-  as the prior `.last` and `documentsUserPushback` returns false — the
-  next pushback ack drop is logged as a first cycle. The chain is a
-  PROPERTY of consecutive log entries, not a permanent flag on memory.
-
-### Track 3 — `RevisedReadCard.headlineCopy(for: CoachCourseChange)` (`RevisedReadCard.swift`)
-
-- New `static func headlineCopy(for change: CoachCourseChange) -> String`:
-  - `change.documentsRebuildPushback == true` →
-    `"You flagged the rebuilt read as off too."`
-  - `else` → `"You flagged the prior read as off."` (the existing
-    static constant `headlineCopy`).
+- The round-33 two-branch picker body lifts entirely to the data
+  model. `RevisedReadCard.headlineCopy(for:)` is now one line:
+  `change.caseFileHeadline`. The card's upstream gate
+  (`SummaryView.freshRevisedReadChange`) guarantees
+  `change.documentsUserPushback == true` on every mount, so the
+  engine-only fall-through arm of `caseFileHeadline` is unreachable
+  from this surface — the picker reads as pushback-only here even
+  though the underlying property is broader.
 - The static `let headlineCopy: String = "You flagged the prior read as off."`
-  constant is unchanged — the existing test
-  `headlineCopyNamesUserAction` continues to pass, and any surface
-  that reads the constant directly (none today, but the
-  `coachCaseFormulationLines` doc comment references the phrase) does
-  not regress.
-- The view body and `accessibilityLabel` now read the picker function
-  through `change`. The accessibility label is computed once at view
-  composition time and reused for both visible Text and AX, so the
-  spoken read matches what the user sees.
-- Brand-voice rules respected on the second-cycle phrase: no
-  exclamation, no apology, no celebratory framing ("at least you spoke
-  up"), no "Let's", no "we". "too" carries the second-cycle
-  acknowledgment without escalating.
+  constant is unchanged. Round 28's `headlineCopyNamesUserAction`
+  test pins the constant directly; round 34 preserves that contract.
+- Doc comment updated to name round 34 as the lift round; round-33
+  intent is preserved verbatim. The brand-voice rule notes ("no
+  exclamation, no apology, no 'we', no 'Let's'") are unchanged —
+  the picker's output strings did not change; only their home did.
 
-### Track 4 — `CoachContextBuilder.freshRevisedReadContextLines` second-cycle branch (`CoachContextBuilder.swift`)
+### Track 3 — `CaseReviewCard` "Last shift" row (`CaseReviewCard.swift`)
 
-- The case-state line now branches on `change.documentsRebuildPushback`:
-  - Second cycle: `"- Case file just shifted again: the user flagged the rebuilt read as off too; the working hypothesis above is the next rebuilt one\(basisTail)."`
-  - First cycle: `"- Case file just shifted: the user flagged the prior read as off; the working hypothesis above is the rebuilt one\(basisTail)."` (round-31 line unchanged).
-- The coach-move line is identical on both cycles — "speak to it as
-  the live operating read, not the original. Leave room for the user
-  to settle into the rebuild or push back again before strengthening
-  it." Still applies whether this is the first rebuild the user has
-  pushed back on or the second. The case-state framing tells the
-  model which cycle.
-- The round-31 `freshRevisedReadChange` predicate is unchanged. It
-  reads `documentsUserPushback`, which round 33 keeps true for both
-  cycles. The round-32 `rebuildVerdictPair` predicate is unchanged for
-  the same reason.
-- The three-tier wiring in `interventionCycleLines` is unchanged:
-  round 32 (verdict) > round 31 (fresh rebuild — now with second-cycle
-  framing) > generic. The mutual-exclusion property at the memory
-  level continues to hold: the round-30 ack bump that satisfies round
-  32 still closes round 31's `isFresh` window regardless of cycle.
+- The `caseRow(icon:label:text:)` call for the "Last shift" row now
+  reads `latest.caseFileHeadline` instead of `latest.reason`.
+- A user-pushback entry surfaces in the user's own second-person
+  voice on the Profile card — matching the post-rep summary. A
+  first-cycle pushback reads "You flagged the prior read as off."
+  on both surfaces; a second-cycle pushback reads "You flagged the
+  rebuilt read as off too." on both surfaces.
+- Engine-only shifts ("Shifted focus from Pace to Depth.") fall
+  through to `reason` unchanged — the pre-round-34 behavior is
+  preserved on this branch. No over-claim of user action on
+  `(prior?, nil)` entries.
+- Inline comment names the round-34 lift and the cross-surface
+  consistency contract, so a future reader does not silently
+  re-inline `latest.reason` and break the symmetry.
+- The five-section layout (working hypothesis / intervention / Last
+  shift / transfer / reflection) is unchanged. The compact card
+  contract (≤2 lines per row, no scrolling, no buttons) is
+  unchanged — the new headline is shorter than the prior engine
+  reason for both pushback branches, so the row's vertical budget
+  shrinks if anything.
 
-### Track 5 — `SecondCyclePushbackAdaptationTests` + `RevisedReadCardTests` extensions (`NoumTests/NoumTests.swift`)
+### Track 4 — `SummaryView.freshRevisedReadChange` collapses (`SummaryView.swift`)
 
-New `@Suite("SecondCyclePushbackAdaptationTests")` (struct, `@MainActor`)
-placed after the round-32 `RebuildVerdictContextTests`. Fifteen `@Test`
-methods cover the predicate contracts, the engine's detection logic,
-and the round-31 / round-32 surfaces' continued correctness on the
-second cycle:
+- The private property body lifts entirely to
+  `CoachContextBuilder.freshRevisedReadChange(in:)`:
 
-- **CoachCourseChange predicate matrix (5 tests):**
-  - `documentsUserPushbackStillTrueForFirstCycleMarker` — back-compat:
-    a round-27 entry shape still satisfies `documentsUserPushback`.
-  - `documentsUserPushbackTrueForSecondCycleMarker` — round 33: a
-    rebuild-marker entry also satisfies `documentsUserPushback` AND
-    `documentsRebuildPushback`.
-  - `documentsRebuildPushbackFalseForEngineOnlyShift` — engine-only
-    entries satisfy neither predicate.
-  - `documentsRebuildPushbackTrueOnCombinedShiftSecondCycle` —
-    `(prior?, ack?)` second cycle: both predicates true.
-  - `documentsRebuildPushbackFalseOnCombinedShiftFirstCycle` —
-    `(prior?, ack?)` first cycle: only `documentsUserPushback` true.
-- **Engine second-cycle detection (5 tests):**
-  - `buildWritesFirstCycleMarkerWhenNoPriorPushback` — no prior log:
-    first-cycle marker stands.
-  - `buildWritesSecondCycleMarkerWhenPriorEntryDocumentsPushback` —
-    headline contract: prior log entry was a pushback, new ack drop
-    writes the rebuild marker.
-  - `buildWritesSecondCycleMarkerOnCombinedShiftAndRejection` —
-    `(prior?, ack?)` arm on the second cycle: rebuild marker AND
-    shift clause both present in the reason.
-  - `buildKeepsFirstCycleMarkerWhenPriorEntryIsEngineOnly` — defensive:
-    engine-only prior log entry does NOT trigger the second-cycle
-    marker. The chain is a property of CONSECUTIVE pushback entries.
-  - `buildEngineOnlyShiftDoesNotInheritSecondCycleMarker` — defensive:
-    a pure engine-only shift (no ack to drop) writes the engine-only
-    reason regardless of what the prior entry was.
-- **Round-31 / round-32 surfaces on the second cycle (4 tests):**
-  - `freshRevisedReadContextLinesNamesSecondCycleExplicitly` — round
-    33: case-state line uses "shifted again" + "rebuilt read as off
-    too" + "the next rebuilt one" on the second cycle.
-  - `freshRevisedReadContextLinesKeepsFirstCyclePhrasingOnFirstCycle`
-    — round-31 line unchanged on first cycles.
-  - `rebuildVerdictPairStillFiresOnSecondCyclePushbackWithAck` —
-    round-32 contract preserved: a `.confirmed` ack on a second-cycle
-    rebuild fires the verdict block.
-  - `userContextSurfacesSecondCycleCaseStateOnFreshSecondPushback` —
-    end-to-end through `userContext(...)`: the second-cycle case-state
-    line surfaces in the chat-coach payload AND round 32 / generic are
-    suppressed on the fresh-pre-ack window.
-- **End-to-end chain (1 test):**
-  - `chainsTwoCyclesEndToEndThroughEngineRebuilds` — TWO
-    `CoachMemoryEngine.build(...)` passes back-to-back, each folding
-    a `.rejected` ack. Pass #1 writes the first-cycle marker; pass #2
-    writes the second-cycle marker; the bounded log carries BOTH
-    entries; the first cycle entry is unchanged on the second pass.
+  ```swift
+  private var freshRevisedReadChange: CoachCourseChange? {
+      guard let memory = coachMemoryStore.currentMemory else { return nil }
+      return CoachContextBuilder.freshRevisedReadChange(in: memory)
+  }
+  ```
 
-Four new `@Test` methods extend the existing `RevisedReadCardTests`
-suite:
+- Both call sites (the two `if let revisedChange = freshRevisedReadChange`
+  mounts inside the summary body) and the round-29 `talkToNoumOpener`
+  gate (`if freshRevisedReadChange != nil`) continue to work
+  unchanged — the property still returns the same shape.
+- Closes future move #11. The chat-coach user-context block
+  (round-31 `freshRevisedReadContextLines`), the round-30 chip-row
+  gate (which reads `freshRevisedReadChange(in:)` indirectly through
+  the round-31 lift), the post-rep `RevisedReadCard` mount, and the
+  round-29 `talkToNoumOpener` are now all driven off ONE canonical
+  predicate. A future edit to the eligibility contract (e.g., a
+  `documentsRebuildPushback` branch, an evidence-floor gate) lands
+  in one place rather than four.
+- The doc comment names the collapse and links the consumer
+  surfaces, so a future reader does not silently re-inline the
+  predicate.
 
-- `headlineCopyForFirstCyclePushbackUsesPriorPhrasing` — back-compat:
-  the picker reads "prior read" on a first-cycle entry, and the
-  static `headlineCopy` constant still returns "prior read".
-- `headlineCopyForSecondCyclePushbackUsesRebuiltPhrasing` — picker
-  reads "rebuilt read as off too" on a standalone second-cycle entry.
-- `headlineCopyForCombinedShiftSecondCycleUsesRebuiltPhrasing` —
-  picker reads the rebuilt phrase on a `(prior?, ack?)` second-cycle
-  entry (rebuild marker AND shift clause both in the reason).
-- `headlineCopyForEngineOnlyShiftFallsBackToFirstCyclePhrasing` —
-  defensive: an engine-only change (which the upstream gate should
-  filter out) returns the safer first-cycle phrase, not the second-
-  cycle "off too" over-claim.
+### Track 5 — `CaseFileHeadlineTests` + `FreshRevisedReadChangeSecondCycleDelegationTests` (`NoumTests/NoumTests.swift`)
+
+New `@Suite("CaseFileHeadlineTests")` (struct, `@MainActor`) placed
+after the round-33 `SecondCyclePushbackAdaptationTests`. Nine `@Test`
+methods cover the picker's contract on every arm of the resolution
+order, plus three cross-surface consistency tests that lock the
+round-34 invariant: `RevisedReadCard.headlineCopy(for: change) ==
+change.caseFileHeadline` for the pushback cases.
+
+- **`caseFileHeadline` resolution matrix (6 tests):**
+  - `caseFileHeadlineNamesFirstCyclePushbackInSecondPerson` — round-27
+    entry shape returns "You flagged the prior read as off."
+  - `caseFileHeadlineNamesSecondCyclePushbackInSecondPerson` — round-33
+    entry shape returns "You flagged the rebuilt read as off too."
+  - `caseFileHeadlineNamesCombinedShiftSecondCycleInSecondPerson` —
+    `(prior?, ack?)` second-cycle arm: the reason carries BOTH the
+    focus-shift clause AND the rebuilt-hypothesis marker; picker
+    reads the second-cycle phrase.
+  - `caseFileHeadlineNamesCombinedShiftFirstCycleInSecondPerson` —
+    `(prior?, ack?)` first-cycle arm: picker reads the first-cycle
+    phrase. Symmetric with the second-cycle combined arm.
+  - `caseFileHeadlineFallsThroughToReasonForEngineOnlyShift` —
+    `(prior?, nil)` arm: neither pushback marker present; picker
+    returns the persisted `reason` ("Shifted focus from Pace to
+    Depth.") unchanged. No over-claim of user action.
+  - `caseFileHeadlineFallsThroughToReasonForEmptyReason` — defensive:
+    an empty `reason` returns the empty string. Boundary the engine
+    never writes but a Codable round-trip could deliver.
+- **Cross-surface consistency (3 tests):**
+  - `revisedReadCardHeadlineMatchesCaseFileHeadlineOnFirstCycle` —
+    locks `RevisedReadCard.headlineCopy(for: change) == change.caseFileHeadline`
+    on first-cycle pushback. A copy edit to either site without
+    updating the other fails this test.
+  - `revisedReadCardHeadlineMatchesCaseFileHeadlineOnSecondCycle` —
+    same contract on second-cycle pushback.
+  - `revisedReadCardHeadlineConstantStillReturnsFirstCyclePhrasing` —
+    back-compat: the round-28 `headlineCopyNamesUserAction` test
+    pins the static constant; round 34 preserves it.
+
+New `@Suite("FreshRevisedReadChangeSecondCycleDelegationTests")`
+(struct, `@MainActor`) placed after `CaseFileHeadlineTests`. One
+`@Test` method covers the round-34 cross-cycle contract through the
+helper that `SummaryView` now reads:
+
+- `helperReturnsSecondCycleEntryUnchangedThroughTheCollapse` — a
+  second-cycle pushback entry resolves through
+  `CoachContextBuilder.freshRevisedReadChange(in:)` (round 33's
+  `documentsUserPushback` OR-match plus round 31's freshness gate),
+  preserving the round-33 contract through the round-34
+  `SummaryView` collapse. The existing `FreshRevisedReadContextTests`
+  suite already covers the first-cycle / engine-only / stale /
+  nil-log / empty-log branches.
 
 ### Vision alignment
 
-- **Coach-parity stage #4 (Adaptation).** Per `docs/VISION.md`: the
-  case formulation needs "the reason for changing course" carried as
-  active coaching state. Round 27 surfaced the first cycle in the
-  adaptation log; rounds 28–32 carried that cycle to the post-rep
-  summary, the chat seed, the chip row, and the chat context (with
-  and without ack). Round 33 closes the lineage in the engine itself:
-  the second cycle is now a distinct, durable event in the adaptation
-  log, carrying its own marker that future surfaces can read without
-  prose parsing.
-- **Pillar #5 (Personalized coaching).** A coach who has rebuilt the
-  read once and watched the user push back AGAIN would speak to that
-  second pushback as "you flagged the rebuilt read as off too" — not
-  "you flagged the prior read as off." Round 33 gives the post-rep
-  card AND the chat-coach context the same memory. The user reads
-  acknowledgement of their second pushback, not a generic re-run of
-  the first-pushback copy.
-- **Pillar #4 (Believable progress).** A user who pushed back twice in
-  a row would NOTICE if the second `RevisedReadCard` read identically
-  to the first. The card would feel like a stuck loop, not a coaching
-  surface. Round 33 closes that credibility gap.
-- **Anti-overclaim.** The second-cycle detection requires BOTH the
-  dropped `.rejected` ack AND the prior log entry's pushback marker.
-  An engine-only shift between two pushback cycles resets the chain
-  (the prior `.last` becomes the engine-only entry, which is not a
-  pushback). The engine never infers a second cycle from any signal
-  but the prior log entry's own marker, and never lies about a
-  pushback that did not happen.
-- **No schema bump.** All new behaviour is computed from the existing
-  `reason` field on `CoachCourseChange`. Memories persisted before
-  round 33 decode and behave unchanged until a second-cycle pushback
-  ack drop lands in the engine.
-- **Engineering bans.** No placeholder logic. No dead toggles. No
-  fragmented state. Pure-function lifts on pure-function inputs.
+- **Coach-parity stage #2 (Case formulation).** Per `docs/VISION.md`:
+  the case formulation needs to be "concise, revisable" and surfaced
+  "coherently in Ask Noum, post-rep feedback, and the next-practice
+  recommendation." Round 34 closes a cross-surface coherence gap:
+  the post-rep summary and the Profile case-review card now name the
+  same rebuild event in the same user voice, rather than one in
+  second-person and one in third-person.
+- **Pillar #5 (Personalized coaching).** A coach who acknowledges
+  the user's pushback on the post-rep card and then a moment later
+  refers to "User reported the prior hypothesis did not match what
+  they saw" on the Profile card sounds like two coaches with
+  different memory of the same conversation. Round 34 gives both
+  surfaces the same picker — the user reads one coach voice across
+  the case file.
+- **Pillar #4 (Believable progress).** A user who pushes back twice
+  on the working hypothesis sees their second pushback named
+  explicitly on BOTH surfaces ("rebuilt read as off too"), not just
+  the post-rep card. The Profile card no longer reads as a stale
+  engine log on the second cycle.
+- **Engineering bans.** No fragmented state: round 34 removes the
+  duplicate `freshRevisedReadChange` predicate body
+  (`SummaryView`-local vs. `CoachContextBuilder`-canonical) closing
+  future move #11. No placeholder logic: the new picker has a real
+  call site (the Profile card "Last shift" row) and a real second
+  call site (the post-rep card via the round-33 delegate). No dead
+  toggles: the picker has no flags; the resolution is data-driven
+  off the persisted `reason` field.
+- **Anti-overclaim.** The engine-only fall-through arm of
+  `caseFileHeadline` returns the persisted `reason` unchanged — the
+  picker never rewrites a `(prior?, nil)` shift as a user action.
+  The cross-surface consistency tests do NOT pin engine-only
+  behavior across the picker and the card (the card's gate filters
+  engine-only out before the picker fires; the picker preserves
+  legacy behavior for that branch).
+- **No schema bump.** `caseFileHeadline` is a computed property over
+  the existing `reason` field. Memories persisted before round 34
+  decode and behave unchanged: round-27 entries surface the
+  first-cycle phrase, round-33 entries surface the second-cycle
+  phrase, pre-round-27 memories (no adaptation log) never reach the
+  picker (call sites short-circuit on `adaptationLog?.last`).
 
 ### Branch + redesign-alignment notes
 
 - All five tracks land on `Redesign`, the redesign-lineage branch the
   rolling M24 deferred-slate work has been shipping on since round 11.
   The user brief explicitly calls this out: "ensure working on the
-  redesign branch too (very important)." Round 33 preserves the
+  redesign branch too (very important)." Round 34 preserves the
   round-by-round loop on the redesign lineage.
-- Round 33 does not change the round-32 `rebuildVerdictPair` /
-  `rebuildVerdictContextLines` / `interventionCycleLines` wiring,
-  does not change the round-31 `freshRevisedReadChange` predicate,
-  does not change the round-30 chip-row predicate or catalog, does
-  not change the round-29 `revisedReadOpener`, does not change the
-  round-28 `RevisedReadCard.bodyCopy`, and does not change the
-  round-26 chip catalog or hypothesis-ack row. The round-32 25
-  rebuild-verdict tests + round-31 16 fresh-revised-read tests +
-  round-30 15 follow-up tests + round-29 12 opener tests + round-28
-  5 copy tests + round-26 19 ack tests all remain unchanged; round
-  33's 19 new tests sit alongside them.
-- The existing first-cycle engine tests (`buildLogsCourseChangeWhenRejectedAckIsDroppedByHypothesisRevise`,
-  `buildLogsSingleCourseChangeWhenLeverShiftAndRejectedAckCoincide`,
-  `buildDoesNotLogAdaptationForConfirmedOrUncertainAck`,
-  `buildDoesNotDoubleLogRejectedAckWhenHypothesisHolds`,
-  `buildTrimsLongRejectedSnapshotInEvidenceBasis`,
-  `freshlyBuiltMemoryMarksRejectedAckEntryAsFreshAndPushback`) all
-  continue to pass: each fixture starts with `previous` carrying a
-  nil or empty `adaptationLog`, so `isSecondCyclePushback` returns
-  false and the first-cycle marker stands.
+- Round 34 does not change the round-33 `userRebuildPushbackMarker`
+  constant, the `documentsUserPushback` / `documentsRebuildPushback`
+  predicates, or the `isSecondCyclePushback` engine detection. The
+  round-33 19 second-cycle + 4 picker tests pass unchanged; round
+  34's 10 new tests sit alongside them. Round 32 / round 31 /
+  round 30 / round 29 / round 28 / round 27 surfaces are
+  read-through, not edited.
+- The existing `FreshRevisedReadContextTests` suite (round 31)
+  continues to pin the helper's first-cycle / engine-only / stale /
+  nil-log / empty-log branches; the round-34 collapse is a pure
+  refactor at the `SummaryView` site. No behavioral change at the
+  helper level.
+- The static `RevisedReadCard.headlineCopy` constant is preserved
+  unchanged; round 28's `headlineCopyNamesUserAction` test passes
+  unchanged. Round 34 only lifts the picker function body to the
+  data model, not the constant.
 
 ## Future moves
 
-(Updated priority list — round-33 closed step #11; the rest roll
-forward, plus one new note from round 33.)
+(Updated priority list — round-34 closed step #11; the rest roll
+forward, plus the round-33 carry-forwards.)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
    `PublicProfileSnapshot` schema work.
@@ -315,9 +296,9 @@ forward, plus one new note from round 33.)
    interleaving with celebration timing. Worth a dedicated refactor
    pass with proper visual QA (and a real device).
 3. **Visual polish pass on the round-19 launch CTA.** Carried forward
-   from rounds 19–32. Pure visual work, not destination logic.
+   from rounds 19–33. Pure visual work, not destination logic.
 4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–32. Pure visual work, not crossing logic.
+   forward from rounds 20–33. Pure visual work, not crossing logic.
 5. **Extend the crossing helper to the chat-coach context line.**
    Carried forward from round 21 as a note for the record.
 6. **Day-rollover refresh for long-mounted observers.** Carried forward
@@ -330,54 +311,61 @@ forward, plus one new note from round 33.)
    forward from round 25.
 9. **Voice-tuned ack-chip glyphs.** Carried forward from round 26.
 10. **`.confirmed` confidence amplification on the active intervention.**
-    Carried forward from round 27. Note for round 33: still standing.
-    The round-32 `.confirmed` rebuild-verdict path remains the natural
-    integration site — when the predicate fires AND the engine has not
-    yet bumped `CoachIntervention.criterionStatus`, the same
-    `.confirmed` branch could nudge the criterion toward "met" or
-    extend the `reviewDueAt` cadence by one rep.
-11. **Collapse `SummaryView.freshRevisedReadChange` into a call through
-    `CoachContextBuilder.freshRevisedReadChange(in:)`.** Carried
-    forward from round 31. With round 33's branch on
-    `documentsRebuildPushback` inside `freshRevisedReadContextLines`,
-    the case for unifying the gate at the call site grows: a single
-    helper would also let `SummaryView` read second-cycle awareness
-    if it ever wants to differentiate the card surround (it does not
-    today — the headline already names the cycle — but it could).
-12. **Collapse the round-26 hypothesis-ack reflection in
+    Carried forward from round 27. The round-32 `.confirmed` rebuild-
+    verdict path remains the natural integration site — when the
+    predicate fires AND the engine has not yet bumped
+    `CoachIntervention.criterionStatus`, the same `.confirmed`
+    branch could nudge the criterion toward "met" or extend the
+    `reviewDueAt` cadence by one rep.
+11. **Collapse the round-26 hypothesis-ack reflection in
     `coachCaseFormulationLines` into a single block with the round-32
     rebuild-verdict lines when the predicate fires.** Carried forward
     from round 32. Hold for real-device QA.
-13. **Trend-view distinction between "user accepted the first read"
+12. **Trend-view distinction between "user accepted the first read"
     and "user accepted the rebuilt read".** Carried forward from
-    rounds 30 + 32. With round 33's `documentsRebuildPushback` marker
-    on the adaptation log, a future trend view could ALSO count
-    rebuild PUSHBACKS separately from first-cycle pushbacks — the
-    bounded log carries both lineages now.
-14. **`adaptationLogCycleSummary` helper on `CoachContextBuilder`.**
-    New note from round 33. A future round could compose a one-line
-    coach-context summary that names the cycle depth — "user has
-    pushed back twice on the working hypothesis this case file" —
-    based on a count of consecutive `documentsUserPushback` entries
-    at the tail of `adaptationLog`. Surface in CASE FORMULATION so
-    the model speaks to a user who has pushed back twice differently
-    than a user who has pushed back once. Hold until at least one
-    real-device QA pass on the round-33 second-cycle chain.
-15. **Engine reset on a `.confirmed` ack after a rebuild.** New note
-    from round 33. The current chain depends on
+    rounds 30 + 32 + 33. With round 33's `documentsRebuildPushback`
+    marker on the adaptation log AND round 34's `caseFileHeadline`
+    picker on the data model, a future trend view could ALSO count
+    rebuild PUSHBACKS separately from first-cycle pushbacks AND
+    surface the user-voiced phrase from the picker with no
+    additional engine work.
+13. **`adaptationLogCycleSummary` helper on `CoachContextBuilder`.**
+    Carried forward from round 33. A future round could compose a
+    one-line coach-context summary that names the cycle depth —
+    "user has pushed back twice on the working hypothesis this case
+    file" — based on a count of consecutive `documentsUserPushback`
+    entries at the tail of `adaptationLog`. Surface in CASE
+    FORMULATION so the model speaks to a user who has pushed back
+    twice differently than a user who has pushed back once. Hold
+    until at least one real-device QA pass on the round-33
+    second-cycle chain.
+14. **Engine reset on a `.confirmed` ack after a rebuild.** Carried
+    forward from round 33. The current chain depends on
     `previous.adaptationLog.last.documentsUserPushback`; a
     `.confirmed` ack on the rebuilt read does NOT cycle (it just
     confirms the rebuild). A future round could append an explicit
     `confirmation` entry on `.confirmed` ack-drop to mark the rebuild
     as accepted, closing the cycle in the log as cleanly as the
-    rejection cycle is closed in round 33.
-16. **Sibling `RevisedReadCard` copy for the post-`.confirmed` rebuild
-    surface.** New note from round 33. The card currently surfaces
-    only on a fresh pushback rebuild. A future round could add a
-    sibling card ("You confirmed the rebuilt read") on the post-rep
-    summary AFTER the user lodges a `.confirmed` ack on the rebuilt
-    hypothesis, so the rebuild lifecycle has acknowledged closure on
-    the surface where it began.
+    rejection cycle is closed in round 33. With round-34's
+    `caseFileHeadline` picker on the data model, a third arm
+    ("You confirmed the rebuilt read.") would land naturally as a
+    new branch above the engine-only fall-through.
+15. **Sibling `RevisedReadCard` copy for the post-`.confirmed` rebuild
+    surface.** Carried forward from round 33. The card currently
+    surfaces only on a fresh pushback rebuild. A future round could
+    add a sibling card ("You confirmed the rebuilt read") on the
+    post-rep summary AFTER the user lodges a `.confirmed` ack on the
+    rebuilt hypothesis, so the rebuild lifecycle has acknowledged
+    closure on the surface where it began. Depends on #14 above.
+16. **User-voiced lift for the engine-only fall-through arm of
+    `caseFileHeadline`.** New note from round 34. The current
+    fall-through returns the persisted `reason` ("Shifted focus from
+    Pace to Depth.") unchanged because rewriting it as user action
+    would over-claim. But a softer second-person re-framing might
+    read better on the Profile card without over-claiming — e.g.,
+    "Coach moved your focus from Pace to Depth." Hold until at
+    least one real-device QA pass on round 34's pushback branches
+    on `CaseReviewCard`; the picker's contract is fine today.
 
 ## Build-host limitation (honest note for the next agent)
 
@@ -385,112 +373,96 @@ This environment has **no Xcode and no Swift toolchain**, so nothing in
 this round was compiled or run — not the app, not the test suite. The
 changes are:
 
-- One new constant + one updated predicate + one new predicate on
-  `CoachCourseChange` in `PrimaryFocusMemory.swift`. Self-contained —
-  no new imports, no new dependencies, no new types.
-- One new local + one updated switch arm pair in
-  `CoachMemoryEngine.build(...)` in the same file. The detection is
-  a pure-function read over the previous memory's adaptation log; no
-  storage, no side effects, no I/O.
-- One new static func on `RevisedReadCard` plus a view-body refactor
-  to read it. The body now computes `headline` and `body` once per
-  composition; the existing static `headlineCopy` constant is
-  preserved unchanged.
-- One updated case-state branch in
-  `CoachContextBuilder.freshRevisedReadContextLines`. The coach-move
-  line is unchanged.
-- One new `@Suite("SecondCyclePushbackAdaptationTests")` (15 tests) +
-  four new `@Test` methods in the existing `RevisedReadCardTests`
-  suite. The new suite is plain `struct`, `@MainActor`, mirror of
-  `RebuildVerdictContextTests`'s attribute.
+- One new computed property on `CoachCourseChange` in
+  `PrimaryFocusMemory.swift`. Self-contained — no new imports, no new
+  dependencies, no new types. Reads only the existing `reason` field
+  through the round-33 predicates.
+- One one-line body replacement on `RevisedReadCard.headlineCopy(for:)`
+  in `RevisedReadCard.swift`. The static `headlineCopy` constant is
+  unchanged. The view body is unchanged (still calls
+  `headlineCopy(for: change)`).
+- One one-line text replacement on `CaseReviewCard.swift` — the "Last
+  shift" `caseRow` text argument changes from `latest.reason` to
+  `latest.caseFileHeadline`. No other UI changes.
+- One body replacement on `SummaryView.freshRevisedReadChange` —
+  delegates to `CoachContextBuilder.freshRevisedReadChange(in:)`. The
+  two call sites and the round-29 opener gate read the property
+  unchanged.
+- One new `@Suite("CaseFileHeadlineTests")` (9 tests) + one new
+  `@Suite("FreshRevisedReadChangeSecondCycleDelegationTests")` (1
+  test) in `NoumTests/NoumTests.swift`. Both are plain `struct`,
+  `@MainActor`, mirror of the round-33 suites' attributes.
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter SecondCyclePushbackAdaptationTests` — the new
-   round-33 15 second-cycle tests should all pass.
-2. `swift test --filter RevisedReadCardTests` — the round-28 5
-   tests + round-33 4 new tests should all pass.
-3. `swift test --filter RebuildVerdictContextTests` — the round-32
-   25 rebuild-verdict tests should still pass. Round 33 only enriches
-   the marker phrasing; the round-32 predicate gates on
-   `documentsUserPushback`, which round 33 keeps true for both
-   cycles. Round 32's `userContext` integration tests use fixtures
-   with no `previous` memory, so `isSecondCyclePushback` would never
-   fire even if those tests went through the engine.
-4. `swift test --filter FreshRevisedReadContextTests` — the round-31
-   16 fresh-revised-read tests should still pass. The round-31
-   line-emission tests use `pushbackChange` fixtures with the
-   first-cycle phrasing, so `documentsRebuildPushback` returns false
-   and the first-cycle case-state line surfaces unchanged.
-5. `swift test --filter RevisedReadFollowUpTests` — round-30 tests
+1. `swift test --filter CaseFileHeadlineTests` — the new round-34 9
+   picker + cross-surface tests should all pass.
+2. `swift test --filter FreshRevisedReadChangeSecondCycleDelegationTests`
+   — the new round-34 1 cross-cycle delegation test should pass.
+3. `swift test --filter RevisedReadCardTests` — the round-28 5 tests
+   + round-33 4 picker tests should all still pass. The round-33
+   tests pin the strings; the round-34 delegate returns those same
+   strings (now via `caseFileHeadline`), so the existing tests
+   continue to lock the contract.
+4. `swift test --filter SecondCyclePushbackAdaptationTests` — the
+   round-33 19 second-cycle tests should all still pass. Round 34
+   does not touch the engine's `isSecondCyclePushback` detection or
+   the marker constants.
+5. `swift test --filter RebuildVerdictContextTests` — the round-32
+   25 rebuild-verdict tests should still pass. Round 34 only enriches
+   the user-facing headline picker on the data model; the round-32
+   predicate gates and context lines are unchanged.
+6. `swift test --filter FreshRevisedReadContextTests` — the round-31
+   16 fresh-revised-read tests should still pass. Round 34 collapses
+   the `SummaryView` private predicate into the helper this suite
+   tests; the helper itself is unchanged.
+7. `swift test --filter RevisedReadFollowUpTests` — round-30 tests
    should still pass.
-6. `swift test --filter RevisedReadOpenerTests` — round-29 tests
-   should still pass.
-7. `swift test --filter CoachContextBuilderBigMomentTests` — the
-   existing `userContextSurfacesCaseSpineCriterionReviewAndCourseChange`
-   test (engine-only adaptation entry) MUST still pass.
-8. `swift test --filter CoachMemoryEngineTests` — the round-27 tests
-   should all still pass; each starts with `previous.adaptationLog
-   == nil`, so `isSecondCyclePushback` returns false and the
-   first-cycle marker stands.
-9. `swift test --filter HypothesisAcknowledgementTests` — round-26
-   tests should still pass.
-10. `swift test --filter InterventionReviewPromptTests` — round-24 +
+8. `swift test --filter RevisedReadOpenerTests` — round-29 tests
+   should still pass. Round 34 does not touch
+   `revisedReadOpener` or the gate that selects it.
+9. `swift test --filter CoachMemoryEngineTests` — the round-27 tests
+   should all still pass. Round 34 does not touch the engine's
+   adaptation-log append logic.
+10. `swift test --filter HypothesisAcknowledgementTests` — round-26
+    tests should still pass.
+11. `swift test --filter InterventionReviewPromptTests` — round-24 +
     round-25 tests should still pass.
-11. `swift test --filter CoachMemoryStoreTests` — should still pass.
-12. `swift test --filter CoachReadCardDailyBudgetHintTests` —
-    round-23 tests should still pass.
-13. `swift test --filter AIRateLimiterPublicationTests` — round-22
-    tests should still pass.
-14. `swift test --filter IMToneDrillCrossingTests` — round-21 helper
-    tests should still pass.
-15. `swift test --filter HeroScoreCardToneDrillRibbonContractTests` —
-    round-20 ribbon-contract tests should still pass.
-16. `swift test --filter LookingAheadCardStartCTAContractTests` —
-    round-19 launch-CTA tests should still pass.
-17. **Real-device QA — the second cycle in flight.** Boot the app on
-    simulator. Seed a `CoachMemory.activeIntervention` with a working
-    hypothesis. Open Ask Noum via the round-24 `InterventionReviewPromptCard`
-    or the round-25 empty-state chip. Tap the **Adapt / rejected**
-    ack chip. Finish a new rep that rewrites the working hypothesis
+12. `swift test --filter CoachMemoryStoreTests` — should still pass.
+13. **Real-device QA — cross-surface consistency on the rebuild
+    lineage.** Boot the app on simulator. Seed a
+    `CoachMemory.activeIntervention` with a working hypothesis. Open
+    Ask Noum via the round-24 `InterventionReviewPromptCard` or the
+    round-25 empty-state chip. Tap the **Adapt / rejected** ack
+    chip. Finish a new rep that rewrites the working hypothesis
     (lever shift OR confidence threshold cross). On the post-rep
-    summary, confirm `RevisedReadCard` renders with the **first-cycle
-    headline** ("You flagged the prior read as off."). Open Ask Noum
-    via the **Talk to Noum** CTA, then tap the **Lock the new read
-    in / Stick** chip on the round-30 follow-up row.
-18. **Now drive the second cycle.** Send a free-text message: "actually
-    this still doesn't feel right." Wait for the coach reply, then on
-    a follow-up turn tap the **Adapt / rejected** ack chip on the
-    REBUILT hypothesis (the chip row should fire because the rebuilt
-    hypothesis is now the working one and the user is rejecting it).
-    Finish another rep that rewrites the working hypothesis again. On
-    the post-rep summary, confirm `RevisedReadCard` now renders with
-    the **second-cycle headline** ("You flagged the rebuilt read as
-    off too."), NOT the first-cycle phrase.
-19. Open Ask Noum via Talk to Noum. Open the chat thread debug log
-    (or instrument `AICoachChatService` locally). Confirm the USER
-    CONTEXT payload contains the line starting **"Case file just
-    shifted again: the user flagged the rebuilt read as off too"** —
-    NOT the round-31 first-cycle "Case file just shifted:" line.
-    Round-32 dark on this turn (no fresh ack on the second rebuild
-    yet). The generic "Last course change:" line absent (round 31
-    suppresses it).
-20. Tap a verdict chip on the second rebuild — `.confirmed` /
-    `.uncertain` / `.rejected`. Confirm the round-32 rebuild-verdict
-    block surfaces correctly on the next coach reply (rebuild
-    verdict line + coach-move instruction matching the chip). The
-    second-cycle round-33 line is suppressed (the round-32 ack closes
-    the round-31 freshness window, same as round 32 documented).
-21. Insert an engine-only lever shift between cycles to break the
-    chain. On the next memory rebuild WITHOUT a `.rejected` ack drop
-    (just an engine lever shift), confirm the appended log entry
-    carries the `(prior?, nil)` engine-only reason ("Shifted focus
-    from X to Y."). Then drive another `.rejected` ack drop. The
-    next appended entry MUST be a first-cycle pushback again
-    ("prior hypothesis", not "rebuilt hypothesis") — the engine-only
-    interlude reset the chain. The detection is a property of
-    CONSECUTIVE pushback entries.
-22. Verify the adaptation log's bounded `suffix(8)` truncation
-    behaviour holds: with eight cycles in flight, the log shows the
-    eight most recent entries; the round-33 detection still works
-    because it reads `last`, not a full traversal.
+    summary, confirm `RevisedReadCard` renders with the
+    **first-cycle headline** ("You flagged the prior read as off.").
+14. **Now switch to the Profile tab.** Open the `CaseReviewCard`.
+    Confirm the "Last shift" row reads **"You flagged the prior
+    read as off."** — NOT the third-person engine reason ("User
+    reported the prior hypothesis did not match what they saw;
+    revising the read.") that pre-round-34 builds rendered. The
+    two surfaces now name the same event in the same voice.
+15. **Drive the second cycle.** Through Ask Noum, lodge a verdict
+    chip, then on a follow-up turn tap the **Adapt / rejected** ack
+    chip on the REBUILT hypothesis (the chip row should fire because
+    the rebuilt hypothesis is now the working one and the user is
+    rejecting it). Finish another rep that rewrites the working
+    hypothesis again. On the post-rep summary, confirm
+    `RevisedReadCard` now renders the **second-cycle headline**
+    ("You flagged the rebuilt read as off too.").
+16. **Switch to the Profile tab again.** Confirm the "Last shift"
+    row reads **"You flagged the rebuilt read as off too."** — NOT
+    the third-person engine reason ("User reported the rebuilt
+    hypothesis did not match what they saw; revising the read
+    again.") that pre-round-34 builds rendered. The cross-surface
+    consistency contract holds on the second cycle too.
+17. **Insert an engine-only lever shift between cycles.** Drive a
+    rebuild WITHOUT a `.rejected` ack drop (just an engine lever
+    shift). On the post-rep summary, confirm `RevisedReadCard` does
+    NOT mount (no pushback marker; the gate filters it out). On the
+    Profile tab, confirm `CaseReviewCard`'s "Last shift" row reads
+    the engine-only reason ("Shifted focus from X to Y.") UNCHANGED
+    — round 34's fall-through preserves the pre-round-34 behavior on
+    this branch. No over-claim of user action.

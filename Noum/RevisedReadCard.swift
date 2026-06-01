@@ -111,10 +111,17 @@ struct RevisedReadCard: View {
     /// the second pushback as the second pushback.
     /// Brand-voice compliant: no exclamation, no apology, no "we", no
     /// "Let's", no celebratory framing of a second adapt.
+    ///
+    /// Round-34 lift: delegates to `CoachCourseChange.caseFileHeadline`
+    /// so the post-rep summary AND the Profile-tab `CaseReviewCard` read
+    /// the same user-voiced phrase for the rebuild lineage. The card's
+    /// upstream gate (`SummaryView.freshRevisedReadChange`) guarantees
+    /// `change.documentsUserPushback == true` on every mount, so the
+    /// engine-only fall-through arm of `caseFileHeadline` is unreachable
+    /// from this surface — the picker reads as pushback-only here even
+    /// though the underlying property is broader.
     static func headlineCopy(for change: CoachCourseChange) -> String {
-        change.documentsRebuildPushback
-            ? "You flagged the rebuilt read as off too."
-            : headlineCopy
+        change.caseFileHeadline
     }
 
     /// Body copy. Names the revised working hypothesis when one exists so
