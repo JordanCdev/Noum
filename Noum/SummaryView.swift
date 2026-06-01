@@ -635,6 +635,12 @@ struct SummaryView: View {
                                     workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis
                                 )
                             }
+                            if let confirmationChange = freshRebuildConfirmationChange {
+                                RevisedReadConfirmationCard(
+                                    change: confirmationChange,
+                                    workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis
+                                )
+                            }
                             if let reviewIntervention = activeReviewDueIntervention {
                                 InterventionReviewPromptCard(
                                     intervention: reviewIntervention,
@@ -747,6 +753,12 @@ struct SummaryView: View {
                             if let revisedChange = freshRevisedReadChange {
                                 RevisedReadCard(
                                     change: revisedChange,
+                                    workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis
+                                )
+                            }
+                            if let confirmationChange = freshRebuildConfirmationChange {
+                                RevisedReadConfirmationCard(
+                                    change: confirmationChange,
                                     workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis
                                 )
                             }
@@ -2042,6 +2054,29 @@ struct SummaryView: View {
     private var freshRevisedReadChange: CoachCourseChange? {
         guard let memory = coachMemoryStore.currentMemory else { return nil }
         return CoachContextBuilder.freshRevisedReadChange(in: memory)
+    }
+
+    // MARK: - Revised-read confirmation card (post-rep user lock-in surface)
+    //
+    // Round-37 symmetric closure of `freshRevisedReadChange`. Returns the
+    // latest `CoachCourseChange` iff it documents a user-confirmed rebuild
+    // lock-in AND was appended on the same rebuild that produced the
+    // current memory (round-36 engine arm fires on the rep after the user
+    // lodges `.confirmed` on the rebuilt working hypothesis).
+    //
+    // The predicate body lives entirely on
+    // `CoachContextBuilder.freshRebuildConfirmationChange(in:)` — same
+    // shape as `freshRevisedReadChange(in:)`, lifted so any future surface
+    // (chat-context block, analytics, debug log) can read the same gate
+    // without duplicating the predicate. Mutual exclusion with the
+    // pushback gate is enforced at the data primitive: a confirmation
+    // entry's `reason` never carries either pushback marker, and a
+    // pushback entry's `reason` never carries the confirmation marker.
+    // The two cards can never both mount in the same rep.
+
+    private var freshRebuildConfirmationChange: CoachCourseChange? {
+        guard let memory = coachMemoryStore.currentMemory else { return nil }
+        return CoachContextBuilder.freshRebuildConfirmationChange(in: memory)
     }
 
     /// Build the case-anchored opener for the review CTA. Routes

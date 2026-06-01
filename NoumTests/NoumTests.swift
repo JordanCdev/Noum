@@ -24603,3 +24603,302 @@ struct RebuildConfirmationAdaptationTests {
         #expect(mem == before)
     }
 }
+
+// MARK: - RevisedReadConfirmationCardTests
+//
+// Round-37 pure-copy tests for the post-rep "REVISED READ · CONFIRMED"
+// surface — the symmetric closure of round 28's `RevisedReadCard`. The
+// card renders only when (1) the latest `CoachCourseChange` documents a
+// user-confirmed rebuild lock-in AND (2) the entry is fresh against the
+// carrying memory's `updatedAt`. Both predicates live on
+// `CoachCourseChange` + `CoachContextBuilder.freshRebuildConfirmationChange(in:)`
+// and are pinned by `RebuildConfirmationAdaptationTests` +
+// `FreshRebuildConfirmationChangeTests`. This suite pins the user-facing
+// copy itself so a future edit to `bodyCopy` doesn't quietly drift away
+// from the engine's `workingHypothesis` clause shape, and so the
+// headline never falls out of register with
+// `CoachCourseChange.caseFileHeadline`'s round-36 phrasing.
+
+@available(iOS 17.0, *)
+@MainActor
+@Suite("RevisedReadConfirmationCardTests")
+struct RevisedReadConfirmationCardTests {
+
+    @Test func headlineCopyNamesUserAction() {
+        // The user reads their own action ("you confirmed") so the card
+        // lands as an acknowledgement of acceptance, not a generic plan-
+        // stayed-the-same ping. Mirrors `RevisedReadCard.headlineCopy`'s
+        // user-action register.
+        #expect(RevisedReadConfirmationCard.headlineCopy == "You confirmed the rebuilt read.")
+    }
+
+    @Test func headlineMatchesCaseFileHeadlineForConfirmationEntry() {
+        // Cross-surface read of the rebuild lineage stays consistent:
+        // the post-rep card and the Profile-tab `CaseReviewCard` (which
+        // reads through `caseFileHeadline`) must use the SAME phrasing
+        // on a confirmation entry. A copy edit to one without the other
+        // would produce two different sentences for the same event.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .fillerReduction,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis matches what they see; locking in the new read.",
+            evidenceBasis: ""
+        )
+        #expect(change.caseFileHeadline == RevisedReadConfirmationCard.headlineCopy)
+    }
+
+    @Test func bodyCopyQuotesLockedInHypothesisInline() {
+        // Names the locked-in working hypothesis so the user reads
+        // exactly what the coach has accepted. Mirrors
+        // `RevisedReadCard.bodyCopy`'s clause shape but with the
+        // "locked-in" word in place of "revised" — the lifecycle stage
+        // is named explicitly.
+        let hypothesis = "Filler reduction appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+        let body = RevisedReadConfirmationCard.bodyCopy(workingHypothesis: hypothesis)
+        #expect(body.hasPrefix("Here's the locked-in read: "))
+        #expect(body.contains("Filler reduction appears to be the highest-leverage focus"))
+    }
+
+    @Test func bodyCopyStripsTrailingPeriodToAvoidDoubleStop() {
+        // The engine's hypothesis clause already ends with `.`; the
+        // card's "Here's the locked-in read: …" wrapper adds another.
+        // The body must drop the inner period so the line never reads
+        // as two sentences ending in one.
+        let hypothesis = "Filler reduction appears to be the highest-leverage focus; keep checking against future reps."
+        let body = RevisedReadConfirmationCard.bodyCopy(workingHypothesis: hypothesis)
+        #expect(!body.contains(".."))
+        #expect(body.hasSuffix("."))
+    }
+
+    @Test func bodyCopyFallsBackWhenNoHypothesis() {
+        // Defensive: a memory rebuild with no current lever produces
+        // `workingHypothesis == nil`. The card must still read as a
+        // calm acknowledgement rather than rendering an empty line.
+        // The fallback names the coach's state in calm voice — no
+        // exclamation, no "Let's", no over-claim.
+        let body = RevisedReadConfirmationCard.bodyCopy(workingHypothesis: nil)
+        #expect(body == "The coach noted it and is keeping the read.")
+    }
+
+    @Test func bodyCopyFallsBackWhenHypothesisIsBlank() {
+        // Whitespace-only hypothesis takes the same fallback as nil so
+        // the card never renders "Here's the locked-in read: ." Either
+        // boundary should be unreachable through the store, but the
+        // Codable round-trip could deliver a bad value; defend here.
+        let body = RevisedReadConfirmationCard.bodyCopy(workingHypothesis: "   \n  ")
+        #expect(body == "The coach noted it and is keeping the read.")
+    }
+
+    @Test func headlineHasNoFanfareOrUrgency() {
+        // Brand-voice contract — same rule the round-19 launch CTA and
+        // the round-20 SOLVED ribbon hold to. A confirmation acknowledgement
+        // is calm coaching, not a celebration. The card is restrained on
+        // purpose: the user has just accepted a read, the coach names
+        // it once, the next prescription will speak to the locked-in
+        // hypothesis. No "Locked in!", no "Nailed it", no exclamation.
+        let copy = RevisedReadConfirmationCard.headlineCopy.lowercased()
+        #expect(!copy.contains("!"))
+        #expect(!copy.contains("let's"))
+        #expect(!copy.contains("now"))
+        #expect(!copy.contains("hurry"))
+        #expect(!copy.contains("amazing"))
+        #expect(!copy.contains("nailed"))
+        #expect(!copy.contains("crushed"))
+        #expect(!copy.contains("great"))
+    }
+
+    @Test func bodyCopyHasNoFanfareOrUrgency() {
+        // Same brand-voice contract on the body line. The locked-in
+        // sentence quotes the hypothesis; the wrapper text stays calm.
+        let withHypothesis = RevisedReadConfirmationCard.bodyCopy(workingHypothesis: "Pace is the highest-leverage focus.")
+            .lowercased()
+        let withoutHypothesis = RevisedReadConfirmationCard.bodyCopy(workingHypothesis: nil)
+            .lowercased()
+        for body in [withHypothesis, withoutHypothesis] {
+            #expect(!body.contains("!"))
+            #expect(!body.contains("let's"))
+            #expect(!body.contains("amazing"))
+            #expect(!body.contains("crushed"))
+        }
+    }
+}
+
+// MARK: - FreshRebuildConfirmationChangeTests
+//
+// Round-37 pure-function gate tests for
+// `CoachContextBuilder.freshRebuildConfirmationChange(in:)` — the
+// symmetric closure of `freshRevisedReadChange(in:)`. Pins the predicate
+// that mounts `RevisedReadConfirmationCard` on the post-rep summary, so
+// a future edit to either freshness/predicate clause forces the test
+// suite to follow. Also pins the mutual-exclusion contract with
+// `freshRevisedReadChange(in:)`: the two helpers can NEVER return
+// non-nil on the same memory, so the two cards can never both mount on
+// the same rep.
+
+@MainActor
+@Suite("FreshRebuildConfirmationChangeTests")
+struct FreshRebuildConfirmationChangeTests {
+
+    // MARK: - Fixtures
+
+    private static let rebuiltHypothesis =
+        "Filler reduction appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+
+    private func confirmationEntry(at changedAt: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .fillerReduction,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis matches what they see; locking in the new read.",
+            evidenceBasis: "user-tapped confirmation of: \"Filler reduction appears...\""
+        )
+    }
+
+    private func pushbackEntry(at changedAt: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"Pace appears...\""
+        )
+    }
+
+    private func memory(
+        updatedAt: Date,
+        adaptationLog: [CoachCourseChange]?,
+        workingHypothesis: String? = FreshRebuildConfirmationChangeTests.rebuiltHypothesis
+    ) -> CoachMemory {
+        var mem = CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis
+        )
+        mem.adaptationLog = adaptationLog
+        return mem
+    }
+
+    // MARK: - Predicate fires on a fresh confirmation entry
+
+    @Test func fresh_confirmation_entry_at_tail_fires_predicate() {
+        // Happy path: confirmation entry's `changedAt == memory.updatedAt`.
+        // The engine appends both on the same `now` in
+        // `CoachMemoryEngine.build(...)`, so freshness holds exactly on
+        // the rep that landed the lock-in.
+        let now = Date()
+        let entry = confirmationEntry(at: now)
+        let mem = memory(updatedAt: now, adaptationLog: [entry])
+        let change = CoachContextBuilder.freshRebuildConfirmationChange(in: mem)
+        #expect(change?.id == entry.id)
+        #expect(change?.documentsRebuildConfirmation == true)
+    }
+
+    @Test func fresh_within_one_second_tolerance_fires_predicate() {
+        // `CoachCourseChange.isFresh(comparedTo:)` allows a one-second
+        // tolerance (defensive against test fixtures with slightly-
+        // different Date instances). A 0.5-second skew must still fire.
+        let now = Date()
+        let entry = confirmationEntry(at: now.addingTimeInterval(0.5))
+        let mem = memory(updatedAt: now, adaptationLog: [entry])
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) != nil)
+    }
+
+    // MARK: - Predicate stays nil on stale confirmation entries
+
+    @Test func stale_confirmation_entry_does_not_fire() {
+        // On the rep AFTER the lock-in, the engine bumps `memory.updatedAt`
+        // but leaves the confirmation entry's `changedAt` untouched. The
+        // entry is still in the log, but freshness slams shut. Same
+        // one-rep window as the pushback card.
+        let confirmationAt = Date(timeIntervalSince1970: 1_000)
+        let later = Date(timeIntervalSince1970: 1_200)  // 200s later
+        let entry = confirmationEntry(at: confirmationAt)
+        let mem = memory(updatedAt: later, adaptationLog: [entry])
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) == nil)
+    }
+
+    // MARK: - Mutual exclusion with freshRevisedReadChange
+
+    @Test func pushback_tail_does_not_fire_confirmation_predicate() {
+        // A pushback entry never carries the confirmation marker, so the
+        // confirmation gate stays silent. Mutual exclusion check #1.
+        let now = Date()
+        let entry = pushbackEntry(at: now)
+        let mem = memory(updatedAt: now, adaptationLog: [entry])
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) == nil)
+        // And the OTHER gate fires on this fixture — pushback card mounts
+        // here, confirmation card stays silent. The two cards can never
+        // both mount on the same rep.
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) != nil)
+    }
+
+    @Test func confirmation_tail_does_not_fire_pushback_predicate() {
+        // A confirmation entry never carries either pushback marker, so
+        // the pushback gate stays silent. Mutual exclusion check #2 —
+        // the symmetric direction. Together with the test above this
+        // pins the contract: the two helpers can never both return
+        // non-nil on the same memory.
+        let now = Date()
+        let entry = confirmationEntry(at: now)
+        let mem = memory(updatedAt: now, adaptationLog: [entry])
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) != nil)
+    }
+
+    // MARK: - Predicate stays nil on missing / empty log
+
+    @Test func nil_adaptation_log_does_not_fire_predicate() {
+        let now = Date()
+        let mem = memory(updatedAt: now, adaptationLog: nil)
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) == nil)
+    }
+
+    @Test func empty_adaptation_log_does_not_fire_predicate() {
+        let now = Date()
+        let mem = memory(updatedAt: now, adaptationLog: [])
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) == nil)
+    }
+
+    // MARK: - Predicate reads the TAIL only
+
+    @Test func only_the_tail_entry_is_inspected() {
+        // The bounded `adaptationLog.suffix(8)` keeps history. The
+        // predicate must only inspect the TAIL — a confirmation entry
+        // earlier in the log followed by an engine-only shift at the
+        // tail must NOT fire the gate (the engine-only shift is the
+        // current state of the case file, not the confirmation).
+        let earlierConfirmation = confirmationEntry(at: Date(timeIntervalSince1970: 800))
+        let now = Date(timeIntervalSince1970: 1_000)
+        let engineShift = CoachCourseChange(
+            id: UUID(),
+            changedAt: now,
+            fromLever: .fillerReduction,
+            toLever: .paceControl,
+            reason: "Shifted focus from Filler Reduction to Pace.",
+            evidenceBasis: "stronger trend signal on pace reads"
+        )
+        let mem = memory(updatedAt: now, adaptationLog: [earlierConfirmation, engineShift])
+        #expect(CoachContextBuilder.freshRebuildConfirmationChange(in: mem) == nil)
+    }
+
+    // MARK: - Engineering bans
+
+    @Test func helper_does_not_mutate_memory() {
+        // Pure-function contract. The helper reads `adaptationLog` only;
+        // no state is rewritten.
+        let now = Date()
+        let mem = memory(updatedAt: now, adaptationLog: [confirmationEntry(at: now)])
+        let before = mem
+        _ = CoachContextBuilder.freshRebuildConfirmationChange(in: mem)
+        #expect(mem == before)
+    }
+}
