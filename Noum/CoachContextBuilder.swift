@@ -1355,6 +1355,101 @@ enum CoachContextBuilder {
         ]
     }
 
+    // MARK: - Adaptation log cycle depth (round 35)
+    //
+    // Round 35 closes future-move #13 carried forward from round 33. The
+    // engine has named the SECOND cycle of a rejection-rebuild loop since
+    // round 33 (`userRebuildPushbackMarker`), and rounds 31/32 surface that
+    // marker in the rebuild-context lines on the chat side. But neither the
+    // engine markers nor the rebuild-context block tell the model the TRUE
+    // CYCLE DEPTH on a 3+ pushback chain — the engine writes the same
+    // `userRebuildPushbackMarker` on every rebuild after the first, so a
+    // third-cycle pushback reads identically to a second one in the marker
+    // text. The bounded `adaptationLog.suffix(8)` keeps the history, though,
+    // so counting the TAIL of consecutive `documentsUserPushback` entries
+    // gives the honest depth: the number of times the user has rejected the
+    // working hypothesis in a row, without an intervening engine-only shift
+    // or non-pushback resolution to reset the streak.
+    //
+    // This helper is the data primitive. Round 35 surfaces it in the case-
+    // formulation block (`coachCaseFormulationLines`) so the durable case
+    // file names cycle depth alongside the working hypothesis. The round 31
+    // / round 32 rebuild-context blocks are unchanged — they speak to the
+    // freshness of the latest rebuild, not the durable cycle history.
+    //
+    // Vision alignment: per `docs/VISION.md`, coach-parity stage #4
+    // (Adaptation) requires "compare response across multiple attempts and
+    // either reinforce, vary, or replace the intervention with an explained
+    // rationale." A user who has pushed back three times on the working
+    // hypothesis needs the coach to STOP retrying variations of the same
+    // read and propose a structurally different angle — and the model can
+    // only do that if it knows the streak depth. Round 35 gives it that
+    // signal.
+
+    /// Round-35 pure-function read of the durable case-file pushback depth.
+    /// Returns the count of consecutive `documentsUserPushback` entries at
+    /// the TAIL of `memory.adaptationLog` — the number of times the user
+    /// has rejected the working hypothesis in a row, without an intervening
+    /// engine-only shift breaking the streak.
+    ///
+    /// Returns nil iff the depth is 0 or 1: a streak of 0 (no log, or no
+    /// pushback at the tail) is the silent case the case-formulation block
+    /// must not over-claim; a streak of 1 is the first cycle, already named
+    /// by rounds 28 (post-rep card) / 31 (chat-context fresh line) / 33
+    /// (second-cycle marker). The cycle-depth signal only earns its line
+    /// when the user has pushed back at least twice in a row — the case
+    /// where the model needs to speak differently AND the engine markers
+    /// alone do not suffice (a 3+ pushback chain reads as second-cycle in
+    /// the marker text, so the depth count is the only honest signal).
+    ///
+    /// Pure read of `memory.adaptationLog` and `documentsUserPushback` —
+    /// no schema bump, no new state, no migration. The `adaptationLog`
+    /// boundedness (`.suffix(8)` in `CoachMemoryEngine.build(...)`) caps
+    /// the depth this helper can ever report at 8; the case file will
+    /// never observe an infinite streak.
+    static func adaptationLogCycleDepth(in memory: CoachMemory) -> Int? {
+        guard let log = memory.adaptationLog, !log.isEmpty else { return nil }
+        var depth = 0
+        for change in log.reversed() {
+            if change.documentsUserPushback {
+                depth += 1
+            } else {
+                break
+            }
+        }
+        return depth >= 2 ? depth : nil
+    }
+
+    /// Round-35 coach-context summary line built from the cycle depth.
+    /// Returns nil when `adaptationLogCycleDepth(in:)` returns nil — same
+    /// gate: the depth must be ≥2 before the model earns the signal.
+    ///
+    /// Phrasing matches the brand-voice rules of the case-formulation
+    /// block: third-person (it is a coach note, not a user line), neutral
+    /// (no exclamation, no "Let's"), and ends with a coach-move clause
+    /// that distinguishes itself from rounds 31/32 (which speak to the
+    /// freshness of the latest rebuild). The cycle-depth line is the
+    /// DURABLE case-file read: the case has had N pushbacks in a row;
+    /// stop varying the SAME hypothesis and propose a structurally
+    /// different angle.
+    ///
+    /// Two depth bands:
+    ///   2: "twice in a row" — the second pushback is significant but the
+    ///      coach should still be willing to propose a third variation if
+    ///      the new angle is well-supported.
+    ///   3+: "[N] times in a row" — by the third pushback, varying the
+    ///      same read is no longer credible. The coach-move clause is
+    ///      stronger: propose a structurally different angle, not another
+    ///      variation of the same hypothesis.
+    static func adaptationLogCycleSummary(in memory: CoachMemory) -> String? {
+        guard let depth = adaptationLogCycleDepth(in: memory) else { return nil }
+        let countClause: String = depth == 2 ? "twice" : "\(depth) times"
+        let coachMove: String = depth == 2
+            ? "Treat the next read with extra care; the user has rejected the prior two in a row. Vary the angle, not just the wording."
+            : "The user has rejected this many reads of the same lever in a row; propose a structurally different angle, not another variation of the same hypothesis."
+        return "- Case-file pushback depth: the user has rejected the working hypothesis \(countClause) in a row this case file. \(coachMove)"
+    }
+
     // MARK: - Rebuild-verdict context (the round-30 chip-row ack, reflected into context)
     //
     // Round 32 — the context-block complement to round 30. Round 28 surfaced
@@ -2177,6 +2272,21 @@ enum CoachContextBuilder {
                 lines.append("- Hypothesis acknowledgement: \(ack.confidence.contextLabel). \(ack.confidence.nextMoveInstruction)")
             }
 
+            // Round-35 case-file pushback depth. Surfaces when the user
+            // has rejected the working hypothesis ≥2 times in a row in
+            // the bounded adaptation log — the durable case-file read
+            // that complements rounds 31/32's freshness-gated rebuild
+            // context lines. A 2-deep streak earns a measured note; a
+            // 3+ streak escalates to "propose a structurally different
+            // angle" so the coach stops varying the same lever. The
+            // helper returns nil at depth 0–1, so the line is silent on
+            // engine-only shifts and on the first cycle (already named
+            // by rounds 28/31/33). Pure-function read of the existing
+            // `adaptationLog` field — no schema bump.
+            if let pushbackDepthLine = adaptationLogCycleSummary(in: memory) {
+                lines.append(pushbackDepthLine)
+            }
+
             if let prior = memory.previousLever, prior != currentLever {
                 lines.append("- Focus shift: last read was \(prior.displayName); current read is \(currentLever.displayName).")
             }
@@ -2210,7 +2320,16 @@ enum CoachContextBuilder {
             lines.append("- Watch: \(blocker).")
         }
 
-        return Array(lines.prefix(10))
+        // Round 35 bumped the cap from 10 → 11 to accommodate the new
+        // pushback-depth line without forcing it to compete with the
+        // strength/blocker lines for the model's attention budget. The
+        // depth line fires only when the user has rejected the working
+        // hypothesis ≥2 times in a row — a rare and high-signal case-file
+        // moment where every line in the block carries weight. The bounded
+        // `adaptationLog.suffix(8)` in `CoachMemoryEngine.build(...)`
+        // caps the depth this helper can ever count, so the budget is
+        // well-controlled.
+        return Array(lines.prefix(11))
     }
 
     private static func interventionCycleLines(

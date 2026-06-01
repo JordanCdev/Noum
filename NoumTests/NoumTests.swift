@@ -23539,3 +23539,319 @@ struct FreshRevisedReadChangeSecondCycleDelegationTests {
         #expect(resolved?.documentsRebuildPushback == true)
     }
 }
+
+// MARK: - AdaptationLogCycleSummaryTests
+//
+// Round 35 closes future-move #13 carried forward from round 33: a pure-
+// function helper on `CoachContextBuilder` that counts the TAIL of
+// consecutive `documentsUserPushback` entries in `memory.adaptationLog`
+// and composes a coach-context summary line when the depth ≥ 2.
+//
+// The helper is the data primitive for the durable case-file pushback
+// depth signal — a coach-parity gap the engine markers alone do not
+// close: the engine writes the same `userRebuildPushbackMarker` on every
+// rebuild after the first, so a third-cycle pushback reads identically
+// to a second in the marker text. Counting the tail gives the honest
+// depth: how many times the user has rejected the working hypothesis in
+// a row, without an intervening engine-only shift breaking the streak.
+//
+// This suite covers:
+//   1. The depth predicate itself (`adaptationLogCycleDepth(in:)`) on
+//      every shape: nil log, empty log, one pushback, two pushbacks,
+//      three pushbacks, engine-only shift at tail (streak break),
+//      engine-only shift between pushbacks (interleaved streak reset).
+//   2. The summary phrase (`adaptationLogCycleSummary(in:)`) on the two
+//      depth bands: depth 2 ("twice in a row") with the measured coach-
+//      move clause, depth 3+ ("3 times in a row") with the structurally-
+//      different-angle clause.
+//   3. The case-formulation surfacing — the line appears in the chat-
+//      coach `coachContext(...)` output when the predicate fires, and
+//      is silent when it does not (depth 0, depth 1).
+//   4. Engineering bans: round 35 does NOT touch the round-33 second-
+//      cycle engine markers, the round-31 fresh-revised-read context
+//      lines, or the round-32 rebuild-verdict pair — those branches
+//      stay locked. The cycle-depth signal is purely additive.
+
+@MainActor
+@Suite("AdaptationLogCycleSummaryTests")
+struct AdaptationLogCycleSummaryTests {
+
+    private func firstCyclePushback(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of the working read"
+        )
+    }
+
+    private func secondCyclePushback(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .fillerReduction,
+            toLever: .paceControl,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: "user-tapped rejection of the rebuilt read"
+        )
+    }
+
+    private func engineOnlyShift(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .paceControl,
+            toLever: .openingStrength,
+            reason: "Shifted focus from Pace to Opening Strength.",
+            evidenceBasis: "stronger trend signal on opening reads"
+        )
+    }
+
+    private func memory(adaptationLog: [CoachCourseChange]?, updatedAt: Date = Date()) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "Filler reduction appears to be the highest-leverage focus.",
+            adaptationLog: adaptationLog
+        )
+    }
+
+    // MARK: - adaptationLogCycleDepth: predicate matrix
+
+    @Test func depthIsNilForNilLog() {
+        let mem = memory(adaptationLog: nil)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == nil)
+    }
+
+    @Test func depthIsNilForEmptyLog() {
+        let mem = memory(adaptationLog: [])
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == nil)
+    }
+
+    @Test func depthIsNilForSinglePushback() {
+        // A depth of 1 is the FIRST cycle — already named by rounds 28
+        // (post-rep card), 31 (fresh-revised-read context line), and 33
+        // (second-cycle marker). The round-35 line is silent on depth 1
+        // so the model does not double-name the first cycle.
+        let mem = memory(adaptationLog: [firstCyclePushback(at: Date())])
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == nil)
+    }
+
+    @Test func depthIsTwoForTwoConsecutivePushbacks() {
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 2)
+    }
+
+    @Test func depthIsThreeForThreeConsecutivePushbacks() {
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 3)
+    }
+
+    @Test func depthIsNilWhenEngineOnlyShiftIsAtTail() {
+        // The user pushed back, then the engine moved the lever for a
+        // trend reason without a user push. The streak is broken; the
+        // round-35 line stays silent.
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            engineOnlyShift(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == nil)
+    }
+
+    @Test func depthCountsOnlyTailStreakWhenEngineShiftInterleaves() {
+        // A user pushback at the head, an engine-only shift in the
+        // middle, then two more pushbacks at the tail. The depth is 2,
+        // not 3 — the engine shift resets the streak.
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-10800)),
+            engineOnlyShift(at: now.addingTimeInterval(-7200)),
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 2)
+    }
+
+    @Test func depthCountsBothMarkerVariantsAsPushback() {
+        // Both round-27 `userPushbackMarker` and round-33
+        // `userRebuildPushbackMarker` satisfy `documentsUserPushback`,
+        // so both count toward the streak. The helper does NOT care
+        // about which cycle marker an entry uses — it counts pushback
+        // entries.
+        let now = Date()
+        let log = [
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            firstCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 2)
+    }
+
+    // MARK: - adaptationLogCycleSummary: phrasing per depth band
+
+    @Test func summaryReadsTwiceInARowAtDepthTwo() {
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        let summary = CoachContextBuilder.adaptationLogCycleSummary(in: mem)
+        #expect(summary != nil)
+        #expect(summary?.contains("twice in a row") == true)
+        // The measured coach-move clause for depth 2 — "vary the angle,
+        // not just the wording" — keeps the door open to a third
+        // variation while flagging the streak.
+        #expect(summary?.contains("Vary the angle, not just the wording") == true)
+    }
+
+    @Test func summaryReadsThreeTimesInARowAtDepthThree() {
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        let summary = CoachContextBuilder.adaptationLogCycleSummary(in: mem)
+        #expect(summary != nil)
+        #expect(summary?.contains("3 times in a row") == true)
+        // The escalated coach-move clause for depth 3+ — "propose a
+        // structurally different angle" — tells the model varying the
+        // same lever further is no longer credible.
+        #expect(summary?.contains("structurally different angle") == true)
+    }
+
+    @Test func summaryIsNilAtDepthOne() {
+        let mem = memory(adaptationLog: [firstCyclePushback(at: Date())])
+        #expect(CoachContextBuilder.adaptationLogCycleSummary(in: mem) == nil)
+    }
+
+    @Test func summaryIsNilForNilLog() {
+        let mem = memory(adaptationLog: nil)
+        #expect(CoachContextBuilder.adaptationLogCycleSummary(in: mem) == nil)
+    }
+
+    // MARK: - Case-formulation surfacing
+    //
+    // The case formulation lines are composed inside the public
+    // `userContext(...)` entry point. The round-35 line surfaces in
+    // that output when the predicate fires. These tests build a
+    // minimum-viable `CoachMemory`, feed it through `userContext`, and
+    // verify the depth phrase appears (or does not) according to the
+    // streak shape.
+
+    private func contextString(for mem: CoachMemory) -> String {
+        CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+    }
+
+    @Test func caseFormulationIncludesDepthLineWhenStreakIsTwoOrMore() {
+        // The round-35 line surfaces in the chat-coach case-formulation
+        // block when the predicate fires. The cross-surface contract
+        // round 35 introduces: the durable case-file lines name the
+        // streak depth, not just the latest rebuild (which rounds 31/32
+        // already handle in the rebuild-cycle block).
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log, updatedAt: now)
+        let ctx = contextString(for: mem)
+        #expect(ctx.contains("Case-file pushback depth"))
+        #expect(ctx.contains("twice in a row"))
+    }
+
+    @Test func caseFormulationOmitsDepthLineOnFirstCycle() {
+        // A depth-1 case has no streak signal. The round-35 line is
+        // silent so the model does not double-name what rounds 28/31/33
+        // already name on the first cycle.
+        let mem = memory(adaptationLog: [firstCyclePushback(at: Date())])
+        let ctx = contextString(for: mem)
+        #expect(ctx.contains("Case-file pushback depth") == false)
+    }
+
+    @Test func caseFormulationOmitsDepthLineForEngineOnlyShiftAtTail() {
+        // The streak was broken by an engine-only shift. The depth
+        // signal stays silent; the existing "Focus shift" line in the
+        // case formulation block carries the engine-only event.
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            engineOnlyShift(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        let ctx = contextString(for: mem)
+        #expect(ctx.contains("Case-file pushback depth") == false)
+    }
+
+    // MARK: - Engineering bans: round 35 is purely additive
+
+    @Test func depthHelperDoesNotMutateMemory() {
+        // Pure function — the helper reads `adaptationLog` and returns
+        // a count. No state is rewritten, no Codable round-trip is
+        // triggered, no markers are flipped. This locks the contract
+        // so a future round cannot silently slip in mutation.
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        let before = mem
+        _ = CoachContextBuilder.adaptationLogCycleDepth(in: mem)
+        _ = CoachContextBuilder.adaptationLogCycleSummary(in: mem)
+        #expect(mem == before)
+    }
+
+    @Test func depthHelperReadsLatestEntryTailNotByDate() {
+        // The helper walks `adaptationLog.reversed()` — the LAST entry
+        // in array order, not the entry with the latest `changedAt`.
+        // This matches the engine's append-only contract: every new
+        // course change is appended to the tail. If a future engine
+        // change started inserting out-of-order, this test would
+        // surface the drift.
+        let now = Date()
+        // Order in the array: first-cycle (newer date), second-cycle
+        // (older date). The helper reads by array position, not by
+        // date, so the tail is the second-cycle entry. Depth 2.
+        let log = [
+            firstCyclePushback(at: now),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 2)
+    }
+}

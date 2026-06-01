@@ -69,6 +69,25 @@ struct CaseReviewCard: View {
                 )
             }
 
+            // Round-35: case-file pushback depth on the Profile card.
+            // Fires when the user has rejected the working hypothesis
+            // ≥2 times in a row in the bounded adaptation log — the
+            // same gate the chat-coach case-formulation block reads.
+            // Names the streak in second-person ("You've rejected …
+            // twice in a row") so the surface stays consistent with the
+            // round-34 user-voiced "Last shift" row above. Silent on
+            // depth 0–1: a first cycle is already named by the "Last
+            // shift" row, and a depth of 0 is the engine-only / empty-
+            // log case where the user has not pushed back.
+            if let depth = CoachContextBuilder.adaptationLogCycleDepth(in: memory) {
+                let countClause: String = depth == 2 ? "twice" : "\(depth) times"
+                caseRow(
+                    icon: "repeat",
+                    label: "Pushback depth",
+                    text: "You've flagged the working read as off \(countClause) in a row this case file."
+                )
+            }
+
             // 4. Real-world transfer — the case's latest off-app check-in.
             // If present, this wins the final coaching-context slot over
             // momentum/reflection because it answers the hardest question:
