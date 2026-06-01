@@ -1540,6 +1540,46 @@ enum CoachContextBuilder {
         ]
     }
 
+    // MARK: - Rebuild confirmation context (round 36)
+    //
+    // Symmetric closure of round 32's `rebuildVerdictContextLines`. Round 32
+    // surfaces a freshness-gated read of the rebuild lifecycle: it requires
+    // the latest adaptation entry to be a user-pushback AND a
+    // `hypothesisAcknowledgement` whose snapshot still applies. The moment a
+    // later memory rebuild rewrites the hypothesis, that ack is dropped and
+    // round 32 stops firing — leaving the case file with no durable record
+    // of the user's confirmation.
+    //
+    // Round 36 closes the gap on the engine side: when the previous memory
+    // carries a `.confirmed` ack that satisfies the rebuild-verdict pair AND
+    // the rebuild persists into the new memory, `CoachMemoryEngine.build(...)`
+    // appends a confirmation course-change to `adaptationLog`. Once that
+    // entry is in the log, this helper surfaces it as a durable case-file
+    // line — the symmetric closure of the rejection lifecycle.
+    //
+    // Two lines (mirror of round 32's shape):
+    //   1. Case-state line — names the lock-in event with the evidence
+    //      basis the engine documented on the change.
+    //   2. Coach-move line — tells the model to treat the rebuild as the
+    //      operating hypothesis and not re-litigate the prior pushback.
+    //
+    // Returns `[]` when the latest adaptation entry is not a confirmation,
+    // OR when `workingHypothesis` is empty (the lines reference "the working
+    // hypothesis above" — pointing at nothing would read incoherently).
+    static func rebuildConfirmationContextLines(memory: CoachMemory) -> [String] {
+        guard let last = memory.adaptationLog?.last,
+              last.documentsRebuildConfirmation else { return [] }
+        guard let hypothesis = memory.workingHypothesis?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return [] }
+        let basis = last.evidenceBasis.trimmingCharacters(in: .whitespacesAndNewlines)
+        let basisTail = basis.isEmpty ? "" : " (\(basis))"
+        return [
+            "- Case file rebuild lock-in: the user confirmed the rebuilt working hypothesis above\(basisTail).",
+            "- Coach move on the locked-in rebuild: Treat the rebuild as the accepted operating hypothesis; tie the next prescription to it and do not re-litigate the prior pushback. The user accepted the new read.",
+        ]
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -2354,38 +2394,60 @@ enum CoachContextBuilder {
             }
         }
 
-        // Three-tier course-change surface, most-specific first:
+        // Four-tier course-change surface, most-specific first:
         //
-        //   1. Round 32 — `rebuildVerdictContextLines`. Fires when the
+        //   1. Round 36 — `rebuildConfirmationContextLines`. Fires when the
+        //      latest adaptation entry is a `documentsRebuildConfirmation`
+        //      lock-in event. This is the durable closure of the rejection-
+        //      rebuild lifecycle: the engine writes a confirmation entry on
+        //      the first rebuild after the user lodges `.confirmed` on a
+        //      rebuilt working hypothesis, so the case file carries the
+        //      acceptance as durably as it carries the rejections. Outranks
+        //      round 32 because once the entry is in the log the round-32
+        //      gate naturally falls off (its tail-must-be-pushback predicate
+        //      no longer matches), so the chat context shifts cleanly to
+        //      reading the lock-in as a historical fact, not an in-flight
+        //      verdict.
+        //   2. Round 32 — `rebuildVerdictContextLines`. Fires when the
         //      latest pushback rebuild has been ACKNOWLEDGED by the user
         //      via the round-30 follow-up chip row (the ack post-dates the
         //      rebuild AND still applies to the current hypothesis). Names
-        //      the rebuild AND the user's verdict on it in one block.
-        //   2. Round 31 — `freshRevisedReadContextLines`. Fires when the
+        //      the rebuild AND the user's verdict on it in one block. The
+        //      pre-round-36 freshness-gated read; survives in the window
+        //      between the ack landing and the next memory rebuild that
+        //      promotes a `.confirmed` ack to a durable confirmation entry.
+        //   3. Round 31 — `freshRevisedReadContextLines`. Fires when the
         //      latest pushback rebuild is fresh against memory.updatedAt
         //      but no verdict has been lodged yet — the window between the
         //      rebuild folding in and the user tapping a chip. Same case-
         //      state phrasing, different coach-move (leave room to settle).
-        //   3. Generic — `"Last course change: ..."`. Fires when neither
-        //      dedicated path applies: engine-only lever shifts (round-19
+        //   4. Generic — `"Last course change: ..."`. Fires when none of
+        //      the dedicated paths apply: engine-only lever shifts (round-19
         //      adaptation lineage), stale pushback rebuilds that aged
         //      past this rep AND were never acknowledged, or rebuilds
         //      whose ack has already been dropped by a later memory
         //      rebuild that rewrote the working hypothesis.
         //
-        // The three are mutually exclusive at the memory level: the round-30
-        // ack bump that satisfies round 32 also closes round 31's `isFresh`
-        // window, so the two dedicated blocks never both fire. The chat
-        // context carries one canonical course-change block at any time.
-        let verdictLines = rebuildVerdictContextLines(memory: memory)
-        if !verdictLines.isEmpty {
-            lines.append(contentsOf: verdictLines)
+        // The four are mutually exclusive at the memory level. The round-36
+        // confirmation entry's `documentsUserPushback == false` closes the
+        // round-32 and round-31 gates the moment it lands at the tail; the
+        // round-30 ack bump that satisfies round 32 also closes round 31's
+        // `isFresh` window. The chat context carries one canonical course-
+        // change block at any time.
+        let confirmationLines = rebuildConfirmationContextLines(memory: memory)
+        if !confirmationLines.isEmpty {
+            lines.append(contentsOf: confirmationLines)
         } else {
-            let revisedReadLines = freshRevisedReadContextLines(memory: memory)
-            if !revisedReadLines.isEmpty {
-                lines.append(contentsOf: revisedReadLines)
-            } else if let change = memory.adaptationLog?.last {
-                lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+            let verdictLines = rebuildVerdictContextLines(memory: memory)
+            if !verdictLines.isEmpty {
+                lines.append(contentsOf: verdictLines)
+            } else {
+                let revisedReadLines = freshRevisedReadContextLines(memory: memory)
+                if !revisedReadLines.isEmpty {
+                    lines.append(contentsOf: revisedReadLines)
+                } else if let change = memory.adaptationLog?.last {
+                    lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+                }
             }
         }
 

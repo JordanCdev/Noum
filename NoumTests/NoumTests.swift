@@ -23855,3 +23855,751 @@ struct AdaptationLogCycleSummaryTests {
         #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 2)
     }
 }
+
+// MARK: - RebuildConfirmationAdaptationTests
+//
+// Round 36 closes round-35 future move #13 — "Engine reset on a `.confirmed`
+// ack after a rebuild." Symmetric closure of the rejection lifecycle the
+// round-27 / round-33 markers already record: when the user lodges a
+// `.confirmed` ack on the REBUILT working hypothesis after a pushback was
+// folded in, the engine appends a confirmation course-change to
+// `adaptationLog` so the case file carries the lock-in event as durably
+// as it carries the rejections.
+//
+// This suite covers:
+//   1. The new `CoachCourseChange.documentsRebuildConfirmation` predicate
+//      and the marker constant.
+//   2. The fourth `caseFileHeadline` branch ("You confirmed the rebuilt
+//      read.") — sits AHEAD of the pushback branches so a confirmation
+//      entry surfaces as a lock-in headline on the Profile-tab
+//      `CaseReviewCard` "Last shift" row.
+//   3. The engine append branch on `CoachMemoryEngine.build(...)` — fires
+//      on the first rebuild after the `.confirmed` ack lands; idempotent
+//      across subsequent rebuilds (the new tail's
+//      `documentsUserPushback == false` closes the predicate gate); silent
+//      on every negative shape (`.uncertain` ack, `.rejected` ack, no
+//      pushback tail, snapshot mismatch).
+//   4. `CoachContextBuilder.rebuildConfirmationContextLines(memory:)` —
+//      the durable chat-coach context block surfaced when the tail entry
+//      is a confirmation. Returns `[]` on the negative shapes.
+//   5. `interventionCycleLines` priority: confirmation outranks round 32's
+//      `rebuildVerdictContextLines` (which goes silent automatically the
+//      moment the confirmation entry lands, since its tail-must-be-pushback
+//      predicate fails) and outranks round 31's
+//      `freshRevisedReadContextLines` (same predicate failure).
+//   6. Round-35 cycle-depth reset: a confirmation tail breaks the streak,
+//      so `adaptationLogCycleDepth(in:)` returns nil on a log of
+//      `[pushback, pushback, confirmation]` — exactly the "engine reset
+//      on `.confirmed` ack" outcome future move #13 promised.
+//   7. `RevisedReadCard` gate isolation: `freshRevisedReadChange(in:)`
+//      stays nil when the tail is a confirmation, so the post-rep
+//      `RevisedReadCard` surface (pushback-only by design) never mounts
+//      on a confirmation entry.
+
+@MainActor
+@Suite("RebuildConfirmationAdaptationTests")
+struct RebuildConfirmationAdaptationTests {
+
+    // MARK: - Fixtures
+
+    private static let rebuiltHypothesis =
+        "Filler reduction appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+
+    private static let originalHypothesis =
+        "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+
+    private func profile(voice: SpeakingStyleGoal = .warm) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: voice,
+            styleReference: "",
+            coachingBrief: "I want to brief senior stakeholders clearly.",
+            motivationWhyNow: "",
+            successVision: "",
+            paraphrasedGoal: "Brief senior stakeholders clearly."
+        )
+    }
+
+    private func session(id: UUID = UUID()) -> PracticeSession {
+        PracticeSession(
+            id: id,
+            transcript: "The update needs to be clear and calm.",
+            fillerWordCount: 2,
+            duration: 60,
+            date: Date(timeIntervalSince1970: 1_000),
+            mode: .timed,
+            score: 6
+        )
+    }
+
+    private func pushbackEntry(at changedAt: Date = Date(timeIntervalSince1970: 800)) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"Pace appears...\""
+        )
+    }
+
+    private func confirmationEntry(at changedAt: Date = Date(timeIntervalSince1970: 1_000)) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .fillerReduction,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis matches what they see; locking in the new read.",
+            evidenceBasis: "user-tapped confirmation of: \"Filler reduction appears...\""
+        )
+    }
+
+    // MARK: - CoachCourseChange marker + predicate matrix
+
+    @Test func confirmationMarkerIsRebuildConfirmationLanguage() {
+        // The marker phrase must distinguish a confirmation entry from a
+        // pushback entry on plain `String.range(of:)` lookup. "Matches" vs
+        // "did not match" is the discriminator. Lifting the marker as a
+        // constant lets a copy edit propagate to the predicate.
+        #expect(CoachCourseChange.userRebuildConfirmationMarker == "user reported the rebuilt hypothesis matches what they see")
+    }
+
+    @Test func documentsRebuildConfirmationTrueOnConfirmationReason() {
+        let change = confirmationEntry()
+        #expect(change.documentsRebuildConfirmation == true)
+    }
+
+    @Test func documentsRebuildConfirmationFalseOnFirstCyclePushback() {
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: ""
+        )
+        #expect(change.documentsRebuildConfirmation == false)
+    }
+
+    @Test func documentsRebuildConfirmationFalseOnSecondCyclePushback() {
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: ""
+        )
+        #expect(change.documentsRebuildConfirmation == false)
+        // Mutual exclusion with the pushback predicate is the round-35
+        // depth helper's contract — a confirmation entry must NOT satisfy
+        // `documentsUserPushback`, or the streak would not reset.
+        #expect(change.documentsUserPushback == true)
+    }
+
+    @Test func confirmationEntryDoesNotSatisfyPushbackPredicates() {
+        // The round-35 cycle-depth helper, round-32 `rebuildVerdictPair`,
+        // and round-31 `freshRevisedReadContextLines` all gate on
+        // `documentsUserPushback`. A confirmation entry MUST NOT satisfy
+        // that predicate — otherwise it would extend the pushback streak
+        // (round 35) and re-fire the pre-confirmation surfaces (rounds
+        // 31/32). This is the mutual-exclusion contract.
+        let change = confirmationEntry()
+        #expect(change.documentsUserPushback == false)
+        #expect(change.documentsRebuildPushback == false)
+        #expect(change.documentsRebuildConfirmation == true)
+    }
+
+    // MARK: - caseFileHeadline ordering
+
+    @Test func caseFileHeadlineNamesConfirmationInSecondPerson() {
+        let change = confirmationEntry()
+        #expect(change.caseFileHeadline == "You confirmed the rebuilt read.")
+    }
+
+    @Test func caseFileHeadlineConfirmationOutranksRebuildPushbackBranch() {
+        // Defensive: if a future engine change ever wrote both markers
+        // into the same `reason` (it should not — they are mutually
+        // exclusive at the append site), the confirmation branch must
+        // win. Lock-in is a stronger statement than rejection.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .fillerReduction,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis matches what they see; locking in the new read. (Prior: user reported the rebuilt hypothesis did not match what they saw.)",
+            evidenceBasis: ""
+        )
+        #expect(change.documentsRebuildConfirmation == true)
+        #expect(change.documentsRebuildPushback == true)
+        #expect(change.caseFileHeadline == "You confirmed the rebuilt read.")
+    }
+
+    @Test func caseFileHeadlineUnchangedForPushbackEntries() {
+        // Round-34 branches must continue to fire unchanged. The new
+        // round-36 branch sits AHEAD of them but only matches the new
+        // marker, so pushback entries fall through to the existing
+        // branches.
+        let firstCycle = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: ""
+        )
+        #expect(firstCycle.caseFileHeadline == "You flagged the prior read as off.")
+
+        let secondCycle = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(),
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: ""
+        )
+        #expect(secondCycle.caseFileHeadline == "You flagged the rebuilt read as off too.")
+    }
+
+    // MARK: - Engine append branch
+
+    @Test func buildAppendsConfirmationEntryAfterConfirmedAckOnRebuild() {
+        // The integration contract: previous memory carries a pushback
+        // entry at the tail of `adaptationLog` AND a `.confirmed`
+        // `hypothesisAcknowledgement` whose snapshot matches the previous
+        // `workingHypothesis`. The new memory rebuild detects this state
+        // and appends a confirmation course-change. The bounded log now
+        // carries both entries: the pushback (carried forward) and the
+        // newly-appended confirmation.
+        let pushbackChangedAt = Date(timeIntervalSince1970: 800)
+        let ackAt = Date(timeIntervalSince1970: 900)
+        let pushback = pushbackEntry(at: pushbackChangedAt)
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .confirmed,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: ackAt
+            ),
+            adaptationLog: [pushback]
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.adaptationLog?.count == 2)
+        // The pushback entry is carried forward unchanged — the engine
+        // appends, it does not rewrite history.
+        #expect(memory?.adaptationLog?.first?.id == pushback.id)
+        #expect(memory?.adaptationLog?.first?.documentsUserPushback == true)
+        let latest = memory?.adaptationLog?.last
+        #expect(latest?.documentsRebuildConfirmation == true)
+        #expect(latest?.documentsUserPushback == false)
+        #expect(latest?.reason.contains("matches what they see") == true)
+        #expect(latest?.reason.contains("locking in the new read") == true)
+        // Lever does not shift on confirmation — the user accepted the
+        // existing lever's rebuilt read, not changed focus.
+        #expect(latest?.fromLever == .fillerReduction)
+        #expect(latest?.toLever == .fillerReduction)
+    }
+
+    @Test func buildConfirmationAppendIsIdempotentAcrossSubsequentRebuilds() {
+        // After the confirmation entry lands, the next memory rebuild
+        // sees a NEW tail (the confirmation) whose
+        // `documentsUserPushback == false`. The `confirmedRebuildAck`
+        // predicate's `lastChange.documentsUserPushback` guard returns
+        // false, so the branch does NOT re-fire. Idempotence holds even
+        // when the `.confirmed` ack is carried forward identically.
+        let pushbackChangedAt = Date(timeIntervalSince1970: 800)
+        let confirmationChangedAt = Date(timeIntervalSince1970: 1_000)
+        let ackAt = Date(timeIntervalSince1970: 900)
+        let pushback = pushbackEntry(at: pushbackChangedAt)
+        let confirmation = confirmationEntry(at: confirmationChangedAt)
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .confirmed,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: ackAt
+            ),
+            adaptationLog: [pushback, confirmation]
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_200)
+        )
+        // The log still carries exactly two entries — the confirmation
+        // was NOT duplicated.
+        #expect(memory?.adaptationLog?.count == 2)
+        #expect(memory?.adaptationLog?.last?.id == confirmation.id)
+    }
+
+    @Test func buildDoesNotAppendConfirmationOnUncertainAck() {
+        // Only `.confirmed` triggers the lock-in append. `.uncertain` is
+        // an in-flight verdict; the case file should not record it as
+        // acceptance.
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .uncertain,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: Date(timeIntervalSince1970: 900)
+            ),
+            adaptationLog: [pushbackEntry()]
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        // The log carries only the carried-forward pushback. No
+        // confirmation entry was appended.
+        #expect(memory?.adaptationLog?.count == 1)
+        #expect(memory?.adaptationLog?.last?.documentsRebuildConfirmation == false)
+    }
+
+    @Test func buildDoesNotAppendConfirmationWhenPriorTailIsNotPushback() {
+        // Without a pushback at the tail, there is no rebuild to lock in.
+        // A `.confirmed` ack on a hypothesis that the engine reached
+        // without a user-pushback course change is the steady-state
+        // case — it does not earn a confirmation entry.
+        let engineOnlyShift = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 800),
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Reduction.",
+            evidenceBasis: "stronger trend signal on filler reads"
+        )
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .confirmed,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: Date(timeIntervalSince1970: 900)
+            ),
+            adaptationLog: [engineOnlyShift]
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.adaptationLog?.count == 1)
+        #expect(memory?.adaptationLog?.last?.documentsRebuildConfirmation == false)
+    }
+
+    @Test func buildDoesNotAppendConfirmationWhenAckSnapshotDoesNotMatch() {
+        // The `.confirmed` ack must still apply to the freshly-built
+        // working hypothesis. If the new memory's hypothesis rewrites
+        // (so `appliesTo(currentHypothesis:)` returns false), the ack is
+        // about to be dropped and a confirmation entry would lie about
+        // what the user accepted.
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .confirmed,
+                hypothesisSnapshot: "Some stale hypothesis the user acked previously.",
+                acknowledgedAt: Date(timeIntervalSince1970: 900)
+            ),
+            adaptationLog: [pushbackEntry()]
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .stable,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .developing
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.adaptationLog?.count == 1)
+        #expect(memory?.adaptationLog?.last?.documentsRebuildConfirmation == false)
+    }
+
+    @Test func buildDoesNotAppendConfirmationOnRejectedAck() {
+        // A `.rejected` ack is the existing pushback append path. The
+        // confirmation branch must stay silent when a rejection is in
+        // flight — the round-27 / round-33 branches already handle this
+        // case correctly.
+        let prior = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 900),
+            evidenceCount: 8,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .rejected,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: Date(timeIntervalSince1970: 900)
+            ),
+            adaptationLog: [pushbackEntry()]
+        )
+        let trend = SkillTrend(
+            skillArea: .answerDevelopment,
+            direction: .newIssue,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+        let memory = CoachMemoryEngine.build(
+            profile: profile(),
+            baseline: .empty,
+            sessions: Array(repeating: session(), count: 10),
+            trends: [trend],
+            forwardPlan: nil,
+            previous: prior,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        // The new tail is the second-cycle pushback (round 33), NOT a
+        // confirmation. The confirmation branch correctly yielded to the
+        // rejection branch.
+        let latest = memory?.adaptationLog?.last
+        #expect(latest?.documentsRebuildConfirmation == false)
+        #expect(latest?.documentsRebuildPushback == true)
+    }
+
+    // MARK: - rebuildConfirmationContextLines
+
+    @Test func rebuildConfirmationContextLinesFiresWhenTailIsConfirmation() {
+        let now = Date()
+        let pushback = pushbackEntry(at: now.addingTimeInterval(-3600))
+        let confirmation = confirmationEntry(at: now)
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: [pushback, confirmation]
+        )
+        let lines = CoachContextBuilder.rebuildConfirmationContextLines(memory: mem)
+        #expect(lines.count == 2)
+        #expect(lines.first?.contains("Case file rebuild lock-in") == true)
+        #expect(lines.first?.contains("the user confirmed the rebuilt working hypothesis above") == true)
+        // The evidence basis the engine documents is carried in
+        // parentheses — same shape as round 32's lines.
+        #expect(lines.first?.contains("user-tapped confirmation of:") == true)
+        #expect(lines.last?.contains("accepted operating hypothesis") == true)
+        #expect(lines.last?.contains("do not re-litigate") == true)
+    }
+
+    @Test func rebuildConfirmationContextLinesEmptyWhenTailIsPushback() {
+        let mem = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: [pushbackEntry()]
+        )
+        #expect(CoachContextBuilder.rebuildConfirmationContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func rebuildConfirmationContextLinesEmptyWhenWorkingHypothesisEmpty() {
+        // The lines reference "the working hypothesis above" — without a
+        // hypothesis they would point at nothing. Empty/whitespace
+        // hypothesis returns `[]` so the model never reads an incoherent
+        // dangling reference.
+        let mem = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: "   ",
+            adaptationLog: [confirmationEntry()]
+        )
+        #expect(CoachContextBuilder.rebuildConfirmationContextLines(memory: mem).isEmpty)
+    }
+
+    @Test func rebuildConfirmationContextLinesEmptyWhenLogIsNil() {
+        let mem = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: nil
+        )
+        #expect(CoachContextBuilder.rebuildConfirmationContextLines(memory: mem).isEmpty)
+    }
+
+    // MARK: - Cross-helper isolation
+
+    @Test func cycleDepthResetsToNilOnConfirmationTail() {
+        // Round 35 promised: the depth count resets cleanly on a non-
+        // pushback entry at the tail. The confirmation entry is exactly
+        // that non-pushback entry. Two pushbacks followed by a
+        // confirmation produces depth nil (streak broken).
+        let now = Date()
+        let log = [
+            pushbackEntry(at: now.addingTimeInterval(-7200)),
+            pushbackEntry(at: now.addingTimeInterval(-3600)),
+            confirmationEntry(at: now),
+        ]
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: log
+        )
+        #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == nil)
+        #expect(CoachContextBuilder.adaptationLogCycleSummary(in: mem) == nil)
+    }
+
+    @Test func freshRevisedReadChangeStaysNilOnConfirmationTail() {
+        // `SummaryView.freshRevisedReadChange` (the gate that mounts
+        // `RevisedReadCard` on the post-rep summary) requires
+        // `documentsUserPushback` at the tail. A confirmation entry must
+        // not satisfy that gate — the surface is pushback-only by design.
+        let now = Date()
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: [confirmationEntry(at: now)]
+        )
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    @Test func rebuildVerdictPairStaysNilOnConfirmationTail() {
+        // Round-32 gates on `lastChange.documentsUserPushback`. Once the
+        // confirmation entry is at the tail, the gate fails and round 32
+        // stops firing — the chat context cleanly shifts to reading the
+        // lock-in as a durable historical fact (via round 36's lines)
+        // rather than as an in-flight verdict.
+        let now = Date()
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .confirmed,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: now
+            ),
+            adaptationLog: [confirmationEntry(at: now)]
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    // MARK: - interventionCycleLines priority (via public userContext)
+
+    private func contextString(for mem: CoachMemory) -> String {
+        CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+    }
+
+    @Test func userContextSurfacesConfirmationBlockWhenTailIsConfirmation() {
+        let now = Date()
+        let pushback = pushbackEntry(at: now.addingTimeInterval(-3600))
+        let confirmation = confirmationEntry(at: now)
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: [pushback, confirmation]
+        )
+        let ctx = contextString(for: mem)
+        #expect(ctx.contains("Case file rebuild lock-in"))
+        // Mutual-exclusion contract: the round-32 verdict line MUST NOT
+        // also fire — confirmation entry breaks the round-32 gate.
+        #expect(ctx.contains("Case file rebuild verdict") == false)
+        // The round-31 fresh-revised-read line must also be silent — its
+        // gate requires `documentsUserPushback` at the tail.
+        #expect(ctx.contains("Case file just shifted") == false)
+    }
+
+    @Test func userContextStillSurfacesRound32VerdictBeforeConfirmationLands() {
+        // The freshness window between the `.confirmed` ack landing and
+        // the next memory rebuild appending the confirmation entry. In
+        // that window the tail IS still a pushback and the round-32
+        // verdict line fires correctly. Round 36 only outranks it once
+        // the confirmation entry is at the tail.
+        let changedAt = Date()
+        let ackAt = changedAt.addingTimeInterval(60)
+        let pushback = pushbackEntry(at: changedAt)
+        let mem = CoachMemory(
+            updatedAt: ackAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            hypothesisAcknowledgement: CoachHypothesisAcknowledgement(
+                confidence: .confirmed,
+                hypothesisSnapshot: Self.rebuiltHypothesis,
+                acknowledgedAt: ackAt
+            ),
+            adaptationLog: [pushback]
+        )
+        let ctx = contextString(for: mem)
+        #expect(ctx.contains("Case file rebuild verdict"))
+        #expect(ctx.contains("Case file rebuild lock-in") == false)
+    }
+
+    // MARK: - Engineering bans
+
+    @Test func confirmationContextLinesHelperDoesNotMutateMemory() {
+        // Pure-function contract. The helper reads `adaptationLog` and
+        // `workingHypothesis`; no state is rewritten.
+        let now = Date()
+        let mem = CoachMemory(
+            updatedAt: now,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .fillerReduction,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: Self.rebuiltHypothesis,
+            adaptationLog: [confirmationEntry(at: now)]
+        )
+        let before = mem
+        _ = CoachContextBuilder.rebuildConfirmationContextLines(memory: mem)
+        #expect(mem == before)
+    }
+}

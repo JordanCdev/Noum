@@ -177,6 +177,19 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// first cycle without parsing the surrounding reason text.
     static let userRebuildPushbackMarker = "user reported the rebuilt hypothesis did not match"
 
+    /// Round-36 rebuild-confirmation marker. Written when the previous memory
+    /// carried a `.confirmed` `hypothesisAcknowledgement` that satisfied the
+    /// round-32 rebuild-verdict pair semantics (the ack was lodged on the
+    /// rebuilt working hypothesis after a pushback was folded in) AND the
+    /// rebuild persists into the new memory (the ack snapshot still applies
+    /// to the freshly-built working hypothesis). Closes the rejection-rebuild
+    /// lifecycle in the bounded adaptation log: a confirmation event is now
+    /// recorded as cleanly as a rejection event was in rounds 27 and 33.
+    /// Distinct phrasing ("matches" not "did not match") so the predicate
+    /// below — and the round-35 cycle-depth helper — can distinguish a
+    /// confirmation from a pushback without parsing the surrounding text.
+    static let userRebuildConfirmationMarker = "user reported the rebuilt hypothesis matches what they see"
+
     /// True iff this course change documents a user-tapped rejection of the
     /// working hypothesis at the time — either the original ("prior") or a
     /// rebuilt ("rebuilt") read. Round 31's `freshRevisedReadContextLines`
@@ -186,6 +199,12 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// `reason` — no extra state to round-trip through Codable, so memories
     /// persisted before this lift decode and behave correctly without a
     /// schema bump.
+    ///
+    /// Round-36 contract: a confirmation entry's `reason` carries the
+    /// `userRebuildConfirmationMarker` only; it does NOT carry either
+    /// pushback marker, so `documentsUserPushback` returns false on it.
+    /// This is the property round-35's `adaptationLogCycleDepth` relies on
+    /// to reset the streak when the user accepts the rebuilt read.
     var documentsUserPushback: Bool {
         reason.range(of: CoachCourseChange.userPushbackMarker, options: .caseInsensitive) != nil
             || reason.range(of: CoachCourseChange.userRebuildPushbackMarker, options: .caseInsensitive) != nil
@@ -201,6 +220,17 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// persisted `reason`.
     var documentsRebuildPushback: Bool {
         reason.range(of: CoachCourseChange.userRebuildPushbackMarker, options: .caseInsensitive) != nil
+    }
+
+    /// Round-36: true iff this course change documents the user CONFIRMING
+    /// the rebuilt working hypothesis — the symmetric closure of the
+    /// rejection lifecycle. Used by `caseFileHeadline` (Profile-tab
+    /// surface), `CoachContextBuilder.rebuildConfirmationContextLines`
+    /// (durable chat-coach context block), and `RevisedReadCard`'s gate
+    /// (which stays silent on a confirmation entry — its surface is
+    /// pushback-only). Pure function of the persisted `reason`.
+    var documentsRebuildConfirmation: Bool {
+        reason.range(of: CoachCourseChange.userRebuildConfirmationMarker, options: .caseInsensitive) != nil
     }
 
     /// Was this course change appended on the same rebuild that produced
@@ -231,30 +261,40 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     ///
     /// Resolution order (mutually exclusive — predicates are gated by the
     /// engine arms in `CoachMemoryEngine.build(...)`):
-    ///   1. Second-cycle pushback (`documentsRebuildPushback`):
+    ///   1. Rebuild confirmation (`documentsRebuildConfirmation`, round 36):
+    ///      "You confirmed the rebuilt read." — the symmetric closure of
+    ///      the rejection lifecycle. The engine appends a confirmation
+    ///      entry on the rep after the user lodges `.confirmed` on a
+    ///      rebuilt working hypothesis, so the case file carries the
+    ///      lock-in event as durably as it carries the rejections.
+    ///   2. Second-cycle pushback (`documentsRebuildPushback`):
     ///      "You flagged the rebuilt read as off too." — same string the
     ///      round-33 `RevisedReadCard.headlineCopy(for:)` picker returns.
-    ///   2. First-cycle pushback (`documentsUserPushback` only):
+    ///   3. First-cycle pushback (`documentsUserPushback` only):
     ///      "You flagged the prior read as off." — same string the
     ///      back-compat `RevisedReadCard.headlineCopy` constant returns.
-    ///   3. Engine-only shift (`fromLever != toLever`, neither pushback
+    ///   4. Engine-only shift (`fromLever != toLever`, neither pushback
     ///      marker present): the existing third-person `reason` text. The
     ///      "Shifted focus from X to Y." line is engine voice but is
     ///      already neutral; rewriting it as second-person ("Your focus
     ///      shifted...") would over-claim a user action that did not
     ///      happen. Falling through keeps the line honest.
-    ///   4. Empty/malformed reason: the literal `reason` (which may be
+    ///   5. Empty/malformed reason: the literal `reason` (which may be
     ///      empty). Defensive — the engine never writes an empty reason
     ///      on the append path, but a Codable round-trip from an older
     ///      version could theoretically deliver one.
     ///
     /// Pure-function read over the persisted `reason` field — no schema
     /// bump, no extra state to round-trip, no migration. Memories
-    /// persisted before round 34 behave correctly: `documentsRebuildPushback`
-    /// is round 33's predicate (already in the schema); `documentsUserPushback`
-    /// is round 27's; falling through to `reason` is the existing behavior
+    /// persisted before round 34 behave correctly: `documentsRebuildConfirmation`
+    /// is round 36's predicate (the marker is absent from earlier reasons);
+    /// `documentsRebuildPushback` is round 33's; `documentsUserPushback` is
+    /// round 27's; falling through to `reason` is the existing behavior
     /// every prior version of `CaseReviewCard` rendered.
     var caseFileHeadline: String {
+        if documentsRebuildConfirmation {
+            return "You confirmed the rebuilt read."
+        }
         if documentsRebuildPushback {
             return "You flagged the rebuilt read as off too."
         }
@@ -779,6 +819,39 @@ enum CoachMemoryEngine {
             return previous?.adaptationLog?.last?.documentsUserPushback == true
         }()
 
+        // Round-36: rebuild-confirmation detection. Symmetric closure of the
+        // round-27 / round-33 rejection lifecycle. When the previous memory
+        // carried a `.confirmed` `hypothesisAcknowledgement` that satisfied
+        // round-32's `rebuildVerdictPair` semantics (ack lodged on the
+        // rebuilt working hypothesis AFTER a pushback was folded in) AND
+        // the rebuild persists into the new memory (ack snapshot still
+        // applies to `newWorkingHypothesis`), the engine appends a
+        // confirmation course change so the case file records the lock-in
+        // event as durably as it records the rejections.
+        //
+        // The branch fires only when no lever shift AND no `.rejected` ack
+        // are firing — those are handled by the existing append section
+        // below. A confirmation is the silent case (no engine shift, no
+        // user pushback), so the existing arms never see it.
+        //
+        // Idempotence: the appended confirmation entry has
+        // `documentsUserPushback == false`, so the next memory rebuild's
+        // predicate (`previous?.adaptationLog?.last?.documentsUserPushback`)
+        // returns false on the new tail and the branch does not re-fire.
+        // The bounded `adaptationLog.suffix(8)` caps total contributions.
+        let confirmedRebuildAck: CoachHypothesisAcknowledgement? = {
+            guard let prev = previous,
+                  let ack = prev.hypothesisAcknowledgement,
+                  ack.confidence == .confirmed,
+                  let lastChange = prev.adaptationLog?.last,
+                  lastChange.documentsUserPushback,
+                  ack.acknowledgedAt >= lastChange.changedAt,
+                  ack.appliesTo(currentHypothesis: prev.workingHypothesis),
+                  ack.appliesTo(currentHypothesis: newWorkingHypothesis)
+            else { return nil }
+            return ack
+        }()
+
         let previousLever: SkillArea?
         let focusShiftedAt: Date?
         var adaptationLog = previous?.adaptationLog ?? []
@@ -827,6 +900,26 @@ enum CoachMemoryEngine {
                 reason = ""
                 evidenceBasis = ""
             }
+            adaptationLog.append(
+                CoachCourseChange(
+                    id: UUID(),
+                    changedAt: now,
+                    fromLever: previous?.currentLever,
+                    toLever: currentLever,
+                    reason: reason,
+                    evidenceBasis: evidenceBasis
+                )
+            )
+            adaptationLog = Array(adaptationLog.suffix(8))
+        } else if let ack = confirmedRebuildAck {
+            // Round 36: append a confirmation entry on the first rebuild
+            // after the user lodges `.confirmed` on a rebuilt working
+            // hypothesis. `fromLever == toLever` (no lever shift on a
+            // confirmation) is the natural shape — the entry documents the
+            // user's acceptance of the existing lever's rebuilt read, not a
+            // change of focus.
+            let reason = "User reported the rebuilt hypothesis matches what they see; locking in the new read."
+            let evidenceBasis = rebuildConfirmationEvidenceBasis(ack: ack)
             adaptationLog.append(
                 CoachCourseChange(
                     id: UUID(),
@@ -1047,6 +1140,30 @@ enum CoachMemoryEngine {
             trimmed = snapshot
         }
         return "user-tapped rejection of: \"\(trimmed)\""
+    }
+
+    /// Round-36 sibling of `rejectedAckEvidenceBasis`: composes the
+    /// evidence-basis line for a `.confirmed` ack lodged on a rebuilt
+    /// working hypothesis. Mirrors the rejection shape (snapshot quoted
+    /// inline so the bounded log carries the exact read the user accepted)
+    /// so a downstream analytics or audit surface can read both arms with
+    /// the same parser.
+    private static func rebuildConfirmationEvidenceBasis(
+        ack: CoachHypothesisAcknowledgement
+    ) -> String {
+        let snapshot = ack.hypothesisSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snapshot.isEmpty else {
+            return "user-tapped confirmation of the rebuilt read"
+        }
+        let cap = 140
+        let trimmed: String
+        if snapshot.count > cap {
+            let index = snapshot.index(snapshot.startIndex, offsetBy: cap)
+            trimmed = "\(snapshot[..<index].trimmingCharacters(in: .whitespacesAndNewlines))…"
+        } else {
+            trimmed = snapshot
+        }
+        return "user-tapped confirmation of: \"\(trimmed)\""
     }
 
     private static func workingHypothesis(
