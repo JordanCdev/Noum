@@ -1,31 +1,38 @@
-# HANDOFF — M24 deferred slate (round 35): adaptation-log cycle-depth signal — `CoachContextBuilder.adaptationLogCycleDepth(in:)` + `adaptationLogCycleSummary(in:)` count the tail of consecutive `documentsUserPushback` entries on `memory.adaptationLog`, surface a depth-aware coach-context line in the durable case-formulation block, and land a second-person "Pushback depth" row on the Profile-tab `CaseReviewCard`.
+# HANDOFF — M24 deferred slate (round 36): depth-aware Ask Noum starter chip + opener — `CoachContextBuilder.adaptationLoopBreakOpener(memory:voice:)` + `adaptationLoopBreakStarterHeadline(in:)` compose a depth-gated, voice-shaped seed opener and a short display headline for a new `AskNoumView.adaptationLoopBreakStarterChip`, gated on the round-35 cycle-depth helper hitting the escalation band (depth ≥ 3). Closes future move #17.
 
 ## Scope
 
-Round 34 closed the cross-surface voice gap: the Profile-tab
-`CaseReviewCard` "Last shift" row now reads the same user-voiced
-pushback phrase the post-rep `RevisedReadCard` lands ("You flagged
-the rebuilt read as off too." / "You flagged the prior read as off.")
-via the new `CoachCourseChange.caseFileHeadline` picker. It also
-closed future move #11 by collapsing `SummaryView.freshRevisedReadChange`
-through `CoachContextBuilder.freshRevisedReadChange(in:)`.
+Round 35 closed future move #13 by adding the durable case-file
+pushback cycle-depth signal: `CoachContextBuilder.adaptationLogCycleDepth(in:)`
++ `adaptationLogCycleSummary(in:)` count consecutive
+`documentsUserPushback` entries at the tail of `memory.adaptationLog`,
+surface a depth-aware coach-context line in the case-formulation
+block, and land a second-person "Pushback depth" row on the
+Profile-tab `CaseReviewCard`. Three surfaces, one cross-surface
+contract: a user three pushbacks deep on the same lever now sees the
+streak named on the Profile card AND reflected in the chat coach's
+context.
 
-The honest gap round 34 left open: neither the engine markers nor the
-freshness-gated rebuild lines (rounds 31 + 32) tell the model the
-TRUE CYCLE DEPTH on a 3+ pushback chain. The engine writes the same
-`userRebuildPushbackMarker` on every rebuild after the first, so a
-third-cycle pushback reads identically to a second one in the marker
-text. The chat-coach case-formulation block — the durable case-file
-read the model receives every turn — carries no signal that the user
-has rejected the working hypothesis MORE than twice in a row.
+The honest gap round 35 left open: a user who lands in `AskNoumView`
+directly — not through the post-rep flow, not through the Profile
+tab — has no one-tap entry into the same case-review conversation
+that names the streak. The empty-state starter chips catalog
+(`CoachContextBuilder.starterPrompts(...)`) is voice-shaped but
+stuck-streak agnostic. A user who has rejected the working
+hypothesis three times in a row sees the same chips a user opening
+a fresh case would see — and the chat thread starts from a clean
+seed as if the loop had never happened.
 
-The bounded `adaptationLog.suffix(8)` already keeps the history. The
-honest depth is sitting in the data; nothing reads it. A user three
-pushbacks deep into the same lever needs the coach to STOP retrying
-variations of the same read and propose a structurally different
-angle — and the model can only do that if it knows the streak depth.
+Round 35's depth signal is already in the case-formulation block
+the chat coach reads, but the model only sees it on the FIRST
+turn after the user types something. A starter chip is the
+specific affordance for the moment BEFORE the user types — the
+re-entry into the chat after a streak. That's where the empty-state
+needs to name the stuck pattern, dispatch an opener that anchors
+the case file's depth + working hypothesis + a voice-shaped ask,
+and hand the conversation off to the coach.
 
-Round 35 picks up future move #13 carried forward from round 33:
+Round 36 picks up future move #17 carried forward from round 35:
 
 User brief, unchanged round to round: "continue from the existing TO-DO,
 ensure working towards getting the app towards the vision plan, and all
@@ -34,151 +41,155 @@ redesign branch too (very important)."
 
 Translation, this round:
 
-- New `CoachContextBuilder.adaptationLogCycleDepth(in:)` — pure
-  function that walks `memory.adaptationLog` from the tail, counts
-  consecutive `documentsUserPushback` entries, and returns the count
-  when it is ≥ 2 (else nil). This is the data primitive.
-- New `CoachContextBuilder.adaptationLogCycleSummary(in:)` — pure
-  function that composes the coach-context summary line from the
-  depth. Two depth bands: depth 2 reads "twice in a row" with a
-  measured coach-move clause ("vary the angle, not just the wording");
-  depth 3+ reads "[N] times in a row" with an escalated clause
-  ("propose a structurally different angle, not another variation").
-- `coachCaseFormulationLines` in `CoachContextBuilder.swift` surfaces
-  the summary line below the existing hypothesis acknowledgement line
-  and above the focus-shift line, with a documented bump of the
-  block's prefix cap from 10 → 11 to accommodate the new high-signal
-  line without forcing it to compete with the strength/blocker lines
-  for the model's attention budget.
-- `CaseReviewCard.swift` lands a second-person "Pushback depth" row
-  ("You've flagged the working read as off twice in a row this case
-  file.") below the round-34 "Last shift" row, on the same gate. The
-  Profile-tab case file now names the streak depth in the user's own
-  voice, matching the round-34 cross-surface consistency contract.
-- The redesign-branch invariant: round 35 lands directly on `Redesign`,
-  the redesign-lineage branch the rolling M24 deferred-slate work has
-  been shipping on since round 11. Round-by-round loop preserved.
+- New `CoachContextBuilder.adaptationLoopBreakOpenerLead` constant —
+  the pinned lead prefix for the dispatched opener, sibling to
+  `interventionReviewOpenerLead` (round 24) and `revisedReadOpenerLead`
+  (round 29). A future predicate (e.g. a chat-thread classifier
+  detecting a loop-break seed for a follow-up chip row) can match
+  the prefix without depending on the depth count or voice-shaped
+  suffix.
+- New `CoachContextBuilder.adaptationLoopBreakOpener(memory:voice:)`
+  pure function — composes the dispatched opener message. Returns
+  nil at depth < 3 OR when the working hypothesis is empty/blank,
+  so the chip and the opener never disagree at the boundary.
+- New `CoachContextBuilder.adaptationLoopBreakStarterHeadline(in:)`
+  pure function — short display label for the chip ("Stuck on the
+  same read — 3 pushbacks in a row"). Returns nil at depth < 3.
+- New `AskNoumView.adaptationLoopBreakStarterChip` SwiftUI view —
+  sibling to round 25's `caseReviewStarterChip`. Wired below it on
+  the empty state. Mirrors the visual register (brand-purple capsule,
+  same chrome) with a distinct icon (`arrow.triangle.2.circlepath`)
+  and a distinct eyebrow ("STUCK PATTERN") so the user reads which
+  signal is firing in one glance. Both chips can render at once —
+  they answer different questions.
+- The redesign-branch invariant: round 36 lands on top of round 35
+  on `Redesign`, the redesign-lineage branch the rolling M24
+  deferred-slate work has been shipping on since round 11. The
+  round-by-round loop is preserved.
 
 ## What shipped
 
-### Track 1 — `CoachContextBuilder.adaptationLogCycleDepth(in:)` (`CoachContextBuilder.swift`)
+### Track 1 — `CoachContextBuilder.adaptationLoopBreakOpenerLead` constant (`CoachContextBuilder.swift`)
 
-- New pure-function helper that walks `memory.adaptationLog.reversed()`,
-  counts consecutive `documentsUserPushback` entries from the tail,
-  and returns the count when it is ≥ 2.
-- Returns nil for depth 0–1: a streak of 0 (no log, or no pushback at
-  the tail) is the silent case the case-formulation block must not
-  over-claim; a streak of 1 is the first cycle, already named by
-  rounds 28 (post-rep card), 31 (chat-context fresh line), and 33
-  (second-cycle marker). The depth signal only earns its line at ≥ 2.
-- Counts BOTH marker variants — round-27 `userPushbackMarker` and
-  round-33 `userRebuildPushbackMarker` both satisfy
-  `documentsUserPushback`, so a chain that mixes first-cycle and
-  second-cycle entries at the tail counts correctly.
-- An engine-only shift at the tail breaks the streak (the loop hits a
-  non-pushback entry and stops). An engine-only shift in the middle
-  of the log interleaves the streak: only the tail run counts.
-- Bounded by `adaptationLog.suffix(8)` in `CoachMemoryEngine.build(...)`
-  — the helper can never report a depth above 8.
+- Pinned static lead: `"The case file shows I keep pushing back on the same read."`
+- First-person voice ("I keep pushing back") matches every other
+  dispatched opener — `sessionOpener` ("Just finished..."),
+  `interventionReviewOpener` ("Time to review..."), and
+  `revisedReadOpener` ("Picking up the case file — I flagged…").
+  The user is typing the message; the perspective stays continuous.
+- Brand-voice compliant — no exclamation, no "Let's", no urgency.
 
-### Track 2 — `CoachContextBuilder.adaptationLogCycleSummary(in:)` (`CoachContextBuilder.swift`)
+### Track 2 — `CoachContextBuilder.adaptationLoopBreakOpener(memory:voice:)` (`CoachContextBuilder.swift`)
 
-- New pure-function helper that composes the coach-context summary
-  line from the depth. Gated through `adaptationLogCycleDepth(in:)`,
-  so the summary is nil whenever the depth helper is nil.
-- Phrasing matches the brand-voice rules of the case-formulation
-  block: third-person ("the user has rejected the working hypothesis
-  twice in a row this case file") — the case-formulation block writes
-  coach notes to the model, not user lines. Profile-card surfacing
-  reads in second-person separately (Track 4).
-- Two depth bands:
-  - Depth 2: "twice in a row" with "Treat the next read with extra
-    care; the user has rejected the prior two in a row. Vary the
-    angle, not just the wording." The measured clause keeps the door
-    open to a third variation while flagging the streak.
-  - Depth 3+: "[N] times in a row" with "The user has rejected this
-    many reads of the same lever in a row; propose a structurally
-    different angle, not another variation of the same hypothesis."
-    The escalated clause tells the model varying the same lever
-    further is no longer credible.
-- Brand-voice compliant — no exclamation, no "Let's", no hype.
+- New pure-function helper. Returns nil at depth < 3 (gated through
+  `adaptationLogCycleDepth(in:)` — same predicate the round-35
+  case-formulation block reads), AND nil when `memory.workingHypothesis`
+  is nil or whitespace-only (the body quotes the hypothesis; a
+  missing read would render the seed incoherent to the model).
+- Composition shape mirrors `revisedReadOpener`: lead + body that
+  quotes the hypothesis with a trailing-period strip + voice-shaped
+  ask. The depth-aware clause ("I've flagged it as off 3 times in
+  a row this case file") sits inside the body.
+- Voice mapping (7 arms — identical voice catalog to every other
+  opener in `CoachContextBuilder`): `.authoritative` → "What's the
+  structurally different angle?", `.warm` → "What angle haven't we
+  tried yet?", `.concise` → "Different angle?", `.persuasive` →
+  "Make the case for a different angle.", `.executive` → "Brief
+  me on a different angle.", `.storytelling` → "What chapter
+  breaks this loop?", default → "What's a different angle to try?".
+- The "structurally different angle" phrasing is the same language
+  round 35's escalated case-formulation clause uses for depth 3+,
+  so the chat seed and the case-file context block read as one
+  coordinated voice.
 
-### Track 3 — Case-formulation surfacing (`CoachContextBuilder.swift`)
+### Track 3 — `CoachContextBuilder.adaptationLoopBreakStarterHeadline(in:)` (`CoachContextBuilder.swift`)
 
-- `coachCaseFormulationLines` appends the round-35 line directly below
-  the existing hypothesis-acknowledgement line and above the focus-
-  shift line. The placement matches the case-file logical flow:
-  hypothesis → user's ack on the hypothesis → durable streak of acks
-  against the hypothesis → engine focus shift detail → goal fit.
-- The block's prefix cap bumps from 10 → 11. Inline comment names the
-  reason: the depth line is rare (≥ 2 pushbacks in a row) and high-
-  signal (the model needs every line in the block at that moment); it
-  must not compete with the strength/blocker lines for the model's
-  attention budget. The bounded `adaptationLog.suffix(8)` caps the
-  total context contribution.
+- Pure function returning `"Stuck on the same read — \(depth) pushbacks in a row"` at depth ≥ 3, nil otherwise.
+- Mirrors `interventionReviewStarterHeadline(for:)`'s shape: short,
+  calm, no urgency. "Stuck on the same READ" names the data; it does
+  not name the user as stuck. Same restraint round-34's
+  `CoachCourseChange.caseFileHeadline` uses on the Profile card.
+- Brand-voice compliant.
 
-### Track 4 — `CaseReviewCard` "Pushback depth" row (`CaseReviewCard.swift`)
+### Track 4 — `AskNoumView.adaptationLoopBreakStarterChip` (`AskNoumView.swift`)
 
-- New `caseRow` block below the round-34 "Last shift" row, on the
-  same `adaptationLogCycleDepth(in:)` gate. Surfaces a second-person
-  phrase: "You've flagged the working read as off twice in a row
-  this case file." (depth 2) or "… [N] times in a row …" (depth 3+).
-- The surface reads consistently with the round-34 "Last shift" row:
-  both name the rebuild event in the user's own voice. A user
-  flicking between the post-rep summary (which carries the round-31
-  fresh-revised-read context line in the chat seed) and the Profile
-  card now sees the streak depth named on both surfaces in the same
-  voice.
-- Silent on depth 0–1: the "Last shift" row already names the first
-  cycle in the user's voice; double-naming would over-claim.
-- Restraint matches the card's compact contract (≤ 2 lines per row,
-  no scrolling, no buttons). The new row uses `icon: "repeat"` to
-  visually distinguish from the `arrow.triangle.branch` "Last shift"
-  row above.
+- New `@ViewBuilder` view, sibling to `caseReviewStarterChip` and
+  wired below it on the empty-state VStack. Mirrors the round-25
+  chip's chrome line-for-line: 10pt-tinted brand-purple capsule,
+  0.32-alpha stroke, top-aligned glyph + eyebrow + headline +
+  trailing arrow.
+- Distinct visual register from `caseReviewStarterChip`:
+  - Icon: `arrow.triangle.2.circlepath` (round 25 uses
+    `calendar.badge.clock`).
+  - Eyebrow: `"STUCK PATTERN"` (round 25 uses `"REVIEW DUE"`).
+  - Both render in brand-purple — they're both coach-priority
+    signals, just answering different questions. A user can have
+    a review due AND a stuck pattern; both chips can show at once.
+- Tap handler: `send(opener)` where `opener` is the full
+  `adaptationLoopBreakOpener(memory:voice:)` result — same
+  dispatch pattern round 25's chip uses for `interventionReviewOpener`.
+  The reply the user gets is the same conversation no matter which
+  surface (chip tap, free-text prompt, future deep-link) led there.
+- Accessibility: combined element with label "Break the pushback
+  loop with Noum", hint "Opens a conversation that names the
+  stuck streak and asks for a different angle.", identifier
+  `askNoum.emptyState.loopBreakChip`.
+- Render predicate uses `if let memory = …, let headline = …,
+  let opener = …` — three optional binds across the same gate.
+  A failure of any (no memory, depth < 3, missing hypothesis)
+  collapses the chip entirely.
 
-### Track 5 — `AdaptationLogCycleSummaryTests` (`NoumTests/NoumTests.swift`)
+### Track 5 — `AdaptationLoopBreakOpenerTests` (`NoumTests/NoumTests.swift`)
 
-New `@Suite("AdaptationLogCycleSummaryTests")` (struct, `@MainActor`)
-placed after the round-34 `FreshRevisedReadChangeSecondCycleDelegationTests`.
-Sixteen `@Test` methods covering the predicate, the summary phrasing,
-the case-formulation surfacing, and the engineering bans.
+New `@Suite("AdaptationLoopBreakOpenerTests")` (struct) placed
+after the round-35 `AdaptationLogCycleSummaryTests`. 27 `@Test`
+methods covering the lead constant, the depth gate, the working-
+hypothesis gate, the voice-shaped ask, the brand-voice contract,
+the headline picker, and the engineering bans.
 
-- **Depth predicate matrix (8 tests):**
-  - `depthIsNilForNilLog` — empty case.
-  - `depthIsNilForEmptyLog` — empty case.
-  - `depthIsNilForSinglePushback` — depth-1 silence (first cycle
-    already named by rounds 28/31/33).
-  - `depthIsTwoForTwoConsecutivePushbacks` — happy path: two
-    pushbacks at the tail.
-  - `depthIsThreeForThreeConsecutivePushbacks` — depth band 3+.
-  - `depthIsNilWhenEngineOnlyShiftIsAtTail` — streak break by an
-    engine-only shift at the tail.
-  - `depthCountsOnlyTailStreakWhenEngineShiftInterleaves` — engine-
-    only shift in the middle interleaves the streak; only tail run
-    counts.
-  - `depthCountsBothMarkerVariantsAsPushback` — round-27 and
-    round-33 markers both satisfy `documentsUserPushback`.
-- **Summary phrasing per depth band (4 tests):**
-  - `summaryReadsTwiceInARowAtDepthTwo` — measured clause for depth 2.
-  - `summaryReadsThreeTimesInARowAtDepthThree` — escalated clause
-    for depth 3.
-  - `summaryIsNilAtDepthOne` — silence on first cycle.
-  - `summaryIsNilForNilLog` — silence on empty log.
-- **Case-formulation surfacing (3 tests):**
-  - `caseFormulationIncludesDepthLineWhenStreakIsTwoOrMore` —
-    integration via the public `CoachContextBuilder.userContext(...)`
-    entry. The depth phrase surfaces in the output.
-  - `caseFormulationOmitsDepthLineOnFirstCycle` — silence on
-    depth 1.
-  - `caseFormulationOmitsDepthLineForEngineOnlyShiftAtTail` —
-    silence when the streak is broken.
-- **Engineering bans (2 tests):**
-  - `depthHelperDoesNotMutateMemory` — pure-function contract:
-    `mem == before` after the helper runs.
-  - `depthHelperReadsLatestEntryTailNotByDate` — the helper walks
-    array position, not `changedAt` — matches the engine's append-
-    only contract. A future engine change that started inserting
-    out-of-order would surface here.
+- **Lead constant (2 tests):**
+  - `openerLeadNamesUserPushbackInFirstPerson` — pins the constant.
+  - `openerStartsWithTheLeadConstant` — composition contract.
+- **Depth gate (6 tests):**
+  - `openerIsNilAtDepthZero` — empty/nil log case.
+  - `openerIsNilAtDepthOne` — first cycle is named by rounds
+    28/31/33/34; a chip on top would over-claim.
+  - `openerIsNilAtDepthTwo` — round-35 case-formulation block +
+    round-32 rebuild-verdict context already speak at depth 2;
+    the chip earns its surface only at the escalation band.
+  - `openerFiresAtDepthThree` — happy path.
+  - `openerFiresAtDepthFour` — open-ended depth band, no magic-
+    number behaviour at depth 3.
+  - `openerIsNilWhenEngineOnlyShiftBreaksStreakAtTail` — engine-
+    only shift at tail resets the streak via the depth helper.
+- **Working-hypothesis gate (4 tests):**
+  - `openerIsNilWhenWorkingHypothesisIsNil` — defensive guard.
+  - `openerIsNilWhenWorkingHypothesisIsBlank` — whitespace-only
+    treated as nil.
+  - `openerBodyQuotesWorkingHypothesisInline` — the read is
+    named in scope.
+  - `openerStripsTrailingPeriodToAvoidDoubleStop` — no `..`
+    mid-sentence.
+- **Voice-shaped ask (7 tests, one per voice arm):**
+  - `openerAskByVoiceAuthoritative` / Warm / Concise / Persuasive
+    / Executive / Storytelling / None.
+- **Brand-voice contract (1 test):**
+  - `openerHasNoUrgencyOrFanfareAcrossAllVoices` — locks the
+    no-exclamation / no-"Let's" / no-"hurry" / no-"You're stuck"
+    contract across all 7 voice arms. Mirrors the round-19
+    `LookingAheadCardStartCTAContractTests` brand-voice pattern.
+- **Headline picker (6 tests):**
+  - `headlineIsNilAtDepthZero` / depth 1 / depth 2.
+  - `headlineFiresAtDepthThreeWithCountInterpolated` — pins the
+    exact display label.
+  - `headlineFiresAtDepthFourWithCountInterpolated` — open-ended
+    band.
+  - `headlineAndOpenerSharedGate` — pins the boundary-depth
+    contract that the chip and the opener cannot drift apart on
+    the streak-depth predicate.
+- **Engineering bans (1 test):**
+  - `openerHelperDoesNotMutateMemory` — pure-function contract:
+    `mem == before` after both helpers run.
 
 ### Vision alignment
 
@@ -187,71 +198,69 @@ the case-formulation surfacing, and the engineering bans.
   vary, or replace the intervention with an explained rationale." A
   user three pushbacks deep into the same lever needs the coach to
   stop varying the same read and propose a structurally different
-  angle. Round 35 gives the model the streak-depth signal so the
-  Adaptation stage has the evidence to make that call.
-- **Coach-parity stage #2 (Case formulation).** The case-formulation
-  block is the durable case-file read the model receives every turn.
-  Round 35 lands the streak-depth line inside that block — not as a
-  freshness-gated rebuild line (rounds 31/32) that disappears on the
-  next followed rep — so the depth signal persists for as long as
-  the streak persists in the bounded `adaptationLog`.
-- **Pillar #5 (Personalized coaching).** A coach who keeps proposing
-  variations of the same hypothesis after three rejections is not
-  personalizing; they are pattern-matching. Round 35's depth-3+
-  escalation tells the model the user has flagged the same lever as
-  off three times in a row — the durable case-file evidence to
-  trigger a structurally different angle.
+  angle. Round 35 gave the model the streak-depth signal in the
+  context block. Round 36 gives the user the one-tap surface to
+  RE-OPEN the conversation when they re-enter Ask Noum — closing
+  the loop on the Adaptation stage from both ends (model side AND
+  user-affordance side).
+- **Pillar #5 (Personalized coaching).** A coach with a stuck
+  patient doesn't make them type out "I'm still stuck" — they
+  open the conversation themselves. Round 36's chip is the
+  re-entry equivalent: the system NAMES the stuck pattern on
+  the user's behalf and seeds a focused opener so the chat
+  starts where the case file is.
 - **Pillar #4 (Believable progress).** A user who has pushed back
-  three times sees their streak named on the Profile card AND
-  reflected in the chat coach's tone. The case file no longer reads
-  as a stale log; the streak depth is a live, surfaced read.
-- **Engineering bans.** No fragmented state: round 35 adds two pure-
-  function helpers and one new row on `CaseReviewCard`. The case-
-  formulation block reads the same helper the Profile card does — a
-  copy edit in one place propagates to both surfaces. No placeholder
-  logic: the new helpers have real call sites in both the chat
-  context and the Profile card. No dead toggles: the helpers have no
-  flags; the resolution is data-driven off the persisted
-  `adaptationLog` field.
-- **Anti-overclaim.** The helpers return nil for depth 0–1, so the
-  case-formulation line and the Profile row stay silent until the
-  user has actually pushed back at least twice in a row. The
-  depth-3+ escalation phrase ("propose a structurally different
-  angle") is the strongest claim the round makes, and it fires only
-  on hard evidence (three consecutive `documentsUserPushback`
-  entries in the bounded `adaptationLog`).
-- **No schema bump.** `adaptationLogCycleDepth(in:)` and
-  `adaptationLogCycleSummary(in:)` are pure-function reads over the
-  existing `adaptationLog` field. Memories persisted before round 35
-  decode and behave unchanged: pre-round-27 memories (no adaptation
-  log) trip the nil guard; round-27 / round-33 entries surface their
-  cycle counts via `documentsUserPushback`.
+  three times sees their streak named on three surfaces (Profile
+  card, chat coach context, AskNoumView starter chip). The chip
+  is silent below depth 3, so it never fabricates a streak; the
+  open-ended count interpolation (3, 4, 5, …) honestly reports
+  what the bounded `adaptationLog` carries.
+- **Engineering bans.** No fragmented state: round 36 adds two
+  pure-function helpers and one new view on `AskNoumView`. The
+  chip reads through the same `adaptationLogCycleDepth(in:)`
+  helper round 35's case-formulation block and Profile card both
+  read — a copy edit in one place propagates to all three surfaces.
+  No placeholder logic: the new helpers have real call sites on
+  the chip. No dead toggles: the helpers have no flags; the
+  resolution is data-driven off the persisted `adaptationLog` field.
+- **Anti-overclaim.** The chip is silent at depth 0–2. Depth 3 is
+  the same band round 35 named as "propose a structurally different
+  angle, not another variation of the same hypothesis" — the chip
+  rendering at that threshold matches the strongest claim the
+  case-formulation block already makes. No new claim, just a new
+  surface for the existing claim.
+- **No schema bump.** Both helpers are pure-function reads over
+  the existing `adaptationLog` + `workingHypothesis` fields.
+  Memories persisted before round 36 decode and behave unchanged:
+  pre-round-27 memories (no adaptation log) trip the depth-helper
+  nil guard; round-27 / round-33 entries surface their cycle
+  counts via `documentsUserPushback`.
 
 ### Branch + redesign-alignment notes
 
-- All five tracks land on `Redesign`, the redesign-lineage branch the
-  rolling M24 deferred-slate work has been shipping on since round 11.
-  The user brief explicitly calls this out: "ensure working on the
-  redesign branch too (very important)." Round 35 preserves the
-  round-by-round loop on the redesign lineage.
-- Round 35 does not change the round-33 marker constants, the
-  `documentsUserPushback` / `documentsRebuildPushback` predicates, or
-  the `isSecondCyclePushback` engine detection. The round-33 19
-  second-cycle + 4 picker tests pass unchanged; round 34's 9 + 1 new
-  tests pass unchanged; round 35's 16 new tests sit alongside.
-- Round 31's `freshRevisedReadContextLines` and round 32's
-  `rebuildVerdictContextLines` are unchanged. The two paths remain
-  freshness/ack-gated rebuild surfaces; round 35 is the durable case-
-  file streak depth surface. The three are mutually compositional:
-  on a first cycle, only round 31 fires; on a fresh second cycle
-  before the user acks, round 31 fires AND round 35 fires; on a
-  rebuild that has been acked, round 32 fires AND round 35 fires.
-- The round-34 `caseFileHeadline` picker is unchanged. The Profile
-  card's "Last shift" row continues to read through it.
+- All five tracks (two helpers, one view, the wiring, the test
+  suite) land on `Redesign`, the redesign-lineage branch the
+  rolling M24 deferred-slate work has been shipping on since
+  round 11. The user brief explicitly calls this out: "ensure
+  working on the redesign branch too (very important)." Round 36
+  preserves the round-by-round loop on the redesign lineage.
+- Round 36 does not change the round-35 helpers, the round-33
+  marker constants, the `documentsUserPushback` predicate, the
+  `isSecondCyclePushback` engine detection, or the round-34
+  `caseFileHeadline` picker. All previous-round tests pass
+  unchanged; round 36's 27 new tests sit alongside.
+- Round 31's `freshRevisedReadContextLines`, round 32's
+  `rebuildVerdictContextLines`, and round 35's
+  `adaptationLogCycleSummary` are unchanged. The three remain
+  freshness/ack/streak-gated context surfaces; round 36 is the
+  USER-AFFORDANCE surface that pairs with the round-35 streak
+  signal. The chip and the case-formulation block speak the same
+  depth threshold (3+) so the user-side and model-side reads
+  agree on when the case has entered the escalation band.
 
 ## Future moves
 
-(Updated priority list — round-35 closed step #13; the rest roll
+(Updated priority list — round-36 closed step #17; the rest roll
 forward.)
 
 1. **Peer Sudden Death scores via `FriendsManager`.** Still blocked on
@@ -260,9 +269,9 @@ forward.)
    interleaving with celebration timing. Worth a dedicated refactor
    pass with proper visual QA (and a real device).
 3. **Visual polish pass on the round-19 launch CTA.** Carried forward
-   from rounds 19–34. Pure visual work, not destination logic.
+   from rounds 19–35. Pure visual work, not destination logic.
 4. **Visual polish pass on the round-20 SOLVED ribbon.** Carried
-   forward from rounds 20–34. Pure visual work, not crossing logic.
+   forward from rounds 20–35. Pure visual work, not crossing logic.
 5. **Extend the crossing helper to the chat-coach context line.**
    Carried forward from round 21 as a note for the record.
 6. **Day-rollover refresh for long-mounted observers.** Carried forward
@@ -272,74 +281,68 @@ forward.)
    round 23.
 8. **Refresh-on-rotate for the empty-state chip when the
    `CoachMemoryStore` mutates while AskNoumView is mounted.** Carried
-   forward from round 25.
+   forward from round 25. Round 36 makes this slightly more visible:
+   when the depth crosses from 2 → 3 mid-mount, the new loop-break
+   chip should render without forcing the user to leave + re-enter
+   the screen. `@StateObject private var coachMemoryStore` already
+   delivers the change, so `@ViewBuilder` re-render fires; the
+   real question is whether `currentMemory` is observed deeply
+   enough that the gate flips on the same tick.
 9. **Voice-tuned ack-chip glyphs.** Carried forward from round 26.
 10. **`.confirmed` confidence amplification on the active intervention.**
     Carried forward from round 27. The round-32 `.confirmed` rebuild-
-    verdict path remains the natural integration site — when the
-    predicate fires AND the engine has not yet bumped
-    `CoachIntervention.criterionStatus`, the same `.confirmed`
-    branch could nudge the criterion toward "met" or extend the
-    `reviewDueAt` cadence by one rep.
+    verdict path remains the natural integration site.
 11. **Collapse the round-26 hypothesis-ack reflection in
     `coachCaseFormulationLines` into a single block with the round-32
     rebuild-verdict lines when the predicate fires.** Carried forward
     from round 32. Hold for real-device QA.
 12. **Trend-view distinction between "user accepted the first read"
     and "user accepted the rebuilt read".** Carried forward from
-    rounds 30 + 32 + 33 + 34. With round 33's `documentsRebuildPushback`
-    marker on the adaptation log, round 34's `caseFileHeadline`
-    picker on the data model, AND round 35's
-    `adaptationLogCycleDepth(in:)` helper, a future trend view could
-    count rebuild PUSHBACKS separately from first-cycle pushbacks,
-    surface the user-voiced phrase from the round-34 picker, AND
-    chart the streak-depth distribution across the case file with no
-    additional engine work.
+    rounds 30 + 32 + 33 + 34 + 35.
 13. **Engine reset on a `.confirmed` ack after a rebuild.** Carried
-    forward from round 33. The current chain depends on
-    `previous.adaptationLog.last.documentsUserPushback`; a
-    `.confirmed` ack on the rebuilt read does NOT cycle (it just
-    confirms the rebuild). A future round could append an explicit
-    `confirmation` entry on `.confirmed` ack-drop to mark the rebuild
-    as accepted, closing the cycle in the log as cleanly as the
-    rejection cycle is closed in round 33. With round-34's
-    `caseFileHeadline` picker on the data model, a third arm
-    ("You confirmed the rebuilt read.") would land naturally as a
-    new branch above the engine-only fall-through. With round 35's
-    `adaptationLogCycleDepth(in:)` helper, the depth count would also
-    reset on the next non-pushback entry — which is exactly what a
-    confirmation entry would be.
+    forward from rounds 33 + 35.
 14. **Sibling `RevisedReadCard` copy for the post-`.confirmed` rebuild
-    surface.** Carried forward from round 33. The card currently
-    surfaces only on a fresh pushback rebuild. A future round could
-    add a sibling card ("You confirmed the rebuilt read") on the
-    post-rep summary AFTER the user lodges a `.confirmed` ack on the
-    rebuilt hypothesis, so the rebuild lifecycle has acknowledged
-    closure on the surface where it began. Depends on #13 above.
+    surface.** Carried forward from rounds 33 + 35. Depends on #13.
 15. **User-voiced lift for the engine-only fall-through arm of
-    `caseFileHeadline`.** Carried forward from round 34. The current
-    fall-through returns the persisted `reason` ("Shifted focus from
-    Pace to Depth.") unchanged because rewriting it as user action
-    would over-claim. But a softer second-person re-framing might
-    read better on the Profile card without over-claiming — e.g.,
-    "Coach moved your focus from Pace to Depth." Hold until at
-    least one real-device QA pass on round 34's pushback branches
-    on `CaseReviewCard`; the picker's contract is fine today.
-16. **Voice-tuned depth-line phrasing.** New note from round 35. The
-    case-formulation depth line currently reads the same across all
-    voices. A future round could vary the coach-move clause by the
-    user's `SpeakingStyleGoal`: `.authoritative` reads "stop
-    retrying the same lever" (direct); `.warm` reads "the streak
-    matters — meet it gently" (measured); `.concise` reads "drop
-    this lever; try another" (tight). Same pattern the round-29
-    opener uses for voice-tuned phrasing. Hold until at least one
-    real-device QA pass on the depth line landing in chat.
-17. **Depth-aware Ask Noum starter chip.** New note from round 35.
-    When `adaptationLogCycleDepth(in:)` returns ≥ 3, AskNoumView's
-    empty-state starter chips could surface a dedicated "Why does
-    this keep coming back?" chip that seeds the conversation with
-    the streak context. Sibling of the round-25 case-review
-    starter chip. Hold until at least one real-device QA pass.
+    `caseFileHeadline`.** Carried forward from rounds 34 + 35.
+16. **Voice-tuned depth-line phrasing.** Carried forward from round 35.
+    The case-formulation depth line currently reads the same across
+    all voices. A future round could vary the coach-move clause by
+    the user's `SpeakingStyleGoal` to mirror round 36's voice-shaped
+    ask: `.authoritative` → "stop retrying the same lever" (direct);
+    `.warm` → "the streak matters — meet it gently" (measured);
+    `.concise` → "drop this lever; try another" (tight). Same
+    voice catalog the loop-break opener uses.
+17. **(closed in round 36)**
+18. **Profile-tab handoff from the loop-break chip.** New note from
+    round 36. The Profile-tab `CaseReviewCard` already shows the
+    round-35 "Pushback depth" row. A future round could add a small
+    "Open in Ask Noum" affordance on that row when the depth ≥ 3,
+    dispatching the same `adaptationLoopBreakOpener` the empty-state
+    chip uses — so the cross-surface handoff is two-way (post-rep →
+    AskNoum chip → conversation; Profile card → AskNoum opener →
+    conversation). Hold until at least one real-device QA pass on
+    the round-36 chip.
+19. **Per-cycle depth annotation on the trend view.** New note from
+    round 36. Closely related to #12 but more specific: round 36
+    treats depth as a single scalar (the current tail-streak count).
+    A future trend view could chart depth ACROSS the case file's
+    lifetime — peaks, valleys, the timestamps of resets via
+    engine-only shifts — so the user sees how often they cycle.
+    Hold until at least one real-device QA pass on the round-36
+    chip + the round-35 case-formulation line landing in chat.
+20. **Bounded-history extension for the depth signal.** New note
+    from round 36. The bounded `adaptationLog.suffix(8)` caps the
+    depth helper's reportable count at 8. A user pushing back nine
+    times in a row would still read as "8 times in a row" on the
+    chip, the case-formulation block, and the Profile card. This
+    is honest within the bounded view but lossy if the streak is
+    longer than 8. A future round could either (a) raise the
+    bound (with a Codable migration), (b) carry a separate
+    `lifetimePushbackCount` field that survives the bounded
+    log's eviction (no migration; additive field), or (c) leave
+    the bound where it is and accept the 8-cap as the upper
+    reportable count. Hold for a product decision.
 
 ## Build-host limitation (honest note for the next agent)
 
@@ -347,94 +350,91 @@ This environment has **no Xcode and no Swift toolchain**, so nothing in
 this round was compiled or run — not the app, not the test suite. The
 changes are:
 
-- Two new pure-function helpers (`adaptationLogCycleDepth(in:)` and
-  `adaptationLogCycleSummary(in:)`) on `CoachContextBuilder` in
-  `CoachContextBuilder.swift`. Self-contained — no new imports, no new
-  dependencies, no new types. Reads only the existing `adaptationLog`
-  field through the round-27 / round-33 `documentsUserPushback`
-  predicate.
-- One new conditional `lines.append(...)` block on
-  `coachCaseFormulationLines` in `CoachContextBuilder.swift`, plus a
-  prefix cap bump from `.prefix(10)` → `.prefix(11)` with an inline
-  comment naming the reason.
-- One new `caseRow(...)` block on `CaseReviewCard.swift` between the
-  round-34 "Last shift" row and the "Real-world check-in" /
-  "Momentum" row. Reads
-  `CoachContextBuilder.adaptationLogCycleDepth(in: memory)` and
-  composes the second-person depth phrase inline.
-- One new `@Suite("AdaptationLogCycleSummaryTests")` (16 tests) in
-  `NoumTests/NoumTests.swift`. Plain `struct`, `@MainActor`, mirror
-  of the round-34 suites' attributes.
+- One new constant + two new pure-function helpers
+  (`adaptationLoopBreakOpenerLead` static, `adaptationLoopBreakOpener(memory:voice:)`,
+  `adaptationLoopBreakStarterHeadline(in:)`) on `CoachContextBuilder`
+  in `CoachContextBuilder.swift`. Self-contained — no new imports, no
+  new dependencies, no new types. Reads only the existing
+  `adaptationLog` (via the round-35 `adaptationLogCycleDepth(in:)`
+  helper) and `workingHypothesis` fields.
+- One new `@ViewBuilder` `adaptationLoopBreakStarterChip` on
+  `AskNoumView.swift`, plus one inline call site in the
+  `emptyState` VStack. Mirrors round-25's `caseReviewStarterChip`
+  shape — no new SwiftUI patterns introduced.
+- One new `@Suite("AdaptationLoopBreakOpenerTests")` (27 tests) in
+  `NoumTests/NoumTests.swift`. Plain `struct`, mirror of the
+  round-35 `AdaptationLogCycleSummaryTests` suite's attributes.
 
 All checks the next agent should run on a real build host:
 
-1. `swift test --filter AdaptationLogCycleSummaryTests` — the new
-   round-35 16 tests should all pass.
-2. `swift test --filter CaseFileHeadlineTests` — the round-34 9 tests
-   should still pass. Round 35 does not touch `caseFileHeadline`.
-3. `swift test --filter FreshRevisedReadChangeSecondCycleDelegationTests`
-   — the round-34 1 test should still pass.
-4. `swift test --filter RevisedReadCardTests` — the round-28 5 tests
-   + round-33 4 picker tests should all still pass.
-5. `swift test --filter SecondCyclePushbackAdaptationTests` — the
-   round-33 19 second-cycle tests should all still pass. Round 35
-   does not touch the engine's `isSecondCyclePushback` detection or
-   the marker constants.
-6. `swift test --filter RebuildVerdictContextTests` — the round-32
-   25 rebuild-verdict tests should still pass. Round 35 only adds a
-   sibling helper; the rebuild-verdict gates and context lines are
-   unchanged.
-7. `swift test --filter FreshRevisedReadContextTests` — the round-31
-   16 fresh-revised-read tests should still pass. Round 35 only
-   composes alongside the round-31 lines; the helper itself is
-   unchanged.
-8. `swift test --filter RevisedReadFollowUpTests` — round-30 tests
+1. `swift test --filter AdaptationLoopBreakOpenerTests` — the new
+   round-36 27 tests should all pass.
+2. `swift test --filter AdaptationLogCycleSummaryTests` — the
+   round-35 16 tests should still pass. Round 36 does not touch
+   `adaptationLogCycleDepth` or `adaptationLogCycleSummary`.
+3. `swift test --filter CaseFileHeadlineTests` — the round-34 9
+   tests should still pass.
+4. `swift test --filter RevisedReadOpenerTests` — round-29 tests
    should still pass.
-9. `swift test --filter RevisedReadOpenerTests` — round-29 tests
-   should still pass.
-10. `swift test --filter CoachMemoryEngineTests` — the round-27 tests
-    should all still pass. Round 35 does not touch the engine's
-    adaptation-log append logic.
-11. `swift test --filter HypothesisAcknowledgementTests` — round-26
-    tests should still pass.
-12. `swift test --filter InterventionReviewPromptTests` — round-24 +
-    round-25 tests should still pass.
-13. `swift test --filter CoachMemoryStoreTests` — should still pass.
-14. **Real-device QA — depth signal on a 2-pushback chain.** Boot the
-    app on simulator. Seed a `CoachMemory.activeIntervention` with a
-    working hypothesis. Open Ask Noum via the round-24
-    `InterventionReviewPromptCard` or the round-25 empty-state chip.
-    Tap the **Adapt / rejected** ack chip. Finish a new rep that
-    rewrites the working hypothesis. Through Ask Noum, lodge a
-    verdict chip, then on a follow-up turn tap the **Adapt /
-    rejected** ack chip on the REBUILT hypothesis. Finish another
-    rep. The `adaptationLog` now carries two consecutive
-    pushback entries at its tail (depth 2).
-15. **Confirm the chat-coach context block carries the depth line.**
-    The next AskNoumView reply should compose against a user context
-    that includes "Case-file pushback depth: the user has rejected
-    the working hypothesis twice in a row this case file. Treat the
-    next read with extra care; the user has rejected the prior two
-    in a row. Vary the angle, not just the wording."
-16. **Switch to the Profile tab.** Open the `CaseReviewCard`. Confirm
-    the new "Pushback depth" row reads "You've flagged the working
-    read as off twice in a row this case file." between the "Last
-    shift" row and the "Real-world check-in" / "Momentum" row.
-17. **Drive a third cycle.** Through Ask Noum, lodge a verdict chip,
-    then tap the **Adapt / rejected** chip again. Finish another
-    rep. The `adaptationLog` now carries three consecutive pushback
-    entries (depth 3). The chat-coach context block should now read
-    "rejected the working hypothesis 3 times in a row" with the
-    escalated "propose a structurally different angle" coach-move
-    clause. The Profile card row should read "3 times in a row".
-18. **Insert an engine-only shift to break the streak.** Drive a
-    rebuild WITHOUT a `.rejected` ack drop (engine lever shift on a
-    trend signal). The new `adaptationLog.last` is engine-only;
-    `documentsUserPushback` returns false on the tail; the depth
-    helpers return nil. Confirm the chat-coach context block omits
-    the depth line on the next reply AND the Profile card's
-    "Pushback depth" row disappears on the next render.
+5. `swift test --filter RevisedReadCardTests` — round-28 + 33
+   tests should still pass.
+6. `swift test --filter SecondCyclePushbackAdaptationTests` —
+   round-33 tests should still pass.
+7. `swift test --filter RebuildVerdictContextTests` — round-32
+   tests should still pass.
+8. `swift test --filter FreshRevisedReadContextTests` — round-31
+   tests should still pass.
+9. `swift test --filter HypothesisAcknowledgementTests` — round-26
+   tests should still pass.
+10. `swift test --filter InterventionReviewPromptTests` — round-24
+    + round-25 tests should still pass.
+11. **Real-device QA — chip renders on a 3-pushback chain.** Boot
+    the app on simulator. Seed a `CoachMemory.activeIntervention`
+    with a working hypothesis. Drive three consecutive
+    `.rejected`-driven course-changes through Ask Noum, finishing
+    a followed rep between each. The `adaptationLog` now carries
+    three consecutive pushback entries at its tail (depth 3).
+12. **Confirm the AskNoumView empty-state shows the new chip.**
+    Navigate to Ask Noum from the Profile tab (so the empty
+    state renders — there are no messages yet for this fresh
+    visit). Confirm a brand-purple chip with the
+    `arrow.triangle.2.circlepath` glyph, the eyebrow "STUCK
+    PATTERN", and the headline "Stuck on the same read — 3
+    pushbacks in a row" renders below the existing case-review
+    chip (or as the sole priority chip if no review is due).
+13. **Tap the loop-break chip.** Confirm the dispatched message
+    text reads "The case file shows I keep pushing back on the
+    same read. I've flagged it as off 3 times in a row this case
+    file. The read on the table is: \<working hypothesis>. What's
+    a different angle to try?" (or the voice-shaped variant if a
+    speaking-style goal is set on the profile).
+14. **Set a voice goal and re-test.** Set
+    `coachingProfileStore.profile.speakingStyleGoal = .authoritative`,
+    re-enter Ask Noum, tap the chip. The ask should now read
+    "What's the structurally different angle?". Confirm the same
+    swap for `.warm` ("What angle haven't we tried yet?"),
+    `.concise` ("Different angle?"), `.persuasive` ("Make the
+    case for a different angle."), `.executive` ("Brief me on a
+    different angle."), `.storytelling` ("What chapter breaks
+    this loop?").
+15. **Drive a fourth cycle.** The chip headline should read
+    "Stuck on the same read — 4 pushbacks in a row"; the
+    dispatched opener should read "4 times in a row this case
+    file"; the model's context block (round 35) should still
+    read the escalated "propose a structurally different angle"
+    clause.
+16. **Insert an engine-only shift to break the streak.** Drive a
+    rebuild WITHOUT a `.rejected` ack drop (engine lever shift on
+    a trend signal). The chip should disappear from the empty
+    state on the next render — confirm both the chip AND the
+    round-35 case-formulation depth line stop firing.
+17. **Confirm both chips render together.** Seed an intervention
+    that is review-due AND has depth-3 pushback tail. The
+    `caseReviewStarterChip` (round 25) should render above the
+    `adaptationLoopBreakStarterChip` (round 36), both visible at
+    once. Distinct icons + eyebrows make them readable in one
+    glance.
 
-Branch lineage: round 35 sits on top of round 34 on `Redesign`, which
-sits on top of rounds 11–33. The round-by-round loop on the redesign
-lineage is preserved.
+Branch lineage: round 36 sits on top of round 35 on `Redesign`,
+which sits on top of rounds 11–34. The round-by-round loop on the
+redesign lineage is preserved.

@@ -1450,6 +1450,131 @@ enum CoachContextBuilder {
         return "- Case-file pushback depth: the user has rejected the working hypothesis \(countClause) in a row this case file. \(coachMove)"
     }
 
+    // MARK: - Adaptation loop-break opener (round-36 depth-aware AskNoum chip)
+    //
+    // Round 36 — closes future move #17 carried forward from round 35. The
+    // depth signal landed on three surfaces in round 35: the chat-coach
+    // case-formulation block (`adaptationLogCycleSummary`), the durable
+    // Profile-tab `CaseReviewCard` "Pushback depth" row, and the engine's
+    // bounded `adaptationLog`. What round 35 did NOT close: a user who
+    // lands in `AskNoumView` directly (not through the post-rep flow or
+    // the Profile tab) has no one-tap entry into the same case-review
+    // conversation that names the streak. The empty-state starter chips
+    // catalog (`starterPrompts(...)`) is voice-shaped but stuck-streak
+    // agnostic — a user who has rejected the working hypothesis three
+    // times in a row sees the same chips a user opening a fresh case
+    // would see.
+    //
+    // Round 36 adds the missing entry point: a sibling starter chip to
+    // round 25's `caseReviewStarterChip`, gated on the round-35 depth
+    // helper hitting depth ≥ 3 (the "structurally different angle"
+    // band — round 35 already speaks at depth 2 across three surfaces;
+    // a starter chip earns its surface only when the streak crosses
+    // into the escalation band where the case file demands a different
+    // angle, not another variation of the same hypothesis).
+    //
+    // Why a distinct opener and not a re-use of `interventionReviewOpener`:
+    // the review opener anchors on the intervention (mode + focus +
+    // followed-rep depth) and asks "keep, adapt, or replace?"; the
+    // loop-break opener anchors on the WORKING HYPOTHESIS and the
+    // streak depth and asks "what's the different angle?". The two
+    // conversations are about different things — the review opener
+    // closes the case-review cadence, the loop-break opener calls a
+    // stuck pattern by name and asks the coach to step out of it. A
+    // user three pushbacks deep does not want the coach to re-explain
+    // the same intervention; they want the coach to acknowledge the
+    // stuck loop and propose a structurally different read.
+    //
+    // Brand-voice rules: no exclamation, no "Let's", no urgency framing.
+    // First-person ("I've been pushing back…") matches every other
+    // dispatched opener — `sessionOpener` ("Just finished..."),
+    // `interventionReviewOpener` ("Time to review..."), and
+    // `revisedReadOpener` ("Picking up the case file — I flagged…").
+    // The user is typing the message; the perspective stays continuous.
+
+    /// Lead prefix on every `adaptationLoopBreakOpener`. Lifted as a constant
+    /// so a future predicate (e.g. a chat-thread classifier that detects a
+    /// loop-break seed for a follow-up chip row, mirroring round-26's
+    /// `shouldShowHypothesisAcknowledgement` predicate or round-29's
+    /// `revisedReadOpenerLead` prefix match) can match the prefix without
+    /// depending on the depth count or voice-shaped suffix.
+    static let adaptationLoopBreakOpenerLead = "The case file shows I keep pushing back on the same read."
+
+    /// Round-36 seed opener for the AskNoumView empty-state loop-break chip
+    /// when the durable case-file pushback depth has reached the escalation
+    /// band (depth ≥ 3). Names the streak in first-person, anchors on the
+    /// current working hypothesis, and ends with a voice-shaped ask for a
+    /// structurally different angle. Pure function — no store reads.
+    ///
+    /// Returns nil when:
+    ///   • `adaptationLogCycleDepth(in:)` returns nil (depth 0–1 — silent),
+    ///   • the depth is 2 (round-35 case-formulation block + the round-32
+    ///     rebuild-verdict context already speak; a chip earns its surface
+    ///     only at the escalation band), or
+    ///   • the chip-eligible depth is reached but no working hypothesis is
+    ///     in scope (the opener references "this read" — pointing at
+    ///     nothing would read incoherently to the model).
+    ///
+    /// Mirrors `revisedReadOpener`'s shape: lead + body that quotes the
+    /// hypothesis + voice-shaped ask. Same `.` trailing strip on the
+    /// hypothesis clause so the seed never renders ".." mid-sentence.
+    static func adaptationLoopBreakOpener(
+        memory: CoachMemory,
+        voice: SpeakingStyleGoal?
+    ) -> String? {
+        guard let depth = adaptationLogCycleDepth(in: memory), depth >= 3 else { return nil }
+        guard let raw = memory.workingHypothesis?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        let stripped: String
+        if raw.hasSuffix(".") {
+            stripped = String(raw.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            stripped = raw
+        }
+        let depthClause = "\(depth) times in a row this case file"
+        let body = "I've flagged it as off \(depthClause). The read on the table is: \(stripped)."
+        let ask: String
+        switch voice {
+        case .authoritative:
+            ask = "What's the structurally different angle?"
+        case .warm:
+            ask = "What angle haven't we tried yet?"
+        case .concise:
+            ask = "Different angle?"
+        case .persuasive:
+            ask = "Make the case for a different angle."
+        case .executive:
+            ask = "Brief me on a different angle."
+        case .storytelling:
+            ask = "What chapter breaks this loop?"
+        case .none:
+            ask = "What's a different angle to try?"
+        }
+        return "\(adaptationLoopBreakOpenerLead) \(body) \(ask)"
+    }
+
+    /// Round-36 compact display headline for the AskNoumView empty-state
+    /// loop-break chip. Mirrors `interventionReviewStarterHeadline(for:)`'s
+    /// shape: short, calm, second-person, no urgency framing. Returns nil
+    /// at depth < 3 — same gate as `adaptationLoopBreakOpener` so the chip
+    /// and the dispatched opener can never disagree on whether to render.
+    ///
+    /// The chip text is the DISPLAY label only — the actual opener
+    /// dispatched when the user taps it is `adaptationLoopBreakOpener(...)`,
+    /// which carries the streak depth + working hypothesis + voice-shaped
+    /// ask. The reply the user gets is the same conversation no matter
+    /// which surface (chip tap, free-text prompt, deep-link) led there.
+    ///
+    /// Brand-voice rules: no exclamation, no "Let's", no shame framing.
+    /// "Stuck on the same read" names the data; it does not name the user
+    /// as stuck. Same restraint round-34's `CoachCourseChange.caseFileHeadline`
+    /// uses on the Profile card.
+    static func adaptationLoopBreakStarterHeadline(in memory: CoachMemory) -> String? {
+        guard let depth = adaptationLogCycleDepth(in: memory), depth >= 3 else { return nil }
+        return "Stuck on the same read — \(depth) pushbacks in a row"
+    }
+
     // MARK: - Rebuild-verdict context (the round-30 chip-row ack, reflected into context)
     //
     // Round 32 — the context-block complement to round 30. Round 28 surfaced

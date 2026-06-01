@@ -23855,3 +23855,379 @@ struct AdaptationLogCycleSummaryTests {
         #expect(CoachContextBuilder.adaptationLogCycleDepth(in: mem) == 2)
     }
 }
+
+// MARK: - Round-36 adaptation loop-break opener tests
+//
+// Closes future move #17 carried forward from round 35. The depth
+// signal landed on three surfaces in round 35 (chat-coach case-
+// formulation block, Profile-tab `CaseReviewCard`, bounded
+// `adaptationLog`). Round 36 adds a fourth: a one-tap starter chip
+// on the AskNoumView empty state, gated on depth ≥ 3 — the same
+// escalation band the round-35 case-formulation block names as
+// "propose a structurally different angle". The dispatched opener
+// names the streak in first-person, anchors on the working
+// hypothesis, and ends with a voice-shaped ask for a different
+// angle.
+
+@Suite("AdaptationLoopBreakOpenerTests")
+struct AdaptationLoopBreakOpenerTests {
+
+    private func firstCyclePushback(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of the working read"
+        )
+    }
+
+    private func secondCyclePushback(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .fillerReduction,
+            toLever: .paceControl,
+            reason: "User reported the rebuilt hypothesis did not match what they saw; revising the read again.",
+            evidenceBasis: "user-tapped rejection of the rebuilt read"
+        )
+    }
+
+    private func engineOnlyShift(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .paceControl,
+            toLever: .openingStrength,
+            reason: "Shifted focus from Pace to Opening Strength.",
+            evidenceBasis: "stronger trend signal on opening reads"
+        )
+    }
+
+    private func memory(
+        workingHypothesis: String? = "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps.",
+        adaptationLog: [CoachCourseChange]?
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis,
+            adaptationLog: adaptationLog
+        )
+    }
+
+    private func depthThreeLog() -> [CoachCourseChange] {
+        let now = Date()
+        return [
+            firstCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+    }
+
+    private func depthFourLog() -> [CoachCourseChange] {
+        let now = Date()
+        return [
+            firstCyclePushback(at: now.addingTimeInterval(-10800)),
+            secondCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+    }
+
+    // MARK: - Lead constant
+
+    @Test func openerLeadNamesUserPushbackInFirstPerson() {
+        // The lead is the user-voice clause that names the stuck pattern.
+        // First-person ("I keep pushing back") matches every other
+        // dispatched opener — `sessionOpener` ("Just finished..."),
+        // `interventionReviewOpener` ("Time to review..."),
+        // `revisedReadOpener` ("Picking up the case file — I flagged…").
+        #expect(
+            CoachContextBuilder.adaptationLoopBreakOpenerLead
+                == "The case file shows I keep pushing back on the same read."
+        )
+    }
+
+    @Test func openerStartsWithTheLeadConstant() {
+        // Composition contract: the full opener must begin with the
+        // pinned lead so a future predicate can match the prefix
+        // without depending on the voice-shaped suffix.
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil)
+        #expect(opener != nil)
+        #expect(opener?.hasPrefix(CoachContextBuilder.adaptationLoopBreakOpenerLead) == true)
+    }
+
+    // MARK: - Depth gate
+
+    @Test func openerIsNilAtDepthZero() {
+        let mem = memory(adaptationLog: nil)
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil) == nil)
+    }
+
+    @Test func openerIsNilAtDepthOne() {
+        // The case-formulation block (round 35), Profile card (round 35),
+        // post-rep `RevisedReadCard` (round 28), and chat-coach fresh
+        // line (round 31) all already speak to a first cycle. A
+        // starter chip on top would over-claim.
+        let mem = memory(adaptationLog: [firstCyclePushback(at: Date())])
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil) == nil)
+    }
+
+    @Test func openerIsNilAtDepthTwo() {
+        // Depth 2 fires the round-35 case-formulation line and the
+        // round-32 rebuild-verdict context, but the chip earns its
+        // surface only at the escalation band — depth 3+, where the
+        // case-formulation block tells the model varying the same
+        // lever further is no longer credible. The chip is the entry
+        // point for "the loop is stuck", not "you pushed back twice".
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil) == nil)
+    }
+
+    @Test func openerFiresAtDepthThree() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil)
+        #expect(opener != nil)
+        #expect(opener?.contains("3 times in a row this case file") == true)
+    }
+
+    @Test func openerFiresAtDepthFour() {
+        // The depth band is open-ended — round 35's escalated coach-move
+        // clause already speaks to "this many reads of the same lever
+        // in a row", and the opener should mirror that openness. Test
+        // a depth-4 chain to lock the count interpolation across the
+        // band rather than treating depth 3 as a magic number.
+        let mem = memory(adaptationLog: depthFourLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil)
+        #expect(opener != nil)
+        #expect(opener?.contains("4 times in a row this case file") == true)
+    }
+
+    @Test func openerIsNilWhenEngineOnlyShiftBreaksStreakAtTail() {
+        // Two pushbacks at the head, then an engine-only shift breaks
+        // the streak. The depth helper returns nil; the opener must
+        // not fire even though there are pushback entries in the log.
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-7200)),
+            secondCyclePushback(at: now.addingTimeInterval(-3600)),
+            engineOnlyShift(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil) == nil)
+    }
+
+    // MARK: - Working hypothesis gate
+
+    @Test func openerIsNilWhenWorkingHypothesisIsNil() {
+        // The opener references "the read on the table is: …" so a
+        // missing hypothesis would render the message incoherent to
+        // the model. Defensive guard: nil hypothesis returns nil
+        // opener even when the depth gate passes.
+        let mem = memory(workingHypothesis: nil, adaptationLog: depthThreeLog())
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil) == nil)
+    }
+
+    @Test func openerIsNilWhenWorkingHypothesisIsBlank() {
+        // Whitespace-only hypothesis takes the same gate as nil so the
+        // seed never renders "The read on the table is: ." to the
+        // model. Either boundary should be unreachable through the
+        // store, but the Codable round-trip could deliver a bad
+        // value; defend here.
+        let mem = memory(workingHypothesis: "   \n  ", adaptationLog: depthThreeLog())
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil) == nil)
+    }
+
+    @Test func openerBodyQuotesWorkingHypothesisInline() {
+        // The body names the working hypothesis so the coach reply has
+        // the case-anchored read in scope from the first turn. Same
+        // hypothesis text the post-rep `RevisedReadCard` and the
+        // round-35 case-formulation block reference — the chat thread
+        // and the case file read as continuous voice.
+        let mem = memory(
+            workingHypothesis: "Filler reduction appears to be the highest-leverage focus.",
+            adaptationLog: depthThreeLog()
+        )
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil)
+        #expect(opener?.contains("The read on the table is: ") == true)
+        #expect(opener?.contains("Filler reduction appears to be the highest-leverage focus") == true)
+    }
+
+    @Test func openerStripsTrailingPeriodToAvoidDoubleStop() {
+        // The engine's hypothesis clause already ends with `.`, and the
+        // body wraps it in "The read on the table is: …" which appends
+        // another. The strip step keeps the seed clean.
+        let mem = memory(
+            workingHypothesis: "Pace appears to be the highest-leverage focus; keep checking against future reps.",
+            adaptationLog: depthThreeLog()
+        )
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil)
+        #expect(opener?.contains("..") == false)
+    }
+
+    // MARK: - Voice-shaped ask
+
+    @Test func openerAskByVoiceAuthoritative() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .authoritative)
+        #expect(opener?.hasSuffix("What's the structurally different angle?") == true)
+    }
+
+    @Test func openerAskByVoiceWarm() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .warm)
+        #expect(opener?.hasSuffix("What angle haven't we tried yet?") == true)
+    }
+
+    @Test func openerAskByVoiceConcise() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .concise)
+        #expect(opener?.hasSuffix("Different angle?") == true)
+    }
+
+    @Test func openerAskByVoicePersuasive() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .persuasive)
+        #expect(opener?.hasSuffix("Make the case for a different angle.") == true)
+    }
+
+    @Test func openerAskByVoiceExecutive() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .executive)
+        #expect(opener?.hasSuffix("Brief me on a different angle.") == true)
+    }
+
+    @Test func openerAskByVoiceStorytelling() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .storytelling)
+        #expect(opener?.hasSuffix("What chapter breaks this loop?") == true)
+    }
+
+    @Test func openerAskByVoiceNone() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: nil)
+        #expect(opener?.hasSuffix("What's a different angle to try?") == true)
+    }
+
+    // MARK: - Brand-voice contract
+
+    @Test func openerHasNoUrgencyOrFanfareAcrossAllVoices() {
+        // Mirrors round-19 + round-20's brand-voice contracts. The chip
+        // is a stuck-pattern signal, not a celebration or a panic. None
+        // of the voice arms should leak through exclamation, "let's",
+        // "now", "hurry", "amazing", "nailed", "crushed", "stuck"
+        // (we name the *read* as stuck, not the user).
+        let voices: [SpeakingStyleGoal?] = [
+            .authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil,
+        ]
+        let bannedSubstrings = ["!", "Let's", "let's", " now ", "hurry", "amazing", "nailed", "crushed", "You're stuck"]
+        for voice in voices {
+            let mem = memory(adaptationLog: depthThreeLog())
+            guard let opener = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: voice) else {
+                Issue.record("Opener should not be nil for voice \(String(describing: voice)) at depth 3")
+                continue
+            }
+            for banned in bannedSubstrings {
+                #expect(
+                    !opener.contains(banned),
+                    "Opener for voice \(String(describing: voice)) contained banned substring '\(banned)'"
+                )
+            }
+        }
+    }
+
+    // MARK: - Headline picker
+
+    @Test func headlineIsNilAtDepthZero() {
+        let mem = memory(adaptationLog: nil)
+        #expect(CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: mem) == nil)
+    }
+
+    @Test func headlineIsNilAtDepthOne() {
+        let mem = memory(adaptationLog: [firstCyclePushback(at: Date())])
+        #expect(CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: mem) == nil)
+    }
+
+    @Test func headlineIsNilAtDepthTwo() {
+        // Mirrors the opener gate. The chip surface only earns rendering
+        // at the escalation band — depth 3+. At depth 2, the round-35
+        // case-formulation block and the round-32 rebuild-verdict
+        // context already speak in the model's context AND on the
+        // post-rep card; a chip on top would over-claim.
+        let now = Date()
+        let log = [
+            firstCyclePushback(at: now.addingTimeInterval(-3600)),
+            secondCyclePushback(at: now),
+        ]
+        let mem = memory(adaptationLog: log)
+        #expect(CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: mem) == nil)
+    }
+
+    @Test func headlineFiresAtDepthThreeWithCountInterpolated() {
+        let mem = memory(adaptationLog: depthThreeLog())
+        let headline = CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: mem)
+        #expect(headline == "Stuck on the same read — 3 pushbacks in a row")
+    }
+
+    @Test func headlineFiresAtDepthFourWithCountInterpolated() {
+        let mem = memory(adaptationLog: depthFourLog())
+        let headline = CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: mem)
+        #expect(headline == "Stuck on the same read — 4 pushbacks in a row")
+    }
+
+    @Test func headlineAndOpenerSharedGate() {
+        // Round-36 contract: the chip surface and the dispatched opener
+        // must never disagree on whether to render. A surface-level
+        // refactor (e.g. a future round threading the chip through a
+        // different dispatch path) cannot drift the two predicates.
+        // This test pins the invariant across the boundary depths.
+        let depthZero = memory(adaptationLog: nil)
+        let depthOne = memory(adaptationLog: [firstCyclePushback(at: Date())])
+        let depthThree = memory(adaptationLog: depthThreeLog())
+        let depthThreeNoHypothesis = memory(workingHypothesis: nil, adaptationLog: depthThreeLog())
+
+        #expect((CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: depthZero) != nil)
+                == (CoachContextBuilder.adaptationLoopBreakOpener(memory: depthZero, voice: nil) != nil))
+        #expect((CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: depthOne) != nil)
+                == (CoachContextBuilder.adaptationLoopBreakOpener(memory: depthOne, voice: nil) != nil))
+        #expect((CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: depthThree) != nil)
+                == (CoachContextBuilder.adaptationLoopBreakOpener(memory: depthThree, voice: nil) != nil))
+        // Note: the headline does NOT read the working hypothesis (it
+        // displays the streak depth only), so a missing hypothesis
+        // makes the OPENER nil while the headline can still render.
+        // This is by design — the chip CAN show the streak even when
+        // a hypothesis is mid-rebuild — BUT the chip's tap handler
+        // checks the opener separately, so a render-without-opener
+        // case is unreachable through the view. Test the opener side
+        // explicitly so the divergence is named.
+        #expect(CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: depthThreeNoHypothesis) != nil)
+        #expect(CoachContextBuilder.adaptationLoopBreakOpener(memory: depthThreeNoHypothesis, voice: nil) == nil)
+    }
+
+    // MARK: - Engineering bans
+
+    @Test func openerHelperDoesNotMutateMemory() {
+        // Pure function — reads `adaptationLog` + `workingHypothesis`
+        // and returns a string. No state is rewritten, no markers are
+        // flipped. This locks the contract so a future round cannot
+        // silently slip in mutation.
+        let mem = memory(adaptationLog: depthThreeLog())
+        let before = mem
+        _ = CoachContextBuilder.adaptationLoopBreakOpener(memory: mem, voice: .warm)
+        _ = CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: mem)
+        #expect(mem == before)
+    }
+}

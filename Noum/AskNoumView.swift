@@ -262,6 +262,16 @@ struct AskNoumView: View {
             // gets a one-tap entry into the same case-review conversation.
             caseReviewStarterChip
 
+            // Round-36 — adaptation loop-break chip. Sibling to the
+            // case-review chip above, gated on the round-35
+            // `adaptationLogCycleDepth(in:)` helper hitting depth ≥ 3
+            // (the escalation band where the case-formulation block tells
+            // the model to propose a structurally different angle). Names
+            // the stuck streak in the user's own voice and dispatches an
+            // opener that anchors on the working hypothesis + the depth
+            // count + a voice-shaped ask for a different angle.
+            adaptationLoopBreakStarterChip
+
             Text("Starters")
                 .font(Typography.micro.weight(.bold))
                 .foregroundStyle(.secondary)
@@ -399,6 +409,88 @@ struct AskNoumView: View {
             .accessibilityLabel("Review the active coaching case with Noum")
             .accessibilityHint("Opens the case-review conversation with the same context the post-rep card uses.")
             .accessibilityIdentifier("askNoum.emptyState.caseReviewChip")
+        }
+    }
+
+    // MARK: - Adaptation loop-break starter chip (round-36)
+    //
+    // Empty-state companion to the round-35 Profile-tab `CaseReviewCard`
+    // "Pushback depth" row. Renders only when
+    // `CoachContextBuilder.adaptationLogCycleDepth(in:)` returns a depth
+    // ≥ 3 — same escalation band the round-35 case-formulation block
+    // names as "propose a structurally different angle".
+    //
+    // Why a distinct visual register from `caseReviewStarterChip`:
+    //   • The case-review chip is a CADENCE signal ("your coach has a
+    //     check-in queued"); the loop-break chip is a PATTERN signal
+    //     ("the case file has been stuck on the same read for a while").
+    //     Distinct icons (`calendar.badge.clock` vs.
+    //     `arrow.triangle.2.circlepath`) let the user read which signal
+    //     is firing in one glance. Both can render at once — they
+    //     answer different questions.
+    //   • The display headline is intentionally short. The actual
+    //     dispatched opener is the full `adaptationLoopBreakOpener`,
+    //     same string a future re-entry surface would dispatch — so
+    //     the reply lands with depth + working hypothesis in scope and
+    //     a voice-shaped ask already framed.
+    //   • Voice continuity: tapping the chip and (in a future round)
+    //     opening the same loop-break thread from a Profile-tab tap
+    //     produce the identical chat thread. No surface-specific
+    //     phrasing drift.
+    //
+    // Brand-voice rules apply: the headline names the data ("Stuck on
+    // the same read — 3 pushbacks in a row"), not the user. No shame
+    // framing, no urgency framing.
+    @ViewBuilder
+    private var adaptationLoopBreakStarterChip: some View {
+        if let memory = coachMemoryStore.currentMemory,
+           let headline = CoachContextBuilder.adaptationLoopBreakStarterHeadline(in: memory),
+           let opener = CoachContextBuilder.adaptationLoopBreakOpener(
+               memory: memory,
+               voice: voice
+           ) {
+            Button {
+                send(opener)
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("STUCK PATTERN")
+                            .font(Typography.captionSmall)
+                            .tracking(0.6)
+                            .foregroundStyle(AppColor.pro)
+                        Text(headline)
+                            .font(Typography.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.top, 4)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    AppColor.pro.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                        .stroke(AppColor.pro.opacity(0.32), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Break the pushback loop with Noum")
+            .accessibilityHint("Opens a conversation that names the stuck streak and asks for a different angle.")
+            .accessibilityIdentifier("askNoum.emptyState.loopBreakChip")
         }
     }
 
