@@ -239,20 +239,42 @@ enum NextActionEngine {
 
     // MARK: - Adaptation bias
 
+    /// True iff the outcome ledger confidently says to REPLACE `mode`: a
+    /// `.replace`/`.confident` adaptation verdict (the analyzer's ≥6-measurable-rep
+    /// + genuinely-negative-recent-window bar). This is the single tie-breaker
+    /// predicate shared across the selection cascade.
+    ///
+    /// It is a pure read of `input.recommendationOutcomes` (the defaulted-empty
+    /// ledger passed IN — the engine never reaches the store), so an empty or
+    /// below-floor ledger ALWAYS returns `false`: every tie-breaker built on it is
+    /// a guaranteed no-op until ≥6 measurable reps for the mode exist, and the
+    /// analyzer's own floors mean `.vary`/`.reinforce`/tentative verdicts also
+    /// return `false`. Only a confident `.replace` — the one verdict that says a
+    /// mode's metric has trended down across the window — ever biases selection.
+    private static func confidentReplace(forMode mode: PracticeMode, input: NextActionInput) -> Bool {
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: mode, in: input.recommendationOutcomes)
+        return verdict?.action == .replace && verdict?.confidence == .confident
+    }
+
     /// Whether a Priority-6 reinforcement should be deferred because the outcome
     /// ledger confidently says to REPLACE the mode it would repeat. Only a
     /// `.stabilizingRep` (the one action that concretely re-prescribes the
-    /// just-practiced mode) is gated, and only on a `.replace`/`.confident`
-    /// verdict (≥6 measurable reps trending down) — a `.vary` or `.reinforce`
-    /// verdict, or thin evidence, never defers. Falling through hands the user a
-    /// targeted drill for the improving skill instead of repeating a mode the
-    /// evidence says is not moving the metric.
+    /// just-practiced mode) is gated, and only on a confident `.replace` verdict
+    /// (≥6 measurable reps trending down, via `confidentReplace`) — a `.vary` or
+    /// `.reinforce` verdict, or thin evidence, never defers. Falling through hands
+    /// the user a targeted drill for the improving skill instead of repeating a
+    /// mode the evidence says is not moving the metric.
     ///
-    /// Deliberately scoped to the mode-keyed `.stabilizingRep`/`.pressureExposure`
-    /// actions: the skill-keyed drills (P1–P5, P7/P8) are chosen from hard
-    /// real-time signals or a `targetArea`, which a per-MODE verdict must not
-    /// override. P1/P2/P4/P5 severe/blocker/declining/new-issue tiers run before
-    /// this and are never suppressed.
+    /// Scope of the adaptation verdict across the cascade: it is a TIE-BREAKER
+    /// over P3 (pressure), P6 (this reinforcement) and P7 (stretch) ONLY — and
+    /// only ever biases AWAY from a confidently-replaced mode (never INTO one,
+    /// never toward `nil` where an action was previously returned). The hard
+    /// real-time signals P1/P2/P4/P5 (severe/blocker/declining/new-issue) return
+    /// before any tie-breaker and are never suppressed; the skill-keyed P8 `.drill`
+    /// is likewise never overridden — a per-MODE verdict must not veto a
+    /// SKILL-keyed drill (P8 stays inert; at most its fallback `.practiceMode`
+    /// could bias away from `input.mode`). `.vary` is inert and an empty ledger is
+    /// a guaranteed no-op, so `recommend()` stays a total function throughout.
     private static func shouldDeferReinforcement(_ action: ActionRecommendation, input: NextActionInput) -> Bool {
         let mode: PracticeMode
         switch action {
@@ -261,8 +283,7 @@ enum NextActionEngine {
         case .drill, .confidenceRebuilding, .practiceMode:
             return false
         }
-        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: mode, in: input.recommendationOutcomes)
-        return verdict?.action == .replace && verdict?.confidence == .confident
+        return confidentReplace(forMode: mode, input: input)
     }
 
     // MARK: - Priority Checks
@@ -326,6 +347,20 @@ enum NextActionEngine {
         guard input.pressureLevel < .elevated else { return nil }
 
         let mode: PracticeMode = input.mode == .suddenDeath ? .timed : .suddenDeath
+
+        // Adaptation tie-breaker: if the ledger confidently says to REPLACE this
+        // pressure mode, bias AWAY — flip to the other pressure mode. If THAT one
+        // is also confidently-replaced (both pressure modes not moving the metric),
+        // fall through (return nil) so the cascade hands a drill/stretch instead of
+        // re-prescribing a pressure mode the evidence says is stalled. An empty or
+        // below-floor ledger makes both checks `false`, so this preserves today's
+        // chosen mode byte-for-byte until ≥6 measurable reps exist.
+        if confidentReplace(forMode: mode, input: input) {
+            let flipped: PracticeMode = mode == .suddenDeath ? .timed : .suddenDeath
+            guard !confidentReplace(forMode: flipped, input: input) else { return nil }
+            return .pressureExposure(flipped, reason: "Your casual delivery is solid — testing it under pressure will reveal your next growth edge.")
+        }
+
         return .pressureExposure(mode, reason: "Your casual delivery is solid — testing it under pressure will reveal your next growth edge.")
     }
 
@@ -420,10 +455,26 @@ enum NextActionEngine {
     }
 
     /// A stretch challenge for users who are performing well.
+    ///
+    /// Adaptation tie-breaker: each mode-keyed branch checks `confidentReplace` for
+    /// the mode it is about to prescribe and, on a confident `.replace`, biases to
+    /// an ALTERNATIVE stretch (the `.practiceMode(.imConversation)` modality switch,
+    /// or the other pressure mode when IM is itself the replaced candidate) rather
+    /// than handing back a mode the ledger says is stalled. Every branch still
+    /// returns a stretch action — the tie-breaker only redirects WHICH one — so the
+    /// function stays total. An empty/below-floor ledger makes every check `false`,
+    /// leaving today's branches byte-for-byte unchanged.
     private static func stretchChallenge(input: NextActionInput) -> ActionRecommendation? {
+        let imSwitch: ActionRecommendation = .practiceMode(.imConversation, reason: "A change of modality is its own stretch — try an IM conversation to push a different edge.")
+
         // If they haven't tried sudden death much, suggest it
         let recentSuddenDeath = input.drillHistory.filter { $0.skillArea == .fillerReduction }.count
         if recentSuddenDeath < 3 && input.fillerCount <= 2 {
+            if confidentReplace(forMode: .suddenDeath, input: input) {
+                // Sudden death is the candidate but the ledger says replace it →
+                // switch modality instead of repeating a not-moving pressure mode.
+                return imSwitch
+            }
             return .pressureExposure(.suddenDeath, reason: "Your filler control is strong — test it under sudden death pressure.")
         }
 
@@ -434,6 +485,16 @@ enum NextActionEngine {
 
         // Otherwise suggest pressure mode
         if input.pressureLevel < .elevated {
+            if confidentReplace(forMode: input.mode, input: input) {
+                // The just-practiced mode is confidently replaced. Prefer the IM
+                // modality switch; if IM is itself the replaced mode, bias to the
+                // other pressure mode so we never re-offer the stalled one.
+                if input.mode != .imConversation {
+                    return imSwitch
+                }
+                let alt: PracticeMode = input.mode == .suddenDeath ? .timed : .suddenDeath
+                return .pressureExposure(alt, reason: "Turn on pressure mode for your next session to push your edge.")
+            }
             return .pressureExposure(input.mode, reason: "Turn on pressure mode for your next session to push your edge.")
         }
 
