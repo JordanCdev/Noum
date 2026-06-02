@@ -1,0 +1,132 @@
+# Coach-Replacement Scorecard
+
+**Generated: 2026-06-01**
+
+> One honest read of how close Noum is to genuinely replacing an excellent human public-speaking / communications coach — measured box-by-box against what such a coach actually does. A box is only marked **ticked this run** if its independent verification came back non-blocking. Boxes that only a human, real users, or a real coach can confirm are kept in their own section and are never counted as done.
+
+## State of coach-replacement
+
+Noum is a serious, evidence-disciplined coaching substrate — and, on the full checklist of what an excellent human communications coach does, it is closer than most products ever get, but it is **not** a replacement and this run does not claim one. Across roughly fifty boxes, the diagnosis spine (evidence-led baseline, committed high-leverage lever), the memory spine (durable case file, persistent voice register, hypotheses-not-traits), the delivery sensing (fillers, pace, pitch, energy, pauses, composure — each honestly gated on thin data), the deliberate-practice prescription (named strategy + observable target + honest success bar), the cross-attempt adaptation reducer, the pressure / role-play exercises, the model-a-stronger-version loop, and the transfer-to-real-moments capture are all shipped-strong and independently re-verified. This run moved **four** boxes from partial/absent to shipped (all four verifications non-blocking): SUBSTANCE-2 the BLUF verdict is now genuinely *positional* and single-sourced across four surfaces; IM-SUBSTANCE the primary role-play grader now has a locale gate, a deterministic grounded fallback, and a grounding gate (no more offline dead-end); EXERCISE-6/5/9 STAR-turn, persuasion claim/counter, and a timed elevator pitch are now graded on their own structure instead of merely displayed; and DIAGNOSE-3/HONESTY-7 a stated-vs-measured divergence now surfaces as a *question* rather than a silent focus switch. What code cannot tick remains untouched and is stated plainly: nothing here was compiled or run (no toolchain on host), the felt quality of every live LLM read is unproven without on-device QA on real keys, and true coach parity — expert calibration and durable real-user improvement over weeks — is provable only by humans and real outcomes.
+
+**The discipline that makes this credible, not the box count:** every intelligence box that ships follows the proven contract — rich whole-person context, an explicit priority-ordered substance rubric per voice register, a post-hoc grounding gate that rejects generic output, a deterministic grounded fallback for offline / non-English / no-provider, a locale gate, a deterministic untouched numeric score, a single source of truth across surfaces, and bounded decode-safe types with unit-tested seams. Shipped, careful code is **necessary but not sufficient.** A green test suite is not evidence of coaching parity.
+
+---
+
+## Full checklist
+
+Legend: **shipped-strong** = built and verified · **shipped (this run)** = moved this run, verification non-blocking · **shipped-partial** = real but incomplete · **absent** = not built · **human-gated** = no code can tick it.
+
+| Box (what a great coach does) | Status | Evidence / owner · or this-run slice |
+|---|---|---|
+| DIAGNOSE-1: Evidence-led baseline (no single-sample diagnosis) | shipped-strong | `BaselineEngine` `CommunicationBaseline` + `BaselineConfidence` ladder; `>= .tentative` gate before any baseline line |
+| DIAGNOSE-2: Name the single high-leverage weakness, committed deterministically | shipped-strong | `PrimaryFocusMemory.selectLever` priority chain + `TrendAnalyzer.primaryFocus` ladder |
+| DIAGNOSE-3: Reconcile the measured read with the user's STATED challenge | **shipped (this run)** | **slice-4 / initiative #13** — `selectLever` reads `CoachingProfile.biggestChallenge` via canonical `skillAreaForAIWeek`; records `StatedChallengeConcordance`; agreement affirmed, divergence surfaced |
+| REMEMBER-1: Durable evolving case file, rebuilt every finalize, injected every turn | shipped-strong | `CoachCaseFile` + `CoachMemory` rebuilt on finalize, user-confirmable, threaded via `CoachContextBuilder` |
+| REMEMBER-2: Hold the user's goal/voice register as the persistent coaching lens | shipped-strong | Single `CoachPersona` via `AIInsightsService.registerClause`, reused across note / debrief / Coach Read |
+| REMEMBER-3: Treat deep patterns as confirmable hypotheses, never asserted traits | shipped-strong | `workingHypothesis` + `CoachHypothesisAcknowledgement.appliesTo` snapshot guard; chip-row verdict carried into chat |
+| REMEMBER-4: Hold the upcoming real-world moment on the durable case spine | shipped-partial | `BigMoment` reaches per-turn context (`daysUntil`) but never `CoachCaseFile.build`. Roadmap initiative #2 |
+| PRESCRIBE-1: Named strategy + explicit rationale (a drill for a reason) | shipped-strong | `CoachIntervention` + `activeIntervention` builder + `interventionSummary` |
+| PRESCRIBE-2: Observable target + honest success bar stated before practice | shipped-strong | `observableTarget` + `successMeasureSummary` + `reviewDueAt` + `buildSuccessCriterion` |
+| PRESCRIBE-3: Ground the target/bar in the user's OWN baseline numbers | absent | `priorAverage` computed but never reaches `criterionSummary`; bar is a fixed switch. Roadmap initiative #5 |
+| OBSERVE+ADAPT-1: Compare across attempts → reinforce / vary / replace | shipped-strong | `RecommendationAdaptationAnalyzer` pure reducer, min-rep floors + bands; 22-case tests (initiative #1) |
+| OBSERVE+ADAPT-2: Feed the verdict back to bias the NEXT prescription | shipped-partial | Only Priority-6 reinforcement-deferral wired (`NextActionEngine`); broader P3/P7/P8/standardDrill bias unbuilt |
+| EXERCISE-1: Impromptu / Table-Topics (think + structure under a soft clock) | shipped-strong | `PracticeMode.timed` + `TimedPracticeView` + `.impromptu` / `.tableTopic` catalog |
+| EXERCISE-2: Pressure / curveball role-play (escalating stress) | shipped-strong | `SuddenDeathPracticeView` + `PressureTimerEngine` tiered escalation; `classifyPressure` fairness |
+| EXERCISE-3: Conversational role-play with an in-persona partner | shipped-strong | `AINPCChatService` scenario-locked NPC (persona/stakes/mood/friction/STAY IN PERSONA); rated turns |
+| EXERCISE-4: Concision / "get to the point" (BLUF, lead with the point) | shipped-partial | BLUF drill copy exists and the verdict can detect a buried lede, but no dedicated guided BLUF-detection exercise |
+| EXERCISE-5: Structured-argument frameworks (PREP; persuasion claim/counter) | **shipped (this run)** / shipped-partial | **slice-3** added a persuasion **claim/counter** check on top of the shipped PREP 4-step. **AREA / Monroe's / claim-evidence-warrant scaffolds still absent** |
+| EXERCISE-6: Storytelling / narrative (STAR, setup-turn-takeaway) with a "turn" check | **shipped (this run)** | **slice-3 / initiative #12** — `FrameworkDrillChecks.starTurn` detects the discourse-shift "turn", `.flat` above floor, `nil` below the content-word floor |
+| EXERCISE-7: Reframing / bridging hostile or curveball questions | absent | Hostility only DETECTED lexically; no structured bridging drill or check |
+| EXERCISE-8: Pace control + vocal-variety + pause drills | shipped-strong | `beatTheBrake` live-WPM + `landThePause` checkpoints + `vocalVariety` + `ahCounter` |
+| EXERCISE-9: Elevator pitch / analogy-metaphor / articulation warmups | **shipped (this run)** / shipped-partial | **slice-3** added a **timed elevator-pitch** check (`elevatorPitch`, name + hook + in-box duration). Analogy/articulation warmups still unbuilt |
+| SUBSTANCE-1: Did you answer the question? (prompt-aware relevance, single source) | shipped-strong | `promptRelevance` + `promptAnswerVerdict` single-sourced across 4 surfaces with evidence floors (initiative #8) |
+| SUBSTANCE-2: Lead with the point vs buried lede (positional) | **shipped (this run)** | **slice-1 / initiative #10** — verdict now compares `firstSentenceOverlap` vs whole-rep overlap; `.buried` = present-but-late; the false "arrived late" on a 0%-overlap rep is closed |
+| SUBSTANCE-3: Grounded, quoted, tailored feedback enforced by a post-hoc gate | shipped-strong | `engagesTranscript` gates in `PostRepCoachNoteService` + `AICoachService`; deterministic fallback |
+| SUBSTANCE-4: Comprehensive rubric reasons over the standing hypothesis + target | absent | `CoachMemory` / `workingHypothesis` / `activeIntervention` not yet threaded into `AICoachSessionInput`. Deferred in initiative #9 |
+| DELIVERY-1: Filler-word reduction sensed and trended | shipped-strong | `BaselineEngine` `fillerRate` + per-rep rate + register-specific baselines; semantic-vs-filler guard |
+| DELIVERY-2: Pace + pace-variance sensed, baseline-calibrated | shipped-strong | `BaselineEngine` `pace` + `paceVariance`; `classifyPressure` fairness |
+| DELIVERY-3: Pitch / prosody (monotone) from on-device f0 | shipped-strong | `PitchAnalyzer` real autocorrelation f0; only `isReliable` sessions contribute |
+| DELIVERY-4: Vocal energy / dynamics sensed | shipped-strong | `VocalEnergyMetrics` real RMS-envelope; feeds `ComposureRead.Inputs` (M26 edits in-flight) |
+| DELIVERY-5: Pause usage sensed (filled vs silent, placement) | shipped-strong | `BaselineEngine` `pauseRate` + `pauseFilledRatio`; `landThePause` checkpoint drill |
+| DELIVERY-6: Composure + confidence-marker reads (multi-channel, honest about thin data) | shipped-strong | `ComposureRead` / `ConfidenceMarkerRead` fuse ≥2 channels (nil below), hedged readouts |
+| DELIVERY-7: ONE durable fused delivery read (clear vs polished/evasive/timid/detached) | absent | Channels sense+trend separately; no `fuseDeliveryRead` / `CoachDeliveryRead` on the case file. Roadmap initiative #3 |
+| MODEL-1: Show a stronger version anchored to the user's own words/voice | shipped-strong | `AIRewriteService` vocabulary-preservation + AI-tell jargon-drift rejection; `revisedOpening` |
+| MODEL-2: Explain WHY it's better and let the user push back | shipped-strong | `RevisedReadCard` + `shouldShowRevisedReadFollowUp`; chip-row verdict into every chat turn |
+| ROLE-PLAY-1: In-persona pressure + curveballs with sequenced difficulty | shipped-strong | `AINPCChatService` `escalationInstruction` by phase + Sudden Death ramp + STAY IN PERSONA |
+| ROLE-PLAY-2: Build confidence — fair pressure, never punish-shame under load | shipped-strong | Credit without intra-round interruption + never-punish-shame rule + `classifyPressure` fairness |
+| TRANSFER-1: Capture upcoming real moments and read them back into coaching | shipped-strong | `BigMomentStore` + `daysUntil` into context + prep-for-event chips |
+| TRANSFER-2: Capture how the moment went (outcome + perceived audience response) | shipped-strong | `ReportedMomentOutcome` + `ReportedAudienceResponse` + `CoachTransferReview` folds into the case |
+| TRANSFER-3: Aggregate outcomes across same-kind events into a tentative cross-event trend | absent | `recentOutcomeReports` returns a FLAT list emitted flat; no per-kind aggregation. Roadmap initiative #4 |
+| HONESTY-1: Weak evidence → tentative; repeated patterns → stronger intervention | shipped-strong | Evidence floors everywhere (verdict nil below floor, adaptation min-rep floors, baseline gate) |
+| HONESTY-2: Association never causation; never overclaim a drill caused a change | shipped-strong | Adaptation phrased as association; transfer-line disclaimer; system-prompt rule 14 |
+| HONESTY-3: Deterministic grounded fallback for offline / non-English / no-provider | shipped-strong | `PostRepCoachNoteService` + `AICoachService` fallback-first; "Coach Read failed" unreachable on gated paths |
+| HONESTY-4: Locale gate — non-AI-supported locales get the deterministic read | shipped-strong / **extended (this run)** | `activeLocaleSupportsAI()` guards `AICoachService`; **slice-2 added the same gate to the IM grader** |
+| HONESTY-5: Numeric score stays deterministic + untouched (AI is read-only context) | shipped-strong | Score computed only in `PracticeEvaluator`; relevance feeds rating not score; score-invariance tests |
+| HONESTY-6: Restrained brand voice — no exclamation/chirp/fanfare; never punish-shame | shipped-strong | `passesBrandVoiceContract` gate + rubric forbids punish-shame/exclamation |
+| HONESTY-7: No silent focus switches on stated-vs-measured divergence | **shipped (this run)** | **slice-4 / initiative #13** — `.divergent` emits ONE question ("ask which to anchor to — do not silently switch the focus they stated"); stored focus never auto-flipped |
+| COHERENCE: Single coherent coach read / voice / case across every surface | shipped-strong | One `promptAnswerVerdict` + one `CoachPersona` + byte-identical `AICoachFeedback` schema across surfaces; tested |
+| SUBSTRATE: Bounded, decode-safe, defaulted types + unit-tested deterministic seams | shipped-strong | ~1530 `@Test` cases; optional/defaulted fields with custom `init(from:)`; per-initiative suites |
+| IM-SUBSTANCE: IM role-play grader contract (locale gate + grounded fallback + grounding gate) | **shipped (this run)** | **slice-2 / initiative #11** — `IMConversationEvaluationService` rebuilt fallback-first; 5 gated throw sites removed; deterministic read reuses `IMToneMatcher`/`IMUserMessageAnalyzer`/`IMConversationOutcomeResolver` |
+| IM-TONE: `IMToneMatcher.score` + `IMHistorySummary.matches` (multi-signal vs single-keyword) | shipped-partial | Each tone is one substring check; `matches()` is exact-title substring |
+| ARGUMENT-LOGIC: claim→evidence→warrant detection as a real deterministic signal | absent | `StyleTrait` / `evaluationHint` are descriptive label strings with no consumers; no detector |
+| CONCISION-OF-MEANING: deterministic meaning-density / answer-arrival signal | shipped-partial | Length proxy replaced by overlap (#8); no meaning-density metric; concision carried by LLM prompts + word-count heuristics |
+| AI-CHAT-FALLBACK: `AICoachChatService` deterministic reply fallback | shipped-partial | Locale gate + rich context, but no deterministic reply on `.network`/`.empty`/`.noProvider`; chat dead-ends offline |
+| AI-HOME-REC: `AIHomeRecommendationService` contract completion | shipped-partial | Ungated/throwing/generic prompt, but 3 of 4 call sites use deterministic `RecommendationBiasEngine.blueprint`; degrades silently |
+| VIDEO-ANALYSIS: `VideoAnalysisService` contract completion | shipped-partial | Ungated/throwing; generic fallback prompt; raw-error render. Presence pillar sequenced last; doubly human-gated |
+| PRESSURE-FOLLOWUP: `PressureFollowUpService` locale gate + grounding | shipped-partial | Throws + no locale gate but absorbed by deterministic templates. Lowest leverage |
+| VALIDATE-1: Version-controlled, leak-guarded evaluation fixture substrate | absent | Only an in-memory `#if DEBUG` `DevSeedData` seed; no version-controlled leak-guarded fixture set. Roadmap initiative #7 |
+| VALIDATE-2: Expert-coach per-fixture baseline + scored Noum-vs-baseline comparison | human-gated | Requires an expert per-fixture baseline + pre-registered scored comparison |
+| VALIDATE-3: Longitudinal real-user outcome tracking proving durable improvement | human-gated | Requires real users over weeks |
+| VALIDATE-4: Felt response quality of live LLM reads | human-gated | On-device QA with real provider keys only |
+
+---
+
+## Built this run
+
+Four slices, each built end-to-end against the real codebase and **independently re-verified** (cold-read of changed code + tests, hand-traced fixtures against the real tokenizer / stop set / named constants). All four verifications came back **non-blocking** — no blocker/high/medium findings; only low-severity documentation/comment nits, listed under Remaining.
+
+- **slice-1 — Positional BLUF verdict** (initiative #10). `PracticeEvaluator.promptAnswerVerdict` was overlap-*magnitude* only; four surfaces asserted positional "lead vs arrived late" reasoning the engine never performed. The verdict now computes `firstSentenceOverlap` (the lead) against whole-rep overlap, so `.buried` means *present but late* and `.partial` means *engaged only loosely* — and the standing honesty bug (a fallback line claiming "the answer arrived late" about a 0%-overlap off-topic rep) is closed by construction. Single-sourced across the deterministic fallback, `CoachContextBuilder`, `FeedbackEngine`, and the `AICoachService` rubric. **Verdict: non-blocking** (one low: transposed enum case doc-comments at `Noum/PracticeSupport.swift:5561-5574` — comments only, code correct everywhere).
+- **slice-2 — IM grader contract completion** (initiative #11). `IMConversationEvaluationService` restructured to the proven fallback-first shape: locale gate, a deterministic transcript-grounded read that reuses `IMToneMatcher` + `IMUserMessageAnalyzer` + `IMConversationOutcomeResolver` (so the fallback grade agrees with the live per-turn reads — true single source of truth), and an `evaluationEngagesTranscript` grounding gate that rejects generic output. All five gated `IMModeServiceError` throw sites inside `evaluateConversation` removed; the remaining `IMModeServiceError` throws live only in the separate reply service. The offline "Couldn't finish" dead-end is gone. **Verdict: non-blocking** (two low: stale sibling-service line refs in comments; one test-comment misattributes which gate-branch it exercises — the assertion itself is correct).
+- **slice-3 — Verified framework drills** (initiative #12). Three displayed-instruction exercises became real deliberate practice graded on their own structure, via pure deterministic detectors in `Noum/FrameworkDrillChecks.swift`: `starTurn` (discourse-shift "turn" detection), `claimCounter` (concession-before-bridge ordering for persuasion), and `elevatorPitch` (name + hook + in-box duration). Each returns `nil` below a content-word evidence floor rather than a confident negative; the verdict routes to a quality bonus and is *never* an XP/streak/score input (proven by an XP-invariance test). Catalog entries state the framework + observable target before the rep. **Verdict: non-blocking** (two low: the self-report's file list named `FeedbackEngine.swift` — that diff is unrelated #8/#10 work; and `DrillCompletionCopy` lives in `ReinforcementCopy.swift` at project root, not under `Noum/` — both code claims check out). *Honest caveat: the arithmetic and routing are fully verified, but whether the discourse-marker bands match the real distribution of natural speech is a reasonable conservative band, not a proven-complete one — on-device QA territory.*
+- **slice-4 — Stated-vs-measured concordance** (initiative #13). `selectLever` now reads `CoachingProfile.biggestChallenge`, maps it through the canonical `skillAreaForAIWeek` (so diagnosis and the AI forward plan can't disagree about what a challenge means), and records a `StatedChallengeConcordance` (`.agree` / `.divergent` / `.deferred` / `.unknown`) on the durable `CoachMemory` (new fields decode-safe + defaulted + round-trip tested). When the reps diverge from the stated goal, `CoachContextBuilder` emits ONE divergence *question*; the stored focus is never auto-flipped. **Verdict: non-blocking** (one low/latent: the `.divergent` context arm double-guards on a non-nil differing `statedChallengeArea` — unreachable via the real build path today, flagged as a future-coupling hardening at `Noum/CoachContextBuilder.swift:2374-2377`).
+
+New artifacts this run: `Noum/FrameworkDrillChecks.swift`; specs `docs/initiatives/10_positional_bluf_verdict.md`, `11_im_grader_contract_completion.md`, `12_framework_drill_checks.md`, `13_stated_vs_measured_concordance.md`. Pre-existing dirty edits (M26 vocal-energy) were left untouched as instructed.
+
+---
+
+## Remaining (code-tickable)
+
+Sequenced roughly by coaching leverage. Each is statically buildable against the existing owners on a future run; none requires a human to *write*.
+
+- **REMEMBER-4** — put `BigMoment` on `CoachCaseFile.build`, not just per-turn context. *(initiative #2)*
+- **PRESCRIBE-3** — feed `priorAverage` into `criterionSummary` so the success bar is grounded in the user's own numbers, not a fixed switch. *(initiative #5)*
+- **OBSERVE+ADAPT-2** — extend the adaptation verdict's influence beyond Priority-6 to P3/P7/P8/standardDrill prescription bias.
+- **DELIVERY-7** — one durable fused `CoachDeliveryRead` (clear vs polished/evasive/timid/detached) on the case file. *(initiative #3)*
+- **SUBSTANCE-4** — thread `CoachMemory` / `workingHypothesis` / `activeIntervention` into `AICoachSessionInput` so the rubric reasons over the standing hypothesis + target.
+- **TRANSFER-3** — aggregate reported outcomes per event-kind into a tentative cross-event trend. *(initiative #4)*
+- **EXERCISE-5 (remainder)** — AREA / Monroe's Sequence / claim-evidence-warrant scaffolds (PREP + the new STAR/claim-counter/pitch checks now exist).
+- **EXERCISE-7** — a structured reframing/bridging drill for hostile or curveball questions (hostility is currently only detected).
+- **ARGUMENT-LOGIC** — a real deterministic claim→evidence→warrant signal with consumers.
+- **CONCISION-OF-MEANING** — a deterministic meaning-density / answer-arrival metric.
+- **AI-CHAT-FALLBACK** — a deterministic reply for `AICoachChatService` on `.network`/`.empty`/`.noProvider` (chat still dead-ends offline).
+- **IM-TONE** — multi-signal `IMToneMatcher.score` + `IMHistorySummary.matches` (each is a single substring check today).
+- **Lower-leverage contract completions** — `AIHomeRecommendationService`, `VideoAnalysisService`, `PressureFollowUpService` (each ungated/throwing but mostly absorbed by deterministic fallbacks).
+- **VALIDATE-1** — a version-controlled, leak-guarded evaluation fixture substrate (only an in-memory `#if DEBUG` seed exists today). *(initiative #7)* — this is the bridge to the human-gated VALIDATE boxes.
+- **Doc-only cleanups** from verification (zero behavioral impact): transposed `PromptAnswerVerdict` doc-comments (`PracticeSupport.swift:5561-5574`); stale sibling-service line refs in the IM-grader comments; optional hardening of the `.divergent` double-guard (`CoachContextBuilder.swift:2374-2377`).
+
+---
+
+## Human-gated — only you / your users / real coaches can tick these
+
+No amount of careful Swift can close these. They are stated up front so the scorecard never overclaims.
+
+- **COMPILE / BUILD** — This host has no Swift/Xcode toolchain. None of these slices were compiled or run. Cross-file "cannot find type" SourceKit errors are expected module-index noise, **not** real failures. A clean `xcodebuild` is the first thing a human must confirm.
+- **TEST EXECUTION** — The ~1530 `@Test` cases (including the new per-slice suites for every deterministic seam — fallback, grounding gate, schema parse, context assembly, decode-safety) cannot be executed here. A green `NoumTests` run requires the toolchain — **and a green suite is explicitly not evidence of coach parity.**
+- **VALIDATE-4 — felt LLM quality** — Whether the now-positional BLUF read, the IM grounding gate, the framework nudges, and the divergence question actually *feel* like an excellent coach is judgeable only by on-device QA with real provider keys. The code designs the substrate that determines reasoning quality; it cannot prove the felt quality of a live response.
+- **VALIDATE-2 — expert-coach calibration** — Confirming Noum's diagnosis/feedback agrees with an excellent human coach needs an expert per-fixture baseline + a pre-registered scored comparison. No keys, no toolchain, no human coach on this host.
+- **VALIDATE-3 — longitudinal outcomes** — True coach parity is provable only by durable real-user improvement over weeks, read through honest telemetry. Impossible on this host and never claimable from a feature checklist or a single reply.
+- **VIDEO / PRESENCE felt quality** — Even with `VideoAnalysisService`'s contract completed, its reads are doubly human-gated (real keys **and** real on-device camera frames), and the presence pillar is intentionally sequenced after audio/text coaching is trustworthy.
+
+---
+
+*Bottom line: Noum has the diagnosis, memory, prescription, delivery-sensing, adaptation, role-play, modeling, and transfer machinery of a real coach, built under genuine honesty discipline, and this run tightened four of its sharpest edges. That makes it a credible coaching system on paper. It does not make it a proven replacement. The remaining distance is not mostly more code — it is compilation, on-device QA with real keys, expert calibration, and real users improving over time. This document will say "ticked" only when those are true.*
