@@ -78,9 +78,13 @@ enum AskNoumSpokenMode {
     ///
     /// A `.failure` (any cause) is NEVER spoken — a system-notice row is a
     /// UI affordance, not the coach's voice, so reading "I couldn't reach my
-    /// model" aloud would be worse than silence. An all-whitespace reply is
-    /// also rejected (defensive; the store routes that to `.failure(.empty)`
-    /// anyway, but the predicate must not depend on that downstream behavior).
+    /// model" aloud would be worse than silence. A `.deterministicReply` (the
+    /// grounded offline line) is ALSO never spoken: TTS needs the same network /
+    /// provider that is down, and reading a canned line aloud as if it were the
+    /// live coach would overclaim — it stays a silent text bubble. An
+    /// all-whitespace reply is also rejected (defensive; the store routes that
+    /// to `.failure(.empty)` anyway, but the predicate must not depend on that
+    /// downstream behavior).
     static func shouldSpeak(
         outcome: ChatOutcome,
         spokenRepliesEnabled: Bool,
@@ -90,6 +94,13 @@ enum AskNoumSpokenMode {
         switch outcome {
         case .reply(let text):
             return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .deterministicReply:
+            // A canned offline line is NEVER read aloud as the live coach —
+            // TTS needs the same network / provider that is down, and a
+            // deterministic line spoken as if live would overclaim. It renders
+            // as a coach bubble (see `AskNoumStore.completeCoachTurn`) but stays
+            // silent.
+            return false
         case .failure:
             return false
         }
@@ -1869,11 +1880,36 @@ struct AskNoumView: View {
             // only shapes the reply's framing.
             pendingGoalIntent: pendingGoalIntent
         )
+        // Deterministic-fallback context (A1). Assembled HERE, in the same
+        // main-actor prologue as the `userContext` store reads above (before any
+        // `await`), so an OFFLINE / no-provider / locale-blocked turn still gets
+        // a grounded, in-voice coach reply instead of an error notice. Reads the
+        // most-recent TIMED rep (the mode the prompt-answer verdict is about)
+        // and the already-summarized standing case off the case file — never
+        // re-derives, never fabricates. The service ignores this on the live
+        // path; it only consumes it on the handled failure paths.
+        let recentTimed = sessionStore.sessions.last(where: { $0.mode == .timed })
+        let recentTimedWPM: Int = recentTimed.map {
+            PracticeEvaluator.paceSnapshot(forTranscript: $0.transcript, duration: $0.duration).wordsPerMinute
+        } ?? 0
+        let fallbackCaseFile = coachMemoryStore.currentMemory?.caseFile
+        let fallbackContext = ChatFallbackContext(
+            voice: voice,
+            recentTimedTranscript: recentTimed?.transcript,
+            recentTimedPrompt: recentTimed?.prompt,
+            recentWordsPerMinute: recentTimedWPM,
+            recentFillerCount: recentTimed?.fillerWordCount ?? 0,
+            hypothesis: fallbackCaseFile?.hypothesis,
+            observableTarget: fallbackCaseFile?.observableTarget,
+            successMeasure: fallbackCaseFile?.successMeasure,
+            nextQuestion: fallbackCaseFile?.nextQuestion
+        )
         let history = await MainActor.run { store.replayForModel }
         let outcome = await AICoachChatService.shared.reply(
             history: history,
             systemPrompt: systemPrompt,
-            userContext: context
+            userContext: context,
+            fallback: fallbackContext
         )
         await MainActor.run {
             store.completeCoachTurn(id: coachID, outcome: outcome)

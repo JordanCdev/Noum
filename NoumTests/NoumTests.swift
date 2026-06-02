@@ -411,6 +411,102 @@ struct FrameworkDrillCheckTests {
         #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 25) == .overTime)
     }
 
+    // MARK: Reframe / bridge (curveball)
+
+    @Test func reframeAcknowledgeThenBridgeToPrioritySatisfies() {
+        // "that's fair" (ack) BEFORE "the real question is" (priority bridge).
+        // 9 content words: fair, real, question, whether, customers, actually,
+        // trust, product, enough.
+        let t = "That's fair, but the real question is whether our customers actually trust the product enough."
+        #expect(FrameworkDrillChecks.bridgeReframe(transcript: t) == .reframed)
+    }
+
+    @Test func reframeDirectAnswerWithoutBridgeIsFacedDirectly() {
+        // No fair-acknowledgement marker at all -> answered head-on, which is
+        // valid; the reframe move simply isn't present. Constructive, not nil.
+        let t = "Our revenue grew thirty percent this quarter and the team shipped every major feature."
+        #expect(FrameworkDrillChecks.bridgeReframe(transcript: t) == .facedDirectly)
+    }
+
+    @Test func reframeBridgeBeforeAcknowledgementFailsOrdering() {
+        // Honesty-critical ordering case (mirrors claim/counter): the priority
+        // bridge ("the real question") appears BEFORE the acknowledgement
+        // ("that's fair"), and there is no bridge AFTER the ack -> facedDirectly,
+        // never a confident "reframed". Exactly 6 content words (at the floor):
+        // real, question, cost, fair, point, honestly.
+        let t = "The real question is cost, that's fair to point out honestly."
+        #expect(FrameworkDrillChecks.bridgeReframe(transcript: t) == .facedDirectly)
+    }
+
+    @Test func reframeAlternateMarkersStillSatisfy() {
+        // Different ack ("i hear that") + different priority bridge ("what
+        // matters more"). 8 content words: hear, concern, completely, matters,
+        // keeping, existing, customers, happy.
+        let t = "I hear that concern completely, but what matters more is keeping our existing customers happy."
+        #expect(FrameworkDrillChecks.bridgeReframe(transcript: t) == .reframed)
+    }
+
+    @Test func reframeBelowFloorIsTentative() {
+        // "that's" tokenizes to "that"(stop)+"s"(<4); only "fair" is a content
+        // word -> 1 < 6 -> nil (no confident verdict on thin data, even with an
+        // ack marker present).
+        let t = "That's fair, but no."
+        #expect(FrameworkDrillChecks.bridgeReframe(transcript: t) == nil)
+    }
+
+    // MARK: AREA (Answer · Reason · Example · Answer)
+
+    @Test func areaAllFourBeatsComplete() {
+        // Reason ("the reason is"), example ("for example", "last week"), and a
+        // closing loop ("so that's why") all present above the floor.
+        let t = "Remote work wins. The reason is teams ship faster. For example, last week we shipped in two days. So that's why remote wins."
+        #expect(FrameworkDrillChecks.areaAnswer(transcript: t) == .complete)
+    }
+
+    @Test func areaMissingReasonFlagged() {
+        // Example present ("for example") but NO reason marker -> missingReason
+        // (checked first). 9 content words incl. the duplicate "charge".
+        let t = "Our pricing is too high. For example, competitors charge half what we charge for similar features."
+        #expect(FrameworkDrillChecks.areaAnswer(transcript: t) == .missingReason)
+    }
+
+    @Test func areaMissingExampleFlagged() {
+        // Reason ("because") present, NO example marker -> missingExample. Note
+        // "because" is a CONTENT-WORD stop word (it does not inflate the floor)
+        // yet still matches as a reason discourse marker — the design seam.
+        // Content words: discipline, beats, talent, consistent, effort,
+        // compounds, time = 7 >= 6.
+        let t = "Discipline beats talent because consistent effort compounds over time and habits outlast motivation eventually."
+        #expect(FrameworkDrillChecks.areaAnswer(transcript: t) == .missingExample)
+    }
+
+    @Test func areaBuriedLeadFlagged() {
+        // Above the floor (6 content words: answer, discipline, consistent,
+        // practice, compounds, daily) but the FIRST sentence ("Um, so, well,
+        // like, just") carries zero content words ("well"/"like"/"just" are stop
+        // words, the rest < 4 chars) -> the answer is buried -> missingLead,
+        // checked before reason/example/closing. The "..." splits the lead from
+        // the body on the shared first-sentence rule.
+        let t = "Um, so, well, like, just... the answer is discipline because consistent practice compounds daily."
+        #expect(FrameworkDrillChecks.areaAnswer(transcript: t) == .missingLead)
+    }
+
+    @Test func areaNoClosingLoopFlagged() {
+        // Reason ("because") + example ("for instance" / "last month") present,
+        // but no closing-loop marker (deliberately avoids "that's why" / "which
+        // is why" / "so the answer", which double as closings) -> noClosingLoop.
+        let t = "Hiring slowly is smart because a bad hire is costly. For instance, last month one wrong hire stalled the whole roadmap."
+        #expect(FrameworkDrillChecks.areaAnswer(transcript: t) == .noClosingLoop)
+    }
+
+    @Test func areaBelowFloorIsTentative() {
+        // The floor gate runs BEFORE any beat detection: only "reasons" is a
+        // content word ("because" is a stop word; "yes" < 4) -> 1 < 6 -> nil,
+        // even though a reason marker is present.
+        let t = "Yes, because reasons."
+        #expect(FrameworkDrillChecks.areaAnswer(transcript: t) == nil)
+    }
+
     // MARK: Verdict wrapper + factory
 
     @Test func evaluateReturnsNilForNonFrameworkDrill() {
@@ -438,6 +534,20 @@ struct FrameworkDrillCheckTests {
             duration: 16
         )
         #expect(pitch == .elevatorPitch(.landed))
+
+        let reframe = FrameworkDrillVerdict.evaluate(
+            .bridgeReframe,
+            transcript: "That's fair, but the real question is whether our customers actually trust the product enough.",
+            duration: 30
+        )
+        #expect(reframe == .bridgeReframe(.reframed))
+
+        let area = FrameworkDrillVerdict.evaluate(
+            .areaAnswer,
+            transcript: "Remote work wins. The reason is teams ship faster. For example, last week we shipped in two days. So that's why remote wins.",
+            duration: 30
+        )
+        #expect(area == .areaAnswer(.complete))
     }
 }
 
@@ -450,12 +560,15 @@ struct FrameworkDrillCatalogTests {
         #expect(ids.contains("story.starTurn"))
         #expect(ids.contains("structure.claimCounter"))
         #expect(ids.contains("concise.elevatorPitch"))
+        #expect(ids.contains("structure.bridgeReframe"))
+        #expect(ids.contains("depth.areaAnswer"))
     }
 
     @Test func frameworkVariationsCarryNamedTargetCopy() {
         // Rubric clause: each drill states its framework + observable target
         // BEFORE the rep (constraint + successDescription non-empty).
-        for id in ["story.starTurn", "structure.claimCounter", "concise.elevatorPitch"] {
+        for id in ["story.starTurn", "structure.claimCounter", "concise.elevatorPitch",
+                   "structure.bridgeReframe", "depth.areaAnswer"] {
             let v = DrillCatalog.allVariations.first { $0.id == id }!
             #expect(!v.constraint.isEmpty)
             #expect(!v.coachingPrinciple.isEmpty)
@@ -468,12 +581,16 @@ struct FrameworkDrillCatalogTests {
         #expect(DrillCatalog.allVariations.first { $0.id == "story.starTurn" }!.skillArea == .answerDevelopment)
         #expect(DrillCatalog.allVariations.first { $0.id == "structure.claimCounter" }!.skillArea == .structure)
         #expect(DrillCatalog.allVariations.first { $0.id == "concise.elevatorPitch" }!.skillArea == .conciseSpeaking)
+        #expect(DrillCatalog.allVariations.first { $0.id == "structure.bridgeReframe" }!.skillArea == .structure)
+        #expect(DrillCatalog.allVariations.first { $0.id == "depth.areaAnswer" }!.skillArea == .answerDevelopment)
     }
 
     @Test func variationIdRoutesToFrameworkCheckType() {
         #expect(MiniDrillType.from(variationId: "story.starTurn") == .frameworkCheck)
         #expect(MiniDrillType.from(variationId: "structure.claimCounter") == .frameworkCheck)
         #expect(MiniDrillType.from(variationId: "concise.elevatorPitch") == .frameworkCheck)
+        #expect(MiniDrillType.from(variationId: "structure.bridgeReframe") == .frameworkCheck)
+        #expect(MiniDrillType.from(variationId: "depth.areaAnswer") == .frameworkCheck)
         // Existing types unchanged.
         #expect(MiniDrillType.from(variationId: "structure.prepStack") == .prepStack)
         #expect(MiniDrillType.from(variationId: "filler.silentTransitions") == .standard)
@@ -483,6 +600,8 @@ struct FrameworkDrillCatalogTests {
         #expect(MiniDrillType.framework(for: "story.starTurn") == .starTurn)
         #expect(MiniDrillType.framework(for: "structure.claimCounter") == .claimCounter)
         #expect(MiniDrillType.framework(for: "concise.elevatorPitch") == .elevatorPitch)
+        #expect(MiniDrillType.framework(for: "structure.bridgeReframe") == .bridgeReframe)
+        #expect(MiniDrillType.framework(for: "depth.areaAnswer") == .areaAnswer)
         #expect(MiniDrillType.framework(for: "filler.silentTransitions") == nil)
         #expect(MiniDrillType.framework(for: "structure.prepStack") == nil)
     }
@@ -582,6 +701,117 @@ struct FrameworkDrillCopyAndScoreTests {
         )
         #expect(DrillCompletionCopy.frameworkFeedback(outcome: thin) == expectedFallback)
         // And the title falls back to the neutral skill title, not a structural label.
+        #expect(DrillCompletionCopy.title(for: thin) == "Go Deeper")
+    }
+
+    // MARK: Reframe / AREA copy + score-safety
+
+    @Test func reframeCopyMatchesVerdictBand() {
+        let reframed = outcome(
+            variationId: "structure.bridgeReframe",
+            transcript: "That's fair, but the real question is whether our customers actually trust the product enough.",
+            duration: 22,
+            wordCount: 15,
+            succeeded: true
+        )
+        let faced = outcome(
+            variationId: "structure.bridgeReframe",
+            transcript: "Our revenue grew thirty percent this quarter and the team shipped every major feature on time.",
+            duration: 22,
+            wordCount: 15,
+            succeeded: true
+        )
+        #expect(reframed.frameworkVerdict == .bridgeReframe(.reframed))
+        #expect(faced.frameworkVerdict == .bridgeReframe(.facedDirectly))
+        #expect(DrillCompletionCopy.title(for: reframed) == "Reframed It")
+        #expect(DrillCompletionCopy.title(for: faced) == "Faced It Head-On")
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: reframed).contains("reframe"))
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: faced).contains("reframe"))
+    }
+
+    @Test func areaCopyMatchesVerdictBand() {
+        let complete = outcome(
+            variationId: "depth.areaAnswer",
+            transcript: "Remote work wins. The reason is teams ship faster. For example, last week we shipped in two days. So that's why remote wins.",
+            duration: 40,
+            wordCount: 50,
+            succeeded: true
+        )
+        let missingExample = outcome(
+            variationId: "depth.areaAnswer",
+            transcript: "Discipline beats talent because consistent effort compounds over time and habits outlast motivation eventually here.",
+            duration: 40,
+            wordCount: 50,
+            succeeded: true
+        )
+        #expect(complete.frameworkVerdict == .areaAnswer(.complete))
+        #expect(missingExample.frameworkVerdict == .areaAnswer(.missingExample))
+        #expect(DrillCompletionCopy.title(for: complete) == "Full AREA")
+        #expect(DrillCompletionCopy.title(for: missingExample) == "Need an Example")
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: complete).contains("AREA"))
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: missingExample).contains("example"))
+    }
+
+    @Test func newFrameworkVerdictsDoNotMoveXP() {
+        // Identical numeric inputs, divergent structural verdicts -> identical XP
+        // for BOTH new drills. The verdict is coaching copy only, never a score.
+        let reframed = outcome(
+            variationId: "structure.bridgeReframe",
+            transcript: "That's fair, but the real question is whether our customers actually trust the product enough.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        let faced = outcome(
+            variationId: "structure.bridgeReframe",
+            transcript: "Our revenue grew thirty percent this quarter and the team shipped every major feature on time.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        #expect(reframed.frameworkVerdict == .bridgeReframe(.reframed))
+        #expect(faced.frameworkVerdict == .bridgeReframe(.facedDirectly))
+        #expect(DrillXPEngine.calculate(outcome: reframed) == DrillXPEngine.calculate(outcome: faced))
+
+        let areaComplete = outcome(
+            variationId: "depth.areaAnswer",
+            transcript: "Remote work wins. The reason is teams ship faster. For example, last week we shipped in two days. So that's why remote wins.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        let areaMissing = outcome(
+            variationId: "depth.areaAnswer",
+            transcript: "Discipline beats talent because consistent effort compounds over time and habits outlast motivation eventually here.",
+            duration: 30,
+            wordCount: 45,
+            succeeded: true
+        )
+        #expect(areaComplete.frameworkVerdict == .areaAnswer(.complete))
+        #expect(areaMissing.frameworkVerdict == .areaAnswer(.missingExample))
+        #expect(DrillXPEngine.calculate(outcome: areaComplete) == DrillXPEngine.calculate(outcome: areaMissing))
+    }
+
+    @Test func areaBelowFloorFeedbackFallsBackToSkillLine() {
+        // A too-thin AREA rep (no verdict) must NOT emit a structural claim — it
+        // falls back BYTE-IDENTICAL to the neutral answer-development line.
+        let thin = outcome(
+            variationId: "depth.areaAnswer",
+            transcript: "Yes, because reasons.",
+            duration: 6,
+            wordCount: 3,
+            succeeded: false
+        )
+        #expect(thin.frameworkVerdict == nil)
+        let expectedFallback = DrillCompletionCopy.feedbackLine(
+            skillArea: .answerDevelopment,
+            succeeded: false,
+            fillerCount: 0,
+            wordCount: 3,
+            duration: 6,
+            wpm: 3.0 / 6.0 * 60
+        )
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: thin) == expectedFallback)
         #expect(DrillCompletionCopy.title(for: thin) == "Go Deeper")
     }
 }
@@ -880,6 +1110,181 @@ struct NextActionEngineTests {
         } else {
             Issue.record("A .vary verdict must not defer reinforcement. Got: \(result.primary)")
         }
+    }
+
+    // MARK: - Adaptation tie-breaker across selection tiers (D1)
+
+    /// 6 sustained-unfavorable followed reps for `mode` → a confident `.replace`
+    /// verdict (clears minMovementRepsToReplace=6, unfavorableRate=1.0,
+    /// lateMean=-1.0). Identical shape to the proven `replaceLedger`, but
+    /// parameterizable so a single ledger can confidently-replace two modes.
+    private func replaceLedger(for modes: [PracticeMode]) -> [RecommendationOutcome] {
+        modes.flatMap { mode in
+            (0..<6).map { i in
+                RecommendationOutcome(
+                    id: UUID(), fingerprint: "\(mode.rawValue)|", title: "t",
+                    focus: nil, target: nil, mode: mode, sessionID: UUID(),
+                    followed: true, completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
+                    scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+                )
+            }
+        }
+    }
+
+    /// Pressure-gap (Priority 3) input. Mirrors `pressureGapDetected` exactly so
+    /// the cascade is guaranteed to reach P3: input.mode == .timed makes the chosen
+    /// pressure mode `.suddenDeath`.
+    private func pressureGapInput(outcomes: [RecommendationOutcome]) -> NextActionInput {
+        NextActionInput(
+            fillerCount: 1, duration: 55, wordCount: 150, wpm: 140, score: 8,
+            categoryRatings: ["Opening": "Good", "Structure": "Good"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 12, score: 7.5),
+            pressureProfile: makePressure(resilience: 0.4),
+            trends: [], drillHistory: [],
+            sessionCount: 12, streakDays: 7, styleGoal: nil,
+            recommendationOutcomes: outcomes
+        )
+    }
+
+    @Test func confidentReplaceOnPressureModeFlipsToOtherPressureMode() {
+        // Cold-start control: empty ledger → P3 prescribes the chosen pressure mode
+        // (suddenDeath, because input.mode is timed).
+        let control = NextActionEngine.recommend(input: pressureGapInput(outcomes: []))
+        if case .pressureExposure(let m, _) = control.primary {
+            #expect(m == .suddenDeath, "Cold-start P3 should prescribe the flip of the practiced mode. Got: \(m)")
+        } else {
+            Issue.record("Expected a pressure exposure on the cold-start control. Got: \(control.primary)")
+        }
+
+        // A confident .replace of .suddenDeath biases AWAY → P3 must flip to the
+        // OTHER pressure mode (.timed), never re-offer the replaced one.
+        let biased = NextActionEngine.recommend(input: pressureGapInput(outcomes: replaceLedger(for: [.suddenDeath])))
+        if case .pressureExposure(let m, _) = biased.primary {
+            #expect(m == .timed, "A confident replace of suddenDeath should flip P3 to timed. Got: \(m)")
+        } else {
+            Issue.record("P3 should still return a pressure exposure (the flipped mode). Got: \(biased.primary)")
+        }
+    }
+
+    @Test func confidentReplaceOnBothPressureModesFallsThroughOffPressure() {
+        // Both pressure modes confidently replaced → P3 returns nil and the cascade
+        // hands a non-pressure action (a drill or the IM-modality stretch). The key
+        // invariant: it must NOT re-offer EITHER stalled pressure mode.
+        let biased = NextActionEngine.recommend(input: pressureGapInput(outcomes: replaceLedger(for: [.suddenDeath, .timed])))
+        if case .pressureExposure(let m, _) = biased.primary {
+            Issue.record("With both pressure modes replaced, P3 must not re-offer a pressure mode. Got pressureExposure(\(m)).")
+        }
+        // recommend() stays total — there is always a primary.
+        #expect(!biased.primary.displayTitle.isEmpty)
+    }
+
+    /// Stable + strong (Priority 7) input. `.empty` pressure profile makes P3's
+    /// resilience nil (P3 skips); empty trends skip P4/P5/P6; score 8 + the
+    /// suddenDeath stretch branch (drillHistory empty, fillerCount ≤ 2) reach P7.
+    private func stretchInput(mode: PracticeMode, outcomes: [RecommendationOutcome]) -> NextActionInput {
+        NextActionInput(
+            fillerCount: 0, duration: 50, wordCount: 140, wpm: 135, score: 8,
+            categoryRatings: ["Opening": "Good", "Structure": "Good", "Depth": "Good"],
+            mode: mode, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10, score: 8.0),
+            pressureProfile: .empty,
+            trends: [],
+            drillHistory: [],
+            sessionCount: 10, streakDays: 5, styleGoal: nil,
+            recommendationOutcomes: outcomes
+        )
+    }
+
+    @Test func confidentReplaceOnStretchModeSwitchesModality() {
+        // Cold-start control: the suddenDeath stretch branch fires (the candidate
+        // stretch mode is .suddenDeath).
+        let control = NextActionEngine.recommend(input: stretchInput(mode: .timed, outcomes: []))
+        if case .pressureExposure(let m, _) = control.primary {
+            #expect(m == .suddenDeath, "Cold-start P7 should offer the suddenDeath stretch. Got: \(m)")
+        } else {
+            Issue.record("Expected the suddenDeath pressure stretch on the cold-start control. Got: \(control.primary)")
+        }
+
+        // A confident .replace of .suddenDeath biases the stretch to the IM
+        // modality switch instead of repeating the stalled pressure mode.
+        let biased = NextActionEngine.recommend(input: stretchInput(mode: .timed, outcomes: replaceLedger(for: [.suddenDeath])))
+        if case .practiceMode(let m, _) = biased.primary {
+            #expect(m == .imConversation, "A confident replace of the stretch mode should switch modality to IM. Got: \(m)")
+        } else {
+            Issue.record("P7 should redirect to the IM modality switch. Got: \(biased.primary)")
+        }
+    }
+
+    @Test func emptyLedgerLeavesEveryTierByteUnchanged() {
+        // The total-function guarantee: an empty (no-op) ledger reproduces the
+        // pre-tie-breaker recommendation on P3, P6 and P7 verbatim.
+        let p3 = NextActionEngine.recommend(input: pressureGapInput(outcomes: []))
+        if case .pressureExposure(let m, _) = p3.primary { #expect(m == .suddenDeath) }
+        else { Issue.record("Empty-ledger P3 changed. Got: \(p3.primary)") }
+
+        let p6 = NextActionEngine.recommend(input: improvingTrendInput(mode: .timed, outcomes: []))
+        if case .stabilizingRep(let m, _) = p6.primary { #expect(m == .timed) }
+        else { Issue.record("Empty-ledger P6 changed. Got: \(p6.primary)") }
+
+        let p7 = NextActionEngine.recommend(input: stretchInput(mode: .timed, outcomes: []))
+        if case .pressureExposure(let m, _) = p7.primary { #expect(m == .suddenDeath) }
+        else { Issue.record("Empty-ledger P7 changed. Got: \(p7.primary)") }
+    }
+
+    @Test func hardSignalsWinRegardlessOfReplaceVerdict() {
+        // P1 severe (fillerCount ≥ 10) must return its corrective drill even with a
+        // confident-replace ledger spanning every mode — the tie-breaker never
+        // touches P1/P2/P4/P5.
+        let everyMode = replaceLedger(for: [.timed, .suddenDeath, .imConversation, .ahCounter])
+        let severe = NextActionInput(
+            fillerCount: 12, duration: 45, wordCount: 120, wpm: 160, score: 4,
+            categoryRatings: ["Opening": "OK", "Structure": "Could improve"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(), pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 10, streakDays: 3, styleGoal: nil,
+            recommendationOutcomes: everyMode
+        )
+        let result = NextActionEngine.recommend(input: severe)
+        #expect(result.reasoning.contains("significant issue"), "P1 severe must win over any verdict. Got: \(result.reasoning)")
+        if case .drill = result.primary {} else {
+            Issue.record("P1 severe should return a drill regardless of the ledger. Got: \(result.primary)")
+        }
+
+        // P2 persistent blocker likewise unaffected.
+        let blocker = NextActionInput(
+            fillerCount: 4, duration: 35, wordCount: 90, wpm: 154, score: 5,
+            categoryRatings: ["Opening": "Could improve", "Structure": "OK"],
+            mode: .timed, pressureLevel: .standard,
+            baseline: makeBaseline(blockers: ["Filler words"]),
+            pressureProfile: .empty,
+            trends: [], drillHistory: [],
+            sessionCount: 15, streakDays: 5, styleGoal: nil,
+            recommendationOutcomes: everyMode
+        )
+        let blockerResult = NextActionEngine.recommend(input: blocker)
+        #expect(blockerResult.reasoning.contains("persistent"), "P2 blocker must win over any verdict. Got: \(blockerResult.reasoning)")
+    }
+
+    @Test func varyVerdictIsInertAcrossPressureAndStretchTiers() {
+        // A thin (3-rep) unfavorable ledger yields .vary on BOTH the P3 and P7
+        // candidate modes — .vary is inert, so neither tier moves.
+        let thin: [RecommendationOutcome] = (0..<3).map { i in
+            RecommendationOutcome(
+                id: UUID(), fingerprint: "sd|", title: "t", focus: nil, target: nil,
+                mode: .suddenDeath, sessionID: UUID(), followed: true,
+                completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
+                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+            )
+        }
+        let p3 = NextActionEngine.recommend(input: pressureGapInput(outcomes: thin))
+        if case .pressureExposure(let m, _) = p3.primary { #expect(m == .suddenDeath, ".vary must not flip P3. Got: \(m)") }
+        else { Issue.record(".vary must not move P3. Got: \(p3.primary)") }
+
+        let p7 = NextActionEngine.recommend(input: stretchInput(mode: .timed, outcomes: thin))
+        if case .pressureExposure(let m, _) = p7.primary { #expect(m == .suddenDeath, ".vary must not redirect P7. Got: \(m)") }
+        else { Issue.record(".vary must not move P7. Got: \(p7.primary)") }
     }
 }
 
@@ -4900,6 +5305,426 @@ struct PromptRelevanceFollowOnTests {
     }
 }
 
+// MARK: - Argument-logic + concision-of-meaning reads (slice C2)
+//
+// Two deterministic PracticeEvaluator read+verdict pairs modelled on the
+// promptRelevance/promptAnswerVerdict contract: a read struct, a verdict enum,
+// and a nil-below-floor mapping fn. Every fixture is hand-traced against the
+// REAL `relevanceContentWords` stop set + `wordCount` tokenizer + the named
+// marker bands, so a threshold change breaks a test rather than silently
+// shifting a verdict. These cover the DETERMINISTIC seams only (the reads are
+// pure — no model output). The two new verdicts are pinned DISTINCT from the
+// existing positional `promptAnswerVerdict` (topic relevance) and from
+// `StyleSignalSnapshot` length/diversity on the same fixtures.
+
+struct ArgumentLogicTests {
+
+    // MARK: claim -> evidence -> implication
+
+    @Test func fullChainWhenClaimEvidenceAndImplicationPresent() {
+        // "the reason is" -> evidence; "which means" -> implication; lead
+        // sentence "Remote work boosts output" carries content -> claim.
+        // 10 content words clears the >=6 floor.
+        let read = PracticeEvaluator.argumentStructure(
+            transcript: "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day."
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.hasClaim)
+        #expect(read.hasEvidence)
+        #expect(read.hasImplication)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .fullChain)
+    }
+
+    @Test func assertionOnlyWhenClaimButNoEvidenceOrImplication() {
+        // A clear, on-its-own-terms claim with NO justification and NO
+        // consequence marker. 11 content words clears the floor.
+        let read = PracticeEvaluator.argumentStructure(
+            transcript: "Remote work clearly boosts output and keeps the whole team genuinely happier every single day."
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.hasClaim)
+        #expect(!read.hasEvidence)
+        #expect(!read.hasImplication)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .assertionOnly)
+    }
+
+    @Test func claimWithSupportWhenEvidenceOnly() {
+        // "because" -> evidence; no implication marker -> claimWithSupport, and
+        // read.hasEvidence is the branch flag. ("because" is a stop word for the
+        // content-word COUNT but still matches as a discourse marker; 9 other
+        // content words clear the floor.)
+        let read = PracticeEvaluator.argumentStructure(
+            transcript: "We should raise the price because demand keeps climbing well past our current supply levels."
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.hasClaim)
+        #expect(read.hasEvidence)
+        #expect(!read.hasImplication)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .claimWithSupport)
+    }
+
+    @Test func claimWithSupportWhenImplicationOnly() {
+        // "which means" -> implication; no evidence marker -> claimWithSupport.
+        let read = PracticeEvaluator.argumentStructure(
+            transcript: "We should raise the price, which means stronger margins and room to invest properly next year."
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.hasClaim)
+        #expect(!read.hasEvidence)
+        #expect(read.hasImplication)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .claimWithSupport)
+    }
+
+    @Test func nilBelowContentWordFloor() {
+        // "Yes, we should." -> yes(<4), we(<4), should(stop) -> 0 content words
+        // < 6 -> floor not met -> no verdict (never a confident "no argument").
+        let read = PracticeEvaluator.argumentStructure(transcript: "Yes, we should.")
+        #expect(!read.evidenceFloorMet)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == nil)
+    }
+
+    @Test func floorBoundaryExactlySixContentWordsAsserts() {
+        // Exactly 6 content words (alpha tokens, each >=4 chars, none a stop
+        // word, none a marker) -> floor met (>=), assertionOnly (no markers).
+        // "winter" "spring" "summer" "autumn" "season" "weather" = 6.
+        let read = PracticeEvaluator.argumentStructure(
+            transcript: "winter spring summer autumn season weather"
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.hasClaim)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .assertionOnly)
+        // One fewer content word -> below the floor -> nil.
+        let belowFloor = PracticeEvaluator.argumentStructure(
+            transcript: "winter spring summer autumn season"
+        )
+        #expect(!belowFloor.evidenceFloorMet)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: belowFloor) == nil)
+    }
+
+    @Test func markersAreWordBoundaryAwareNoFalsePositive() {
+        // "single" must NOT match the "since" marker; "contributes" must NOT
+        // match a bridge-style "but". Above the floor, no real marker -> the
+        // verdict stays assertionOnly (no spurious evidence/implication).
+        let read = PracticeEvaluator.argumentStructure(
+            transcript: "This single contributes genuinely toward the broader quarterly company performance results overall."
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(!read.hasEvidence)
+        #expect(!read.hasImplication)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .assertionOnly)
+    }
+
+    // MARK: distinctness from prompt-relevance (topic) verdict
+
+    private let shipQuestion = "Should we ship the feature this week?"
+
+    @Test func topicallyRelevantButLogicallyUnstructuredDiverges() {
+        // On-topic (echoes ship/feature/week in the lead -> .answered) yet a
+        // flat assertion with no reason / implication -> .assertionOnly. The two
+        // verdicts read DIFFERENT things on the same rep.
+        let transcript = "We should ship the feature this week without any further delay or hesitation at all really."
+        let relevance = PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+        let argument = PracticeEvaluator.argumentStructure(transcript: transcript)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: relevance) == .answered)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: argument) == .assertionOnly)
+    }
+
+    @Test func logicallyStructuredButTopicallyOffDiverges() {
+        // A full claim->evidence->implication argument about an UNRELATED topic:
+        // argument .fullChain, relevance .partial (point nowhere in the rep).
+        let transcript = "Gardening reduces stress because plants demand patience, which means calmer evenings after a long workday."
+        let relevance = PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+        let argument = PracticeEvaluator.argumentStructure(transcript: transcript)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: argument) == .fullChain)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: relevance) == .partial)
+    }
+
+    // MARK: CoachContextBuilder consumer (cross-surface single source)
+
+    private func session(prompt: String?, transcript: String, mode: PracticeMode = .timed) -> PracticeSession {
+        PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 2,
+            duration: 40,
+            date: Date(),
+            mode: mode,
+            score: 6,
+            prompt: prompt
+        )
+    }
+
+    private func context(for session: PracticeSession) -> String {
+        CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+    }
+
+    @Test func contextSurfacesArgumentLogicForTimedRep() {
+        let transcript = "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day."
+        let ctx = context(for: session(prompt: shipQuestion, transcript: transcript))
+        #expect(ctx.contains("ARGUMENT LOGIC"))
+        #expect(ctx.contains("claim + reason + implication all present"))
+        #expect(ctx.contains("never proof the reasoning is sound"))
+    }
+
+    @Test func contextOmitsArgumentLogicBelowFloor() {
+        // Thin transcript -> argument read below floor -> no section.
+        let ctx = context(for: session(prompt: shipQuestion, transcript: "Yes we should ship it"))
+        #expect(!ctx.contains("ARGUMENT LOGIC"))
+    }
+
+    @Test func contextOmitsArgumentLogicForNonTimedRep() {
+        let transcript = "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day."
+        let ctx = context(for: session(prompt: shipQuestion, transcript: transcript, mode: .suddenDeath))
+        #expect(!ctx.contains("ARGUMENT LOGIC"))
+    }
+
+    @Test func argumentLogicLinesNilBelowFloor() {
+        #expect(CoachContextBuilder.argumentLogicLines(transcript: "Yes we should ship it") == nil)
+    }
+
+    @Test func argumentLogicLinesAssertionOnlyCarriesAssociationDisclaimer() {
+        let lines = CoachContextBuilder.argumentLogicLines(
+            transcript: "Remote work clearly boosts output and keeps the whole team genuinely happier every single day."
+        )
+        let joined = (lines ?? []).joined(separator: "\n")
+        #expect(lines != nil)
+        #expect(joined.contains("asserted, not argued"))
+        #expect(joined.contains("never proof the answer was wrong"))
+    }
+
+    @Test func oneArgumentReadDrivesInsightAndContext() {
+        // Coherence: the SAME read yields the .fullChain verdict, the Timed
+        // insight line, and the chat-context line — one read, surfaces agree.
+        let transcript = "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day."
+        let read = PracticeEvaluator.argumentStructure(transcript: transcript)
+        #expect(PracticeEvaluator.argumentLogicVerdict(for: read) == .fullChain)
+        let insights = PracticeEvaluator.timedModeInsightsForTesting(
+            fillerCount: 1, duration: 30, wordCount: 16, wordsPerMinute: 130,
+            recentSessions: [], transcript: transcript, prompt: shipQuestion
+        )
+        #expect(insights.contains { $0.contains("the shape of a complete argument") })
+        let ctx = context(for: session(prompt: shipQuestion, transcript: transcript))
+        #expect(ctx.contains("ARGUMENT LOGIC"))
+    }
+}
+
+struct ConcisionOfMeaningTests {
+
+    private let shipQuestion = "Should we ship the feature this week?"
+
+    // MARK: content-word density bands
+
+    @Test func denseWhenHighFractionAndNoPromptToJudgeArrival() {
+        // 13 tokens, 11 content words -> fraction 0.846 >= 0.50. nil prompt ->
+        // arrival unknown -> .dense (front-loaded by default when un-judgeable).
+        let transcript = "The decision saves three million dollars annually because automation removes manual review entirely."
+        let read = PracticeEvaluator.meaningDensity(
+            transcript: transcript,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: transcript)
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.totalWords == 13)
+        #expect(read.answerArrivedEarly == nil)
+        #expect(abs(read.contentWordFraction - 11.0 / 13.0) < 0.0001)
+        #expect(read.contentWordFraction >= PracticeEvaluator.meaningDensityHighFraction)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: read) == .dense)
+    }
+
+    @Test func paddedWhenLowContentWordFraction() {
+        // 19 tokens, 6 content words -> fraction 0.316 < 0.35 -> .padded.
+        let transcript = "Well you know I think that maybe we could possibly try to do something about it at some point."
+        let read = PracticeEvaluator.meaningDensity(
+            transcript: transcript,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: transcript)
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.totalWords == 19)
+        #expect(abs(read.contentWordFraction - 6.0 / 19.0) < 0.0001)
+        #expect(read.contentWordFraction < PracticeEvaluator.meaningDensityLowFraction)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: read) == .padded)
+    }
+
+    @Test func measuredWhenMidFraction() {
+        // 17 tokens; content words = think, team, probably, need, time, plan,
+        // right = 7 (We/that/the/will/a/bit/more/to/get are <4 chars or stop
+        // words) -> fraction 7/17 = 0.4118, in [0.35, 0.50) -> .measured
+        // (nil prompt -> arrival unknown, so not the late path).
+        let transcript = "We think that the team will probably need a bit more time to get the plan right."
+        let read = PracticeEvaluator.meaningDensity(
+            transcript: transcript,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: transcript)
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.totalWords == 17)
+        #expect(abs(read.contentWordFraction - 7.0 / 17.0) < 0.0001)
+        #expect(read.contentWordFraction >= PracticeEvaluator.meaningDensityLowFraction)
+        #expect(read.contentWordFraction < PracticeEvaluator.meaningDensityHighFraction)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: read) == .measured)
+    }
+
+    @Test func denseButLateArrivalDowngradesToMeasured() {
+        // High fraction (11/16 = 0.6875 >= 0.50) BUT the point arrives late: the
+        // lead echoes none of ship/feature/week (lead overlap 0 < weak) while
+        // the whole rep echoes all 3. So answerArrivedEarly == false ->
+        // .measured (dense-but-late), NOT .dense. This is the one branch where a
+        // real prompt changes the verdict vs the nil-prompt path.
+        let transcript = "Countless competing priorities dominated every strategic discussion lately. We should ship the feature this week regardless."
+        let relevance = PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+        let read = PracticeEvaluator.meaningDensity(transcript: transcript, relevance: relevance)
+        #expect(read.evidenceFloorMet)
+        #expect(read.contentWordFraction >= PracticeEvaluator.meaningDensityHighFraction)
+        #expect(read.answerArrivedEarly == false)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: read) == .measured)
+    }
+
+    @Test func nilBelowTokenFloor() {
+        // 6 tokens < minWordsForMeaningDensity (12) -> floor not met -> no
+        // verdict (never a confident "padded" on a fragment).
+        let transcript = "The plan works well overall here."
+        let read = PracticeEvaluator.meaningDensity(
+            transcript: transcript,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: transcript)
+        )
+        #expect(!read.evidenceFloorMet)
+        #expect(read.totalWords == 6)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: read) == nil)
+    }
+
+    @Test func floorBoundaryExactlyTwelveTokensAsserts() {
+        // Exactly 12 tokens -> floor met (>=). Twelve content words -> fraction
+        // 1.0 -> .dense (nil prompt). Eleven tokens -> below floor -> nil.
+        let twelve = "winter spring summer autumn season weather climate forecast pattern region coastal inland"
+        let readTwelve = PracticeEvaluator.meaningDensity(
+            transcript: twelve,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: twelve)
+        )
+        #expect(readTwelve.totalWords == 12)
+        #expect(readTwelve.evidenceFloorMet)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: readTwelve) == .dense)
+
+        let eleven = "winter spring summer autumn season weather climate forecast pattern region coastal"
+        let readEleven = PracticeEvaluator.meaningDensity(
+            transcript: eleven,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: eleven)
+        )
+        #expect(readEleven.totalWords == 11)
+        #expect(!readEleven.evidenceFloorMet)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: readEleven) == nil)
+    }
+
+    // MARK: distinctness from raw word count + lexical diversity
+
+    @Test func distinctFromRawWordCountAndUniqueRatio() {
+        // Two reps, identical raw length (19 tokens) and similar token diversity,
+        // but very different MEANING density -> different verdicts. Proves the
+        // metric is not a length or word-count proxy.
+        let padded = "Well you know I think that maybe we could possibly try to do something about it at some point."
+        let dense = "Quarterly revenue climbed sharply because disciplined spending freed real capital, which then funded three strategic brand new product launches."
+        let paddedRead = PracticeEvaluator.meaningDensity(
+            transcript: padded,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: padded)
+        )
+        let denseRead = PracticeEvaluator.meaningDensity(
+            transcript: dense,
+            relevance: PracticeEvaluator.promptRelevance(prompt: nil, transcript: dense)
+        )
+        // Same raw length, opposite density verdicts.
+        #expect(paddedRead.totalWords == denseRead.totalWords)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: paddedRead) == .padded)
+        #expect(PracticeEvaluator.concisionOfMeaningVerdict(for: denseRead) == .dense)
+    }
+
+    // MARK: timedModeInsights consumer surfacing
+
+    @Test func insightSurfacesPaddedLineAboveFloorViaTimedInsights() {
+        let padded = "Well you know I think that maybe we could possibly try to do something about it at some point."
+        let insights = PracticeEvaluator.timedModeInsightsForTesting(
+            fillerCount: 1, duration: 30, wordCount: 19, wordsPerMinute: 130,
+            recentSessions: [], transcript: padded, prompt: nil
+        )
+        #expect(insights.contains { $0.contains("carried little of the meaning") })
+    }
+
+    @Test func insightOmitsConcisionLineBelowFloor() {
+        // 6-token transcript -> density read below floor -> NO concision line in
+        // the uncapped insight list (byte-identical to today on a fragment).
+        let thin = "The plan works well overall here."
+        let insights = PracticeEvaluator.timedModeInsightsForTesting(
+            fillerCount: 1, duration: 30, wordCount: 6, wordsPerMinute: 130,
+            recentSessions: [], transcript: thin, prompt: nil
+        )
+        // No concision-of-meaning line in any band: "carried" covers the
+        // dense + padded copy, "substance" covers the measured copy.
+        #expect(!insights.contains { $0.contains("carried") })
+        #expect(!insights.contains { $0.contains("substance") })
+    }
+
+    @Test func denseButLateInsightCoachesLeadingWithIt() {
+        // The dense-but-late .measured branch emits the "lead with it" copy.
+        let transcript = "Countless competing priorities dominated every strategic discussion lately. We should ship the feature this week regardless."
+        let insights = PracticeEvaluator.timedModeInsightsForTesting(
+            fillerCount: 1, duration: 30, wordCount: 16, wordsPerMinute: 130,
+            recentSessions: [], transcript: transcript, prompt: shipQuestion
+        )
+        #expect(insights.contains { $0.contains("the point took a while to arrive") })
+    }
+}
+
+// MARK: - Timed insight consumer surfacing (slice C2, full pipeline)
+//
+// Proves the argument-logic line reaches the REAL `evaluateTimedPractice`
+// insights (capped at 3). With empty history the insight order is
+// [first-rep, pace, argument], so the fullChain line lands in the cap; below
+// the floor it is absent. The uncapped `timedModeInsightsForTesting` suites
+// above pin both lines independently of the cap.
+
+struct TimedInsightArgumentConsumerTests {
+
+    @Test func fullPipelineSurfacesArgumentLineWithinPrefixCap() {
+        // Fixture A: 16 raw words, .fullChain. duration 20 / wordCount 16 means
+        // neither thin gate (wordCount<8 || duration<8) fires, so the order is
+        // [first-rep, pace, argument] and the argument line survives prefix(3).
+        let eval = PracticeEvaluator.evaluateTimedPractice(
+            transcript: "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day.",
+            fillerCount: 1,
+            duration: 20,
+            difficulty: .medium,
+            recentSessions: [],
+            profile: nil,
+            transcriptConfidence: nil,
+            question: "What is the case for remote work?"
+        )
+        #expect(eval.insights.count <= 3)
+        #expect(eval.insights.contains { $0.contains("the shape of a complete argument") })
+    }
+
+    @Test func fullPipelineScoreUnchangedByNewInsightLines() {
+        // The new insight lines are copy only — the numeric score must be
+        // identical to a run whose transcript yields no argument/density line
+        // (same length, same fillers, same duration). Score reads contentProgress
+        // + pace + duration, never the insight builder.
+        let withArgument = PracticeEvaluator.evaluateTimedPractice(
+            transcript: "Remote work boosts output. The reason is fewer interruptions, which means deeper focus across the day.",
+            fillerCount: 1, duration: 20, difficulty: .medium,
+            recentSessions: [], profile: nil
+        )
+        // Same raw word count (16), no markers, no claim-bearing structure.
+        let withoutArgument = PracticeEvaluator.evaluateTimedPractice(
+            transcript: "word word word word word word word word word word word word word word word word",
+            fillerCount: 1, duration: 20, difficulty: .medium,
+            recentSessions: [], profile: nil
+        )
+        #expect(withArgument.score == withoutArgument.score)
+    }
+}
+
 // MARK: - Goal Progress Tests (M14)
 //
 // Locks the contract for the profile's goal-progress ring:
@@ -7154,6 +7979,38 @@ struct AskNoumStoreTests {
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .systemNotice)
         #expect(store.messages[1].text.contains("couldn't reach"))
+        #expect(!store.isAwaitingReply)
+    }
+
+    /// A1 — a `.deterministicReply` (the grounded OFFLINE coach line) is the
+    /// coach answering, so it hydrates the placeholder into a real `.coach`
+    /// bubble carrying the exact text — NEVER a `.systemNotice`. This is the
+    /// behavioral difference from `.failure`: the user sees a useful line, not
+    /// an error notice. Same branch shape as `.reply` (trim-guarded coach
+    /// bubble), and `isAwaitingReply` clears.
+    @Test func completeCoachTurnDeterministicReplyBecomesCoachBubble() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How did my last rep go?")
+        let line = "Here's what stood out: run one more rep when you're ready."
+        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply(line))
+        #expect(store.messages.count == 2)
+        #expect(store.messages[1].role == .coach)
+        #expect(store.messages[1].role != .systemNotice)
+        #expect(store.messages[1].isPending == false)
+        #expect(store.messages[1].text == line)
+        #expect(!store.isAwaitingReply)
+    }
+
+    /// A1 — defensive: a `.deterministicReply` with all-whitespace text still
+    /// must not leave a blank coach bubble. The builder is total + always
+    /// non-empty, but the store must not depend on that, so an empty
+    /// deterministic line routes to the same notice as an empty live reply.
+    @Test func completeCoachTurnEmptyDeterministicReplyBecomesNotice() {
+        let store = freshStore()
+        let ids = store.appendUserTurn("How did my last rep go?")
+        store.completeCoachTurn(id: ids.coachID, outcome: .deterministicReply("   \n\t "))
+        #expect(store.messages.count == 2)
+        #expect(store.messages[1].role == .systemNotice)
         #expect(!store.isAwaitingReply)
     }
 
@@ -12678,6 +13535,252 @@ struct CoachMemoryEngineTests {
             durationDelta: 0
         )
     }
+
+    // MARK: - B1 #5 — Grounded success-bar criterion copy
+    //
+    // The success measure quotes the user's OWN pre-window average once they
+    // have >= 3 reps OLDER than the 2-rep evaluation window; below that floor
+    // the copy is byte-identical to the generic phrasing so no fabricated
+    // number is ever shown. `fillersPerRep` is a COUNT (never a %), the window
+    // is always `caseEvaluationWindow` (2). Fixtures hand-traced against the
+    // real constants:
+    //   followedRepValues newest-first → priorValues = dropFirst(2) → average.
+
+    @Test func buildGroundsFillerCriterionInPriorAverageAboveFloor() {
+        // fillers newest→oldest: 1, 1, 7, 6, 6.
+        // window = 2 → priorValues = [7, 6, 6] (count 3, at the floor),
+        // priorAverage = 19/3 ≈ 6.333 → "6.3"; threshold = (6.333-1).rounded() = 5.
+        let ahSessions = [
+            ahCounterSession(fillers: 1, at: 1_000),
+            ahCounterSession(fillers: 1, at: 900),
+            ahCounterSession(fillers: 7, at: 800),
+            ahCounterSession(fillers: 6, at: 700),
+            ahCounterSession(fillers: 6, at: 600),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: ahSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let criterion = memory?.activeIntervention?.successCriterion
+        #expect(criterion?.metric == .fillersPerRep)
+        #expect(criterion?.threshold == 5)
+        // Grounded copy — the user's own number, COUNT unit, window = 2.
+        #expect(criterion?.summary == "your last 3 reps averaged 6.3 fillers — hold at 5 or fewer per rep across 2 reps")
+    }
+
+    @Test func buildGroundsScoreCriterionInPriorAverageAboveFloor() {
+        // Score metric (non-filler focus). scores newest→oldest: 8, 8, 5, 5, 5.
+        // priorValues = [5, 5, 5] (count 3), priorAverage = 5.0 → "5";
+        // threshold = min(10, (5+1).rounded()) = 6.
+        let timedSessions: [PracticeSession] = [
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 1_000), mode: .timed, score: 8),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 900), mode: .timed, score: 8),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 800), mode: .timed, score: 5),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 700), mode: .timed, score: 5),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 600), mode: .timed, score: 5),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: timedSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0)
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let criterion = memory?.activeIntervention?.successCriterion
+        #expect(criterion?.metric == .sessionScore)
+        #expect(criterion?.threshold == 6)
+        #expect(criterion?.summary == "your last 3 reps averaged 5 — hold a 6 or higher across 2 reps")
+    }
+
+    @Test func criterionStaysGenericBelowPriorRepFloor() {
+        // Only 4 reps → priorValues = dropFirst(2) = 2 reps, BELOW the 3-rep
+        // floor → copy must be byte-identical to the pre-B1 generic phrasing.
+        // fillers newest→oldest 1, 2, 5, 5 → priors [5, 5] → threshold 4.
+        let ahSessions = [
+            ahCounterSession(fillers: 1, at: 1_000),
+            ahCounterSession(fillers: 2, at: 900),
+            ahCounterSession(fillers: 5, at: 800),
+            ahCounterSession(fillers: 5, at: 700),
+        ]
+        let fillerMemory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: ahSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .ahCounter, followed: true, completedAt: 1_000, scoreDelta: 0, fillerDelta: -1)
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(fillerMemory?.activeIntervention?.successCriterion?.threshold == 4)
+        #expect(fillerMemory?.activeIntervention?.successCriterion?.summary == "4 or fewer fillers per rep across 2 reps")
+
+        // Score metric, same thin-evidence shape. scores 8, 8, 5, 5 →
+        // priors [5, 5] (count 2, below floor) → threshold 6, generic copy.
+        let timedSessions: [PracticeSession] = [
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 1_000), mode: .timed, score: 8),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 900), mode: .timed, score: 8),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 800), mode: .timed, score: 5),
+            PracticeSession(transcript: "rep", fillerWordCount: 0, duration: 60, date: Date(timeIntervalSince1970: 700), mode: .timed, score: 5),
+        ]
+        let scoreMemory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: timedSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, followed: true, completedAt: 1_000, scoreDelta: 1, fillerDelta: 0)
+            ],
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(scoreMemory?.activeIntervention?.successCriterion?.threshold == 6)
+        #expect(scoreMemory?.activeIntervention?.successCriterion?.summary == "score of 6 or higher across 2 reps")
+    }
+
+    // MARK: - B1 #2 — Case-file upcoming BigMoment line
+
+    @Test func caseFileCarriesUpcomingMomentLineWhenActiveDatedMomentExists() {
+        // A dated moment 5 days out, threaded into build the way SessionFinalizer
+        // threads `BigMomentStore.shared.activeMoment`. The case file exists
+        // because a trend supplies a lever; the upcoming line is supplementary.
+        //
+        // IMPORTANT: `BigMomentStore.daysUntil` floors today/target to start of
+        // day against the REAL wall clock (`Date()`), ignoring the `now:` passed
+        // to `build`. Anchoring the moment date to `startOfDay(today) + 5 days`
+        // makes the day-count deterministically 5 regardless of run time.
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let today = Calendar.current.startOfDay(for: Date())
+        let moment = BigMoment(
+            title: "Q3 board update",
+            date: Calendar.current.date(byAdding: .day, value: 5, to: today),
+            category: .review,
+            createdAt: now
+        )
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            upcomingMoment: moment,
+            now: now
+        )
+
+        #expect(memory?.caseFile?.upcomingMomentLine == "Preparing for: Q3 board update (performance review), 5 days away.")
+    }
+
+    @Test func caseFileUpcomingMomentLineNilWithoutMoment() {
+        let trend = SkillTrend(
+            skillArea: .fillerReduction,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+        let withoutMoment = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [trend],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        #expect(withoutMoment?.caseFile != nil)
+        #expect(withoutMoment?.caseFile?.upcomingMomentLine == nil)
+
+        // An undated moment is never "upcoming" — no fabricated countdown.
+        let undated = BigMoment(title: "Someday talk", date: nil, category: .presentation)
+        #expect(CoachCaseFile.upcomingMomentLine(for: undated) == nil)
+
+        // A past moment is excluded too (expired moments auto-archive in the
+        // store, but the pure helper still guards the boundary).
+        let past = BigMoment(
+            title: "Last week's review",
+            date: Date(timeIntervalSince1970: 1_600_000_000),
+            category: .review
+        )
+        #expect(CoachCaseFile.upcomingMomentLine(for: past) == nil)
+    }
+
+    @Test func caseFileBlobWithoutUpcomingMomentLineDecodesToNil() {
+        // Back-compat: a CoachCaseFile encoded before the upcomingMomentLine
+        // field existed must decode cleanly with the field defaulting to nil.
+        let legacyJSON = """
+        {
+          "updatedAt": 700000000,
+          "evidenceSummary": "moderate read across 6 signals",
+          "nextMove": "followIntervention",
+          "nextQuestion": "What is the next followed rep?"
+        }
+        """
+        let data = Data(legacyJSON.utf8)
+        let decoder = JSONDecoder()
+        let decoded = try? decoder.decode(CoachCaseFile.self, from: data)
+        #expect(decoded != nil)
+        #expect(decoded?.upcomingMomentLine == nil)
+        #expect(decoded?.nextMove == .followIntervention)
+
+        // And a whole CoachMemory blob carrying such a legacy caseFile round-trips.
+        // NOTE: evidenceConfidence is an Int-raw enum (BaselineConfidence);
+        // .moderate == 2. goalFit is String-raw (CoachMemoryGoalFit.aligned).
+        let legacyMemoryJSON = """
+        {
+          "updatedAt": 700000000,
+          "evidenceCount": 6,
+          "evidenceConfidence": 2,
+          "goalFit": "aligned",
+          "strengths": [],
+          "blockers": [],
+          "caseFile": {
+            "updatedAt": 700000000,
+            "evidenceSummary": "moderate read across 6 signals",
+            "nextMove": "followIntervention",
+            "nextQuestion": "What is the next followed rep?"
+          }
+        }
+        """
+        let memoryData = Data(legacyMemoryJSON.utf8)
+        let decodedMemory = try? decoder.decode(CoachMemory.self, from: memoryData)
+        #expect(decodedMemory != nil)
+        #expect(decodedMemory?.caseFile?.upcomingMomentLine == nil)
+    }
 }
 
 // MARK: - Stated-vs-measured concordance (slice-4)
@@ -15357,7 +16460,10 @@ struct CoachReadParityTests {
         voice: SpeakingStyleGoal? = nil,
         recentSessionSummaries: [String] = [],
         baselineFillerRate: Double? = nil,
-        baselinePaceWPM: Double? = nil
+        baselinePaceWPM: Double? = nil,
+        standingHypothesis: String? = nil,
+        standingObservableTarget: String? = nil,
+        standingSuccessMeasure: String? = nil
     ) -> AICoachSessionInput {
         AICoachSessionInput(
             transcript: transcript,
@@ -15371,7 +16477,10 @@ struct CoachReadParityTests {
             voice: voice,
             recentSessionSummaries: recentSessionSummaries,
             baselineFillerRate: baselineFillerRate,
-            baselinePaceWPM: baselinePaceWPM
+            baselinePaceWPM: baselinePaceWPM,
+            standingHypothesis: standingHypothesis,
+            standingObservableTarget: standingObservableTarget,
+            standingSuccessMeasure: standingSuccessMeasure
         )
     }
 
@@ -15637,6 +16746,10 @@ struct CoachReadParityTests {
         #expect(input.recentSessionSummaries.isEmpty)
         #expect(input.baselineFillerRate == nil)
         #expect(input.baselinePaceWPM == nil)
+        // SUBSTANCE-4 standing-case fields also default to nil.
+        #expect(input.standingHypothesis == nil)
+        #expect(input.standingObservableTarget == nil)
+        #expect(input.standingSuccessMeasure == nil)
     }
 
     // 12. The user prompt omits the question / continuity / baseline lines when
@@ -15653,6 +16766,11 @@ struct CoachReadParityTests {
         #expect(!user.contains("RECENT REPS"))
         #expect(!user.contains("Baseline filler rate:"))
         #expect(!user.contains("Baseline pace:"))
+        // No STANDING CASE block when all three standing fields are nil.
+        #expect(!user.contains("STANDING CASE"))
+        #expect(!user.contains("Working hypothesis:"))
+        #expect(!user.contains("Observable target:"))
+        #expect(!user.contains("Success measure:"))
         // No stray blank-block artefact.
         #expect(!user.contains("\n\n\n"))
     }
@@ -15680,6 +16798,83 @@ struct CoachReadParityTests {
         #expect(user.contains("- Timed | score 6/10 | 3 fillers"))
         // Mode uses the display label, not the rawValue.
         #expect(user.contains("Mode: Timed"))
+    }
+
+    // 13b. (SUBSTANCE-4) The user prompt surfaces the STANDING CASE block with
+    //      the standing hypothesis / observable target / success measure when
+    //      those durable-context fields are present.
+    @Test func userPromptSurfacesStandingCaseWhenPresent() {
+        let input = makeInput(
+            transcript: "Productivity is complicated.",
+            standingHypothesis: "Leads strong but buries the ask under hedging.",
+            standingObservableTarget: "State the ask in the first sentence.",
+            standingSuccessMeasure: "Ask lands in sentence one for 3 reps."
+        )
+        let user = AICoachService.userPrompt(
+            input: input, profile: nil, plan: nil, baselineContext: ""
+        )
+        #expect(user.contains("STANDING CASE (the user's current goal/target — reason over this, not just this rep):"))
+        #expect(user.contains("Working hypothesis: Leads strong but buries the ask under hedging."))
+        #expect(user.contains("Observable target: State the ask in the first sentence."))
+        #expect(user.contains("Success measure: Ask lands in sentence one for 3 reps."))
+        // No stray blank-block artefact.
+        #expect(!user.contains("\n\n\n"))
+    }
+
+    // 13c. (SUBSTANCE-4) Each STANDING CASE component is independently omitted
+    //      when its source field is nil — a hypothesis with no active
+    //      intervention surfaces only the hypothesis line, not target/measure.
+    @Test func userPromptStandingCaseOmitsMissingComponents() {
+        let input = makeInput(
+            standingHypothesis: "Tends to over-qualify before the point.",
+            standingObservableTarget: nil,
+            standingSuccessMeasure: nil
+        )
+        let user = AICoachService.userPrompt(
+            input: input, profile: nil, plan: nil, baselineContext: ""
+        )
+        #expect(user.contains("STANDING CASE (the user's current goal/target — reason over this, not just this rep):"))
+        #expect(user.contains("Working hypothesis: Tends to over-qualify before the point."))
+        #expect(!user.contains("Observable target:"))
+        #expect(!user.contains("Success measure:"))
+    }
+
+    // 13d. (SUBSTANCE-4) Byte-identical omission: the user prompt with all
+    //      standing fields nil is exactly the prompt that never had them — the
+    //      STANDING CASE block adds nothing when empty.
+    @Test func userPromptStandingCaseOmittedByteIdenticalWhenAllNil() {
+        let withNilStanding = makeInput(
+            transcript: "A grounded line about the topic.",
+            prompt: "Should we adopt the policy",
+            voice: .executive,
+            standingHypothesis: nil,
+            standingObservableTarget: nil,
+            standingSuccessMeasure: nil
+        )
+        let baseline = makeInput(
+            transcript: "A grounded line about the topic.",
+            prompt: "Should we adopt the policy",
+            voice: .executive
+        )
+        let a = AICoachService.userPrompt(
+            input: withNilStanding, profile: nil, plan: nil, baselineContext: ""
+        )
+        let b = AICoachService.userPrompt(
+            input: baseline, profile: nil, plan: nil, baselineContext: ""
+        )
+        #expect(a == b)
+    }
+
+    // 13e. (SUBSTANCE-4) The systemPrompt carries the standing-target rubric
+    //      line that keeps the standing case as a hypothesis to test, never an
+    //      assertion the target was hit this rep without transcript support.
+    @Test func systemPromptCarriesStandingCaseRubricLine() {
+        let prompt = AICoachService.systemPrompt(persona: CoachPersona.persona(for: .executive))
+        #expect(prompt.contains("STANDING CASE. If a STANDING CASE is given"))
+        #expect(prompt.contains("weigh this rep against"))
+        #expect(prompt.contains("never assert the"))
+        // The standing case is framed as a hypothesis to test, never causation.
+        #expect(prompt.contains("treat it as the hypothesis you are testing"))
     }
 
     // 14. recentSessionSummaries excludes the current rep and is bounded to 3.
@@ -17095,6 +18290,21 @@ struct S5SpokenModeShouldSpeakTests {
         }
     }
 
+    /// A1 — a `.deterministicReply` (the grounded offline line) is NEVER
+    /// spoken even with the toggle ON and a supported locale: TTS needs the
+    /// same network / provider that is down, and reading a canned line aloud
+    /// as if it were the live coach would overclaim. It renders as a coach
+    /// bubble (see `AskNoumStore.completeCoachTurn`) but stays silent. Sibling
+    /// of `neverSpeaksAnyFailureCause`. Asserted with non-empty text so the
+    /// suppression is the OUTCOME-SHAPE veto, not the empty-text veto.
+    @Test func neverSpeaksDeterministicReply() {
+        #expect(!AskNoumSpokenMode.shouldSpeak(
+            outcome: .deterministicReply("Here's what stood out: run one more rep when you're ready."),
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ), "a deterministic offline reply must never be spoken as the live coach")
+    }
+
     /// A whitespace-only reply is rejected even though it is nominally a
     /// `.reply`. The predicate must not depend on the store routing empties to
     /// `.failure(.empty)` — it owns the empty check itself.
@@ -17149,6 +18359,200 @@ struct S5SpokenModeCoachToneTests {
         for voice in SpeakingStyleGoal.allCases {
             #expect(realTones.contains(AskNoumSpokenMode.coachTone(for: voice)))
         }
+    }
+}
+
+/// A1 — deterministic OFFLINE chat fallback (`AICoachChatService.deterministicReply`).
+///
+/// A real coach always responds. On the unreachable / unsupported failure
+/// paths (`.network` / `.noProvider` / `.localeUnsupported`) the service hands
+/// back a grounded, in-voice coach line built from the SAME shared context the
+/// LLM gets — the chosen voice's `CoachPersona`, the shared
+/// `PracticeEvaluator.promptAnswerVerdict` over the most-recent timed rep, and
+/// the already-summarized standing case — instead of an error notice. These
+/// tests pin the deterministic seam:
+///   • correct per-verdict / per-voice line above the evidence floor;
+///   • below the floor it states delivery FACTS only — no substance claim;
+///   • it never reproduces (quotes) the transcript text;
+///   • it is total — non-empty across every handled cause × every voice × nil;
+///   • output honors the brand-voice contract (no exclamations, bounded).
+/// Fixtures are hand-traced against the REAL relevance constants
+/// (`relevanceStrongOverlap = 0.30`, `relevanceWeakOverlap = 0.12`,
+/// `minTranscriptWordsForRelevance = 12`, `minPromptContentWordsForRelevance = 3`).
+struct AICoachChatDeterministicReplyTests {
+
+    // --- Hand-traced relevance fixtures (see suite doc for the trace) ---
+
+    /// 4 distinct content words: describe, biggest, professional, achievement.
+    private let prompt = "Describe your biggest professional achievement"
+
+    /// `.answered`: the prompt's key terms lead the first sentence.
+    /// firstSentenceOverlap = 3/4 = 0.75 ≥ 0.30. (>= 12 transcript words.)
+    private let answeredTranscript = "My biggest professional achievement was leading a team that shipped a payments platform under a tight deadline and we delivered it ahead of schedule."
+
+    /// `.buried`: key terms ABSENT from the first sentence (firstSentenceOverlap
+    /// = 0 < 0.12) but PRESENT overall (overlap = 3/4 = 0.75 ≥ 0.30).
+    private let buriedTranscript = "Well it was a really tough quarter overall and there were many moving parts. My biggest professional achievement was the payments platform."
+
+    /// `.partial`: none of the prompt's content words appear (overlap = 0), so
+    /// neither answered nor buried. (>= 12 transcript words.)
+    private let partialTranscript = "I think the weather today is quite pleasant and I enjoyed a long walk in the park near my house this morning."
+
+    /// Below the evidence floor: < 12 transcript words → no verdict.
+    private let thinTranscript = "Hello there friend."
+
+    /// The per-voice persona reflection lead the line must open with.
+    private func lead(for voice: SpeakingStyleGoal?) -> String {
+        CoachPersona.persona(for: voice).reflectionLead
+    }
+
+    @Test func answeredVerdictEmitsLeadWithPointLineInVoice() {
+        for voice in (SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]) {
+            let ctx = ChatFallbackContext(
+                voice: voice,
+                recentTimedTranscript: answeredTranscript,
+                recentTimedPrompt: prompt
+            )
+            let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+            #expect(out.hasPrefix(lead(for: voice)), "voice \(String(describing: voice)) lead")
+            #expect(out.contains("led with the point"),
+                    "answered verdict line for voice \(String(describing: voice))")
+        }
+    }
+
+    @Test func buriedVerdictEmitsArrivedLateLine() {
+        let ctx = ChatFallbackContext(
+            voice: .authoritative,
+            recentTimedTranscript: buriedTranscript,
+            recentTimedPrompt: prompt
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(out.hasPrefix("What I observed:"))
+        #expect(out.contains("arrived late"))
+    }
+
+    @Test func partialVerdictEmitsLeadWithFirstSentenceLine() {
+        let ctx = ChatFallbackContext(
+            voice: .concise,
+            recentTimedTranscript: partialTranscript,
+            recentTimedPrompt: prompt
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(out.hasPrefix("What landed:"))
+        #expect(out.contains("didn't clearly lead"))
+    }
+
+    /// Below the substance floor (thin transcript) → NO substance verdict; the
+    /// line states a delivery FACT instead. A fast pace surfaces the WPM fact.
+    @Test func belowFloorEmitsDeliveryFactNotSubstanceClaim() {
+        let ctx = ChatFallbackContext(
+            voice: .warm,
+            recentTimedTranscript: thinTranscript,
+            recentTimedPrompt: prompt,
+            recentWordsPerMinute: 180
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(out.contains("180 WPM"))
+        // No positional substance claim may appear on thin evidence.
+        #expect(!out.contains("led with the point"))
+        #expect(!out.contains("arrived late"))
+        #expect(!out.contains("didn't clearly lead"))
+    }
+
+    /// The fallback NEVER reproduces the transcript text — it states the
+    /// verdict and folds the summarized case in, but quotes nothing. The
+    /// distinctive transcript token ("payments") must not appear in the output.
+    @Test func neverQuotesTheTranscript() {
+        let ctx = ChatFallbackContext(
+            voice: .storytelling,
+            recentTimedTranscript: answeredTranscript,
+            recentTimedPrompt: prompt
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(!out.lowercased().contains("payments"))
+        #expect(!out.lowercased().contains("platform"))
+    }
+
+    /// With NO recent rep at all, the line advances the standing case using the
+    /// already-phrased `nextQuestion` — it never fabricates a rep read.
+    @Test func noRecentRepAdvancesStandingCase() {
+        let ctx = ChatFallbackContext(
+            voice: nil,
+            nextQuestion: "What is the next followed rep that will test the success measure?"
+        )
+        let out = AICoachChatService.deterministicReply(failure: .noProvider, context: ctx)
+        #expect(out.hasPrefix("Here's what stood out:"))
+        #expect(out.contains("don't have a fresh rep"))
+        // lowerFirst applied to the next-question fragment.
+        #expect(out.contains("what is the next followed rep"))
+        #expect(!out.contains("led with the point"))
+    }
+
+    /// The standing case (success measure) is folded into the closing line in
+    /// association-only framing, grounded in the user's OWN summarized numbers.
+    @Test func successMeasureFoldedIntoClosingLine() {
+        let ctx = ChatFallbackContext(
+            voice: .executive,
+            recentTimedTranscript: answeredTranscript,
+            recentTimedPrompt: prompt,
+            successMeasure: "Hold filler under 4 per rep for 3 reps"
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(out.contains("where we're aiming"))
+        #expect(out.contains("hold filler under 4 per rep for 3 reps"))
+    }
+
+    /// Totality: across every handled failure cause × every voice (incl. nil),
+    /// the builder returns a non-empty, brand-safe line. Never throws/empties.
+    @Test func totalAndBrandSafeAcrossCausesAndVoices() {
+        let causes: [ChatFailure] = [.network, .noProvider, .localeUnsupported]
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for cause in causes {
+            for voice in voices {
+                // Exercise both the with-rep and no-rep-no-case branches.
+                let withRep = ChatFallbackContext(
+                    voice: voice,
+                    recentTimedTranscript: answeredTranscript,
+                    recentTimedPrompt: prompt,
+                    successMeasure: "Hold filler under 4 per rep for 3 reps"
+                )
+                let bare = ChatFallbackContext(voice: voice)
+                for ctx in [withRep, bare] {
+                    let out = AICoachChatService.deterministicReply(failure: cause, context: ctx)
+                    #expect(!out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            "non-empty for \(cause) / \(String(describing: voice))")
+                    #expect(!out.contains("!"), "no exclamations")
+                    #expect(PostRepCoachNoteService.passesBrandVoiceContract(out),
+                            "brand contract for \(cause) / \(String(describing: voice))")
+                }
+            }
+        }
+    }
+
+    /// The default-empty context (the `reply(...)` default param) still yields
+    /// a non-empty, brand-safe, in-voice line — the steady fallback. No crash,
+    /// no fabrication, no error string.
+    @Test func emptyContextYieldsSteadyInVoiceLine() {
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ChatFallbackContext())
+        #expect(out.hasPrefix("Here's what stood out:")) // nil-voice persona lead
+        #expect(!out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
+    }
+
+    /// A very long summarized success measure is truncated so the rendered
+    /// bubble stays within the brand-voice ceiling (≤ 220 chars). The line is
+    /// still non-empty and brand-safe — truncation never breaks the contract.
+    @Test func longCaseStringTruncatesWithinBrandCeiling() {
+        let longMeasure = String(repeating: "hold the line and keep it tight ", count: 12)
+        let ctx = ChatFallbackContext(
+            voice: .persuasive,
+            recentTimedTranscript: answeredTranscript,
+            recentTimedPrompt: prompt,
+            successMeasure: longMeasure
+        )
+        let out = AICoachChatService.deterministicReply(failure: .network, context: ctx)
+        #expect(out.count <= 220)
+        #expect(PostRepCoachNoteService.passesBrandVoiceContract(out))
     }
 }
 
@@ -24183,6 +25587,314 @@ struct DerivedReadsTrendEngineTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(DerivedReadTrend.self, from: data)
         #expect(decoded == original)
+    }
+}
+
+// MARK: - FusedDeliveryReadTests (#3)
+//
+// `DerivedReadsTrendEngine.fusedDeliveryRead` fuses the existing per-rep
+// reads (composure + confidence markers, with structural as a non-
+// contradiction guard) over the recent window into one DURABLE, hedged
+// delivery read. THE MOST INTERPRETIVELY DANGEROUS READ in the system —
+// these tests pin the conservative contract:
+//   - `.forming` + suppressed line below the 4-of-5 consistency floor
+//   - a pattern (`.clear` / `.timid`) only at/above the floor
+//   - never a label on thin / missing channels (returns nil — no signal)
+//   - split votes never characterise (the coach abstains)
+//   - copy is a HYPOTHESIS about the REP SET, baseline-relative, with no
+//     absolute-loudness / absolute-pitch term
+//   - the `.evasive` / `.polished` / `.detached` labels are absent by
+//     design (the enum simply has no such cases to emit)
+//   - back-compat: a `CoachMemory` persisted without `coachDeliveryRead`
+//     decodes to nil (round-trip)
+//   - carry-forward: a thin-window `build` preserves the previous read
+//     (mirrors `lastTransferReview`)
+//
+// Fixtures mirror `DerivedReadsTrendEngineTests.session(daysAgo:...)` and
+// are hand-traced against the REAL constants in `ComposureReadEngine` +
+// `ConfidenceMarkerEngine`:
+//   clear rep  (steadiness 0.85, 0 fillers, hedging 0): composure 0.925,
+//              confidence 0.975 — both ≥ 0.65 → clear vote.
+//   timid rep  (steadiness 0.45, 10 fillers, hedging 6): confidence 0.239
+//              — ≤ 0.40 → timid vote.
+
+@Suite("FusedDeliveryRead")
+struct FusedDeliveryReadTests {
+
+    private func session(daysAgo: Int, energySteadiness: Double?, fillerCount: Int = 0, duration: TimeInterval = 60) -> PracticeSession {
+        let energy: VocalEnergyMetrics? = energySteadiness.map {
+            VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.6, stdDeviation: 0.05, coefficientOfVariation: 0.12, steadiness: $0, sampleCount: 100)
+        }
+        return PracticeSession(
+            transcript: "rep transcript with enough words for pace estimation here",
+            fillerWordCount: fillerCount,
+            duration: duration,
+            date: Date().addingTimeInterval(TimeInterval(-daysAgo * 86400)),
+            mode: .timed,
+            vocalEnergyMetrics: energy
+        )
+    }
+
+    // MARK: Engine — characterisation floor
+
+    @Test func characterizesClearAtFloor() {
+        // 5 clear reps (steadiness 0.85, 0 fillers, hedging 0) → 5 clear
+        // votes ≥ the 4-of-5 floor → `.clear`.
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let read = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(read?.dominantPattern == .clear)
+        #expect(read?.evidenceDepth == 5)
+        #expect(read?.tentativeLine != nil)
+        #expect(read?.isCharacterized == true)
+    }
+
+    @Test func characterizesTimidAtFloor() {
+        // 5 timid reps (steadiness 0.45, 10 fillers, hedging 6) →
+        // confidence 0.239 ≤ 0.40 → 5 timid votes → `.timid`.
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.45, fillerCount: 10) }
+        let read = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 6 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(read?.dominantPattern == .timid)
+        #expect(read?.evidenceDepth == 5)
+        #expect(read?.tentativeLine != nil)
+    }
+
+    @Test func formingBelowFloorWithSuppressedLine() {
+        // Only 3 clear reps — below the 4-rep consistency floor. The reps
+        // DO form reads, but not enough agree → `.forming`, line SUPPRESSED.
+        let sessions = (1...3).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let read = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(read?.dominantPattern == .forming)
+        #expect(read?.evidenceDepth == 0)
+        #expect(read?.tentativeLine == nil, "Below the floor the line must be suppressed")
+        #expect(read?.isCharacterized == false)
+    }
+
+    @Test func splitVotesNeverCharacterize() {
+        // 3 clear + 2 timid in the recent window: neither vote reaches the
+        // 4-rep floor → `.forming`. The coach abstains on a split read.
+        // The hedging closure keys off steadiness so clear reps get 0 and
+        // timid reps get 6, matching their filler load.
+        var sessions: [PracticeSession] = []
+        for i in 1...3 { sessions.append(session(daysAgo: i, energySteadiness: 0.85, fillerCount: 0)) }
+        for i in 4...5 { sessions.append(session(daysAgo: i, energySteadiness: 0.45, fillerCount: 10)) }
+        let read = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { s in (s.vocalEnergyMetrics?.steadiness ?? 0) > 0.6 ? 0 : 6 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(read?.dominantPattern == .forming)
+        #expect(read?.tentativeLine == nil)
+    }
+
+    // MARK: Engine — never labels on thin / missing channels
+
+    @Test func returnsNilWhenNoChannelsFormAnyRead() {
+        // No vocal-energy metrics AND no hedging signal → composure can't
+        // form (0 channels) and confidence falls to 1 channel → neither
+        // read forms on ANY rep → no signal at all → nil (let the caller
+        // carry a previous read forward rather than invent `.forming`).
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: nil) }
+        let read = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in nil },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(read == nil, "No formed reads on any rep → nil, never a fabricated label")
+    }
+
+    @Test func emptyWindowReturnsNil() {
+        let read = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: [],
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )
+        #expect(read == nil)
+    }
+
+    // MARK: Engine — copy hygiene (hypothesis, baseline-relative, no absolute term)
+
+    @Test func clearCopyIsHedgedHypothesisNotTrait() {
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let line = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 0 },
+            paceBaselinePerSession: { _ in nil }
+        )?.tentativeLine
+        let lowered = (line ?? "").lowercased()
+        // Reads the REP SET, not the person.
+        #expect(lowered.contains("reps"))
+        #expect(lowered.contains("not a fixed trait"))
+        #expect(!lowered.contains("you are"))
+        // No absolute-loudness / absolute-pitch vocabulary.
+        #expect(!lowered.contains("loud"))
+        #expect(!lowered.contains("quiet"))
+        #expect(!lowered.contains("decibel"))
+        #expect(!lowered.contains("hz"))
+    }
+
+    @Test func timidCopyIsBaselineRelativeHypothesis() {
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.45, fillerCount: 10) }
+        let line = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in 6 },
+            paceBaselinePerSession: { _ in nil }
+        )?.tentativeLine
+        let lowered = (line ?? "").lowercased()
+        #expect(lowered.contains("hypothesis"))
+        #expect(lowered.contains("baseline"))          // explicitly relative to the user's own baseline
+        #expect(lowered.contains("not a label on the person"))
+        #expect(!lowered.contains("you are timid"))
+        #expect(!lowered.contains("loud"))
+        #expect(!lowered.contains("hz"))
+    }
+
+    // MARK: CoachMemory — back-compat round-trip
+
+    @Test func memoryPersistedWithoutFieldDecodesToNil() throws {
+        // A memory with no delivery read must round-trip with the field nil,
+        // and a blob missing the key entirely must decode to nil too.
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: []
+        )
+        #expect(memory.coachDeliveryRead == nil)
+
+        let data = try JSONEncoder().encode(memory)
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: data)
+        #expect(decoded.coachDeliveryRead == nil)
+
+        // Strip the key from the JSON object to simulate a pre-D2 blob.
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        object.removeValue(forKey: "coachDeliveryRead")
+        let strippedData = try JSONSerialization.data(withJSONObject: object)
+        let strippedDecoded = try JSONDecoder().decode(CoachMemory.self, from: strippedData)
+        #expect(strippedDecoded.coachDeliveryRead == nil)
+    }
+
+    @Test func memoryRoundTripPreservesCharacterizedRead() throws {
+        var memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: []
+        )
+        memory.coachDeliveryRead = CoachDeliveryRead(
+            dominantPattern: .clear,
+            evidenceDepth: 5,
+            tentativeLine: "these reps read as clear — a read of these reps, not a fixed trait."
+        )
+        let data = try JSONEncoder().encode(memory)
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: data)
+        #expect(decoded.coachDeliveryRead == memory.coachDeliveryRead)
+        #expect(decoded.coachDeliveryRead?.dominantPattern == .clear)
+        #expect(decoded.coachDeliveryRead?.evidenceDepth == 5)
+    }
+
+    // MARK: build — compute + carry-forward across thin windows
+
+    private func baselineForFusedReads(hedging: Double) -> CommunicationBaseline {
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 6   // moderate → evidenceCount > 0
+        baseline.hedgingRate.value = hedging
+        // pace.value stays 0 → the confidence read's pace channel is skipped
+        // deterministically (it requires paceBaseline > 0).
+        return baseline
+    }
+
+    @Test func buildComputesCharacterizedReadFromSessions() {
+        // 5 clear reps + a baseline whose hedging rate is 0 → build fuses a
+        // `.clear` read onto the fresh memory.
+        let sessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let memory = CoachMemoryEngine.build(
+            profile: nil,
+            baseline: baselineForFusedReads(hedging: 0),
+            sessions: sessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil
+        )
+        #expect(memory?.coachDeliveryRead?.dominantPattern == .clear)
+        #expect(memory?.coachDeliveryRead?.evidenceDepth == 5)
+    }
+
+    @Test func buildCarriesPreviousReadForwardOnThinWindow() throws {
+        // Build 1: 5 clear reps → `.clear` characterised.
+        let richSessions = (1...5).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let first = try #require(
+            CoachMemoryEngine.build(
+                profile: nil,
+                baseline: baselineForFusedReads(hedging: 0),
+                sessions: richSessions,
+                trends: [],
+                forwardPlan: nil,
+                previous: nil,
+                lastSessionID: nil
+            )
+        )
+        #expect(first.coachDeliveryRead?.dominantPattern == .clear)
+
+        // Build 2: only 2 reps — below the consistency floor → the fresh read
+        // is `.forming`; the carry-forward must preserve the previous `.clear`
+        // rather than erase it (mirrors `lastTransferReview`).
+        let thinSessions = (1...2).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let second = try #require(
+            CoachMemoryEngine.build(
+                profile: nil,
+                baseline: baselineForFusedReads(hedging: 0),
+                sessions: thinSessions,
+                trends: [],
+                forwardPlan: nil,
+                previous: first,
+                lastSessionID: nil
+            )
+        )
+        #expect(second.coachDeliveryRead?.dominantPattern == .clear, "Thin window must preserve the previous durable read")
+        #expect(second.coachDeliveryRead?.evidenceDepth == 5)
+    }
+
+    @Test func buildLeavesReadNilWhenThinAndNoPrevious() {
+        // A cold thin window (2 reps, no previous) must NOT persist
+        // `.forming` — it stays nil until a real pattern earns the floor.
+        let thinSessions = (1...2).map { session(daysAgo: $0, energySteadiness: 0.85) }
+        let memory = CoachMemoryEngine.build(
+            profile: nil,
+            baseline: baselineForFusedReads(hedging: 0),
+            sessions: thinSessions,
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil
+        )
+        #expect(memory?.coachDeliveryRead == nil)
     }
 }
 
