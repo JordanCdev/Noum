@@ -55,11 +55,80 @@ enum ChatFailure: Equatable {
     case empty
 }
 
-/// Outcome of a chat turn — either a hydrated reply or a typed failure
-/// the store maps to per-cause copy.
+/// Outcome of a chat turn — a live model reply, a *deterministic* offline
+/// reply, or a typed failure the store maps to per-cause copy.
 enum ChatOutcome {
+    /// A live, model-generated reply.
     case reply(String)
+    /// A deterministic, grounded, in-voice coach reply assembled locally
+    /// when the model is unreachable (`.network` / `.noProvider`) or the
+    /// locale is unsupported (`.localeUnsupported`). A real coach always
+    /// responds, so these failure paths hand back a useful association-only
+    /// line instead of an error notice. Kept DISTINCT from `.reply` so the
+    /// spoken path stays silent (TTS needs the same network/provider that is
+    /// down) while the store still renders it as a real coach bubble — never
+    /// a system notice. Mirrors `AICoachService.deterministicFeedback` /
+    /// `PostRepCoachNoteService.deterministicNote`.
+    case deterministicReply(String)
     case failure(ChatFailure)
+}
+
+/// Decode-free, transient context the deterministic chat fallback reads to
+/// ground its reply. Assembled at the call site (`AskNoumView.runReply`) from
+/// owners already in scope — the user's chosen voice, the most-recent timed
+/// rep, and the already-summarized standing case (hypothesis / observable
+/// target / success measure / next question) off `CoachCaseFile`. Pure data;
+/// no I/O, no singletons, nothing persisted (so no Codable surface). Every
+/// field is optional and defaulted so the call site can pass exactly what it
+/// has and the builder degrades gracefully (no fabrication below a floor).
+struct ChatFallbackContext: Equatable {
+    /// The user's CHOSEN training voice (nil until they pick one). Selects
+    /// the `CoachPersona` register so the offline line speaks in-voice.
+    var voice: SpeakingStyleGoal?
+    /// The most-recent TIMED rep's transcript, when one exists. Drives the
+    /// SHARED `PracticeEvaluator.promptAnswerVerdict`; nil → no substance
+    /// verdict (delivery-fact-only). Never quoted directly (no fabrication).
+    var recentTimedTranscript: String?
+    /// The prompt the most-recent timed rep answered, when known. Paired
+    /// with `recentTimedTranscript` for the positional verdict.
+    var recentTimedPrompt: String?
+    /// Whole-words-per-minute on that rep (0 when unknown) — a delivery fact
+    /// the fallback may state when the substance verdict is below its floor.
+    var recentWordsPerMinute: Int
+    /// Filler-word COUNT on that rep (not a rate) — a delivery fact only.
+    var recentFillerCount: Int
+    /// The standing working hypothesis, already bounded/summarized on the
+    /// case file. Folded in association-only framing — never as a diagnosis.
+    var hypothesis: String?
+    /// The active intervention's observable target, already summarized.
+    var observableTarget: String?
+    /// The active intervention's success measure, already summarized.
+    var successMeasure: String?
+    /// The case file's next coaching question, already phrased. Used to
+    /// advance the case when there is no recent rep to read.
+    var nextQuestion: String?
+
+    init(
+        voice: SpeakingStyleGoal? = nil,
+        recentTimedTranscript: String? = nil,
+        recentTimedPrompt: String? = nil,
+        recentWordsPerMinute: Int = 0,
+        recentFillerCount: Int = 0,
+        hypothesis: String? = nil,
+        observableTarget: String? = nil,
+        successMeasure: String? = nil,
+        nextQuestion: String? = nil
+    ) {
+        self.voice = voice
+        self.recentTimedTranscript = recentTimedTranscript
+        self.recentTimedPrompt = recentTimedPrompt
+        self.recentWordsPerMinute = recentWordsPerMinute
+        self.recentFillerCount = recentFillerCount
+        self.hypothesis = hypothesis
+        self.observableTarget = observableTarget
+        self.successMeasure = successMeasure
+        self.nextQuestion = nextQuestion
+    }
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -75,27 +144,39 @@ actor AICoachChatService {
 
     private init() {}
 
-    /// Send a turn to the model. Returns `.reply(text)` on success or
-    /// `.failure(cause)` on any failure. The store maps the cause to
-    /// per-failure copy so the user always sees an accurate notice
-    /// instead of a generic "couldn't reach my model" string that
-    /// misdirected locale-blocked users to a useless settings page.
+    /// Send a turn to the model. Returns `.reply(text)` on a live success,
+    /// `.deterministicReply(text)` when the model is unreachable / the locale
+    /// is unsupported (a real coach always answers — see `ChatFallbackContext`),
+    /// or `.failure(cause)` on the one path where a canned line could mask a
+    /// real bug (`.empty`: the model WAS reached but returned nothing parseable
+    /// or was length-truncated — the user gets the honest "try rephrasing"
+    /// notice instead of substituted text). Total function — never throws.
+    ///
+    /// `fallback` is the LAST, defaulted parameter (arg-order rule) so the
+    /// single existing call site can opt in without reordering; with the
+    /// default empty context the deterministic reply degrades to an in-voice,
+    /// fabrication-free line.
     func reply(
         history: [CoachMessage],
         systemPrompt: String,
-        userContext: String
+        userContext: String,
+        fallback: ChatFallbackContext = ChatFallbackContext()
     ) async -> ChatOutcome {
         guard let provider = await currentProvider(),
               let endpoint = provider.endpoint,
               let key = apiKey(for: provider)
         else {
-            return .failure(.noProvider)
+            // No provider configured — the model can't be reached at all.
+            // A real coach still answers, so hand back a grounded, in-voice
+            // deterministic line rather than an error notice.
+            return .deterministicReply(Self.deterministicReply(failure: .noProvider, context: fallback))
         }
 
-        // M13: AI surfaces are English-only. Surface a locale-specific
-        // notice rather than the generic provider-config message.
+        // M13: AI surfaces are English-only. The deterministic fallback is
+        // locale-agnostic English copy (layer-wide precedent), so a non-English
+        // user still gets a useful coach line rather than a config notice.
         guard await activeLocaleSupportsAI() else {
-            return .failure(.localeUnsupported)
+            return .deterministicReply(Self.deterministicReply(failure: .localeUnsupported, context: fallback))
         }
 
         // Compose the system prompt — voice + context block.
@@ -122,15 +203,195 @@ actor AICoachChatService {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return .failure(.network)
+                // Transport reached the server but it refused — treat as a
+                // network failure and answer deterministically (a coach who
+                // can't reach their notes still gives a useful read).
+                return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
             }
             if let text = extractText(from: data, provider: provider) {
                 return .reply(text)
             }
+            // The model WAS reached but returned nothing parseable / was
+            // length-truncated. Keep the honest `.empty` notice — substituting
+            // a canned line here could mask a real truncation bug.
             return .failure(.empty)
         } catch {
-            return .failure(.network)
+            // Transport / encode failure — the model is unreachable. Answer
+            // deterministically instead of dead-ending the user.
+            return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
         }
+    }
+
+    // MARK: - Deterministic offline fallback
+    //
+    // A real coach always responds. When the model is unreachable
+    // (`.network` / `.noProvider`) or the locale is unsupported
+    // (`.localeUnsupported`), this assembles a grounded, in-voice coach line
+    // from the same rich context the LLM gets — the chosen voice's persona,
+    // the SHARED prompt-answer verdict over the most-recent timed rep, and the
+    // standing case (hypothesis / target / success measure). It mirrors
+    // `AICoachService.deterministicFeedback` and
+    // `PostRepCoachNoteService.deterministicNote`:
+    //
+    //   • Pure + `nonisolated` + total — unit-testable, never throws/empties.
+    //   • Honors evidence floors — `promptAnswerVerdict == nil` (thin / absent
+    //     rep) yields a delivery-fact-only line, NEVER a substance claim; with
+    //     no recent rep at all it advances the standing case in association-only
+    //     framing instead of inventing a read.
+    //   • Never fabricates a quote — it states the verdict and delivery facts,
+    //     and folds the already-summarized case in; it never reproduces the
+    //     transcript text.
+    //   • Locale-agnostic English copy (the deterministic path is shared by the
+    //     non-English locale-block per layer-wide precedent).
+    //   • Brand-safe by construction — run through `ensureNoExclamations` /
+    //     `collapseWhitespace` / `truncate` (reused from
+    //     `PostRepCoachNoteService`), bounded to the brand-voice length ceiling.
+
+    /// Build the deterministic, in-voice coach reply for a handled failure
+    /// cause. The `failure` parameter is accepted for symmetry / future
+    /// per-cause shaping but the COPY is intentionally cause-agnostic: the user
+    /// shouldn't be able to tell whether the model was offline, unconfigured,
+    /// or locale-blocked — they just get a useful coach line. Pure + total.
+    nonisolated static func deterministicReply(
+        failure: ChatFailure,
+        context: ChatFallbackContext
+    ) -> String {
+        _ = failure // cause-agnostic copy today; kept for per-cause shaping later
+        let persona = CoachPersona.persona(for: context.voice)
+        let lead = persona.reflectionLead
+
+        // The grounded body: the SHARED substance verdict above its floor,
+        // else a delivery fact, else a case-advancing line, else a steady
+        // in-voice fallback. Exactly one body sentence — coach voice rule #1.
+        let body = bodySentence(context: context, persona: persona)
+
+        // The standing case, folded in association-only framing. Suppressed
+        // when there is no durable case (no hypothesis / target / measure /
+        // next question) so the line never gestures at a plan that isn't there.
+        let caseLine = standingCaseLine(context: context, persona: persona)
+
+        var text = caseLine.isEmpty ? "\(lead) \(body)" : "\(lead) \(body) \(caseLine)"
+        text = PostRepCoachNoteService.collapseWhitespace(in: text)
+        text = PostRepCoachNoteService.ensureNoExclamations(in: text)
+        // Bounded to the brand-voice ceiling so the rendered bubble stays tight
+        // and `passesBrandVoiceContract` holds (it rejects > 220 chars).
+        text = PostRepCoachNoteService.truncate(text, max: 220)
+        return text
+    }
+
+    /// The single body sentence. Priority:
+    /// 1. Substance verdict over the most-recent timed rep, when above floor.
+    /// 2. A delivery FACT (pace / fillers) when present but the verdict is below
+    ///    floor — never a substance claim.
+    /// 3. A case-advancing reflection when there's no rep to read.
+    /// 4. A steady in-voice fallback that asserts nothing it cannot support.
+    private nonisolated static func bodySentence(
+        context: ChatFallbackContext,
+        persona: CoachPersona
+    ) -> String {
+        // 1) Substance verdict — only above the shared evidence floor.
+        if let transcript = context.recentTimedTranscript,
+           !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let read = PracticeEvaluator.promptRelevance(
+                prompt: context.recentTimedPrompt?.isEmpty == false ? context.recentTimedPrompt : nil,
+                transcript: transcript
+            )
+            if let verdict = PracticeEvaluator.promptAnswerVerdict(for: read) {
+                return verdictSentence(verdict)
+            }
+            // Below the substance floor — fall through to a delivery fact.
+        }
+
+        // 2) Delivery fact (no substance claim). Pace band first, then fillers.
+        if context.recentWordsPerMinute > 170 {
+            return "On your last timed rep the pace ran fast at \(context.recentWordsPerMinute) WPM, so add a beat between points and each one gets room to land."
+        }
+        if context.recentWordsPerMinute > 0 && context.recentWordsPerMinute < 95 {
+            return "On your last timed rep the pace ran slow at \(context.recentWordsPerMinute) WPM, so lift the energy a touch and the line carries."
+        }
+        if context.recentFillerCount >= 4 {
+            return "Fillers crept into your last timed rep, so try a deliberate pause where one wants to go — silence reads as composure."
+        }
+
+        // 3) No rep to read — advance the standing case if we have one. (Copy
+        // deliberately avoids "let's", which the brand-voice contract rejects.)
+        if let next = bounded(context.nextQuestion) {
+            return "I don't have a fresh rep in front of me, so the open thread is still the one to pull on: \(lowerFirst(next))"
+        }
+        if bounded(context.hypothesis) != nil {
+            return "I don't have a fresh rep in front of me, but the working read still stands."
+        }
+
+        // 4) Steady in-voice fallback — asserts nothing it cannot support.
+        return steadyFallback(persona: persona)
+    }
+
+    /// Per-verdict body, mirroring the shared positional language used by
+    /// `AICoachService.deterministicFeedback` / the AI rubric so every surface
+    /// agrees. Association on the rep's own words only — never a confident
+    /// off-topic claim.
+    private nonisolated static func verdictSentence(_ verdict: PracticeEvaluator.PromptAnswerVerdict) -> String {
+        switch verdict {
+        case .answered:
+            return "Your last timed rep led with the point — the answer was right up front, so the work now is closing as cleanly as you opened."
+        case .partial:
+            return "On your last timed rep the question's key terms didn't clearly lead, so make your main point the first sentence and spend the rest supporting it."
+        case .buried:
+            return "Your last timed rep had the answer in it, but it arrived late — lead with the point in the first sentence, then build the case behind it."
+        }
+    }
+
+    /// The standing case folded into one association-only line. Order:
+    /// success measure (the most concrete target) > observable target >
+    /// hypothesis. Empty when there is no durable case so nothing is invented.
+    private nonisolated static func standingCaseLine(
+        context: ChatFallbackContext,
+        persona: CoachPersona
+    ) -> String {
+        if let measure = bounded(context.successMeasure) {
+            return "That ties to where we're aiming: \(lowerFirst(measure))."
+        }
+        if let target = bounded(context.observableTarget) {
+            return "Keep it pointed at the target we set: \(lowerFirst(target))."
+        }
+        if let hypothesis = bounded(context.hypothesis) {
+            return "It fits the read we're carrying: \(lowerFirst(hypothesis))."
+        }
+        return ""
+    }
+
+    /// A steady, in-voice fallback line when there is neither a rep nor a case
+    /// to ground against. Asserts nothing about the user's last rep.
+    private nonisolated static func steadyFallback(persona: CoachPersona) -> String {
+        switch persona.voice {
+        case .concise:
+            return "Pick one idea, make it the first sentence of your next rep, and cut the rest."
+        case .storytelling:
+            return "Run one more rep and give me the arc — open on the point, then carry it through."
+        case .authoritative, .executive, .persuasive:
+            return "Run one more rep with a single clear point up front, and I'll read it the moment I'm back online."
+        case .warm, .none:
+            return "Run one more rep when you're ready — lead with your point, and I'll read it the moment I'm back online."
+        }
+    }
+
+    // MARK: - Small string helpers (deterministic fallback)
+
+    /// Trim + non-empty guard, returning nil for absent/blank input so the
+    /// builder never folds in an empty fragment. Mirrors the `bounded(_:)`
+    /// idiom used by `CoachCaseFile`.
+    private nonisolated static func bounded(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    /// Lowercase only the first character so a summarized fragment reads
+    /// naturally mid-sentence ("Hold under 4%…" → "hold under 4%…"). Leaves
+    /// the rest untouched so acronyms / numbers are preserved. Pure.
+    private nonisolated static func lowerFirst(_ value: String) -> String {
+        guard let first = value.first else { return value }
+        return first.lowercased() + value.dropFirst()
     }
 
     // MARK: - Provider plumbing

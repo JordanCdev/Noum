@@ -169,12 +169,18 @@ final class AskNoumStore: ObservableObject {
     func completeCoachTurn(id: UUID, outcome: ChatOutcome) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         switch outcome {
-        case .reply(let text):
+        case .reply(let text), .deterministicReply(let text):
+            // A live `.reply` and a grounded `.deterministicReply` both render
+            // as a real coach bubble — the deterministic offline line is the
+            // coach answering, NOT a system notice. (The spoken path treats
+            // them differently — see `AskNoumSpokenMode.shouldSpeak` — because
+            // a canned line must never be read aloud as the live coach.)
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
-                // Defensive: service shouldn't hand us a successful reply
-                // with empty content (that path returns `.failure(.empty)`),
-                // but if it does, route through the same notice.
+                // Defensive: neither path should hand us empty content (a live
+                // empty returns `.failure(.empty)`; the deterministic builder
+                // is total and always non-empty), but if it does, route through
+                // the same notice rather than leaving a blank bubble.
                 replaceWithNotice(at: idx, id: id, failure: .empty)
             } else {
                 messages[idx] = CoachMessage(
