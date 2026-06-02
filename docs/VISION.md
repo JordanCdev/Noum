@@ -67,11 +67,14 @@ addressed in app code:
 
 Where the product is now **underweight** for coach parity:
 
-- **The coaching case is incomplete.** Durable memory, proof moments, trend
-  reads, forward plans, and observed response to followed recommendations
-  provide a meaningful base. They are not yet one explicit, revisable case
-  formulation with hypothesis, intervention, success criterion, review
-  cadence, and reason for changing course.
+- **The coaching case is newly explicit, but still early.** Durable memory,
+  proof moments, trend reads, forward plans, observed response to followed
+  recommendations, subjective reflection patterns, transfer reviews, and a
+  first-class `CoachCaseFile` now provide one bounded case spine: hypothesis,
+  intervention, target, success measure, review due date, transfer read, and
+  next coach move. That is the right architecture, but it still needs richer
+  user confirmation, more repeated evidence, and real-world validation before
+  Noum can claim professional-coach parity.
 - **Delivery sensing is not deep enough.** Fillers, pace, pauses, word choice,
   rhetorical devices, and scenario state are useful signals, but professional
   coaching also needs reliable prosody/intonation, pitch range, emphasis,
@@ -80,8 +83,11 @@ Where the product is now **underweight** for coach parity:
 - **The user's inner experience is not yet deeply captured.** A human coach
   asks what felt difficult, where confidence changed, what the user avoided,
   what nerves did to their delivery, and whether a technically polished answer
-  actually felt like them. Noum needs brief reflective check-ins that become
-  durable context only with the user's participation.
+  actually felt like them. Noum now carries bounded repeated self-report
+  patterns from recent post-rep reflections into the coach case as hypotheses,
+  but it still needs richer confidence, avoidance, difficulty, and outside-app
+  outcome check-ins that become durable context only with the user's
+  participation.
 - **Deeper patterns remain hypotheses, not a coaching record.** The product
   must be able to explore overexplaining, fear of disagreement, lack of
   conviction, defensiveness, weak executive presence, timidity, evasion, or
@@ -131,12 +137,17 @@ rather than two parallel tracks. The eloquence engine surfaces eleven
 rhetorical devices in the summary card + a brief in-session HUD, and
 awards XP per detection.
 
-The coach-memory track now includes durable working memory and bounded
-response-to-recommendation evidence for Ask Noum and AI-generated forward
-plans. That is the beginning of an adaptive coaching relationship, not the
-finish: Noum can observe that a prescribed mode is associated with progress
-or regression, but it does not yet maintain a complete coaching case or
-prove transfer into the user's real-world moments.
+The coach-memory track now includes durable working memory, bounded
+response-to-recommendation evidence, bounded subjective reflection-pattern
+memory, real-world transfer reviews, and a first-class `CoachCaseFile` for Ask
+Noum and AI-generated forward plans. Intervention-review handoffs now carry
+those repeated self-report patterns into the review question, and the case file
+names the current hypothesis, intervention, observable target, success measure,
+review date, transfer read, and next coach move. That is the beginning of an
+adaptive coaching relationship, not the finish: Noum can observe that a
+prescribed mode is associated with progress or regression, and can carry a
+repeated self-report pattern as a coach hypothesis, but it still has to prove
+transfer into the user's real-world moments.
 
 ## Coach-parity standard
 
