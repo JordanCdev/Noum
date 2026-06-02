@@ -735,6 +735,18 @@ enum CoachContextBuilder {
                     lines.append("PROMPT RELEVANCE (most-recent rep — did the answer engage the question?)")
                     lines.append(contentsOf: relevanceLines)
                 }
+
+                // ARGUMENT LOGIC — the rep's reasoning shape (claim ->
+                // evidence -> implication), the SAME deterministic read that
+                // drives the Timed insight line so the chat coach can't disagree
+                // with the post-rep note. Distinct from PROMPT RELEVANCE above
+                // (topic vs reasoning structure). Nil below the floor or when no
+                // claim was asserted — no down-talk on a fragment.
+                if let argumentLines = argumentLogicLines(transcript: latest.transcript) {
+                    lines.append("")
+                    lines.append("ARGUMENT LOGIC (most-recent rep — is the answer built as an argument?)")
+                    lines.append(contentsOf: argumentLines)
+                }
             }
         }
 
@@ -755,9 +767,21 @@ enum CoachContextBuilder {
             hedgingPerMinutePerSession: { _ in hedgingPerMin },
             paceBaselinePerSession: { _ in paceBaseline }
         )
-        if !derivedTrends.isEmpty {
+        // FUSED DELIVERY READ (#3) — the single durable read of how the
+        // recent rep SET read on delivery, fused from the per-rep reads and
+        // persisted on `CoachMemory`. `tentativeLine` is nil below the
+        // consistency floor (the read is `.forming` — suppressed), so this
+        // surfaces ONE line only when a pattern has earned the floor. It is a
+        // HYPOTHESIS about the reps, never a trait/diagnosis — the copy itself
+        // carries that hedge, and it leads the section because it is the
+        // durable read the per-dimension trends below merely support.
+        let fusedDeliveryLine = coachMemory?.coachDeliveryRead?.tentativeLine
+        if fusedDeliveryLine != nil || !derivedTrends.isEmpty {
             lines.append("")
             lines.append("DERIVED READ TRENDS (recent vs prior window)")
+            if let fusedDeliveryLine {
+                lines.append("- Fused delivery read: \(fusedDeliveryLine)")
+            }
             for trend in derivedTrends {
                 lines.append("- \(trend.readout)")
             }
@@ -955,6 +979,44 @@ enum CoachContextBuilder {
         out.append("- The first sentence echoed \(leadPct)% of the question's key terms; the whole answer echoed \(overlapPct)% (lexical overlap) — \(verdictPhrase).")
         out.append("- \(guidance)")
         return out
+    }
+
+    // MARK: - Argument logic (the reasoning-shape read for the chat coach)
+    //
+    // The deterministic claim->evidence->implication read
+    // (`PracticeEvaluator.argumentStructure` / `argumentLogicVerdict`) surfaced
+    // for the conversational coach as a terse, citeable section — the SAME read
+    // that drives the Timed insight line, so the chat coach and the post-rep
+    // insights can never disagree about a rep's reasoning shape (one source of
+    // truth). DISTINCT from PROMPT RELEVANCE above: that reads whether the answer
+    // engaged the QUESTION (topic); this reads whether the answer is built as an
+    // ARGUMENT (claim, why, so-what) regardless of topic. Returns nil below the
+    // content-word floor OR when no claim was even asserted (the verdict is nil),
+    // so the coach never judges reasoning on a fragment. Framed as lexical
+    // association on the rep's own discourse markers, never proof the reasoning is
+    // sound (rule 14 is the backstop).
+    static func argumentLogicLines(transcript: String) -> [String]? {
+        let read = PracticeEvaluator.argumentStructure(transcript: transcript)
+        guard let verdict = PracticeEvaluator.argumentLogicVerdict(for: read) else { return nil }
+        let dataLine: String
+        let guidance: String
+        switch verdict {
+        case .fullChain:
+            dataLine = "- Reasoning shape: claim + reason + implication all present — the answer is built as an argument."
+            guidance = "- The rep has a full reasoning spine; if relevant, affirm it briefly and coach delivery or tightening from there. Lexical association on the rep's own markers, never proof the reasoning is sound."
+        case .claimWithSupport:
+            if read.hasEvidence {
+                dataLine = "- Reasoning shape: claim backed by a reason, but no implication — it never carries forward to what it means."
+                guidance = "- When it fits, coach closing the loop: one line on what the point means or leads to. Lexical association, never a verdict on correctness."
+            } else {
+                dataLine = "- Reasoning shape: claim plus where it leads, but no stated reason — asserted and projected, never justified."
+                guidance = "- When it fits, coach adding one reason (a \"because…\") so the argument holds. Lexical association, never a verdict on correctness."
+            }
+        case .assertionOnly:
+            dataLine = "- Reasoning shape: a clear claim, but no reason and no implication — asserted, not argued."
+            guidance = "- If it fits the moment, coach the claim -> reason -> implication spine so the next answer has a backbone. This is lexical association on the rep's own markers, never proof the answer was wrong."
+        }
+        return [dataLine, guidance]
     }
 
     /// Collapses + truncates the rep's stored prompt for the PROMPT RELEVANCE
@@ -3040,9 +3102,12 @@ enum CoachContextBuilder {
         if let transfer = caseFile.transferRead {
             lines.append("- Transfer read: \(transfer) User-reported; not proof of causation.")
         }
+        if let upcoming = caseFile.upcomingMomentLine {
+            lines.append("- \(upcoming)")
+        }
         lines.append("- Next coach move: \(caseFile.nextMove.contextLabel). \(caseFile.nextMove.contextInstruction) \(caseFile.nextQuestion)")
 
-        return Array(lines.prefix(10))
+        return Array(lines.prefix(11))
     }
 
     private static func coachCaseFormulationLines(

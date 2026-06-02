@@ -5278,7 +5278,9 @@ enum PracticeEvaluator {
             wordCount: wordCount,
             wordsPerMinute: wordsPerMinute,
             trends: trends,
-            paceSnapshot: paceSnapshot
+            paceSnapshot: paceSnapshot,
+            transcript: cleanTranscript,
+            relevance: relevanceRead
         )
         insights.append(styleAlignmentInsight(styleSnapshot: styleSnapshot, profile: profile, alignment: styleAlignment))
         if let styleTrendNote = styleTrendInsight(styleTrend, profile: profile) {
@@ -5860,13 +5862,283 @@ enum PracticeEvaluator {
         return .partial
     }
 
+    // MARK: - Argument logic (claim -> evidence -> implication chain)
+    //
+    // A deterministic, transcript-only read of whether an answer is structured
+    // as an ARGUMENT — a claim that is both justified (evidence) and carried
+    // forward to a consequence (implication) — rather than a bare assertion.
+    //
+    // This is DELIBERATELY DISTINCT from `promptAnswerVerdict` (topic
+    // relevance / "did you answer the question"). A rep can be perfectly
+    // on-topic and still be a flat assertion with no reasoning chain; and a rep
+    // can be a tight claim->evidence->implication argument about something the
+    // prompt never asked. Relevance reads the prompt overlap; this reads the
+    // rep's own internal logical scaffold. The two never share a band.
+    //
+    // It is also distinct from the persuasion `claimCounter` framework drill
+    // (`FrameworkDrillChecks`), which checks ACKNOWLEDGE-then-bridge ordering for
+    // a two-sided argument. This checks the one-sided spine — claim, why, so-what
+    // — which is the thing a coach asks for on an unstructured impromptu answer.
+    //
+    // Conservative by construction: lexical-marker association, never causation,
+    // and `nil` below the content-word floor (no confident "no argument" on a
+    // fragment). Marker presence is necessary but not sufficient for a real
+    // argument — so the strongest verdict the read ever asserts is "the shape of
+    // an argument is present", framed as a hypothesis everywhere it surfaces.
+
+    /// Minimum distinct content words (post `relevanceContentWords` stop-filter)
+    /// before any argument-structure verdict is asserted. Below this the rep is
+    /// too thin to claim a missing reasoning chain — the read returns `nil`
+    /// (tentative, never punitive). Matches the spirit of the framework-drill
+    /// floor (`FrameworkDrillChecks.minContentWordsForVerdict`) so "too thin to
+    /// judge structure" is one bar across the structural reads.
+    static let minContentWordsForArgument: Int = 6
+
+    /// EVIDENCE markers — the speaker justifies WHY the claim is true (backward
+    /// support). Deliberately scoped to JUSTIFICATION, not consequence: this band
+    /// answers "why should I believe this." Multi-word phrases are listed so they
+    /// match as whole runs. Distinct from `StyleSignalSnapshot.persuasiveScore`'s
+    /// band (which mixes justification and consequence into one persuasion score)
+    /// — here evidence and implication are split so the chain can be read as a
+    /// chain. Note `because` is in `relevanceContentWords`'s stop set (so it
+    /// never inflates the content-word floor) but still matches here as a
+    /// discourse marker; marker matching is independent of the content-word count.
+    static let argumentEvidenceMarkers: [String] = [
+        "because", "since", "the reason", "the reason is", "reason being",
+        "due to", "given that", "the data", "the evidence", "research shows",
+        "studies show", "for example", "for instance", "based on", "in fact"
+    ]
+
+    /// IMPLICATION / consequence markers — the speaker carries the claim FORWARD
+    /// to what follows from it (the "so what"). Deliberately scoped to
+    /// CONSEQUENCE, not justification: this band answers "so what does this
+    /// mean." Distinct from the evidence band above so a rep with only a "why"
+    /// and a rep with only a "so what" land in different verdicts. Whole-run
+    /// matched.
+    static let argumentImplicationMarkers: [String] = [
+        "which means", "so that", "therefore", "as a result", "the result is",
+        "that leads to", "which is why", "so we should", "the takeaway",
+        "the upshot", "this means", "that means", "in turn", "consequently",
+        "the implication", "what this means"
+    ]
+
+    /// The internal-logic read of an answer's claim->evidence->implication chain.
+    /// Pure, transcript-only.
+    struct ArgumentStructureRead: Equatable {
+        /// True once the lead sentence carries at least one content word — the
+        /// answer actually opens on a claim rather than a pure hedge. Uses the
+        /// SAME `relevanceFirstSentence` lead span the positional BLUF read uses
+        /// (single source of truth for "the lead").
+        let hasClaim: Bool
+        /// True when a backward-justification marker is present anywhere.
+        let hasEvidence: Bool
+        /// True when a forward-consequence marker is present anywhere.
+        let hasImplication: Bool
+        /// True once the content-word floor is met. When false the read is
+        /// tentative and the verdict mapping returns `nil` (no confident
+        /// "no argument" on thin evidence).
+        let evidenceFloorMet: Bool
+    }
+
+    /// The shared argument-logic verdict — a HYPOTHESIS about the rep's internal
+    /// reasoning shape, never a claim that the argument is correct. Distinct from
+    /// `PromptAnswerVerdict` by construction (that reads prompt relevance; this
+    /// reads the rep's own claim/evidence/implication markers).
+    enum ArgumentLogicVerdict: Equatable {
+        /// Claim + evidence + implication all present: the shape of a complete
+        /// argument (point, why, so-what). Lexical association, never proof the
+        /// reasoning is sound.
+        case fullChain
+        /// A claim plus EXACTLY ONE of evidence or implication — supported or
+        /// carried forward, but not both. A partial spine.
+        case claimWithSupport
+        /// A claim with neither a justification nor a consequence marker — the
+        /// point was asserted but never backed or carried forward. Constructive,
+        /// never a verdict on correctness, never a confident negative below the
+        /// floor (that path returns `nil`).
+        case assertionOnly
+    }
+
+    /// Pure. Reads the claim->evidence->implication scaffold of `transcript`.
+    /// Marker scanning uses the SAME normalisation discipline as the framework
+    /// detectors (whole-run, word-boundary aware) via a local padded-string scan,
+    /// so "but" never matches inside "contribute" and a trailing comma never
+    /// hides a marker. Below the content-word floor every structural flag is
+    /// reported but `evidenceFloorMet` is false, and the verdict mapping returns
+    /// `nil`.
+    static func argumentStructure(transcript: String) -> ArgumentStructureRead {
+        let contentCount = relevanceContentWords(in: transcript).count
+        let floorMet = contentCount >= minContentWordsForArgument
+        let lead = relevanceFirstSentence(in: transcript)
+        let hasClaim = !relevanceContentWords(in: lead).isEmpty
+        let padded = argumentNormalisedPadded(transcript)
+        let hasEvidence = argumentContains(any: argumentEvidenceMarkers, in: padded)
+        let hasImplication = argumentContains(any: argumentImplicationMarkers, in: padded)
+        return ArgumentStructureRead(
+            hasClaim: hasClaim,
+            hasEvidence: hasEvidence,
+            hasImplication: hasImplication,
+            evidenceFloorMet: floorMet
+        )
+    }
+
+    /// Pure. Maps an `ArgumentStructureRead` onto the shared argument-logic
+    /// verdict. Returns `nil` below the evidence floor — no verdict on thin
+    /// evidence — and `nil` when the lead carries no claim at all (there is no
+    /// argument spine to grade if nothing was even asserted). Order:
+    /// 1. claim + evidence + implication -> `.fullChain`.
+    /// 2. claim + (evidence XOR implication) -> `.claimWithSupport`.
+    /// 3. claim alone -> `.assertionOnly`.
+    static func argumentLogicVerdict(for read: ArgumentStructureRead) -> ArgumentLogicVerdict? {
+        guard read.evidenceFloorMet, read.hasClaim else { return nil }
+        if read.hasEvidence && read.hasImplication { return .fullChain }
+        if read.hasEvidence != read.hasImplication { return .claimWithSupport }
+        return .assertionOnly
+    }
+
+    // MARK: - Concision of meaning (meaning-density + answer-arrival)
+    //
+    // A deterministic "how much meaning per word, and how soon did it arrive"
+    // read. DISTINCT from raw `wordCount` (length) and from
+    // `StyleSignalSnapshot.uniqueWordRatio` (lexical DIVERSITY — how many
+    // *different* words). A rep can be long and word-diverse yet meaning-thin
+    // (varied function words, slow arrival); this measures SUBSTANCE density:
+    // the fraction of tokens that are content words, combined with how early the
+    // point landed (the answer-arrival signal, reused from the positional BLUF
+    // read so the two surfaces share one notion of "the lead").
+    //
+    // Conservative: `nil` below the transcript floor, no confident "padded"
+    // on a fragment. Lexical association, never a verdict on whether the content
+    // itself was good.
+
+    /// Below this many tokens the transcript is too short to read meaning
+    /// density honestly (a five-word reply is not "padded"). Reuses the same raw
+    /// floor as the relevance read (`minTranscriptWordsForRelevance`, 12 words)
+    /// so "too thin to judge" is one bar.
+    static let minWordsForMeaningDensity: Int = minTranscriptWordsForRelevance
+    /// >= this content-word fraction reads as point-packed ("dense"). Hand-traced
+    /// against the real `relevanceContentWords` stop set + `wordCount` tokenizer:
+    /// natural conversational speech carrying real substance clears this; a
+    /// hedge-and-filler answer ("well you know I think maybe…") falls below it.
+    static let meaningDensityHighFraction: Double = 0.50
+    /// < this content-word fraction reads as padded — many words, little meaning
+    /// per word. Never below this is a confident negative; it only ever softens
+    /// to the constructive "took a while to land" nudge.
+    static let meaningDensityLowFraction: Double = 0.35
+
+    /// The meaning-density / answer-arrival read. Pure.
+    struct MeaningDensityRead: Equatable {
+        /// 0...1 fraction of tokens that are content words
+        /// (`relevanceContentWords.count / wordCount`). The substance-density
+        /// signal. 0 when the transcript has no tokens.
+        let contentWordFraction: Double
+        /// Total tokens considered (`wordCount(in:)`).
+        let totalWords: Int
+        /// Whether the answer ARRIVED early — the lead sentence carried the
+        /// point. Nil when there is no prompt to judge arrival against (a
+        /// nil/thin-prompt rep still gets a density read, just no arrival term).
+        /// Reused from the positional BLUF read so "arrived early" means the
+        /// SAME thing here as in `promptAnswerVerdict`.
+        let answerArrivedEarly: Bool?
+        /// True once the token floor is met. False -> verdict mapping returns
+        /// `nil`.
+        let evidenceFloorMet: Bool
+    }
+
+    /// The shared concision-of-meaning verdict — a HYPOTHESIS about substance
+    /// density, never a claim the content was good. Distinct from raw word count
+    /// and from lexical diversity by construction.
+    enum ConcisionOfMeaningVerdict: Equatable {
+        /// High content-word fraction AND (when a prompt is present) the point
+        /// arrived in the lead — meaning-dense and front-loaded.
+        case dense
+        /// A middling content-word fraction — some substance, some padding.
+        /// Also the band a high-density-but-late-arrival rep lands in, so a
+        /// front-loading nudge can apply without overclaiming the answer was thin.
+        case measured
+        /// Low content-word fraction — many words, little meaning per word.
+        /// Constructive "tighten it" nudge, never a confident negative (that
+        /// path returns `nil` below the floor).
+        case padded
+    }
+
+    /// Pure. Reads meaning density (content-word fraction) and answer arrival
+    /// for `transcript`, taking the already-computed `PromptRelevanceRead` so the
+    /// arrival signal is single-sourced with the positional BLUF read rather than
+    /// re-derived. Below the token floor `evidenceFloorMet` is false and the
+    /// verdict mapping returns `nil`.
+    static func meaningDensity(transcript: String, relevance: PromptRelevanceRead) -> MeaningDensityRead {
+        let totalWords = wordCount(in: transcript)
+        let contentCount = relevanceContentWords(in: transcript).count
+        let fraction = totalWords > 0 ? Double(contentCount) / Double(totalWords) : 0
+        // Answer arrival only when the relevance read itself cleared its floor
+        // (there is a real prompt to judge "did the point lead" against).
+        let arrived: Bool? = relevance.evidenceFloorMet
+            ? relevance.firstSentenceOverlap >= relevanceStrongOverlap
+            : nil
+        return MeaningDensityRead(
+            contentWordFraction: fraction,
+            totalWords: totalWords,
+            answerArrivedEarly: arrived,
+            evidenceFloorMet: totalWords >= minWordsForMeaningDensity
+        )
+    }
+
+    /// Pure. Maps a `MeaningDensityRead` onto the concision-of-meaning verdict.
+    /// Returns `nil` below the token floor. Order:
+    /// 1. `< meaningDensityLowFraction` -> `.padded` (meaning-thin).
+    /// 2. `>= meaningDensityHighFraction` AND the point arrived early (or no
+    ///    prompt to judge arrival) -> `.dense`.
+    /// 3. everything else (mid fraction, or dense-but-late arrival) -> `.measured`.
+    static func concisionOfMeaningVerdict(for read: MeaningDensityRead) -> ConcisionOfMeaningVerdict? {
+        guard read.evidenceFloorMet else { return nil }
+        if read.contentWordFraction < meaningDensityLowFraction { return .padded }
+        if read.contentWordFraction >= meaningDensityHighFraction {
+            // Dense — but only call it front-loaded when arrival is unknown
+            // (no prompt) or genuinely early. A dense-but-late rep is `.measured`
+            // so the nudge can still say "lead with it" without claiming thinness.
+            if read.answerArrivedEarly ?? true { return .dense }
+            return .measured
+        }
+        return .measured
+    }
+
+    /// Whole-run, word-boundary-aware substring check over a pre-padded,
+    /// normalised string. Mirrors `FrameworkDrillChecks.contains(any:in:)` but
+    /// kept local to `PracticeEvaluator` so the argument-logic read does not
+    /// depend on a sibling enum's private helpers (single-file ownership of its
+    /// own marker scan). Pure.
+    private static func argumentContains(any phrases: [String], in padded: String) -> Bool {
+        for phrase in phrases where padded.contains(" \(phrase) ") { return true }
+        return false
+    }
+
+    /// Lowercased, punctuation-folded, space-padded transcript for whole-run
+    /// marker scanning. Every non-letter/number/apostrophe maps to a space, runs
+    /// of whitespace collapse, the curly apostrophe folds onto the straight one,
+    /// and the result is wrapped in leading/trailing spaces so the first and last
+    /// tokens are matchable as whole runs. Same discipline as
+    /// `FrameworkDrillChecks.normalised`, kept local. Pure.
+    private static func argumentNormalisedPadded(_ text: String) -> String {
+        let folded = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        let scrubbed = String(folded.map { ch -> Character in
+            (ch.isLetter || ch.isNumber || ch == "'") ? ch : " "
+        })
+        let collapsed = scrubbed
+            .split(whereSeparator: { $0 == " " })
+            .joined(separator: " ")
+        return " \(collapsed) "
+    }
+
     private static func timedModeInsights(
         fillerCount: Int,
         duration: TimeInterval,
         wordCount: Int,
         wordsPerMinute: Double,
         trends: TrendSnapshot,
-        paceSnapshot: PaceSnapshot
+        paceSnapshot: PaceSnapshot,
+        transcript: String,
+        relevance: PromptRelevanceRead
     ) -> [String] {
         var insights = sharedTrendInsights(trends: trends)
         if wordCount < 8 || duration < 8 {
@@ -5876,7 +6148,71 @@ enum PracticeEvaluator {
         if fillerCount > 4 {
             insights.append("Too much processing is happening out loud. Replace the next filler with a short pause.")
         }
+        // Argument-logic read — claim -> evidence -> implication scaffold. A
+        // deterministic structural HYPOTHESIS about the rep's own reasoning
+        // shape, distinct from the prompt-relevance read (topic) and from the
+        // pace/filler signals. Adds NOTHING below the content-word floor (the
+        // verdict is nil there), so a thin rep is byte-identical to today.
+        if let argumentLine = argumentLogicInsight(transcript: transcript) {
+            insights.append(argumentLine)
+        }
+        // Concision-of-meaning read — content-word density + answer arrival.
+        // Distinct from raw word count and from lexical diversity. Adds nothing
+        // below the token floor (verdict nil there).
+        if let densityLine = meaningDensityInsight(transcript: transcript, relevance: relevance) {
+            insights.append(densityLine)
+        }
         return insights
+    }
+
+    /// Deterministic argument-logic insight line, or `nil` below the floor /
+    /// when no claim was even asserted. Coaching copy only — never a score, never
+    /// a confident negative. Every line is framed as a HYPOTHESIS about the
+    /// reasoning shape, association on the rep's own discourse markers.
+    private static func argumentLogicInsight(transcript: String) -> String? {
+        let read = argumentStructure(transcript: transcript)
+        guard let verdict = argumentLogicVerdict(for: read) else { return nil }
+        switch verdict {
+        case .fullChain:
+            return "Your point, your reason, and what it means all landed — that's the shape of a complete argument. Keep building answers on that spine."
+        case .claimWithSupport:
+            if read.hasEvidence {
+                return "You made a point and backed it, but did not carry it forward. Add one line on what it means before you close."
+            } else {
+                return "You stated a point and where it leads, but not why. One reason — \"because…\" — would make the argument hold."
+            }
+        case .assertionOnly:
+            return "You led with a clear point but did not back it. Try claim, then reason, then what it means — even one of each gives the answer a backbone."
+        }
+    }
+
+    /// Deterministic concision-of-meaning insight line, or `nil` below the floor.
+    /// Coaching copy only. The "padded" band only ever softens to a constructive
+    /// "tighten it" nudge — never a confident negative on the content itself.
+    private static func meaningDensityInsight(transcript: String, relevance: PromptRelevanceRead) -> String? {
+        let read = meaningDensity(transcript: transcript, relevance: relevance)
+        guard let verdict = concisionOfMeaningVerdict(for: read) else { return nil }
+        switch verdict {
+        case .dense:
+            // Only claim "arrived early" when a prompt was present to judge
+            // arrival against (answerArrivedEarly == true). With no prompt the
+            // arrival is unknown, so praise density without the unfounded
+            // positional claim — never overclaim from absent evidence.
+            if read.answerArrivedEarly == true {
+                return "High signal — most of your words carried meaning and the point arrived early. That density is hard to do under pressure."
+            }
+            return "High signal — most of your words carried real meaning, very little padding. That density is hard to do under pressure."
+        case .measured:
+            // Distinguish "the point was there but late" from a plain mid read,
+            // using the single-sourced arrival signal — only when a prompt was
+            // present to judge arrival against.
+            if read.answerArrivedEarly == false {
+                return "There was real substance here, but the point took a while to arrive. Lead with it and the same content lands faster."
+            }
+            return "A reasonable balance of substance and connective words. To sharpen it, cut one qualifier and let the point stand."
+        case .padded:
+            return "A lot of words carried little of the meaning. Say the same point in fewer words and it will land with more weight."
+        }
     }
 
     static func paceSnapshot(forTranscript transcript: String, duration: TimeInterval) -> PaceSnapshot {
@@ -5919,6 +6255,41 @@ enum PracticeEvaluator {
             wordsPerMinute: wordsPerMinute, durationProgress: durationProgress,
             contentProgress: contentProgress, paceProgress: paceProgress,
             transcript: transcript, relevanceProgress: relevanceProgress
+        )
+    }
+
+    /// Test hook — exposes the private `timedModeInsights` builder UNCAPPED (the
+    /// production `evaluateTimedPractice` path applies `.prefix(3)` after
+    /// appending the style insights, which would hide the later argument-logic /
+    /// concision lines behind the cap in a full-pipeline assertion). Lets the
+    /// argument-logic + concision-of-meaning consumer lines be pinned directly:
+    /// they surface above the floor and are absent below it. Internal-visibility
+    /// only; production callers go through the full evaluation pipeline.
+    static func timedModeInsightsForTesting(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        wordsPerMinute: Double,
+        recentSessions: [PracticeSession],
+        transcript: String,
+        prompt: String?
+    ) -> [String] {
+        let trends = trendSnapshot(
+            fillerCount: fillerCount,
+            duration: duration,
+            recentSessions: recentSessions
+        )
+        let snapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
+        let relevance = promptRelevance(prompt: prompt, transcript: transcript)
+        return timedModeInsights(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            wordsPerMinute: wordsPerMinute,
+            trends: trends,
+            paceSnapshot: snapshot,
+            transcript: transcript,
+            relevance: relevance
         )
     }
 
@@ -7819,6 +8190,21 @@ struct AICoachSessionInput {
     /// number). Mirrors `PostRepCoachNoteInput.baselineFillerRate`/`PaceWPM`.
     let baselineFillerRate: Double?
     let baselinePaceWPM: Double?
+    // --- new, all defaulted (SUBSTANCE-4: standing-case context) ---
+    /// The user's STANDING working hypothesis from `CoachMemory` — the durable
+    /// read the coach is carrying across reps, not this rep's evidence. Lets the
+    /// Coach Read reason over the standing goal/target, not just the last rep.
+    /// Nil when no durable hypothesis exists yet (cold start). Built at the call
+    /// site from `coachMemoryStore.currentMemory?.workingHypothesis`.
+    let standingHypothesis: String?
+    /// The observable target of the user's active intervention (reused from the
+    /// already-built `CoachCaseFile.observableTarget`, single source of truth —
+    /// never re-derived from the raw `activeIntervention`). Nil when no active
+    /// intervention.
+    let standingObservableTarget: String?
+    /// What success on the standing intervention looks like (reused from
+    /// `CoachCaseFile.successMeasure`). Nil when no active intervention.
+    let standingSuccessMeasure: String?
 
     init(
         transcript: String,
@@ -7832,7 +8218,10 @@ struct AICoachSessionInput {
         voice: SpeakingStyleGoal? = nil,
         recentSessionSummaries: [String] = [],
         baselineFillerRate: Double? = nil,
-        baselinePaceWPM: Double? = nil
+        baselinePaceWPM: Double? = nil,
+        standingHypothesis: String? = nil,
+        standingObservableTarget: String? = nil,
+        standingSuccessMeasure: String? = nil
     ) {
         self.transcript = transcript
         self.mode = mode
@@ -7846,6 +8235,9 @@ struct AICoachSessionInput {
         self.recentSessionSummaries = recentSessionSummaries
         self.baselineFillerRate = baselineFillerRate
         self.baselinePaceWPM = baselinePaceWPM
+        self.standingHypothesis = standingHypothesis
+        self.standingObservableTarget = standingObservableTarget
+        self.standingSuccessMeasure = standingSuccessMeasure
     }
 }
 
@@ -9712,7 +10104,7 @@ struct AICoachService: AICoachServicing {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             let prompt = prompt(for: input, profile: profile, plan: plan)
-            let system = systemPrompt(persona: CoachPersona.persona(for: input.voice))
+            let system = Self.systemPrompt(persona: CoachPersona.persona(for: input.voice))
             switch provider {
             case .none:
                 return fallback
@@ -9796,7 +10188,11 @@ struct AICoachService: AICoachServicing {
         }
     }
 
-    private func systemPrompt(persona: CoachPersona) -> String {
+    /// Pure system-prompt builder over `persona` only (mirrors the
+    /// `nonisolated static` `userPrompt` seam). Made static + unit-testable so
+    /// the STANDING CASE rubric line and the honesty rules are verified without
+    /// a live model — single source of truth, no duplicated prompt string.
+    nonisolated static func systemPrompt(persona: CoachPersona) -> String {
         """
         You are a senior £130/hr speaking coach writing a structured read of one \
         practice rep for your client. Voice register: \(persona.signatureTone)
@@ -9813,7 +10209,12 @@ struct AICoachService: AICoachServicing {
         or specifics, or stated bare — when the transcript shows it.
         4. Connect to prior reps only when genuinely true (continuity), e.g. \
         "second time the lede arrived late." Never invent past behavior.
-        5. Stats (score, filler count, pace) are CONTEXT, not the read.
+        5. STANDING CASE. If a STANDING CASE is given, weigh this rep against \
+        that standing target/measure (the user's ongoing goal), not just this \
+        rep in isolation — but it is durable context, NOT this-rep evidence: \
+        treat it as the hypothesis you are testing, and never assert the \
+        standing target was hit this rep unless the transcript shows it.
+        6. Stats (score, filler count, pace) are CONTEXT, not the read.
 
         Honesty rules (hard):
         - Patterns are HYPOTHESES, not diagnoses. Association, never causation.
@@ -9908,6 +10309,31 @@ struct AICoachService: AICoachServicing {
         if !trimmedContext.isEmpty {
             lines.append("")
             lines.append(trimmedContext)
+        }
+
+        // STANDING CASE — the user's durable working hypothesis + active
+        // intervention target/measure (SUBSTANCE-4). Durable context the coach
+        // is carrying, NOT this-rep evidence: the rubric weighs the rep against
+        // this standing target but never asserts it was hit without transcript
+        // support. Each component is omitted when its source field is nil; the
+        // whole block is omitted when all three are absent (no placeholder).
+        var standingCaseLines: [String] = []
+        if let hypothesis = input.standingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !hypothesis.isEmpty {
+            standingCaseLines.append("Working hypothesis: \(hypothesis)")
+        }
+        if let target = input.standingObservableTarget?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !target.isEmpty {
+            standingCaseLines.append("Observable target: \(target)")
+        }
+        if let measure = input.standingSuccessMeasure?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !measure.isEmpty {
+            standingCaseLines.append("Success measure: \(measure)")
+        }
+        if !standingCaseLines.isEmpty {
+            lines.append("")
+            lines.append("STANDING CASE (the user's current goal/target — reason over this, not just this rep):")
+            lines.append(contentsOf: standingCaseLines)
         }
 
         // THE QUESTION ASKED — the field that makes "did you answer it"

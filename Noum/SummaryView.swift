@@ -2948,7 +2948,14 @@ struct SummaryView: View {
                     voice: coachingProfileStore.profile?.speakingStyleGoal,
                     recentSessionSummaries: priorSummaries,
                     baselineFillerRate: baselineFiller,
-                    baselinePaceWPM: baselinePace
+                    baselinePaceWPM: baselinePace,
+                    // STANDING CASE (SUBSTANCE-4) — the durable working
+                    // hypothesis + the already-built case-file target/measure
+                    // (single source of truth: reuse caseFile.observableTarget/
+                    // successMeasure, never re-derive from activeIntervention).
+                    standingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
+                    standingObservableTarget: coachMemoryStore.currentMemory?.caseFile?.observableTarget,
+                    standingSuccessMeasure: coachMemoryStore.currentMemory?.caseFile?.successMeasure
                 ),
                 profile: coachingProfileStore.profile,
                 plan: plan

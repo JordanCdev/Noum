@@ -251,7 +251,8 @@ enum SessionFinalizer {
             recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
             latestReflection: SessionReflectionStore.shared.latest,
             reflectionHistory: SessionReflectionStore.shared.history,
-            latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first
+            latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first,
+            upcomingMoment: BigMomentStore.shared.activeMoment
         )
 
         let milestone = detectMilestone(

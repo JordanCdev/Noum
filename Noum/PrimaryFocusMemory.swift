@@ -774,6 +774,19 @@ struct CoachMemory: Codable, Equatable {
     var weeklyRepCount: Int?
     var isLatestSessionPersonalBest: Bool?
 
+    // The single fused, DURABLE delivery read (#3) — how the recent rep SET
+    // read on delivery (clear / timid / still forming), fused from the
+    // existing per-rep reads by `DerivedReadsTrendEngine.fusedDeliveryRead`.
+    // A HYPOTHESIS about the reps, never a trait or diagnosis. Lives HERE on
+    // `CoachMemory` (not on `caseFile`) deliberately: the 5 post-hoc mutators
+    // rebuild `caseFile` WITHOUT session data and would wipe a read stored
+    // there, but they copy `CoachMemory` by value and never touch this field,
+    // so it survives them; `build` computes it from sessions and carries the
+    // previous read forward across thin windows (mirrors `lastTransferReview`).
+    // Optional for backward compat — memories persisted before this field
+    // decode to nil via `decodeIfPresent`.
+    var coachDeliveryRead: CoachDeliveryRead?
+
     // Explicit memberwise init — required because the custom
     // `init(from:)` below suppresses the synthesized one.
     init(
@@ -809,7 +822,8 @@ struct CoachMemory: Codable, Equatable {
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int? = nil,
-        isLatestSessionPersonalBest: Bool? = nil
+        isLatestSessionPersonalBest: Bool? = nil,
+        coachDeliveryRead: CoachDeliveryRead? = nil
     ) {
         self.updatedAt = updatedAt
         self.lastSessionID = lastSessionID
@@ -844,6 +858,7 @@ struct CoachMemory: Codable, Equatable {
         self.fillerTrendDirection = fillerTrendDirection
         self.weeklyRepCount = weeklyRepCount
         self.isLatestSessionPersonalBest = isLatestSessionPersonalBest
+        self.coachDeliveryRead = coachDeliveryRead
     }
 
     // Custom Decodable for backward compatibility — all momentum
@@ -864,6 +879,7 @@ struct CoachMemory: Codable, Equatable {
         case lastTransferReview
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
+        case coachDeliveryRead
     }
 
     init(from decoder: Decoder) throws {
@@ -901,6 +917,7 @@ struct CoachMemory: Codable, Equatable {
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
         isLatestSessionPersonalBest = try c.decodeIfPresent(Bool.self, forKey: .isLatestSessionPersonalBest)
+        coachDeliveryRead = try c.decodeIfPresent(CoachDeliveryRead.self, forKey: .coachDeliveryRead)
     }
 }
 
@@ -921,10 +938,21 @@ struct CoachCaseFile: Codable, Equatable {
     var reviewDueAt: Date?
     var subjectivePattern: String?
     var transferRead: String?
+    /// The soonest upcoming real-world moment the user is preparing for, as a
+    /// bounded one-line clause ("Preparing for: Q3 review (performance review),
+    /// 5 days away."). Derived at the call site from `BigMomentStore` and
+    /// threaded into `build` — the pure build never reads the store. Optional
+    /// with a `nil` default so a `CoachCaseFile` blob persisted before this
+    /// field decodes cleanly (synthesized Codable tolerates the missing key).
+    var upcomingMomentLine: String? = nil
     var nextMove: CoachCaseNextMove
     var nextQuestion: String
 
-    static func build(from memory: CoachMemory, now: Date) -> CoachCaseFile? {
+    static func build(
+        from memory: CoachMemory,
+        now: Date,
+        upcomingMomentLine: String? = nil
+    ) -> CoachCaseFile? {
         let hypothesis = bounded(memory.workingHypothesis)
         let focus = memory.currentLever
         let activeIntervention = memory.activeIntervention.map(interventionSummary)
@@ -954,6 +982,7 @@ struct CoachCaseFile: Codable, Equatable {
             reviewDueAt: reviewDueAt,
             subjectivePattern: subjectivePattern,
             transferRead: transferRead,
+            upcomingMomentLine: upcomingMomentLine,
             nextMove: move,
             nextQuestion: nextQuestion(for: move)
         )
@@ -1056,6 +1085,29 @@ struct CoachCaseFile: Codable, Equatable {
               !trimmed.isEmpty else { return nil }
         return String(trimmed.prefix(maximumLength))
     }
+
+    /// Window (in days) within which an upcoming moment is "preparing for"
+    /// relevant to the durable case. Mirrors the per-turn `BIG MOMENT` gate in
+    /// `CoachContextBuilder` (0...60 days) so the case file and the per-turn
+    /// context agree on what counts as imminent.
+    static let upcomingMomentHorizonDays = 60
+
+    /// Derives the bounded "Preparing for:" line for the durable case file from
+    /// the soonest upcoming moment. Returns nil for no moment, an undated
+    /// moment, a past moment, or one beyond the horizon — so the case never
+    /// claims preparation for something that isn't actually upcoming. Pure
+    /// function of the passed `moment` (the store is read at the call site, not
+    /// here) so it is unit-testable and the pure `build` stays store-free. Copy
+    /// mirrors `CoachContextBuilder`'s per-turn `BIG MOMENT` line for a single
+    /// coherent read across surfaces.
+    static func upcomingMomentLine(for moment: BigMoment?) -> String? {
+        guard let moment,
+              let days = BigMomentStore.daysUntil(moment),
+              days >= 0,
+              days <= upcomingMomentHorizonDays else { return nil }
+        let title = bounded(moment.title) ?? moment.category.title
+        return "Preparing for: \(title) (\(moment.category.displayName)), \(days) day\(days == 1 ? "" : "s") away."
+    }
 }
 
 enum CoachMemoryEngine {
@@ -1072,6 +1124,7 @@ enum CoachMemoryEngine {
         latestReflection: SessionReflection? = nil,
         reflectionHistory: [SessionReflection] = [],
         latestTransferReport: BigMomentOutcomeReport? = nil,
+        upcomingMoment: BigMoment? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> CoachMemory? {
@@ -1238,7 +1291,37 @@ enum CoachMemoryEngine {
         memory.fillerTrendDirection = momentumFillerTrend
         memory.weeklyRepCount = momentumWeekly
         memory.isLatestSessionPersonalBest = momentumPB
-        memory.caseFile = CoachCaseFile.build(from: memory, now: now)
+        // Fused delivery read (#3) — fuse the existing per-rep reads over the
+        // recent window into one durable, hedged read of how the rep SET read
+        // on delivery. Reuses the SAME per-session derive closures the
+        // longitudinal trend block uses (hedging + pace relative to the user's
+        // own baseline), so calibration is inherited and there is no absolute
+        // loudness/pitch term. Carry a previously-CHARACTERISED read forward
+        // across a thin or still-`.forming` window so a dip below the
+        // consistency floor doesn't erase a durable read — exactly the
+        // `lastTransferReview` carry-forward contract. A fresh `.forming`
+        // (reps exist, no agreement) defers to the previous read; with no
+        // previous read it stays nil rather than persisting `.forming`.
+        let baselineHedgingPerMin = baseline.hedgingRate.value
+        let baselinePace = baseline.pace.value
+        let freshDeliveryRead = DerivedReadsTrendEngine.fusedDeliveryRead(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinutePerSession: { _ in baselineHedgingPerMin },
+            paceBaselinePerSession: { _ in baselinePace }
+        )
+        memory.coachDeliveryRead = freshDeliveryRead.flatMap { $0.isCharacterized ? $0 : nil }
+            ?? previous?.coachDeliveryRead
+        // Derive the upcoming-moment line HERE (not inside the pure build) so
+        // the case file knows what the user is preparing for. Mirrors the
+        // `lastTransferReview` wiring: the store is read at the SessionFinalizer
+        // call site and the raw `BigMoment` is threaded in; `build` stays pure.
+        let upcomingMomentLine = CoachCaseFile.upcomingMomentLine(for: upcomingMoment)
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: now,
+            upcomingMomentLine: upcomingMomentLine
+        )
         return memory
     }
 
@@ -1584,17 +1667,71 @@ enum CoachMemoryEngine {
             comparator: comparator,
             threshold: threshold,
             evaluationWindow: window,
-            summary: criterionSummary(metric: metric, threshold: threshold, window: window)
+            summary: criterionSummary(
+                metric: metric,
+                threshold: threshold,
+                window: window,
+                priorAverage: priorAverage,
+                priorRepCount: priorValues.count
+            )
         )
     }
 
+    /// The minimum pre-window history (reps OLDER than the evaluation window)
+    /// required before the success-bar copy is allowed to quote the user's own
+    /// average. Below this, the figure isn't trustworthy enough to ground the
+    /// bar, so the copy falls back byte-identically to the generic phrasing.
+    /// Gated on the PRE-WINDOW count (`priorValues.count`), never the full
+    /// followed-rep count, so the real number never appears on thin data.
+    private static let minPriorRepsForGroundedCriterion = 3
+
+    /// Formats a metric average for criterion copy: drops a trailing `.0` so a
+    /// whole number reads as "6" (not "6.0"), otherwise rounds to one decimal
+    /// ("6.3"). Locale-agnostic deterministic copy — no `NumberFormatter`, so
+    /// the string is identical across locales and unit-testable without a
+    /// device.
+    private static func formattedAverage(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return String(Int(rounded.rounded()))
+        }
+        return String(format: "%.1f", rounded)
+    }
+
+    /// Builds the success-bar copy. When the user has >= 3 pre-window followed
+    /// reps the bar is grounded in their OWN average ("your last 3 reps
+    /// averaged 6.3 fillers — hold at 5 or fewer across 2 reps"); below that
+    /// floor (or with no measurable prior average) the copy is BYTE-IDENTICAL
+    /// to the generic phrasing so thin-evidence behaviour is unchanged and no
+    /// fabricated number is ever shown. `fillersPerRep` is a COUNT (never a
+    /// percentage) and `window` is always `caseEvaluationWindow` (2), so the
+    /// grounded copy never invents a unit or a window the engine doesn't use.
     private static func criterionSummary(
         metric: CoachCaseMetric,
         threshold: Double,
-        window: Int
+        window: Int,
+        priorAverage: Double? = nil,
+        priorRepCount: Int = 0
     ) -> String {
         let count = Int(threshold)
         let reps = window <= 1 ? "the next rep" : "\(window) reps"
+
+        // Grounded path: enough pre-window history AND a real average to quote.
+        if priorRepCount >= minPriorRepsForGroundedCriterion,
+           let priorAverage {
+            let avg = formattedAverage(priorAverage)
+            switch metric {
+            case .fillersPerRep:
+                let fillers = count == 1 ? "filler" : "fillers"
+                return "your last \(priorRepCount) reps averaged \(avg) \(fillers) — hold at \(count) or fewer per rep across \(reps)"
+            case .sessionScore:
+                return "your last \(priorRepCount) reps averaged \(avg) — hold a \(count) or higher across \(reps)"
+            case .durationSeconds:
+                return "your last \(priorRepCount) reps averaged ~\(avg)s — hold ~\(count)s of structured delivery across \(reps)"
+            }
+        }
+
+        // Below the evidence floor — generic copy, byte-identical to before.
         switch metric {
         case .fillersPerRep:
             let fillers = count == 1 ? "filler" : "fillers"
@@ -1796,6 +1933,7 @@ final class CoachMemoryStore: ObservableObject {
         latestReflection: SessionReflection? = nil,
         reflectionHistory: [SessionReflection] = [],
         latestTransferReport: BigMomentOutcomeReport? = nil,
+        upcomingMoment: BigMoment? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) {
@@ -1812,6 +1950,7 @@ final class CoachMemoryStore: ObservableObject {
             latestReflection: latestReflection,
             reflectionHistory: reflectionHistory,
             latestTransferReport: latestTransferReport,
+            upcomingMoment: upcomingMoment,
             now: now,
             calendar: calendar
         ) else { return }
@@ -1829,7 +1968,15 @@ final class CoachMemoryStore: ObservableObject {
         memory.lastReflectionReview = nil
         memory.reflectionPattern = nil
         memory.updatedAt = Date()
-        memory.caseFile = CoachCaseFile.build(from: memory, now: memory.updatedAt)
+        // Carry the upcoming-moment line forward across this incremental
+        // rebuild — it isn't a stored `CoachMemory` field, so without this the
+        // mid-session update would drop "Preparing for: …" until the next full
+        // `refresh`. The next finalize re-derives it from the store.
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: memory.updatedAt,
+            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+        )
         currentMemory = memory
         persist(memory)
     }
@@ -1847,7 +1994,11 @@ final class CoachMemoryStore: ObservableObject {
         let history = recentReflections.isEmpty ? [reflection] : recentReflections
         memory.reflectionPattern = CoachReflectionPattern.build(from: history)
         memory.updatedAt = Date()
-        memory.caseFile = CoachCaseFile.build(from: memory, now: memory.updatedAt)
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: memory.updatedAt,
+            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+        )
         currentMemory = memory
         persist(memory)
     }
@@ -1871,7 +2022,11 @@ final class CoachMemoryStore: ObservableObject {
             acknowledgedAt: now
         )
         memory.updatedAt = now
-        memory.caseFile = CoachCaseFile.build(from: memory, now: now)
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: now,
+            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+        )
         currentMemory = memory
         persist(memory)
     }
@@ -1923,7 +2078,11 @@ final class CoachMemoryStore: ObservableObject {
         )
         memory.adaptationLog = Array(log.suffix(8))
         memory.updatedAt = now
-        memory.caseFile = CoachCaseFile.build(from: memory, now: now)
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: now,
+            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+        )
         currentMemory = memory
         persist(memory)
     }
@@ -1935,7 +2094,11 @@ final class CoachMemoryStore: ObservableObject {
         guard var memory = currentMemory else { return }
         memory.lastTransferReview = CoachTransferReview(report: report)
         memory.updatedAt = Date()
-        memory.caseFile = CoachCaseFile.build(from: memory, now: memory.updatedAt)
+        memory.caseFile = CoachCaseFile.build(
+            from: memory,
+            now: memory.updatedAt,
+            upcomingMomentLine: memory.caseFile?.upcomingMomentLine
+        )
         currentMemory = memory
         persist(memory)
     }
