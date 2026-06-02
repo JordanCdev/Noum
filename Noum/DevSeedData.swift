@@ -109,6 +109,18 @@ enum DevSeedData {
     /// tests can lock the per-seed voice mapping without mutating any
     /// live store.
     static func seedCoachingProfile(for profile: SeedProfile) -> CoachingProfile {
+        // Every seed is a deliberate demo persona with a genuinely-chosen voice,
+        // so stamp `chosenStyleGoal` from the constructed `speakingStyleGoal`
+        // once here — keeps `hasChosenVoice` true for all seeds (tailored demo
+        // experience) without repeating the field in every case below.
+        var built = buildSeedProfile(for: profile)
+        if built.chosenStyleGoal == nil {
+            built.chosenStyleGoal = built.speakingStyleGoal
+        }
+        return built
+    }
+
+    private static func buildSeedProfile(for profile: SeedProfile) -> CoachingProfile {
         switch profile {
         case .beginner:
             // First few reps, fillers are the visible problem. Warm voice

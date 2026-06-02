@@ -41,7 +41,11 @@ struct CoachingOnboardingView: View {
     @State private var screen: OnboardingScreen = .intro
     @State private var speakingContext: SpeakingContext = .work
     @State private var biggestChallenge: SpeakingChallenge = .fillerWords
-    @State private var speakingStyleGoal: SpeakingStyleGoal = .authoritative
+    // No pre-selection — the voice goal drives the entire tailored coaching
+    // persona, so the user must actively choose it rather than tap through a
+    // defaulted "authoritative." nil until they pick; the continue button on
+    // the style stage is gated on a selection.
+    @State private var speakingStyleGoal: SpeakingStyleGoal?
     @State private var coachingGoal = ""
     @State private var whyNow = ""
     @State private var successVision = ""
@@ -325,7 +329,7 @@ struct CoachingOnboardingView: View {
                     case .challenge:
                         optionList(options: SpeakingChallenge.allCases, selectedID: biggestChallenge.id) { biggestChallenge = $0 }
                     case .style:
-                        optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal.id) { speakingStyleGoal = $0 }
+                        optionList(options: SpeakingStyleGoal.allCases, selectedID: speakingStyleGoal?.id) { speakingStyleGoal = $0 }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -562,7 +566,7 @@ struct CoachingOnboardingView: View {
                         profileRow(
                             icon: "wand.and.stars",
                             label: "Style goal",
-                            value: speakingStyleGoal.title
+                            value: speakingStyleGoal?.title ?? "Not chosen yet"
                         )
 
                         if !coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -724,12 +728,15 @@ struct CoachingOnboardingView: View {
 
     private func optionList<Option: Identifiable & CaseIterable & Hashable>(
         options: Option.AllCases,
-        selectedID: Option.ID,
+        selectedID: Option.ID?,
         onSelect: @escaping (Option) -> Void
     ) -> some View where Option.AllCases.Element == Option, Option: CustomStringConvertible {
         VStack(spacing: 8) {
             ForEach(Array(options), id: \.id) { option in
-                let isSelected = option.id == selectedID
+                // `selectedID` is optional so the voice stage can render with
+                // nothing pre-selected — no option highlights until the user
+                // taps (`option.id == nil` is always false).
+                let isSelected = selectedID != nil && option.id == selectedID
                 let detail = optionDetail(for: option)
 
                 Button {
@@ -1026,9 +1033,16 @@ struct CoachingOnboardingView: View {
     }
 
     private func canAdvance(from stage: OnboardingStage) -> Bool {
-        // After the onboarding-cut to 3 multi-choice screens, every stage
-        // has a default selection, so the user can always advance.
-        return true
+        // Context + challenge keep sensible defaults so the user can always
+        // advance. The VOICE stage requires an explicit pick — it drives the
+        // entire tailored coaching persona, so we never let a tap-through
+        // assign a phantom default.
+        switch stage {
+        case .style:
+            return speakingStyleGoal != nil
+        case .context, .challenge:
+            return true
+        }
     }
 
     private func advance(from stage: OnboardingStage) {
@@ -1069,6 +1083,10 @@ struct CoachingOnboardingView: View {
 
     private func saveProfile() {
         guard !isSaving else { return }
+        // Voice is required to finish onboarding (the continue button on the
+        // style stage is gated on it), so a nil here is a programmer error, not
+        // a user path — bail rather than persist a phantom default.
+        guard let chosenVoice = speakingStyleGoal else { return }
         isSaving = true
 
         coachingProfileStore.save(
@@ -1077,12 +1095,13 @@ struct CoachingOnboardingView: View {
                 primaryGoal: biggestChallenge.recommendedPriority,
                 confidenceLevel: .rebuilding,
                 biggestChallenge: biggestChallenge,
-                desiredOutcome: speakingStyleGoal.recommendedOutcome,
-                speakingStyleGoal: speakingStyleGoal,
+                desiredOutcome: chosenVoice.recommendedOutcome,
+                speakingStyleGoal: chosenVoice,
                 styleReference: "",
                 coachingBrief: coachingGoal.trimmingCharacters(in: .whitespacesAndNewlines),
                 motivationWhyNow: whyNow.trimmingCharacters(in: .whitespacesAndNewlines),
-                successVision: successVision.trimmingCharacters(in: .whitespacesAndNewlines)
+                successVision: successVision.trimmingCharacters(in: .whitespacesAndNewlines),
+                chosenStyleGoal: chosenVoice   // finishing onboarding IS an explicit choice
             )
         )
     }
@@ -1101,7 +1120,10 @@ struct CoachingOnboardingView: View {
         isEditingExistingProfile = true
         speakingContext = profile.speakingContext
         biggestChallenge = profile.biggestChallenge
-        speakingStyleGoal = profile.speakingStyleGoal
+        // Pre-fill the picker from the user's real prior choice (nil-safe: a
+        // legacy profile that was never genuinely chosen leaves the picker
+        // empty so they pick deliberately when editing).
+        speakingStyleGoal = profile.chosenStyleGoal
         coachingGoal = profile.coachingBrief.trimmingCharacters(in: .whitespacesAndNewlines)
         whyNow = profile.motivationWhyNow.trimmingCharacters(in: .whitespacesAndNewlines)
         successVision = profile.successVision.trimmingCharacters(in: .whitespacesAndNewlines)

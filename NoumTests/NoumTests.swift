@@ -264,6 +264,328 @@ struct DrillXPEngineTests {
     }
 }
 
+// MARK: - Framework Drill Check Tests
+//
+// Per-detector boundary tests for the deterministic named-framework drills
+// (STAR turn / claim-counter / elevator pitch). Every fixture is hand-traced
+// against the REAL `PracticeEvaluator.relevanceContentWords` stop set + the
+// named `FrameworkDrillChecks` constants so a threshold change breaks a test
+// rather than silently shifting a verdict. These cover the DETERMINISTIC seams
+// only — never live model output (there is none here; the detectors are pure).
+
+struct FrameworkDrillCheckTests {
+
+    // Helper: build a framework-drill outcome the way `MiniDrillView` does,
+    // routing the verdict through the same `FrameworkDrillVerdict.evaluate`
+    // factory the recording flow uses.
+    private func makeFrameworkOutcome(
+        variationId: String,
+        transcript: String,
+        duration: TimeInterval,
+        succeeded: Bool
+    ) -> MiniDrillOutcome {
+        let variation = DrillCatalog.allVariations.first { $0.id == variationId }!
+        let drill = DrillRecommendationV2(variation: variation, reason: "test", trendContext: nil, alternateFormat: nil)
+        let framework = MiniDrillType.framework(for: variationId)
+        let verdict = FrameworkDrillVerdict.evaluate(framework, transcript: transcript, duration: duration)
+        let wordCount = transcript.split { !$0.isLetter && !$0.isNumber }.count
+        return MiniDrillOutcome(
+            drill: drill,
+            drillType: MiniDrillType.from(variationId: variationId),
+            transcript: transcript,
+            fillerCount: 0,
+            duration: duration,
+            wordCount: wordCount,
+            succeeded: succeeded,
+            framework: framework,
+            frameworkVerdict: verdict
+        )
+    }
+
+    // MARK: STAR turn-check
+
+    @Test func starSetupShiftTakeawayDetectsTurn() {
+        // 9 content words + the "but then" shift marker.
+        let t = "I was leading a struggling project with no budget but then everything shifted completely after the deadline."
+        #expect(FrameworkDrillChecks.starTurn(transcript: t) == .turnDetected)
+    }
+
+    @Test func starFlatDescriptionHasNoTurn() {
+        // Plenty of content words, no shift marker -> flat, not punitive nil.
+        let t = "I manage a marketing department handling several campaigns across multiple regions every quarter consistently."
+        #expect(FrameworkDrillChecks.starTurn(transcript: t) == .flat)
+    }
+
+    @Test func starBelowFloorIsTentativeNotNegative() {
+        // 2 content words (small, team) — below the 6-content-word floor.
+        let t = "I led a small team."
+        #expect(FrameworkDrillChecks.starTurn(transcript: t) == nil)
+    }
+
+    @Test func starBelowFloorNeverAssertsTurnEither() {
+        // A shift marker but too thin -> still nil (no confident verdict at all
+        // on thin data, positive OR negative).
+        let t = "but then I quit."
+        #expect(FrameworkDrillChecks.starTurn(transcript: t) == nil)
+    }
+
+    @Test func starUntilMarkerDetectsTurn() {
+        let t = "Everything was going smoothly across the whole quarter until production completely collapsed overnight."
+        #expect(FrameworkDrillChecks.starTurn(transcript: t) == .turnDetected)
+    }
+
+    // MARK: Claim / counter
+
+    @Test func claimWithAcknowledgedCounterAndBridgeSatisfiesFramework() {
+        let t = "Remote work boosts productivity dramatically. Some would say collaboration suffers, but the data shows teams actually deliver faster."
+        #expect(FrameworkDrillChecks.claimCounter(transcript: t) == .counterAcknowledged)
+    }
+
+    @Test func oneSidedAssertionMissesCounter() {
+        let t = "Remote work clearly boosts productivity, improves morale, and reduces commuting costs significantly."
+        #expect(FrameworkDrillChecks.claimCounter(transcript: t) == .oneSided)
+    }
+
+    @Test func bareBridgeWithoutPriorConcessionIsOneSided() {
+        // "but" is present but there is no acknowledgement marker before it, so
+        // the acknowledge-THEN-bridge ordering is not satisfied. This is the
+        // honesty-critical case: a bare continuation is not a counter move.
+        let t = "I think remote work is great but I also enjoy office banter sometimes honestly."
+        #expect(FrameworkDrillChecks.claimCounter(transcript: t) == .oneSided)
+    }
+
+    @Test func acknowledgementAfterBridgeDoesNotSatisfyOrdering() {
+        // Concession appears AFTER the only bridge -> ordering fails -> oneSided.
+        // "however" (bridge) precedes "although" (acknowledgement); there is no
+        // bridge after the acknowledgement.
+        let t = "Productivity rises however teams ship faster although remote collaboration occasionally stalls."
+        #expect(FrameworkDrillChecks.claimCounter(transcript: t) == .oneSided)
+    }
+
+    @Test func claimCounterBelowFloorIsTentative() {
+        let t = "Remote work rules."
+        #expect(FrameworkDrillChecks.claimCounter(transcript: t) == nil)
+    }
+
+    // MARK: Elevator pitch
+
+    @Test func elevatorNamedHookInBoxLands() {
+        let t = "Hi, I'm Jordan, and I build communication training software that helps people speak with confidence under pressure."
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 18) == .landed)
+    }
+
+    @Test func elevatorOverTimeMissesBox() {
+        let t = "Hi, I'm Jordan, and I build communication training software that helps people speak with confidence under pressure."
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 42) == .overTime)
+    }
+
+    @Test func elevatorMissingNameFlagged() {
+        let t = "This software helps people speak with confidence and clarity under real pressure every day."
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 15) == .missingName)
+    }
+
+    @Test func elevatorNamedButHooklessFlagged() {
+        // Named, in box, but 0 content words -> missing hook (not landed).
+        let t = "Hi, I'm Sam."
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 10) == .missingHook)
+    }
+
+    @Test func elevatorBelowFloorIsTentative() {
+        // Both too short (<8s) AND too thin (<6 content words) -> no assertion.
+        let t = "Hi there."
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 4) == nil)
+    }
+
+    @Test func elevatorContentRichButShortStillGraded() {
+        // <8s but content-rich (>=6 content words) clears the floor (OR, not
+        // AND) and is graded honestly — here named + hook + in box -> landed.
+        let t = "I'm Dana, founder of a climate analytics startup helping cities cut emissions fast."
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 6) == .landed)
+    }
+
+    @Test func elevatorWordCountCeilingTreatsRambleAsOverTime() {
+        // Named + in the time box by SECONDS, but word count blows the ceiling
+        // (a fast talker who rambled) -> not a concise pitch -> overTime.
+        let body = String(repeating: "and then I also want to mention ", count: 15) // ~105 words
+        let t = "I'm Alex. " + body
+        #expect(FrameworkDrillChecks.elevatorPitch(transcript: t, duration: 25) == .overTime)
+    }
+
+    // MARK: Verdict wrapper + factory
+
+    @Test func evaluateReturnsNilForNonFrameworkDrill() {
+        #expect(FrameworkDrillVerdict.evaluate(nil, transcript: "anything at all here", duration: 20) == nil)
+    }
+
+    @Test func evaluateRoutesEachFrameworkToItsDetector() {
+        let star = FrameworkDrillVerdict.evaluate(
+            .starTurn,
+            transcript: "I was running a calm project until everything suddenly fell apart completely overnight.",
+            duration: 30
+        )
+        #expect(star == .star(.turnDetected))
+
+        let claim = FrameworkDrillVerdict.evaluate(
+            .claimCounter,
+            transcript: "Remote work boosts output. Some would say it hurts culture, but the numbers prove otherwise here.",
+            duration: 30
+        )
+        #expect(claim == .claimCounter(.counterAcknowledged))
+
+        let pitch = FrameworkDrillVerdict.evaluate(
+            .elevatorPitch,
+            transcript: "Hi, I'm Jordan and I build communication training tools for nervous speakers under pressure.",
+            duration: 16
+        )
+        #expect(pitch == .elevatorPitch(.landed))
+    }
+}
+
+// MARK: - Framework Drill Catalog / Routing / Copy Tests
+
+struct FrameworkDrillCatalogTests {
+
+    @Test func threeFrameworkVariationsExistWithStableIds() {
+        let ids = Set(DrillCatalog.allVariations.map(\.id))
+        #expect(ids.contains("story.starTurn"))
+        #expect(ids.contains("structure.claimCounter"))
+        #expect(ids.contains("concise.elevatorPitch"))
+    }
+
+    @Test func frameworkVariationsCarryNamedTargetCopy() {
+        // Rubric clause: each drill states its framework + observable target
+        // BEFORE the rep (constraint + successDescription non-empty).
+        for id in ["story.starTurn", "structure.claimCounter", "concise.elevatorPitch"] {
+            let v = DrillCatalog.allVariations.first { $0.id == id }!
+            #expect(!v.constraint.isEmpty)
+            #expect(!v.coachingPrinciple.isEmpty)
+            #expect(!v.successDescription.isEmpty)
+            #expect(v.format == .miniDrill)
+        }
+    }
+
+    @Test func frameworkVariationsMapToCorrectSkillAreas() {
+        #expect(DrillCatalog.allVariations.first { $0.id == "story.starTurn" }!.skillArea == .answerDevelopment)
+        #expect(DrillCatalog.allVariations.first { $0.id == "structure.claimCounter" }!.skillArea == .structure)
+        #expect(DrillCatalog.allVariations.first { $0.id == "concise.elevatorPitch" }!.skillArea == .conciseSpeaking)
+    }
+
+    @Test func variationIdRoutesToFrameworkCheckType() {
+        #expect(MiniDrillType.from(variationId: "story.starTurn") == .frameworkCheck)
+        #expect(MiniDrillType.from(variationId: "structure.claimCounter") == .frameworkCheck)
+        #expect(MiniDrillType.from(variationId: "concise.elevatorPitch") == .frameworkCheck)
+        // Existing types unchanged.
+        #expect(MiniDrillType.from(variationId: "structure.prepStack") == .prepStack)
+        #expect(MiniDrillType.from(variationId: "filler.silentTransitions") == .standard)
+    }
+
+    @Test func frameworkLookupResolvesAndDefaultsNil() {
+        #expect(MiniDrillType.framework(for: "story.starTurn") == .starTurn)
+        #expect(MiniDrillType.framework(for: "structure.claimCounter") == .claimCounter)
+        #expect(MiniDrillType.framework(for: "concise.elevatorPitch") == .elevatorPitch)
+        #expect(MiniDrillType.framework(for: "filler.silentTransitions") == nil)
+        #expect(MiniDrillType.framework(for: "structure.prepStack") == nil)
+    }
+}
+
+// MARK: - Framework Drill Score-Safety + Copy Tests
+
+struct FrameworkDrillCopyAndScoreTests {
+
+    private func outcome(
+        variationId: String,
+        transcript: String,
+        duration: TimeInterval,
+        wordCount: Int,
+        succeeded: Bool
+    ) -> MiniDrillOutcome {
+        let variation = DrillCatalog.allVariations.first { $0.id == variationId }!
+        let drill = DrillRecommendationV2(variation: variation, reason: "test", trendContext: nil, alternateFormat: nil)
+        let framework = MiniDrillType.framework(for: variationId)
+        let verdict = FrameworkDrillVerdict.evaluate(framework, transcript: transcript, duration: duration)
+        return MiniDrillOutcome(
+            drill: drill,
+            drillType: MiniDrillType.from(variationId: variationId),
+            transcript: transcript,
+            fillerCount: 0,
+            duration: duration,
+            wordCount: wordCount,
+            succeeded: succeeded,
+            framework: framework,
+            frameworkVerdict: verdict
+        )
+    }
+
+    @Test func structuralVerdictDoesNotMoveXP() {
+        // Two STAR outcomes IDENTICAL in every numeric input (succeeded, words,
+        // duration, fillers) but one has a turn and one is flat. XP MUST match:
+        // the verdict is coaching copy only, never a score input.
+        let withTurn = outcome(
+            variationId: "story.starTurn",
+            transcript: "I was leading a struggling project with no budget but then everything shifted completely after deadline.",
+            duration: 40,
+            wordCount: 60,
+            succeeded: true
+        )
+        let flat = outcome(
+            variationId: "story.starTurn",
+            transcript: "I manage a marketing department handling several campaigns across multiple regions every quarter consistently always.",
+            duration: 40,
+            wordCount: 60,
+            succeeded: true
+        )
+        #expect(withTurn.frameworkVerdict == .star(.turnDetected))
+        #expect(flat.frameworkVerdict == .star(.flat))
+        #expect(DrillXPEngine.calculate(outcome: withTurn) == DrillXPEngine.calculate(outcome: flat))
+    }
+
+    @Test func feedbackCopyMatchesVerdictBand() {
+        let landed = outcome(
+            variationId: "concise.elevatorPitch",
+            transcript: "Hi, I'm Jordan and I build communication training software for nervous speakers under real pressure.",
+            duration: 17,
+            wordCount: 16,
+            succeeded: true
+        )
+        let missName = outcome(
+            variationId: "concise.elevatorPitch",
+            transcript: "This software helps people speak with confidence and clarity under real pressure every single day.",
+            duration: 15,
+            wordCount: 15,
+            succeeded: true
+        )
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: landed).contains("pitch") || DrillCompletionCopy.frameworkFeedback(outcome: landed).contains("hook"))
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: missName).contains("introduce yourself"))
+        // Titles are verdict-keyed.
+        #expect(DrillCompletionCopy.title(for: landed) == "Pitch Landed")
+        #expect(DrillCompletionCopy.title(for: missName) == "Who Are You?")
+    }
+
+    @Test func belowFloorFeedbackFallsBackToSkillLine() {
+        // A too-thin framework rep (no verdict) must NOT emit a structural
+        // claim — it falls back to the neutral skill-area feedback line.
+        let thin = outcome(
+            variationId: "story.starTurn",
+            transcript: "I led a team.",
+            duration: 6,
+            wordCount: 4,
+            succeeded: false
+        )
+        #expect(thin.frameworkVerdict == nil)
+        let expectedFallback = DrillCompletionCopy.feedbackLine(
+            skillArea: .answerDevelopment,
+            succeeded: false,
+            fillerCount: 0,
+            wordCount: 4,
+            duration: 6,
+            wpm: 4.0 / 6.0 * 60
+        )
+        #expect(DrillCompletionCopy.frameworkFeedback(outcome: thin) == expectedFallback)
+        // And the title falls back to the neutral skill title, not a structural label.
+        #expect(DrillCompletionCopy.title(for: thin) == "Go Deeper")
+    }
+}
+
 // MARK: - NextAction Engine Tests
 
 struct NextActionEngineTests {
@@ -490,6 +812,74 @@ struct NextActionEngineTests {
         let result = NextActionEngine.recommend(input: input)
         #expect(!result.reasoning.lowercased().contains("voice."),
             "No style goal should produce no voice suffix. Got: \(result.reasoning)")
+    }
+
+    // MARK: - Adaptation bias (initiative #1)
+
+    /// Builds an improving-trend (Priority 6) input that, absent any ledger,
+    /// returns a `.stabilizingRep` repeating the just-practiced mode.
+    private func improvingTrendInput(
+        mode: PracticeMode,
+        outcomes: [RecommendationOutcome]
+    ) -> NextActionInput {
+        NextActionInput(
+            fillerCount: 2, duration: 40, wordCount: 110, wpm: 150, score: 6,
+            categoryRatings: ["Opening": "OK"],
+            mode: mode, pressureLevel: .standard,
+            baseline: makeBaseline(sessionCount: 10),
+            pressureProfile: .empty,
+            trends: [SkillTrend(skillArea: .fillerReduction, direction: .improving, confidence: .medium, windowSize: 8, currentLevel: .developing)],
+            drillHistory: [DrillHistoryStore.Entry(variationId: "test", skillArea: .fillerReduction, succeeded: true, sessionId: UUID())],
+            sessionCount: 10, streakDays: 4, styleGoal: nil,
+            recommendationOutcomes: outcomes
+        )
+    }
+
+    private func replaceLedger(mode: PracticeMode) -> [RecommendationOutcome] {
+        // 6 sustained-unfavorable followed reps for the mode → confident .replace.
+        (0..<6).map { i in
+            RecommendationOutcome(
+                id: UUID(), fingerprint: "\(mode.rawValue)|", title: "t",
+                focus: nil, target: nil, mode: mode, sessionID: UUID(),
+                followed: true, completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
+                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+            )
+        }
+    }
+
+    @Test func confidentReplaceVerdictDefersStabilizingRep() {
+        // Cold-start control: empty ledger → P6 hands back a stabilizing rep in the same mode.
+        let control = NextActionEngine.recommend(input: improvingTrendInput(mode: .timed, outcomes: []))
+        if case .stabilizingRep(let m, _) = control.primary {
+            #expect(m == .timed)
+        } else {
+            Issue.record("Expected a stabilizing rep on the cold-start control. Got: \(control.primary)")
+        }
+
+        // With a confident-replace ledger for .timed, P6 is deferred → it must NOT
+        // re-prescribe a .timed stabilizing rep; it falls through to a drill.
+        let biased = NextActionEngine.recommend(input: improvingTrendInput(mode: .timed, outcomes: replaceLedger(mode: .timed)))
+        if case .stabilizingRep = biased.primary {
+            Issue.record("A confident replace verdict should defer the stabilizing rep. Got: \(biased.primary)")
+        }
+    }
+
+    @Test func varyOrThinLedgerDoesNotDeferReinforcement() {
+        // A thin (3-rep) unfavorable ledger yields .vary, which must NOT block selection.
+        let thin: [RecommendationOutcome] = (0..<3).map { i in
+            RecommendationOutcome(
+                id: UUID(), fingerprint: "timed|", title: "t", focus: nil, target: nil,
+                mode: .timed, sessionID: UUID(), followed: true,
+                completedAt: Date(timeIntervalSince1970: 100 + Double(i)),
+                scoreDelta: -0.9, hasComparableScore: true, fillerDelta: 0, durationDelta: 0
+            )
+        }
+        let result = NextActionEngine.recommend(input: improvingTrendInput(mode: .timed, outcomes: thin))
+        if case .stabilizingRep(let m, _) = result.primary {
+            #expect(m == .timed)   // .vary is inert in selection
+        } else {
+            Issue.record("A .vary verdict must not defer reinforcement. Got: \(result.primary)")
+        }
     }
 }
 
@@ -3990,6 +4380,524 @@ struct ScoreCalibrationTests {
         _ = Typography.figtreeNumeric(size: 18, weight: .heavy, relativeTo: .headline)
         // Compile-time check is the contract — runtime smoke is enough.
     }
+
+    // MARK: - Prompt-grounded relevance (replaces the wordCount/65 proxy)
+    //
+    // The Relevance *rating* on the 7-dimension card now reads the prompt,
+    // not just length. These pin the conservative contract: a clear miss
+    // only softens to "Mostly relevant" (.ok), never a confident off-topic
+    // (.couldImprove) from overlap alone; nil/thin prompt or thin transcript
+    // defaults HIGH (no down-rate on weak evidence); the named overlap
+    // boundary is locked; and the numeric score never moves.
+
+    private func relevanceCategory(in categories: [FeedbackCategory]) -> FeedbackRating? {
+        categories.first(where: { $0.dimension == "Relevance" })?.rating
+    }
+
+    @Test func promptRelevanceOffTopicLongAnswerLowOverlapRatesDownNotConfidentMiss() {
+        // 60 words about an unrelated topic, no shared content words with the
+        // shipping question.
+        let transcript = Array(repeating: "garden flowers bloom slowly through spring sunshine warmth", count: 7)
+            .joined(separator: " ")
+        let read = PracticeEvaluator.promptRelevance(
+            prompt: "Should we ship the feature this week?",
+            transcript: transcript
+        )
+        #expect(read.evidenceFloorMet)
+        #expect(read.overlap < PracticeEvaluator.relevanceWeakOverlap)
+        #expect(read.progress == 0.45)
+        // Rating softens to .ok, never .couldImprove from overlap alone.
+        let categories = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 56, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: transcript, relevanceProgress: read.progress
+        )
+        #expect(relevanceCategory(in: categories) == .ok)
+    }
+
+    @Test func promptRelevanceOnTopicAnswerHighOverlapRatesUp() {
+        let transcript = "We should ship the feature this week because the rollout data and customer feedback both point the same direction."
+        let read = PracticeEvaluator.promptRelevance(
+            prompt: "Should we ship the feature this week?",
+            transcript: transcript
+        )
+        #expect(read.overlap >= PracticeEvaluator.relevanceStrongOverlap)
+        #expect(read.progress == 1.0)
+        let categories = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 20, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: transcript, relevanceProgress: read.progress
+        )
+        #expect(relevanceCategory(in: categories) == .good)
+    }
+
+    @Test func promptRelevanceNilPromptDefaultsHighNoDownRate() {
+        let transcript = Array(repeating: "word", count: 60).joined(separator: " ")
+        let read = PracticeEvaluator.promptRelevance(prompt: nil, transcript: transcript)
+        #expect(read.evidenceFloorMet == false)
+        #expect(read.progress == PracticeEvaluator.relevanceAbsentDefault)
+        // Rating identical to the contentProgress path for the same length:
+        // 60 words -> contentProgress 60/65 ≈ 0.92 -> .good; the high default
+        // (0.70) also yields .good, so the nil-prompt path matches today.
+        let withDefault = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: min(60.0 / 65.0, 1.0),
+            paceProgress: 1.0, transcript: transcript, relevanceProgress: read.progress
+        )
+        let legacy = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: min(60.0 / 65.0, 1.0),
+            paceProgress: 1.0, transcript: transcript, relevanceProgress: nil
+        )
+        #expect(relevanceCategory(in: withDefault) == relevanceCategory(in: legacy))
+    }
+
+    @Test func promptRelevanceThinTranscriptBelowFloorStaysTentative() {
+        let read = PracticeEvaluator.promptRelevance(
+            prompt: "Should we ship the feature this week?",
+            transcript: "Yes we should ship it" // 5 words < minTranscriptWordsForRelevance
+        )
+        #expect(read.evidenceFloorMet == false)
+        #expect(read.progress == PracticeEvaluator.relevanceAbsentDefault)
+        #expect(read.progress >= 0.4) // never a confident off-topic
+    }
+
+    @Test func promptRelevanceThinPromptUnderThreeContentWordsBelowFloor() {
+        // "Why?" has zero content words after the >=4-char + stop filter.
+        let read = PracticeEvaluator.promptRelevance(
+            prompt: "Why?",
+            transcript: Array(repeating: "answer", count: 40).joined(separator: " ")
+        )
+        #expect(read.promptContentWords < PracticeEvaluator.minPromptContentWordsForRelevance)
+        #expect(read.evidenceFloorMet == false)
+        #expect(read.progress == PracticeEvaluator.relevanceAbsentDefault)
+    }
+
+    @Test func promptRelevanceBoundaryOverlapAtStrongThresholdIsGood() {
+        // Prompt with exactly 10 distinct content words. A transcript echoing
+        // exactly 3 of them = overlap 0.30 == relevanceStrongOverlap -> .good.
+        // 12 transcript words clears the transcript floor.
+        // 10 distinct content words (all >=4 chars, none a stop word).
+        let prompt = "Whales travel oceans yearly tracking plankton blooms northern southern currents"
+        let echoingThree = "Whales travel oceans every season and also rest quietly near shore daily"
+        let read = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: echoingThree)
+        #expect(read.promptContentWords == 10)
+        #expect(read.overlap == PracticeEvaluator.relevanceStrongOverlap)
+        #expect(read.progress == 1.0)
+
+        // One fewer echoed word -> overlap 0.20 < 0.30 -> not full credit, but above the ramp floor.
+        let echoingTwo = "Whales travel deeply every season and also rest quietly near shore daily"
+        let readTwo = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: echoingTwo)
+        #expect(readTwo.overlap < PracticeEvaluator.relevanceStrongOverlap)
+        #expect(readTwo.progress < 1.0)
+        #expect(readTwo.progress >= 0.45)
+    }
+
+    @Test func evaluateTimedPracticeQuestionDefaultedExistingCallSitesUnchanged() {
+        // Back-compat for the 3 existing ScoreCalibration call sites + 3 prod
+        // sites that pass no `question`: the defaulted nil must NOT change the
+        // score (formula reads contentProgress, untouched), and the omitted
+        // arg must behave identically to an explicit nil. 60 words sits where
+        // the high nil-prompt default (0.70) and the contentProgress proxy
+        // (60/65 ≈ 0.92) BOTH read .good, so the rating matches today too.
+        let words = Array(repeating: "word", count: 60).joined(separator: " ")
+        let baseline = PracticeEvaluator.evaluateTimedPractice(
+            transcript: words, fillerCount: 2, duration: 30,
+            difficulty: .medium, recentSessions: [], profile: nil
+        )
+        let withDefault = PracticeEvaluator.evaluateTimedPractice(
+            transcript: words, fillerCount: 2, duration: 30,
+            difficulty: .medium, recentSessions: [], profile: nil,
+            transcriptConfidence: nil, question: nil
+        )
+        #expect(baseline.score == withDefault.score)
+        #expect(relevanceCategory(in: baseline.categories) == relevanceCategory(in: withDefault.categories))
+        // And that rating is .good — matching the pre-change contentProgress
+        // read for a 60-word answer (no upward drift at this length).
+        #expect(relevanceCategory(in: withDefault.categories) == .good)
+    }
+
+    @Test func evaluateTimedPracticeOffTopicDoesNotMoveScoreOnlyRating() {
+        // Same transcript/duration/fillers, two questions: on-topic vs
+        // off-topic. The numeric score must be IDENTICAL (score formula reads
+        // contentProgress, untouched); only the Relevance rating may differ.
+        let transcript = "We should ship the feature this week because the rollout data and customer feedback both point the same direction and the team is ready."
+        let onTopic = PracticeEvaluator.evaluateTimedPractice(
+            transcript: transcript, fillerCount: 1, duration: 40,
+            difficulty: .medium, recentSessions: [], profile: nil,
+            transcriptConfidence: nil, question: "Should we ship the feature this week?"
+        )
+        let offTopic = PracticeEvaluator.evaluateTimedPractice(
+            transcript: transcript, fillerCount: 1, duration: 40,
+            difficulty: .medium, recentSessions: [], profile: nil,
+            transcriptConfidence: nil, question: "What did you have for breakfast on holiday abroad?"
+        )
+        #expect(onTopic.score == offTopic.score, "Relevance must be rating-only; score moved")
+        #expect(relevanceCategory(in: onTopic.categories) == .good)
+        #expect(relevanceCategory(in: offTopic.categories) == .ok)
+    }
+
+    @Test func buildFeedbackCategoriesRelevanceProgressOverridesContentProgress() {
+        // contentProgress=1.0 (would be .good) but relevanceProgress=0.45 -> .ok.
+        let overridden = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: "filler body text", relevanceProgress: 0.45
+        )
+        #expect(relevanceCategory(in: overridden) == .ok)
+        // relevanceProgress=nil -> falls back to contentProgress (.good).
+        let fallback = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: "filler body text", relevanceProgress: nil
+        )
+        #expect(relevanceCategory(in: fallback) == .good)
+    }
+
+    @Test func relevanceCopyStringsUnchangedNoOverclaim() {
+        // The three Relevance note strings must be byte-identical post-change
+        // — we changed the gating signal, not the copy. .good / .ok /
+        // .couldImprove each map to its established string.
+        let good = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: "body", relevanceProgress: 1.0
+        )
+        let ok = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: "body", relevanceProgress: 0.45
+        )
+        let low = PracticeEvaluator.buildFeedbackCategoriesForTesting(
+            wordCount: 60, duration: 40, fillerCount: 0,
+            wordsPerMinute: 140, durationProgress: 1.0, contentProgress: 1.0,
+            paceProgress: 1.0, transcript: "body", relevanceProgress: 0.2
+        )
+        let goodNote = good.first(where: { $0.dimension == "Relevance" })?.note
+        let okNote = ok.first(where: { $0.dimension == "Relevance" })?.note
+        let lowNote = low.first(where: { $0.dimension == "Relevance" })?.note
+        #expect(goodNote == "Stayed on topic")
+        #expect(okNote == "Mostly relevant")
+        #expect(lowNote == "Connect more directly to the prompt")
+    }
+}
+
+// MARK: - Prompt-grounded relevance follow-on (chat coach + Timed three-part note)
+//
+// Initiative #8 gave the deterministic Relevance rating + the two AI surfaces a
+// shared `PromptRelevanceRead`. This suite pins the follow-on that threads the
+// SAME read into the two surfaces #8 deferred: the live chat coach
+// (`CoachContextBuilder`) and the `FeedbackEngine` Timed three-part note
+// (`VerdictEngine`). Contracts mirror #8 — the verdict softens, never asserts a
+// confident off-topic; weak/absent evidence yields no verdict (no down-talk);
+// and the rest of the coach-note structure (momentum / next-step) never moves.
+// Fixtures reuse the #8 ScoreCalibrationTests pairs so the overlap bands stay
+// locked against the real tokenizer + stop set rather than re-derived here.
+
+struct PromptRelevanceFollowOnTests {
+
+    private let shipQuestion = "Should we ship the feature this week?"
+
+    /// Genuine BURIED LEDE (initiative #10): the point (ship/feature/week) is
+    /// present across the rep (whole overlap 3/3 = 1.0) but absent from the lead
+    /// (first sentence "Honestly there were a lot of competing priorities…"
+    /// echoes none of it -> first-sentence overlap 0/3 = 0.0 < weak). The only
+    /// configuration that earns the positional `.buried` verdict.
+    private var buriedRead: PracticeEvaluator.PromptRelevanceRead {
+        let transcript = "Honestly there were a lot of competing priorities pulling at the team. We weighed the tradeoffs at length. In the end I do think we should ship the feature this week."
+        return PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+    }
+    /// 56 off-topic words, zero shared content words -> whole overlap 0. Used
+    /// to be classified `.buried` (the pre-#10 magnitude-only mapping); under
+    /// the positional mapping a point that is nowhere in the rep is NOT a buried
+    /// lede — it is `.partial` ("did not clearly lead"), never the confident
+    /// "arrived late" claim. The rating still softens to .ok (progress 0.45).
+    private var offTopicRead: PracticeEvaluator.PromptRelevanceRead {
+        let transcript = Array(repeating: "garden flowers bloom slowly through spring sunshine warmth", count: 7)
+            .joined(separator: " ")
+        return PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+    }
+    /// On-topic answer that LEADS with the point — echoes every prompt content
+    /// word, and the first sentence carries them (lead overlap 3/3) -> `.answered`.
+    private var answeredRead: PracticeEvaluator.PromptRelevanceRead {
+        let transcript = "We should ship the feature this week because the rollout data and customer feedback both point the same direction."
+        return PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+    }
+    /// 10-content-word prompt, transcript echoes exactly 2 across the whole rep
+    /// and in the (single-sentence) lead -> whole 0.20, lead 0.20. Neither
+    /// leads (lead < strong) nor buried (whole < strong) -> `.partial`.
+    private var partialRead: PracticeEvaluator.PromptRelevanceRead {
+        let prompt = "Whales travel oceans yearly tracking plankton blooms northern southern currents"
+        let transcript = "Whales travel deeply every season and also rest quietly near shore daily"
+        return PracticeEvaluator.promptRelevance(prompt: prompt, transcript: transcript)
+    }
+    /// Same prompt, single-sentence transcript echoes exactly 3 -> lead overlap
+    /// == strong 0.30 -> `.answered` (the point led, inclusive boundary).
+    private var boundaryAnsweredRead: PracticeEvaluator.PromptRelevanceRead {
+        let prompt = "Whales travel oceans yearly tracking plankton blooms northern southern currents"
+        let transcript = "Whales travel oceans every season and also rest quietly near shore daily"
+        return PracticeEvaluator.promptRelevance(prompt: prompt, transcript: transcript)
+    }
+
+    // MARK: - Shared verdict mapping (the one point all four surfaces read)
+
+    @Test func verdictAnsweredWhenPointLeads() {
+        // The point led — first-sentence overlap cleared the strong bar.
+        #expect(answeredRead.firstSentenceOverlap >= PracticeEvaluator.relevanceStrongOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: answeredRead) == .answered)
+    }
+
+    @Test func verdictBuriedWhenPointPresentButNotInLead() {
+        // Genuine buried lede: present across the rep, absent from the lead.
+        #expect(buriedRead.overlap >= PracticeEvaluator.relevanceStrongOverlap)
+        #expect(buriedRead.firstSentenceOverlap < PracticeEvaluator.relevanceWeakOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: buriedRead) == .buried)
+    }
+
+    @Test func verdictOffTopicLowWholeOverlapIsPartialNotBuried() {
+        // Honesty fix (initiative #10): a point that is NOWHERE in the rep is
+        // not a "buried lede" — overlap alone never earns the positional
+        // "arrived late" claim. Pre-#10 this fixture mapped to `.buried`.
+        #expect(offTopicRead.overlap < PracticeEvaluator.relevanceWeakOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: offTopicRead) == .partial)
+    }
+
+    @Test func verdictPartialBetweenThresholds() {
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: partialRead) == .partial)
+    }
+
+    @Test func verdictAnsweredAtStrongLeadBoundaryInclusive() {
+        // first-sentence overlap == relevanceStrongOverlap is .answered
+        // (inclusive), matching the rating's `>= relevanceStrongOverlap` branch.
+        #expect(boundaryAnsweredRead.firstSentenceOverlap == PracticeEvaluator.relevanceStrongOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: boundaryAnsweredRead) == .answered)
+    }
+
+    @Test func verdictPartialWhenPresentButLeadBetweenWeakAndStrong() {
+        // Asymmetry lock: a high-whole-overlap rep whose LEAD overlap sits
+        // between weak and strong is NOT buried (lead is not < weak) — `.buried`
+        // requires the lead to genuinely miss the point, not merely under-lead.
+        let prompt = "Should we adopt a four day work week policy"
+        let transcript = "The policy is worth a look. Then after weighing the tradeoffs I would adopt the four day work week across the board."
+        let read = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: transcript)
+        #expect(read.overlap >= PracticeEvaluator.relevanceStrongOverlap)
+        #expect(read.firstSentenceOverlap >= PracticeEvaluator.relevanceWeakOverlap)
+        #expect(read.firstSentenceOverlap < PracticeEvaluator.relevanceStrongOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) == .partial)
+    }
+
+    @Test func verdictAnsweredWhenLeadCarriesPointEvenWithFewExactWords() {
+        // The slice's front-vs-buried boundary, positive side: a rep that LEADS
+        // with the answer using few exact question words but still clears the
+        // strong lead bar is `.answered`, never `.buried`.
+        let transcript = "Ship it now. The rollout numbers are strong and customers are clearly waiting, so holding back only costs us momentum we will not recover."
+        let read = PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+        #expect(read.firstSentenceOverlap >= PracticeEvaluator.relevanceStrongOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) == .answered)
+    }
+
+    @Test func verdictPartialWhenLedSubstanceButLowWholeOverlap() {
+        // The slice's boundary, the "leads with the answer but reuses few exact
+        // question words" case where the WHOLE overlap is also low: NOT buried
+        // (whole < strong) and not answered (lead < strong) -> `.partial`. This
+        // proves `.buried` needs BOTH high whole overlap AND a missing lead.
+        let transcript = "Yes, release it right away. The numbers are strong, the team is ready, and customers have been asking for this capability for months now."
+        let read = PracticeEvaluator.promptRelevance(prompt: shipQuestion, transcript: transcript)
+        #expect(read.overlap < PracticeEvaluator.relevanceStrongOverlap)
+        #expect(read.firstSentenceOverlap < PracticeEvaluator.relevanceStrongOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) != .buried)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) == .partial)
+    }
+
+    @Test func verdictNilBelowEvidenceFloor() {
+        // nil prompt, thin transcript, and a sub-3-content-word prompt all
+        // return no verdict -> no surface down-talks weak/absent evidence.
+        let nilPrompt = PracticeEvaluator.promptRelevance(
+            prompt: nil,
+            transcript: Array(repeating: "word", count: 40).joined(separator: " ")
+        )
+        let thinTranscript = PracticeEvaluator.promptRelevance(
+            prompt: shipQuestion,
+            transcript: "Yes we should ship it"
+        )
+        let thinPrompt = PracticeEvaluator.promptRelevance(
+            prompt: "Why?",
+            transcript: Array(repeating: "answer", count: 40).joined(separator: " ")
+        )
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: nilPrompt) == nil)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: thinTranscript) == nil)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: thinPrompt) == nil)
+    }
+
+    // MARK: - FeedbackEngine Timed three-part note (Layer 2b)
+
+    private func note(relevance: PracticeEvaluator.PromptRelevanceRead?) -> CoachNote {
+        VerdictEngine.generate(
+            fillerCount: 3, duration: 45, wordCount: 100, wpm: 130, score: 6,
+            categoryRatings: [:], trends: [], primaryFocus: .fillerReduction,
+            drillHistory: [], promptRelevance: relevance
+        )
+    }
+
+    private let buriedNoteFragment = "anchored to the question"
+
+    @Test func buriedRelevanceAddsLeverageNote() {
+        // Fires only on the genuine positional buried lede.
+        #expect(note(relevance: buriedRead).leverage.contains(buriedNoteFragment))
+    }
+
+    @Test func answeredRelevanceAddsNoLeverageNote() {
+        #expect(!note(relevance: answeredRead).leverage.contains(buriedNoteFragment))
+    }
+
+    @Test func partialRelevanceAddsNoLeverageNote() {
+        // Only a buried lede (.buried) fires the note — partial stays quiet so
+        // the leverage line never piles onto a borderline read.
+        #expect(!note(relevance: partialRead).leverage.contains(buriedNoteFragment))
+    }
+
+    @Test func offTopicRelevanceAddsNoLeverageNote() {
+        // A low-whole-overlap off-topic rep is `.partial` now, not `.buried`,
+        // so it must NOT fire the buried-lede note (no "arrived late" implied
+        // about an answer whose point is nowhere in the rep).
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: offTopicRead) == .partial)
+        #expect(!note(relevance: offTopicRead).leverage.contains(buriedNoteFragment))
+    }
+
+    @Test func belowFloorRelevanceAddsNoLeverageNote() {
+        let belowFloor = PracticeEvaluator.promptRelevance(
+            prompt: shipQuestion,
+            transcript: "Yes we should ship it"
+        )
+        #expect(!note(relevance: belowFloor).leverage.contains(buriedNoteFragment))
+    }
+
+    @Test func nilRelevanceLeavesNoteByteIdenticalBackCompat() {
+        // Existing callers pass no read -> leverage identical to an explicit
+        // nil, and never carries the relevance note.
+        let omitted = VerdictEngine.generate(
+            fillerCount: 3, duration: 45, wordCount: 100, wpm: 130, score: 6,
+            categoryRatings: [:], trends: [], primaryFocus: .fillerReduction,
+            drillHistory: []
+        )
+        let explicitNil = note(relevance: nil)
+        #expect(omitted.leverage == explicitNil.leverage)
+        #expect(omitted.momentum == explicitNil.momentum)
+        #expect(omitted.nextStep == explicitNil.nextStep)
+        #expect(!omitted.leverage.contains(buriedNoteFragment))
+    }
+
+    @Test func relevanceNoteTouchesOnlyLeverage() {
+        // The substance read must not bleed into momentum or next-step — it is
+        // a leverage-line concern only (mirrors buildIMContextNote).
+        let withBuried = note(relevance: buriedRead)
+        let withoutRead = note(relevance: nil)
+        #expect(withBuried.momentum == withoutRead.momentum)
+        #expect(withBuried.nextStep == withoutRead.nextStep)
+        #expect(withBuried.leverage != withoutRead.leverage)
+    }
+
+    @Test func buriedNoteCopyRestrainedNoOverclaim() {
+        let leverage = note(relevance: buriedRead).leverage.lowercased()
+        #expect(!leverage.contains("off-topic"))
+        #expect(!leverage.contains("off topic"))
+        #expect(!leverage.contains("!"))
+        #expect(!leverage.contains("definitely"))
+        #expect(!leverage.contains("clearly"))
+    }
+
+    // MARK: - CoachContextBuilder rep-context section
+
+    private func session(mode: PracticeMode, prompt: String?, transcript: String) -> PracticeSession {
+        PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 2,
+            duration: 40,
+            date: Date(),
+            mode: mode,
+            score: 6,
+            prompt: prompt
+        )
+    }
+
+    private func context(for session: PracticeSession) -> String {
+        CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: [session],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+    }
+
+    @Test func contextSurfacesBuriedRelevanceForTimedRep() {
+        // Genuine buried lede -> the chat-context section names the positional
+        // "arrived late" read and keeps the association disclaimer.
+        let transcript = "Honestly there were a lot of competing priorities pulling at the team. We weighed the tradeoffs at length. In the end I do think we should ship the feature this week."
+        let ctx = context(for: session(mode: .timed, prompt: shipQuestion, transcript: transcript))
+        #expect(ctx.contains("PROMPT RELEVANCE"))
+        #expect(ctx.contains("the point arrived late"))
+        #expect(ctx.contains("missing from the lead"))
+        #expect(ctx.contains("never proof the answer was off-topic"))
+    }
+
+    @Test func contextSurfacesPositionalOverlapNumbersForTimedRep() {
+        // The data line now reports BOTH the lead overlap and the whole-rep
+        // overlap so the coach can cite the gap that defines a buried lede.
+        let transcript = "Honestly there were a lot of competing priorities pulling at the team. We weighed the tradeoffs at length. In the end I do think we should ship the feature this week."
+        let ctx = context(for: session(mode: .timed, prompt: shipQuestion, transcript: transcript))
+        #expect(ctx.contains("The first sentence echoed 0%"))
+        #expect(ctx.contains("the whole answer echoed 100%"))
+    }
+
+    @Test func contextSurfacesAnsweredRelevanceForTimedRep() {
+        let transcript = "We should ship the feature this week because the rollout data and customer feedback both point the same direction."
+        let ctx = context(for: session(mode: .timed, prompt: shipQuestion, transcript: transcript))
+        #expect(ctx.contains("PROMPT RELEVANCE"))
+        #expect(ctx.contains("the point led"))
+    }
+
+    @Test func contextOmitsRelevanceBelowEvidenceFloor() {
+        // Thin transcript -> read below floor -> no verdict -> no section.
+        let ctx = context(for: session(mode: .timed, prompt: shipQuestion, transcript: "Yes we should ship it"))
+        #expect(!ctx.contains("PROMPT RELEVANCE"))
+    }
+
+    @Test func contextOmitsRelevanceForNonTimedRep() {
+        // Same buried pair, but a non-Timed most-recent rep -> the section is
+        // gated off (IM relevance is carried by the TONE-DRILL sections).
+        let transcript = "Honestly there were a lot of competing priorities pulling at the team. We weighed the tradeoffs at length. In the end I do think we should ship the feature this week."
+        let ctx = context(for: session(mode: .suddenDeath, prompt: shipQuestion, transcript: transcript))
+        #expect(!ctx.contains("PROMPT RELEVANCE"))
+    }
+
+    @Test func promptRelevanceLinesNilBelowFloor() {
+        let belowFloor = PracticeEvaluator.promptRelevance(
+            prompt: "Why?",
+            transcript: Array(repeating: "answer", count: 40).joined(separator: " ")
+        )
+        #expect(CoachContextBuilder.promptRelevanceLines(for: belowFloor, prompt: "Why?") == nil)
+    }
+
+    @Test func promptRelevanceLinesBuriedCarriesAssociationDisclaimer() {
+        let lines = CoachContextBuilder.promptRelevanceLines(for: buriedRead, prompt: shipQuestion)
+        let joined = (lines ?? []).joined(separator: "\n")
+        #expect(lines != nil)
+        #expect(joined.contains("never proof the answer was off-topic"))
+        #expect(joined.contains("lexical overlap"))
+    }
+
+    @Test func oneReadDrivesBothSurfaces() {
+        // The decisive coherence contract: the SAME positional read produces a
+        // .buried verdict, fires the Timed note, AND yields the buried
+        // chat-context guidance — one read, every surface agrees.
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: buriedRead) == .buried)
+        #expect(note(relevance: buriedRead).leverage.contains(buriedNoteFragment))
+        let lines = CoachContextBuilder.promptRelevanceLines(for: buriedRead, prompt: shipQuestion) ?? []
+        #expect(lines.joined(separator: "\n").contains("the point arrived late"))
+    }
 }
 
 // MARK: - Goal Progress Tests (M14)
@@ -5678,6 +6586,85 @@ struct CoachContextBuilderTests {
         #expect(ctx.contains("I avoided disagreeing with the prompt."))
         #expect(ctx.contains("Next review move: Ask what they avoided saying"))
         #expect(ctx.contains("not a measured signal"))
+    }
+
+    @Test func userContextSurfacesReflectionPatternAsHypothesisOnly() {
+        let pattern = CoachReflectionPattern.build(from: [
+            SessionReflection(sessionID: UUID(), feeling: .heldBack, recordedAt: Date(timeIntervalSince1970: 1_000)),
+            SessionReflection(sessionID: UUID(), feeling: .strong, recordedAt: Date(timeIntervalSince1970: 900)),
+            SessionReflection(sessionID: UUID(), feeling: .heldBack, recordedAt: Date(timeIntervalSince1970: 800)),
+            SessionReflection(sessionID: UUID(), feeling: .heldBack, recordedAt: Date(timeIntervalSince1970: 700)),
+        ])
+        let memory = CoachMemory(
+            updatedAt: Date(),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            reflectionPattern: pattern
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("Subjective pattern (repeated pattern): Across 3 of the last 4 reflections"))
+        #expect(ctx.contains("self-reported avoidance hypothesis"))
+        #expect(ctx.contains("not a diagnosis"))
+        #expect(ctx.contains("confirm, refine, or reject"))
+    }
+
+    @Test func userContextSurfacesDurableCoachCaseFile() {
+        let caseFile = CoachCaseFile(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            hypothesis: "Closings may be the highest-leverage focus because endings are rushed.",
+            focus: .closingStrength,
+            evidenceSummary: "Forming read across 5 signals; basis: endings are rushed",
+            activeIntervention: "Timed for a decisive close",
+            observableTarget: "One clean final sentence",
+            successMeasure: "score of 7 or higher across 2 reps — not enough followed reps yet to judge",
+            reviewDueAt: Date(timeIntervalSince1970: 1_000),
+            subjectivePattern: "Across 3 of the last 4 reflections, the user reported nerves affected their delivery.",
+            transferRead: "For presentation \"Board update\", the user reported it fell short; the room seemed unclear.",
+            nextMove: .reviewIntervention,
+            nextQuestion: "Should the current intervention continue, adapt, or be replaced?"
+        )
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            currentLever: .closingStrength,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            caseFile: caseFile
+        )
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+
+        #expect(ctx.contains("COACH CASE FILE (durable strategy)"))
+        #expect(ctx.contains("Case hypothesis: Closings may be the highest-leverage focus"))
+        #expect(ctx.contains("Next coach move: Review the intervention"))
+        #expect(ctx.contains("Should the current intervention continue, adapt, or be replaced?"))
+        #expect(ctx.contains("self-report, not diagnosis"))
+        #expect(ctx.contains("not proof of causation"))
     }
 
     @Test func userContextSurfacesTransferReviewAsAUserOwnedCaseAction() {
@@ -7887,6 +8874,197 @@ struct AppDestinationSessionDetailTests {
 // shuffle voice assignments out from under the screenshot tour. The pure
 // helper `DevSeedData.seedCoachingProfile(for:)` is tested directly so we
 // don't have to mutate any live stores.
+@Suite("CoachingProfileVoiceChoiceTests")
+struct CoachingProfileVoiceChoiceTests {
+
+    // A profile constructed WITHOUT an explicit choice (the in-memory default)
+    // must report hasChosenVoice == false — the coach stays generic and offers
+    // to set the voice rather than inventing one.
+    @Test func unchosenProfileReportsNoVoiceChoice() {
+        let p = CoachingProfile(
+            speakingContext: .work, primaryGoal: .reduceFillers, confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords, desiredOutcome: .persuasive,
+            speakingStyleGoal: .concise, styleReference: "", coachingBrief: "",
+            motivationWhyNow: "", successVision: ""
+            // chosenStyleGoal omitted → defaults nil
+        )
+        #expect(p.hasChosenVoice == false)
+        #expect(p.chosenStyleGoal == nil)
+    }
+
+    // An explicit choice sets the flag and the chosen value.
+    @Test func explicitChoiceReportsChosenVoice() {
+        let p = CoachingProfile(
+            speakingContext: .work, primaryGoal: .reduceFillers, confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords, desiredOutcome: .persuasive,
+            speakingStyleGoal: .warm, styleReference: "", coachingBrief: "",
+            motivationWhyNow: "", successVision: "", chosenStyleGoal: .warm
+        )
+        #expect(p.hasChosenVoice)
+        #expect(p.chosenStyleGoal == .warm)
+    }
+
+    // No hardcoded "authoritative" default: a profile JSON with NO voice key
+    // decodes to the neutral effective default AND stays unchosen — never
+    // silently "authoritative".
+    @Test func legacyDecodeWithoutVoiceStaysUnchosenAndNotAuthoritative() throws {
+        let json = """
+        {
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "rebuilding",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "persuasive"
+        }
+        """.data(using: .utf8)!
+        let p = try JSONDecoder().decode(CoachingProfile.self, from: json)
+        #expect(p.hasChosenVoice == false)
+        #expect(p.chosenStyleGoal == nil)
+        #expect(p.speakingStyleGoal != .authoritative,
+            "Absent voice must not silently decode as authoritative")
+    }
+
+    // A legacy profile that DID carry a voice (old onboarding always wrote one)
+    // back-fills the choice from it — those users genuinely chose.
+    @Test func legacyDecodeWithVoiceBackfillsChoice() throws {
+        let json = """
+        {
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "rebuilding",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "persuasive",
+            "speakingStyleGoal": "persuasive"
+        }
+        """.data(using: .utf8)!
+        let p = try JSONDecoder().decode(CoachingProfile.self, from: json)
+        #expect(p.hasChosenVoice)
+        #expect(p.chosenStyleGoal == .persuasive)
+        #expect(p.speakingStyleGoal == .persuasive)
+    }
+}
+
+// MARK: - S2: chosen-voice coaching copy
+//
+// The pure string seam behind the app-wide voice reflection (Profile coaching
+// read, CaseReviewCard register eyebrow, Summary empty-state line). These are
+// the deterministic helpers `CoachingProfile.chosenVoiceCoachingLead` and
+// `.chosenVoiceRegisterLabel`. The CONTRACT under test:
+//   • Single source of truth is `chosenStyleGoal`, NOT the always-populated
+//     `speakingStyleGoal` default. An un-chosen profile returns nil from both
+//     helpers, so every consumer falls back to its existing GENERIC copy and
+//     a never-chosen profile reads neutral (never impersonates `.concise`).
+//   • A chosen profile returns a string that references the voice (registerName)
+//     and reuses `SpeakingStyleGoal.coachingDescription`.
+//   • A BLEND (secondary set) names BOTH voices.
+//   • Brand voice: no exclamation, no emoji.
+@Suite("ChosenVoiceCoachingCopyTests")
+struct ChosenVoiceCoachingCopyTests {
+
+    private func makeProfile(
+        chosen: SpeakingStyleGoal?,
+        secondary: SpeakingStyleGoal? = nil,
+        effective: SpeakingStyleGoal = .concise
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work, primaryGoal: .reduceFillers, confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords, desiredOutcome: .persuasive,
+            speakingStyleGoal: effective, styleReference: "", coachingBrief: "",
+            motivationWhyNow: "", successVision: "",
+            secondaryStyleGoal: secondary, chosenStyleGoal: chosen
+        )
+    }
+
+    // GATING: an un-chosen profile returns nil from BOTH helpers, even though
+    // the effective `speakingStyleGoal` is populated (here `.concise`). This is
+    // what keeps the consumer copy GENERIC for a never-chosen profile.
+    @Test func unchosenProfileReturnsNilFromBothHelpers() {
+        let p = makeProfile(chosen: nil, effective: .concise)
+        #expect(p.hasChosenVoice == false)
+        #expect(p.chosenVoiceCoachingLead == nil)
+        #expect(p.chosenVoiceRegisterLabel == nil)
+    }
+
+    // CHOSEN: the lead references the voice (registerName) and reuses the
+    // canonical `coachingDescription`, and the eyebrow names the register.
+    @Test func chosenSingleVoiceLeadReferencesVoiceAndReusesDescription() {
+        let p = makeProfile(chosen: .authoritative, effective: .authoritative)
+        let persona = CoachPersona.persona(for: .authoritative)
+        guard let lead = p.chosenVoiceCoachingLead else {
+            Issue.record("A chosen voice must produce a coaching lead, got nil")
+            return
+        }
+        #expect(lead.contains(persona.registerName))                    // "Authoritative"
+        #expect(lead.contains(SpeakingStyleGoal.authoritative.coachingDescription))
+        #expect(p.chosenVoiceRegisterLabel == "Authoritative register")
+    }
+
+    // SOURCE OF TRUTH: the COPY follows `chosenStyleGoal`, NOT the effective
+    // `speakingStyleGoal`. Here the user chose `.warm` while the effective
+    // default is `.concise`; the copy must speak Warm, never Concise.
+    @Test func copyFollowsChosenVoiceNotEffectiveDefault() {
+        let p = makeProfile(chosen: .warm, effective: .concise)
+        guard let lead = p.chosenVoiceCoachingLead else {
+            Issue.record("A chosen voice must produce a coaching lead, got nil")
+            return
+        }
+        #expect(lead.contains("Warm"))
+        #expect(lead.contains(SpeakingStyleGoal.warm.coachingDescription))
+        // Must NOT have leaked the effective `.concise` description.
+        #expect(lead.contains(SpeakingStyleGoal.concise.coachingDescription) == false)
+        #expect(p.chosenVoiceRegisterLabel == "Warm register")
+    }
+
+    // BLEND: a secondary voice names BOTH voices in the eyebrow and the lead.
+    @Test func blendNamesBothVoices() {
+        let p = makeProfile(chosen: .authoritative, secondary: .warm, effective: .authoritative)
+        #expect(p.chosenVoiceRegisterLabel == "Authoritative + Warm register")
+        guard let lead = p.chosenVoiceCoachingLead else {
+            Issue.record("A blended voice must produce a coaching lead, got nil")
+            return
+        }
+        #expect(lead.contains("Authoritative"))
+        #expect(lead.contains("Warm"))
+        #expect(lead.contains(SpeakingStyleGoal.authoritative.coachingDescription))
+    }
+
+    // BLEND edge: a "blend" whose secondary equals the primary is NOT a blend —
+    // it collapses to the single-voice copy (mirrors `blendedAlignedSkillAreas`).
+    @Test func blendWithSecondaryEqualToPrimaryCollapsesToSingleVoice() {
+        let p = makeProfile(chosen: .executive, secondary: .executive, effective: .executive)
+        #expect(p.chosenVoiceRegisterLabel == "Executive register")
+        guard let lead = p.chosenVoiceCoachingLead else {
+            Issue.record("A chosen voice must produce a coaching lead, got nil")
+            return
+        }
+        #expect(lead.contains("blended with") == false)
+    }
+
+    // BRAND VOICE: no exclamation marks, no emoji, across every voice (single
+    // and blended). The em-dash is allowed; "!" and emoji are not.
+    @Test func copyHasNoExclamationOrEmojiForAnyVoice() {
+        for voice in SpeakingStyleGoal.allCases {
+            let single = makeProfile(chosen: voice, effective: voice)
+            let blended = makeProfile(
+                chosen: voice,
+                secondary: voice == .warm ? .concise : .warm,
+                effective: voice
+            )
+            for profile in [single, blended] {
+                let strings = [profile.chosenVoiceCoachingLead, profile.chosenVoiceRegisterLabel].compactMap { $0 }
+                #expect(strings.count == 2, "Both helpers must produce copy for \(voice.rawValue)")
+                for string in strings {
+                    #expect(string.contains("!") == false)
+                    // `isEmojiPresentation` (not `isEmoji`) so ASCII digits —
+                    // which report `isEmoji == true` due to keycap bases — don't
+                    // trip a false failure; only true pictographic emoji do.
+                    #expect(string.unicodeScalars.allSatisfy { $0.properties.isEmojiPresentation == false })
+                }
+            }
+        }
+    }
+}
+
 struct DevSeedCoachingProfileTests {
 
     @Test func improvingIntermediateSeedsWarmVoiceAndConciseGoal() {
@@ -7907,6 +9085,18 @@ struct DevSeedCoachingProfileTests {
         let profile = DevSeedData.seedCoachingProfile(for: .plateauedAdvanced)
         #expect(profile.speakingStyleGoal == .authoritative)
         #expect(profile.speakingContext == .presentations)
+    }
+
+    @Test func everySeedHasAnExplicitlyChosenVoice() {
+        // Seeds are deliberate demo personas; each must read as a genuine
+        // choice (hasChosenVoice) so the seeded/UI-test experience is tailored,
+        // not the generic no-voice coach.
+        for seed in SeedProfile.allCases {
+            let profile = DevSeedData.seedCoachingProfile(for: seed)
+            #expect(profile.hasChosenVoice, "Seed \(seed) should have a chosen voice")
+            #expect(profile.chosenStyleGoal == profile.speakingStyleGoal,
+                "Seed \(seed) chosenStyleGoal should match its effective voice")
+        }
     }
 
     @Test func pressureVulnerableSeedsExecutiveVoiceAndCalmerGoal() {
@@ -10123,6 +11313,277 @@ struct RecommendationResponseAnalyzerTests {
     }
 }
 
+@Suite("RecommendationAdaptationAnalyzerTests")
+struct RecommendationAdaptationAnalyzerTests {
+
+    // MARK: Cold start + thin evidence
+
+    @Test func coldStart_noFollowedReps_returnsNilAndNoRationale() {
+        #expect(RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: []) == nil)
+        // Followed:false reps for the key are not cold-start material either.
+        let unfollowed = (0..<5).map { adOutcome(mode: .timed, focus: "close", followed: false, at: 100 + Double($0), score: -2) }
+        #expect(RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: unfollowed) == nil)
+        #expect(RecommendationAdaptationAnalyzer.adaptationRationale(mode: .timed, focus: "close", in: unfollowed) == nil)
+    }
+
+    @Test func belowMovementFloor_reinforceTentative_noRationale_excludesNoSignalReps() {
+        // 2 moving (comparable score) + 3 followed reps with no movement at all.
+        var outcomes = [
+            adOutcome(mode: .timed, focus: "close", at: 200, score: -0.7, hasScore: true),
+            adOutcome(mode: .timed, focus: "close", at: 199, score: -0.8, hasScore: true),
+        ]
+        outcomes += (0..<3).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: 0, hasScore: false, filler: 0) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.action == .reinforce)
+        #expect(verdict?.confidence == .tentative)
+        #expect(verdict?.movementReps == 2)        // 3 no-signal reps excluded
+        #expect(verdict?.followedReps == 5)
+        #expect(RecommendationAdaptationAnalyzer.adaptationRationale(mode: .timed, focus: "close", in: outcomes) == nil)
+    }
+
+    // MARK: Vary / replace floors
+
+    @Test func exactlyThreeUnfavorable_varyTentative_notReplace_notFailed() {
+        let outcomes = (0..<3).map { adOutcome(mode: .suddenDeath, focus: "open", at: 100 + Double($0), score: -0.7, hasScore: true) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, focus: "open", in: outcomes)
+        #expect(verdict?.action == .vary)
+        #expect(verdict?.confidence == .tentative)
+        #expect(verdict?.movementReps == 3)
+        #expect(verdict?.improvedRate == 0.0)
+        let line = RecommendationAdaptationAnalyzer.adaptationRationale(mode: .suddenDeath, focus: "open", in: outcomes)
+        #expect(line?.contains("varying the approach") == true)
+        #expect(line?.contains("not abandoning it yet") == true)
+        #expect(line?.contains("failed") == false)
+        #expect(line?.contains("swap") == false)
+    }
+
+    @Test func replaceFloorHoldsAtFive_neverReplace() {
+        let outcomes = (0..<5).map { adOutcome(mode: .suddenDeath, focus: "open", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, focus: "open", in: outcomes)
+        #expect(verdict?.action == .vary)        // 5 < 6 confident-replace floor
+        #expect(verdict?.action != .replace)
+    }
+
+    @Test func sixSustainedUnfavorable_confidentReplace_trendedDown_noCausalClaim() {
+        let outcomes = (0..<6).map { adOutcome(mode: .suddenDeath, focus: "open", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, focus: "open", in: outcomes)
+        #expect(verdict?.action == .replace)
+        #expect(verdict?.confidence == .confident)
+        #expect(verdict?.movementReps == 6)
+        #expect((verdict?.unfavorableRate ?? 0) >= 0.6)
+        let line = RecommendationAdaptationAnalyzer.adaptationRationale(mode: .suddenDeath, focus: "open", in: outcomes)
+        #expect(line?.contains("trended down") == true)
+        #expect(line?.contains("swap it for a different angle") == true)
+        for banned in ["failed", "caused", "because", "proves", "guarantee"] {
+            #expect(line?.contains(banned) == false)
+        }
+    }
+
+    // MARK: Autocorrelation + recency hardening
+
+    @Test func autocorrelatedMeanReversion_neverConfidentReplace() {
+        // oldest -> newest: unfav, unfav, unfav, neutral, fav, fav (one early bad run that
+        // mean-reverts). All 6 carry a comparable score, so movementReps == 6 reaches the
+        // confident-replace FLOOR — yet the positive recent window must still block replace.
+        let scores = [-0.9, -0.9, -0.9, 0.0, 0.9, 0.9]
+        let outcomes = scores.enumerated().map { i, s in
+            adOutcome(mode: .timed, focus: "close", at: 100 + Double(i), score: s, hasScore: true, filler: 0)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.movementReps == 6)      // at the replace floor…
+        #expect(verdict?.action != .replace)     // …but the late window is positive -> not replace
+    }
+
+    @Test func slippingTrend_overridesHighRate_doesNotReinforce() {
+        // oldest -> newest: fav, fav, fav, unfav, unfav, unfav. improvedRate 0.5 but recent window clearly negative.
+        let scores = [0.9, 0.9, 0.9, -0.9, -0.9, -0.9]
+        let outcomes = scores.enumerated().map { i, s in
+            adOutcome(mode: .timed, focus: "close", at: 100 + Double(i), score: s, hasScore: true)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.action != .reinforce)   // a clearly-negative recent window beats a high lifetime rate
+        #expect(verdict?.improvedRate == 0.5)
+    }
+
+    @Test func recoveringTrend_aboveWindowFloor_reinforces() {
+        // oldest -> newest: unfav, unfav, unfav, fav, fav, fav.
+        let scores = [-0.9, -0.9, -0.9, 0.9, 0.9, 0.9]
+        let outcomes = scores.enumerated().map { i, s in
+            adOutcome(mode: .timed, focus: "close", at: 100 + Double(i), score: s, hasScore: true)
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.action == .reinforce)
+        #expect(verdict?.trend == .recovering)
+    }
+
+    @Test func recoveringTail_belowWindowFloor_doesNotRescue() {
+        // 3 moving reps arranged unfav -> neutral -> favorable (a 1-rep tail cannot rescue: floor is 4).
+        let outcomes = [
+            adOutcome(mode: .timed, focus: "close", at: 100, score: -0.9, hasScore: true),
+            adOutcome(mode: .timed, focus: "close", at: 101, score: 0.0, hasScore: true),
+            adOutcome(mode: .timed, focus: "close", at: 102, score: 0.9, hasScore: true),
+        ]
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.action == .vary)        // not reinforce — 1-rep window can't rescue
+    }
+
+    // MARK: Filler polarity + jitter
+
+    @Test func fillerOnlySignal_polarityInverts_favorableReinforces() {
+        // Negative filler delta = improvement; no comparable score.
+        let outcomes = (0..<4).map { adOutcome(mode: .ahCounter, focus: "lean", at: 100 + Double($0), score: 0, hasScore: false, filler: -1.2) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .ahCounter, focus: "lean", in: outcomes)
+        #expect(verdict?.action == .reinforce)
+        #expect(verdict?.movementReps == 4)
+        #expect(verdict?.improvedRate == 1.0)
+    }
+
+    @Test func fillerJitterBelowFloor_isNotMovement() {
+        let outcomes = (0..<6).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: 0, hasScore: false, filler: 0.1) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.movementReps == 0)      // 0.1 < 0.375 movement floor
+        #expect(verdict?.action == .reinforce)   // falls to thin-evidence reinforce, never near replace
+        #expect(verdict?.action != .replace)
+    }
+
+    @Test func nilComparableScore_isNeverWeighted_fillerStillCounts() {
+        // 4 reps: huge positive scoreDelta but hasComparableScore == nil -> score ignored, no filler movement -> excluded.
+        var outcomes = (0..<4).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: 2.0, hasScoreOptional: nil, filler: 0) }
+        // 3 reps with a real filler improvement, still nil score.
+        outcomes += (0..<3).map { adOutcome(mode: .timed, focus: "close", at: 200 + Double($0), score: 2.0, hasScoreOptional: nil, filler: -1.0) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.movementReps == 3)      // only the filler-moving reps count; +2.0 score on nil-flag reps ignored
+    }
+
+    // MARK: Keying
+
+    @Test func verdictScopedPerModeFocusGroup_notGlobal() {
+        // The sustained-unfavorable group under test (suddenDeath|close) is given the
+        // NEWEST timestamps so the staleness escape-hatch doesn't decay its replace —
+        // this test isolates per-key scoping + whitespace normalisation, not staleness.
+        var outcomes = (0..<6).map { adOutcome(mode: .suddenDeath, focus: "close", at: 500 + Double($0), score: -0.9, hasScore: true) }
+        outcomes += (0..<6).map { adOutcome(mode: .suddenDeath, focus: "opener", at: 300 + Double($0), score: 0.9, hasScore: true) }
+        outcomes += (0..<6).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: 0.9, hasScore: true) }
+        // Whitespace variant must normalise into the "close" group (and stay newest).
+        outcomes.append(adOutcome(mode: .suddenDeath, focus: "  close  ", at: 510, score: -0.9, hasScore: true))
+        #expect(RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, focus: "close", in: outcomes)?.action == .replace)
+        #expect(RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, focus: "opener", in: outcomes)?.action == .reinforce)
+        #expect(RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)?.action == .reinforce)
+    }
+
+    @Test func modeOnlyOverload_aggregatesFocuses_forSelectionBias() {
+        // Same mode, two focuses, all unfavorable -> aggregate reaches the replace floor.
+        var outcomes = (0..<3).map { adOutcome(mode: .suddenDeath, focus: "close", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        outcomes += (0..<3).map { adOutcome(mode: .suddenDeath, focus: "opener", at: 200 + Double($0), score: -0.9, hasScore: true) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, in: outcomes)
+        #expect(verdict?.action == .replace)
+        #expect(verdict?.movementReps == 6)
+        #expect(verdict?.normalizedFocus == nil)
+    }
+
+    @Test func modeOnlyOverload_mixedFocuses_doesNotReplace() {
+        var outcomes = (0..<3).map { adOutcome(mode: .suddenDeath, focus: "close", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        outcomes += (0..<3).map { adOutcome(mode: .suddenDeath, focus: "opener", at: 200 + Double($0), score: 0.9, hasScore: true) }
+        #expect(RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, in: outcomes)?.action != .replace)
+    }
+
+    // MARK: Window + ordering + latch
+
+    @Test func windowCap_stalEvidenceBeyond12_excluded() {
+        // 9 oldest unfavorable, 6 newest favorable. Only the most-recent 12 count.
+        var outcomes = (0..<9).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        outcomes += (0..<6).map { adOutcome(mode: .timed, focus: "close", at: 500 + Double($0), score: 0.9, hasScore: true) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: outcomes)
+        #expect(verdict?.action == .reinforce)   // recent 12 are mostly favorable; stale history can't force replace
+        #expect(verdict?.action != .replace)
+    }
+
+    @Test func orderIndependence_givenDistinctTimestamps() {
+        let base = [-0.9, -0.9, -0.9, 0.9, 0.9, 0.9].enumerated().map { i, s in
+            adOutcome(mode: .timed, focus: "close", at: 100 + Double(i), score: s, hasScore: true)
+        }
+        let forward = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: base)
+        let reversed = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: base.reversed())
+        let shuffled = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .timed, focus: "close", in: [base[3], base[0], base[5], base[1], base[4], base[2]])
+        #expect(forward == reversed)
+        #expect(forward == shuffled)
+    }
+
+    @Test func latchDecays_whenModeUnrevisited() {
+        // 6 sustained-unfavorable reps for the key (old), then 8 newer followed reps for OTHER keys.
+        var outcomes = (0..<6).map { adOutcome(mode: .suddenDeath, focus: "open", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        outcomes += (0..<8).map { adOutcome(mode: .timed, focus: "other", at: 500 + Double($0), score: 0.2, hasScore: true) }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: .suddenDeath, focus: "open", in: outcomes)
+        #expect(verdict?.action == .vary)        // decayed from confident replace; the mode earns a fresh trial
+        #expect(verdict?.action != .replace)
+    }
+
+    // MARK: The single most important copy-safety lock
+
+    @Test func associationLanguage_noCausalClaim_everyEmittingBranch() {
+        let reinforce = (0..<3).map { adOutcome(mode: .timed, focus: "close", at: 100 + Double($0), score: 0.9, hasScore: true) }
+        let vary = (0..<3).map { adOutcome(mode: .suddenDeath, focus: "open", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        let replace = (0..<6).map { adOutcome(mode: .ahCounter, focus: "lean", at: 100 + Double($0), score: -0.9, hasScore: true) }
+        let lines = [
+            RecommendationAdaptationAnalyzer.adaptationRationale(mode: .timed, focus: "close", in: reinforce),
+            RecommendationAdaptationAnalyzer.adaptationRationale(mode: .suddenDeath, focus: "open", in: vary),
+            RecommendationAdaptationAnalyzer.adaptationRationale(mode: .ahCounter, focus: "lean", in: replace),
+        ]
+        for line in lines {
+            #expect(line != nil)
+            #expect(line?.contains("measurable rep") == true)        // honest count label, never bare "followed reps"
+            #expect(line?.contains("followed rep") == false)
+            for banned in ["failed", "caused", "because", "proves", "guarantee"] {
+                #expect(line?.contains(banned) == false)
+            }
+        }
+        // reinforce + vary speak of moving "alongside your metric"; replace says "trended down".
+        #expect(lines[0]?.contains("alongside your metric") == true)
+        #expect(lines[1]?.contains("alongside your metric") == true)
+        #expect(lines[2]?.contains("trended down") == true)
+    }
+
+    // MARK: Factory
+
+    private func adOutcome(
+        mode: PracticeMode,
+        focus: String?,
+        followed: Bool = true,
+        at completedAt: TimeInterval,
+        score: Double,
+        hasScore: Bool = true,
+        filler: Double = 0
+    ) -> RecommendationOutcome {
+        adOutcome(mode: mode, focus: focus, followed: followed, at: completedAt, score: score, hasScoreOptional: hasScore, filler: filler)
+    }
+
+    private func adOutcome(
+        mode: PracticeMode,
+        focus: String?,
+        followed: Bool = true,
+        at completedAt: TimeInterval,
+        score: Double,
+        hasScoreOptional: Bool?,
+        filler: Double = 0
+    ) -> RecommendationOutcome {
+        RecommendationOutcome(
+            id: UUID(),
+            fingerprint: "\(mode.rawValue)|\(focus ?? "")",
+            title: "Test prescription",
+            focus: focus,
+            target: nil,
+            mode: mode,
+            sessionID: UUID(),
+            followed: followed,
+            completedAt: Date(timeIntervalSince1970: completedAt),
+            scoreDelta: score,
+            hasComparableScore: hasScoreOptional,
+            fillerDelta: filler,
+            durationDelta: 0
+        )
+    }
+}
+
 @Suite("CoachMemoryEngineTests")
 struct CoachMemoryEngineTests {
 
@@ -10352,6 +11813,41 @@ struct CoachMemoryEngineTests {
         #expect(memory?.activeIntervention?.reviewBasis.contains("associated with worse results") == true)
     }
 
+    @Test func buildCreatesDurableCaseFileFromHypothesisInterventionAndReflectionPattern() {
+        let history = [
+            reflection(.nervous, at: 1_100),
+            reflection(.strong, at: 1_000),
+            reflection(.nervous, at: 900),
+            reflection(.nervous, at: 800),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            recommendationOutcomes: [
+                interventionOutcome(mode: .timed, completedAt: 1_100, scoreDelta: -1, fillerDelta: 2),
+                interventionOutcome(mode: .timed, completedAt: 1_000, scoreDelta: -2, fillerDelta: 1)
+            ],
+            latestReflection: history.first,
+            reflectionHistory: history,
+            now: Date(timeIntervalSince1970: 1_200)
+        )
+
+        #expect(memory?.caseFile?.hypothesis?.contains("verify over more reps") == true)
+        #expect(memory?.caseFile?.focus == .conciseSpeaking)
+        #expect(memory?.caseFile?.activeIntervention == "Timed for a decisive close")
+        #expect(memory?.caseFile?.observableTarget == "One clean final sentence")
+        #expect(memory?.caseFile?.successMeasure?.contains("score of") == true)
+        #expect(memory?.caseFile?.subjectivePattern?.contains("Across 3 of the last 4 reflections") == true)
+        #expect(memory?.caseFile?.nextMove == .adaptIntervention)
+        #expect(memory?.caseFile?.nextQuestion.contains("What broke") == true)
+    }
+
     @Test func caseFieldsDecodeMemoryPersistedBeforeCaseFile() throws {
         struct LegacyMemory: Codable {
             let updatedAt: Date
@@ -10404,7 +11900,9 @@ struct CoachMemoryEngineTests {
         #expect(decoded.adaptationLog == nil)
         #expect(decoded.lastReflectionSummary == nil)
         #expect(decoded.lastReflectionReview == nil)
+        #expect(decoded.reflectionPattern == nil)
         #expect(decoded.lastTransferReview == nil)
+        #expect(decoded.caseFile == nil)
         #expect(decoded.currentLever == .structure)
     }
 
@@ -10481,6 +11979,70 @@ struct CoachMemoryEngineTests {
         #expect(memory?.lastReflectionSummary == "they held back and played it safe — \"I softened the disagreement.\"")
         #expect(memory?.lastReflectionReview?.nextAction == .exploreAvoidance)
         #expect(memory?.lastReflectionReview?.note == "I softened the disagreement.")
+    }
+
+    @Test func buildStoresRepeatedReflectionPatternFromHistory() {
+        let history = [
+            reflection(.nervous, at: 1_000),
+            reflection(.strong, at: 900),
+            reflection(.nervous, at: 800),
+            reflection(.nervous, at: 700),
+            reflection(.heldBack, at: 600),
+        ]
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: nil,
+            latestReflection: history.first,
+            reflectionHistory: history,
+            now: Date(timeIntervalSince1970: 1_100)
+        )
+
+        #expect(memory?.reflectionPattern?.dominantFeeling == .nervous)
+        #expect(memory?.reflectionPattern?.dominantCount == 3)
+        #expect(memory?.reflectionPattern?.sampleSize == 5)
+        #expect(memory?.reflectionPattern?.confidence == .repeated)
+        #expect(memory?.reflectionPattern?.reportedLine.contains("Across 3 of the last 5 reflections") == true)
+    }
+
+    @Test func buildClearsStaleReflectionPatternWhenHistoryNoLongerRepeats() {
+        let previous = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 800),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            reflectionPattern: CoachReflectionPattern.build(from: [
+                reflection(.heldBack, at: 700),
+                reflection(.heldBack, at: 600),
+                reflection(.heldBack, at: 500),
+                reflection(.strong, at: 400),
+            ])
+        )
+
+        let memory = CoachMemoryEngine.build(
+            profile: profile(voice: .concise),
+            baseline: .empty,
+            sessions: [session()],
+            trends: [],
+            forwardPlan: nil,
+            previous: previous,
+            lastSessionID: nil,
+            reflectionHistory: [
+                reflection(.strong, at: 1_000),
+                reflection(.nervous, at: 900),
+                reflection(.heldBack, at: 800),
+            ],
+            now: Date(timeIntervalSince1970: 1_100)
+        )
+
+        #expect(memory?.reflectionPattern == nil)
     }
 
     @Test func buildCarriesRealWorldTransferReviewWithoutChangingInterventionVerdict() {
@@ -11080,6 +12642,19 @@ struct CoachMemoryEngineTests {
         )
     }
 
+    private func reflection(
+        _ feeling: ReflectionFeeling,
+        at time: TimeInterval,
+        note: String? = nil
+    ) -> SessionReflection {
+        SessionReflection(
+            sessionID: UUID(),
+            feeling: feeling,
+            note: note,
+            recordedAt: Date(timeIntervalSince1970: time)
+        )
+    }
+
     private func interventionOutcome(
         mode: PracticeMode,
         followed: Bool = true,
@@ -11102,6 +12677,346 @@ struct CoachMemoryEngineTests {
             fillerDelta: fillerDelta,
             durationDelta: 0
         )
+    }
+}
+
+// MARK: - Stated-vs-measured concordance (slice-4)
+//
+// Covers the deterministic seams of the diagnosis owner's stated-vs-measured
+// reconciliation: the pure `statedChallengeRead` mapping + evidence floor,
+// the `CoachMemoryEngine.build` wiring (focus is NEVER auto-flipped), the
+// single divergence question emitted through `CoachContextBuilder`, and
+// decode-safety of the new defaulted field from an old `CoachMemory` blob.
+@Suite("StatedChallengeConcordanceTests")
+struct StatedChallengeConcordanceTests {
+
+    // A profile whose stated `biggestChallenge` we control. Voice is fixed to
+    // `.concise` (its `primaryAlignedSkillArea` is `.conciseSpeaking`) only as
+    // a stable default; the concordance read is about `biggestChallenge`, not
+    // the voice.
+    private func profile(challenge: SpeakingChallenge) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: challenge,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    // Baseline whose `qualifyingSessionCount` (and therefore
+    // `overallConfidence`) we control to sit above/below the reliability
+    // floor. `.moderate` (5+) is reliable; `.tentative` (3-4) is not.
+    private func baseline(qualifying: Int) -> CommunicationBaseline {
+        var b = CommunicationBaseline.empty
+        b.qualifyingSessionCount = qualifying
+        return b
+    }
+
+    // High-confidence declining trend on `area` — drives the measured lever
+    // deterministically through `selectLever`'s first (trend) branch.
+    // Hand-traced score: declining(100) + weak(25) + high(10) = 135 >= 50.
+    private func decliningTrend(_ area: SkillArea) -> SkillTrend {
+        SkillTrend(
+            skillArea: area,
+            direction: .declining,
+            confidence: .high,
+            windowSize: 8,
+            currentLevel: .weak
+        )
+    }
+
+    private func session(id: UUID = UUID()) -> PracticeSession {
+        PracticeSession(
+            id: id,
+            transcript: "The update needs to be clear and calm.",
+            fillerWordCount: 2,
+            duration: 60,
+            date: Date(timeIntervalSince1970: 1_000),
+            mode: .timed,
+            score: 6,
+            intentLabel: nil
+        )
+    }
+
+    // MARK: Pure mapping + floor (statedChallengeRead)
+
+    @Test func statedChallengeMapsThroughForwardPlanSkillAreaMap() {
+        // The slice composes SpeakingChallenge.recommendedPriority ->
+        // ForwardPlanService.skillAreaForAIWeek. Lock that exact chain so a
+        // change to either map is caught here.
+        #expect(ForwardPlanService.skillAreaForAIWeek(focus: SpeakingChallenge.fillerWords.recommendedPriority) == .fillerReduction)
+        #expect(ForwardPlanService.skillAreaForAIWeek(focus: SpeakingChallenge.rambling.recommendedPriority) == .conciseSpeaking)
+        #expect(ForwardPlanService.skillAreaForAIWeek(focus: SpeakingChallenge.freezing.recommendedPriority) == .confidence)
+        #expect(ForwardPlanService.skillAreaForAIWeek(focus: SpeakingChallenge.rushing.recommendedPriority) == .pauseUsage)
+    }
+
+    @Test func readIsUnknownWithNoProfile() {
+        let read = CoachMemoryEngine.statedChallengeRead(
+            measuredArea: .fillerReduction,
+            profile: nil,
+            baseline: baseline(qualifying: 12)
+        )
+        #expect(read.concordance == .unknown)
+        #expect(read.statedArea == nil)
+    }
+
+    @Test func statedEqualsMeasuredAboveFloorIsAgree() {
+        // Stated .fillerWords -> .fillerReduction; measured .fillerReduction;
+        // baseline 6 qualifying (.moderate, reliable). -> agree, no area.
+        let read = CoachMemoryEngine.statedChallengeRead(
+            measuredArea: .fillerReduction,
+            profile: profile(challenge: .fillerWords),
+            baseline: baseline(qualifying: 6)
+        )
+        #expect(read.concordance == .agree)
+        #expect(read.statedArea == nil)
+    }
+
+    @Test func thinBaselineDefersToStatedChallenge() {
+        // Stated .rambling -> .conciseSpeaking; measured .fillerReduction
+        // (a divergence on paper) but baseline only 3 qualifying
+        // (.tentative, below floor). -> deferred, NOT divergent, no question.
+        let read = CoachMemoryEngine.statedChallengeRead(
+            measuredArea: .fillerReduction,
+            profile: profile(challenge: .rambling),
+            baseline: baseline(qualifying: 3)
+        )
+        #expect(read.concordance == .deferred)
+        #expect(read.statedArea == nil)
+    }
+
+    @Test func thinBaselineDefersEvenWhenStatedEqualsMeasured() {
+        // Below the floor we defer regardless of agreement — the measured
+        // read isn't trustworthy enough to even confirm the stated one.
+        let read = CoachMemoryEngine.statedChallengeRead(
+            measuredArea: .conciseSpeaking,
+            profile: profile(challenge: .rambling),
+            baseline: baseline(qualifying: 4)
+        )
+        #expect(read.concordance == .deferred)
+    }
+
+    @Test func statedDiffersFromMeasuredAboveFloorIsDivergent() {
+        // Stated .freezing -> .confidence; measured .fillerReduction;
+        // baseline 12 qualifying (.established, reliable). -> divergent and
+        // the stated area is carried so the coach can name it.
+        let read = CoachMemoryEngine.statedChallengeRead(
+            measuredArea: .fillerReduction,
+            profile: profile(challenge: .freezing),
+            baseline: baseline(qualifying: 12)
+        )
+        #expect(read.concordance == .divergent)
+        #expect(read.statedArea == .confidence)
+    }
+
+    @Test func exactlyAtFloorIsAboveFloor() {
+        // 5 qualifying == .moderate == isReliable true (boundary guard so
+        // the floor isn't off-by-one). Stated .rushing -> .pauseUsage;
+        // measured .pauseUsage -> agree (above floor, equal).
+        let read = CoachMemoryEngine.statedChallengeRead(
+            measuredArea: .pauseUsage,
+            profile: profile(challenge: .rushing),
+            baseline: baseline(qualifying: 5)
+        )
+        #expect(read.concordance == .agree)
+    }
+
+    // MARK: build() wiring — never auto-flips the stored focus
+
+    @Test func buildSetsAgreeWithoutChangingFocus() {
+        let sessionID = UUID()
+        let memory = CoachMemoryEngine.build(
+            profile: profile(challenge: .fillerWords),   // -> .fillerReduction
+            baseline: baseline(qualifying: 6),
+            sessions: [session(id: sessionID)],
+            trends: [decliningTrend(.fillerReduction)],  // measured lever
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: sessionID,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.currentLever == .fillerReduction)
+        #expect(memory?.statedChallengeConcordance == .agree)
+        #expect(memory?.statedChallengeArea == nil)
+    }
+
+    @Test func buildSetsDivergentAndLeavesStoredFocusUnchanged() {
+        // The honesty invariant: the stored focus stays the MEASURED lever,
+        // never auto-flipped to what the user stated. The divergence is a
+        // flag + a question, not a switch.
+        let sessionID = UUID()
+        let memory = CoachMemoryEngine.build(
+            profile: profile(challenge: .freezing),      // stated -> .confidence
+            baseline: baseline(qualifying: 12),
+            sessions: [session(id: sessionID)],
+            trends: [decliningTrend(.fillerReduction)],  // measured -> .fillerReduction
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: sessionID,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        // Focus UNCHANGED — still the measured lever, not the stated area.
+        #expect(memory?.currentLever == .fillerReduction)
+        #expect(memory?.statedChallengeConcordance == .divergent)
+        #expect(memory?.statedChallengeArea == .confidence)
+    }
+
+    @Test func buildDefersBelowFloorAndKeepsMeasuredFocus() {
+        let sessionID = UUID()
+        let memory = CoachMemoryEngine.build(
+            profile: profile(challenge: .rambling),      // stated -> .conciseSpeaking
+            baseline: baseline(qualifying: 3),           // below floor
+            sessions: [session(id: sessionID)],
+            trends: [decliningTrend(.fillerReduction)],  // measured -> .fillerReduction
+            forwardPlan: nil,
+            previous: nil,
+            lastSessionID: sessionID,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        #expect(memory?.currentLever == .fillerReduction)
+        #expect(memory?.statedChallengeConcordance == .deferred)
+        #expect(memory?.statedChallengeArea == nil)
+    }
+
+    // MARK: Context emission — exactly one divergence question
+
+    @Test func divergentMemoryEmitsExactlyOneDivergenceQuestion() {
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 12,
+            evidenceConfidence: .established,
+            voice: .concise,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .high,
+            currentLeverBasis: "declining trend",
+            goalFit: .offGoal,
+            statedChallengeConcordance: .divergent,
+            statedChallengeArea: .confidence,
+            strengths: [],
+            blockers: []
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(challenge: .freezing),
+            baseline: baseline(qualifying: 12),
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+        let occurrences = ctx.components(separatedBy: "Stated-vs-measured:").count - 1
+        #expect(occurrences == 1, "Exactly one divergence line expected. Got: \(occurrences)")
+        #expect(ctx.contains("came in wanting to work on \(SkillArea.confidence.displayName)"))
+        #expect(ctx.contains("point more at \(SkillArea.fillerReduction.displayName)"))
+        #expect(ctx.contains("do not silently switch the focus they stated"))
+    }
+
+    @Test func agreeMemoryEmitsAffirmationNotQuestion() {
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            voice: .concise,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .high,
+            currentLeverBasis: "declining trend",
+            goalFit: .aligned,
+            statedChallengeConcordance: .agree,
+            statedChallengeArea: nil,
+            strengths: [],
+            blockers: []
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(challenge: .fillerWords),
+            baseline: baseline(qualifying: 6),
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+        #expect(ctx.contains("the reps line up with the \(SkillArea.fillerReduction.displayName) challenge"))
+        #expect(!ctx.contains("which to anchor to"))
+        #expect(!ctx.contains("came in wanting to work on"))
+    }
+
+    @Test func deferredMemoryEmitsNoConcordanceLine() {
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 3,
+            evidenceConfidence: .tentative,
+            voice: .concise,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .high,
+            currentLeverBasis: "declining trend",
+            goalFit: .offGoal,
+            statedChallengeConcordance: .deferred,
+            statedChallengeArea: nil,
+            strengths: [],
+            blockers: []
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(challenge: .rambling),
+            baseline: baseline(qualifying: 3),
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: memory
+        )
+        #expect(!ctx.contains("Stated-vs-measured:"))
+    }
+
+    // MARK: Decode-safety — old blob without the new keys
+
+    @Test func decodesOldCoachMemoryBlobWithoutConcordanceKeys() throws {
+        // A CoachMemory persisted before slice-4 carries neither
+        // `statedChallengeConcordance` nor `statedChallengeArea`. It must
+        // decode cleanly with the defaulted (.unknown / nil) values — no
+        // throw, no migration.
+        let legacy = """
+        {
+          "updatedAt": 1000,
+          "evidenceCount": 8,
+          "evidenceConfidence": 2,
+          "currentLever": "fillerReduction",
+          "goalFit": "aligned",
+          "strengths": [],
+          "blockers": []
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: legacy)
+        #expect(decoded.statedChallengeConcordance == .unknown)
+        #expect(decoded.statedChallengeArea == nil)
+        #expect(decoded.currentLever == .fillerReduction)
+    }
+
+    @Test func concordanceFieldSurvivesEncodeDecodeRoundTrip() throws {
+        let memory = CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 12,
+            evidenceConfidence: .established,
+            voice: .concise,
+            currentLever: .fillerReduction,
+            goalFit: .offGoal,
+            statedChallengeConcordance: .divergent,
+            statedChallengeArea: .confidence,
+            strengths: [],
+            blockers: []
+        )
+        let data = try JSONEncoder().encode(memory)
+        let decoded = try JSONDecoder().decode(CoachMemory.self, from: data)
+        #expect(decoded.statedChallengeConcordance == .divergent)
+        #expect(decoded.statedChallengeArea == .confidence)
     }
 }
 
@@ -11259,6 +13174,8 @@ struct CoachMemoryStoreTests {
         #expect(reloaded.currentMemory?.lastTransferReview?.nextAction == .exploreWhatTransferred)
         #expect(reloaded.currentMemory?.lastTransferReview?.momentTitle == "Board update")
         #expect(reloaded.currentMemory?.activeIntervention?.reviewStatus == .awaitingAttempt)
+        #expect(reloaded.currentMemory?.caseFile?.transferRead?.contains("Board update") == true)
+        #expect(reloaded.currentMemory?.caseFile?.activeIntervention == "Timed for a decisive close")
     }
 
     private func baseline(count: Int) -> CommunicationBaseline {
@@ -12851,6 +14768,214 @@ struct AskNoumChipFilterTests {
     }
 }
 
+// MARK: - S3 — Recent-session digest + AI-starter fallback contract
+//
+// Covers the two NEW deterministic seams added for session-aware chips +
+// dynamic empty-state starters. `parseAndFilterChips` itself is already
+// exercised in `AskNoumChipFilterTests` / `CoachContextBuilderChipParserTests`
+// — here we cover (1) `recentSessionDigestForChips` (the privacy-bounded
+// summary that feeds both the follow-up chips and the AI starters) and
+// (2) the contract that the AI-starter path reuses `parseAndFilterChips` as
+// its grounding gate, so a short/ungrounded batch yields nil and the caller
+// falls back to the deterministic catalog.
+
+@Suite("AskNoumStarterDigestTests")
+struct AskNoumStarterDigestTests {
+
+    // Local factory — mirrors the positional-init + var-assignment shape the
+    // rest of the suite uses for PracticeSession.
+    private func session(
+        score: Int? = nil,
+        theme: PromptTheme? = nil,
+        intentLabel: String? = nil,
+        headline: String? = nil,
+        transcript: String = "raw transcript words the user actually said out loud",
+        date: Date = Date()
+    ) -> PracticeSession {
+        var s = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 0,
+            duration: 30,
+            date: date
+        )
+        s.score = score
+        s.theme = theme
+        s.intentLabel = intentLabel
+        s.headline = headline
+        return s
+    }
+
+    // MARK: - recentSessionDigestForChips
+
+    @Test func digestIsNilOnEmptySessions() {
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [],
+            baseline: .empty
+        )
+        #expect(digest == nil)
+    }
+
+    @Test func digestIsNilWhenSessionsCarryNoSignal() {
+        // A rep with no score, no theme, no intent, no headline produces no
+        // row — and an all-bare history produces no digest at all.
+        let bare = session(score: nil, theme: nil, intentLabel: nil, headline: nil)
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [bare],
+            baseline: .empty
+        )
+        #expect(digest == nil)
+    }
+
+    @Test func digestIncludesScoreAndIntentLabels() throws {
+        let s = session(
+            score: 7,
+            theme: .workCareer,
+            intentLabel: "Cut fillers",
+            headline: "Strong open, lost the thread mid-answer"
+        )
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [s],
+            baseline: .empty
+        )
+        let unwrapped = try #require(digest)
+        #expect(unwrapped.contains("score 7/10"))
+        #expect(unwrapped.contains("aimed for Cut fillers"))
+        #expect(unwrapped.contains("Work & Career"))      // theme rawValue
+        #expect(unwrapped.contains("Strong open"))         // headline survives
+        #expect(unwrapped.contains("RECENT REPS"))         // labelled block
+    }
+
+    @Test func digestIsBoundedToLimit() throws {
+        // Five scored reps, limit 2 → exactly two "- " rows.
+        let sessions = (1...5).map { i in
+            session(score: i + 3, theme: .leadership, date: Date().addingTimeInterval(Double(i)))
+        }
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: sessions,
+            baseline: .empty,
+            limit: 2
+        )
+        let unwrapped = try #require(digest)
+        let rowCount = unwrapped
+            .split(separator: "\n")
+            .filter { $0.hasPrefix("- ") }
+            .count
+        #expect(rowCount == 2)
+    }
+
+    @Test func digestTakesMostRecentByDate() throws {
+        // Unsorted input — the digest must pick the newest two by date,
+        // not by array order. Newest two scores are 9 and 8.
+        let old = session(score: 4, date: Date().addingTimeInterval(-300))
+        let newest = session(score: 9, date: Date().addingTimeInterval(0))
+        let middle = session(score: 8, date: Date().addingTimeInterval(-100))
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [old, newest, middle],
+            baseline: .empty,
+            limit: 2
+        )
+        let unwrapped = try #require(digest)
+        #expect(unwrapped.contains("score 9/10"))
+        #expect(unwrapped.contains("score 8/10"))
+        #expect(!unwrapped.contains("score 4/10"))
+    }
+
+    @Test func digestNeverPastesRawTranscript() throws {
+        // PRIVACY invariant — the raw spoken words must never appear in the
+        // digest. Only score / theme / intent / coach-authored headline.
+        let secret = "MY_SECRET_RAW_TRANSCRIPT_PHRASE"
+        let s = session(
+            score: 6,
+            theme: .general,
+            intentLabel: "Tighten structure",
+            headline: "Clear and direct",
+            transcript: "Here is \(secret) that I said in the rep."
+        )
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [s],
+            baseline: .empty
+        )
+        let unwrapped = try #require(digest)
+        #expect(!unwrapped.contains(secret))
+    }
+
+    @Test func digestContainsNoExclamationOrEmoji() throws {
+        // Brand-voice safety — even though the digest is model-input (not
+        // user-visible), keep it clean so a model can't echo an exclamation
+        // straight into a chip. Headlines with a trailing "!" are stripped.
+        let s = session(
+            score: 8,
+            theme: .funRandom,
+            intentLabel: "Slow down",
+            headline: "Nailed the landing!"
+        )
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [s],
+            baseline: .empty
+        )
+        let unwrapped = try #require(digest)
+        #expect(!unwrapped.contains("!"))
+        for scalar in unwrapped.unicodeScalars {
+            #expect(!(scalar.properties.isEmoji && scalar.value > 0x238C))
+        }
+    }
+
+    @Test func digestSkipsAllThemeButKeepsRealThemes() throws {
+        // `.all` is a UI filter sentinel, not a real session theme — it must
+        // not leak into the digest. A real theme must.
+        let allTheme = session(score: 5, theme: .all)
+        let realTheme = session(score: 6, theme: .interviewPrep, date: Date().addingTimeInterval(10))
+        let digest = CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [allTheme, realTheme],
+            baseline: .empty
+        )
+        let unwrapped = try #require(digest)
+        #expect(!unwrapped.contains("All Themes"))
+        #expect(unwrapped.contains("Interview Prep"))
+    }
+
+    @Test func digestRejectsNonPositiveLimit() {
+        let s = session(score: 7)
+        #expect(CoachContextBuilder.recentSessionDigestForChips(
+            sessions: [s], baseline: .empty, limit: 0) == nil)
+    }
+
+    // MARK: - AI-starter fallback contract (reuses parseAndFilterChips)
+    //
+    // The AI-starter path (`generateAIStarterPrompts`) cannot be exercised
+    // without a provider, but its grounding gate IS `parseAndFilterChips`
+    // — identical to the follow-up chip path. These assert the contract the
+    // caller relies on: a full clean batch parses; a short/dirty batch
+    // returns nil, at which point `AskNoumView.displayedStarters` falls back
+    // to the deterministic `starterPrompts(...)` catalog.
+
+    @Test func aiStarterCleanBatchParsesToExactCount() {
+        let raw = """
+        How should I open my board pitch?
+        What cut my last rep short?
+        Plan my next 7 days.
+        """
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips?.count == 3)
+    }
+
+    @Test func aiStarterShortBatchReturnsNilSoCallerFallsBack() {
+        // Only two survive (the exclamation line is dropped) → nil → the
+        // empty-state ForEach renders the deterministic catalog instead.
+        let raw = "Open my pitch?\nGreat work today!\nNext 7 days?"
+        let chips = CoachContextBuilder.parseAndFilterChips(raw, count: 3)
+        #expect(chips == nil)
+        // And the deterministic catalog the caller falls back to is always
+        // non-empty for any voice.
+        let fallback = CoachContextBuilder.starterPrompts(
+            bigMoment: nil,
+            baseline: .empty,
+            voice: .authoritative
+        )
+        #expect(!fallback.isEmpty)
+    }
+}
+
 // MARK: - M24 Track 1 — CoachPersona catalogue contract
 
 struct CoachPersonaTests {
@@ -12924,7 +15049,9 @@ struct PostRepCoachNoteServiceDeterministicTests {
         wordCount: Int = 120,
         voice: SpeakingStyleGoal? = nil,
         baselineFillerRate: Double? = nil,
-        baselinePaceWPM: Double? = nil
+        baselinePaceWPM: Double? = nil,
+        transcript: String = "",
+        prompt: String = ""
     ) -> PostRepCoachNoteInput {
         PostRepCoachNoteInput(
             sessionID: UUID(),
@@ -12938,7 +15065,9 @@ struct PostRepCoachNoteServiceDeterministicTests {
             baselineFillerRate: baselineFillerRate,
             baselinePaceWPM: baselinePaceWPM,
             bigMoment: nil,
-            bigMomentDaysUntil: nil
+            bigMomentDaysUntil: nil,
+            transcript: transcript,
+            prompt: prompt
         )
     }
 
@@ -13121,6 +15250,492 @@ struct PostRepCoachNoteServiceDeterministicTests {
     @Test func ensureNoExclamationsReplacesWithPeriod() {
         let safe = PostRepCoachNoteService.ensureNoExclamations(in: "Nice rep! Hold the line!")
         #expect(safe == "Nice rep. Hold the line.")
+    }
+
+    // MARK: - Prompt-grounded read: defaulted prompt field + presence gate
+
+    /// The new `prompt` field defaults to "" so the 30+ existing fixtures
+    /// (which never pass it) still compile, and the deterministic path is
+    /// byte-identical (the deterministic note never reads `prompt`).
+    @Test func postRepInputPromptFieldDefaultsEmptyFixturesCompile() {
+        let input = PostRepCoachNoteInput(
+            sessionID: UUID(),
+            mode: .timed, score: 7, fillerCount: 1,
+            duration: 60, wordCount: 100, voice: nil,
+            intentLabel: nil, baselineFillerRate: nil, baselinePaceWPM: nil,
+            bigMoment: nil, bigMomentDaysUntil: nil
+        )
+        #expect(input.prompt == "")
+        // Empty transcript -> presence gate passes (nothing to quote).
+        #expect(PostRepCoachNoteService.engagesTranscript("Any note about the rep.", input: input))
+        // Deterministic note unaffected by the absent prompt.
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        #expect(note.isAIBacked == false)
+    }
+
+    @Test func engagesTranscriptSharedContentWordPasses() {
+        let input = makeInput(transcript: "I think we should ship the revenue dashboard this week.")
+        #expect(PostRepCoachNoteService.engagesTranscript("You opened with the revenue point cleanly.", input: input))
+    }
+
+    @Test func engagesTranscriptVerbatimSubstringPasses() {
+        // The transcript's content words are all short function words that the
+        // >=4-char content-word filter drops, so path 1 (shared content word)
+        // can't fire — but the note contains a >=12-char verbatim slice
+        // ("can do it now"), so path 2 must. Isolates the substring branch.
+        let input = makeInput(transcript: "We can do it now and we will.")
+        let note = "You said you can do it now, so commit to that."
+        #expect(PostRepCoachNoteService.engagesTranscript(note, input: input))
+    }
+
+    @Test func engagesTranscriptStatRestateOnlyFailsFallsBack() {
+        let input = makeInput(transcript: "We launched the new onboarding flow to all customers today.")
+        // Pure stat-restate: zero shared content words, no verbatim slice.
+        #expect(!PostRepCoachNoteService.engagesTranscript("Scored 7. The fundamentals held.", input: input))
+    }
+
+    @Test func engagesTranscriptEmptyTranscriptPasses() {
+        let input = makeInput(transcript: "")
+        // Nothing to quote — the gate must not block IM/silent reps.
+        #expect(PostRepCoachNoteService.engagesTranscript("Any abstract coaching note.", input: input))
+    }
+
+    // MARK: - Prompt-grounded read: userPrompt question injection
+
+    @Test func postRepUserPromptInjectsQuestionWhenPresent() {
+        let input = makeInput(
+            transcript: "We should ship because the data is clear.",
+            prompt: "Should we ship the feature this week?"
+        )
+        let user = PostRepCoachNoteService.userPrompt(from: input)
+        #expect(user.contains("THE QUESTION ASKED: Should we ship the feature this week?"))
+        // The question line lands before the transcript block.
+        if let qRange = user.range(of: "THE QUESTION ASKED:"),
+           let tRange = user.range(of: "THIS REP — TRANSCRIPT") {
+            #expect(qRange.lowerBound < tRange.lowerBound)
+        } else {
+            Issue.record("Expected both the question line and the transcript block in the prompt")
+        }
+    }
+
+    @Test func postRepUserPromptOmitsQuestionWhenEmpty() {
+        let input = makeInput(
+            transcript: "We should ship because the data is clear.",
+            prompt: ""
+        )
+        let user = PostRepCoachNoteService.userPrompt(from: input)
+        // Match the injected line specifically (colon+space) — the transcript-block
+        // header also contains the bare phrase "THE QUESTION ASKED" without a colon.
+        #expect(!user.contains("THE QUESTION ASKED: "))
+        // No stray blank-only artefact from an omitted question.
+        #expect(!user.contains("\n\n\n"))
+    }
+}
+
+// MARK: - Initiative #9 — Coach Read parity (AICoachService deepening)
+//
+// Tests the deterministic-observable seams of the deepened "Coach Read"
+// (AICoachService.generateDeeperFeedback): the deterministic fallback that runs
+// offline / non-English / on every gated failure, the transcript-grounding
+// gate, the brand-voice contract, the schema-decode stability, the defaulted-
+// init back-compat, the question-aware user prompt, and the pure call-site
+// helpers (recent-summaries + baseline extraction). It does NOT test live
+// model output (no LLM on the build host) — only the substrate that determines
+// whether the read is grounded, honest, well-formed, and never worse offline.
+
+struct CoachReadParityTests {
+
+    private func makeInput(
+        transcript: String = "Here is the core of what I want to say today.",
+        mode: PracticeMode = .timed,
+        score: Int? = 7,
+        fillerCount: Int = 2,
+        duration: TimeInterval = 60,
+        wordsPerMinute: Int = 130,
+        speakingIdentity: String = "Composed speaker",
+        prompt: String = "",
+        voice: SpeakingStyleGoal? = nil,
+        recentSessionSummaries: [String] = [],
+        baselineFillerRate: Double? = nil,
+        baselinePaceWPM: Double? = nil
+    ) -> AICoachSessionInput {
+        AICoachSessionInput(
+            transcript: transcript,
+            mode: mode,
+            score: score,
+            fillerCount: fillerCount,
+            duration: duration,
+            wordsPerMinute: wordsPerMinute,
+            speakingIdentity: speakingIdentity,
+            prompt: prompt,
+            voice: voice,
+            recentSessionSummaries: recentSessionSummaries,
+            baselineFillerRate: baselineFillerRate,
+            baselinePaceWPM: baselinePaceWPM
+        )
+    }
+
+    // 1. deterministicFeedback is always well-formed across the input space.
+    @Test func deterministicFeedbackIsAlwaysWellFormed() {
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for voice in voices {
+            for score in [nil, 3, 5, 7, 9] {
+                for fillers in [0, 3, 8] {
+                    let fb = AICoachService.deterministicFeedback(
+                        input: makeInput(score: score, fillerCount: fillers, voice: voice)
+                    )
+                    #expect(fb.strengths.count == 2,
+                            "voice \(String(describing: voice)) score \(String(describing: score)) fillers \(fillers): strengths=\(fb.strengths.count)")
+                    #expect(fb.strengths.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+                    #expect(!fb.keyImprovement.trimmingCharacters(in: .whitespaces).isEmpty)
+                    #expect(!fb.suggestedDrill.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    // 2. deterministicFeedback honors the brand-voice contract across the sweep.
+    @Test func deterministicFeedbackHonorsBrandVoiceContract() {
+        let voices: [SpeakingStyleGoal?] = SpeakingStyleGoal.allCases.map { Optional($0) } + [nil]
+        for voice in voices {
+            for score in [nil, 3, 5, 7, 9] {
+                for fillers in [0, 3, 8] {
+                    let fb = AICoachService.deterministicFeedback(
+                        input: makeInput(score: score, fillerCount: fillers, voice: voice)
+                    )
+                    #expect(AICoachService.passesBrandVoiceContract(fb),
+                            "voice \(String(describing: voice)) score \(String(describing: score)) fillers \(fillers) violates brand voice")
+                    // Explicit no-exclamation / no-chirp sweep over every field.
+                    for field in fb.strengths + [fb.keyImprovement, fb.suggestedDrill, fb.revisedOpening] {
+                        let lower = field.lowercased()
+                        #expect(!field.contains("!"))
+                        #expect(!lower.contains("awesome"))
+                        #expect(!lower.contains("great job"))
+                        #expect(!lower.contains("let's"))
+                        #expect(!lower.contains("lets "))
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. .answered (point led) -> "engaged the question directly" keyImprovement.
+    @Test func deterministicVerdictAnsweredLeadsToAnsweredKeyImprovement() {
+        // Prompt content words (>=4, non-stop): adopt, four, work, week, policy.
+        let prompt = "Should we adopt a four day work week policy"
+        // Single-sentence answer that LEADS with adopt + policy + work + week
+        // (lead overlap 4/5 = 0.80 >= strong), and >= 12 words.
+        let transcript = "We should adopt the policy because the data shows work output stays strong across the week."
+        let read = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: transcript)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) == .answered)
+
+        let fb = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: transcript, prompt: prompt)
+        )
+        let lower = fb.keyImprovement.lowercased()
+        #expect(lower.contains("engaged the question directly"))
+        #expect(lower.contains("led with the point"))
+        #expect(!lower.contains("arrived late"))
+    }
+
+    // 4. .buried (point present but late) -> lead-with-the-point keyImprovement.
+    @Test func deterministicVerdictBuriedLeadsToLeadWithPointKeyImprovement() {
+        let prompt = "Should we adopt a four day work week policy"
+        // Genuine buried lede: the lead echoes none of the question's key terms
+        // ("There are a lot of competing pressures…" -> lead overlap 0/5), but
+        // the point IS present in the final clause (whole overlap 5/5). This is
+        // the only configuration that earns the positional "arrived late" copy
+        // — and now it is TRUE, not asserted. Pre-#10 this branch fired for any
+        // low-overlap rep, including off-topic ones where the point never
+        // arrived at all (the honesty mismatch this slice closes).
+        let transcript = "There are a lot of competing pressures on the calendar right now and people are stretched. After thinking it through carefully I would adopt the four day work week policy."
+        let read = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: transcript)
+        #expect(read.overlap >= PracticeEvaluator.relevanceStrongOverlap)
+        #expect(read.firstSentenceOverlap < PracticeEvaluator.relevanceWeakOverlap)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) == .buried)
+
+        let fb = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: transcript, prompt: prompt)
+        )
+        let lower = fb.keyImprovement.lowercased()
+        #expect(lower.contains("lead with your point"))
+        #expect(lower.contains("arrived late"))
+    }
+
+    // 4b. Off-topic low-overlap rep -> `.partial`, and the deterministic copy
+    // must NOT claim "arrived late" (the point never arrived). The honesty fix.
+    @Test func deterministicOffTopicLowOverlapDoesNotClaimArrivedLate() {
+        let prompt = "Should we adopt a four day work week policy"
+        // Different topic — zero content-word overlap, but >= 12 words.
+        let transcript = "Yesterday morning the garden looked lovely after the rain and the birds were singing softly outside."
+        let read = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: transcript)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: read) == .partial)
+
+        let fb = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: transcript, prompt: prompt)
+        )
+        let lower = fb.keyImprovement.lowercased()
+        #expect(!lower.contains("arrived late"))
+        // Still coaches leading with the point — the constructive move applies.
+        #expect(lower.contains("first sentence"))
+    }
+
+    // 5. No substance claim below the evidence floor (no fake certainty).
+    @Test func deterministicNoSubstanceClaimBelowEvidenceFloor() {
+        // (a) Empty prompt -> verdict nil regardless of transcript length.
+        let longTranscript = "We should adopt the policy because the data shows work output stays strong across the week."
+        let readNoPrompt = PracticeEvaluator.promptRelevance(prompt: nil, transcript: longTranscript)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: readNoPrompt) == nil)
+        let fbNoPrompt = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: longTranscript, prompt: "")
+        )
+        let lowerA = fbNoPrompt.keyImprovement.lowercased()
+        #expect(!lowerA.contains("engaged the question"))
+        #expect(!lowerA.contains("arrived late"))
+        #expect(!lowerA.contains("lead with your point"))
+
+        // (b) Thin transcript (< 12 words) -> verdict nil even with a prompt.
+        let thin = "Yes I think so."
+        let prompt = "Should we adopt a four day work week policy"
+        let readThin = PracticeEvaluator.promptRelevance(prompt: prompt, transcript: thin)
+        #expect(PracticeEvaluator.promptAnswerVerdict(for: readThin) == nil)
+        let fbThin = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: thin, wordsPerMinute: 180, prompt: prompt)
+        )
+        let lowerB = fbThin.keyImprovement.lowercased()
+        #expect(!lowerB.contains("engaged the question"))
+        #expect(!lowerB.contains("arrived late"))
+    }
+
+    // 6. Quotes the opener when present; never fabricates one when absent.
+    @Test func deterministicQuotesOpenerWhenPresent() {
+        let transcript = "Productivity research is genuinely complicated to summarise."
+        let fb = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: transcript, voice: .executive)
+        )
+        // strengths[0] or revisedOpening should carry a verbatim slice of the
+        // opener — "productivity" is a long content word from the first line.
+        let joined = (fb.strengths.first ?? "") + " " + fb.revisedOpening
+        #expect(joined.lowercased().contains("productivity"))
+
+        // Too-short transcript -> no fabricated quote, empty revisedOpening.
+        let shortFb = AICoachService.deterministicFeedback(
+            input: makeInput(transcript: "Yes.", score: nil, fillerCount: 0)
+        )
+        #expect(shortFb.revisedOpening.isEmpty)
+    }
+
+    // 7. engagesTranscript rejects a stat-restate that ignores the words.
+    @Test func engagesTranscriptRejectsStatRestate() {
+        let transcript = "Our quarterly revenue pipeline needs a tighter forecast model."
+        let fb = AICoachFeedback(
+            strengths: ["Clean delivery."],
+            keyImprovement: "Work on structure and confidence.",
+            suggestedDrill: "Practice pausing.",
+            revisedOpening: "Open with the main idea."
+        )
+        #expect(AICoachService.engagesTranscript(fb, transcript: transcript) == false)
+    }
+
+    // 8. engagesTranscript accepts a shared content word, a verbatim slice, and
+    //    an empty transcript.
+    @Test func engagesTranscriptAcceptsSharedContentWord() {
+        let transcript = "Our quarterly revenue pipeline needs a tighter forecast model."
+        // Shared content word "pipeline" in keyImprovement.
+        let sharedWord = AICoachFeedback(
+            strengths: ["Clean delivery."],
+            keyImprovement: "Your point about the pipeline was the strongest moment.",
+            suggestedDrill: "Practice pausing.",
+            revisedOpening: ""
+        )
+        #expect(AICoachService.engagesTranscript(sharedWord, transcript: transcript) == true)
+
+        // A revisedOpening that quotes a verbatim phrase of the transcript
+        // passes (here via both the shared content word and the >= 12-char
+        // slice "quarterly re…" — either path returns true).
+        let verbatim = AICoachFeedback(
+            strengths: ["Clean delivery."],
+            keyImprovement: "Lead sooner.",
+            suggestedDrill: "Practice pausing.",
+            revisedOpening: "Open on the quarterly revenue, then the model."
+        )
+        #expect(AICoachService.engagesTranscript(verbatim, transcript: transcript) == true)
+
+        // Empty transcript -> never blocks.
+        #expect(AICoachService.engagesTranscript(sharedWord, transcript: "") == true)
+        #expect(AICoachService.engagesTranscript(sharedWord, transcript: "   ") == true)
+    }
+
+    // 9. passesBrandVoiceContract rejects exclamation + chirp; accepts clean.
+    @Test func passesBrandVoiceContractRejectsExclamationAndChirp() {
+        let clean = AICoachFeedback(
+            strengths: ["You opened with conviction.", "Pace stayed steady."],
+            keyImprovement: "Tighten the close so the last line lands.",
+            suggestedDrill: "Pause between your two strongest points.",
+            revisedOpening: "Lead with the conclusion, then support it."
+        )
+        #expect(AICoachService.passesBrandVoiceContract(clean) == true)
+
+        let exclamation = AICoachFeedback(
+            strengths: ["Great rep!", "Pace stayed steady."],
+            keyImprovement: "Tighten the close.",
+            suggestedDrill: "Pause more.",
+            revisedOpening: ""
+        )
+        #expect(AICoachService.passesBrandVoiceContract(exclamation) == false)
+
+        let chirp = AICoachFeedback(
+            strengths: ["You opened well.", "Pace steady."],
+            keyImprovement: "Awesome work — keep it up.",
+            suggestedDrill: "Pause more.",
+            revisedOpening: ""
+        )
+        #expect(AICoachService.passesBrandVoiceContract(chirp) == false)
+
+        let lets = AICoachFeedback(
+            strengths: ["You opened well.", "Pace steady."],
+            keyImprovement: "Tighten the close.",
+            suggestedDrill: "Let's practice pausing.",
+            revisedOpening: ""
+        )
+        #expect(AICoachService.passesBrandVoiceContract(lets) == false)
+
+        let greatJob = AICoachFeedback(
+            strengths: ["Great job on the open.", "Pace steady."],
+            keyImprovement: "Tighten the close.",
+            suggestedDrill: "Pause more.",
+            revisedOpening: ""
+        )
+        #expect(AICoachService.passesBrandVoiceContract(greatJob) == false)
+    }
+
+    // 10. The wire schema the render path depends on decodes unchanged.
+    @Test func aiCoachFeedbackSchemaDecodesUnchanged() throws {
+        let json = #"{"strengths":["a","b"],"keyImprovement":"x","suggestedDrill":"y","revisedOpening":"z"}"#
+        let data = json.data(using: .utf8)!
+        let fb = try JSONDecoder().decode(AICoachFeedback.self, from: data)
+        #expect(fb.strengths == ["a", "b"])
+        #expect(fb.keyImprovement == "x")
+        #expect(fb.suggestedDrill == "y")
+        #expect(fb.revisedOpening == "z")
+    }
+
+    // 11. The old 7-arg positional construction still compiles and defaults
+    //     the new fields. (Compile-guard for the defaulted init.)
+    @Test func inputDefaultsKeepLegacyConstructionCompiling() {
+        let input = AICoachSessionInput(
+            transcript: "Hello there friends",
+            mode: .timed,
+            score: 5,
+            fillerCount: 1,
+            duration: 30,
+            wordsPerMinute: 120,
+            speakingIdentity: "Speaker"
+        )
+        #expect(input.prompt == "")
+        #expect(input.voice == nil)
+        #expect(input.recentSessionSummaries.isEmpty)
+        #expect(input.baselineFillerRate == nil)
+        #expect(input.baselinePaceWPM == nil)
+    }
+
+    // 12. The user prompt omits the question / continuity / baseline lines when
+    //     those inputs are absent (no placeholder injected).
+    @Test func userPromptOmitsQuestionAndContinuityWhenAbsent() {
+        let input = makeInput(prompt: "", recentSessionSummaries: [],
+                              baselineFillerRate: nil, baselinePaceWPM: nil)
+        let user = AICoachService.userPrompt(
+            input: input, profile: nil, plan: nil, baselineContext: ""
+        )
+        // No injected QUESTION ASKED line (colon-qualified — the transcript-block
+        // header also contains the bare phrase without the prompt value).
+        #expect(!user.contains("THE QUESTION ASKED: "))
+        #expect(!user.contains("RECENT REPS"))
+        #expect(!user.contains("Baseline filler rate:"))
+        #expect(!user.contains("Baseline pace:"))
+        // No stray blank-block artefact.
+        #expect(!user.contains("\n\n\n"))
+    }
+
+    // 13. The user prompt surfaces the question + register + grounding
+    //     instruction when present.
+    @Test func userPromptSurfacesQuestionAndRegisterWhenPresent() {
+        let input = makeInput(
+            transcript: "Productivity is complicated.",
+            prompt: "Should we adopt a four day work week",
+            voice: .executive,
+            recentSessionSummaries: ["Timed | score 6/10 | 3 fillers"]
+        )
+        let user = AICoachService.userPrompt(
+            input: input, profile: nil, plan: nil, baselineContext: ""
+        )
+        #expect(user.contains("THE QUESTION ASKED: Should we adopt a four day work week"))
+        // The executive register clause is surfaced.
+        #expect(user.contains(AIInsightsService.registerClause(for: .executive)))
+        // The transcript block carries the answered / where-the-point-landed
+        // grounding instruction.
+        #expect(user.contains("answered THE QUESTION ASKED and where the main point landed"))
+        // Continuity block present.
+        #expect(user.contains("RECENT REPS (continuity, never invent):"))
+        #expect(user.contains("- Timed | score 6/10 | 3 fillers"))
+        // Mode uses the display label, not the rawValue.
+        #expect(user.contains("Mode: Timed"))
+    }
+
+    // 14. recentSessionSummaries excludes the current rep and is bounded to 3.
+    @Test func summaryViewRecentSummariesExcludeCurrentRep() {
+        let currentID = UUID()
+        let now = Date()
+        let current = PracticeSession(
+            id: currentID, transcript: "current", fillerWordCount: 9,
+            duration: 60, date: now, mode: .timed, score: 9
+        )
+        let prior1 = PracticeSession(
+            id: UUID(), transcript: "p1", fillerWordCount: 1,
+            duration: 60, date: now, mode: .timed, score: 8
+        )
+        let prior2 = PracticeSession(
+            id: UUID(), transcript: "p2", fillerWordCount: 2,
+            duration: 60, date: now, mode: .suddenDeath, score: 7
+        )
+        let prior3 = PracticeSession(
+            id: UUID(), transcript: "p3", fillerWordCount: 3,
+            duration: 60, date: now, mode: .timed, score: nil
+        )
+        let prior4 = PracticeSession(
+            id: UUID(), transcript: "p4", fillerWordCount: 4,
+            duration: 60, date: now, mode: .timed, score: 5
+        )
+        let summaries = AICoachService.recentSessionSummaries(
+            sessions: [current, prior1, prior2, prior3, prior4],
+            currentRepID: currentID
+        )
+        // Bounded to 3, current rep dropped (no "9 fillers" self-reference).
+        #expect(summaries.count == 3)
+        #expect(!summaries.contains { $0.contains("9 filler") })
+        // Shape: "Mode | score X/10 | N fillers", singular for 1.
+        #expect(summaries[0] == "Timed | score 8/10 | 1 filler")
+        #expect(summaries[1] == "Sudden Death | score 7/10 | 2 fillers")
+        #expect(summaries[2] == "Timed | score n/a | 3 fillers")
+    }
+
+    // 15. Baseline extraction returns nil on insufficient confidence, value
+    //     otherwise (mirrors PracticeSupport.swift:7182-7185 — the gate the
+    //     call site applies so the prompt never shows a fake baseline number).
+    @Test func baselineExtractionReturnsNilOnInsufficientConfidence() {
+        func extract(_ stat: BaselineStat) -> Double? {
+            stat.confidence == .insufficient ? nil : stat.value
+        }
+        let insufficient = BaselineStat(
+            value: 4.2, sampleCount: 1, confidence: .insufficient,
+            trend: .stable, percentile25: 0, percentile75: 0
+        )
+        let moderate = BaselineStat(
+            value: 4.2, sampleCount: 6, confidence: .moderate,
+            trend: .stable, percentile25: 0, percentile75: 0
+        )
+        #expect(extract(insufficient) == nil)
+        #expect(extract(moderate) == 4.2)
     }
 }
 
@@ -14341,6 +16956,270 @@ struct M25IMMessageSpeakerGenerationTests {
         #expect(speaker.currentGeneration > before)
     }
 }
+
+/// S4 — voice-conversation speaking-state seam on `IMMessageSpeaker`.
+/// Verifies the `isSpeaking` flag tracks a deterministic state machine
+/// (set on play-start, cleared on BOTH natural finish and barge-in) and
+/// that the `onPlaybackFinished` handoff fires only on natural finish —
+/// without ever playing real audio (no API keys / no audio in tests).
+/// Mirrors the M25 generation-token suite above.
+///
+/// Each test calls `stop()` first to reset the shared singleton to a
+/// known clean state (no live player, `isSpeaking == false`), the same
+/// defensive teardown the M25 tests use.
+@MainActor
+struct S4IMMessageSpeakerSpeakingStateTests {
+
+    /// After a clean teardown the speaker is not speaking. This is the
+    /// resting state a "coach speaking" UI binds against.
+    @Test func isSpeakingFalseAfterStop() {
+        let speaker = IMMessageSpeaker.shared
+        speaker.stop()
+        #expect(speaker.isSpeaking == false)
+    }
+
+    /// `stop()` (barge-in / teardown) clears a set speaking flag AND
+    /// advances the generation in one step — the two halves of a clean
+    /// interruption. Without this, a "coach is speaking" UI would stick
+    /// after the user barges in.
+    @Test func stopClearsSpeakingAndAdvancesGeneration() {
+        let speaker = IMMessageSpeaker.shared
+        speaker.stop() // known clean baseline
+        speaker.setSpeakingForTesting(true)
+        #expect(speaker.isSpeaking == true)
+        let before = speaker.currentGeneration
+        speaker.stop()
+        #expect(speaker.isSpeaking == false)
+        #expect(speaker.currentGeneration > before)
+    }
+
+    /// A natural end-of-clip clears `isSpeaking` and fires the
+    /// listen → speak → listen handoff exactly once. This is the
+    /// `audioPlayerDidFinishPlaying` branch exercised via the test seam.
+    @Test func naturalFinishClearsSpeakingAndFiresHandoff() {
+        let speaker = IMMessageSpeaker.shared
+        speaker.stop()
+        var finishedCount = 0
+        speaker.onPlaybackFinished = { finishedCount += 1 }
+        speaker.setSpeakingForTesting(true)
+        speaker.finishPlaybackForTesting()
+        #expect(speaker.isSpeaking == false)
+        #expect(finishedCount == 1)
+        speaker.onPlaybackFinished = nil // don't leak into other tests
+    }
+
+    /// Barge-in (`stop()`) must NOT fire `onPlaybackFinished` — the
+    /// caller initiated the interruption and already knows. Only a
+    /// natural finish triggers the auto-handoff back to listening.
+    @Test func bargeInDoesNotFireHandoff() {
+        let speaker = IMMessageSpeaker.shared
+        speaker.stop()
+        var finishedCount = 0
+        speaker.onPlaybackFinished = { finishedCount += 1 }
+        speaker.setSpeakingForTesting(true)
+        speaker.stop()
+        #expect(speaker.isSpeaking == false)
+        #expect(finishedCount == 0)
+        speaker.onPlaybackFinished = nil
+    }
+
+    /// A live `speak(...)` advances the generation (already covered by
+    /// M25). The state seam adds: a `stop()` immediately after leaves the
+    /// speaker not speaking, so the spawned playback Task — even if it
+    /// later resolves with stale audio — cannot leave a stuck flag,
+    /// because `playAudioData` only sets `isSpeaking` after a generation
+    /// check the stale clip fails.
+    @Test func stopAfterSpeakLeavesNotSpeaking() {
+        let speaker = IMMessageSpeaker.shared
+        speaker.speak(
+            "hello",
+            setup: IMConversationSetup(scenario: .workUpdate, targetTone: .confident)
+        )
+        speaker.stop()
+        #expect(speaker.isSpeaking == false)
+    }
+}
+#endif
+
+/// S5 — spoken-coach-mode pure decision logic (`AskNoumSpokenMode`).
+///
+/// `shouldSpeak(outcome:spokenRepliesEnabled:localeSupportsAI:)` is the single
+/// source of truth for whether a freshly-landed coach turn is read aloud. It
+/// is deliberately view-free so the full truth table can be asserted without
+/// the SwiftUI view, an audio engine, or a model. These tests pin every gate:
+/// toggle, locale, and outcome shape.
+struct S5SpokenModeShouldSpeakTests {
+
+    /// The happy path: toggle ON + locale supports AI + a real non-empty
+    /// reply → speak. This is the ONLY combination that returns true.
+    @Test func speaksRealReplyWhenEnabledAndLocaleSupported() {
+        #expect(AskNoumSpokenMode.shouldSpeak(
+            outcome: .reply("Do three reps of Sudden Death."),
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ))
+    }
+
+    /// Toggle OFF is an absolute veto even on an otherwise-speakable reply —
+    /// text-only must stay fully silent.
+    @Test func neverSpeaksWhenToggleOff() {
+        #expect(!AskNoumSpokenMode.shouldSpeak(
+            outcome: .reply("A perfectly good reply."),
+            spokenRepliesEnabled: false,
+            localeSupportsAI: true
+        ))
+    }
+
+    /// Locale gate: a non-AI locale stays text-only even with the toggle ON,
+    /// mirroring the chat-reply locale gate so non-English users get a clean
+    /// silent experience rather than an English voice over a localized UI.
+    @Test func neverSpeaksWhenLocaleUnsupported() {
+        #expect(!AskNoumSpokenMode.shouldSpeak(
+            outcome: .reply("A perfectly good reply."),
+            spokenRepliesEnabled: true,
+            localeSupportsAI: false
+        ))
+    }
+
+    /// A `.failure` outcome is NEVER spoken — the system-notice row is a UI
+    /// affordance, not the coach's voice. Asserted across every failure cause
+    /// so a new cause can't silently become speakable.
+    @Test func neverSpeaksAnyFailureCause() {
+        let causes: [ChatFailure] = [.noProvider, .localeUnsupported, .network, .empty]
+        for cause in causes {
+            #expect(!AskNoumSpokenMode.shouldSpeak(
+                outcome: .failure(cause),
+                spokenRepliesEnabled: true,
+                localeSupportsAI: true
+            ), "failure(\(cause)) must not be spoken")
+        }
+    }
+
+    /// A whitespace-only reply is rejected even though it is nominally a
+    /// `.reply`. The predicate must not depend on the store routing empties to
+    /// `.failure(.empty)` — it owns the empty check itself.
+    @Test func neverSpeaksWhitespaceOnlyReply() {
+        #expect(!AskNoumSpokenMode.shouldSpeak(
+            outcome: .reply("   \n\t  "),
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true
+        ))
+    }
+
+    /// All four off/locale combinations on an empty-text reply are false —
+    /// no combination of flags resurrects an empty reply.
+    @Test func emptyReplyNeverSpeaksUnderAnyFlags() {
+        for enabled in [true, false] {
+            for locale in [true, false] {
+                #expect(!AskNoumSpokenMode.shouldSpeak(
+                    outcome: .reply(""),
+                    spokenRepliesEnabled: enabled,
+                    localeSupportsAI: locale
+                ))
+            }
+        }
+    }
+}
+
+/// S5 — voice → spoken-tone mapping. Pure + total: every chosen voice maps to
+/// a real `IMTargetTone`, and a nil chosen voice maps to the steady neutral
+/// `.calm` coach register (never an invented tone).
+struct S5SpokenModeCoachToneTests {
+
+    @Test func eachChosenVoiceMapsToExpectedTone() {
+        #expect(AskNoumSpokenMode.coachTone(for: .authoritative) == .confident)
+        #expect(AskNoumSpokenMode.coachTone(for: .warm) == .warm)
+        #expect(AskNoumSpokenMode.coachTone(for: .concise) == .concise)
+        #expect(AskNoumSpokenMode.coachTone(for: .persuasive) == .assertive)
+        #expect(AskNoumSpokenMode.coachTone(for: .executive) == .professional)
+        #expect(AskNoumSpokenMode.coachTone(for: .storytelling) == .warm)
+    }
+
+    /// No chosen voice → neutral steady coach tone. The fallback must be a
+    /// real tone, never a crash or an invented register.
+    @Test func nilVoiceMapsToCalm() {
+        #expect(AskNoumSpokenMode.coachTone(for: nil) == .calm)
+    }
+
+    /// Totality guard: every `SpeakingStyleGoal` case resolves to one of the
+    /// real `IMTargetTone` cases (no default-to-junk). Iterates `allCases` so
+    /// a newly-added voice forces a conscious mapping decision here.
+    @Test func everyVoiceResolvesToARealTone() {
+        let realTones = Set(IMTargetTone.allCases)
+        for voice in SpeakingStyleGoal.allCases {
+            #expect(realTones.contains(AskNoumSpokenMode.coachTone(for: voice)))
+        }
+    }
+}
+
+/// S5 — the Ask-Noum spoken-replies toggle persistence contract.
+/// The toggle defaults OFF (texting is the baseline; speaking is opt-in) and
+/// persists under its own key, independent of the IM-rep `isEnabled` flag
+/// which defaults ON. These tests verify the default-OFF mechanism without
+/// mutating the shared singleton's `UserDefaults.standard` value (which would
+/// leak across the suite).
+struct S5AskNoumVoiceToggleTests {
+
+    /// The manager reads the toggle via `UserDefaults.bool(forKey:)`, which
+    /// returns `false` for an absent key — this IS the default-OFF guarantee.
+    /// Verified against a fresh isolated suite so it can't be perturbed by
+    /// whatever the device has stored.
+    @Test func absentKeyReadsAsOffInFreshSuite() {
+        let suiteName = "S5ToggleDefaultOff.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        // No value set → the exact read the manager's init performs.
+        #expect(suite.bool(forKey: "askNoumSpokenRepliesEnabled") == false)
+    }
+
+    /// Round-trip: once written, the key reads back the stored value, so a
+    /// user who turns voice ON keeps it across launches (the manager re-reads
+    /// the same key in its init).
+    @Test func togglePersistsRoundTripInFreshSuite() {
+        let suiteName = "S5ToggleRoundTrip.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        suite.set(true, forKey: "askNoumSpokenRepliesEnabled")
+        #expect(suite.bool(forKey: "askNoumSpokenRepliesEnabled") == true)
+        suite.set(false, forKey: "askNoumSpokenRepliesEnabled")
+        #expect(suite.bool(forKey: "askNoumSpokenRepliesEnabled") == false)
+    }
+
+    /// The IM-rep voice key and the Ask-Noum coach-chat key are DISTINCT —
+    /// toggling one must never move the other. Asserts the two key strings the
+    /// manager uses differ, and that writes to one don't bleed into the other.
+    @Test func imRepAndAskNoumKeysAreIndependent() {
+        let suiteName = "S5ToggleIndependent.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        suite.set(true, forKey: "imVoicePlaybackEnabled")    // IM rep ON
+        // Ask-Noum key still absent → still OFF.
+        #expect(suite.bool(forKey: "askNoumSpokenRepliesEnabled") == false)
+        suite.set(true, forKey: "askNoumSpokenRepliesEnabled") // now ON
+        // IM rep flag unchanged.
+        #expect(suite.bool(forKey: "imVoicePlaybackEnabled") == true)
+    }
+}
+
+#if canImport(AVFAudio)
+/// S5 — `IMMessageSpeaker.canSpeakReplies` availability predicate. This is the
+/// signal the voice-mode toggle uses to HIDE itself rather than offer a dead
+/// toggle. The assertion is env-INDEPENDENT on purpose: a CI machine with no
+/// keys returns false, a dev machine with an `AIConfig.plist` may return true,
+/// and BOTH are correct — what must hold is that the predicate is deterministic
+/// (pure config read, no network, stable across calls within a run). Asserting
+/// a hardcoded boolean here would make the suite flaky on a configured machine.
+@MainActor
+struct S5CanSpeakRepliesTests {
+
+    @Test func canSpeakRepliesIsDeterministicAcrossCalls() {
+        let speaker = IMMessageSpeaker.shared
+        let first = speaker.canSpeakReplies
+        let second = speaker.canSpeakReplies
+        // Pure config read — repeated calls in the same run must agree.
+        #expect(first == second)
+    }
+}
 #endif
 
 struct M25NPCSystemPromptTests {
@@ -14539,6 +17418,65 @@ struct M25NPCSystemPromptTests {
             )
             #expect(!prompt.contains("!"),
                     "Prompt for voice \(voice.rawValue) must not contain exclamation marks")
+        }
+    }
+}
+
+// MARK: - Backend IM evaluation request encoding
+
+/// The backend IM conversation evaluator calibrates its read on the
+/// user's relationship continuity and live session context. Both fields
+/// are stored on `BackendIMConversationEvaluationRequest` and passed in
+/// by `evaluateConversation`, but a `CodingKeys` enum that stopped at
+/// `profile` silently dropped them on encode — so the evaluator never
+/// saw them. This pins the full key contract so a future case omission
+/// can't quietly starve the backend again.
+struct BackendIMEvaluationRequestEncodingTests {
+    @Test func encodesRelationshipAndContextKeys() throws {
+        let context = IMSessionContext(
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            weekday: "Tuesday",
+            dateLabel: "Nov 14",
+            timeLabel: "10:00 AM",
+            timeZoneLabel: "PST",
+            regionLabel: "Northern California",
+            locationLabel: nil,
+            weatherSummary: nil,
+            majorEventsSummary: nil,
+            socialPulse: nil,
+            seasonLabel: "Autumn",
+            partOfDay: "Morning"
+        )
+        let request = BackendIMConversationEvaluationRequest(
+            setup: IMConversationSetup(scenario: .networking, targetTone: .confident),
+            turns: [],
+            finalState: IMConversationState.starting,
+            transcript: "Hello there.",
+            fillerCount: 0,
+            duration: 42,
+            recentSessions: [],
+            profile: nil,
+            relationship: IMRelationshipProfile.initial(for: .networking),
+            context: context
+        )
+
+        let data = try JSONEncoder().encode(request)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        // The two keys the CodingKeys oversight dropped — must now reach
+        // the backend, and as populated objects (not null / empty).
+        #expect(object["relationship"] != nil)
+        #expect(object["context"] != nil)
+        #expect((object["relationship"] as? [String: Any])?.isEmpty == false)
+        #expect((object["context"] as? [String: Any])?.isEmpty == false)
+
+        // Existing keys still encode under their established snake_case
+        // contract, pinning the naming the backend already expects.
+        for key in ["setup", "turns", "final_state", "transcript",
+                    "filler_count", "duration", "recent_sessions"] {
+            #expect(object[key] != nil, "Expected key \(key) in encoded request")
         }
     }
 }
@@ -14837,6 +17775,91 @@ struct M25PersonalizationVoicePromptTests {
         #expect(prompt.contains("strict JSON"))
         #expect(prompt.contains("weekIndex"))
         #expect(prompt.contains("Exactly 4 weeks"))
+    }
+}
+
+// MARK: - Prompt-grounded read — AIInsights sessionDebrief question anchor
+//
+// The "Deep analysis" sessionDebrief read now carries THE QUESTION ASKED so
+// it can name whether the answer engaged the prompt and where the point
+// landed. Single source of truth is the session's stored prompt;
+// promptOverride lets tests drive it without a full session. These pin:
+// override precedence, session-prompt fallback, and honest omission.
+
+struct AIInsightsPromptAnchorTests {
+
+    private func session(transcript: String, prompt: String?) -> PracticeSession {
+        var s = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 1,
+            duration: 40,
+            date: Date(),
+            mode: .timed,
+            score: 7
+        )
+        s.prompt = prompt
+        return s
+    }
+
+    private func makeInput(
+        kind: AIInsightKind = .sessionDebrief,
+        sessions: [PracticeSession],
+        promptOverride: String? = nil
+    ) -> AIInsightInput {
+        AIInsightInput(
+            kind: kind,
+            sessions: sessions,
+            baseline: .empty,
+            rating: SpeakingRating(overall: 1200, peakRating: 1200, ratingHistory: [], personalBests: [], totalRatedSessions: 0),
+            weeklyDelta: 0,
+            weeklyReps: 1,
+            topFillerWord: nil,
+            goalParaphrase: nil,
+            currentStreak: 0,
+            goalDistance: nil,
+            promptOverride: promptOverride
+        )
+    }
+
+    @Test func promptOverrideNilReadsSessionPrompt() {
+        let s = session(
+            transcript: "We should ship because the data is clear and the team is ready.",
+            prompt: "Should we ship the feature this week?"
+        )
+        let input = makeInput(sessions: [s], promptOverride: nil)
+        let user = AIInsightsService.userPrompt(from: input)
+        #expect(user.contains("THE QUESTION ASKED: Should we ship the feature this week?"))
+    }
+
+    @Test func promptOverrideWinsOverSessionPrompt() {
+        let s = session(
+            transcript: "We should ship because the data is clear and the team is ready.",
+            prompt: "Session-stored question?"
+        )
+        let input = makeInput(sessions: [s], promptOverride: "Override question wins?")
+        let user = AIInsightsService.userPrompt(from: input)
+        #expect(user.contains("THE QUESTION ASKED: Override question wins?"))
+        #expect(!user.contains("Session-stored question?"))
+    }
+
+    @Test func noPromptEmitsNoQuestionLine() {
+        let s = session(
+            transcript: "We should ship because the data is clear and the team is ready.",
+            prompt: nil
+        )
+        let input = makeInput(sessions: [s], promptOverride: nil)
+        let user = AIInsightsService.userPrompt(from: input)
+        // Match the injected line specifically (colon+space) — the transcript-block
+        // header also contains the bare phrase "THE QUESTION ASKED" without a colon.
+        #expect(!user.contains("THE QUESTION ASKED: "))
+        // Transcript block still present — only the question line is omitted.
+        #expect(user.contains("TRANSCRIPT OF THIS REP"))
+    }
+
+    @Test func sessionDebriefSystemPromptAddressesQuestionWhenProvided() {
+        let prompt = AIInsightsService.systemPrompt(for: .sessionDebrief, voice: nil)
+        #expect(prompt.contains("THE QUESTION ASKED"))
+        #expect(prompt.contains("where the main point landed"))
     }
 }
 
@@ -16664,12 +19687,17 @@ struct IMToneDrillCrossingTests {
         // must surface it the same way through the with-vs-without
         // comparison.
         //
-        // Construction: 6 reps that crossed (oldest), then 3 reps that
-        // drop the latest window back below the hold bar, then a 10th
-        // rep that lands the tone and re-clears. With the 10th rep in,
-        // resolved-now reads non-nil; with the 10th rep stripped, the
-        // latest-window-only-lands-1/3 (33% < 60%) read is nil → the
-        // helper returns the fresh crossing.
+        // Construction: 6 reps that crossed (oldest), then a post-crossing
+        // stretch — two relapse misses (tense, rushed) and the first calm
+        // of the climb back — then the reclear rep (calm). `toneDrillResolved`
+        // reads the latest window as the 3 newest evaluated reps. Stripped
+        // of the reclear rep that window is [tense, rushed, calm] = 1/3
+        // (33% < 60%) → resolved-before is nil; with the reclear rep in it
+        // slides to [rushed, calm, calm] = 2/3 (67% >= 60%) → resolved-now
+        // is non-nil, so the helper surfaces the fresh crossing. A lone
+        // calm rep can't reclear a window still holding two relapse misses;
+        // the climb has to land twice — exactly what the 60% hold bar over
+        // a 3-rep window enforces ("the climb stuck, isn't one lucky rep").
         let earlyCrossing = [
             imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -12),
             imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -11),
@@ -16681,7 +19709,9 @@ struct IMToneDrillCrossingTests {
         let relapseWindow = [
             imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
             imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
-            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -1)
+            // The climb's first calm — one short of reclearing the 3-rep
+            // hold window on its own (relapse misses still outweigh it).
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
         ]
         let reclearRep = imSession(
             scenario: .difficultConversation, targetTone: .calm, actualTone: "calm", daysOffset: 0
@@ -18146,6 +21176,64 @@ struct ReflectionToCoachContextEndToEndTests {
         #expect(ctx.contains("Ask what felt unlike them before coaching polish further."))
     }
 
+    @MainActor
+    @Test func structuredNoteReflectionPersistsRecentPatternWhenHistoryRepeats() {
+        let suite = "e2e-reflection-pattern-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "e2e-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        var baseline = CommunicationBaseline.empty
+        baseline.qualifyingSessionCount = 5
+
+        store.refresh(
+            profile: profile(),
+            baseline: baseline,
+            sessions: [PracticeSession(
+                transcript: "Test.", fillerWordCount: 0,
+                duration: 45, date: Date(), mode: .timed, score: 8
+            )],
+            trends: [],
+            forwardPlan: nil,
+            lastSessionID: nil,
+            now: Date()
+        )
+
+        let latest = SessionReflection(
+            sessionID: UUID(),
+            feeling: .nervous,
+            recordedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let history = [
+            latest,
+            SessionReflection(sessionID: UUID(), feeling: .strong, recordedAt: Date(timeIntervalSince1970: 900)),
+            SessionReflection(sessionID: UUID(), feeling: .nervous, recordedAt: Date(timeIntervalSince1970: 800)),
+            SessionReflection(sessionID: UUID(), feeling: .nervous, recordedAt: Date(timeIntervalSince1970: 700)),
+        ]
+
+        store.noteReflection(latest, recentReflections: history)
+
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.reflectionPattern?.dominantFeeling == .nervous)
+        #expect(reloaded.currentMemory?.reflectionPattern?.confidence == .repeated)
+        #expect(reloaded.currentMemory?.caseFile?.subjectivePattern?.contains("Across 3 of the last 4 reflections") == true)
+        #expect(reloaded.currentMemory?.caseFile?.nextMove == .exploreSubjectivePattern)
+
+        let ctx = CoachContextBuilder.userContext(
+            profile: profile(),
+            baseline: baseline,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: reloaded.currentMemory
+        )
+        #expect(ctx.contains("Subjective pattern (repeated pattern): Across 3 of the last 4 reflections"))
+        #expect(ctx.contains("not a diagnosis"))
+    }
+
     /// When no reflection is recorded, the CASE FORMULATION section does
     /// not include a "Last reflection" line.
     @MainActor
@@ -19536,6 +22624,15 @@ struct InterventionReviewPromptTests {
 
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
+    private func repeatedReflectionPattern(_ feeling: ReflectionFeeling) -> CoachReflectionPattern {
+        CoachReflectionPattern.build(from: [
+            SessionReflection(sessionID: UUID(), feeling: feeling, recordedAt: Date(timeIntervalSince1970: 1_000)),
+            SessionReflection(sessionID: UUID(), feeling: .strong, recordedAt: Date(timeIntervalSince1970: 900)),
+            SessionReflection(sessionID: UUID(), feeling: feeling, recordedAt: Date(timeIntervalSince1970: 800)),
+            SessionReflection(sessionID: UUID(), feeling: feeling, recordedAt: Date(timeIntervalSince1970: 700)),
+        ])!
+    }
+
     // MARK: - Predicate guards
 
     @Test func reviewIsNotDueWhenReviewDueAtIsNil() {
@@ -19741,6 +22838,42 @@ struct InterventionReviewPromptTests {
             voice: nil
         )
         #expect(opener.contains("for authority practice,"))
+    }
+
+    @Test func openerAddsSubjectivePatternReviewBeforeVoiceAsk() {
+        // A human coach reviews more than the metric. When the case file
+        // has a repeated self-report pattern, the opener asks the coach
+        // to check whether that felt blocker is changing without
+        // stealing the final voice-shaped ask.
+        let intervention = makeIntervention(
+            focus: "Filler reduction",
+            followedRepCount: 4
+        )
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: intervention,
+            voice: .concise,
+            reflectionPattern: repeatedReflectionPattern(.nervous)
+        )
+
+        #expect(opener.contains("Also review the subjective pattern as self-report, not diagnosis: check whether the repeated nerves are easing, unchanged, or worse."))
+        #expect(opener.hasSuffix("Keep, adapt, or replace?"))
+    }
+
+    @Test func openerSubjectivePatternAvoidsCausalOrDiagnosticClaims() {
+        // The pattern is user-owned self-report. The opener may ask
+        // about it, but must not say the intervention caused it or
+        // treat it as a diagnosis.
+        let opener = CoachContextBuilder.interventionReviewOpener(
+            intervention: makeIntervention(followedRepCount: 4),
+            voice: nil,
+            reflectionPattern: repeatedReflectionPattern(.heldBack)
+        )
+        let lower = opener.lowercased()
+
+        #expect(opener.contains("self-report, not diagnosis"))
+        #expect(opener.contains("still holding back"))
+        #expect(!lower.contains("caused"))
+        #expect(!lower.contains("diagnosed"))
     }
 
     // MARK: - Opener voice mapping
@@ -20189,7 +23322,7 @@ struct HypothesisAcknowledgementTests {
         {
             "updatedAt": 1700000000,
             "evidenceCount": 5,
-            "evidenceConfidence": "moderate",
+            "evidenceConfidence": 2,
             "goalFit": "noLever",
             "strengths": [],
             "blockers": []
@@ -20226,7 +23359,6 @@ struct HypothesisAcknowledgementTests {
 // with sessions persisted before the field existed).
 
 @Suite("VocalEnergyMetrics")
-@available(iOS 17.0, macOS 13.0, *)
 struct VocalEnergyMetricsTests {
 
     @Test func computeOnSilenceProducesZeros() {
@@ -20246,8 +23378,10 @@ struct VocalEnergyMetricsTests {
     @Test func computeOnConstantLevelIsMaximallySteady() {
         let flat = Array(repeating: 0.45, count: 200)
         let m = VocalEnergyAccumulator.compute(samples: flat)
-        #expect(m.meanLevel == 0.45)
-        #expect(m.peakLevel == 0.45)
+        // Summing 200 identical doubles accumulates floating-point error, so
+        // compare within a tolerance rather than exact equality.
+        #expect(abs(m.meanLevel - 0.45) < 0.0001)
+        #expect(abs(m.peakLevel - 0.45) < 0.0001)
         #expect(m.stdDeviation < 0.0001)
         #expect(m.coefficientOfVariation < 0.0001)
         #expect(m.steadiness > 0.999)
@@ -20328,7 +23462,7 @@ struct VocalEnergyMetricsTests {
           "date": -10000,
           "mode": "timed",
           "insights": [],
-          "pressureLevel": "standard",
+          "pressureLevel": 1,
           "isRated": false
         }
         """.data(using: .utf8)!
@@ -20351,7 +23485,6 @@ struct VocalEnergyMetricsTests {
 //   - Channel-list readout when N channels contribute
 
 @Suite("ComposureReadEngine")
-@available(iOS 17.0, macOS 13.0, *)
 struct ComposureReadEngineTests {
 
     private func makeSession(
@@ -20397,7 +23530,7 @@ struct ComposureReadEngineTests {
 
     @Test func allFourChannelsContributeWhenAvailable() {
         let energy = VocalEnergyMetrics(meanLevel: 0.45, peakLevel: 0.7, stdDeviation: 0.06, coefficientOfVariation: 0.13, steadiness: 0.87, sampleCount: 100)
-        let pitch = PitchMetrics(meanHz: 150, stdHz: 30, voicedFraction: 0.7)
+        let pitch = PitchMetrics(meanHz: 150, stdHz: 30, voicedRatio: 0.7, windowCount: 50)
         let pause = PauseMetrics(count: 5, meanSeconds: 1.2, longestSeconds: 2.5, filledRatio: 0.20)
         let session = makeSession(vocalEnergy: energy, pitch: pitch, pause: pause)
         let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: 1.0)
@@ -20409,7 +23542,7 @@ struct ComposureReadEngineTests {
     @Test func monotonePitchPenalizesScore() {
         let energy = VocalEnergyMetrics(meanLevel: 0.4, peakLevel: 0.5, stdDeviation: 0.02, coefficientOfVariation: 0.05, steadiness: 0.95, sampleCount: 100)
         // Very monotone — CV ≈ 0.05 → pitch channel scores 0.4
-        let monotonePitch = PitchMetrics(meanHz: 150, stdHz: 7.5, voicedFraction: 0.8)
+        let monotonePitch = PitchMetrics(meanHz: 150, stdHz: 7.5, voicedRatio: 0.8, windowCount: 50)
         let session = makeSession(vocalEnergy: energy, pitch: monotonePitch)
         let read = ComposureReadEngine.derive(session: session, hedgingPerMinute: nil)
         // Channels: vocal energy 0.95 + pitch 0.4 → mean ≈ 0.675
@@ -20491,7 +23624,6 @@ struct ComposureReadEngineTests {
 // "the user is unconfident" — only "this rep read as tentative".
 
 @Suite("ConfidenceMarkerEngine")
-@available(iOS 17.0, macOS 13.0, *)
 struct ConfidenceMarkerEngineTests {
 
     private func makeSession(
@@ -20694,7 +23826,6 @@ struct ConfidenceMarkerEngineTests {
 //   - Tentative prefix on ≤2 dimensions
 
 @Suite("StructuralReadEngine")
-@available(iOS 17.0, macOS 13.0, *)
 struct StructuralReadEngineTests {
 
     @Test func returnsNilWhenZeroDimensionsContribute() {
@@ -20859,7 +23990,6 @@ struct StructuralReadEngineTests {
 //   - Per-trend readout copy includes the actual numbers
 
 @Suite("DerivedReadsTrendEngine")
-@available(iOS 17.0, macOS 13.0, *)
 struct DerivedReadsTrendEngineTests {
 
     private func session(daysAgo: Int, energySteadiness: Double?, fillerCount: Int = 0, duration: TimeInterval = 60) -> PracticeSession {
@@ -21067,7 +24197,6 @@ struct DerivedReadsTrendEngineTests {
 // `bodyCopy` doesn't quietly drift away from the engine's
 // `workingHypothesis` clause shape.
 
-@available(iOS 17.0, *)
 @MainActor
 @Suite("RevisedReadCardTests")
 struct RevisedReadCardTests {
@@ -22569,5 +25698,1143 @@ struct RebuildVerdictContextTests {
         #expect(ctx.contains("pushed back on the rebuilt read too"))
         #expect(ctx.contains("do not retry the same rebuilt hypothesis"))
         #expect(ctx.contains("propose a third angle"))
+    }
+}
+
+// MARK: - IM conversation evaluation contract (slice-2)
+
+/// Pure-seam coverage for the IM grader's contract completion: the deterministic
+/// fallback (`IMConversationEvaluationService.deterministicEvaluation`) and the
+/// transcript-grounding gate (`evaluationEngagesTranscript`). IM is the
+/// highest-fidelity role-play surface and its grade drives the saved score, the
+/// relationship state, and the next move — so a finished conversation must never
+/// dead-end with a thrown error offline / non-English / with no provider.
+///
+/// What is NOT tested here (and why): the live `evaluateConversation` network
+/// path and the `LocaleSettingsManager.shared.current` mutation are deliberately
+/// out of scope — mutating the locale singleton persists to UserDefaults and
+/// would make the suite order-dependent. The locale gate is the one-line
+/// `guard activeLocaleSupportsAI() else { return fallback }`; on an unsupported
+/// locale it returns EXACTLY this `deterministicEvaluation` output, which these
+/// tests pin directly (mirrors `CoachReadParityTests`' discipline for the same
+/// gate in `AICoachService`).
+struct IMConversationEvaluationContractTests {
+
+    // MARK: Fixtures
+
+    private static func userTurn(_ text: String) -> IMConversationTurn {
+        IMConversationTurn(speaker: .user, text: text)
+    }
+
+    private static func npcTurn(_ text: String) -> IMConversationTurn {
+        IMConversationTurn(speaker: .npc, text: text)
+    }
+
+    /// A realistic, substantive networking conversation. Turn 1 is
+    /// unambiguously the longest user turn (68 chars vs the others' 59 and 62),
+    /// so the deterministic headline quotes it — no dependence on `max(by:)`
+    /// tie-breaking. Turn 1 is exactly 14 words, the `longestSubstantiveTurn`
+    /// word cap, so the whole turn appears verbatim in the headline.
+    private static func groundedConversation() -> [IMConversationTurn] {
+        [
+            npcTurn("Good to meet you. What kind of work are you focused on?"),
+            userTurn("I lead the platform team at a fintech startup based here in the city"),
+            npcTurn("Oh nice, what are you building?"),
+            userTurn("We just shipped a payments rewrite that cut latency by half"),
+            npcTurn("That sounds impactful."),
+            userTurn("It was, and the team really pulled together to ship it on time")
+        ]
+    }
+
+    private static func transcript(of turns: [IMConversationTurn]) -> String {
+        turns
+            .filter { $0.speaker == .user }
+            .map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let setup = IMConversationSetup(scenario: .networking, targetTone: .confident)
+
+    private static func evaluate(
+        turns: [IMConversationTurn],
+        finalState: IMConversationState? = IMConversationState(trust: 7, engagement: 7, tension: 3, beat: "Open and engaged."),
+        duration: TimeInterval = 120
+    ) -> IMConversationEvaluation {
+        IMConversationEvaluationService.deterministicEvaluation(
+            setup: setup,
+            turns: turns,
+            finalState: finalState,
+            transcript: transcript(of: turns),
+            fillerCount: 1,
+            duration: duration,
+            recentSessions: [],
+            relationship: nil
+        )
+    }
+
+    // MARK: Deterministic fallback — grounded headline quotes a real turn
+
+    @Test func fallbackHeadlineQuotesAnActualTurn() {
+        let turns = Self.groundedConversation()
+        let eval = Self.evaluate(turns: turns)
+        // The headline must quote the longest substantive user turn verbatim —
+        // not a generic stat-restate. This is the grounding anchor.
+        #expect(
+            eval.headline.contains("I lead the platform team at a fintech startup based here in the city"),
+            "Headline should quote the actual user turn. Got: \(eval.headline)"
+        )
+    }
+
+    @Test func fallbackPassesItsOwnGroundingGate() {
+        // The deterministic read is the fallback returned on a grounding-gate
+        // failure of the AI read, so it must itself clear the gate — otherwise
+        // a substitution could loop. (It does, trivially, because it quotes the
+        // transcript.)
+        let turns = Self.groundedConversation()
+        let eval = Self.evaluate(turns: turns)
+        #expect(
+            IMConversationEvaluationService.evaluationEngagesTranscript(eval, transcript: Self.transcript(of: turns)),
+            "The deterministic fallback must engage the transcript it was built from."
+        )
+    }
+
+    @Test func fallbackScoresAreAllInValidBand() {
+        let eval = Self.evaluate(turns: Self.groundedConversation())
+        for value in [eval.toneMatch, eval.clarityScore, eval.composureScore, eval.vocabularyScore, eval.conversationScore] {
+            #expect((1...10).contains(value), "Every IM dimension must clamp to 1...10. Got \(value)")
+        }
+        #expect((1...10).contains(eval.overallScore), "overallScore must clamp to 1...10")
+        // Insights: the schema/prompt contract is exactly 3 concise strings.
+        #expect(eval.insights.count == 3, "Fallback must emit exactly 3 insights. Got \(eval.insights.count)")
+        #expect(eval.insights.allSatisfy { !$0.isEmpty }, "No insight may be empty")
+        #expect(!eval.feedback.isEmpty, "Feedback must not be empty")
+        #expect(!eval.suggestedDrill.isEmpty, "Drill must not be empty")
+        // The outcome is resolved by the shared resolver so the call site's
+        // `outcome?.closingMessage` path is preserved.
+        #expect(eval.outcome != nil, "Fallback must carry an outcome for the call-site closing-message path")
+    }
+
+    @Test func fallbackUsesSharedToneMatcherSoGradeAgreesWithPerTurnRead() {
+        // Single-source-of-truth: the fallback's toneMatch must equal what the
+        // live per-turn tone read (IMToneMatcher) computes for the same tone +
+        // transcript, so the saved grade can never disagree with the tone read.
+        let turns = Self.groundedConversation()
+        let transcript = Self.transcript(of: turns)
+        let eval = Self.evaluate(turns: turns)
+        #expect(
+            eval.toneMatch == IMToneMatcher.score(for: .confident, transcript: transcript),
+            "Fallback toneMatch must equal the shared IMToneMatcher score for the same tone/transcript."
+        )
+    }
+
+    // MARK: Honesty — short session softens to an early read
+
+    @Test func shortSessionSoftensHeadlineToEarlyRead() {
+        // <= 2 user turns OR < 30s → the headline must not assert a confident
+        // verdict; it states an "early read" instead (matches the LLM prompt's
+        // own short-session rule).
+        let turns: [IMConversationTurn] = [
+            Self.npcTurn("Good to meet you. What kind of work are you focused on?"),
+            Self.userTurn("I run growth at a small design studio downtown")
+        ]
+        let eval = Self.evaluate(turns: turns, duration: 18)
+        #expect(
+            eval.headline.lowercased().contains("early read"),
+            "A short session must soften to an early read. Got: \(eval.headline)"
+        )
+    }
+
+    @Test func emptyTurnsNeverFabricateAQuoteAndStayValid() {
+        // No usable turn → the headline states a grounded scenario read, never a
+        // fabricated quote, and the grade is still well-formed.
+        let eval = Self.evaluate(turns: [], finalState: IMConversationState.starting, duration: 5)
+        #expect(!eval.headline.contains("''"), "Must not render an empty quote")
+        #expect(eval.headline.lowercased().contains("early read"), "Empty short session is an early read")
+        #expect(eval.insights.count == 3)
+        #expect((1...10).contains(eval.overallScore))
+    }
+
+    // MARK: Grounding gate — accept / reject / empty
+
+    @Test func groundingGateAcceptsAReadThatSharesAContentWord() {
+        let turns = Self.groundedConversation()
+        let transcript = Self.transcript(of: turns)
+        // "platform" is a >= 4-char non-stop content word present in the turns.
+        let grounded = Self.syntheticEvaluation(
+            headline: "You held the room — your platform line set the frame.",
+            insights: ["Reciprocity stayed high.", "Specificity carried it.", "Trust landed."]
+        )
+        #expect(
+            IMConversationEvaluationService.evaluationEngagesTranscript(grounded, transcript: transcript),
+            "A read sharing a content word with a turn must pass the gate."
+        )
+    }
+
+    @Test func groundingGateAcceptsAReadQuotingAMultiWordDetailFromATurn() {
+        let turns = Self.groundedConversation()
+        let transcript = Self.transcript(of: turns)
+        // A read that quotes a real multi-word detail from a turn ("payments
+        // rewrite", a >= 12-char verbatim run also carrying content words)
+        // engages the conversation and must pass — only the insights carry the
+        // contact; the headline alone shares nothing.
+        let grounded = Self.syntheticEvaluation(
+            headline: "Solid, measured exchange overall.",
+            insights: ["The 'payments rewrite' detail gave them something concrete.", "Good pacing.", "Stay specific."]
+        )
+        #expect(
+            IMConversationEvaluationService.evaluationEngagesTranscript(grounded, transcript: transcript),
+            "A read quoting a real multi-word detail from a turn must pass the gate."
+        )
+    }
+
+    @Test func groundingGateAcceptsAVerbatimSliceWithNoSharedContentWord() {
+        // Isolate the >= 12-char verbatim-slice branch from the content-word
+        // branch. Transcript tokens (>= 4 chars) are "abcdefghij" + "klmnopqrst".
+        // The read embeds the verbatim 12-char slice "efghij klmno" (which spans
+        // the word boundary and reproduces NO whole content word as a standalone
+        // token — the candidate's tokens are "value"/"efghij"/"klmnozone", none
+        // equal to a transcript token), so only the slice path can pass it.
+        let transcript = "the abcdefghij klmnopqrst"
+        let read = Self.syntheticEvaluation(
+            headline: "The value efghij klmnozone landed.",
+            insights: ["Composed read.", "Steady pacing.", "Stayed on point."]
+        )
+        #expect(
+            IMConversationEvaluationService.evaluationEngagesTranscript(read, transcript: transcript),
+            "A read containing a >= 12-char verbatim slice of a turn must pass via the slice path."
+        )
+    }
+
+    @Test func groundingGateRejectsAnUngroundedRead() {
+        // Transcript with ONLY sub-4-char tokens → the content-word set is
+        // empty, and no 12-char slice of it can appear in a generic English
+        // read → the gate must reject, and `evaluateConversation` would
+        // substitute the deterministic fallback.
+        let transcript = "Xy zq wb mm tf vn"
+        let ungrounded = Self.syntheticEvaluation(
+            headline: "You did a solid job overall and showed good composure.",
+            insights: [
+                "Your engagement was strong throughout the exchange.",
+                "Consider adding more specifics to your replies.",
+                "Trust generally improved over the conversation."
+            ]
+        )
+        #expect(
+            IMConversationEvaluationService.evaluationEngagesTranscript(ungrounded, transcript: transcript) == false,
+            "A generic read that engages no real turn must be rejected."
+        )
+    }
+
+    @Test func groundingGateEmptyTranscriptPasses() {
+        // IM with no captured user words → nothing to quote → never block.
+        let any = Self.syntheticEvaluation(headline: "Anything.", insights: ["a", "b", "c"])
+        #expect(IMConversationEvaluationService.evaluationEngagesTranscript(any, transcript: ""))
+        #expect(IMConversationEvaluationService.evaluationEngagesTranscript(any, transcript: "   "))
+    }
+
+    // MARK: Schema decode-safety (byte-identical contract preserved)
+
+    @Test func schemaDecodesUnchanged() throws {
+        // The wire contract the AI/backend graders emit must still decode into
+        // the byte-identical schema the surfaces depend on.
+        let json = """
+        {
+          "actualTone": "Warm",
+          "toneMatch": 8,
+          "clarityScore": 7,
+          "composureScore": 6,
+          "vocabularyScore": 7,
+          "conversationScore": 8,
+          "headline": "You held the room.",
+          "feedback": "Specific and responsive.",
+          "insights": ["a", "b", "c"],
+          "suggestedDrill": "Reciprocity drill.",
+          "outcome": {
+            "title": "Strong connection",
+            "summary": "You built trust.",
+            "closingMessage": "Great talking, let's keep in touch."
+          }
+        }
+        """
+        let data = try #require(json.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(IMConversationEvaluation.self, from: data)
+        #expect(decoded.actualTone == "Warm")
+        #expect(decoded.toneMatch == 8)
+        #expect(decoded.conversationScore == 8)
+        #expect(decoded.insights == ["a", "b", "c"])
+        #expect(decoded.outcome?.title == "Strong connection")
+        #expect((1...10).contains(decoded.overallScore))
+    }
+
+    @Test func schemaDecodesWithMissingOutcome() throws {
+        // `outcome` is optional — a grade with no outcome must still decode.
+        let json = """
+        {
+          "actualTone": "Clear but measured",
+          "toneMatch": 6, "clarityScore": 6, "composureScore": 6,
+          "vocabularyScore": 6, "conversationScore": 6,
+          "headline": "An even exchange.",
+          "feedback": "Steady throughout.",
+          "insights": ["x", "y", "z"],
+          "suggestedDrill": "Tone drill."
+        }
+        """
+        let data = try #require(json.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(IMConversationEvaluation.self, from: data)
+        #expect(decoded.outcome == nil)
+        #expect(decoded.headline == "An even exchange.")
+    }
+
+    // MARK: Helper — synthetic grade for gate tests
+
+    private static func syntheticEvaluation(headline: String, insights: [String]) -> IMConversationEvaluation {
+        IMConversationEvaluation(
+            actualTone: "Clear but measured",
+            toneMatch: 7,
+            clarityScore: 7,
+            composureScore: 7,
+            vocabularyScore: 7,
+            conversationScore: 7,
+            headline: headline,
+            feedback: "Synthetic feedback for the gate test.",
+            insights: insights,
+            suggestedDrill: "Synthetic drill.",
+            outcome: nil
+        )
+    }
+}
+
+// MARK: - AICoachChatService truncation guard (S1)
+
+/// Deterministic coverage for the chat-reply truncation fix. The felt
+/// output length/quality is on-device-QA-only (no toolchain/keys on the
+/// build host), but the finish-reason gate that decides whether a
+/// completion is committed or routed to the honest "try rephrasing"
+/// notice is a pure seam and must be locked down.
+///
+/// Roots being guarded (see `AICoachChatService` header): a length-
+/// truncated completion (Gemini `finishReason == MAX_TOKENS`, OpenAI /
+/// DeepSeek `finish_reason == length`) is a guillotined sentence and
+/// must NOT be returned as a finished reply — `extractText` returns nil
+/// so `reply(...)` yields `.failure(.empty)`.
+@Suite("AICoachTruncationGuardTests")
+struct AICoachTruncationGuardTests {
+
+    // MARK: Stub builders — shaped exactly like the provider JSON the
+    // real `extractText` parses, so the gate is exercised on realistic
+    // objects (not hand-rolled finish-reason-only dicts).
+
+    private func geminiObject(finishReason: String?, text: String = "A complete coach reply.") -> [String: Any] {
+        var candidate: [String: Any] = [
+            "content": ["parts": [["text": text]]]
+        ]
+        if let finishReason { candidate["finishReason"] = finishReason }
+        return ["candidates": [candidate]]
+    }
+
+    private func openAIObject(finishReason: String?, content: String = "A complete coach reply.") -> [String: Any] {
+        var choice: [String: Any] = [
+            "message": ["role": "assistant", "content": content]
+        ]
+        if let finishReason { choice["finish_reason"] = finishReason }
+        return ["choices": [choice]]
+    }
+
+    // MARK: Truncated completions are caught
+
+    @Test func geminiMaxTokensIsTruncated() {
+        let object = geminiObject(finishReason: "MAX_TOKENS", text: "We are in a")
+        #expect(AICoachChatService.isLengthTruncated(responseObject: object, provider: .gemini))
+    }
+
+    @Test func openAILengthIsTruncated() {
+        let object = openAIObject(finishReason: "length", content: "We are currently")
+        #expect(AICoachChatService.isLengthTruncated(responseObject: object, provider: .openAI))
+    }
+
+    @Test func deepSeekLengthIsTruncated() {
+        // DeepSeek rides the OpenAI-shaped path.
+        let object = openAIObject(finishReason: "length")
+        #expect(AICoachChatService.isLengthTruncated(responseObject: object, provider: .deepSeek))
+    }
+
+    @Test func finishReasonMatchIsCaseInsensitive() {
+        // Guard against a provider casing drift (e.g. "Length",
+        // "max_tokens"). `.uppercased()` normalizes before matching.
+        #expect(AICoachChatService.isLengthTruncated(
+            responseObject: openAIObject(finishReason: "Length"), provider: .openAI))
+        #expect(AICoachChatService.isLengthTruncated(
+            responseObject: geminiObject(finishReason: "max_tokens"), provider: .gemini))
+    }
+
+    // MARK: Complete completions pass through
+
+    @Test func geminiStopIsNotTruncated() {
+        let object = geminiObject(finishReason: "STOP")
+        #expect(!AICoachChatService.isLengthTruncated(responseObject: object, provider: .gemini))
+    }
+
+    @Test func openAIStopIsNotTruncated() {
+        let object = openAIObject(finishReason: "stop")
+        #expect(!AICoachChatService.isLengthTruncated(responseObject: object, provider: .openAI))
+    }
+
+    @Test func missingFinishReasonIsNotTruncated() {
+        // Some clean stops omit the field entirely — a missing reason
+        // must read as complete, never as a (false) truncation that would
+        // suppress a perfectly good reply.
+        #expect(!AICoachChatService.isLengthTruncated(
+            responseObject: geminiObject(finishReason: nil), provider: .gemini))
+        #expect(!AICoachChatService.isLengthTruncated(
+            responseObject: openAIObject(finishReason: nil), provider: .openAI))
+    }
+
+    @Test func noneProviderIsNeverTruncated() {
+        #expect(!AICoachChatService.isLengthTruncated(responseObject: [:], provider: .none))
+    }
+
+    // MARK: parseFinishReason extracts the right provider field
+
+    @Test func parseFinishReasonReadsProviderSpecificField() {
+        // Gemini's field is `finishReason` under `candidates`; OpenAI's is
+        // `finish_reason` under `choices`. Reading one shape with the
+        // other provider must miss (returns nil) — proving the gate is
+        // provider-scoped and won't cross-read.
+        let gemini = geminiObject(finishReason: "MAX_TOKENS")
+        let openAI = openAIObject(finishReason: "length")
+        #expect(AICoachChatService.parseFinishReason(responseObject: gemini, provider: .gemini) == "MAX_TOKENS")
+        #expect(AICoachChatService.parseFinishReason(responseObject: openAI, provider: .openAI) == "length")
+        // Cross-read: Gemini object has no `choices`, OpenAI object has no
+        // `candidates` → nil → treated as not-truncated.
+        #expect(AICoachChatService.parseFinishReason(responseObject: gemini, provider: .openAI) == nil)
+        #expect(AICoachChatService.parseFinishReason(responseObject: openAI, provider: .gemini) == nil)
+        #expect(!AICoachChatService.isLengthTruncated(responseObject: gemini, provider: .openAI))
+    }
+
+    @Test func emptyObjectYieldsNilFinishReason() {
+        #expect(AICoachChatService.parseFinishReason(responseObject: [:], provider: .gemini) == nil)
+        #expect(AICoachChatService.parseFinishReason(responseObject: [:], provider: .openAI) == nil)
+    }
+}
+
+// MARK: - S2 Goal data + intelligence layer
+//
+// Deterministic seams behind the chat-driven "set or change your voice"
+// affordance (the UI card + commit path are S3). All pure / store-level —
+// no live model output, no pixel layout. Covers:
+//   • `CoachContextBuilder.detectGoalIntent` — initialSet vs change, the 6
+//     voice aliases, and nil on non-goal text.
+//   • `CoachingProfile.secondaryStyleGoal` — decode-safety (legacy JSON
+//     without the key) + round-trip.
+//   • `CoachingProfile.blendedAlignedSkillAreas` — union of both voices.
+//   • `CoachMemoryStore.noteVoiceChange` — appends a `CoachCourseChange` with
+//     the correct from/to lever + the voice-change marker + suffix(8) bound.
+//   • `CoachContextBuilder.recentVoiceChangeCount` — counts only in-window
+//     voice-change entries.
+//   • `CoachContextBuilder.goalIntentContextLines` — propose / change-trade-off
+//     / anti-thrash framing.
+
+@Suite("GoalIntentDetectionTests")
+struct GoalIntentDetectionTests {
+
+    // kind: initialSet when cold start, change when a voice already exists.
+
+    @Test func initialSetWhenNoCurrentVoice() {
+        let intent = CoachContextBuilder.detectGoalIntent(
+            "Can I set my communication style and goals here with you now?",
+            currentVoice: nil
+        )
+        #expect(intent?.kind == .initialSet)
+    }
+
+    @Test func changeWhenCurrentVoiceExists() {
+        let intent = CoachContextBuilder.detectGoalIntent(
+            "I want to switch my voice to persuasive instead.",
+            currentVoice: .authoritative
+        )
+        #expect(intent?.kind == .change)
+        #expect(intent?.requestedVoice == .persuasive)
+    }
+
+    // Resolve each of the 6 voices from a natural-language alias (not the
+    // rawValue / title) so the detector matches how a user actually types.
+
+    @Test func resolvesAllSixVoicesFromAliases() {
+        let cases: [(String, SpeakingStyleGoal)] = [
+            ("I want to sound more commanding", .authoritative),
+            ("can you make my voice more welcoming", .warm),
+            ("set my voice to sharp and crisp", .concise),
+            ("change my voice to be more convincing", .persuasive),
+            ("change my style to boardroom ready", .executive),
+            ("I'd rather work on vivid storytelling", .storytelling),
+        ]
+        for (text, expected) in cases {
+            let intent = CoachContextBuilder.detectGoalIntent(text, currentVoice: .warm)
+            #expect(intent?.requestedVoice == expected, "Expected \(expected) for: \(text)")
+        }
+    }
+
+    @Test func resolvesFromExactRawValueAndTitle() {
+        // resolve(_:) coverage through the detector — rawValue + display title.
+        let raw = CoachContextBuilder.detectGoalIntent("set my voice to warm", currentVoice: nil)
+        #expect(raw?.requestedVoice == .warm)
+        let title = CoachContextBuilder.detectGoalIntent(
+            "change my voice to Executive presence",
+            currentVoice: .warm
+        )
+        #expect(title?.requestedVoice == .executive)
+    }
+
+    // Non-goal text returns nil so the card never surfaces spuriously.
+
+    @Test func returnsNilOnNonGoalText() {
+        #expect(CoachContextBuilder.detectGoalIntent("How did my last rep go?", currentVoice: .warm) == nil)
+        #expect(CoachContextBuilder.detectGoalIntent("What does authoritative even mean?", currentVoice: nil) == nil)
+        #expect(CoachContextBuilder.detectGoalIntent("Tell me more.", currentVoice: .concise) == nil)
+        #expect(CoachContextBuilder.detectGoalIntent("", currentVoice: nil) == nil)
+    }
+
+    @Test func setPhraseWithNoNamedVoiceStillFiresWithNilVoice() {
+        // "help me pick" turns the dead-end into a guided pick — the card
+        // offers the palette. Intent fires, requestedVoice is nil.
+        let intent = CoachContextBuilder.detectGoalIntent(
+            "Can you help me pick a voice?",
+            currentVoice: nil
+        )
+        #expect(intent != nil)
+        #expect(intent?.requestedVoice == nil)
+        #expect(intent?.kind == .initialSet)
+    }
+
+    @Test func bareVoiceMentionWithoutIntentDoesNotFire() {
+        // A voice word with no set/change phrase AND no goal/voice/style anchor
+        // must NOT trip the card — only a real request should.
+        #expect(CoachContextBuilder.detectGoalIntent("That was a really persuasive close.", currentVoice: .warm) == nil)
+    }
+
+    // S1 — non-canonical descriptor closest-match. A user can name a QUALITY
+    // ("engaging") that is not one of the six register words; with an explicit
+    // set/change phrase present, it maps to the nearest canonical voice. "engaging"
+    // is verbatim in Storytelling's coachingDescription ("vivid, engaging, and
+    // memorable"), so it resolves to .storytelling — never a fabricated voice.
+
+    @Test func nonCanonicalDescriptorWithIntentResolvesToClosestVoice() {
+        let intent = CoachContextBuilder.detectGoalIntent(
+            "I want to sound more engaging",
+            currentVoice: .warm
+        )
+        #expect(intent != nil)
+        #expect(intent?.kind == .change)
+        // Closest-match resolves the descriptor onto a canonical voice; the
+        // only acceptable outcomes are the mapped voice or a nil (guided pick) —
+        // NEVER an invented voice. "engaging" maps to .storytelling.
+        #expect(intent?.requestedVoice == .storytelling || intent?.requestedVoice == nil)
+        #expect(intent?.requestedVoice == .storytelling)
+    }
+
+    @Test func descriptorClosestMatchCoversRepresentativeQualities() {
+        // Each descriptor must land on one of the six canonical voices (or nil),
+        // gated by an explicit set/change phrase. Never an invented voice.
+        let cases: [(String, SpeakingStyleGoal)] = [
+            ("I want to sound more engaging", .storytelling),
+            ("I want to sound more composed", .executive),
+            ("I want to sound more efficient", .concise),
+            ("I want to sound more assured", .authoritative),
+            ("I want to sound more encouraging", .warm),
+        ]
+        for (text, expected) in cases {
+            let intent = CoachContextBuilder.detectGoalIntent(text, currentVoice: .warm)
+            #expect(intent?.requestedVoice == expected, "Expected \(expected) for: \(text)")
+        }
+    }
+
+    @Test func bareDescriptorWithoutIntentDoesNotFire() {
+        // A descriptor with NO set/change phrase and NO goal/voice/style anchor
+        // must NOT trip the card — the closest-match second pass is gated behind
+        // an explicit intent cue, so a casual quality mention resolves nothing.
+        #expect(CoachContextBuilder.detectGoalIntent("That felt really engaging.", currentVoice: .warm) == nil)
+        #expect(CoachContextBuilder.detectGoalIntent("She seemed very composed up there.", currentVoice: .concise) == nil)
+    }
+
+    @Test func unmappableDescriptorWithIntentFallsToGuidedPick() {
+        // A set/change phrase whose quality maps to NONE of the six voices must
+        // return requestedVoice == nil (guided pick), never a fabricated voice.
+        let intent = CoachContextBuilder.detectGoalIntent(
+            "I want to sound more mysterious",
+            currentVoice: .warm
+        )
+        #expect(intent != nil)
+        #expect(intent?.requestedVoice == nil)
+    }
+}
+
+@Suite("SecondaryStyleGoalDecodeSafetyTests")
+struct SecondaryStyleGoalDecodeSafetyTests {
+
+    private func legacyProfileJSON() -> Data {
+        // A profile persisted before `secondaryStyleGoal` existed — the key is
+        // simply absent. Must decode with secondaryStyleGoal == nil.
+        let json = """
+        {
+            "speakingContext": "work",
+            "primaryGoal": "reduceFillers",
+            "confidenceLevel": "rebuilding",
+            "biggestChallenge": "fillerWords",
+            "desiredOutcome": "concise",
+            "speakingStyleGoal": "authoritative",
+            "styleReference": "",
+            "coachingBrief": "Brief stakeholders clearly.",
+            "motivationWhyNow": "",
+            "successVision": ""
+        }
+        """
+        return Data(json.utf8)
+    }
+
+    @Test func legacyProfileWithoutKeyDecodesToNil() throws {
+        let profile = try JSONDecoder().decode(CoachingProfile.self, from: legacyProfileJSON())
+        #expect(profile.secondaryStyleGoal == nil)
+        // Existing fields still decode unchanged (decode-safety regression guard).
+        #expect(profile.speakingStyleGoal == .authoritative)
+        #expect(profile.coachingBrief == "Brief stakeholders clearly.")
+    }
+
+    @Test func roundTripPreservesSetSecondary() throws {
+        var profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .warm,
+            styleReference: "",
+            coachingBrief: "Brief stakeholders clearly.",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        profile.secondaryStyleGoal = .persuasive
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(CoachingProfile.self, from: data)
+        #expect(decoded.secondaryStyleGoal == .persuasive)
+        #expect(decoded.speakingStyleGoal == .warm)
+        #expect(decoded == profile)
+    }
+
+    @Test func defaultMemberwiseInitLeavesSecondaryNil() {
+        let profile = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        #expect(profile.secondaryStyleGoal == nil)
+    }
+}
+
+@Suite("BlendedAlignedSkillAreasTests")
+struct BlendedAlignedSkillAreasTests {
+
+    private func profile(primary: SpeakingStyleGoal, secondary: SpeakingStyleGoal?) -> CoachingProfile {
+        var p = CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: primary,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+        p.secondaryStyleGoal = secondary
+        return p
+    }
+
+    @Test func singleVoiceEqualsEnumLevelSet() {
+        let p = profile(primary: .warm, secondary: nil)
+        #expect(p.blendedAlignedSkillAreas == SpeakingStyleGoal.warm.alignedSkillAreas)
+    }
+
+    @Test func blendIsUnionOfBothVoices() {
+        // concise = {conciseSpeaking, structure, fillerReduction}
+        // warm    = {paceControl, vocalEmphasis, answerDevelopment}
+        // disjoint → union has 6.
+        let p = profile(primary: .concise, secondary: .warm)
+        let expected = SpeakingStyleGoal.concise.alignedSkillAreas
+            .union(SpeakingStyleGoal.warm.alignedSkillAreas)
+        #expect(p.blendedAlignedSkillAreas == expected)
+        #expect(p.blendedAlignedSkillAreas.count == 6)
+        #expect(p.blendedAlignedSkillAreas.contains(.conciseSpeaking))
+        #expect(p.blendedAlignedSkillAreas.contains(.paceControl))
+    }
+
+    @Test func blendWithSameSecondaryCollapsesToPrimary() {
+        // A degenerate "blend" where secondary == primary must not double-count
+        // or change the set — it reads as a single voice.
+        let p = profile(primary: .persuasive, secondary: .persuasive)
+        #expect(p.blendedAlignedSkillAreas == SpeakingStyleGoal.persuasive.alignedSkillAreas)
+    }
+}
+
+@MainActor
+@Suite("NoteVoiceChangeTests")
+struct NoteVoiceChangeTests {
+
+    private func makeMemory() -> CoachMemory {
+        CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            evidenceCount: 6,
+            evidenceConfidence: .moderate,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: []
+        )
+    }
+
+    private func reason(from: SpeakingStyleGoal, to: SpeakingStyleGoal) -> String {
+        // Use the canonical composer so the test stays in lockstep with the
+        // marker the anti-thrash counter reads.
+        CoachCourseChange.voiceChangeReason(from: from, to: to)
+    }
+
+    @Test func canonicalReasonAlwaysCarriesMarker() {
+        for from in SpeakingStyleGoal.allCases {
+            for to in SpeakingStyleGoal.allCases {
+                let switchReason = CoachCourseChange.voiceChangeReason(from: from, to: to)
+                let blendReason = CoachCourseChange.voiceChangeReason(from: from, to: to, kind: .blend)
+                #expect(switchReason.range(of: CoachCourseChange.voiceChangeMarker, options: .caseInsensitive) != nil)
+                #expect(blendReason.range(of: CoachCourseChange.voiceChangeMarker, options: .caseInsensitive) != nil)
+            }
+        }
+    }
+
+    @Test func appendsCourseChangeWithCorrectLeversAndMarker() {
+        let suite = "note-voice-change-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "account-\(UUID().uuidString)"
+
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        store.replaceForTesting(makeMemory())
+
+        store.noteVoiceChange(
+            from: .warm,
+            to: .persuasive,
+            reason: reason(from: .warm, to: .persuasive),
+            evidenceBasis: "user-confirmed in chat",
+            at: Date(timeIntervalSince1970: 2_000)
+        )
+
+        let entry = store.currentMemory?.adaptationLog?.last
+        #expect(entry != nil)
+        // Levers map via primaryAlignedSkillArea: warm -> paceControl,
+        // persuasive -> structure.
+        #expect(entry?.fromLever == .paceControl)
+        #expect(entry?.toLever == .structure)
+        #expect(entry?.documentsVoiceChange == true)
+        #expect(entry?.changedAt == Date(timeIntervalSince1970: 2_000))
+        // Persists + reloads.
+        let reloaded = CoachMemoryStore(defaults: defaults, accountIDProvider: { accountID })
+        #expect(reloaded.currentMemory?.adaptationLog?.last?.toLever == .structure)
+        #expect(reloaded.currentMemory?.adaptationLog?.last?.documentsVoiceChange == true)
+    }
+
+    @Test func isNoOpWithoutCurrentMemory() {
+        // Cold start: no memory to record against; the profile write is the
+        // durable record there. Must not crash or create a memory.
+        let suite = "note-voice-change-nomem-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { "tester" })
+        store.replaceForTesting(nil)
+
+        store.noteVoiceChange(
+            from: .warm,
+            to: .concise,
+            reason: reason(from: .warm, to: .concise),
+            evidenceBasis: "user-confirmed in chat"
+        )
+        #expect(store.currentMemory == nil)
+    }
+
+    @Test func boundsAdaptationLogToEight() {
+        let suite = "note-voice-change-bound-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { "tester" })
+        store.replaceForTesting(makeMemory())
+
+        // Ten appends → only the last 8 survive (matches the engine's ceiling).
+        for i in 0..<10 {
+            store.noteVoiceChange(
+                from: .warm,
+                to: .concise,
+                reason: reason(from: .warm, to: .concise),
+                evidenceBasis: "change #\(i)",
+                at: Date(timeIntervalSince1970: TimeInterval(1_000 + i))
+            )
+        }
+        #expect(store.currentMemory?.adaptationLog?.count == 8)
+        // The earliest two were dropped; the newest is retained.
+        #expect(store.currentMemory?.adaptationLog?.first?.evidenceBasis == "change #2")
+        #expect(store.currentMemory?.adaptationLog?.last?.evidenceBasis == "change #9")
+    }
+
+    @Test func preservesPriorEngineCourseChanges() {
+        // The voice change APPENDS; it must not wipe an engine-recorded
+        // course change already in the log.
+        let suite = "note-voice-change-preserve-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = CoachMemoryStore(defaults: defaults, accountIDProvider: { "tester" })
+        var memory = makeMemory()
+        memory.adaptationLog = [
+            CoachCourseChange(
+                id: UUID(),
+                changedAt: Date(timeIntervalSince1970: 500),
+                fromLever: .fillerReduction,
+                toLever: .structure,
+                reason: "Shifted focus from Filler Words to Structure.",
+                evidenceBasis: "updated read across recent reps"
+            )
+        ]
+        store.replaceForTesting(memory)
+
+        store.noteVoiceChange(
+            from: .warm,
+            to: .concise,
+            reason: reason(from: .warm, to: .concise),
+            evidenceBasis: "user-confirmed in chat",
+            at: Date(timeIntervalSince1970: 2_000)
+        )
+        #expect(store.currentMemory?.adaptationLog?.count == 2)
+        #expect(store.currentMemory?.adaptationLog?.first?.documentsVoiceChange == false)
+        #expect(store.currentMemory?.adaptationLog?.last?.documentsVoiceChange == true)
+    }
+}
+
+@Suite("RecentVoiceChangeCountTests")
+struct RecentVoiceChangeCountTests {
+
+    private func voiceChange(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .paceControl,
+            toLever: .structure,
+            reason: CoachCourseChange.voiceChangeReason(from: .warm, to: .persuasive),
+            evidenceBasis: "user-confirmed in chat"
+        )
+    }
+
+    private func engineChange(at date: Date) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: date,
+            fromLever: .fillerReduction,
+            toLever: .structure,
+            reason: "Shifted focus from Filler Words to Structure.",
+            evidenceBasis: "updated read"
+        )
+    }
+
+    @Test func nilLogCountsZero() {
+        #expect(CoachContextBuilder.recentVoiceChangeCount(adaptationLog: nil) == 0)
+    }
+
+    @Test func countsOnlyInWindowVoiceChanges() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let log = [
+            voiceChange(at: now.addingTimeInterval(-1 * day)),   // in window
+            voiceChange(at: now.addingTimeInterval(-3 * day)),   // in window
+            voiceChange(at: now.addingTimeInterval(-30 * day)),  // out of window
+            engineChange(at: now.addingTimeInterval(-1 * day)),  // not a voice change
+        ]
+        let count = CoachContextBuilder.recentVoiceChangeCount(
+            adaptationLog: log,
+            within: 7 * day,
+            now: now
+        )
+        #expect(count == 2)
+    }
+
+    @Test func engineOnlyLogCountsZero() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let log = [engineChange(at: now), engineChange(at: now.addingTimeInterval(-100))]
+        #expect(CoachContextBuilder.recentVoiceChangeCount(adaptationLog: log, now: now) == 0)
+    }
+}
+
+@Suite("GoalIntentContextLinesTests")
+struct GoalIntentContextLinesTests {
+
+    @Test func initialSetEmitsProposeNotCommitted() {
+        let lines = CoachContextBuilder.goalIntentContextLines(
+            intent: .init(requestedVoice: .warm, kind: .initialSet),
+            currentVoice: nil,
+            adaptationLog: nil
+        )
+        #expect(lines.contains { $0.contains("SET their voice to Warm and welcoming") })
+        #expect(lines.contains { $0.contains("do NOT assume it is set") })
+    }
+
+    @Test func initialSetWithNoVoiceAsksToGuide() {
+        let lines = CoachContextBuilder.goalIntentContextLines(
+            intent: .init(requestedVoice: nil, kind: .initialSet),
+            currentVoice: nil,
+            adaptationLog: nil
+        )
+        #expect(lines.contains { $0.contains("not named a specific voice") })
+    }
+
+    @Test func changeNamesTradeOffAndRaisesAsQuestion() {
+        let lines = CoachContextBuilder.goalIntentContextLines(
+            intent: .init(requestedVoice: .persuasive, kind: .change),
+            currentVoice: .authoritative,
+            adaptationLog: nil
+        )
+        #expect(lines.contains { $0.contains("CHANGE their voice from Authoritative to Persuasive") })
+        #expect(lines.contains { $0.contains("Name the trade-off") })
+        #expect(lines.contains { $0.contains("their call") })
+    }
+
+    // S1 — the change branch must carry an explicit clarifying-question
+    // instruction (why change now / what has shifted) AND forbid the model from
+    // claiming the change is set, mirroring system-prompt rule 16.
+    @Test func changeBranchAsksWhyAndForbidsClaimingSet() {
+        let lines = CoachContextBuilder.goalIntentContextLines(
+            intent: .init(requestedVoice: .persuasive, kind: .change),
+            currentVoice: .authoritative,
+            adaptationLog: nil
+        )
+        #expect(lines.contains { $0.contains("ASK a clarifying question") })
+        #expect(lines.contains { $0.contains("what has shifted") })
+        #expect(lines.contains { $0.contains("do NOT state it is set") })
+    }
+
+    @Test func antiThrashNoteFiresAtThreshold() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: now.addingTimeInterval(-1 * day),
+            fromLever: .paceControl,
+            toLever: .structure,
+            reason: CoachCourseChange.voiceChangeReason(from: .warm, to: .persuasive),
+            evidenceBasis: "user-confirmed in chat"
+        )
+        // Two in-window voice changes → at threshold → anti-thrash note.
+        let lines = CoachContextBuilder.goalIntentContextLines(
+            intent: .init(requestedVoice: .concise, kind: .change),
+            currentVoice: .persuasive,
+            adaptationLog: [change, change],
+            now: now
+        )
+        #expect(lines.contains { $0.contains("changed voice 2 times in the last week") })
+        #expect(lines.contains { $0.contains("Do not punish-shame") })
+    }
+
+    @Test func antiThrashNoteAbsentBelowThreshold() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: now.addingTimeInterval(-1 * 24 * 60 * 60),
+            fromLever: .paceControl,
+            toLever: .structure,
+            reason: CoachCourseChange.voiceChangeReason(from: .warm, to: .persuasive),
+            evidenceBasis: "user-confirmed in chat"
+        )
+        let lines = CoachContextBuilder.goalIntentContextLines(
+            intent: .init(requestedVoice: .concise, kind: .change),
+            currentVoice: .persuasive,
+            adaptationLog: [change],
+            now: now
+        )
+        #expect(!lines.contains { $0.contains("times in the last week") })
+    }
+}
+
+// MARK: - Goal proposal card (S3 — in-chat set / change confirmation)
+//
+// S3 wires the human-in-the-loop affordance into AskNoumView. The deterministic
+// seams under test here are the two pure functions the view + tap handlers read:
+//   • `CoachContextBuilder.shouldShowGoalProposal(messages:intentPresent:)` —
+//     the visibility predicate. Same chat-shape gate as the ack rows (last
+//     message is a non-pending coach reply) AND a detected intent is pending.
+//   • `CoachContextBuilder.goalProposalChips(intent:currentVoice:)` — the chip
+//     catalog. Four shapes: cold-start-with-target, cold-start-palette,
+//     change-with-target (switch / blend / keep), change-palette.
+//
+// The commit handlers (`recordGoalSet` / `recordGoalChange`) touch @MainActor
+// stores + the model and are verified by hand-trace + on-device QA (no toolchain
+// / keys on this host). The LLM-never-writes invariant is enforced statically
+// (the only `CoachingProfileStore.save` call sites in the chat path are the two
+// tap handlers, never the service or `runReply`).
+
+@Suite("GoalProposalPredicateTests")
+struct GoalProposalPredicateTests {
+
+    @Test func showsWhenCoachRepliedAndIntentPending() {
+        // Happy path: the user asked to set/change a voice (intent present),
+        // the coach replied (most-recent, non-pending). Card eligible.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "Can I set my communication style here with you?"),
+            CoachMessage(role: .coach, text: "We can — want me to set it to warm?", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowGoalProposal(messages: messages, intentPresent: true) == true)
+    }
+
+    @Test func hiddenWhenNoIntentPending() {
+        // Same chat shape, but no detected intent — a plain coach reply to a
+        // plain question must never surface the goal card.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "How did my last rep go?"),
+            CoachMessage(role: .coach, text: "Your filler rate dropped to 3.1 per minute.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowGoalProposal(messages: messages, intentPresent: false) == false)
+    }
+
+    @Test func hiddenWhileCoachReplyPending() {
+        // While the model composes, no card — there's no reply to anchor the
+        // confirmation under.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "Change my voice to persuasive."),
+            CoachMessage(role: .coach, text: "", isPending: true),
+        ]
+        #expect(CoachContextBuilder.shouldShowGoalProposal(messages: messages, intentPresent: true) == false)
+    }
+
+    @Test func hiddenWhenLastMessageIsUserTurn() {
+        // After the user types again, the conversation moved on — collapse the
+        // card so a stale confirmation can't land out of order.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "Change my voice to persuasive."),
+            CoachMessage(role: .coach, text: "Want me to switch you?", isPending: false),
+            CoachMessage(role: .user, text: "Actually tell me more first."),
+        ]
+        #expect(CoachContextBuilder.shouldShowGoalProposal(messages: messages, intentPresent: true) == false)
+    }
+
+    @Test func hiddenOnEmptyMessages() {
+        #expect(CoachContextBuilder.shouldShowGoalProposal(messages: [], intentPresent: true) == false)
+    }
+}
+
+@Suite("GoalProposalChipCatalogTests")
+struct GoalProposalChipCatalogTests {
+
+    // MARK: - Cold start (.initialSet)
+
+    @Test func coldStartWithTargetOffersSetAndDecline() {
+        let chips = CoachContextBuilder.goalProposalChips(
+            intent: .init(requestedVoice: .warm, kind: .initialSet),
+            currentVoice: nil
+        )
+        #expect(chips.count == 2)
+        // First chip commits the set; carries the resolved voice.
+        #expect(chips.first?.action == .set(.warm))
+        #expect(chips.first?.label == "Set Warm and welcoming")
+        // Last chip declines.
+        #expect(chips.last?.action == .decline)
+        // No `noteVoiceChange`/blend semantics on cold start — only set/decline.
+        #expect(chips.allSatisfy { chip in
+            if case .switchTo = chip.action { return false }
+            if case .blend = chip.action { return false }
+            return true
+        })
+    }
+
+    @Test func coldStartWithoutTargetOffersFullPalettePlusDecline() {
+        let chips = CoachContextBuilder.goalProposalChips(
+            intent: .init(requestedVoice: nil, kind: .initialSet),
+            currentVoice: nil
+        )
+        // Six voices + one decline.
+        #expect(chips.count == SpeakingStyleGoal.allCases.count + 1)
+        #expect(chips.last?.action == .decline)
+        // Every voice is represented exactly once as a `.set`.
+        let setVoices: [SpeakingStyleGoal] = chips.compactMap { chip in
+            if case .set(let v) = chip.action { return v }
+            return nil
+        }
+        #expect(Set(setVoices) == Set(SpeakingStyleGoal.allCases))
+        #expect(setVoices.count == SpeakingStyleGoal.allCases.count)
+    }
+
+    // MARK: - Change (.change)
+
+    @Test func changeWithTargetOffersSwitchBlendKeep() {
+        let chips = CoachContextBuilder.goalProposalChips(
+            intent: .init(requestedVoice: .persuasive, kind: .change),
+            currentVoice: .warm
+        )
+        #expect(chips.count == 3)
+        #expect(chips[0].action == .switchTo(.persuasive))
+        #expect(chips[1].action == .blend(.persuasive))
+        #expect(chips[2].action == .decline) // "Keep <old>"
+        // The blend chip names BOTH voices so the user reads what they keep.
+        #expect(chips[1].label == "Blend Warm and welcoming + Persuasive")
+        // The keep chip names the OLD voice so the decline is explicit.
+        #expect(chips[2].label == "Keep Warm and welcoming")
+    }
+
+    @Test func changeOmitsBlendWhenTargetEqualsCurrent() {
+        // A "change" whose resolved target is the SAME as the current voice
+        // (degenerate, but possible if the detector resolves the active voice):
+        // no blend chip (blending a voice with itself is meaningless), just
+        // switch (a harmless no-op the commit handler guards) + keep.
+        let chips = CoachContextBuilder.goalProposalChips(
+            intent: .init(requestedVoice: .warm, kind: .change),
+            currentVoice: .warm
+        )
+        #expect(!chips.contains { chip in
+            if case .blend = chip.action { return true }
+            return false
+        })
+        #expect(chips.contains { $0.action == .decline })
+    }
+
+    @Test func changeWithoutTargetOffersPaletteExcludingCurrentPlusKeep() {
+        let chips = CoachContextBuilder.goalProposalChips(
+            intent: .init(requestedVoice: nil, kind: .change),
+            currentVoice: .warm
+        )
+        // Five switch targets (all voices except the current one) + keep.
+        #expect(chips.count == SpeakingStyleGoal.allCases.count - 1 + 1)
+        #expect(chips.last?.action == .decline)
+        let switchVoices: [SpeakingStyleGoal] = chips.compactMap { chip in
+            if case .switchTo(let v) = chip.action { return v }
+            return nil
+        }
+        // Current voice must NOT appear as a switch target.
+        #expect(!switchVoices.contains(.warm))
+        #expect(Set(switchVoices) == Set(SpeakingStyleGoal.allCases).subtracting([.warm]))
+    }
+
+    @Test func everyChipCarriesNonEmptyDispatchAndStableID() {
+        // The dispatched continuation text is what keeps the chat continuous
+        // after a tap — it must never be empty, and IDs must be unique so the
+        // SwiftUI ForEach + accessibility identifiers stay stable.
+        let catalogs: [[CoachContextBuilder.GoalProposalChip]] = [
+            CoachContextBuilder.goalProposalChips(intent: .init(requestedVoice: .warm, kind: .initialSet), currentVoice: nil),
+            CoachContextBuilder.goalProposalChips(intent: .init(requestedVoice: nil, kind: .initialSet), currentVoice: nil),
+            CoachContextBuilder.goalProposalChips(intent: .init(requestedVoice: .persuasive, kind: .change), currentVoice: .warm),
+            CoachContextBuilder.goalProposalChips(intent: .init(requestedVoice: nil, kind: .change), currentVoice: .concise),
+        ]
+        for chips in catalogs {
+            #expect(chips.allSatisfy { !$0.dispatchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            #expect(chips.allSatisfy { !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            #expect(Set(chips.map { $0.id }).count == chips.count)
+        }
     }
 }

@@ -100,6 +100,23 @@ final class AskNoumStore: ObservableObject {
     /// orphaned chip data for IDs that no longer exist.
     @Published private(set) var aiChipsCache: [UUID: [String]] = [:]
 
+    /// AI-tailored EMPTY-STATE starter prompts, cached against a stable
+    /// signature of the inputs that shape them (chosen voice + active
+    /// BigMoment + weakest baseline dimension). Unlike `aiChipsCache`,
+    /// which keys by coach message ID, the starter row is a single
+    /// pre-conversation surface — one cached set at a time. Keying by a
+    /// signature means a voice change / a new upcoming moment / a shifted
+    /// weakest dimension re-rolls the starters, while idle re-renders
+    /// (keyboard focus, scroll) reuse the cached set without re-rolling
+    /// the generation request.
+    ///
+    /// In-memory only — same rationale as `aiChipsCache`: starters are
+    /// pre-conversation ephemera, not a persistence surface. A relaunch
+    /// re-rolls once against the deterministic catalog skeleton.
+    ///
+    /// Cleared by `clearThread()` alongside the reply chip cache.
+    @Published private(set) var starterChipsCache: [String: [String]] = [:]
+
     /// Set by `injectUserTurn(_:)` when a different surface (e.g. the
     /// post-session Summary's "Talk to your coach about this rep" CTA)
     /// drops a seed message into the thread *before* AskNoumView has
@@ -219,6 +236,9 @@ final class AskNoumStore: ObservableObject {
         // Drop the AI chip cache too — every cached entry is keyed by
         // a coach message ID that no longer exists.
         aiChipsCache.removeAll()
+        // Drop the empty-state starter cache as well — a wiped thread
+        // returns to the empty state, which should re-roll fresh starters.
+        starterChipsCache.removeAll()
         persist()
     }
 
@@ -236,6 +256,21 @@ final class AskNoumStore: ObservableObject {
     /// deterministic chip catalog in the meantime.
     func aiChips(for coachID: UUID) -> [String]? {
         aiChipsCache[coachID]
+    }
+
+    /// Cache an AI-generated empty-state starter set keyed by the input
+    /// signature that produced it. Called by AskNoumView once the starter
+    /// generation request returns successfully.
+    func setStarterChips(_ chips: [String], for signature: String) {
+        starterChipsCache[signature] = chips
+    }
+
+    /// Read cached starter prompts for a given input signature, if any.
+    /// Returns nil when nothing has hydrated for this signature yet — the
+    /// view shows the deterministic data-grounded `starterPrompts(...)` in
+    /// the meantime, and the request fires once per new signature.
+    func starterChips(for signature: String) -> [String]? {
+        starterChipsCache[signature]
     }
 
     /// Cross-surface seed-message inject. Used by post-session bridges

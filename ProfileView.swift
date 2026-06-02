@@ -130,10 +130,24 @@ struct ProfileView: View {
     }
 
     private var coachingInsight: String {
+        // The generic read (unchanged) — kept verbatim so a never-chosen
+        // profile still reads neutral.
+        let genericRead: String
         if let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile) {
-            return plan.encouragement
+            genericRead = plan.encouragement
+        } else {
+            genericRead = "A few more sessions will turn this into a sharper read on how you speak under pressure."
         }
-        return "A few more sessions will turn this into a sharper read on how you speak under pressure."
+        // S2: when the user has EXPLICITLY chosen a voice, lead the read with a
+        // CoachPersona-derived chosen-voice line so the app visibly reflects the
+        // choice. Gated on `hasChosenVoice` (via the nil-returning helper) — an
+        // un-chosen profile returns nil and falls through to the generic read,
+        // so it never impersonates the default `.concise` voice. Deterministic,
+        // no model call.
+        if let voiceLead = coachingProfileStore.profile?.chosenVoiceCoachingLead {
+            return voiceLead + " " + genericRead
+        }
+        return genericRead
     }
 
     var body: some View {
@@ -949,7 +963,11 @@ struct ProfileView: View {
     private var caseReviewCard: some View {
         if let memory = coachMemoryStore.currentMemory,
            memory.evidenceConfidence >= .tentative {
-            CaseReviewCard(memory: memory)
+            // S2: pass the coaching profile so the card can render a chosen-voice
+            // register eyebrow when the user has picked a voice. Additive +
+            // defaulted nil on `CaseReviewCard`, so previews/other call sites are
+            // unaffected; a nil/unchosen profile renders exactly as before.
+            CaseReviewCard(memory: memory, profile: coachingProfileStore.profile)
         }
     }
 

@@ -218,6 +218,109 @@ final class NoumUITests: XCTestCase {
         }
         XCTFail("None of the expected option identifiers were found: \(candidates)")
     }
+
+    // MARK: - Ask Noum in-chat goal change (confirm-before-commit + blend)
+    //
+    // Verifies the fix for the screenshotted dead-end where the coach refused
+    // to set/change the user's voice and punted to settings. The seed profile
+    // is `.authoritative`; typing a change request must surface the in-chat
+    // goal-proposal card with the coach-like options (switch / blend / keep),
+    // proving (a) intent detection fires deterministically (no API key in the
+    // sim) and (b) the change is offered as a confirm-before-commit card, not
+    // a silent write or a refusal.
+    @MainActor
+    func testAskNoumGoalChangeSurfacesConfirmationCard() throws {
+        let app = launchSeededAt("noum://ask")
+
+        // Land on the chat.
+        let input = app.descendants(matching: .any)["askNoum.inputControl"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10), "Ask Noum input control should exist")
+
+        // Type a voice-change request (seed voice is authoritative -> concise).
+        let field = app.textViews.firstMatch.exists ? app.textViews.firstMatch : app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Message field should exist")
+        field.tap()
+        // NOTE: the field is `axis: .vertical`, so a trailing "\n" inserts a
+        // newline into the draft rather than submitting — send via the unified
+        // input control instead (verified working via the captured UI
+        // hierarchy: the tap dispatches trySend()).
+        field.typeText("I want to change my voice goal to concise and sharp")
+        input.tap()
+
+        // Capture the post-send state for the record.
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "ask-noum-after-goal-change-send"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        // The deterministic goal-proposal card must appear — the fix for the
+        // screenshotted dead-end (coach refusing and punting to settings). The
+        // concrete commit chip is `set.concise` when the profile has no voice
+        // yet (initial set) or `switch.concise` when changing an existing one;
+        // accept either so the test is robust to the seed's profile state.
+        let setChip = app.buttons["askNoum.goalProposal.set.concise"]
+        let switchChip = app.buttons["askNoum.goalProposal.switch.concise"]
+        let commitChip = setChip.waitForExistence(timeout: 12) ? setChip
+            : (switchChip.waitForExistence(timeout: 2) ? switchChip : setChip)
+        XCTAssertTrue(commitChip.exists,
+            "Goal request must surface the in-chat confirm-before-commit card (set/switch concise), not a refusal")
+
+        // The decline option must always exist — the change is the user's call,
+        // committed only on an explicit tap (the LLM never writes the profile).
+        XCTAssertTrue(app.buttons["askNoum.goalProposal.decline"].exists
+            || app.buttons["askNoum.goalProposal.keep"].exists,
+            "Card must offer a decline/keep option — confirm-before-commit")
+
+        // Tapping the commit chip is the only profile-write path; the card
+        // collapses afterward.
+        commitChip.tap()
+        XCTAssertFalse(commitChip.waitForExistence(timeout: 3),
+            "Confirmation card should collapse after the user taps a chip")
+
+        app.terminate()
+    }
+
+    /// Regression for the screenshotted "Engaging" bug: a NON-CANONICAL voice
+    /// descriptor ("engaging" — not one of the six voices) must now map to the
+    /// closest real voice (Storytelling) and surface the confirm-before-commit
+    /// card, instead of the coach narrating "You have chosen Engaging…" and
+    /// silently accepting a goal change in prose. The seed voice is
+    /// authoritative, so a change request yields switch/blend storytelling chips.
+    @MainActor
+    func testNonCanonicalVoiceDescriptorSurfacesCard() throws {
+        let app = launchSeededAt("noum://ask")
+
+        let input = app.descendants(matching: .any)["askNoum.inputControl"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10), "Ask Noum input control should exist")
+
+        let field = app.textViews.firstMatch.exists ? app.textViews.firstMatch : app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Message field should exist")
+        field.tap()
+        field.typeText("I want to change my voice to sound more engaging")
+        input.tap()
+
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "ask-noum-engaging-maps-to-storytelling"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        // "engaging" → Storytelling. The card MUST appear with a storytelling
+        // commit chip — `set.storytelling` (initial set) or `switch.storytelling`
+        // (change from an existing voice), depending on profile state. The proof
+        // the non-canonical descriptor no longer slips past the detector into
+        // silent prose acceptance.
+        let setChip = app.buttons["askNoum.goalProposal.set.storytelling"]
+        let switchChip = app.buttons["askNoum.goalProposal.switch.storytelling"]
+        let cardAppeared = setChip.waitForExistence(timeout: 12)
+            || switchChip.waitForExistence(timeout: 2)
+        XCTAssertTrue(cardAppeared,
+            "A non-canonical descriptor ('engaging') must map to Storytelling and surface the goal card, not be silently accepted in prose")
+        XCTAssertTrue(app.buttons["askNoum.goalProposal.keep"].exists
+            || app.buttons["askNoum.goalProposal.decline"].exists,
+            "Card must offer keep/decline — confirm-before-commit")
+
+        app.terminate()
+    }
 }
 
 // MARK: - Option identifier fixtures
