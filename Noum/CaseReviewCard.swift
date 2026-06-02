@@ -19,14 +19,37 @@ import SwiftUI
 
 struct CaseReviewCard: View {
     let memory: CoachMemory
+    /// S2 (additive, defaulted nil): the user's coaching profile, used only to
+    /// render a chosen-voice register eyebrow when the user has explicitly
+    /// picked a voice. Defaulted nil so the existing call sites and previews
+    /// compile unchanged — mirrors the `secondaryStyleGoal` additive-field
+    /// pattern. When nil or unchosen, the card renders exactly as before. This
+    /// is read-only COPY (no model call, no numeric score, no analytics).
+    var profile: CoachingProfile? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Your Coach's Read")
-                .font(Typography.micro)
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your Coach's Read")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+
+                // S2: chosen-voice register eyebrow. Only when the user has
+                // EXPLICITLY chosen a voice (helper returns nil otherwise, so an
+                // un-chosen profile shows nothing extra and the card is byte-for-
+                // byte the prior layout). Same restrained micro/tertiary eyebrow
+                // treatment — names the lens this read is written through without
+                // adding a row, a button, or a glyph.
+                if let registerLabel = profile?.chosenVoiceRegisterLabel {
+                    Text(registerLabel)
+                        .font(Typography.micro)
+                        .foregroundStyle(.tertiary)
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                }
+            }
 
             // 1. Working hypothesis or current lever
             if let hypothesis = memory.workingHypothesis,

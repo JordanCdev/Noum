@@ -70,6 +70,36 @@ enum CoachMemoryGoalFit: String, Codable, Equatable {
     case noLever
 }
 
+/// How the measured coaching lever lines up with the challenge the user
+/// *stated* at onboarding (`CoachingProfile.biggestChallenge`). This is the
+/// stated-vs-measured concordance read a human coach keeps in mind: never
+/// silently overrule what the client said they want to work on. Bounded,
+/// `Codable`, and defaulted (`.unknown`) so a `CoachMemory` blob persisted
+/// before this field decodes cleanly.
+///
+/// Semantics (all decided in `CoachMemoryEngine.selectLever`):
+///   • `.unknown`     — no stated challenge on file, or no lever to compare.
+///                      The coach says nothing about concordance.
+///   • `.deferred`    — the baseline is still thin (below the evidence
+///                      floor). The measured read isn't trustworthy enough
+///                      to challenge what the user said, so we defer to the
+///                      stated challenge and stay tentative. No question.
+///   • `.agree`       — above the floor, the measured lever maps to the same
+///                      SkillArea the stated challenge points at. The coach
+///                      can affirm "what you came in for is what the reps
+///                      show" but raises no divergence question.
+///   • `.divergent`   — above the floor, the measured lever points somewhere
+///                      *other* than the stated challenge. The coach surfaces
+///                      ONE divergence question ("you came in wanting X — the
+///                      reps point more at Y; which should we anchor to?")
+///                      and does NOT auto-flip the stored focus.
+enum StatedChallengeConcordance: String, Codable, Equatable {
+    case unknown
+    case deferred
+    case agree
+    case divergent
+}
+
 enum CoachInterventionReviewStatus: String, Codable, Equatable {
     case awaitingAttempt
     case formingEvidence
@@ -166,6 +196,50 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// Lifted as a constant so a copy edit in the engine forces the predicate
     /// to follow in one place.
     static let userPushbackMarker = "user reported the prior hypothesis did not match"
+
+    /// Marker phrase written into `reason` by
+    /// `CoachMemoryStore.noteVoiceChange(...)` whenever the user confirms a
+    /// voice-goal change from the in-chat goal-change card. Lets
+    /// `CoachContextBuilder.recentVoiceChangeCount(...)` count only voice-change
+    /// entries (not engine lever shifts or hypothesis rejections) in the
+    /// bounded `adaptationLog` for the anti-thrash note. Lifted as a constant so
+    /// a copy edit in the recorder forces the counter to follow in one place.
+    static let voiceChangeMarker = "changed voice goal from"
+
+    /// The canonical `reason` string for a user-confirmed voice-goal change.
+    /// Always embeds `voiceChangeMarker` so `documentsVoiceChange` (and the
+    /// anti-thrash counter that reads it) match every entry the in-chat card
+    /// records — the caller can't forget the marker. Uses each voice's
+    /// `shortVoiceLabel` so the recorded reason reads in the coach's register
+    /// ("The user changed voice goal from warm voice to persuasive voice.").
+    /// `kind == .blend` documents a keep-primary-add-secondary choice so the
+    /// recorded history distinguishes a full switch from a blend.
+    static func voiceChangeReason(
+        from: SpeakingStyleGoal,
+        to: SpeakingStyleGoal,
+        kind: VoiceChangeKind = .switchVoice
+    ) -> String {
+        switch kind {
+        case .switchVoice:
+            return "The user changed voice goal from \(from.shortVoiceLabel) to \(to.shortVoiceLabel)."
+        case .blend:
+            return "The user changed voice goal from \(from.shortVoiceLabel) to a blend of \(from.shortVoiceLabel) (primary) and \(to.shortVoiceLabel) (secondary)."
+        }
+    }
+
+    /// Distinguishes a full voice switch from a blend in the recorded reason.
+    enum VoiceChangeKind {
+        case switchVoice
+        case blend
+    }
+
+    /// True iff this course change documents a user-confirmed voice-goal change
+    /// (as opposed to an engine lever shift or a hypothesis rejection). Pure
+    /// function of the persisted `reason` — no extra state to round-trip, so
+    /// entries persisted before this lift decode and behave correctly.
+    var documentsVoiceChange: Bool {
+        reason.range(of: CoachCourseChange.voiceChangeMarker, options: .caseInsensitive) != nil
+    }
 
     /// True iff this course change documents a user-tapped rejection of the
     /// prior working hypothesis (as opposed to an engine-only lever shift).
@@ -308,6 +382,114 @@ struct CoachReflectionReview: Codable, Equatable {
             line += " — \"\(note)\""
         }
         return line
+    }
+}
+
+enum CoachReflectionPatternConfidence: String, Codable, Equatable {
+    case forming
+    case repeated
+
+    var contextLabel: String {
+        switch self {
+        case .forming:
+            return "forming pattern"
+        case .repeated:
+            return "repeated pattern"
+        }
+    }
+}
+
+/// A bounded read over the user's recent post-rep reflections. This is not a
+/// psychological label; it is a repeated self-report pattern the coach should
+/// use as a hypothesis to explore.
+struct CoachReflectionPattern: Codable, Equatable {
+    static let defaultWindowSize = 6
+    private static let minimumSampleSize = 3
+    private static let minimumDominantCount = 2
+    private static let dominanceRatio = 0.5
+
+    var dominantFeeling: ReflectionFeeling
+    var dominantCount: Int
+    var sampleSize: Int
+    var windowSize: Int
+    var firstSeenAt: Date
+    var latestSeenAt: Date
+    var confidence: CoachReflectionPatternConfidence
+
+    static func build(
+        from reflections: [SessionReflection],
+        windowSize: Int = defaultWindowSize
+    ) -> CoachReflectionPattern? {
+        let window = reflections
+            .sorted { $0.recordedAt > $1.recordedAt }
+            .prefix(max(1, windowSize))
+        guard window.count >= minimumSampleSize else { return nil }
+
+        let grouped = Dictionary(grouping: window, by: \.feeling)
+        let ranked = grouped.map { (feeling, items) in
+            (
+                feeling: feeling,
+                items: items,
+                count: items.count,
+                latest: items.map(\.recordedAt).max() ?? .distantPast
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.count != rhs.count { return lhs.count > rhs.count }
+            return lhs.latest > rhs.latest
+        }
+
+        guard let dominant = ranked.first,
+              dominant.count >= minimumDominantCount,
+              Double(dominant.count) / Double(window.count) >= dominanceRatio,
+              let firstSeen = dominant.items.map(\.recordedAt).min(),
+              let latestSeen = dominant.items.map(\.recordedAt).max() else {
+            return nil
+        }
+
+        let confidence: CoachReflectionPatternConfidence = dominant.count >= 3 && window.count >= 4
+            ? .repeated
+            : .forming
+
+        return CoachReflectionPattern(
+            dominantFeeling: dominant.feeling,
+            dominantCount: dominant.count,
+            sampleSize: window.count,
+            windowSize: windowSize,
+            firstSeenAt: firstSeen,
+            latestSeenAt: latestSeen,
+            confidence: confidence
+        )
+    }
+
+    var reportedLine: String {
+        "Across \(dominantCount) of the last \(sampleSize) reflections, the user reported \(dominantFeeling.coachClause)."
+    }
+
+    var contextInstruction: String {
+        switch dominantFeeling {
+        case .strong:
+            return "Ask what conditions made control possible, then reuse those conditions deliberately."
+        case .nervous:
+            return "Treat this as a self-reported nerves pattern; ask where pressure enters before increasing difficulty."
+        case .heldBack:
+            return "Treat this as a self-reported avoidance hypothesis; ask what they avoided saying before prescribing firmer delivery."
+        case .notLikeMe:
+            return "Treat this as an authenticity calibration issue; ask what would sound more like them before coaching more polish."
+        }
+    }
+
+    var interventionReviewQuestion: String {
+        switch dominantFeeling {
+        case .strong:
+            return "check what made those stronger reps possible and whether the intervention should reuse those conditions"
+        case .nervous:
+            return "check whether the repeated nerves are easing, unchanged, or worse"
+        case .heldBack:
+            return "check whether they are still holding back or avoiding the direct version"
+        case .notLikeMe:
+            return "check whether the work is helping them sound more like themselves, not just more polished"
+        }
     }
 }
 
@@ -461,6 +643,59 @@ struct CoachIntervention: Codable, Equatable {
     }
 }
 
+enum CoachCaseNextMove: String, Codable, Equatable {
+    case confirmHypothesis
+    case reformulateHypothesis
+    case followIntervention
+    case reviewIntervention
+    case adaptIntervention
+    case reviewTransfer
+    case exploreSubjectivePattern
+    case gatherEvidence
+
+    var contextLabel: String {
+        switch self {
+        case .confirmHypothesis:
+            return "Confirm the read"
+        case .reformulateHypothesis:
+            return "Reformulate the read"
+        case .followIntervention:
+            return "Run the intervention"
+        case .reviewIntervention:
+            return "Review the intervention"
+        case .adaptIntervention:
+            return "Adapt the intervention"
+        case .reviewTransfer:
+            return "Review transfer"
+        case .exploreSubjectivePattern:
+            return "Explore subjective pattern"
+        case .gatherEvidence:
+            return "Gather evidence"
+        }
+    }
+
+    var contextInstruction: String {
+        switch self {
+        case .confirmHypothesis:
+            return "Ask whether the current hypothesis matches the user's experience before strengthening it."
+        case .reformulateHypothesis:
+            return "Treat the current hypothesis as challenged by the user; propose a revised read and name what evidence would distinguish it."
+        case .followIntervention:
+            return "Keep the current prescription active and collect followed reps against the success measure."
+        case .reviewIntervention:
+            return "Review whether the current prescription should continue, adapt, or be replaced."
+        case .adaptIntervention:
+            return "Do not repeat the same intervention unchanged; diagnose what broke and prescribe a narrower variation."
+        case .reviewTransfer:
+            return "Ask what transferred into the real moment and what broke down before changing course."
+        case .exploreSubjectivePattern:
+            return "Ask the user to confirm, refine, or reject the repeated self-report pattern."
+        case .gatherEvidence:
+            return "Collect another rep before strengthening the case."
+        }
+    }
+}
+
 struct CoachMemory: Codable, Equatable {
     var updatedAt: Date
     var lastSessionID: UUID?
@@ -474,6 +709,17 @@ struct CoachMemory: Codable, Equatable {
     var previousLever: SkillArea?
     var focusShiftedAt: Date?
     var goalFit: CoachMemoryGoalFit
+    /// Stated-vs-measured read: how the current lever lines up with the
+    /// challenge the user named at onboarding. Defaulted to `.unknown` and
+    /// decoded with `decodeIfPresent` so memories persisted before this
+    /// field decode cleanly. Consumed by `CoachContextBuilder` to surface a
+    /// single divergence question rather than silently switching focus.
+    var statedChallengeConcordance: StatedChallengeConcordance
+    /// The SkillArea the user's stated challenge maps to, carried only when
+    /// the concordance read is `.divergent` so the divergence-question copy
+    /// can name what the user actually asked for. `nil` otherwise (agree /
+    /// deferred / unknown need no second area to phrase a question).
+    var statedChallengeArea: SkillArea?
     var strengths: [String]
     var blockers: [String]
     var lastIntentLabel: String?
@@ -482,6 +728,11 @@ struct CoachMemory: Codable, Equatable {
     var planMode: PracticeMode?
     var workingHypothesis: String?
     var activeIntervention: CoachIntervention?
+
+    // The compact operating case a human coach would keep in their notes:
+    // hypothesis, active intervention, evidence threshold, subjective pattern,
+    // transfer read, and the next coaching move. Optional for backward compat.
+    var caseFile: CoachCaseFile?
 
     /// The user's most-recent one-tap verdict on the working hypothesis,
     /// captured from the `AskNoumView` hypothesis acknowledgement chip
@@ -506,6 +757,10 @@ struct CoachMemory: Codable, Equatable {
     // review move. Optional for backward compatibility; older memories only
     // have `lastReflectionSummary`.
     var lastReflectionReview: CoachReflectionReview?
+
+    // Repeated self-report pattern across recent reflection history. Optional
+    // and bounded; absence means no honest pattern yet, not "no issue."
+    var reflectionPattern: CoachReflectionPattern?
 
     // The latest off-app outcome folded into this case file. Optional for
     // backward compatibility and kept separate from intervention verdicts:
@@ -534,6 +789,8 @@ struct CoachMemory: Codable, Equatable {
         previousLever: SkillArea? = nil,
         focusShiftedAt: Date? = nil,
         goalFit: CoachMemoryGoalFit,
+        statedChallengeConcordance: StatedChallengeConcordance = .unknown,
+        statedChallengeArea: SkillArea? = nil,
         strengths: [String],
         blockers: [String],
         lastIntentLabel: String? = nil,
@@ -542,10 +799,12 @@ struct CoachMemory: Codable, Equatable {
         planMode: PracticeMode? = nil,
         workingHypothesis: String? = nil,
         activeIntervention: CoachIntervention? = nil,
+        caseFile: CoachCaseFile? = nil,
         hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil,
         adaptationLog: [CoachCourseChange]? = nil,
         lastReflectionSummary: String? = nil,
         lastReflectionReview: CoachReflectionReview? = nil,
+        reflectionPattern: CoachReflectionPattern? = nil,
         lastTransferReview: CoachTransferReview? = nil,
         consecutiveCleanReps: Int? = nil,
         fillerTrendDirection: TrendDirection? = nil,
@@ -564,6 +823,8 @@ struct CoachMemory: Codable, Equatable {
         self.previousLever = previousLever
         self.focusShiftedAt = focusShiftedAt
         self.goalFit = goalFit
+        self.statedChallengeConcordance = statedChallengeConcordance
+        self.statedChallengeArea = statedChallengeArea
         self.strengths = strengths
         self.blockers = blockers
         self.lastIntentLabel = lastIntentLabel
@@ -572,10 +833,12 @@ struct CoachMemory: Codable, Equatable {
         self.planMode = planMode
         self.workingHypothesis = workingHypothesis
         self.activeIntervention = activeIntervention
+        self.caseFile = caseFile
         self.hypothesisAcknowledgement = hypothesisAcknowledgement
         self.adaptationLog = adaptationLog
         self.lastReflectionSummary = lastReflectionSummary
         self.lastReflectionReview = lastReflectionReview
+        self.reflectionPattern = reflectionPattern
         self.lastTransferReview = lastTransferReview
         self.consecutiveCleanReps = consecutiveCleanReps
         self.fillerTrendDirection = fillerTrendDirection
@@ -590,12 +853,15 @@ struct CoachMemory: Codable, Equatable {
         case updatedAt, lastSessionID, evidenceCount, evidenceConfidence
         case voice, statedGoalSummary, currentLever, currentLeverConfidence
         case currentLeverBasis, previousLever, focusShiftedAt, goalFit
+        case statedChallengeConcordance, statedChallengeArea
         case strengths, blockers, lastIntentLabel
         case planWeekIndex, planFocus, planMode
         case workingHypothesis, activeIntervention
+        case caseFile
         case hypothesisAcknowledgement
         case adaptationLog
-        case lastReflectionSummary, lastReflectionReview, lastTransferReview
+        case lastReflectionSummary, lastReflectionReview, reflectionPattern
+        case lastTransferReview
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
     }
@@ -614,6 +880,8 @@ struct CoachMemory: Codable, Equatable {
         previousLever = try c.decodeIfPresent(SkillArea.self, forKey: .previousLever)
         focusShiftedAt = try c.decodeIfPresent(Date.self, forKey: .focusShiftedAt)
         goalFit = try c.decode(CoachMemoryGoalFit.self, forKey: .goalFit)
+        statedChallengeConcordance = try c.decodeIfPresent(StatedChallengeConcordance.self, forKey: .statedChallengeConcordance) ?? .unknown
+        statedChallengeArea = try c.decodeIfPresent(SkillArea.self, forKey: .statedChallengeArea)
         strengths = try c.decode([String].self, forKey: .strengths)
         blockers = try c.decode([String].self, forKey: .blockers)
         lastIntentLabel = try c.decodeIfPresent(String.self, forKey: .lastIntentLabel)
@@ -622,15 +890,171 @@ struct CoachMemory: Codable, Equatable {
         planMode = try c.decodeIfPresent(PracticeMode.self, forKey: .planMode)
         workingHypothesis = try c.decodeIfPresent(String.self, forKey: .workingHypothesis)
         activeIntervention = try c.decodeIfPresent(CoachIntervention.self, forKey: .activeIntervention)
+        caseFile = try c.decodeIfPresent(CoachCaseFile.self, forKey: .caseFile)
         hypothesisAcknowledgement = try c.decodeIfPresent(CoachHypothesisAcknowledgement.self, forKey: .hypothesisAcknowledgement)
         adaptationLog = try c.decodeIfPresent([CoachCourseChange].self, forKey: .adaptationLog)
         lastReflectionSummary = try c.decodeIfPresent(String.self, forKey: .lastReflectionSummary)
         lastReflectionReview = try c.decodeIfPresent(CoachReflectionReview.self, forKey: .lastReflectionReview)
+        reflectionPattern = try c.decodeIfPresent(CoachReflectionPattern.self, forKey: .reflectionPattern)
         lastTransferReview = try c.decodeIfPresent(CoachTransferReview.self, forKey: .lastTransferReview)
         consecutiveCleanReps = try c.decodeIfPresent(Int.self, forKey: .consecutiveCleanReps)
         fillerTrendDirection = try c.decodeIfPresent(TrendDirection.self, forKey: .fillerTrendDirection)
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
         isLatestSessionPersonalBest = try c.decodeIfPresent(Bool.self, forKey: .isLatestSessionPersonalBest)
+    }
+}
+
+/// The durable operating note for the coach. This deliberately composes
+/// existing owners rather than owning raw history: `CoachMemory` remains the
+/// per-account state, `RecommendationLearningStore` owns intervention
+/// evidence, `SessionReflectionStore` owns reflection history, and
+/// `BigMomentStore` owns transfer check-ins. The case file is the concise
+/// strategy spine the AI coach can carry across chat, summaries, and plans.
+struct CoachCaseFile: Codable, Equatable {
+    var updatedAt: Date
+    var hypothesis: String?
+    var focus: SkillArea?
+    var evidenceSummary: String
+    var activeIntervention: String?
+    var observableTarget: String?
+    var successMeasure: String?
+    var reviewDueAt: Date?
+    var subjectivePattern: String?
+    var transferRead: String?
+    var nextMove: CoachCaseNextMove
+    var nextQuestion: String
+
+    static func build(from memory: CoachMemory, now: Date) -> CoachCaseFile? {
+        let hypothesis = bounded(memory.workingHypothesis)
+        let focus = memory.currentLever
+        let activeIntervention = memory.activeIntervention.map(interventionSummary)
+        let observableTarget = bounded(memory.activeIntervention?.target)
+        let successMeasure = memory.activeIntervention.flatMap(successMeasureSummary)
+        let reviewDueAt = memory.activeIntervention?.reviewDueAt
+        let subjectivePattern = memory.reflectionPattern?.reportedLine
+        let transferRead = memory.lastTransferReview?.reportedOutcomeLine
+
+        guard hypothesis != nil ||
+                focus != nil ||
+                activeIntervention != nil ||
+                subjectivePattern != nil ||
+                transferRead != nil else {
+            return nil
+        }
+
+        let move = nextMove(for: memory, now: now)
+        return CoachCaseFile(
+            updatedAt: now,
+            hypothesis: hypothesis,
+            focus: focus,
+            evidenceSummary: evidenceSummary(for: memory),
+            activeIntervention: activeIntervention,
+            observableTarget: observableTarget,
+            successMeasure: successMeasure,
+            reviewDueAt: reviewDueAt,
+            subjectivePattern: subjectivePattern,
+            transferRead: transferRead,
+            nextMove: move,
+            nextQuestion: nextQuestion(for: move)
+        )
+    }
+
+    private static func nextMove(for memory: CoachMemory, now: Date) -> CoachCaseNextMove {
+        if let ack = memory.hypothesisAcknowledgement,
+           ack.appliesTo(currentHypothesis: memory.workingHypothesis),
+           ack.confidence == .rejected {
+            return .reformulateHypothesis
+        }
+
+        if let intervention = memory.activeIntervention {
+            switch intervention.reviewStatus {
+            case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+                return .adaptIntervention
+            case .awaitingAttempt, .formingEvidence, .continueAndVerify:
+                break
+            }
+
+            if intervention.isReviewDue(at: now) {
+                return .reviewIntervention
+            }
+
+            if intervention.followedRepCount < intervention.minimumFollowedRepsForReview {
+                return .followIntervention
+            }
+        }
+
+        if let transfer = memory.lastTransferReview,
+           transfer.nextAction != .exploreWhatTransferred {
+            return .reviewTransfer
+        }
+
+        if memory.activeIntervention != nil {
+            return .followIntervention
+        }
+
+        if memory.reflectionPattern != nil {
+            return .exploreSubjectivePattern
+        }
+
+        if bounded(memory.workingHypothesis) != nil {
+            return .confirmHypothesis
+        }
+
+        if memory.lastTransferReview != nil {
+            return .reviewTransfer
+        }
+
+        return .gatherEvidence
+    }
+
+    private static func nextQuestion(for move: CoachCaseNextMove) -> String {
+        switch move {
+        case .confirmHypothesis:
+            return "Does this working hypothesis match the user's lived experience?"
+        case .reformulateHypothesis:
+            return "What revised read fits the user's pushback, and what evidence would distinguish it?"
+        case .followIntervention:
+            return "What is the next followed rep that will test the success measure?"
+        case .reviewIntervention:
+            return "Should the current intervention continue, adapt, or be replaced?"
+        case .adaptIntervention:
+            return "What broke in the current intervention, and what narrower variation should replace it?"
+        case .reviewTransfer:
+            return "What transferred into the real moment, and what broke down?"
+        case .exploreSubjectivePattern:
+            return "Does this repeated self-report pattern fit, or should it be revised?"
+        case .gatherEvidence:
+            return "What one more rep would strengthen or weaken this read?"
+        }
+    }
+
+    private static func evidenceSummary(for memory: CoachMemory) -> String {
+        let noun = memory.evidenceCount == 1 ? "signal" : "signals"
+        var summary = "\(memory.evidenceConfidence.label) read across \(memory.evidenceCount) \(noun)"
+        if let basis = bounded(memory.currentLeverBasis) {
+            summary += "; basis: \(basis)"
+        }
+        return summary
+    }
+
+    private static func interventionSummary(_ intervention: CoachIntervention) -> String {
+        let purpose = bounded(intervention.focus) ?? bounded(intervention.title) ?? intervention.mode.displayLabel
+        return "\(intervention.mode.displayLabel) for \(purpose)"
+    }
+
+    private static func successMeasureSummary(_ intervention: CoachIntervention) -> String? {
+        guard let criterion = intervention.successCriterion else { return nil }
+        var summary = criterion.summary
+        if let status = intervention.criterionStatus {
+            summary += " — \(status.contextLabel)"
+        }
+        return summary
+    }
+
+    private static func bounded(_ value: String?, maximumLength: Int = 180) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(maximumLength))
     }
 }
 
@@ -646,6 +1070,7 @@ enum CoachMemoryEngine {
         pendingIntervention: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
         latestReflection: SessionReflection? = nil,
+        reflectionHistory: [SessionReflection] = [],
         latestTransferReport: BigMomentOutcomeReport? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
@@ -773,6 +1198,8 @@ enum CoachMemoryEngine {
             previousLever: previousLever,
             focusShiftedAt: focusShiftedAt,
             goalFit: goalFit,
+            statedChallengeConcordance: lever?.concordance ?? .unknown,
+            statedChallengeArea: lever?.statedChallengeArea,
             strengths: Array(baseline.topStrengths.prefix(3)),
             blockers: Array(baseline.persistentBlockers.prefix(3)),
             lastIntentLabel: latestIntentLabel(from: sessions),
@@ -802,12 +1229,16 @@ enum CoachMemoryEngine {
             ?? previous?.lastReflectionSummary
         memory.lastReflectionReview = latestReflection.map(CoachReflectionReview.init)
             ?? previous?.lastReflectionReview
+        memory.reflectionPattern = reflectionHistory.isEmpty
+            ? previous?.reflectionPattern
+            : CoachReflectionPattern.build(from: reflectionHistory)
         memory.lastTransferReview = latestTransferReport.map { CoachTransferReview(report: $0) }
             ?? previous?.lastTransferReview
         memory.consecutiveCleanReps = momentumClean
         memory.fillerTrendDirection = momentumFillerTrend
         memory.weeklyRepCount = momentumWeekly
         memory.isLatestSessionPersonalBest = momentumPB
+        memory.caseFile = CoachCaseFile.build(from: memory, now: now)
         return memory
     }
 
@@ -815,6 +1246,15 @@ enum CoachMemoryEngine {
         let area: SkillArea
         let confidence: TrendConfidence?
         let basis: String
+        /// Stated-vs-measured read of `area` against the user's onboarding
+        /// `biggestChallenge`. Defaulted to `.unknown` so the existing
+        /// return sites that don't compute it stay valid; `selectLever`
+        /// fills it in before returning.
+        var concordance: StatedChallengeConcordance = .unknown
+        /// The SkillArea the stated challenge maps to. Only meaningful when
+        /// `concordance == .divergent` (so the question copy can name what
+        /// the user actually asked for); `nil` otherwise.
+        var statedChallengeArea: SkillArea? = nil
     }
 
     private static func selectLever(
@@ -822,32 +1262,85 @@ enum CoachMemoryEngine {
         baseline: CommunicationBaseline,
         trends: [SkillTrend]
     ) -> LeverSelection? {
+        // Resolve the measured lever exactly as before — telemetry first,
+        // then a persistent blocker, then the stated voice goal. The
+        // stated-challenge reconciliation is applied AFTER, as a read on
+        // the chosen lever, so it never changes WHICH lever is selected
+        // (no silent focus switch — honesty invariant).
+        var selection: LeverSelection?
         if let trend = strongestTrendLever(from: trends, profile: profile) {
-            return LeverSelection(
+            selection = LeverSelection(
                 area: trend.skillArea,
                 confidence: trend.confidence,
                 basis: trendBasis(trend)
             )
-        }
-
-        if let blocker = baseline.persistentBlockers.first,
-           let area = skillArea(fromBlocker: blocker) {
-            return LeverSelection(
+        } else if let blocker = baseline.persistentBlockers.first,
+                  let area = skillArea(fromBlocker: blocker) {
+            selection = LeverSelection(
                 area: area,
                 confidence: nil,
                 basis: "persistent blocker in the rolling baseline"
             )
-        }
-
-        if let voice = profile?.speakingStyleGoal {
-            return LeverSelection(
+        } else if let voice = profile?.speakingStyleGoal {
+            selection = LeverSelection(
                 area: voice.primaryAlignedSkillArea,
                 confidence: nil,
                 basis: "stated voice goal while evidence is still forming"
             )
         }
 
-        return nil
+        guard var lever = selection else { return nil }
+        let read = statedChallengeRead(
+            measuredArea: lever.area,
+            profile: profile,
+            baseline: baseline
+        )
+        lever.concordance = read.concordance
+        lever.statedChallengeArea = read.statedArea
+        return lever
+    }
+
+    /// Pure stated-vs-measured concordance read. Composes the user's
+    /// onboarding `biggestChallenge` into a SkillArea via the existing
+    /// `SpeakingChallenge.recommendedPriority` ->
+    /// `ForwardPlanService.skillAreaForAIWeek` mapping (the same canonical
+    /// focus→skill map the AI forward plan uses, so the diagnosis and the
+    /// plan never disagree about what a challenge "means"), then compares it
+    /// to the measured lever:
+    ///
+    ///   • No stated challenge on file ............. `.unknown`
+    ///   • Baseline below the evidence floor ....... `.deferred` (defer to
+    ///                                               the stated challenge;
+    ///                                               the measured read isn't
+    ///                                               trustworthy enough yet)
+    ///   • Above floor, same area .................. `.agree`
+    ///   • Above floor, different area ............. `.divergent` (+ carry
+    ///                                               the stated area so the
+    ///                                               coach can name it)
+    ///
+    /// The evidence floor is `BaselineConfidence.isReliable` (>= .moderate,
+    /// i.e. 5+ qualifying sessions) — the same "reliable enough to act on"
+    /// bar the rest of the baseline layer uses. Below it we never challenge
+    /// what the user said they wanted to work on.
+    static func statedChallengeRead(
+        measuredArea: SkillArea,
+        profile: CoachingProfile?,
+        baseline: CommunicationBaseline
+    ) -> (concordance: StatedChallengeConcordance, statedArea: SkillArea?) {
+        guard let challenge = profile?.biggestChallenge else {
+            return (.unknown, nil)
+        }
+        let statedArea = ForwardPlanService.skillAreaForAIWeek(
+            focus: challenge.recommendedPriority
+        )
+        guard baseline.overallConfidence.isReliable else {
+            // Thin baseline — defer to the stated challenge, stay tentative.
+            return (.deferred, nil)
+        }
+        if statedArea == measuredArea {
+            return (.agree, nil)
+        }
+        return (.divergent, statedArea)
     }
 
     private static func strongestTrendLever(
@@ -1159,16 +1652,51 @@ enum CoachMemoryEngine {
                 boundedText($0.focus, maximumLength: 80) == normalizedLatestFocus
             }
         let followedRepCount = summary?.followedCount ?? 1
+
+        // Prefer the stricter reinforce / vary / replace verdict once enough
+        // measurable reps exist (≥3), so the durable case file reads the SAME
+        // adaptation decision the chat coach, forward plan, and next-practice
+        // recommendation do — a coach holds one read across every surface, not a
+        // "continue and verify" here and a "vary" there. Below the floor the
+        // verdict is nil and we fall back to the existing association assessment,
+        // so thin-evidence behaviour is unchanged.
+        //
+        // Deliberate keying difference (coherent, not contradictory): the case
+        // file keys the verdict on `latest.mode`/`latest.focus` — the most-RECENT
+        // prescription, i.e. the status of the ACTIVE intervention — whereas the
+        // chat coach and forward plan key on `summarize().first`, the most-FOLLOWED
+        // group. The identical reducer runs per key, so each key's verdict is
+        // self-consistent; the surfaces can headline different keys when the most-
+        // recent prescription isn't the most-evidenced one, which is the distinction
+        // a real coach holds (the active drill vs. the strongest pattern), not two
+        // contradictory reads. See docs/initiatives/01_adaptation_loop_spec.md.
         let status: CoachInterventionReviewStatus
-        switch summary?.assessment ?? .forming {
-        case .forming:
-            status = .formingEvidence
-        case .promising:
-            status = .continueAndVerify
-        case .mixed:
-            status = .diagnoseBeforeRepeating
-        case .needsAdjustment:
-            status = .adaptBeforeRepeating
+        let reviewBasis: String
+        if let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(
+            mode: latest.mode, focus: latest.focus, in: outcomes),
+           let verdictLine = RecommendationAdaptationAnalyzer.adaptationRationale(
+            mode: latest.mode, focus: latest.focus, in: outcomes) {
+            switch verdict.action {
+            case .reinforce:
+                status = .continueAndVerify
+            case .vary:
+                status = .diagnoseBeforeRepeating
+            case .replace:
+                status = .adaptBeforeRepeating
+            }
+            reviewBasis = verdictLine.trimmingCharacters(in: CharacterSet(charactersIn: "- "))
+        } else {
+            switch summary?.assessment ?? .forming {
+            case .forming:
+                status = .formingEvidence
+            case .promising:
+                status = .continueAndVerify
+            case .mixed:
+                status = .diagnoseBeforeRepeating
+            case .needsAdjustment:
+                status = .adaptBeforeRepeating
+            }
+            reviewBasis = (summary?.assessment ?? .forming).coachingGuidance
         }
 
         return CoachIntervention(
@@ -1181,7 +1709,7 @@ enum CoachMemoryEngine {
             followedRepCount: followedRepCount,
             minimumFollowedRepsForReview: 2,
             reviewStatus: status,
-            reviewBasis: (summary?.assessment ?? .forming).coachingGuidance
+            reviewBasis: reviewBasis
         )
     }
 
@@ -1266,6 +1794,7 @@ final class CoachMemoryStore: ObservableObject {
         pendingIntervention: RecommendationExposure? = nil,
         recommendationOutcomes: [RecommendationOutcome] = [],
         latestReflection: SessionReflection? = nil,
+        reflectionHistory: [SessionReflection] = [],
         latestTransferReport: BigMomentOutcomeReport? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
@@ -1281,6 +1810,7 @@ final class CoachMemoryStore: ObservableObject {
             pendingIntervention: pendingIntervention,
             recommendationOutcomes: recommendationOutcomes,
             latestReflection: latestReflection,
+            reflectionHistory: reflectionHistory,
             latestTransferReport: latestTransferReport,
             now: now,
             calendar: calendar
@@ -1297,7 +1827,9 @@ final class CoachMemoryStore: ObservableObject {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = summary
         memory.lastReflectionReview = nil
+        memory.reflectionPattern = nil
         memory.updatedAt = Date()
+        memory.caseFile = CoachCaseFile.build(from: memory, now: memory.updatedAt)
         currentMemory = memory
         persist(memory)
     }
@@ -1305,11 +1837,17 @@ final class CoachMemoryStore: ObservableObject {
     /// Structured late-arriving reflection from the post-rep summary. Keeps
     /// the user's own words and the next review move inside the durable case
     /// immediately, without waiting for the next full memory rebuild.
-    func noteReflection(_ reflection: SessionReflection) {
+    func noteReflection(
+        _ reflection: SessionReflection,
+        recentReflections: [SessionReflection] = []
+    ) {
         guard var memory = currentMemory else { return }
         memory.lastReflectionSummary = reflection.coachClause
         memory.lastReflectionReview = CoachReflectionReview(reflection: reflection)
+        let history = recentReflections.isEmpty ? [reflection] : recentReflections
+        memory.reflectionPattern = CoachReflectionPattern.build(from: history)
         memory.updatedAt = Date()
+        memory.caseFile = CoachCaseFile.build(from: memory, now: memory.updatedAt)
         currentMemory = memory
         persist(memory)
     }
@@ -1333,6 +1871,59 @@ final class CoachMemoryStore: ObservableObject {
             acknowledgedAt: now
         )
         memory.updatedAt = now
+        memory.caseFile = CoachCaseFile.build(from: memory, now: now)
+        currentMemory = memory
+        persist(memory)
+    }
+
+    /// Record the user's confirmed voice-goal change from the `AskNoumView`
+    /// goal-change card. Appends a `CoachCourseChange` to the bounded
+    /// `adaptationLog` so the case carries an honest "reason for changing
+    /// course" rather than silently swapping the goal — the human-in-the-loop
+    /// audit trail the coach reads back. Mirrors
+    /// `noteHypothesisAcknowledgement`: guard the current memory, append,
+    /// bound to the last 8 (same ceiling the engine enforces in `build`),
+    /// stamp `updatedAt`, rebuild the case file, persist. No-op when no
+    /// current memory exists (cold-start has nothing to record against — the
+    /// profile write is the durable record there).
+    ///
+    /// The change ONLY appends — it never wipes the prior adaptation history,
+    /// session evidence, baseline, or trends (all keyed by `SkillArea`/metric,
+    /// none carry a voice field). Levers are mapped via each voice's
+    /// `primaryAlignedSkillArea` so the recorded `from`/`to` read as the
+    /// concrete skill the voice change re-weights toward. The recorded entry
+    /// auto-surfaces to the model through the generic course-change branch in
+    /// `CoachContextBuilder.interventionCycleLines`.
+    ///
+    /// - Parameters:
+    ///   - from: the voice the user is leaving.
+    ///   - to: the voice the user is moving to.
+    ///   - reason: the documented reason for the change (caller composes it
+    ///     from `shortVoiceLabel`).
+    ///   - evidenceBasis: how the prior voice's work is characterised.
+    ///   - at: timestamp; defaults to now. Used by `recentVoiceChangeCount`.
+    func noteVoiceChange(
+        from: SpeakingStyleGoal,
+        to: SpeakingStyleGoal,
+        reason: String,
+        evidenceBasis: String,
+        at now: Date = Date()
+    ) {
+        guard var memory = currentMemory else { return }
+        var log = memory.adaptationLog ?? []
+        log.append(
+            CoachCourseChange(
+                id: UUID(),
+                changedAt: now,
+                fromLever: from.primaryAlignedSkillArea,
+                toLever: to.primaryAlignedSkillArea,
+                reason: reason,
+                evidenceBasis: evidenceBasis
+            )
+        )
+        memory.adaptationLog = Array(log.suffix(8))
+        memory.updatedAt = now
+        memory.caseFile = CoachCaseFile.build(from: memory, now: now)
         currentMemory = memory
         persist(memory)
     }
@@ -1344,6 +1935,7 @@ final class CoachMemoryStore: ObservableObject {
         guard var memory = currentMemory else { return }
         memory.lastTransferReview = CoachTransferReview(report: report)
         memory.updatedAt = Date()
+        memory.caseFile = CoachCaseFile.build(from: memory, now: memory.updatedAt)
         currentMemory = memory
         persist(memory)
     }

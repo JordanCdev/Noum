@@ -320,14 +320,31 @@ struct MiniDrillView: View {
             CoachHaptic.drillIncomplete()
         }
 
+        // `MiniDrillView` is the shared recording UI for both the generic
+        // constraint drill (`.standard`) and the named-framework drills
+        // (`.frameworkCheck`). Derive the type + framework from the variation
+        // ID so the result surface routes to the right copy. The structural
+        // verdict is computed READ-ONLY — `succeeded` above is untouched, so
+        // XP / streaks / history stay driven purely by the deterministic
+        // `evaluateSuccess` thresholds (score-safety).
+        let drillType = MiniDrillType.from(variationId: drill.variation.id)
+        let framework = MiniDrillType.framework(for: drill.variation.id)
+        let frameworkVerdict = FrameworkDrillVerdict.evaluate(
+            framework,
+            transcript: transcript,
+            duration: duration
+        )
+
         let outcome = MiniDrillOutcome(
             drill: drill,
-            drillType: .standard,
+            drillType: drillType,
             transcript: transcript,
             fillerCount: fillerCount,
             duration: duration,
             wordCount: wordCount,
-            succeeded: succeeded
+            succeeded: succeeded,
+            framework: framework,
+            frameworkVerdict: frameworkVerdict
         )
 
         // Brief pause before showing result
@@ -392,6 +409,46 @@ struct MiniDrillOutcome: Identifiable {
     var beatTheBrakeMetrics: BeatTheBrakeMetrics?
     var landThePauseMetrics: LandThePauseMetrics?
     var prepStackMetrics: PREPStackMetrics?
+    /// The named framework a `.frameworkCheck` drill graded against, when this
+    /// is a framework drill. `nil` for every other drill type — defaulted so
+    /// existing construction sites are unaffected.
+    var framework: FrameworkDrill?
+    /// The post-hoc structural verdict for a `.frameworkCheck` drill, carried
+    /// so the result copy can surface ONE constructive structural nudge without
+    /// re-running detection. READ-ONLY w.r.t. the numeric outcome: it never
+    /// feeds `succeeded` or XP (mirrors how the prompt-relevance verdict never
+    /// moves the score). `nil` when below the detector's evidence floor or for
+    /// non-framework drills.
+    var frameworkVerdict: FrameworkDrillVerdict?
+}
+
+/// A type-erased wrapper over the three per-framework verdicts so the result
+/// view holds one optional field rather than three. Bounded + `Equatable`.
+enum FrameworkDrillVerdict: Equatable {
+    case star(FrameworkDrillChecks.StarTurnVerdict)
+    case claimCounter(FrameworkDrillChecks.ClaimCounterVerdict)
+    case elevatorPitch(FrameworkDrillChecks.ElevatorPitchVerdict)
+
+    /// Run the matching deterministic detector for `framework`. Returns `nil`
+    /// when there is no framework (a non-framework drill) or when the detector
+    /// is below its evidence floor (no confident negative on thin data). Pure —
+    /// the single place that maps a framework to its detector + wraps the
+    /// result, so the recording flow and any test read the same routing.
+    static func evaluate(
+        _ framework: FrameworkDrill?,
+        transcript: String,
+        duration: TimeInterval
+    ) -> FrameworkDrillVerdict? {
+        guard let framework else { return nil }
+        switch framework {
+        case .starTurn:
+            return FrameworkDrillChecks.starTurn(transcript: transcript).map(FrameworkDrillVerdict.star)
+        case .claimCounter:
+            return FrameworkDrillChecks.claimCounter(transcript: transcript).map(FrameworkDrillVerdict.claimCounter)
+        case .elevatorPitch:
+            return FrameworkDrillChecks.elevatorPitch(transcript: transcript, duration: duration).map(FrameworkDrillVerdict.elevatorPitch)
+        }
+    }
 }
 
 #endif

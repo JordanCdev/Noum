@@ -2363,7 +2363,8 @@ struct TimedPracticeView: View {
                     duration: speechVM.lastSessionDuration,
                     difficulty: practiceSettings.timedDifficulty,
                     recentSessions: speechVM.pastSessions,
-                    profile: coachingProfileStore.profile
+                    profile: coachingProfileStore.profile,
+                    question: question.isEmpty ? nil : question
                 )
                 evaluation = result
                 speechVM.annotateLatestSession(

@@ -16,10 +16,24 @@ import Foundation
 //   • Bounded replay — cap at 12 user-coach turn pairs in the request
 //     body (24 messages). Older context is summarised by virtue of
 //     being baked into the user context block.
-//   • Token-bounded — temperature 0.6, max_tokens 350. System prompt
-//     brevity contract (2-4 sentences) keeps replies tight; 350 tokens
-//     (~260 words) is well over the real output ceiling. Earlier 700
-//     cap caused wall-of-text; earlier 380 cap clipped mid-fraction.
+//   • Token-bounded — temperature 0.6, output cap 800. The system
+//     prompt brevity contract (2-4 sentences) is what actually keeps
+//     replies tight; the cap is a safety ceiling, not the length lever.
+//     History: a 350 cap silently truncated. The default provider is a
+//     *thinking* model (gemini-2.5-flash) whose budget is shared between
+//     invisible reasoning tokens and visible text, so terse/ambiguous
+//     early questions triggered heavy reasoning that ate the 350 budget
+//     and guillotined the visible answer mid-word ("…guide you through
+//     the app'"). Fix: Gemini reasoning is disabled (thinkingConfig
+//     thinkingBudget 0) so the whole budget is visible text, and the cap
+//     is 800 (headroom over the 2-4 sentence contract, matching the
+//     never-truncating PostRepCoachNoteService which sets no cap).
+//   • Truncation-honest — `extractText` reads the provider finish reason
+//     (Gemini `finishReason`, OpenAI/DeepSeek `finish_reason`). A
+//     length-truncated completion (MAX_TOKENS / "length") is treated as
+//     `.empty` so the user sees the honest "try rephrasing" notice
+//     instead of a sentence that stops dead. Never commit a guillotined
+//     reply verbatim.
 //   • Failure-typed — `reply(...)` returns `ChatOutcome` so the store
 //     can route to per-cause copy (locale-block vs. network vs. no
 //     provider vs. empty) instead of one generic "couldn't reach my
@@ -163,7 +177,10 @@ actor AICoachChatService {
             return [
                 "model": provider.model,
                 "temperature": 0.6,
-                "max_tokens": 350,
+                // 800 is a safety ceiling, not the length lever — the
+                // system-prompt brevity contract (2-4 sentences) governs
+                // length. A lower cap silently clipped replies mid-word.
+                "max_tokens": 800,
                 "messages": msgs
             ]
         case .gemini:
@@ -188,7 +205,14 @@ actor AICoachChatService {
                 "contents": contents,
                 "generationConfig": [
                     "temperature": 0.6,
-                    "maxOutputTokens": 350
+                    // gemini-2.5-flash is a thinking model: reasoning
+                    // tokens otherwise share — and eat — the output
+                    // budget, guillotining the visible reply mid-word.
+                    // thinkingBudget 0 spends the whole budget on text.
+                    "thinkingConfig": ["thinkingBudget": 0],
+                    // 800 = safety ceiling; the 2-4 sentence system-prompt
+                    // contract is what keeps replies tight.
+                    "maxOutputTokens": 800
                 ]
             ]
         case .none:
@@ -208,6 +232,12 @@ actor AICoachChatService {
                 let message = first["message"] as? [String: Any],
                 let content = message["content"] as? String
             else { return nil }
+            // Truncation-honest: a completion the provider stopped for
+            // length is a guillotined sentence. Treat it as empty so the
+            // store shows "try rephrasing" rather than a dead-stop reply.
+            if Self.isLengthTruncated(responseObject: object, provider: provider) {
+                return nil
+            }
             let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         case .gemini:
@@ -218,6 +248,9 @@ actor AICoachChatService {
                 let content = first["content"] as? [String: Any],
                 let parts = content["parts"] as? [[String: Any]]
             else { return nil }
+            if Self.isLengthTruncated(responseObject: object, provider: provider) {
+                return nil
+            }
             let joined = parts
                 .compactMap { $0["text"] as? String }
                 .joined(separator: " ")
@@ -225,6 +258,51 @@ actor AICoachChatService {
             return joined.isEmpty ? nil : joined
         case .none:
             return nil
+        }
+    }
+
+    // MARK: - Finish-reason inspection (truncation guard)
+
+    /// Reads the provider-specific finish reason from a parsed response
+    /// object. Gemini reports `candidates[0].finishReason`; OpenAI /
+    /// DeepSeek report `choices[0].finish_reason`. Returns `nil` when the
+    /// field is absent (some providers omit it on a clean stop).
+    ///
+    /// Pure + dependency-free so the truncation gate is unit-testable
+    /// without a live provider (see `AICoachTruncationGuardTests`).
+    static func parseFinishReason(responseObject object: [String: Any], provider: AIProvider) -> String? {
+        switch provider {
+        case .openAI, .deepSeek:
+            guard
+                let choices = object["choices"] as? [[String: Any]],
+                let first = choices.first
+            else { return nil }
+            return first["finish_reason"] as? String
+        case .gemini:
+            guard
+                let candidates = object["candidates"] as? [[String: Any]],
+                let first = candidates.first
+            else { return nil }
+            return first["finishReason"] as? String
+        case .none:
+            return nil
+        }
+    }
+
+    /// Whether the parsed response was cut off because the model hit its
+    /// output cap (Gemini `MAX_TOKENS`, OpenAI/DeepSeek `length`). Such a
+    /// completion is a mid-sentence fragment and must not be committed as
+    /// a finished reply. Case-insensitive; a missing or any other finish
+    /// reason (e.g. `STOP`, `stop`) is treated as *not* truncated.
+    static func isLengthTruncated(responseObject object: [String: Any], provider: AIProvider) -> Bool {
+        guard let reason = parseFinishReason(responseObject: object, provider: provider) else {
+            return false
+        }
+        switch reason.uppercased() {
+        case "MAX_TOKENS", "LENGTH":
+            return true
+        default:
+            return false
         }
     }
 }

@@ -51,6 +51,12 @@ struct PostRepCoachNoteInput {
     /// the AI path is required to reference a specific phrase or moment
     /// rather than restate the stats above.
     let transcript: String
+    /// The question this rep answered (`PracticeSession.prompt`). Lets the AI
+    /// path judge "did you answer it / where did the point land" instead of
+    /// only quoting a phrase — the one thing a coach checks first. Empty when
+    /// unknown (IM, silence, legacy). Defaulted in the init so every existing
+    /// call site + test fixture compiles unchanged.
+    let prompt: String
     /// Short descriptors of the last few sessions (mode, score, key signal)
     /// so the AI can write "this rep" vs "the last few" continuity copy.
     /// Empty for first-rep users; deterministic fallback handles that case.
@@ -149,6 +155,7 @@ struct PostRepCoachNoteInput {
         bigMoment: BigMoment?,
         bigMomentDaysUntil: Int?,
         transcript: String = "",
+        prompt: String = "",
         recentSessionSummaries: [String] = [],
         recentProofQuotes: [String] = [],
         consecutiveCleanReps: Int = 0,
@@ -177,6 +184,7 @@ struct PostRepCoachNoteInput {
         self.bigMoment = bigMoment
         self.bigMomentDaysUntil = bigMomentDaysUntil
         self.transcript = transcript
+        self.prompt = prompt
         self.recentSessionSummaries = recentSessionSummaries
         self.recentProofQuotes = recentProofQuotes
         self.consecutiveCleanReps = consecutiveCleanReps
@@ -406,6 +414,15 @@ actor PostRepCoachNoteService {
             // filler, length cap. If the model misbehaves, fall back
             // rather than render policy-violating text.
             guard Self.passesBrandVoiceContract(noteText) else {
+                return fallback
+            }
+            // Presence gate (mirrors GrammarFeedbackService's excerpt-must-
+            // appear check): when there's a real rep to quote, the note must
+            // actually engage the transcript — share a content word or a
+            // verbatim slice — else it's a stat-restate dressed as a coach
+            // read and we fall back to the deterministic note. Empty
+            // transcript (IM / silent rep) -> nothing to quote -> gate passes.
+            guard Self.engagesTranscript(noteText, input: input) else {
                 return fallback
             }
             return PostRepCoachNote(
@@ -1065,6 +1082,71 @@ actor PostRepCoachNoteService {
         text.replacingOccurrences(of: "!", with: ".")
     }
 
+    /// Local content-word stop set for the presence gate. Same established
+    /// local-set pattern used elsewhere; kept private to this type. Tokens
+    /// in this set don't count as "engaging the transcript" so a note that
+    /// only shares filler words like "the"/"with" still falls back.
+    private nonisolated static let engagementStopWords: Set<String> = [
+        "the", "and", "for", "are", "but", "not", "you", "your", "with",
+        "this", "that", "they", "them", "from", "have", "what", "when",
+        "were", "will", "would", "should", "could", "about", "there",
+        "their", "then", "than", "into", "more", "some", "such", "only",
+        "very", "just", "most", "over", "also", "been", "being", "which",
+        "while", "these", "those", "here", "make", "made", "much", "many",
+        "like", "well", "even", "ever", "because", "really", "it's"
+    ]
+
+    /// Presence gate for the AI note (mirrors
+    /// `GrammarFeedbackService`'s excerpt-must-appear substring check at
+    /// :358-360). Returns true when the note genuinely engages the rep's
+    /// transcript, so a stat-restate that ignores what the user said gets
+    /// rejected and the deterministic note is shown instead.
+    ///
+    /// True if EITHER:
+    /// - the note shares at least one content word (>= 4 chars, non-stop)
+    ///   with the transcript, OR
+    /// - the note contains a >= 12-char verbatim substring of the transcript
+    ///   (case-insensitive).
+    /// Empty transcript -> passes (nothing to quote; never blocks IM/silent
+    /// reps).
+    nonisolated static func engagesTranscript(_ note: String, input: PostRepCoachNoteInput) -> Bool {
+        let transcript = input.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return true }
+
+        let lowerTranscript = transcript.lowercased()
+        let lowerNote = note.lowercased()
+
+        // 1) Shared content word.
+        let transcriptWords = Set(
+            lowerTranscript
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count >= 4 && !engagementStopWords.contains($0) }
+        )
+        let noteWords = lowerNote
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count >= 4 && !engagementStopWords.contains($0) }
+        if noteWords.contains(where: { transcriptWords.contains($0) }) {
+            return true
+        }
+
+        // 2) >= 12-char verbatim slice of the transcript appears in the note.
+        // Slide a 12-char window across the transcript; cheap and bounded
+        // (transcript is capped well under 1k chars on this path).
+        let window = 12
+        let chars = Array(lowerTranscript)
+        if chars.count >= window {
+            for start in 0...(chars.count - window) {
+                let slice = String(chars[start..<(start + window)])
+                if lowerNote.contains(slice) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     nonisolated static func collapseWhitespace(in text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var result = ""
@@ -1089,7 +1171,7 @@ actor PostRepCoachNoteService {
 
     // MARK: - AI prompt + parsing
 
-    private func userPrompt(from input: PostRepCoachNoteInput) -> String {
+    nonisolated static func userPrompt(from input: PostRepCoachNoteInput) -> String {
         var lines: [String] = []
         if let voice = input.voice {
             lines.append("User's voice goal: \(voice.title) (\(voice.coachingDescription))")
@@ -1117,9 +1199,17 @@ actor PostRepCoachNoteService {
         // a real phrase is what separates "coach who heard you" from
         // "dashboard reading numbers." Capped so the prompt stays bounded.
         let trimmedTranscript = Self.collapseWhitespace(in: input.transcript)
+        // The question the rep answered — lets the model judge "did you
+        // answer it / where did the point land" instead of only quoting a
+        // phrase. Omitted entirely when unknown (no placeholder injected).
+        let trimmedPrompt = Self.collapseWhitespace(in: input.prompt)
+        if !trimmedPrompt.isEmpty {
+            lines.append("")
+            lines.append("THE QUESTION ASKED: \(Self.truncate(trimmedPrompt, max: 200))")
+        }
         if !trimmedTranscript.isEmpty {
             lines.append("")
-            lines.append("THIS REP — TRANSCRIPT (quote a specific phrase when you respond):")
+            lines.append("THIS REP — TRANSCRIPT (quote a specific phrase, and say whether it answered THE QUESTION ASKED and where the main point landed):")
             lines.append(Self.truncate(trimmedTranscript, max: 900))
         }
         if !input.recentSessionSummaries.isEmpty {
@@ -1192,6 +1282,9 @@ actor PostRepCoachNoteService {
         1. Reference a SPECIFIC moment from THEIR TRANSCRIPT below — a \
         phrase they used, a structural choice, an opener, an ending. \
         Quote it in their words when possible.
+        1b. If a QUESTION ASKED is given, your note must reflect whether the \
+        rep actually answered it and where the main point landed (lead vs \
+        buried) — grounded in their words, never a generic relevance claim.
         2. Connect this rep to prior sessions or banked proofs when that \
         adds genuine continuity — "this is the second time you've leaned \
         on…", "the pause game from last week showed up again here." \
@@ -1215,7 +1308,7 @@ actor PostRepCoachNoteService {
     private func requestBody(for provider: AIProvider, input: PostRepCoachNoteInput) -> [String: Any] {
         let persona = CoachPersona.persona(for: input.voice)
         let system = systemPrompt(persona: persona)
-        let user = userPrompt(from: input)
+        let user = Self.userPrompt(from: input)
         switch provider {
         case .openAI, .deepSeek:
             return [

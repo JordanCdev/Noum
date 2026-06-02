@@ -239,6 +239,14 @@ struct SummaryView: View {
         if let enhancedCoachNote { return enhancedCoachNote }
         let wpm = effectiveDuration > 0 ? Double(transcriptWordCount) / effectiveDuration * 60 : 0
         let categoryRatings = Dictionary(uniqueKeysWithValues: feedbackCategories.map { ($0.dimension, $0.rating.rawValue) })
+        // Prompt-grounded relevance (initiative #8 follow-on): same read the
+        // Relevance rating uses, so this pre-finalize fallback note shares the
+        // "answered vs buried" signal with the richer SessionFinalizer pass +
+        // the chat coach. Timed only; nil elsewhere keeps the note unchanged.
+        let promptRelevanceRead: PracticeEvaluator.PromptRelevanceRead? =
+            currentMode == .timed
+            ? PracticeEvaluator.promptRelevance(prompt: sessionPrompt, transcript: transcriptText)
+            : nil
         return VerdictEngine.generate(
             fillerCount: effectiveFillerCount,
             duration: effectiveDuration,
@@ -249,7 +257,8 @@ struct SummaryView: View {
             trends: skillTrends,
             primaryFocus: drillRecommendationV2.skillArea,
             drillHistory: DrillHistoryStore.shared.entries,
-            styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+            styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+            promptRelevance: promptRelevanceRead
         )
     }
 
@@ -1807,6 +1816,21 @@ struct SummaryView: View {
 
     // MARK: - Coach Read Card
 
+    /// S2: the empty-state line for the Coach Read card (shown before an AI read
+    /// has been generated). When the user has EXPLICITLY chosen a voice, lead
+    /// with the CoachPersona-derived chosen-voice line so the card reflects the
+    /// choice even with no model output yet; otherwise keep the original generic
+    /// CTA verbatim. Single source of truth = `chosenStyleGoal` (the helper
+    /// returns nil for an un-chosen profile). Deterministic, no model call, no
+    /// numeric score touched.
+    private var coachReadEmptyStateLine: String {
+        let genericCTA = "Generate a deeper coaching read from this session's transcript."
+        if let voiceLead = coachingProfileStore.profile?.chosenVoiceCoachingLead {
+            return voiceLead + " " + genericCTA
+        }
+        return genericCTA
+    }
+
     private var coachReadCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Coach")
@@ -1856,7 +1880,14 @@ struct SummaryView: View {
                     }
                 }
             } else {
-                Text("Generate a deeper coaching read from this session's transcript.")
+                // S2: voice-shape the empty-state line when the user has
+                // EXPLICITLY chosen a voice, so even before the AI read is
+                // generated the card reflects the chosen voice. Gated via the
+                // nil-returning helper on `chosenStyleGoal` (NOT the always-
+                // populated `speakingStyleGoal`), so an un-chosen profile keeps
+                // the original generic line. AICoachFeedback content + the
+                // numeric score are untouched; this is the empty-state copy only.
+                Text(coachReadEmptyStateLine)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -2049,7 +2080,8 @@ struct SummaryView: View {
     private func interventionReviewOpener(for intervention: CoachIntervention) -> String {
         CoachContextBuilder.interventionReviewOpener(
             intervention: intervention,
-            voice: coachingProfileStore.profile?.speakingStyleGoal
+            voice: coachingProfileStore.profile?.speakingStyleGoal,
+            reflectionPattern: coachMemoryStore.currentMemory?.reflectionPattern
         )
     }
 
@@ -2675,7 +2707,11 @@ struct SummaryView: View {
             LandThePauseView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
         case .prepStack:
             PREPStackView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
-        case .standard:
+        case .standard, .frameworkCheck:
+            // Framework drills (STAR turn / claim-counter / elevator pitch) reuse
+            // the standard recording UI; the named-framework structural verdict
+            // is computed post-hoc in `finishDrill` and surfaces in the result
+            // copy — no dedicated screen.
             MiniDrillView(drill: drill, prompt: sessionPrompt, onComplete: handleDrillComplete, onCancel: handleDrillCancel)
         }
     }
@@ -2878,10 +2914,28 @@ struct SummaryView: View {
                 for: text,
                 profile: coachingProfileStore.profile
             )
+            let currentMode = recentSessions.first?.mode ?? .timed
+            // THE QUESTION ASKED — the stored prompt of this rep, the single
+            // source of truth the deterministic verdict + the rubric both read.
+            let repPrompt = recentSessions.first?.prompt ?? sessionPrompt ?? ""
+            // Continuity — drop the current rep, map the next 3 prior reps to
+            // the same shape AIInsights renders. Never invented. Pure helper so
+            // the exclude-current-rep + bound-to-3 logic is unit-tested.
+            let priorSummaries = AICoachService.recentSessionSummaries(
+                sessions: sessionStore.sessions,
+                currentRepID: latestSessionID
+            )
+            // Confidence-gated baseline (nil on insufficient data — never a
+            // fake number). Same gate as PostRepCoachNote (:7182-7185).
+            let coachBaseline = baselineStore.baseline
+            let baselineFiller: Double? = coachBaseline.fillerRate.confidence == .insufficient
+                ? nil : coachBaseline.fillerRate.value
+            let baselinePace: Double? = coachBaseline.pace.confidence == .insufficient
+                ? nil : coachBaseline.pace.value
             let feedback = try await aiCoachService.generateDeeperFeedback(
                 input: AICoachSessionInput(
                     transcript: text,
-                    mode: recentSessions.first?.mode ?? .timed,
+                    mode: currentMode,
                     score: score,
                     fillerCount: fillerCount,
                     duration: duration,
@@ -2889,7 +2943,12 @@ struct SummaryView: View {
                         forTranscript: text,
                         duration: duration
                     ).wordsPerMinute,
-                    speakingIdentity: styleSnapshot.identity
+                    speakingIdentity: styleSnapshot.identity,
+                    prompt: repPrompt,
+                    voice: coachingProfileStore.profile?.speakingStyleGoal,
+                    recentSessionSummaries: priorSummaries,
+                    baselineFillerRate: baselineFiller,
+                    baselinePaceWPM: baselinePace
                 ),
                 profile: coachingProfileStore.profile,
                 plan: plan

@@ -84,6 +84,12 @@ struct AIInsightInput {
     /// reference real growth ("three weeks ago you said X") instead of
     /// generic week-over-week framing. Empty for cold-start users.
     var recentProofQuotes: [String] = []
+    /// Optional explicit question override for the sessionDebrief read. When
+    /// nil, the service reads `focusSessions.first?.prompt` (single source of
+    /// truth — the same stored prompt the deterministic Relevance rating and
+    /// the post-rep note use). Exists so tests can drive the question without
+    /// constructing a full PracticeSession.
+    var promptOverride: String? = nil
     /// Sessions to focus on inside the prompt — usually the last 3–5.
     /// Trimmed by the caller so the prompt stays small.
     var focusSessions: [PracticeSession] {
@@ -135,7 +141,7 @@ actor AIInsightsService {
         }
 
         do {
-            let prompt = userPrompt(from: input)
+            let prompt = Self.userPrompt(from: input)
             let body = requestBody(for: provider, prompt: prompt, system: Self.systemPrompt(for: input.kind, voice: input.voice))
             // Gemini insights run on the stronger 2.5-pro model. Inputs
             // are short and the JSON shape is fixed, so the latency hit
@@ -230,7 +236,7 @@ actor AIInsightsService {
         case .weeklyNarrative:
             return common + "\nThe goal is a one-paragraph narrative summary of the user's last 7 days of speaking practice. If a user goal is provided, open with one sentence connecting the week's trend to that goal."
         case .sessionDebrief:
-            return common + "\nThe goal is a coaching read of one specific session. PRIORITY: when the transcript is provided, your headline OR body MUST reference a SPECIFIC phrase or moment from the user's actual words — quote them, paraphrase them, name what they did structurally. Stats are context, not the read. If a user goal is provided, connect the session to it in plain language. Banked proofs (if listed) let you say 'this is the second time…' or 'last week you also…' — only when genuinely true. Never invent past behavior."
+            return common + "\nThe goal is a coaching read of one specific session. PRIORITY: when the transcript is provided, your headline OR body MUST reference a SPECIFIC phrase or moment from the user's actual words — quote them, paraphrase them, name what they did structurally. Stats are context, not the read. When THE QUESTION ASKED is provided, your read must address whether the answer engaged it and where the main point landed — grounded in their words, association not verdict. If a user goal is provided, connect the session to it in plain language. Banked proofs (if listed) let you say 'this is the second time…' or 'last week you also…' — only when genuinely true. Never invent past behavior."
         case .patternBreak:
             return common + "\nA pattern just shifted. Surface what changed and whether it was good or bad. If a user goal is provided, frame the shift in terms of that goal."
         }
@@ -269,7 +275,7 @@ actor AIInsightsService {
         return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(geminiModelOverride):generateContent")
     }
 
-    private func userPrompt(from input: AIInsightInput) -> String {
+    static func userPrompt(from input: AIInsightInput) -> String {
         var lines: [String] = []
         // Goal goes first — for sessionDebrief the system prompt requires leading with it.
         if let goal = input.goalParaphrase, !goal.isEmpty {
@@ -311,8 +317,18 @@ actor AIInsightsService {
         if input.kind == .sessionDebrief,
            let mostRecent = input.focusSessions.first,
            !mostRecent.transcript.isEmpty {
+            // The question this rep answered — single source of truth is the
+            // session's stored prompt; promptOverride lets tests drive it.
+            // Omitted entirely when unknown (no placeholder injected).
+            let question = input.promptOverride ?? mostRecent.prompt
+            if let q = question, !q.isEmpty {
+                let trimmedQ = q.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cappedQ = trimmedQ.count > 200 ? String(trimmedQ.prefix(199)) + "…" : trimmedQ
+                lines.append("")
+                lines.append("THE QUESTION ASKED: \(cappedQ)")
+            }
             lines.append("")
-            lines.append("TRANSCRIPT OF THIS REP (quote a specific phrase in your read):")
+            lines.append("TRANSCRIPT OF THIS REP (quote a specific phrase; state whether it answered THE QUESTION ASKED and where the point landed):")
             let trimmed = mostRecent.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             let capped = trimmed.count > 900
                 ? String(trimmed.prefix(899)) + "…"

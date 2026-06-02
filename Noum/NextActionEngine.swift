@@ -104,6 +104,13 @@ struct NextActionInput {
     let sessionCount: Int
     let streakDays: Int
     let styleGoal: String?
+
+    /// The recommendation outcome ledger, passed IN so the engine stays a pure
+    /// value-transform (it never reaches `RecommendationLearningStore.shared`).
+    /// Defaulted empty: every existing call site compiles unchanged, and an empty
+    /// ledger yields a nil verdict, so the engine behaves exactly as before until
+    /// ≥3 measurable reps exist for a mode.
+    var recommendationOutcomes: [RecommendationOutcome] = []
 }
 
 // MARK: - Next Action Engine
@@ -177,7 +184,13 @@ enum NextActionEngine {
         }
 
         // --- Priority 6: Improving trend ---
-        if let reinforcing = checkImprovingTrend(input: input) {
+        // A confidently-replaced mode is NOT re-handed as a stabilizing rep:
+        // when the ledger shows this mode's metric trending down over ≥6
+        // measurable reps, the coach varies the modality instead of repeating
+        // it, so we fall through to a targeted drill below. Pure tie-breaker —
+        // the cascade past here is always total.
+        if let reinforcing = checkImprovingTrend(input: input),
+           !shouldDeferReinforcement(reinforcing, input: input) {
             let base = ConfidencePhrasing.frame("You're making progress — one more rep can lock it in.", confidence: confidence)
             return NextAction(
                 primary: reinforcing,
@@ -222,6 +235,34 @@ enum NextActionEngine {
         }()
         guard let skill, style.aligns(with: skill) else { return base }
         return base + " It's a direct step toward your \(style.shortVoiceLabel)."
+    }
+
+    // MARK: - Adaptation bias
+
+    /// Whether a Priority-6 reinforcement should be deferred because the outcome
+    /// ledger confidently says to REPLACE the mode it would repeat. Only a
+    /// `.stabilizingRep` (the one action that concretely re-prescribes the
+    /// just-practiced mode) is gated, and only on a `.replace`/`.confident`
+    /// verdict (≥6 measurable reps trending down) — a `.vary` or `.reinforce`
+    /// verdict, or thin evidence, never defers. Falling through hands the user a
+    /// targeted drill for the improving skill instead of repeating a mode the
+    /// evidence says is not moving the metric.
+    ///
+    /// Deliberately scoped to the mode-keyed `.stabilizingRep`/`.pressureExposure`
+    /// actions: the skill-keyed drills (P1–P5, P7/P8) are chosen from hard
+    /// real-time signals or a `targetArea`, which a per-MODE verdict must not
+    /// override. P1/P2/P4/P5 severe/blocker/declining/new-issue tiers run before
+    /// this and are never suppressed.
+    private static func shouldDeferReinforcement(_ action: ActionRecommendation, input: NextActionInput) -> Bool {
+        let mode: PracticeMode
+        switch action {
+        case .stabilizingRep(let m, _), .pressureExposure(let m, _):
+            mode = m
+        case .drill, .confidenceRebuilding, .practiceMode:
+            return false
+        }
+        let verdict = RecommendationAdaptationAnalyzer.adaptationVerdict(mode: mode, in: input.recommendationOutcomes)
+        return verdict?.action == .replace && verdict?.confidence == .confident
     }
 
     // MARK: - Priority Checks

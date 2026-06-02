@@ -250,6 +250,7 @@ enum SessionFinalizer {
             pendingIntervention: RecommendationLearningStore.shared.pendingExposure,
             recommendationOutcomes: RecommendationLearningStore.shared.outcomes,
             latestReflection: SessionReflectionStore.shared.latest,
+            reflectionHistory: SessionReflectionStore.shared.history,
             latestTransferReport: BigMomentStore.shared.recentOutcomeReports(limit: 1).first
         )
 
@@ -300,7 +301,8 @@ enum SessionFinalizer {
                 drillHistory: DrillHistoryStore.shared.entries,
                 sessionCount: sessionStore.sessions.count,
                 streakDays: currentStreak,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+                recommendationOutcomes: RecommendationLearningStore.shared.outcomes
             )
             let action = NextActionEngine.recommend(input: input)
             LastNextActionSnapshot.save(action)
@@ -327,6 +329,17 @@ enum SessionFinalizer {
                 recentDrills: DrillHistoryStore.shared.entries,
                 styleGoal: coachingProfileStore.profile?.speakingStyleGoal
             )
+            // Prompt-grounded relevance (initiative #8 follow-on): the SAME
+            // read the 7-dimension Relevance rating consumes, threaded into
+            // the Timed three-part note so the post-rep coach note shares one
+            // "answered vs buried" substance read with the rating + the chat
+            // coach. Timed only — the mode whose `sessionPrompt` is a question
+            // to answer; nil elsewhere keeps the note byte-identical for IM /
+            // Sudden Death / Ah-Counter.
+            let promptRelevanceRead: PracticeEvaluator.PromptRelevanceRead? =
+                currentMode == .timed
+                ? PracticeEvaluator.promptRelevance(prompt: sessionPrompt, transcript: transcript)
+                : nil
             return VerdictEngine.generate(
                 fillerCount: effectiveFillerCount,
                 duration: effectiveDuration,
@@ -340,7 +353,8 @@ enum SessionFinalizer {
                 baseline: baselineStore.baseline,
                 pressureProfile: baselineStore.pressureProfile,
                 pressureLevel: pressureLevel,
-                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title
+                styleGoal: coachingProfileStore.profile?.speakingStyleGoal.title,
+                promptRelevance: promptRelevanceRead
             )
         }()
 

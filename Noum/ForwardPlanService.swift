@@ -506,6 +506,14 @@ actor ForwardPlanService {
         if !responseLines.isEmpty {
             lines.append("Observed response to earlier prescribed modes (association only):")
             lines.append(contentsOf: responseLines)
+            // Same reinforce / vary / replace verdict the chat coach surfaces, so
+            // the forward plan and Ask Noum read one coherent decision on whether
+            // a prescribed mode is working. Omitted below the evidence floor.
+            if let topSummary = RecommendationResponseAnalyzer.summarize(outcomes: input.recommendationOutcomes).first,
+               let verdictLine = RecommendationAdaptationAnalyzer.adaptationRationale(
+                   mode: topSummary.mode, focus: topSummary.focus, in: input.recommendationOutcomes) {
+                lines.append(verdictLine)
+            }
         }
         lines.append("")
         lines.append("Produce exactly 4 weeks.")

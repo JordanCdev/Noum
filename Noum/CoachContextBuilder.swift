@@ -85,19 +85,58 @@ enum CoachContextBuilder {
            "adapt before repeating it", do not prescribe it again unchanged without explaining the adjustment.
         9. When REAL-WORLD TRANSFER is present, it is the user's report of what happened and how the room felt. Use it to ask, adapt, or prepare; never call it objective proof or claim a drill caused the result.
         10. When SUBJECTIVE REFLECTION is present, it is the user's own inner read, not telemetry. Use it to ask the next review question, especially around nerves, avoidance, confidence, or authenticity; never contradict it with measured data.
-        11. When TONE-DRILL TRAJECTORY is present, it reports whether a \
+        11. When SUBJECTIVE PATTERN is present, it is a repeated self-report pattern, not a diagnosis. Treat it as a hypothesis to explore and ask the user to confirm, refine, or reject it before strengthening the claim.
+        12. When TONE-DRILL TRAJECTORY is present, it reports whether a \
            prescribed IM tone drill is recovering, stalled, or slipping \
            across the user's own reps. Speak to the response — reinforce a \
            recovering drill, change the approach on a slipping one, treat a \
            stalled one as a plateau to break — rather than re-issuing the \
            original miss as if nothing has moved. It is observed \
            association, never proof a drill caused the change.
-        12. When TONE-DRILL SOLVED is present, a tone gap the user used to \
+        13. When TONE-DRILL SOLVED is present, a tone gap the user used to \
            miss now holds above the drill bar. Name the win once, plainly, \
            then point them at the next target — do not re-prescribe the \
            solved drill or restate the old miss as if it were still open. \
            It is observed association in the user's own reps, never proof a \
            drill caused the recovery.
+        14. When PROMPT RELEVANCE is present, it reports a POSITIONAL read of \
+           the most-recent rep — how much of the question's key terms led the \
+           answer (first sentence) versus appeared across the whole answer. A \
+           buried lede is the point present overall but missing from the lead \
+           ("arrived late"); a led answer put the point up front. Use it to \
+           coach leading with the point when it arrived late or did not clearly \
+           lead, or to affirm substance when it led. It is lexical association \
+           on the user's own words, never proof the answer was off-topic; do \
+           not assert a confident off-topic verdict from it on a borderline \
+           read.
+        15. When CASE FORMULATION carries a "Stated-vs-measured" line, it \
+           reconciles what the user SAID they wanted to work on with what \
+           their reps actually point at. On a divergence, raise it as a \
+           question and let the user choose which to anchor to — never \
+           silently switch away from the focus they stated. On alignment, you \
+           may affirm it briefly. The measured read is evidence, not a mandate \
+           to override the user's stated goal.
+        16. You NEVER set, change, choose, save, or confirm the user's \
+           speaking voice or coaching goal yourself, and you NEVER state — in \
+           any words — that one has been set, changed, chosen, updated, locked \
+           in, or saved. You cannot write the profile; only the user's own tap \
+           on the in-app confirmation card commits it. So when the user asks to \
+           set or change their voice (or names a style they want to sound like, \
+           e.g. "I want to sound more engaging"), you PROPOSE — you do not \
+           accept. Do not write sentences like "You have chosen X", "I've set \
+           your style to X", "Your voice is now X", or "I'll tailor my feedback \
+           to X from now on". Instead: name the closest of the six real voices \
+           (Authoritative, Warm and welcoming, Concise and sharp, Persuasive, \
+           Executive presence, Storytelling) — and if what they said maps to \
+           none, ask them to pick from those six rather than inventing a voice \
+           that is not one of them. If they already have a voice, name what \
+           they have been building on it (cite reps / since-date from CONTEXT \
+           if present) AND ask a clarifying question — why they want to change \
+           and what has shifted — before they decide. Then defer the commit to \
+           the card with a short cue such as "tap to confirm and I'll lock it \
+           in". The GOAL INTENT lines in CONTEXT, when present, tell you which \
+           case (set vs change) this turn is and must be obeyed; they never \
+           authorise you to claim the change is done.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -247,7 +286,14 @@ enum CoachContextBuilder {
         // section (longitudinal direction across the most-recent +
         // prior windows). Defaults to empty so existing callers
         // compile unchanged.
-        snapshotsForTrends: [SkillSnapshot] = []
+        snapshotsForTrends: [SkillSnapshot] = [],
+        // S2 — Optional detected goal-set/change intent for the CURRENT chat
+        // turn (from `detectGoalIntent`). When present, the GOAL block emits
+        // propose-not-committed / change-trade-off / anti-thrash lines so the
+        // coach PROPOSES rather than assumes a write — the user still confirms
+        // in-app via the goal card. Defaults to nil so existing callers compile
+        // unchanged and non-goal turns emit no extra lines.
+        pendingGoalIntent: GoalIntent? = nil
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -260,6 +306,14 @@ enum CoachContextBuilder {
             let voiceTitle = profile.speakingStyleGoal.title
             let voiceDesc = profile.speakingStyleGoal.coachingDescription
             lines.append("- Voice: \(voiceTitle) — wants to \(voiceDesc).")
+            // Blended voice — the user chose to keep their primary and add a
+            // secondary from the in-chat goal-change card. The read weighs both
+            // (see `CoachingProfile.blendedAlignedSkillAreas`); the coach should
+            // hold the mix, not treat the secondary as a replacement.
+            if let secondary = profile.secondaryStyleGoal,
+               secondary != profile.speakingStyleGoal {
+                lines.append("- Blended voice: primary \(profile.speakingStyleGoal.title), secondary \(secondary.title). Read both — the secondary widens the leverage, it does not replace the primary.")
+            }
             if let paraphrase = profile.paraphrasedGoal,
                !paraphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 lines.append("- In their words: \(paraphrase)")
@@ -295,6 +349,20 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("GOAL")
             lines.append("- No voice set yet. Treat this as cold start — gentle, curious.")
+        }
+
+        // GOAL INTENT — when the current turn is a detected set/change request,
+        // tell the coach to PROPOSE not assume (the user confirms in-app via the
+        // goal card; the model never writes). On a change, name the trade-off and
+        // surface the anti-thrash note when the user has been switching often.
+        if let intent = pendingGoalIntent {
+            lines.append(
+                contentsOf: goalIntentContextLines(
+                    intent: intent,
+                    currentVoice: profile?.speakingStyleGoal,
+                    adaptationLog: coachMemory?.adaptationLog
+                )
+            )
         }
 
         // BIG MOMENT — only present when active + within 60 days.
@@ -444,10 +512,14 @@ enum CoachContextBuilder {
         }
 
         let memoryLines: [String]
+        let caseFileLines: [String]
         let caseLines: [String]
         let cycleLines: [String]
         if let coachMemory {
             memoryLines = coachMemoryLines(
+                memory: coachMemory
+            )
+            caseFileLines = coachCaseFileLines(
                 memory: coachMemory
             )
             caseLines = coachCaseFormulationLines(
@@ -464,6 +536,7 @@ enum CoachContextBuilder {
                 sessions: sessions,
                 trends: trends
             )
+            caseFileLines = []
             caseLines = []
             cycleLines = []
         }
@@ -471,6 +544,11 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("COACH MEMORY")
             lines.append(contentsOf: memoryLines)
+        }
+        if !caseFileLines.isEmpty {
+            lines.append("")
+            lines.append("COACH CASE FILE (durable strategy)")
+            lines.append(contentsOf: caseFileLines)
         }
         if !caseLines.isEmpty {
             lines.append("")
@@ -495,6 +573,17 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("INTERVENTION RESPONSE (association only; never claim causation)")
             lines.append(contentsOf: interventionLines)
+            // The reinforce / vary / replace decision for the most-prescribed
+            // key, surfaced under the same header so the chat coach speaks one
+            // verdict — keep it, vary the approach, or swap the mode — rather
+            // than only narrating the association above. Omitted below the
+            // evidence floor (≥3 measurable reps) so the coach never decides on
+            // thin data.
+            if let topSummary = RecommendationResponseAnalyzer.summarize(outcomes: recommendationOutcomes).first,
+               let verdictLine = RecommendationAdaptationAnalyzer.adaptationRationale(
+                   mode: topSummary.mode, focus: topSummary.focus, in: recommendationOutcomes) {
+                lines.append(verdictLine)
+            }
         }
 
         // TONE-DRILL TRAJECTORY — the IM analog of INTERVENTION RESPONSE.
@@ -622,6 +711,30 @@ enum CoachContextBuilder {
                 lines.append("")
                 lines.append("STRUCTURAL READ (most-recent rep)")
                 lines.append("- \(structural.readout). Composite \(String(format: "%.2f", structural.score))/1.0 from \(structural.contributingDimensions) dimensions.")
+            }
+
+            // PROMPT RELEVANCE — the substance read (initiative #8 follow-on).
+            // The same `PromptRelevanceRead` the 7-dimension Relevance rating,
+            // the post-rep hero note, and the deep-analysis debrief consume,
+            // surfaced HERE so the chat coach reads the "did you answer it /
+            // lead vs buried" signal DIRECTLY rather than inheriting it as
+            // free-text through the LAST REP NOTE. Timed only — the mode whose
+            // stored `prompt` is a question to answer; IM relevance is carried
+            // by the TONE-DRILL sections above. Gated on the read's evidence
+            // floor (>= 3 prompt content words, >= 12 transcript words) so the
+            // coach never judges relevance on thin data, and framed as lexical
+            // association, never a confident "off-topic" (rule 14 is the
+            // backstop, the guidance clause is the in-context nudge).
+            if latest.mode == .timed {
+                let relevanceRead = PracticeEvaluator.promptRelevance(
+                    prompt: latest.prompt,
+                    transcript: latest.transcript
+                )
+                if let relevanceLines = promptRelevanceLines(for: relevanceRead, prompt: latest.prompt) {
+                    lines.append("")
+                    lines.append("PROMPT RELEVANCE (most-recent rep — did the answer engage the question?)")
+                    lines.append(contentsOf: relevanceLines)
+                }
             }
         }
 
@@ -791,6 +904,75 @@ enum CoachContextBuilder {
         return [dataLine, guidance]
     }
 
+    // MARK: - Prompt-grounded relevance (the substance read for the chat coach)
+    //
+    // Initiative #8 gave the deterministic Relevance rating + both AI reads a
+    // shared `PracticeEvaluator.PromptRelevanceRead` ("did you answer the
+    // question / lead vs buried"). This carries the SAME read into the
+    // conversational coach as a terse, citeable section — closing the
+    // coherence gap where the chat coach only inherited it indirectly through
+    // the free-text LAST REP NOTE.
+    //
+    // Same shape as `toneDrillTrajectoryLines`: a data line citing the
+    // observed lexical overlap + the shared verdict, and a guidance clause so
+    // the model uses it honestly (the system prompt's rule 14 is the
+    // backstop). Returns nil below the evidence floor (`promptAnswerVerdict`
+    // is nil) — the coach must not judge "did you answer it" on a too-thin
+    // prompt or transcript, exactly as the rating defaults high there. The
+    // verdict mapping is the SAME one the Timed three-part note reads, so the
+    // chat coach and the post-rep note can never disagree about a rep.
+    static func promptRelevanceLines(
+        for read: PracticeEvaluator.PromptRelevanceRead,
+        prompt: String?
+    ) -> [String]? {
+        guard let verdict = PracticeEvaluator.promptAnswerVerdict(for: read) else { return nil }
+        let overlapPct = Int((read.overlap * 100).rounded())
+        let leadPct = Int((read.firstSentenceOverlap * 100).rounded())
+
+        // Positional verdict (initiative #10): the band is about WHERE the
+        // point landed, not only how much of the question was echoed. The data
+        // line now reports both the lead overlap and the whole-rep overlap so
+        // the coach can cite the gap that defines a buried lede.
+        let verdictPhrase: String
+        let guidance: String
+        switch verdict {
+        case .answered:
+            verdictPhrase = "the point led — the question's key terms were right up front"
+            guidance = "The rep led with the answer — affirm the substance briefly if relevant, then coach delivery from there."
+        case .partial:
+            verdictPhrase = "the point did not clearly lead"
+            guidance = "The answer's key terms did not clearly lead — if it fits, coach making the main point the first sentence. Lexical association, never proof the answer was off-topic."
+        case .buried:
+            verdictPhrase = "the point arrived late — present across the rep but missing from the lead"
+            guidance = "The point was in there but buried — when relevant, coach leading with it so it lands in the first sentence. This is lexical association on the rep's own words, never proof the answer was off-topic."
+        }
+
+        var out: [String] = []
+        let questionTail = promptRelevanceQuestionTail(prompt)
+        if !questionTail.isEmpty {
+            out.append("- Question asked: \(questionTail)")
+        }
+        out.append("- The first sentence echoed \(leadPct)% of the question's key terms; the whole answer echoed \(overlapPct)% (lexical overlap) — \(verdictPhrase).")
+        out.append("- \(guidance)")
+        return out
+    }
+
+    /// Collapses + truncates the rep's stored prompt for the PROMPT RELEVANCE
+    /// data line so the coach has the question to quote without dumping a long
+    /// prompt into the bounded context block. Empty when the prompt is nil or
+    /// blank (no placeholder line injected).
+    private static func promptRelevanceQuestionTail(_ prompt: String?) -> String {
+        guard let prompt else { return "" }
+        let collapsed = prompt
+            .split { $0.isWhitespace || $0.isNewline }
+            .joined(separator: " ")
+        guard !collapsed.isEmpty else { return "" }
+        let limit = 120
+        if collapsed.count <= limit { return "\"\(collapsed)\"" }
+        let clipped = String(collapsed.prefix(limit)).trimmingCharacters(in: .whitespaces)
+        return "\"\(clipped)…\""
+    }
+
     // MARK: - Session-anchored opener
     //
     // Produces the seed message the Summary surface drops into the Ask Noum
@@ -872,7 +1054,8 @@ enum CoachContextBuilder {
     /// voice mapping shapes the question the user wants to ask.
     static func interventionReviewOpener(
         intervention: CoachIntervention,
-        voice: SpeakingStyleGoal?
+        voice: SpeakingStyleGoal?,
+        reflectionPattern: CoachReflectionPattern? = nil
     ) -> String {
         let modeLabel = intervention.mode.displayLabel
         let focus = (intervention.focus?.isEmpty == false ? intervention.focus : intervention.title)
@@ -880,6 +1063,9 @@ enum CoachContextBuilder {
         let focusLower = focus.lowercased()
         let repNoun = intervention.followedRepCount == 1 ? "rep" : "reps"
         let lead = "Time to review the active case: \(modeLabel) for \(focusLower), \(intervention.followedRepCount) followed \(repNoun) in."
+        let subjectiveCheck = reflectionPattern.map {
+            "Also review the subjective pattern as self-report, not diagnosis: \($0.interventionReviewQuestion)."
+        }
         let ask: String
         switch voice {
         case .authoritative:
@@ -897,7 +1083,9 @@ enum CoachContextBuilder {
         case .none:
             ask = "Should we keep going, adapt, or change tack?"
         }
-        return "\(lead) \(ask)"
+        return [lead, subjectiveCheck, ask]
+            .compactMap { $0 }
+            .joined(separator: " ")
     }
 
     /// Compact display headline for the AskNoumView empty-state case-
@@ -1022,6 +1210,444 @@ enum CoachContextBuilder {
             ask = "Where does this go from here?"
         }
         return "\(lead) \(body) \(ask)"
+    }
+
+    // MARK: - Goal-intent detection (chat-driven voice set / change)
+    //
+    // The deterministic seam behind the in-chat "set or change your voice"
+    // affordance. The LLM is NEVER trusted to self-report a profile write
+    // (the service is always free-text, AICoachChatService.swift:8-10); this
+    // pure function reads the user's typed text + the current voice state and
+    // decides whether the user is asking to SET (cold start) or CHANGE
+    // (existing voice -> a new one) their speaking-style goal, and which voice
+    // they named (if any).
+    //
+    // `AskNoumView.send(_:)` calls this on every entry point (typed / voice /
+    // chip / inject) BEFORE dispatching the reply. A non-nil result drives the
+    // ephemeral confirmation card (the user CONFIRMS the write with a tap —
+    // human-in-the-loop) and injects a GOAL-section context line so the coach
+    // PROPOSES rather than assumes (see `userContext` GOAL block).
+    //
+    // Mirror of the existing pure predicates (`shouldShowHypothesisAcknowledgement`,
+    // `shouldShowRevisedReadFollowUp`): pure, testable without standing up any
+    // store, deterministic so the same text always yields the same intent.
+
+    /// A detected request to set or change the speaking-style goal from chat.
+    /// `requestedVoice` is `nil` when the user asked to set/change a voice but
+    /// named no concrete target ("help me pick one") — the card then offers the
+    /// full voice palette as a guided pick. `kind` is `.initialSet` when the
+    /// profile carries no voice yet (cold start) else `.change`.
+    struct GoalIntent: Equatable {
+        enum Kind: Equatable {
+            case initialSet
+            case change
+        }
+        var requestedVoice: SpeakingStyleGoal?
+        var kind: Kind
+    }
+
+    /// Lowercased keyword aliases per voice. A user rarely types the exact
+    /// `rawValue` or display title — they say "commanding", "boardroom",
+    /// "vivid". `SpeakingStyleGoal.resolve` covers rawValue + title; this map
+    /// covers the natural-language register. Intentionally narrow + unambiguous
+    /// so two voices never both match the same word.
+    private static let voiceAliases: [(voice: SpeakingStyleGoal, terms: [String])] = [
+        (.authoritative, ["authoritative", "commanding", "command", "assertive", "in charge", "hard to ignore"]),
+        (.warm,          ["warm", "welcoming", "friendly", "approachable", "personable"]),
+        (.concise,       ["concise", "sharp", "crisp", "succinct", "to the point", "tight"]),
+        (.persuasive,    ["persuasive", "convince", "convincing", "compelling"]),
+        (.executive,     ["executive", "boardroom", "board room", "leadership presence", "executive presence"]),
+        (.storytelling,  ["storytelling", "story telling", "vivid", "story", "narrative"]),
+    ]
+
+    /// SECONDARY, descriptor-level closest-match for when the user names a
+    /// QUALITY they want to sound like that isn't one of the primary register
+    /// words above — e.g. "I want to sound more engaging". Each term is drawn
+    /// from (or sits adjacent to) the voice's user-facing `coachingDescription`
+    /// adjectives, so "engaging"/"memorable" → Storytelling, "composed"/
+    /// "high-level" → Executive presence, and so on. Terms are deliberately
+    /// DISJOINT from `voiceAliases` (no overlap) and from each other, and this
+    /// map is consulted ONLY after `voiceAliases` misses AND only when an
+    /// explicit set/change phrase is present — so a casual "that felt engaging"
+    /// (no intent cue) never resolves to a voice and never surfaces the card.
+    /// The mapping only ever yields one of the six canonical
+    /// `SpeakingStyleGoal` cases; it can never invent a voice. A miss falls
+    /// through to `requestedVoice == nil`, which opens the guided-pick palette
+    /// rather than guessing.
+    private static let voiceDescriptorAliases: [(voice: SpeakingStyleGoal, terms: [String])] = [
+        (.authoritative, ["steady", "assured", "authority", "gravitas"]),
+        (.warm,          ["encouraging", "trustworthy", "genuine", "easy to trust", "down to earth"]),
+        (.concise,       ["efficient", "clean", "no-nonsense", "no nonsense", "brief", "punchy"]),
+        (.persuasive,    ["well-supported", "well supported", "intentional", "persuade"]),
+        (.executive,     ["composed", "high-level", "high level", "polished", "senior", "boardroom-ready"]),
+        (.storytelling,  ["engaging", "memorable", "captivating", "vividly"]),
+    ]
+
+    /// Phrasings that signal the user wants to SET or CHANGE their voice goal
+    /// (as opposed to merely discussing a voice). Lowercased substring match.
+    /// Kept deliberately broad on intent but the actual write is always gated
+    /// behind the user's explicit card tap, so a false-positive only surfaces
+    /// a dismissible card — never a silent write.
+    private static let goalIntentPhrases: [String] = [
+        "set my voice", "set my goal", "set my communication style", "set my style",
+        "set my speaking", "change my voice", "change my goal", "change my style",
+        "change my communication", "change my speaking", "switch my voice",
+        "switch to", "switch my goal", "work on", "instead of", "i want to be",
+        "i want to sound", "i'd rather", "make my voice", "update my voice",
+        "update my goal", "change it to", "set it to", "pick a voice", "pick my voice",
+        "choose a voice", "choose my voice", "help me pick", "help me choose",
+        "can i set", "can you set", "can i change", "can we set", "can we change",
+        "save my goal", "save my voice", "save it",
+    ]
+
+    /// Resolve the voice the user named in `lowered`, if any — exact
+    /// resolve first (rawValue / title), then alias keywords. Returns the
+    /// first voice whose alias appears; the alias lists are disjoint so order
+    /// only matters for the (absent) overlap case.
+    private static func resolveRequestedVoice(in lowered: String) -> SpeakingStyleGoal? {
+        // Exact rawValue / display-title hit (e.g. "warm and welcoming").
+        for voice in SpeakingStyleGoal.allCases {
+            if lowered.contains(voice.rawValue) { return voice }
+            if lowered.contains(voice.title.lowercased()) { return voice }
+        }
+        // Natural-language alias hit.
+        for entry in voiceAliases {
+            if entry.terms.contains(where: { lowered.contains($0) }) {
+                return entry.voice
+            }
+        }
+        return nil
+    }
+
+    /// SECONDARY closest-match: when the primary resolve misses, map a named
+    /// QUALITY ("engaging", "composed") onto the nearest of the six canonical
+    /// voices via `voiceDescriptorAliases`. Returns the FIRST voice whose
+    /// descriptor term appears — the lists are disjoint so order is immaterial.
+    /// Returns `nil` when nothing maps, so the caller routes to the guided pick
+    /// rather than inventing a voice. Caller MUST gate this behind an explicit
+    /// set/change intent cue so a casual mention never resolves a voice.
+    private static func resolveDescriptorVoice(in lowered: String) -> SpeakingStyleGoal? {
+        for entry in voiceDescriptorAliases {
+            if entry.terms.contains(where: { lowered.contains($0) }) {
+                return entry.voice
+            }
+        }
+        return nil
+    }
+
+    /// Deterministically detect whether `text` is a request to set or change
+    /// the speaking-style goal. Returns `nil` for any non-goal text (the
+    /// overwhelming majority of chat turns) so the confirmation card never
+    /// surfaces spuriously.
+    ///
+    /// Detection requires EITHER an explicit set/change phrase OR a named voice
+    /// paired with a light intent cue, so "what does authoritative mean?"
+    /// (a question about a voice, no intent) does NOT fire, while "I want to
+    /// work on authoritative" and "set my voice to warm" do. When a phrase
+    /// fires but no concrete voice resolves ("help me pick a voice"), the
+    /// result carries `requestedVoice == nil` so the card offers a guided pick.
+    ///
+    /// When an explicit set/change phrase is present but no canonical voice
+    /// resolves, a SECOND closest-match pass (`resolveDescriptorVoice`) maps a
+    /// named quality ("engaging" → Storytelling) onto the nearest of the six;
+    /// if that also misses, `requestedVoice` stays `nil` (guided pick). The
+    /// second pass is gated on the phrase, so a bare quality mention never fires.
+    ///
+    /// - Parameters:
+    ///   - text: the user's raw chat turn.
+    ///   - currentVoice: the profile's current voice, or `nil` for cold start.
+    ///     Drives `kind`: `.initialSet` when `nil`, else `.change`.
+    static func detectGoalIntent(_ text: String, currentVoice: SpeakingStyleGoal?) -> GoalIntent? {
+        let lowered = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !lowered.isEmpty else { return nil }
+
+        let resolved = resolveRequestedVoice(in: lowered)
+        let hasIntentPhrase = goalIntentPhrases.contains { lowered.contains($0) }
+
+        // Fire only when the user clearly wants to set/change a voice:
+        //   • an explicit set/change phrase (with or without a named voice), OR
+        //   • a named voice AND a "goal/voice/style" anchor word — so a bare
+        //     mention of a voice in conversation doesn't trip the card.
+        let mentionsGoalAnchor = lowered.contains("voice")
+            || lowered.contains("goal")
+            || lowered.contains("style")
+        let namedVoiceWithAnchor = resolved != nil && mentionsGoalAnchor
+
+        guard hasIntentPhrase || namedVoiceWithAnchor else { return nil }
+
+        // Closest-match SECOND pass: if no canonical voice resolved but the user
+        // DID express an explicit set/change phrase, try to map a named quality
+        // ("engaging" → Storytelling) onto the nearest of the six voices. Gated
+        // on `hasIntentPhrase` (never on a bare mention) so "that felt engaging"
+        // can't reach this. A miss leaves `requestedVoice` nil → the card opens
+        // the guided-pick palette; we NEVER invent a voice outside the six.
+        let requested = resolved ?? (hasIntentPhrase ? resolveDescriptorVoice(in: lowered) : nil)
+
+        return GoalIntent(
+            requestedVoice: requested,
+            kind: currentVoice == nil ? .initialSet : .change
+        )
+    }
+
+    /// Count the user-confirmed voice-goal changes recorded in `adaptationLog`
+    /// within `window` of `now` — the anti-thrash substrate. Only entries whose
+    /// `reason` carries `CoachCourseChange.voiceChangeMarker` count (engine
+    /// lever shifts and hypothesis rejections are excluded). The log is already
+    /// bounded to the last 8 by the recorder, so this is cheap. When the count
+    /// reaches the threshold the GOAL block surfaces a tentative
+    /// "you've switched N times — give the current voice more reps" note; the
+    /// note NEVER blocks a confirm (the choice is the user's).
+    ///
+    /// - Parameters:
+    ///   - adaptationLog: the bounded course-change history (nil-safe).
+    ///   - within: the recency window (default 7 days).
+    ///   - now: reference time (default now).
+    static func recentVoiceChangeCount(
+        adaptationLog: [CoachCourseChange]?,
+        within window: TimeInterval = 7 * 24 * 60 * 60,
+        now: Date = Date()
+    ) -> Int {
+        guard let log = adaptationLog else { return 0 }
+        let cutoff = now.addingTimeInterval(-window)
+        return log.filter { $0.documentsVoiceChange && $0.changedAt >= cutoff }.count
+    }
+
+    /// Anti-thrash threshold: at or above this many confirmed voice changes
+    /// inside the recency window, the GOAL block surfaces a tentative
+    /// "give the current voice more reps" note. A NOTE, never a block — the
+    /// user can always still confirm.
+    static let voiceThrashThreshold = 2
+
+    /// The GOAL-section lines for a detected set/change intent on the current
+    /// turn. Pure so it can be tested without `userContext`'s full parameter
+    /// list. Emits:
+    ///   • cold start (`.initialSet`): a propose-not-committed line so the
+    ///     coach helps the user set the voice in the moment but waits for the
+    ///     in-app confirm.
+    ///   • change (`.change`): a trade-off line (name what they've been building
+    ///     in the current voice; raise it as a question, never silently switch —
+    ///     reusing systemPrompt rule 15's posture on the distinct VOICE axis),
+    ///     plus an anti-thrash note when `recentVoiceChangeCount` is at/above
+    ///     the threshold.
+    /// All framing keeps the honesty invariants: weak evidence -> tentative;
+    /// the change is the user's call; never punish-shame a desire to change.
+    static func goalIntentContextLines(
+        intent: GoalIntent,
+        currentVoice: SpeakingStyleGoal?,
+        adaptationLog: [CoachCourseChange]?,
+        now: Date = Date()
+    ) -> [String] {
+        var lines: [String] = []
+        let targetClause: String = {
+            if let v = intent.requestedVoice { return v.title }
+            return "a voice they have not named yet"
+        }()
+
+        switch intent.kind {
+        case .initialSet:
+            lines.append("- GOAL INTENT (this turn): the user is asking to SET their voice to \(targetClause). Help them choose it now — but do NOT assume it is set. They confirm in-app with one tap; the change is not committed until they do.")
+            if intent.requestedVoice == nil {
+                lines.append("- They have not named a specific voice. Offer a short, plain guide to the options rather than picking for them.")
+            }
+        case .change:
+            // The "from" voice grounds the trade-off. Fall back gracefully when
+            // the current voice is somehow absent (defensive — a .change kind
+            // means a voice existed at detection time).
+            let fromClause = currentVoice?.title ?? "their current voice"
+            lines.append("- GOAL INTENT (this turn): the user is asking to CHANGE their voice from \(fromClause) to \(targetClause). Do not assume it is committed and do NOT state it is set — they confirm in-app with one tap. Name the trade-off: they have been building \(fromClause) (cite reps / since-date from CONTEXT if present). Then ASK a clarifying question before they decide — why they want to change now and what has shifted (a real moment coming up, the current voice not landing, curiosity). Let them choose; the change is their call, you advise. Weak evidence -> tentative.")
+            let switches = recentVoiceChangeCount(adaptationLog: adaptationLog, now: now)
+            if switches >= voiceThrashThreshold {
+                lines.append("- The user has changed voice \(switches) times in the last week. Note it plainly — suggest giving the current voice a few more reps before switching again. Do not punish-shame; the choice is theirs.")
+            }
+        }
+        return lines
+    }
+
+    // MARK: - Goal proposal card (in-chat set / change confirmation)
+    //
+    // S3 — the human-in-the-loop affordance. After `detectGoalIntent` fires on
+    // the user's turn (held on `AskNoumView.pendingGoalIntent`) and the coach
+    // replies PROPOSING the set/change, surface a single confirmation card. The
+    // card is the ONLY thing that commits a profile write — the model never
+    // does (the service is always free text, never parsed for actions). A tap
+    // on the card's chip:
+    //   • cold start (`.initialSet`)  → `recordGoalSet`  → constructs + saves a
+    //     fresh `CoachingProfile` in the chosen voice.
+    //   • change (`.change`)          → `recordGoalChange` → notes a
+    //     `CoachCourseChange` then saves a mutated profile copy (full switch or
+    //     keep-primary-add-secondary blend).
+    // Both write FIRST, then dispatch a voice-shaped continuation through
+    // `send(_:)` so the chat stays continuous — same ordering as
+    // `recordHypothesisAck`.
+    //
+    // The visibility gate mirrors `shouldShowHypothesisAcknowledgement`'s
+    // chat-shape check (last message is a non-pending coach reply) but keys on
+    // the presence of a detected intent rather than an opener-lead prefix —
+    // the intent already encodes "the user asked to set/change a voice." The
+    // view composes this with a `intentPresent` flag (its `@State` holds the
+    // intent; clearing it on commit/decline collapses the card).
+
+    /// Should the AskNoumView render the in-chat goal-proposal card? True when
+    /// the thread's most-recent message is a non-pending coach reply AND a goal
+    /// intent is currently pending (the user asked to set/change a voice this
+    /// turn and hasn't yet confirmed or declined). Pure-function mirror of
+    /// `shouldShowHypothesisAcknowledgement(messages:)` — same chat-shape check
+    /// (so the card never flashes on the user's own turn or on the typing dots),
+    /// gated on the detected-intent flag instead of an opener-lead prefix.
+    ///
+    /// `intentPresent` is the view's `pendingGoalIntent != nil`. Passing it as a
+    /// bool keeps this predicate testable without standing up the view's state —
+    /// the commit/decline handlers clear the intent, which flips this to false
+    /// and collapses the card.
+    static func shouldShowGoalProposal(messages: [CoachMessage], intentPresent: Bool) -> Bool {
+        guard intentPresent else { return false }
+        guard let last = messages.last,
+              last.role == .coach,
+              !last.isPending,
+              !last.text.isEmpty else { return false }
+        return true
+    }
+
+    /// The action a goal-proposal chip commits when tapped. Drives the view's
+    /// tap handler (`recordGoalSet` / `recordGoalChange`) and the voice-shaped
+    /// continuation dispatched after the durable write.
+    enum GoalProposalAction: Equatable {
+        /// Cold start — construct + save a fresh profile in this voice.
+        case set(SpeakingStyleGoal)
+        /// Full switch from the current voice to this one.
+        case switchTo(SpeakingStyleGoal)
+        /// Keep the current primary; add this voice as the secondary (blend).
+        case blend(SpeakingStyleGoal)
+        /// Decline — clear the pending intent, write nothing.
+        case decline
+    }
+
+    /// One chip in the goal-proposal card. Carries the label the user sees, the
+    /// durable action the tap commits, and the short voice-shaped user-turn text
+    /// dispatched into the thread after the write so the chat reads continuously
+    /// (a chip tap lands as a real reply, not a silent mutation). Same shape as
+    /// `HypothesisAcknowledgementChip`.
+    struct GoalProposalChip: Equatable, Identifiable {
+        let id: String
+        let label: String
+        let action: GoalProposalAction
+        let dispatchText: String
+    }
+
+    /// The chip catalog for the goal-proposal card, branched on the detected
+    /// intent and the user's current voice. Pure so the UI row + the tap
+    /// handlers read one source of truth and tests can assert the catalog shape
+    /// without rendering.
+    ///
+    /// Four shapes:
+    ///   • cold start WITH a resolved target → "Set <Title>" + "Not now".
+    ///   • cold start WITHOUT a target ("help me pick") → one chip per voice
+    ///     (the guided pick) + "Not now". Turns the dead-end into a palette.
+    ///   • change WITH a resolved target → "Switch to <new>" + "Blend <old> +
+    ///     <new>" + "Keep <old>". The blend is the coach's name-the-trade-off
+    ///     alternative; keep is the decline.
+    ///   • change WITHOUT a target ("change my voice" but none named) → the same
+    ///     guided pick as cold start (each voice becomes a switch target),
+    ///     excluding the current voice, + "Keep <old>".
+    ///
+    /// `currentVoice` is the profile's voice (nil on cold start). The dispatched
+    /// continuation text is deliberately plain + short so it reads in any voice
+    /// register without a per-voice catalog (the coach's NEXT reply re-voices).
+    static func goalProposalChips(
+        intent: GoalIntent,
+        currentVoice: SpeakingStyleGoal?
+    ) -> [GoalProposalChip] {
+        switch intent.kind {
+        case .initialSet:
+            if let target = intent.requestedVoice {
+                return [
+                    GoalProposalChip(
+                        id: "set.\(target.rawValue)",
+                        label: "Set \(target.title)",
+                        action: .set(target),
+                        dispatchText: "Set my voice to \(target.title)."
+                    ),
+                    GoalProposalChip(
+                        id: "decline",
+                        label: "Not now",
+                        action: .decline,
+                        dispatchText: "Not now — I'll keep exploring first."
+                    ),
+                ]
+            }
+            // No named voice — offer the full palette as a guided pick.
+            var chips = SpeakingStyleGoal.allCases.map { voice in
+                GoalProposalChip(
+                    id: "set.\(voice.rawValue)",
+                    label: voice.title,
+                    action: .set(voice),
+                    dispatchText: "Set my voice to \(voice.title)."
+                )
+            }
+            chips.append(
+                GoalProposalChip(
+                    id: "decline",
+                    label: "Not now",
+                    action: .decline,
+                    dispatchText: "Not now — I'll keep exploring first."
+                )
+            )
+            return chips
+
+        case .change:
+            let oldTitle = currentVoice?.title ?? "my current voice"
+            if let target = intent.requestedVoice {
+                var chips: [GoalProposalChip] = [
+                    GoalProposalChip(
+                        id: "switch.\(target.rawValue)",
+                        label: "Switch to \(target.title)",
+                        action: .switchTo(target),
+                        dispatchText: "Switch my voice to \(target.title)."
+                    )
+                ]
+                // Blend only makes sense when the target differs from current.
+                if let current = currentVoice, current != target {
+                    chips.append(
+                        GoalProposalChip(
+                            id: "blend.\(target.rawValue)",
+                            label: "Blend \(current.title) + \(target.title)",
+                            action: .blend(target),
+                            dispatchText: "Blend my \(current.title) voice with \(target.title)."
+                        )
+                    )
+                }
+                chips.append(
+                    GoalProposalChip(
+                        id: "keep",
+                        label: "Keep \(oldTitle)",
+                        action: .decline,
+                        dispatchText: "Keep \(oldTitle) for now."
+                    )
+                )
+                return chips
+            }
+            // Change requested but no voice named — guided pick across the
+            // voices that aren't already the current one, plus keep.
+            var chips = SpeakingStyleGoal.allCases
+                .filter { $0 != currentVoice }
+                .map { voice in
+                    GoalProposalChip(
+                        id: "switch.\(voice.rawValue)",
+                        label: voice.title,
+                        action: .switchTo(voice),
+                        dispatchText: "Switch my voice to \(voice.title)."
+                    )
+                }
+            chips.append(
+                GoalProposalChip(
+                    id: "keep",
+                    label: "Keep \(oldTitle)",
+                    action: .decline,
+                    dispatchText: "Keep \(oldTitle) for now."
+                )
+            )
+            return chips
+        }
     }
 
     // MARK: - Hypothesis acknowledgement chips (post-case-review reply)
@@ -1543,6 +2169,236 @@ enum CoachContextBuilder {
         return Array(chips.prefix(3))
     }
 
+    // MARK: - AI-tailored starter prompts (empty-state)
+    //
+    // Sibling to `generateAIFollowUpChips` — same provider plumbing, same
+    // locale gate, same `parseAndFilterChips` grounding gate, same
+    // never-throw contract — but for the EMPTY-STATE starter row shown
+    // above the input bar before the first message. This is the only
+    // truly-static chat surface left: `starterPrompts(bigMoment:baseline:
+    // voice:)` is data-grounded but its strings are still drawn from a
+    // fixed catalog. This overload lets the openers read as "the coach
+    // already knows where you are" — anchored to the active BigMoment,
+    // the weakest baseline dimension, and the chosen voice tone.
+    //
+    // Contract (identical to the follow-up chip path):
+    //   • Returns nil on EVERY cold path — locale-blocked, no provider,
+    //     network failure, model returned empty/unparseable output, or
+    //     fewer than `count` chips survive the brand-voice filter. The
+    //     caller (`AskNoumView`) keeps the deterministic data-grounded
+    //     `starterPrompts(...)` visible and never shows an error.
+    //   • Returns exactly `count` chips on success (default 3). Each chip
+    //     is written AS THE USER's opening ask — second person, ≤ ~60
+    //     chars, no exclamation, no emoji, no leading directive, no
+    //     "Let's" — the same brand rules `parseAndFilterChips` enforces.
+    //   • Bounded request — 8s timeout, 120 max-tokens, temperature 0.7,
+    //     reused verbatim from the follow-up chip path.
+    //
+    // The deterministic fallback (`starterPrompts(bigMoment:baseline:
+    // voice:)`) stays the source of truth for offline / non-English /
+    // no-provider / no-signal — zero regression.
+    static func generateAIStarterPrompts(
+        voice: SpeakingStyleGoal?,
+        bigMoment: BigMoment?,
+        baseline: CommunicationBaseline,
+        recentSessionDigest: String? = nil,
+        count: Int = 3
+    ) async -> [String]? {
+        // Locale + provider gates first — match `generateAIFollowUpChips`,
+        // `AICoachChatService`, and `AIPromptGeneratorService`. Reading
+        // state on the main actor since both stores live there.
+        guard await activeLocaleSupportsAI() else { return nil }
+        guard let provider = await currentProvider(),
+              let endpoint = provider.endpoint,
+              let key = apiKey(for: provider) else { return nil }
+
+        let system = aiStarterSystemPrompt
+        let user = aiStarterUserPrompt(
+            voice: voice,
+            bigMoment: bigMoment,
+            baseline: baseline,
+            recentSessionDigest: recentSessionDigest,
+            count: count
+        )
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Same tight timeout as the follow-up chips — starters are a
+        // friction-remover, not a blocker; a stalled request shouldn't
+        // hold the network while the deterministic catalog is already on
+        // screen.
+        request.timeoutInterval = 8
+
+        do {
+            switch provider {
+            case .none:
+                return nil
+            case .openAI, .deepSeek:
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                let body: [String: Any] = [
+                    "model": provider.model,
+                    "temperature": 0.7,
+                    "max_tokens": 120,
+                    "messages": [
+                        ["role": "system", "content": system],
+                        ["role": "user", "content": user]
+                    ]
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            case .gemini:
+                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+                let body: [String: Any] = [
+                    "systemInstruction": ["parts": [["text": system]]],
+                    "contents": [["role": "user", "parts": [["text": user]]]],
+                    "generationConfig": [
+                        "temperature": 0.7,
+                        "maxOutputTokens": 120
+                    ]
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            }
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return nil
+            }
+            guard let raw = extractAIChipsText(from: data, provider: provider) else { return nil }
+            // Same grounding gate as the follow-up chips: a partial /
+            // ungrounded batch (fewer than `count` survive the filter)
+            // loses to the deterministic catalog.
+            return parseAndFilterChips(raw, count: count)
+        } catch {
+            return nil
+        }
+    }
+
+    private static let aiStarterSystemPrompt = """
+    You generate short opening prompts for a speaking-coach chat surface. \
+    Each prompt is written AS THE USER opening a conversation with their \
+    coach — second person, direct, the first thing they'd tap to start.
+
+    Hard rules (every output must clear all of these):
+    - Exactly the requested number of prompts. One per line. No numbering, no \
+    bullets, no quotes, no JSON, no preface.
+    - Each prompt ≤ 10 words.
+    - Sentence case. No emoji. No exclamation marks. No "Let's".
+    - No leading directive verbs like "Tell me", "Describe", "Explain", \
+    "Discuss" — write as the user's own opening question or short ask.
+    - Anchor to the user's situation: if a real upcoming moment is given, at \
+    least one prompt preps for it; if a recent rep is given, at least one \
+    references what just happened (the score, theme, intent, or weak area). \
+    Otherwise lean on the weakest dimension and the voice tone.
+    - Tailor to the voice tone. A user training authoritative gets \
+    verdict-shaped openers; warm gets felt-experience asks; concise gets \
+    clipped asks; persuasive gets reasoning asks; executive gets top-line \
+    asks; storytelling gets arc-shaped asks.
+    - Output only the prompts themselves, separated by newlines.
+    """
+
+    private static func aiStarterUserPrompt(
+        voice: SpeakingStyleGoal?,
+        bigMoment: BigMoment?,
+        baseline: CommunicationBaseline,
+        recentSessionDigest: String?,
+        count: Int
+    ) -> String {
+        let voiceLine = voice.map { "Voice tone: \($0.title)." } ?? "Voice tone: not set — keep calm and direct."
+
+        var lines: [String] = [voiceLine]
+
+        // Upcoming moment (if any, within the window the deterministic
+        // catalog also uses). Summary only — title + category + days.
+        if let moment = bigMoment,
+           let days = BigMomentStore.daysUntil(moment),
+           days >= 0, days <= 60 {
+            let label = moment.category.displayName
+            lines.append("Upcoming moment: \(label) in \(days) day\(days == 1 ? "" : "s").")
+        }
+
+        // Weakest baseline dimension — single source of truth.
+        if let weakest = PracticeTopics.weakestDimensionLabel(for: baseline) {
+            lines.append("Weakest dimension right now: \(weakest).")
+        }
+
+        // Recent-rep digest (already privacy-bounded by the caller —
+        // score/theme/intent/headline only, never raw transcript).
+        if let digest = recentSessionDigest,
+           !digest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append(digest)
+        }
+
+        lines.append("")
+        lines.append("Return exactly \(count) opening prompts, one per line.")
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Recent-session digest (chip context)
+    //
+    // Composes a tiny, privacy-bounded summary of the user's most recent
+    // reps for the AI chip + starter prompts. PRIVACY: this NEVER pastes
+    // raw transcript — only the score, theme label, declared-intent label,
+    // and the (already coach-authored) headline. Bounded to `limit` reps
+    // (default 2), one short line each, so the small chip token budget
+    // (120 tokens) doesn't get crowded out and truncate the chips.
+    //
+    // Returns nil when there are no usable rows (empty history, or every
+    // recent session is so bare it produces no signal) — the caller then
+    // omits the RECENT REPS block entirely and the chip path falls through
+    // to today's behavior. Decode-safe by construction: every field it
+    // reads is already optional on `PracticeSession`.
+    //
+    // Pure + static so it's unit-testable without a store or a provider.
+    static func recentSessionDigestForChips(
+        sessions: [PracticeSession],
+        baseline: CommunicationBaseline,
+        limit: Int = 2
+    ) -> String? {
+        guard limit > 0 else { return nil }
+        // Most-recent first. `sessions` is persisted newest-last in some
+        // call paths and newest-first in others, so sort explicitly by
+        // date to make the digest deterministic regardless of caller order.
+        let recent = sessions
+            .sorted { $0.date > $1.date }
+            .prefix(limit)
+
+        var rows: [String] = []
+        for session in recent {
+            var parts: [String] = []
+            if let score = session.score {
+                parts.append("score \(score)/10")
+            }
+            if let theme = session.theme, theme != .all {
+                parts.append("theme \(theme.rawValue)")
+            }
+            if let intent = session.intentLabel,
+               !intent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append("aimed for \(intent)")
+            }
+            if let headline = session.headline,
+               !headline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Headlines are coach-authored summaries, never the user's
+                // raw words — safe to pass through. Strip any trailing
+                // punctuation so the line stays clipped + clause-shaped.
+                let clean = headline
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ".!"))
+                if !clean.isEmpty {
+                    parts.append("read: \(clean)")
+                }
+            }
+            guard !parts.isEmpty else { continue }
+            rows.append("- " + parts.joined(separator: ", "))
+        }
+
+        guard !rows.isEmpty else { return nil }
+
+        // One labelled block. The weakest-dimension line lives in the
+        // starter prompt builder (single source of truth) — keep this
+        // strictly the per-rep summary so the two don't duplicate.
+        return (["RECENT REPS (most recent first):"] + rows).joined(separator: "\n")
+    }
+
     // MARK: - Follow-up suggestions (post-reply)
     //
     // Shown as quiet chips beneath the most-recent coach reply inside
@@ -1800,6 +2656,7 @@ enum CoachContextBuilder {
         lastUserTurn: String,
         lastCoachReply: String,
         voice: SpeakingStyleGoal?,
+        recentSessionDigest: String? = nil,
         count: Int = 3
     ) async -> [String]? {
         let trimmedReply = lastCoachReply.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1819,6 +2676,7 @@ enum CoachContextBuilder {
             lastUserTurn: trimmedTurn,
             lastCoachReply: trimmedReply,
             voice: voice,
+            recentSessionDigest: recentSessionDigest,
             count: count
         )
 
@@ -1899,12 +2757,24 @@ enum CoachContextBuilder {
         lastUserTurn: String,
         lastCoachReply: String,
         voice: SpeakingStyleGoal?,
+        recentSessionDigest: String?,
         count: Int
     ) -> String {
         let voiceLine = voice.map { "Voice tone: \($0.title)." } ?? "Voice tone: not set — keep calm and direct."
+        // Recent-rep digest is optional + already privacy-bounded by the
+        // caller (score/theme/intent/headline only, never raw transcript).
+        // When present it gives the chips a real anchor ("ask about my
+        // last rep's score") instead of pure conversational follow-up.
+        let digestBlock: String
+        if let digest = recentSessionDigest,
+           !digest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            digestBlock = "\n\(digest)\n"
+        } else {
+            digestBlock = ""
+        }
         return """
         \(voiceLine)
-
+        \(digestBlock)
         Last user turn:
         \"\"\"
         \(lastUserTurn)
@@ -2140,6 +3010,41 @@ enum CoachContextBuilder {
         return Array(lines.prefix(7))
     }
 
+    private static func coachCaseFileLines(
+        memory: CoachMemory
+    ) -> [String] {
+        guard let caseFile = memory.caseFile else { return [] }
+
+        var lines: [String] = []
+        if let hypothesis = caseFile.hypothesis {
+            lines.append("- Case hypothesis: \(hypothesis)")
+        } else if let focus = caseFile.focus {
+            lines.append("- Case focus: \(focus.displayName).")
+        }
+        lines.append("- Evidence: \(caseFile.evidenceSummary).")
+        if let active = caseFile.activeIntervention {
+            lines.append("- Intervention: \(active).")
+        }
+        if let target = caseFile.observableTarget {
+            lines.append("- Observable target: \(target).")
+        }
+        if let measure = caseFile.successMeasure {
+            lines.append("- Success measure: \(measure).")
+        }
+        if let due = caseFile.reviewDueAt {
+            lines.append("- Review due: \(caseReviewLabel(for: due)).")
+        }
+        if let pattern = caseFile.subjectivePattern {
+            lines.append("- Subjective pattern: \(pattern) Treat as self-report, not diagnosis.")
+        }
+        if let transfer = caseFile.transferRead {
+            lines.append("- Transfer read: \(transfer) User-reported; not proof of causation.")
+        }
+        lines.append("- Next coach move: \(caseFile.nextMove.contextLabel). \(caseFile.nextMove.contextInstruction) \(caseFile.nextQuestion)")
+
+        return Array(lines.prefix(10))
+    }
+
     private static func coachCaseFormulationLines(
         memory: CoachMemory
     ) -> [String] {
@@ -2179,6 +3084,34 @@ enum CoachContextBuilder {
                     break
                 }
             }
+
+            // Stated-vs-measured concordance (slice-4). The diagnosis engine
+            // reconciles the measured lever with the challenge the user
+            // STATED at onboarding (`CoachingProfile.biggestChallenge`) and
+            // never silently switches focus on a divergence — a guardrail a
+            // real coach does not violate. We surface that read here, beside
+            // the goal-fit read, so chat coach / blueprint / debrief all
+            // reference the same one source of truth.
+            //
+            //   • .divergent → ONE divergence question naming both the stated
+            //     challenge area and the measured lever, so the coach asks
+            //     which to anchor to rather than overriding the user's stated
+            //     focus.
+            //   • .agree → a brief affirmation that the reps line up with what
+            //     the user came in for (no question).
+            //   • .deferred / .unknown → silent: below the evidence floor the
+            //     measured read isn't trustworthy enough to challenge the
+            //     stated challenge, and `.unknown` means nothing to say.
+            switch memory.statedChallengeConcordance {
+            case .divergent:
+                if let statedArea = memory.statedChallengeArea, statedArea != currentLever {
+                    lines.append("- Stated-vs-measured: the user came in wanting to work on \(statedArea.displayName), but the reps point more at \(currentLever.displayName). Ask which to anchor to — do not silently switch the focus they stated.")
+                }
+            case .agree:
+                lines.append("- Stated-vs-measured: the reps line up with the \(currentLever.displayName) challenge the user came in for; you can affirm that alignment.")
+            case .deferred, .unknown:
+                break
+            }
         }
 
         if let transfer = memory.lastTransferReview {
@@ -2191,6 +3124,10 @@ enum CoachContextBuilder {
         } else if let reflection = memory.lastReflectionSummary, !reflection.isEmpty {
             lines.append("- Last reflection: the user said \(reflection). This is their own read, not a measured signal — reference it, never contradict it.")
         }
+        if let pattern = memory.reflectionPattern {
+            lines.append("- Subjective pattern (\(pattern.confidence.contextLabel)): \(pattern.reportedLine) Next review move: \(pattern.contextInstruction)")
+            lines.append("- Pattern evidence rule: this is repeated self-report, not a diagnosis — ask the user to confirm, refine, or reject it before strengthening the claim.")
+        }
         if let strength = memory.strengths.first, !strength.isEmpty {
             lines.append("- Preserve: \(strength).")
         }
@@ -2198,7 +3135,7 @@ enum CoachContextBuilder {
             lines.append("- Watch: \(blocker).")
         }
 
-        return Array(lines.prefix(10))
+        return Array(lines.prefix(12))
     }
 
     private static func interventionCycleLines(

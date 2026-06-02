@@ -218,6 +218,8 @@ struct MiniDrillResultView: View {
             if let metrics = outcome.prepStackMetrics {
                 return DrillCompletionCopy.prepStackFeedback(metrics: metrics, succeeded: outcome.succeeded)
             }
+        case .frameworkCheck:
+            return DrillCompletionCopy.frameworkFeedback(outcome: outcome)
         case .standard:
             break
         }
@@ -260,7 +262,9 @@ struct MiniDrillResultView: View {
                     miniStat(label: "Close", value: "\(Int(m.closeStrength * 100))%")
                 }
             }
-        case .standard:
+        case .standard, .frameworkCheck:
+            // Framework drills reuse the generic delivery stats; the structural
+            // verdict lives in the feedback line, not as a numeric stat.
             HStack(spacing: 24) {
                 miniStat(label: "Duration", value: "\(Int(outcome.duration))s")
                 miniStat(label: "Words", value: "\(outcome.wordCount)")

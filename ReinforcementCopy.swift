@@ -93,7 +93,38 @@ enum DrillCompletionCopy {
             }
             return "Weak Close"
 
+        case .frameworkCheck:
+            return frameworkTitle(for: outcome)
+
         case .standard:
+            return title(for: outcome.drill.skillArea, succeeded: outcome.succeeded)
+        }
+    }
+
+    /// Result title for a named-framework drill, keyed off the post-hoc
+    /// structural verdict when present. Falls back to the generic skill-area
+    /// title below the detector's evidence floor (no verdict) so a too-thin rep
+    /// never gets a structural label it didn't earn.
+    private static func frameworkTitle(for outcome: MiniDrillOutcome) -> String {
+        switch outcome.frameworkVerdict {
+        case .star(.turnDetected):
+            return "Found the Turn"
+        case .star(.flat):
+            return "Set the Scene"
+        case .claimCounter(.counterAcknowledged):
+            return "Both Sides"
+        case .claimCounter(.oneSided):
+            return "One Side So Far"
+        case .elevatorPitch(.landed):
+            return "Pitch Landed"
+        case .elevatorPitch(.overTime):
+            return "Ran Long"
+        case .elevatorPitch(.missingName):
+            return "Who Are You?"
+        case .elevatorPitch(.missingHook):
+            return "Need a Hook"
+        case .none:
+            // Below the evidence floor — fall back to the neutral skill title.
             return title(for: outcome.drill.skillArea, succeeded: outcome.succeeded)
         }
     }
@@ -263,6 +294,54 @@ enum DrillCompletionCopy {
             return "\(steps)/4 steps — push through all four. Point → Reason → Example → Point."
         }
         return "\(steps)/4 steps — strengthen the close so the stack lands."
+    }
+
+    /// Named-framework drill feedback (STAR turn / claim-counter / elevator
+    /// pitch). The structural counterpart to `prepStackFeedback`: surfaces ONE
+    /// constructive nudge keyed to the post-hoc `FrameworkDrillVerdict`. It is
+    /// honest by construction:
+    ///
+    /// - A positive verdict (`turnDetected` / `counterAcknowledged` / `landed`)
+    ///   names what the framework move was and why it worked.
+    /// - A miss verdict frames the missing structural move as the next target —
+    ///   never a verdict on whether the content was *right* (association, not
+    ///   causation), and never punitive.
+    /// - `nil` verdict (below the detector's evidence floor) falls back to the
+    ///   generic skill-area feedback line: no confident "no turn" / "one-sided"
+    ///   on thin data.
+    ///
+    /// `outcome` carries the verdict + the generic-fallback inputs.
+    static func frameworkFeedback(outcome: MiniDrillOutcome) -> String {
+        switch outcome.frameworkVerdict {
+        case .star(.turnDetected):
+            return "There's the turn — the pivot from setup to change is what makes a story land instead of describe."
+        case .star(.flat):
+            return "Solid scene-setting. Now find the turn: the \"…but then…\" or \"…until…\" moment where it changed."
+        case .claimCounter(.counterAcknowledged):
+            return "You named the counter, then bridged back — that's what makes a case persuasive, not just stated."
+        case .claimCounter(.oneSided):
+            return "Strong claim. Next, acknowledge the best counter (\"Some would say…\") before bridging back — it makes the argument land harder."
+        case .elevatorPitch(.landed):
+            return "Named yourself and landed one hook inside the box. That's a pitch, not a ramble."
+        case .elevatorPitch(.overTime):
+            return "Good substance — now tighten it under 30 seconds. The pitch is the doors-closing version."
+        case .elevatorPitch(.missingName):
+            return "One hook, but introduce yourself first — \"I'm…\" — the name is half the pitch."
+        case .elevatorPitch(.missingHook):
+            return "You named yourself — now land one concrete hook worth remembering, then stop."
+        case .none:
+            // Below the evidence floor: defer to the neutral skill-area line so
+            // a too-thin rep never earns a structural claim it didn't support.
+            let wpm = outcome.duration > 0 ? Double(outcome.wordCount) / outcome.duration * 60 : 0
+            return feedbackLine(
+                skillArea: outcome.drill.skillArea,
+                succeeded: outcome.succeeded,
+                fillerCount: outcome.fillerCount,
+                wordCount: outcome.wordCount,
+                duration: outcome.duration,
+                wpm: wpm
+            )
+        }
     }
 }
 

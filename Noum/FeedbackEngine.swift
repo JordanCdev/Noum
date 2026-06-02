@@ -130,7 +130,14 @@ enum VerdictEngine {
     ///
     /// The baseline/pressure/style parameters are optional — when provided, feedback
     /// references the user's historical patterns (Layer 1), IM context-fit (Layer 2),
-    /// and style goal alignment (Layer 3).
+    /// prompt-grounded relevance for prompt-answering modes (Layer 2b), and style
+    /// goal alignment (Layer 3).
+    ///
+    /// `promptRelevance` (Layer 2b) is the initiative-#8 `PromptRelevanceRead` —
+    /// the SAME read the 7-dimension Relevance rating + both AI surfaces consume.
+    /// Threaded here so the Timed three-part note shares one "answered vs buried"
+    /// substance read with every other surface instead of carrying none. It only
+    /// ever softens the leverage line on a clear miss; it never moves the score.
     static func generate(
         fillerCount: Int,
         duration: TimeInterval,
@@ -145,7 +152,8 @@ enum VerdictEngine {
         pressureProfile: PressureProfile? = nil,
         pressureLevel: PressureLevel = .standard,
         styleGoal: String? = nil,
-        imContext: IMContextFit? = nil
+        imContext: IMContextFit? = nil,
+        promptRelevance: PracticeEvaluator.PromptRelevanceRead? = nil
     ) -> CoachNote {
         let confidence = baseline?.overallConfidence ?? .insufficient
 
@@ -181,6 +189,25 @@ enum VerdictEngine {
             let contextNote = buildIMContextNote(imContext: imContext)
             if !contextNote.isEmpty {
                 leverage = leverage + " " + contextNote
+            }
+        }
+
+        // --- Layer 2b: prompt-grounded relevance (Timed three-part note) ---
+        // The IM context note above judges relevance for IM role-plays; this
+        // is its analog for prompt-answering modes (Timed), reading the SAME
+        // `PromptRelevanceRead` the 7-dimension Relevance rating and all the AI
+        // surfaces consume (initiative #8, made positional in #10). Fires ONLY
+        // on a genuine buried lede (`.buried` = point present across the rep but
+        // missing from the lead) so a buried point gets one constructive nudge
+        // while an answer that led with the point — or one that merely engaged
+        // the question loosely — gets nothing. Never a confident "off-topic"
+        // verdict, and never a down-talk on weak/absent evidence (the read
+        // returns nil below its floor). Skipped when an IM context note has
+        // already spoken to relevance, so the two never double up.
+        if imContext == nil, let promptRelevance {
+            let relevanceNote = buildPromptRelevanceNote(read: promptRelevance)
+            if !relevanceNote.isEmpty {
+                leverage = leverage + " " + relevanceNote
             }
         }
 
@@ -513,6 +540,25 @@ enum VerdictEngine {
         }
 
         return notes.prefix(1).joined()
+    }
+
+    // MARK: - Prompt-Grounded Relevance (Layer 2b)
+
+    /// Prompt-grounded relevance note for the Timed three-part coach note.
+    /// Mirrors `buildIMContextNote`'s single-note, miss-only shape: it fires
+    /// ONLY when the shared POSITIONAL read lands on `.buried` — the point was
+    /// present across the rep but missing from the lead (a buried lede) — and
+    /// it frames the move (lead with the point) rather than asserting the answer
+    /// was off-topic. Returns "" (no note) on `.answered`, `.partial`, or below
+    /// the evidence floor, so the leverage line is never cluttered, never
+    /// down-talks weak evidence, and never fires on an answer that merely
+    /// engaged the question loosely. Reads the SAME
+    /// `PracticeEvaluator.promptAnswerVerdict` mapping the chat coach reads, so
+    /// the post-rep note and the live coach can't disagree. The copy is honest
+    /// by construction: `.buried` already proved the point is in there.
+    private static func buildPromptRelevanceNote(read: PracticeEvaluator.PromptRelevanceRead) -> String {
+        guard PracticeEvaluator.promptAnswerVerdict(for: read) == .buried else { return "" }
+        return "Your main point was in there but arrived late — leading with it in the first sentence keeps the answer anchored to the question."
     }
 
     // MARK: - Style Lens (Layer 3)

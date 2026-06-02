@@ -270,6 +270,12 @@ enum MiniDrillType: String, Codable {
     case beatTheBrake   // Live WPM gauge, stay in zone
     case landThePause   // 3 checkpoint pauses
     case prepStack      // Guided 4-step PREP structure
+    case frameworkCheck // Named-framework drill graded on its own structure
+                        // (STAR turn / claim-counter / elevator pitch) via the
+                        // deterministic `FrameworkDrillChecks` detectors. Runs
+                        // through the standard recording UI; the post-hoc
+                        // structural verdict surfaces in the result copy and
+                        // never moves the numeric outcome.
 
     /// Map a variation ID to its drill type.
     static func from(variationId: String) -> MiniDrillType {
@@ -277,9 +283,32 @@ enum MiniDrillType: String, Codable {
         case "pace.beatTheBrake": return .beatTheBrake
         case "pause.landThePause": return .landThePause
         case "structure.prepStack": return .prepStack
+        case "story.starTurn", "structure.claimCounter", "concise.elevatorPitch":
+            return .frameworkCheck
         default: return .standard
         }
     }
+
+    /// The named framework a `frameworkCheck` variation grades against, derived
+    /// from its stable ID. `nil` for non-framework drills. Used by the result
+    /// copy seam to route to the matching `FrameworkDrillChecks` detector.
+    static func framework(for variationId: String) -> FrameworkDrill? {
+        switch variationId {
+        case "story.starTurn": return .starTurn
+        case "structure.claimCounter": return .claimCounter
+        case "concise.elevatorPitch": return .elevatorPitch
+        default: return nil
+        }
+    }
+}
+
+/// The three named-framework drills graded by `FrameworkDrillChecks`. A bounded,
+/// decode-safe enum so the routing has a single typed switch rather than string
+/// comparisons scattered across surfaces.
+enum FrameworkDrill: String, Codable {
+    case starTurn       // STAR / narrative: setup -> turn -> takeaway
+    case claimCounter   // Persuasion: claim, acknowledge counter, bridge back
+    case elevatorPitch  // Timed self-intro: named self + single hook + time box
 }
 
 // MARK: - Drill-Specific Metrics
@@ -715,6 +744,15 @@ enum DrillCatalog {
             format: .miniDrill,
             successDescription: "All 4 PREP steps completed"
         ),
+        DrillVariation(
+            id: "structure.claimCounter",
+            skillArea: .structure,
+            title: "Claim & Counter",
+            constraint: "Make your claim, then acknowledge the strongest counter-argument (\"Some would say…\", \"Admittedly…\") before bridging back (\"But…\", \"Still…\") to why your claim holds.",
+            coachingPrinciple: "Claim-evidence-warrant: acknowledging the counter before bridging back is what separates a persuasive case from a one-sided assertion.",
+            format: .miniDrill,
+            successDescription: "A counter acknowledged, then bridged back to your claim"
+        ),
     ]
 
     // MARK: Answer Development
@@ -756,6 +794,15 @@ enum DrillCatalog {
             format: .fullRetry,
             successDescription: "Depth rated OK or better"
         ),
+        DrillVariation(
+            id: "story.starTurn",
+            skillArea: .answerDevelopment,
+            title: "STAR — Find the Turn",
+            constraint: "Tell a real story: set the scene, then hit the turn — the moment it changed (\"…but then…\", \"…until…\", \"that's when…\") — and land the takeaway.",
+            coachingPrinciple: "A story without a turn is just a description. The pivot from setup to change is what makes a STAR answer land.",
+            format: .miniDrill,
+            successDescription: "A clear turn between the setup and the takeaway"
+        ),
     ]
 
     // MARK: Concise Speaking
@@ -796,6 +843,15 @@ enum DrillCatalog {
             coachingPrinciple: "Repetition is the most common form of rambling. Cut it.",
             format: .miniDrill,
             successDescription: "No repeated ideas"
+        ),
+        DrillVariation(
+            id: "concise.elevatorPitch",
+            skillArea: .conciseSpeaking,
+            title: "The Elevator Pitch",
+            constraint: "Introduce yourself and land one concrete hook — who you are and the single thing worth remembering — in under 30 seconds.",
+            coachingPrinciple: "An elevator pitch is a self-introduction with one memorable hook, delivered before the doors open. Name yourself, make one point, stop.",
+            format: .miniDrill,
+            successDescription: "Named yourself with one clear hook, inside 30 seconds"
         ),
     ]
 
@@ -1009,6 +1065,13 @@ enum DrillXPEngine {
             qualityBonus = landThePauseQualityBonus(outcome: outcome)
         case .prepStack:
             qualityBonus = prepStackQualityBonus(outcome: outcome)
+        case .frameworkCheck:
+            // Framework drills run through the standard recording flow, so they
+            // earn the same word-density / duration-engagement quality bonus.
+            // The structural verdict is deliberately NOT an XP input — XP stays
+            // driven by `succeeded` + delivery density only (score-safety: the
+            // verdict surfaces as coaching copy, never as points).
+            qualityBonus = standardQualityBonus(outcome: outcome)
         }
 
         // Clean execution bonus: zero fillers in any drill
