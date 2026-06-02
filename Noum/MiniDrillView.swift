@@ -428,6 +428,8 @@ enum FrameworkDrillVerdict: Equatable {
     case star(FrameworkDrillChecks.StarTurnVerdict)
     case claimCounter(FrameworkDrillChecks.ClaimCounterVerdict)
     case elevatorPitch(FrameworkDrillChecks.ElevatorPitchVerdict)
+    case bridgeReframe(FrameworkDrillChecks.BridgeReframeVerdict)
+    case areaAnswer(FrameworkDrillChecks.AreaVerdict)
 
     /// Run the matching deterministic detector for `framework`. Returns `nil`
     /// when there is no framework (a non-framework drill) or when the detector
@@ -447,6 +449,10 @@ enum FrameworkDrillVerdict: Equatable {
             return FrameworkDrillChecks.claimCounter(transcript: transcript).map(FrameworkDrillVerdict.claimCounter)
         case .elevatorPitch:
             return FrameworkDrillChecks.elevatorPitch(transcript: transcript, duration: duration).map(FrameworkDrillVerdict.elevatorPitch)
+        case .bridgeReframe:
+            return FrameworkDrillChecks.bridgeReframe(transcript: transcript).map(FrameworkDrillVerdict.bridgeReframe)
+        case .areaAnswer:
+            return FrameworkDrillChecks.areaAnswer(transcript: transcript).map(FrameworkDrillVerdict.areaAnswer)
         }
     }
 }

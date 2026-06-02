@@ -123,6 +123,20 @@ enum DrillCompletionCopy {
             return "Who Are You?"
         case .elevatorPitch(.missingHook):
             return "Need a Hook"
+        case .bridgeReframe(.reframed):
+            return "Reframed It"
+        case .bridgeReframe(.facedDirectly):
+            return "Faced It Head-On"
+        case .areaAnswer(.complete):
+            return "Full AREA"
+        case .areaAnswer(.missingLead):
+            return "Lead With It"
+        case .areaAnswer(.missingReason):
+            return "Add the Why"
+        case .areaAnswer(.missingExample):
+            return "Need an Example"
+        case .areaAnswer(.noClosingLoop):
+            return "Close the Loop"
         case .none:
             // Below the evidence floor — fall back to the neutral skill title.
             return title(for: outcome.drill.skillArea, succeeded: outcome.succeeded)
@@ -297,12 +311,13 @@ enum DrillCompletionCopy {
     }
 
     /// Named-framework drill feedback (STAR turn / claim-counter / elevator
-    /// pitch). The structural counterpart to `prepStackFeedback`: surfaces ONE
-    /// constructive nudge keyed to the post-hoc `FrameworkDrillVerdict`. It is
-    /// honest by construction:
+    /// pitch / reframe-bridge / AREA). The structural counterpart to
+    /// `prepStackFeedback`: surfaces ONE constructive nudge keyed to the post-hoc
+    /// `FrameworkDrillVerdict`. It is honest by construction:
     ///
-    /// - A positive verdict (`turnDetected` / `counterAcknowledged` / `landed`)
-    ///   names what the framework move was and why it worked.
+    /// - A positive verdict (`turnDetected` / `counterAcknowledged` / `landed` /
+    ///   `reframed` / `complete`) names what the framework move was and why it
+    ///   worked.
     /// - A miss verdict frames the missing structural move as the next target —
     ///   never a verdict on whether the content was *right* (association, not
     ///   causation), and never punitive.
@@ -329,6 +344,20 @@ enum DrillCompletionCopy {
             return "One hook, but introduce yourself first — \"I'm…\" — the name is half the pitch."
         case .elevatorPitch(.missingHook):
             return "You named yourself — now land one concrete hook worth remembering, then stop."
+        case .bridgeReframe(.reframed):
+            return "You acknowledged it fairly, then bridged to what matters more — that's a reframe, not a dodge."
+        case .bridgeReframe(.facedDirectly):
+            return "You met the question head-on. Next, try the reframe: grant it fairly (\"That's fair…\"), then bridge to the more important issue."
+        case .areaAnswer(.complete):
+            return "Answer, reason, example, then back to the answer — the full AREA loop. The point landed twice."
+        case .areaAnswer(.missingLead):
+            return "Lead with the answer first — state it in the opening line, then justify it. Don't make them wait for the point."
+        case .areaAnswer(.missingReason):
+            return "Good answer with an example. Now add the why — \"because…\" — so the claim is justified, not just asserted."
+        case .areaAnswer(.missingExample):
+            return "Clear answer and a reason. Now ground it in one concrete example (\"last week…\", \"for instance…\") to make it stick."
+        case .areaAnswer(.noClosingLoop):
+            return "Answer, reason, example — strong. Now close by returning to the answer so the point lands one more time."
         case .none:
             // Below the evidence floor: defer to the neutral skill-area line so
             // a too-thin rep never earns a structural claim it didn't support.

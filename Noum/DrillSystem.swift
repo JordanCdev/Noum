@@ -283,7 +283,8 @@ enum MiniDrillType: String, Codable {
         case "pace.beatTheBrake": return .beatTheBrake
         case "pause.landThePause": return .landThePause
         case "structure.prepStack": return .prepStack
-        case "story.starTurn", "structure.claimCounter", "concise.elevatorPitch":
+        case "story.starTurn", "structure.claimCounter", "concise.elevatorPitch",
+             "structure.bridgeReframe", "depth.areaAnswer":
             return .frameworkCheck
         default: return .standard
         }
@@ -297,6 +298,8 @@ enum MiniDrillType: String, Codable {
         case "story.starTurn": return .starTurn
         case "structure.claimCounter": return .claimCounter
         case "concise.elevatorPitch": return .elevatorPitch
+        case "structure.bridgeReframe": return .bridgeReframe
+        case "depth.areaAnswer": return .areaAnswer
         default: return nil
         }
     }
@@ -309,6 +312,8 @@ enum FrameworkDrill: String, Codable {
     case starTurn       // STAR / narrative: setup -> turn -> takeaway
     case claimCounter   // Persuasion: claim, acknowledge counter, bridge back
     case elevatorPitch  // Timed self-intro: named self + single hook + time box
+    case bridgeReframe  // Curveball: acknowledge fairly -> bridge to the priority
+    case areaAnswer     // AREA: answer -> reason -> example -> answer (close loop)
 }
 
 // MARK: - Drill-Specific Metrics
@@ -753,6 +758,15 @@ enum DrillCatalog {
             format: .miniDrill,
             successDescription: "A counter acknowledged, then bridged back to your claim"
         ),
+        DrillVariation(
+            id: "structure.bridgeReframe",
+            skillArea: .structure,
+            title: "Reframe the Curveball",
+            constraint: "Answer a hostile or loaded question: acknowledge it fairly first (\"That's fair…\", \"I hear that…\"), then bridge to the more important issue (\"The real question is…\", \"What matters more…\").",
+            coachingPrinciple: "Under a curveball, the acknowledge-then-bridge move is what reframes the question fairly instead of dodging it — concede the premise, then redirect to what matters most.",
+            format: .miniDrill,
+            successDescription: "Acknowledged the question, then bridged to the more important point"
+        ),
     ]
 
     // MARK: Answer Development
@@ -802,6 +816,15 @@ enum DrillCatalog {
             coachingPrinciple: "A story without a turn is just a description. The pivot from setup to change is what makes a STAR answer land.",
             format: .miniDrill,
             successDescription: "A clear turn between the setup and the takeaway"
+        ),
+        DrillVariation(
+            id: "depth.areaAnswer",
+            skillArea: .answerDevelopment,
+            title: "AREA — Answer, Reason, Example, Answer",
+            constraint: "Lead with your answer, give the reason (\"because…\"), ground it in one concrete example (\"for instance…\", \"last week…\"), then close by returning to the answer.",
+            coachingPrinciple: "AREA develops an answer the way a coach would: state it, justify it, prove it with one example, then loop back so the point lands twice.",
+            format: .miniDrill,
+            successDescription: "Answer led, reason given, one example, then looped back to the answer"
         ),
     ]
 
