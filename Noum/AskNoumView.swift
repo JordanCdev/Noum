@@ -1841,7 +1841,8 @@ struct AskNoumView: View {
 
     private var textFieldPlaceholder: String {
         if voiceInput.isAvailable {
-            return "Message Noum, or tap the mic\u{2026}"
+            // A5 voice-first: lead with talking; typing is the fallback.
+            return "Tap the mic to talk \u{2014} or type\u{2026}"
         }
         return "Message Noum\u{2026}"
     }

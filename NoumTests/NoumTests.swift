@@ -25317,6 +25317,24 @@ struct AskNoumModeSuggestionTests {
     }
 }
 
+// MARK: - Ask Noum voice-first default (A5)
+//
+// The coach-chat voice now defaults ON so Ask Noum reads as a spoken
+// conversation. An explicit mute (stored preference) is always respected.
+
+@MainActor
+@Suite("AskNoumVoiceFirstDefault")
+struct AskNoumVoiceFirstDefaultTests {
+    @Test func absentPreferenceResolvesOn() {
+        #expect(IMVoicePlaybackSettingsManager.voiceFirstDefault(objectPresent: false, stored: false) == true)
+    }
+
+    @Test func explicitPreferenceRespected() {
+        #expect(IMVoicePlaybackSettingsManager.voiceFirstDefault(objectPresent: true, stored: false) == false)
+        #expect(IMVoicePlaybackSettingsManager.voiceFirstDefault(objectPresent: true, stored: true) == true)
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

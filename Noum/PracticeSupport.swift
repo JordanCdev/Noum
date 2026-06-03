@@ -3865,9 +3865,10 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
     /// They are deliberately separate surfaces with different defaults:
     ///   • IM rep voice (`isEnabled`) defaults ON — a conversation partner
     ///     that never speaks is a broken rep.
-    ///   • Coach-chat voice (`askNoumSpokenRepliesEnabled`) defaults OFF —
-    ///     texting is the baseline coaching interaction; speaking back is an
-    ///     opt-in the user turns on when they want a spoken conversation.
+    ///   • Coach-chat voice (`askNoumSpokenRepliesEnabled`) now defaults ON
+    ///     (A5 voice-first) — the coach speaks its replies by default so Ask
+    ///     Noum reads as a spoken conversation with a coach, not a text thread.
+    ///     The mute toggle is the explicit opt-out, and it is always respected.
     /// Reusing this existing settings owner (rather than a new store) keeps
     /// every voice-playback preference in one inspectable place. Persisted
     /// under its own key so toggling one never moves the other.
@@ -3889,9 +3890,6 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
         if UserDefaults.standard.object(forKey: playbackEnabledKey) == nil {
             UserDefaults.standard.set(true, forKey: playbackEnabledKey)
         }
-        // No first-run seed for the Ask-Noum key: an absent key reads back as
-        // `false` from `.bool(forKey:)`, which is exactly the default-OFF we
-        // want. Seeding it would only matter if we wanted a default-ON.
         if let storedEngine = UserDefaults.standard.string(forKey: engineKey),
            let parsedEngine = IMVoiceEngine(rawValue: storedEngine) {
             engine = parsedEngine
@@ -3899,7 +3897,24 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
             engine = .auto
         }
         isEnabled = UserDefaults.standard.bool(forKey: playbackEnabledKey)
-        askNoumSpokenRepliesEnabled = UserDefaults.standard.bool(forKey: askNoumSpokenRepliesKey)
+        // A5 voice-first: resolve the coach-chat voice ON when the user has
+        // never set it (absent key), so the coach speaks by default and Ask
+        // Noum reads as a spoken conversation. An explicit opt-out (key present
+        // = the user used the mute toggle) is always respected. Setting the
+        // property in init does not fire `didSet`, so an untouched preference
+        // stays absent and re-resolves to ON each launch until the user mutes.
+        askNoumSpokenRepliesEnabled = Self.voiceFirstDefault(
+            objectPresent: UserDefaults.standard.object(forKey: askNoumSpokenRepliesKey) != nil,
+            stored: UserDefaults.standard.bool(forKey: askNoumSpokenRepliesKey)
+        )
+    }
+
+    /// A5 — voice-first default semantics for the coach-chat voice: an absent
+    /// preference resolves ON (the coach speaks by default); a present
+    /// preference respects the stored value (the user's explicit mute choice).
+    /// Pure + testable.
+    static func voiceFirstDefault(objectPresent: Bool, stored: Bool) -> Bool {
+        objectPresent ? stored : true
     }
 
     func recordPlaybackAttempt(resolvedEngine: IMVoiceEngine) {
