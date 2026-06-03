@@ -2566,6 +2566,9 @@ enum CoachContextBuilder {
         case paceMentioned
         /// Coach quoted fillers / "um" / "uh" / hedging.
         case fillerMentioned
+        /// Coach talked about vocal delivery — pitch, vocal variety, tone,
+        /// energy, monotone, projection, emphasis, inflection.
+        case deliveryMentioned
         /// Coach framed in terms of the week or a 7-day plan.
         case weeklyMentioned
         /// Generic — no specific anchor; voice-default evergreen chips.
@@ -2591,6 +2594,11 @@ enum CoachContextBuilder {
         if lower.contains("pace") || lower.contains("wpm") || lower.contains("slow") || lower.contains("rush") {
             return .paceMentioned
         }
+        if lower.contains("pitch") || lower.contains("vocal variety") || lower.contains("monotone")
+            || lower.contains("intonation") || lower.contains("inflection") || lower.contains("vary your")
+            || lower.contains("vocal energy") || lower.contains("projection") || lower.contains("emphasis") {
+            return .deliveryMentioned
+        }
         if lower.contains("this week") || lower.contains("next week") || lower.contains("7 days") || lower.contains("seven days") {
             return .weeklyMentioned
         }
@@ -2611,6 +2619,8 @@ enum CoachContextBuilder {
             return paceFollowUps(voice: voice)
         case .fillerMentioned:
             return fillerFollowUps(voice: voice)
+        case .deliveryMentioned:
+            return deliveryFollowUps(voice: voice)
         case .weeklyMentioned:
             return weeklyFollowUps(voice: voice)
         case .generic:
@@ -2672,6 +2682,28 @@ enum CoachContextBuilder {
             return ["What pace carries a story?", "When does my pace flatten the scene?", "How do I gear-shift mid-rep?"]
         case .none:
             return ["What pace should I target?", "How do I notice when I'm rushing?", "What's the fix?"]
+        }
+    }
+
+    /// A4 — situational chips when the coach reply is about vocal DELIVERY
+    /// (pitch, variety, tone, energy). Previously these replies fell through to
+    /// the generic evergreen set; now they get a delivery-anchored nudge.
+    private static func deliveryFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .authoritative:
+            return ["What's the pitch move?", "When does my voice flatten?", "Drill to add range?"]
+        case .warm:
+            return ["How do I sound more alive?", "When does my warmth fade?", "A drill for natural range?"]
+        case .concise:
+            return ["Best range drill?", "Where do I flatten?", "One move to fix it?"]
+        case .persuasive:
+            return ["How does pitch move the listener?", "Where does my delivery flatten?", "A drill that adds lift?"]
+        case .executive:
+            return ["Pitch range for an exec read-out?", "Where does my voice go flat?", "Tactic to add variety?"]
+        case .storytelling:
+            return ["How does pitch carry the scene?", "Where does my voice flatten?", "A drill for vocal range?"]
+        case .none:
+            return ["How do I add vocal variety?", "Where does my voice flatten?", "What's a good range drill?"]
         }
     }
 

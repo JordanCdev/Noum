@@ -7799,6 +7799,18 @@ struct CoachContextBuilderTests {
         #expect(slow == .paceMentioned)
     }
 
+    @Test func followUpTopicDetectionFindsDelivery() {
+        // A4: pitch / vocal variety / "vary your …" / monotone map to
+        // deliveryMentioned so chips are situational, not the generic set.
+        #expect(CoachContextBuilder.detectFollowUpTopic(in: "Vary your pitch when you introduce a new idea.") == .deliveryMentioned)
+        #expect(CoachContextBuilder.detectFollowUpTopic(in: "Let's focus on vocal variety.") == .deliveryMentioned)
+        #expect(CoachContextBuilder.detectFollowUpTopic(in: "Your delivery reads a little monotone.") == .deliveryMentioned)
+        let delivery = CoachContextBuilder.followUpSuggestions(forCoachReply: "vary your pitch more", voice: .warm)
+        let generic = CoachContextBuilder.followUpSuggestions(forCoachReply: "you handled that well overall", voice: .warm)
+        #expect(!delivery.isEmpty)
+        #expect(delivery != generic)
+    }
+
     @Test func followUpTopicDetectionFindsFillers() {
         let fillers = CoachContextBuilder.detectFollowUpTopic(in: "Three fillers in the opening.")
         let umQuoted = CoachContextBuilder.detectFollowUpTopic(in: "Replace \"um\" with silence.")
