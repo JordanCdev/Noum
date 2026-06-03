@@ -25066,6 +25066,94 @@ struct BigMomentTransferEnrichmentTests {
     }
 }
 
+// MARK: - Prep Session Readiness Tests (F2)
+//
+// The rehearsal readiness read extends the existing PrepSession flow (closing
+// its documented "end-of-prep ready-signal" defer). These lock the level
+// transitions, the prep-window bound (pre-moment reps excluded), remaining-
+// shape naming, and the no-confidence-claim contract on the context line.
+
+@Suite("PrepSessionReadiness")
+struct PrepSessionReadinessTests {
+
+    private func session(_ mode: PracticeMode, daysAfter offset: Int, from base: Date) -> PracticeSession {
+        PracticeSession(
+            transcript: "x",
+            fillerWordCount: 0,
+            duration: 60,
+            date: base.addingTimeInterval(Double(offset) * 86_400),
+            mode: mode
+        )
+    }
+
+    private func plan() -> PrepSessionPlan {
+        PrepSessionPlanner.plan(
+            bigMoment: BigMoment(title: "Board pitch", category: .presentation),
+            daysRemaining: 5
+        )
+    }
+
+    @Test func notStartedWhenNoRepsSinceMoment() {
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let older = session(.timed, daysAfter: -2, from: created) // before -> excluded
+        let r = PrepSessionPlanner.readiness(plan: plan(), sessions: [older], momentCreatedAt: created)
+        #expect(r.level == .notStarted)
+        #expect(r.coveredCount == 0)
+        #expect(r.line.contains("No rehearsal reps"))
+    }
+
+    @Test func underwayWhenSomeShapesCovered() {
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let sessions = [
+            session(.timed, daysAfter: 1, from: created),
+            session(.suddenDeath, daysAfter: 2, from: created),
+        ]
+        let r = PrepSessionPlanner.readiness(plan: plan(), sessions: sessions, momentCreatedAt: created)
+        #expect(r.level == .underway)
+        #expect(r.coveredCount == 2)
+        #expect(r.contextLine.contains("2 of 3"))
+        #expect(r.line.contains("audience simulation")) // the remaining (IM) shape is named
+    }
+
+    @Test func rehearsedWhenAllShapesCovered() {
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let sessions = [
+            session(.timed, daysAfter: 1, from: created),
+            session(.suddenDeath, daysAfter: 2, from: created),
+            session(.imConversation, daysAfter: 3, from: created),
+        ]
+        let r = PrepSessionPlanner.readiness(plan: plan(), sessions: sessions, momentCreatedAt: created)
+        #expect(r.level == .rehearsed)
+        #expect(r.coveredCount == 3)
+        #expect(r.totalRepsInWindow == 3)
+        #expect(r.contextLine.contains("all 3"))
+    }
+
+    @Test func windowExcludesPreMomentReps() {
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let sessions = [
+            session(.timed, daysAfter: -5, from: created),      // before -> excluded
+            session(.suddenDeath, daysAfter: 1, from: created), // after -> counts
+        ]
+        let r = PrepSessionPlanner.readiness(plan: plan(), sessions: sessions, momentCreatedAt: created)
+        #expect(r.totalRepsInWindow == 1)
+        #expect(r.coveredModes == [.suddenDeath])
+    }
+
+    @Test func contextLineReportsActivityNotConfidence() {
+        let created = Date(timeIntervalSince1970: 1_000_000)
+        let r = PrepSessionPlanner.readiness(
+            plan: plan(),
+            sessions: [session(.timed, daysAfter: 1, from: created)],
+            momentCreatedAt: created
+        )
+        let lower = r.contextLine.lowercased()
+        #expect(!lower.contains("will do well"))
+        #expect(!lower.contains("ready to succeed"))
+        #expect(!lower.contains("guaranteed"))
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

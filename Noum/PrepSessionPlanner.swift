@@ -55,6 +55,67 @@ struct PrepSessionPlan: Equatable {
     let imScenario: IMScenarioConfig
 }
 
+/// F2 — an honest read of how rehearsed the user is for the upcoming moment,
+/// computed from how many of the plan's rehearsal SHAPES they've practiced
+/// since setting it. Deliberately a "snapshot of where you stand", never a
+/// pass/fail gate (matches the prep flow's stated anti-goal contract). The
+/// evidence is observed practice activity, never a fabricated confidence
+/// number. Closes the prep flow's documented "end-of-prep ready-signal" defer.
+struct PrepSessionReadiness: Equatable {
+    enum Level: String, Equatable {
+        case notStarted   // no rehearsal reps logged since setting the moment
+        case underway     // some shapes covered, not all
+        case rehearsed    // every rehearsal shape practiced at least once
+    }
+
+    /// The plan's rehearsal modes, in order (warm-up / pressure / audience).
+    let plannedModes: [PracticeMode]
+    /// Which of those modes the user has practiced since the moment was set,
+    /// in plan order (stable copy).
+    let coveredModes: [PracticeMode]
+    /// Total reps logged in the prep window (since the moment was set).
+    let totalRepsInWindow: Int
+    let level: Level
+
+    var coveredCount: Int { coveredModes.count }
+
+    /// User-facing line for the prep readiness card. Calm, no pass/fail.
+    var line: String {
+        switch level {
+        case .notStarted:
+            return "No rehearsal reps logged yet. Start with the warm-up — partial prep still counts."
+        case .underway:
+            let remaining = plannedModes.filter { !coveredModes.contains($0) }
+            let remainingNames = remaining.map(Self.shapeName(for:)).joined(separator: " and ")
+            return "You've rehearsed \(coveredCount) of \(plannedModes.count) shapes. Still open: the \(remainingNames)."
+        case .rehearsed:
+            return "You've run all \(plannedModes.count) rehearsal shapes. You're rehearsed — one more pass close to the day locks it in."
+        }
+    }
+
+    /// Terse, user-reported-style line for the coach context (BIG MOMENT
+    /// section). Names observed activity, never a confidence claim.
+    var contextLine: String {
+        switch level {
+        case .notStarted:
+            return "the user has not logged a rehearsal rep since setting this moment."
+        case .underway:
+            return "the user has rehearsed \(coveredCount) of \(plannedModes.count) prep shapes (\(totalRepsInWindow) reps since setting it)."
+        case .rehearsed:
+            return "the user has rehearsed all \(plannedModes.count) prep shapes (\(totalRepsInWindow) reps since setting it)."
+        }
+    }
+
+    static func shapeName(for mode: PracticeMode) -> String {
+        switch mode {
+        case .timed:          return "warm-up"
+        case .suddenDeath:    return "pressure round"
+        case .ahCounter:      return "filler drill"
+        case .imConversation: return "audience simulation"
+        }
+    }
+}
+
 // MARK: - Planner
 
 enum PrepSessionPlanner {
@@ -100,6 +161,40 @@ enum PrepSessionPlanner {
             introductionCopy: intro,
             steps: steps,
             imScenario: scenario
+        )
+    }
+
+    // MARK: - Readiness
+
+    /// Compute how rehearsed the user is for the moment, from practice activity
+    /// since it was set. Pure — counts sessions by mode against the plan's
+    /// rehearsal shapes. An honest snapshot, never a pass/fail gate: a shape is
+    /// "covered" once the user has logged at least one rep in that mode in the
+    /// prep window. `momentCreatedAt` bounds the window so only reps done while
+    /// preparing for THIS moment count.
+    static func readiness(
+        plan: PrepSessionPlan,
+        sessions: [PracticeSession],
+        momentCreatedAt: Date
+    ) -> PrepSessionReadiness {
+        let plannedModes = plan.steps.map(\.mode)
+        let windowSessions = sessions.filter { $0.date >= momentCreatedAt }
+        let practiced = Set(windowSessions.map(\.mode))
+        // Preserve plan order so the copy reads warm-up → pressure → audience.
+        let covered = plannedModes.filter { practiced.contains($0) }
+        let level: PrepSessionReadiness.Level
+        if covered.isEmpty {
+            level = .notStarted
+        } else if covered.count >= plannedModes.count {
+            level = .rehearsed
+        } else {
+            level = .underway
+        }
+        return PrepSessionReadiness(
+            plannedModes: plannedModes,
+            coveredModes: covered,
+            totalRepsInWindow: windowSessions.count,
+            level: level
         )
     }
 

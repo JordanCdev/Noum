@@ -35,6 +35,7 @@ struct PrepSessionView: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var sessionStore = PracticeSessionStore.shared
 
     var body: some View {
         ScrollView {
@@ -63,6 +64,7 @@ struct PrepSessionView: View {
             )
             introCard(plan: plan, moment: moment, days: days)
             stepsCard(plan: plan)
+            readinessCard(plan: plan, moment: moment)
             footerNote(moment: moment)
         } else {
             emptyState
@@ -169,6 +171,43 @@ struct PrepSessionView: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.leading)
             .padding(.horizontal, Spacing.xs)
+    }
+
+    /// F2 — "Where you stand": an honest snapshot of which rehearsal shapes the
+    /// user has run since setting this moment. A row per shape (covered =
+    /// filled check) + a calm line. Never a pass/fail gate — partial prep is
+    /// valid (matches the flow's anti-goal contract).
+    private func readinessCard(plan: PrepSessionPlan, moment: BigMoment) -> some View {
+        let readiness = PrepSessionPlanner.readiness(
+            plan: plan,
+            sessions: sessionStore.sessions,
+            momentCreatedAt: moment.createdAt
+        )
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("WHERE YOU STAND")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+            ForEach(plan.steps, id: \.mode) { step in
+                let done = readiness.coveredModes.contains(step.mode)
+                HStack(spacing: 8) {
+                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(done ? AppColor.positive : Color.secondary.opacity(0.5))
+                    Text(PrepSessionReadiness.shapeName(for: step.mode).capitalized)
+                        .font(.subheadline)
+                        .foregroundStyle(done ? .primary : .secondary)
+                    Spacer()
+                }
+            }
+            Text(readiness.line)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .accessibilityIdentifier("prepSession.readiness")
     }
 
     private var emptyState: some View {

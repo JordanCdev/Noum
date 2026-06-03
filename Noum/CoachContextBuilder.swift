@@ -378,6 +378,15 @@ enum CoachContextBuilder {
             lines.append("")
             lines.append("BIG MOMENT")
             lines.append("- Preparing for: \(moment.title) (\(moment.category.displayName)). \(days) day\(days == 1 ? "" : "s") away.")
+            // F2 — rehearsal readiness: how many prep shapes the user has run
+            // since setting this moment, so the coach can nudge the remaining
+            // rehearsal rather than re-explaining the moment.
+            let prepReadiness = PrepSessionPlanner.readiness(
+                plan: PrepSessionPlanner.plan(bigMoment: moment, daysRemaining: days),
+                sessions: sessions,
+                momentCreatedAt: moment.createdAt
+            )
+            lines.append("- Rehearsal: \(prepReadiness.contextLine)")
         }
 
         if !recentMomentOutcomes.isEmpty {
