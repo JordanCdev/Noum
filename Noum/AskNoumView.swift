@@ -119,6 +119,71 @@ enum AskNoumSpokenMode {
         case nil: return .calm
         }
     }
+
+    // MARK: - A8: hands-free turn-loop predicates
+    //
+    // Pure, view-free decisions for the two transitions that make a continuous
+    // talk-with-the-coach loop work without inviting accidental sends or
+    // mic-thrash. Both predicates default to "no" so an untouched preference
+    // never changes the established tap-to-talk → review → send behavior, and
+    // both also defend against impossible states (empty transcript, mid-reply,
+    // mic not available).
+    //
+    // The view calls these at the two natural seams:
+    //   • Final-transcript callback (recognizer landed an utterance) →
+    //     `shouldAutoSend(...)`. True → dispatch as a user turn. False → keep
+    //     the existing review-in-draft path.
+    //   • TTS finished naturally (`IMMessageSpeaker.onPlaybackFinished`) →
+    //     `shouldRearmMic(...)`. True → re-`toggle()` voice input. False → idle.
+    //
+    // Both stay strictly local (no nav state, no audio-engine touching) so
+    // they can be unit-tested without standing up SwiftUI or AVFoundation.
+
+    /// True when the just-landed final transcript should be auto-sent to the
+    /// coach instead of dropped into the text bar for review. Requires:
+    ///   • hands-free is ON,
+    ///   • spoken replies are ON (the loop needs a voice to come back —
+    ///     otherwise the user is auto-dispatching into a silent text reply
+    ///     they didn't ask for),
+    ///   • the locale supports AI (same gate the spoken-reply path uses —
+    ///     non-English Ask Noum stays text-only),
+    ///   • the trimmed transcript is non-empty (defensive; the recognizer's
+    ///     own minimum gates this upstream),
+    ///   • no reply is currently in flight (don't pile a second send on the
+    ///     coach mid-turn).
+    static func shouldAutoSend(
+        handsFreeEnabled: Bool,
+        spokenRepliesEnabled: Bool,
+        localeSupportsAI: Bool,
+        transcript: String,
+        awaitingReply: Bool
+    ) -> Bool {
+        guard handsFreeEnabled, spokenRepliesEnabled, localeSupportsAI else { return false }
+        guard !awaitingReply else { return false }
+        return !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// True when a natural end of TTS playback should re-arm the mic to capture
+    /// the next user turn. Requires:
+    ///   • hands-free is ON,
+    ///   • voice input is available (`AskNoumVoiceInput.isAvailable`) — never
+    ///     fire a mic that can't capture; mirrors the visible mic-button gate,
+    ///   • voice input is idle (don't fire a `.toggle()` mid-recording: it
+    ///     would stop the recording the user is in the middle of),
+    ///   • no reply is currently in flight (mid-flight reply means we'll get
+    ///     another playback-finish for THAT reply — wait for it).
+    /// The view is responsible for honoring foreground / lifecycle gates —
+    /// this predicate only encodes the in-Ask-Noum business rules.
+    static func shouldRearmMic(
+        handsFreeEnabled: Bool,
+        voiceInputAvailable: Bool,
+        voiceInputIdle: Bool,
+        awaitingReply: Bool
+    ) -> Bool {
+        guard handsFreeEnabled else { return false }
+        guard voiceInputAvailable, voiceInputIdle else { return false }
+        return !awaitingReply
+    }
 }
 
 @available(iOS 17.0, macOS 12.0, *)
@@ -313,9 +378,59 @@ struct AskNoumView: View {
             // before tapping Send. This makes tap-to-toggle feel like
             // dictation, not auto-fire — user owns the send action.
             voiceInput.onFinalTranscript = { transcript in
-                draft = transcript
-                inputFocused = true
+                // A8 — hands-free turn loop. When the user has explicitly
+                // turned hands-free ON (and the loop is actually viable —
+                // spoken replies on, locale supports AI, no reply already in
+                // flight), the final transcript dispatches directly as a user
+                // turn instead of landing in the text bar for review. The
+                // existing tap-to-talk → review → send path is preserved
+                // verbatim when hands-free is OFF, when any precondition
+                // fails, or when the predicate rejects (e.g. empty
+                // transcript). `send(_:)` runs the same goal-intent detection
+                // typed messages get, so an auto-sent "set my voice to warm"
+                // still surfaces the goal-confirmation card.
+                if AskNoumSpokenMode.shouldAutoSend(
+                    handsFreeEnabled: voiceSettings.askNoumHandsFreeEnabled,
+                    spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
+                    localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported,
+                    transcript: transcript,
+                    awaitingReply: store.isAwaitingReply
+                ) {
+                    draft = ""
+                    send(transcript)
+                } else {
+                    draft = transcript
+                    inputFocused = true
+                }
             }
+            // A8 — close the loop on the playback side. When TTS finishes
+            // naturally (the `IMMessageSpeaker` hook designed for exactly
+            // this — fires once per clip on a real natural end, never on a
+            // `stop()` barge-in), and the predicate is satisfied, re-arm the
+            // mic so the user can speak the next turn without tapping. This
+            // is the "coach finishes a sentence; mic comes back on" half of
+            // the loop. A barge-in (user tapping the talk button) goes
+            // through the existing `speaker.stop()` path and does NOT
+            // re-arm — the user is already in control of the mic at that
+            // point. Guarded by the same precondition checks so a tap that
+            // mutes the speaker mid-flow doesn't surprise-arm the mic.
+            speaker.onPlaybackFinished = {
+                if AskNoumSpokenMode.shouldRearmMic(
+                    handsFreeEnabled: voiceSettings.askNoumHandsFreeEnabled,
+                    voiceInputAvailable: voiceInput.isAvailable,
+                    voiceInputIdle: voiceInput.state == .idle,
+                    awaitingReply: store.isAwaitingReply
+                ) {
+                    voiceInput.toggle()
+                }
+            }
+            // A8 — silence-based auto-finish, applied on whatever the current
+            // hands-free preference is at mount. The view also updates this
+            // on every settings change below so a mid-mount toggle takes
+            // effect immediately rather than waiting for the next mount.
+            voiceInput.autoFinishOnSilence = voiceSettings.askNoumHandsFreeEnabled
+                ? AskNoumVoiceInput.minimumAutoFinishSilence
+                : nil
             // Pick up any cross-surface inject (e.g. Summary's "Talk to
             // your coach about this rep" bridge dropped a seed message
             // into the store right before pushing us onto the nav
@@ -332,6 +447,28 @@ struct AskNoumView: View {
             // calling `IMMessageSpeaker.shared.stop()` on `.onDisappear`. Cheap
             // no-op when nothing is playing.
             speaker.stop()
+            // A8 — drop the hands-free hook so the singleton speaker doesn't
+            // keep a captured reference to this view after pop. The next
+            // mount re-wires it in `.onAppear`. Cheap, idempotent.
+            speaker.onPlaybackFinished = nil
+            // A8 — if the user navigates away mid-recording, stop cleanly so
+            // the mic doesn't keep capturing in the background. cancel rather
+            // than send: a half-utterance the user walked away from is not a
+            // chat turn they meant to dispatch.
+            voiceInput.cancelRecording()
+        }
+        // A8 — keep the recognizer's auto-finish window in lock-step with the
+        // hands-free preference. Turning hands-free OFF mid-recording also
+        // tears down the silence watcher inside `AskNoumVoiceInput` on the
+        // next recording start; an in-flight recording continues under the
+        // window it was started with (the watcher is harmless if hands-free
+        // flips OFF — it just keeps polling and the worst case is one extra
+        // auto-send the user opted out of one beat too late; we cancel
+        // mid-recording from the toggle handler to avoid even that).
+        .onChange(of: voiceSettings.askNoumHandsFreeEnabled) { _, newValue in
+            voiceInput.autoFinishOnSilence = newValue
+                ? AskNoumVoiceInput.minimumAutoFinishSilence
+                : nil
         }
     }
 
@@ -349,6 +486,7 @@ struct AskNoumView: View {
                     .textCase(.uppercase)
                     .tracking(0.8)
                 Spacer()
+                handsFreeToggle
                 voiceModeToggle
                 if !store.messages.isEmpty {
                     Menu {
@@ -417,6 +555,53 @@ struct AskNoumView: View {
     // real-reply at the speak site). Turning it OFF mid-speech stops the
     // current clip immediately so the coach goes quiet the instant the user
     // asks for text-only.
+    // MARK: - Hands-free toggle (A8)
+    //
+    // The "talk-with-Noum" loop control — opt-in. Only renders when BOTH
+    // sides of the loop can actually work: a mic that can capture
+    // (`voiceInput.isAvailable`) AND a TTS layer that can speak
+    // (`speaker.canSpeakReplies`). When either side is missing we hide
+    // rather than dead-toggle — same discipline as `voiceModeToggle` /
+    // `AskNoumVoiceInput.isAvailable`. Persisted on the same playback
+    // settings owner as the spoken-replies toggle, so all voice prefs
+    // live in one inspectable place.
+    //
+    // Turning it OFF mid-loop is a safe stop: any recording in flight
+    // gets cancelled cleanly (no half-utterance accidentally fires), and
+    // any in-flight TTS keeps playing — the user just opted into
+    // text-bar review for the NEXT round, not a hard stop on the
+    // current reply. Turning it ON does NOT auto-arm the mic
+    // immediately; the next user action (a tap on the talk button, or a
+    // coach reply finishing) is the natural entry into the loop.
+    @ViewBuilder
+    private var handsFreeToggle: some View {
+        if voiceInput.isAvailable && speaker.canSpeakReplies {
+            let isOn = voiceSettings.askNoumHandsFreeEnabled
+            Button {
+                CoachHaptic.selectionTap()
+                let newValue = !isOn
+                voiceSettings.askNoumHandsFreeEnabled = newValue
+                if !newValue && voiceInput.state == .recording {
+                    // Stopping the loop should not auto-send whatever the mic
+                    // happened to catch — cancel cleanly so the user is back
+                    // in tap-to-talk → review → send territory.
+                    voiceInput.cancelRecording()
+                }
+            } label: {
+                Image(systemName: isOn ? "infinity.circle.fill" : "infinity")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isOn ? AppColor.brandBlue : .secondary)
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel(isOn ? "Hands-free conversation on" : "Hands-free conversation off")
+            .accessibilityHint(isOn
+                               ? "Double-tap to require a tap before sending and a tap to start each turn"
+                               : "Double-tap to let the coach and you take turns without tapping")
+            .accessibilityIdentifier("askNoum.handsFreeToggle")
+        }
+    }
+
     @ViewBuilder
     private var voiceModeToggle: some View {
         if speaker.canSpeakReplies {
@@ -1644,7 +1829,10 @@ struct AskNoumView: View {
                 recording: voiceInput.state == .recording,
                 processing: voiceInput.state == .processing,
                 speaking: mode == .speaking,
-                hasText: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                hasText: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                handsFree: voiceSettings.askNoumHandsFreeEnabled
+                    && voiceInput.isAvailable
+                    && speaker.canSpeakReplies
             ))
             .font(Typography.caption)
             .foregroundStyle(.secondary)
@@ -1676,11 +1864,33 @@ struct AskNoumView: View {
 
     /// Status line under the talk button. Pure + static so it's testable
     /// without the private `InputControlMode`.
-    static func voiceFirstStatus(recording: Bool, processing: Bool, speaking: Bool, hasText: Bool) -> String {
-        if recording { return "Listening \u{2014} tap to send" }
+    ///
+    /// A8 — `handsFree` reshapes the resting copy so the user reads what the
+    /// loop is doing right now. Hands-free copy stays in the same calm
+    /// register; we never claim the mic auto-rearm has fired ("Mic on!") or
+    /// pretend a tap is required when it's not. The recording / processing /
+    /// speaking lines keep their tap-to-send / tap-to-stop affordances —
+    /// hands-free does not take the user's tap option away.
+    static func voiceFirstStatus(
+        recording: Bool,
+        processing: Bool,
+        speaking: Bool,
+        hasText: Bool,
+        handsFree: Bool = false
+    ) -> String {
+        if recording {
+            return handsFree
+                ? "Listening \u{2014} pause to send"
+                : "Listening \u{2014} tap to send"
+        }
         if processing { return "Thinking\u{2026}" }
-        if speaking { return "Coach is speaking \u{2014} tap to talk" }
+        if speaking {
+            return handsFree
+                ? "Coach is speaking \u{2014} your turn next"
+                : "Coach is speaking \u{2014} tap to talk"
+        }
         if hasText { return "Tap to send" }
+        if handsFree { return "Hands-free on \u{2014} say something" }
         return "Tap to talk"
     }
 
