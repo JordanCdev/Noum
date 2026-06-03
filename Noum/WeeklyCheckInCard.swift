@@ -135,7 +135,7 @@ struct WeeklyCheckInSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text("Weekly check-in")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(Typography.sectionHero)
                 .foregroundStyle(.primary)
             Text("Answer what's useful — every field is optional. Your coach uses these to ask sharper questions and adapt the plan.")
                 .font(.subheadline)
