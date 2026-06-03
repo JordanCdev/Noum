@@ -142,6 +142,10 @@ struct AskNoumView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
 
     @State private var draft: String = ""
+    /// A7 voice-first: when true (and voice is available) Ask Noum shows the
+    /// prominent talk bar as the default input; the user taps "Type instead"
+    /// to fall back to the text bar. Defaults true so the front door is voice.
+    @State private var voiceFirstMode: Bool = true
     @State private var didLandFirstAppear = false
     @FocusState private var inputFocused: Bool
 
@@ -298,7 +302,7 @@ struct AskNoumView: View {
                     }
                 }
                 insightsCaption
-                inputBar
+                inputArea
             }
         }
         .navigationTitle("")
@@ -1563,6 +1567,142 @@ struct AskNoumView: View {
         }
     }
 
+    // MARK: - Input area (voice-first default / text fallback)
+
+    /// A7: voice-first is the default front door whenever the mic is available.
+    /// Text is the explicit opt-in ("Type instead"), and the automatic fallback
+    /// when voice can't be served.
+    private var voiceFirstActive: Bool {
+        voiceFirstMode && voiceInput.isAvailable
+    }
+
+    @ViewBuilder
+    private var inputArea: some View {
+        if voiceFirstActive {
+            voiceFirstBar
+        } else {
+            inputBar
+        }
+    }
+
+    /// The prominent talk surface. Reuses the EXACT control logic the text bar
+    /// uses (`inputControlMode` + `performInputAction`) — only the presentation
+    /// changes: a large centered talk button, the spoken words shown big, and
+    /// text demoted to a small opt-in. The record → transcript → send flow is
+    /// identical, so this can't drift from the text path.
+    private var voiceFirstBar: some View {
+        let mode = inputControlMode
+        return VStack(spacing: Spacing.sm) {
+            micNoticeRow
+
+            // The captured/spoken words, shown prominently. Live partial while
+            // recording; the landed transcript (in `draft`) once captured.
+            if !voiceInput.partialTranscript.isEmpty {
+                Text(voiceInput.partialTranscript)
+                    .font(Typography.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, Spacing.lg)
+                    .transition(.opacity)
+            } else if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(draft)
+                    .font(Typography.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, Spacing.lg)
+            }
+
+            Button {
+                performInputAction(for: mode)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(inputControlFill(for: mode))
+                        .frame(width: 72, height: 72)
+                    if mode == .recording {
+                        Circle()
+                            .stroke(AppColor.brandBlue.opacity(0.35), lineWidth: 3)
+                            .frame(width: 84, height: 84)
+                            .transition(.opacity)
+                    }
+                    Image(systemName: inputControlGlyph(for: mode))
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(.white)
+                        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                        .symbolEffect(.pulse, options: .repeating, isActive: mode == .processing && !reduceMotion)
+                }
+            }
+            .disabled(inputControlDisabled(for: mode))
+            .opacity((store.isAwaitingReply && mode != .speaking) ? 0.45 : 1.0)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: mode)
+            .accessibilityIdentifier("askNoum.voiceFirst.talk")
+            .accessibilityLabel(inputControlAccessibilityLabel(for: mode))
+
+            Text(Self.voiceFirstStatus(
+                recording: voiceInput.state == .recording,
+                processing: voiceInput.state == .processing,
+                speaking: mode == .speaking,
+                hasText: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ))
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+            .animation(nil, value: mode)
+
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    voiceFirstMode = false
+                }
+                inputFocused = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "keyboard")
+                    Text("Type instead")
+                }
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.pro)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("askNoum.voiceFirst.typeInstead")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, Spacing.sm)
+        .padding(.bottom, Spacing.md)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
+    }
+
+    /// Status line under the talk button. Pure + static so it's testable
+    /// without the private `InputControlMode`.
+    static func voiceFirstStatus(recording: Bool, processing: Bool, speaking: Bool, hasText: Bool) -> String {
+        if recording { return "Listening \u{2014} tap to send" }
+        if processing { return "Thinking\u{2026}" }
+        if speaking { return "Coach is speaking \u{2014} tap to talk" }
+        if hasText { return "Tap to send" }
+        return "Tap to talk"
+    }
+
+    /// Shared tap action for BOTH the compact text-bar control and the
+    /// prominent voice-first talk button, so the two never diverge.
+    private func performInputAction(for mode: InputControlMode) {
+        switch mode {
+        case .send, .sendOnly:
+            trySend()
+        case .speaking:
+            // The control is the Stop affordance while the coach speaks.
+            CoachHaptic.selectionTap()
+            speaker.stop()
+        case .mic, .recording, .processing:
+            CoachHaptic.selectionTap()
+            // Barge-in: silence any in-flight coach speech the moment the user
+            // reaches for the mic, so the synthesizer never fights the recognizer.
+            speaker.stop()
+            voiceInput.toggle()
+        }
+    }
+
     // MARK: - Input bar
 
     private var inputBar: some View {
@@ -1599,6 +1739,24 @@ struct AskNoumView: View {
 
     private var inputBarRow: some View {
         HStack(alignment: .bottom, spacing: Spacing.sm) {
+            // A7: small affordance back to the voice-first talk bar. Only shown
+            // when voice is available (otherwise text is the only option).
+            if voiceInput.isAvailable {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        voiceFirstMode = true
+                    }
+                    inputFocused = false
+                } label: {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppColor.brandBlue)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("askNoum.textBar.voiceToggle")
+                .accessibilityLabel("Back to voice")
+            }
             ZStack(alignment: .leading) {
                 if draft.isEmpty {
                     Text(textFieldPlaceholder)
@@ -1665,24 +1823,7 @@ struct AskNoumView: View {
     private var unifiedInputControl: some View {
         let mode = inputControlMode
         return Button {
-            switch mode {
-            case .send, .sendOnly:
-                trySend()
-            case .speaking:
-                // S5 — the control is the Stop affordance while the coach
-                // speaks. Tap silences the current reply; the input returns to
-                // its resting mic/send state on the next frame.
-                CoachHaptic.selectionTap()
-                speaker.stop()
-            case .mic, .recording, .processing:
-                CoachHaptic.selectionTap()
-                // S5 — barge-in: silence any in-flight coach speech the moment
-                // the user reaches for the mic, so the synthesizer never fights
-                // the recognizer (same discipline as the rep views stopping TTS
-                // on `.userTurnWaiting`).
-                speaker.stop()
-                voiceInput.toggle()
-            }
+            performInputAction(for: mode)
         } label: {
             ZStack {
                 Circle()

@@ -25614,6 +25614,15 @@ struct AskNoumVoiceFirstDefaultTests {
         #expect(IMVoicePlaybackSettingsManager.voiceFirstDefault(objectPresent: true, stored: false) == false)
         #expect(IMVoicePlaybackSettingsManager.voiceFirstDefault(objectPresent: true, stored: true) == true)
     }
+
+    @Test func voiceFirstStatusReadsLikeAConversation() {
+        guard #available(iOS 17.0, *) else { return }
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: false) == "Tap to talk")
+        #expect(AskNoumView.voiceFirstStatus(recording: true, processing: false, speaking: false, hasText: false).contains("Listening"))
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: true, speaking: false, hasText: false).contains("Thinking"))
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: true, hasText: false).contains("speaking"))
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: true) == "Tap to send")
+    }
 }
 
 // MARK: - M26 Vocal Energy Metrics Tests
@@ -28806,7 +28815,6 @@ struct RebuildVerdictContextTests {
 // only changes WHAT copy round 31 and the generic else-arm emit when the
 // latest change is a second-cycle pushback. No reordering, no new branch.
 
-@available(iOS 17.0, macOS 12.0, *)
 @MainActor
 @Suite("SecondCyclePushbackContextTests")
 struct SecondCyclePushbackContextTests {
