@@ -130,6 +130,35 @@ enum ReportedAudienceResponse: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// F4b — the user's read on whether their PREP / prescribed drill carried into
+/// the real moment. Deliberately framed as what they FELT, never as proof the
+/// drill caused the outcome (the no-causation contract). Kept separate from
+/// `outcome` so the coach can learn whether training is transferring even when
+/// the moment itself went mixed or poorly.
+enum ReportedDrillTransfer: String, Codable, CaseIterable, Identifiable {
+    case transferred
+    case partly
+    case didNotTransfer
+
+    var id: String { rawValue }
+
+    var chipLabel: String {
+        switch self {
+        case .transferred:    return "Prep carried over"
+        case .partly:         return "Partly"
+        case .didNotTransfer: return "Didn't carry"
+        }
+    }
+
+    var coachClause: String {
+        switch self {
+        case .transferred:    return "they felt their prep carried into the moment"
+        case .partly:         return "they felt their prep partly carried into the moment"
+        case .didNotTransfer: return "they felt their prep didn't carry into the moment"
+        }
+    }
+}
+
 struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
     static let noteCharacterLimit = 180
 
@@ -140,6 +169,10 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
     let outcome: ReportedMomentOutcome
     let audienceResponse: ReportedAudienceResponse
     let note: String?
+    /// F4b — the user's read on whether their prep transferred. User-reported,
+    /// never proof the drill caused the outcome. Optional → reports persisted
+    /// before F4b decode with nil (synthesized Decodable, optional key).
+    let drillTransfer: ReportedDrillTransfer?
     let recordedAt: Date
 
     init(
@@ -148,6 +181,7 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
         outcome: ReportedMomentOutcome,
         audienceResponse: ReportedAudienceResponse,
         note: String? = nil,
+        drillTransfer: ReportedDrillTransfer? = nil,
         recordedAt: Date = Date()
     ) {
         self.id = id
@@ -164,14 +198,20 @@ struct BigMomentOutcomeReport: Codable, Identifiable, Equatable {
         } else {
             self.note = nil
         }
+        self.drillTransfer = drillTransfer
         self.recordedAt = recordedAt
     }
 
     /// Bounded, explicitly user-reported language for the AI coach context.
     var coachContextLine: String {
-        let base = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
-        guard let note else { return base }
-        return "\(base) Their note: \"\(note)\"."
+        var line = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
+        if let drillTransfer {
+            line += " On their prep, \(drillTransfer.coachClause)."
+        }
+        if let note {
+            line += " Their note: \"\(note)\"."
+        }
+        return line
     }
 }
 
@@ -283,14 +323,16 @@ final class BigMomentStore: ObservableObject {
         for moment: BigMoment,
         outcome: ReportedMomentOutcome,
         audienceResponse: ReportedAudienceResponse,
-        note: String? = nil
+        note: String? = nil,
+        drillTransfer: ReportedDrillTransfer? = nil
     ) -> BigMomentOutcomeReport? {
         guard let accountID = currentAccountID else { return nil }
         let report = BigMomentOutcomeReport(
             moment: moment,
             outcome: outcome,
             audienceResponse: audienceResponse,
-            note: note
+            note: note,
+            drillTransfer: drillTransfer
         )
         var updated = outcomeReports.filter { $0.momentID != moment.id }
         updated.insert(report, at: 0)

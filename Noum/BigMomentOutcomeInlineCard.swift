@@ -14,6 +14,7 @@ struct BigMomentOutcomeInlineCard: View {
     @StateObject private var store = BigMomentStore.shared
     @State private var selectedOutcome: ReportedMomentOutcome?
     @State private var selectedResponse: ReportedAudienceResponse?
+    @State private var selectedTransfer: ReportedDrillTransfer?
     @State private var note = ""
     @State private var deferredForNow = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -40,8 +41,14 @@ struct BigMomentOutcomeInlineCard: View {
                     selected: selectedResponse,
                     label: \.chipLabel
                 ) { selectedResponse = $0 }
+                choices(
+                    title: "Did your prep transfer?",
+                    values: ReportedDrillTransfer.allCases,
+                    selected: selectedTransfer,
+                    label: \.chipLabel
+                ) { selectedTransfer = $0 }
 
-                TextField("A detail your coach should remember (optional)", text: $note, axis: .vertical)
+                TextField("What was hardest, what you avoided, or what landed (optional)", text: $note, axis: .vertical)
                     .font(Typography.caption)
                     .lineLimit(2...3)
                     .padding(Spacing.sm)
@@ -175,7 +182,8 @@ struct BigMomentOutcomeInlineCard: View {
             for: moment,
             outcome: selectedOutcome,
             audienceResponse: selectedResponse,
-            note: note
+            note: note,
+            drillTransfer: selectedTransfer
         ) {
             CoachMemoryStore.shared.noteTransferOutcome(report)
         }

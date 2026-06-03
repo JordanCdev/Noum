@@ -296,6 +296,7 @@ struct CoachTransferReview: Codable, Equatable {
     var outcome: ReportedMomentOutcome
     var audienceResponse: ReportedAudienceResponse
     var note: String?
+    var drillTransfer: ReportedDrillTransfer?
     var recordedAt: Date
     var nextAction: CoachTransferReviewAction
 
@@ -306,6 +307,7 @@ struct CoachTransferReview: Codable, Equatable {
         outcome = report.outcome
         audienceResponse = report.audienceResponse
         note = report.note
+        drillTransfer = report.drillTransfer
         recordedAt = report.recordedAt
         switch report.outcome {
         case .wentWell:
@@ -318,9 +320,14 @@ struct CoachTransferReview: Codable, Equatable {
     }
 
     var reportedOutcomeLine: String {
-        let base = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
-        guard let note else { return base }
-        return "\(base) Their note: \"\(note)\"."
+        var line = "For \(category.displayName) \"\(momentTitle)\", the user reported \(outcome.coachClause); \(audienceResponse.coachClause)."
+        if let drillTransfer {
+            line += " On their prep, \(drillTransfer.coachClause)."
+        }
+        if let note {
+            line += " Their note: \"\(note)\"."
+        }
+        return line
     }
 }
 

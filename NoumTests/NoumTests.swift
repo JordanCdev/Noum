@@ -24997,6 +24997,75 @@ struct CoachCheckInStoreTests {
     }
 }
 
+// MARK: - Big Moment Transfer Enrichment Tests (F4b)
+//
+// The "did your prep transfer?" signal must flow into BOTH the AI context
+// (report.coachContextLine) and the case file (CoachTransferReview), stay
+// user-reported (no causal claim), and decode on reports persisted before F4b.
+
+@MainActor
+@Suite("BigMomentTransferEnrichment")
+struct BigMomentTransferEnrichmentTests {
+
+    private func report(drillTransfer: ReportedDrillTransfer?, note: String? = nil) -> BigMomentOutcomeReport {
+        BigMomentOutcomeReport(
+            moment: BigMoment(title: "Q3 review", category: .review),
+            outcome: .mixed,
+            audienceResponse: .unclear,
+            note: note,
+            drillTransfer: drillTransfer
+        )
+    }
+
+    @Test func coachContextLineIncludesDrillTransferAndStaysNonCausal() {
+        let line = report(drillTransfer: .partly).coachContextLine
+        #expect(line.contains("prep partly carried"))
+        #expect(!line.lowercased().contains("caused"))
+        // Absent transfer -> no prep clause (no fabricated signal).
+        #expect(!report(drillTransfer: nil).coachContextLine.contains("their prep"))
+    }
+
+    @Test func recordOutcomeCarriesDrillTransfer() {
+        let suite = "bigMoment-transfer-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BigMomentStore(defaults: defaults, accountIDProvider: { "a" })
+        let moment = BigMoment(title: "Pitch", category: .presentation)
+        let saved = store.recordOutcome(
+            for: moment,
+            outcome: .wentWell,
+            audienceResponse: .engaged,
+            note: nil,
+            drillTransfer: .transferred
+        )
+        #expect(saved?.drillTransfer == .transferred)
+    }
+
+    @Test func transferReviewCarriesDrillTransferIntoCaseLine() {
+        let review = CoachTransferReview(report: report(drillTransfer: .didNotTransfer))
+        #expect(review.drillTransfer == .didNotTransfer)
+        #expect(review.reportedOutcomeLine.contains("prep didn't carry"))
+    }
+
+    @Test func outcomeReportDecodesWithoutDrillTransferField() throws {
+        // Reports persisted before F4b must decode with drillTransfer == nil.
+        let legacy = """
+        {
+            "id": "\(UUID().uuidString)",
+            "momentID": "\(UUID().uuidString)",
+            "momentTitle": "Old moment",
+            "category": "interview",
+            "outcome": "wentWell",
+            "audienceResponse": "engaged",
+            "recordedAt": 1700000000
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(BigMomentOutcomeReport.self, from: legacy)
+        #expect(decoded.drillTransfer == nil)
+        #expect(decoded.outcome == .wentWell)
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics
