@@ -2025,6 +2025,20 @@ enum CoachContextBuilder {
               !hypothesis.isEmpty else { return [] }
         let basis = change.evidenceBasis.trimmingCharacters(in: .whitespacesAndNewlines)
         let basisTail = basis.isEmpty ? "" : " (\(basis))"
+        // Round-33: when the rebuild is itself a second-cycle pushback (the
+        // engine wrote the `secondCyclePushbackMarker` tag because the prior
+        // adaptation entry was also a user pushback), surface the second
+        // cycle in BOTH lines so the model recognises a repeated adapt
+        // pattern instead of treating it as a first-time pushback. The
+        // round-32 in-context "second pushback" tag only fires while the
+        // chip-row ack is carried in memory; this branch preserves the
+        // signal AFTER the engine drops that ack on the next rebuild.
+        if change.documentsSecondCyclePushback {
+            return [
+                "- Case file shifted again: the user has now flagged the prior read as off across two consecutive rebuild cycles; the working hypothesis above is the new read\(basisTail).",
+                "- Coach move on the second rebuild cycle: do not re-prescribe the same intervention unchanged. Acknowledge the repeated adapt explicitly, ask one focused question that would discriminate between this new read and the two it just replaced, and avoid strengthening either prior read.",
+            ]
+        }
         return [
             "- Case file just shifted: the user flagged the prior read as off; the working hypothesis above is the rebuilt one\(basisTail).",
             "- Coach move on the rebuild: speak to it as the live operating read, not the original. Leave room for the user to settle into the rebuild or push back again before strengthening it.",
@@ -3257,6 +3271,16 @@ enum CoachContextBuilder {
                 lines.append(contentsOf: revisedReadLines)
             } else if let change = memory.adaptationLog?.last {
                 lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+                // Round-33: when the latest course change documents a
+                // second-cycle pushback BUT round 31's `isFresh` window has
+                // already closed AND round 32's ack is no longer carried,
+                // append a one-sentence cycle note so the second-cycle
+                // signal survives the rep boundary. The model otherwise
+                // sees the entry as "another course change" and loses the
+                // repeated-adapt context the engine has already recorded.
+                if change.documentsSecondCyclePushback {
+                    lines.append("- Repeated-adapt note: the latest course change is a second-cycle pushback — the prior course change was also a user pushback rebuild, so the model should treat the new read as the SECOND adapt, not the first. Avoid re-prescribing identical work and avoid strengthening either prior read until the user weighs in on the new one.")
+                }
             }
         }
 
