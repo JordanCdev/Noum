@@ -27,6 +27,15 @@ struct CaseReviewCard: View {
     /// is read-only COPY (no model call, no numeric score, no analytics).
     var profile: CoachingProfile? = nil
 
+    /// F4a (additive, defaulted nil): closure the Profile screen wires to
+    /// `CoachMemoryStore.noteHypothesisAcknowledgement`. When non-nil, the card
+    /// renders three acknowledgement chips ("does this read fit you?") beneath
+    /// the case so the user can confirm / question / push back on the working
+    /// hypothesis directly from Profile — the SAME durable verdict AskNoum
+    /// captures, no parallel state. Defaulted nil so previews and any other call
+    /// site render the card exactly as before (fully read-only).
+    var onAcknowledge: ((CoachHypothesisConfidence) -> Void)? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -109,6 +118,15 @@ struct CaseReviewCard: View {
                     text: reflection
                 )
             }
+
+            // 6. Acknowledgement — the coach asking "does this read fit you?".
+            // Rendered only when ProfileView wires `onAcknowledge` AND there is a
+            // working hypothesis the user has not already answered for the current
+            // phrasing. Read-only call sites (previews) leave `onAcknowledge` nil
+            // and render exactly as before. Persists through the SAME
+            // CoachMemoryStore.noteHypothesisAcknowledgement path AskNoum uses —
+            // no parallel acknowledgement state.
+            acknowledgementSection
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
@@ -313,5 +331,87 @@ struct CaseReviewCard: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return formatter.string(from: date)
+    }
+
+    // MARK: - Acknowledgement
+    //
+    // The coach asking "does this read fit you?" — the structured back-channel a
+    // real coach uses after sharing a read. Mirrors AskNoumView's hypothesis-ack
+    // chips, minus the chat-shape eligibility (there is no chat thread on
+    // Profile). The durable verdict is voice-independent
+    // (`CoachHypothesisConfidence`); only the chip COPY shifts per voice.
+
+    /// Pure eligibility: is there a working hypothesis the user has not yet
+    /// acknowledged for its current phrasing? Static + pure so it is locked by
+    /// tests without standing up a SwiftUI view. A memory rebuild that rewrites
+    /// the hypothesis drops a stale ack via `appliesTo`, which re-offers the row.
+    static func hasUnacknowledgedHypothesis(in memory: CoachMemory) -> Bool {
+        guard let hypothesis = memory.workingHypothesis?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !hypothesis.isEmpty else { return false }
+        if let ack = memory.hypothesisAcknowledgement,
+           ack.appliesTo(currentHypothesis: memory.workingHypothesis) {
+            return false
+        }
+        return true
+    }
+
+    /// Quiet echo shown once the user has acknowledged the current hypothesis
+    /// (from this card or from Ask Noum) — closes the loop without fanfare. Nil
+    /// when no acknowledgement applies to the current phrasing. Brand voice:
+    /// calm, no exclamation; a `.rejected` verdict reads as the user steering
+    /// the coach, never as a failure state.
+    static func acknowledgedEcho(for memory: CoachMemory) -> String? {
+        guard let ack = memory.hypothesisAcknowledgement,
+              ack.appliesTo(currentHypothesis: memory.workingHypothesis) else { return nil }
+        switch ack.confidence {
+        case .confirmed: return "You confirmed this read."
+        case .uncertain: return "You're not sure about this read yet."
+        case .rejected:  return "You asked the coach to adapt this read."
+        }
+    }
+
+    @ViewBuilder
+    private var acknowledgementSection: some View {
+        if let onAcknowledge {
+            if Self.hasUnacknowledgedHypothesis(in: memory) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Does this read fit you?")
+                        .font(Typography.micro.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                        .accessibilityLabel("Quick verdict on your coach's working read")
+
+                    FlowLayout(spacing: 8, runSpacing: 6) {
+                        ForEach(
+                            CoachContextBuilder.hypothesisAcknowledgementChips(for: memory.voice),
+                            id: \.confidence
+                        ) { chip in
+                            Button {
+                                onAcknowledge(chip.confidence)
+                            } label: {
+                                Text(chip.label)
+                                    .font(Typography.caption.weight(.semibold))
+                                    .multilineTextAlignment(.leading)
+                                    .foregroundStyle(AppColor.pro)
+                                    .padding(.horizontal, Spacing.sm)
+                                    .padding(.vertical, 6)
+                                    .background(AppColor.pro.opacity(0.10), in: Capsule())
+                                    .overlay(
+                                        Capsule().stroke(AppColor.pro.opacity(0.32), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityLabel("Acknowledge: \(chip.label)")
+                            .accessibilityIdentifier("profile.caseReview.ack.\(chip.confidence.rawValue)")
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            } else if let echo = Self.acknowledgedEcho(for: memory) {
+                caseRow(icon: "checkmark.bubble", label: "Your verdict", text: echo)
+            }
+        }
     }
 }

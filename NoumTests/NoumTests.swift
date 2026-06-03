@@ -24738,6 +24738,69 @@ struct HypothesisAcknowledgementTests {
         #expect(decoded.evidenceCount == 5)
     }
 
+    // MARK: - Case-review card acknowledgement surface (F4a)
+    //
+    // The Profile `CaseReviewCard` now offers the same confirm/question/reject
+    // verdict AskNoum does, wired to the SAME store path. These pin the card's
+    // pure eligibility + echo helpers so the surface can't drift from the
+    // durable `appliesTo` snapshot contract.
+
+    @Test func caseReviewOffersAckWhenHypothesisUnacknowledged() {
+        let memory = makeMemory(workingHypothesis: "Filler reduction is the next lever.")
+        #expect(CaseReviewCard.hasUnacknowledgedHypothesis(in: memory) == true)
+        #expect(CaseReviewCard.acknowledgedEcho(for: memory) == nil)
+    }
+
+    @Test func caseReviewHidesAckOnceConfirmedForCurrentHypothesis() {
+        var memory = makeMemory(workingHypothesis: "Filler reduction is the next lever.")
+        memory.hypothesisAcknowledgement = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "Filler reduction is the next lever.",
+            acknowledgedAt: Date()
+        )
+        #expect(CaseReviewCard.hasUnacknowledgedHypothesis(in: memory) == false)
+        #expect(CaseReviewCard.acknowledgedEcho(for: memory) == "You confirmed this read.")
+    }
+
+    @Test func caseReviewReoffersAckOnHypothesisDrift() {
+        // A memory rebuild rewrote the hypothesis; the prior ack snapshot no
+        // longer applies, so the card must re-offer the verdict (and show no
+        // stale echo).
+        var memory = makeMemory(workingHypothesis: "Filler reduction is the next lever.")
+        memory.hypothesisAcknowledgement = CoachHypothesisAcknowledgement(
+            confidence: .confirmed,
+            hypothesisSnapshot: "An older, differently-worded read.",
+            acknowledgedAt: Date()
+        )
+        #expect(CaseReviewCard.hasUnacknowledgedHypothesis(in: memory) == true)
+        #expect(CaseReviewCard.acknowledgedEcho(for: memory) == nil)
+    }
+
+    @Test func caseReviewNoAckWithoutWorkingHypothesis() {
+        let memory = makeMemory(workingHypothesis: nil)
+        #expect(CaseReviewCard.hasUnacknowledgedHypothesis(in: memory) == false)
+        #expect(CaseReviewCard.acknowledgedEcho(for: memory) == nil)
+    }
+
+    @Test func caseReviewAckEchoCopyPerVerdictIsCalm() {
+        let expected: [(CoachHypothesisConfidence, String)] = [
+            (.confirmed, "You confirmed this read."),
+            (.uncertain, "You're not sure about this read yet."),
+            (.rejected,  "You asked the coach to adapt this read."),
+        ]
+        for (confidence, copy) in expected {
+            var memory = makeMemory(workingHypothesis: "Filler reduction is the next lever.")
+            memory.hypothesisAcknowledgement = CoachHypothesisAcknowledgement(
+                confidence: confidence,
+                hypothesisSnapshot: "Filler reduction is the next lever.",
+                acknowledgedAt: Date()
+            )
+            #expect(CaseReviewCard.acknowledgedEcho(for: memory) == copy)
+            // Brand voice: calm, never punitive — no exclamation even on reject.
+            #expect(!copy.contains("!"))
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeMemory(workingHypothesis: String?) -> CoachMemory {

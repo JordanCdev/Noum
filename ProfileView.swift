@@ -967,7 +967,17 @@ struct ProfileView: View {
             // register eyebrow when the user has picked a voice. Additive +
             // defaulted nil on `CaseReviewCard`, so previews/other call sites are
             // unaffected; a nil/unchosen profile renders exactly as before.
-            CaseReviewCard(memory: memory, profile: coachingProfileStore.profile)
+            CaseReviewCard(
+                memory: memory,
+                profile: coachingProfileStore.profile,
+                // F4a: wire the card's acknowledgement chips to the SAME durable
+                // path AskNoum uses. noteHypothesisAcknowledgement updates the
+                // @Published currentMemory, so this view re-renders and the card
+                // swaps the chips for the quiet acknowledged echo.
+                onAcknowledge: { confidence in
+                    coachMemoryStore.noteHypothesisAcknowledgement(confidence)
+                }
+            )
         }
     }
 
