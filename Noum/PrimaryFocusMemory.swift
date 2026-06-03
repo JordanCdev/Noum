@@ -197,6 +197,29 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// to follow in one place.
     static let userPushbackMarker = "user reported the prior hypothesis did not match"
 
+    /// Round-33 marker phrase appended to `reason` by `CoachMemoryEngine.build(...)`
+    /// when a `.rejected` ack is dropped AND the previous adaptation log's last
+    /// entry was itself a user pushback rebuild — i.e., the user has now pushed
+    /// back twice across consecutive rebuild cycles.
+    ///
+    /// Embedded as a parenthetical INSIDE the existing first-cycle reason, so:
+    ///   - `documentsUserPushback` still returns true (the first-cycle marker
+    ///     phrase is preserved verbatim).
+    ///   - `documentsSecondCyclePushback` returns true only when this tail is
+    ///     present, so the two predicates layer cleanly.
+    ///
+    /// The model copy in `CoachContextBuilder` reads off this predicate to
+    /// surface "Case file shifted again" / "second adapt cycle" phrasing
+    /// instead of treating the new entry as a first-time pushback. Without
+    /// this, the round-32 "second pushback" signal in the chat-coach context
+    /// goes dark the moment the engine drops the round-30 ack, even though
+    /// the persistent record still carries the full cycle lineage.
+    ///
+    /// Phrasing kept short and parenthetical so the case-state line stays
+    /// readable when surfaced in the user-context block; the leading clause
+    /// remains the user's own verdict, the second-cycle tag is the qualifier.
+    static let secondCyclePushbackMarker = "after a prior pushback rebuild"
+
     /// Marker phrase written into `reason` by
     /// `CoachMemoryStore.noteVoiceChange(...)` whenever the user confirms a
     /// voice-goal change from the in-chat goal-change card. Lets
@@ -248,6 +271,28 @@ struct CoachCourseChange: Codable, Equatable, Identifiable {
     /// behave correctly without a schema bump.
     var documentsUserPushback: Bool {
         reason.range(of: CoachCourseChange.userPushbackMarker, options: .caseInsensitive) != nil
+    }
+
+    /// Round-33 predicate. True iff this course change documents a user
+    /// pushback rebuild that itself followed a prior pushback rebuild —
+    /// the user has now lodged at least two pushback cycles back-to-back.
+    /// Pure function of the persisted `reason`; the engine writes the
+    /// `secondCyclePushbackMarker` parenthetical only on the (nil, ack?) and
+    /// (prior?, ack?) arms of `CoachMemoryEngine.build(...)` when the
+    /// previous adaptation log's `.last` entry already documented user
+    /// pushback. The marker is embedded INSIDE the first-cycle reason, so
+    /// `documentsUserPushback` and `documentsSecondCyclePushback` are
+    /// orthogonal: `documentsSecondCyclePushback` always implies
+    /// `documentsUserPushback`, never the other way round.
+    ///
+    /// Read by `CoachContextBuilder.freshRevisedReadContextLines(memory:)`
+    /// (round 31) and the generic "Last course change" line (the
+    /// `interventionCycleLines` else-arm) so the model gets the second-cycle
+    /// signal both in the rebuild's fresh window AND after it ages out —
+    /// closing the round-32 gap where the "second pushback" tag in
+    /// context lived only while the chip-row ack was carried in memory.
+    var documentsSecondCyclePushback: Bool {
+        reason.range(of: CoachCourseChange.secondCyclePushbackMarker, options: .caseInsensitive) != nil
     }
 
     /// Was this course change appended on the same rebuild that produced
@@ -1207,17 +1252,29 @@ enum CoachMemoryEngine {
         }
 
         if priorLeverShift != nil || droppedRejectedAck != nil {
+            // Round-33: detect a second-cycle pushback. The signal is
+            // ack-driven only (engine-only lever shifts are not "the user
+            // pushing back again"); the prior bounded log's `.last` entry
+            // must itself already document a user pushback. The tag is
+            // embedded as a parenthetical inside the existing first-cycle
+            // reason so `documentsUserPushback` still matches, AND
+            // `documentsSecondCyclePushback` matches only when the
+            // parenthetical is present.
+            let priorEntryWasPushback = previous?.adaptationLog?.last?.documentsUserPushback == true
+            let secondCycleTag = (droppedRejectedAck != nil && priorEntryWasPushback)
+                ? " (\(CoachCourseChange.secondCyclePushbackMarker))"
+                : ""
             let reason: String
             let evidenceBasis: String
             switch (priorLeverShift, droppedRejectedAck) {
             case let (prior?, ack?):
-                reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read") after the user reported the prior hypothesis did not match what they saw."
+                reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read") after the user reported the prior hypothesis did not match what they saw\(secondCycleTag)."
                 evidenceBasis = rejectedAckEvidenceBasis(ack: ack)
             case let (prior?, nil):
                 reason = "Shifted focus from \(prior.displayName) to \(currentLever?.displayName ?? "the next read")."
                 evidenceBasis = lever?.basis ?? "updated read across recent reps"
             case let (nil, ack?):
-                reason = "User reported the prior hypothesis did not match what they saw; revising the read."
+                reason = "User reported the prior hypothesis did not match what they saw\(secondCycleTag); revising the read."
                 evidenceBasis = rejectedAckEvidenceBasis(ack: ack)
             case (nil, nil):
                 reason = ""

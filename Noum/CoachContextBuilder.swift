@@ -1261,12 +1261,23 @@ enum CoachContextBuilder {
     // `interventionReviewOpener` ("Time to review..."), and the
     // hypothesis ack chips ("Yes — that's the read", "Adapt the read").
 
-    /// Lead prefix on every `revisedReadOpener`. Lifted as a constant so a
-    /// future predicate (e.g. a chat-thread classifier that detects a
-    /// revised-read seed for a follow-up chip row, mirroring the round-26
-    /// `shouldShowHypothesisAcknowledgement` predicate) can match the
-    /// prefix without depending on the voice-shaped ask suffix.
+    /// Lead prefix on every first-cycle `revisedReadOpener`. Lifted as a
+    /// constant so a future predicate (e.g. a chat-thread classifier that
+    /// detects a revised-read seed for a follow-up chip row, mirroring the
+    /// round-26 `shouldShowHypothesisAcknowledgement` predicate) can match
+    /// the prefix without depending on the voice-shaped ask suffix.
     static let revisedReadOpenerLead = "Picking up the case file — I flagged the prior read as off."
+
+    /// Round-35 second-cycle lead. Surfaced when the carrying course change
+    /// documents a second-cycle pushback (round 33's marker — the engine
+    /// detected that the latest pushback rebuild itself followed a prior
+    /// pushback rebuild). Mirrors `RevisedReadCard.secondCycleHeadlineCopy`
+    /// ("You flagged the rebuilt read as off too.") in user voice so the
+    /// chat seed names the repeated adapt the same way the post-rep card
+    /// did on the same rep. The `shouldShowRevisedReadFollowUp` predicate
+    /// matches against BOTH leads so the round-30 chip row still fires
+    /// when the user dispatches a second-cycle seed.
+    static let revisedReadOpenerSecondCycleLead = "Picking up the case file — I flagged the rebuilt read as off too."
 
     /// Seed opener for the post-rep "Talk to Noum" CTA when the just-
     /// finished rep produced a fresh `.rejected`-driven adaptation entry
@@ -1293,36 +1304,90 @@ enum CoachContextBuilder {
     ) -> String {
         let lead = revisedReadOpenerLead
         let body: String
-        if let raw = workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !raw.isEmpty {
-            let stripped: String
-            if raw.hasSuffix(".") {
-                stripped = String(raw.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
-            } else {
-                stripped = raw
-            }
+        if let stripped = strippedHypothesisForOpener(workingHypothesis) {
             body = "The revised read you're holding is: \(stripped)."
         } else {
             body = "The revised read is still forming."
         }
-        let ask: String
+        return "\(lead) \(body) \(revisedReadOpenerAsk(for: voice))"
+    }
+
+    /// Round-35 second-cycle opener. Mirrors `revisedReadOpener` shape but
+    /// swaps the lead to `revisedReadOpenerSecondCycleLead` and the body
+    /// verb to "next read" (matches `RevisedReadCard.secondCycleBodyCopy`
+    /// so the post-rep card and the chat seed read with one voice on the
+    /// cycle distinction). Voice-shaped ask is unchanged — the ask was
+    /// always cycle-agnostic ("Where does the read land now?") and round
+    /// 35 preserves that invariant so the seven voice branches keep
+    /// matching between the two composers.
+    static func secondCycleRevisedReadOpener(
+        workingHypothesis: String?,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        let lead = revisedReadOpenerSecondCycleLead
+        let body: String
+        if let stripped = strippedHypothesisForOpener(workingHypothesis) {
+            body = "The next read you're holding is: \(stripped)."
+        } else {
+            body = "The next read is still forming."
+        }
+        return "\(lead) \(body) \(revisedReadOpenerAsk(for: voice))"
+    }
+
+    /// Round-35 opener router. Reads `documentsSecondCyclePushback` on the
+    /// passed change and dispatches to the second-cycle composer when the
+    /// round-33 marker is present, falling through to the first-cycle
+    /// `revisedReadOpener` otherwise. Pure router — same shape as
+    /// `RevisedReadCard.headlineCopy(for:)` / `bodyCopy(for:workingHypothesis:)`
+    /// so the post-rep card and the chat seed gate on the same predicate.
+    /// `SummaryView.talkToNoumOpener` is the single call site.
+    static func revisedReadOpener(
+        for change: CoachCourseChange,
+        workingHypothesis: String?,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        if change.documentsSecondCyclePushback {
+            return secondCycleRevisedReadOpener(workingHypothesis: workingHypothesis, voice: voice)
+        }
+        return revisedReadOpener(workingHypothesis: workingHypothesis, voice: voice)
+    }
+
+    /// Shared hypothesis trim. The engine's hypothesis clause typically
+    /// ends with `.`; both opener bodies wrap it in a "…: <hypothesis>."
+    /// line which would otherwise produce `..`. Returns nil on nil /
+    /// blank input so the caller can pick the "still forming" fallback
+    /// without re-running the trim. Mirrors
+    /// `RevisedReadCard.strippedHypothesis(_:)` — a future edit (e.g. a
+    /// multi-period strip) lands in both places.
+    private static func strippedHypothesisForOpener(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        if raw.hasSuffix(".") {
+            return String(raw.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return raw
+    }
+
+    /// Shared voice-shaped ask. Lifted into one function so the first-
+    /// cycle and second-cycle composers can never drift on the seven
+    /// voice mappings — a future edit to one branch ripples to both.
+    private static func revisedReadOpenerAsk(for voice: SpeakingStyleGoal?) -> String {
         switch voice {
         case .authoritative:
-            ask = "Where does the read land now?"
+            return "Where does the read land now?"
         case .warm:
-            ask = "What does this open up?"
+            return "What does this open up?"
         case .concise:
-            ask = "Where does this go?"
+            return "Where does this go?"
         case .persuasive:
-            ask = "Make the case for the new read."
+            return "Make the case for the new read."
         case .executive:
-            ask = "Brief me on what shifted."
+            return "Brief me on what shifted."
         case .storytelling:
-            ask = "What chapter does this start?"
+            return "What chapter does this start?"
         case .none:
-            ask = "Where does this go from here?"
+            return "Where does this go from here?"
         }
-        return "\(lead) \(body) \(ask)"
     }
 
     // MARK: - Goal-intent detection (chat-driven voice set / change)
@@ -1931,16 +1996,27 @@ enum CoachContextBuilder {
 
     /// Should the AskNoumView render the revised-read follow-up chip row?
     /// True when the thread's most-recent message is a non-pending coach
-    /// reply AND the user turn that triggered it begins with the
-    /// `revisedReadOpenerLead` prefix. Pure-function mirror of
+    /// reply AND the user turn that triggered it begins with EITHER the
+    /// `revisedReadOpenerLead` (round 29 first-cycle seed) or the
+    /// `revisedReadOpenerSecondCycleLead` (round 35 second-cycle seed)
+    /// prefix. Pure-function mirror of
     /// `shouldShowHypothesisAcknowledgement(messages:)` — same shape,
-    /// different lead constant.
+    /// two valid lead constants instead of one.
     ///
-    /// Why both conditions: we only want the chip row after the coach has
-    /// actually answered the rebuild seed — not on the user turn (which is
-    /// the seed itself) and not while the reply is pending (premature
-    /// follow-up). A later user turn means the conversation has moved on;
-    /// the chip row stops rendering.
+    /// Why both leads match: round 35 split the chat seed into first-cycle
+    /// and second-cycle composers (mirror of round 34's `RevisedReadCard`
+    /// split). The follow-up chip row owns the rebuild-verdict surface on
+    /// both cycles — a user who pushed back twice deserves the same
+    /// one-tap stick / refine / push-back row as a user who pushed back
+    /// once. The two leads are mutually exclusive at the chat-shape level
+    /// (a single user turn can only start with one) so the predicate
+    /// still names a single canonical surface.
+    ///
+    /// Why both message-shape conditions: we only want the chip row after
+    /// the coach has actually answered the rebuild seed — not on the user
+    /// turn (which is the seed itself) and not while the reply is pending
+    /// (premature follow-up). A later user turn means the conversation
+    /// has moved on; the chip row stops rendering.
     static func shouldShowRevisedReadFollowUp(messages: [CoachMessage]) -> Bool {
         guard let last = messages.last,
               last.role == .coach,
@@ -1949,6 +2025,7 @@ enum CoachContextBuilder {
         let prior = messages.dropLast()
         guard let userTurn = prior.last(where: { $0.role == .user }) else { return false }
         return userTurn.text.hasPrefix(revisedReadOpenerLead)
+            || userTurn.text.hasPrefix(revisedReadOpenerSecondCycleLead)
     }
 
     /// Three voice-shaped follow-up chips — confirmed / uncertain /
@@ -2076,6 +2153,20 @@ enum CoachContextBuilder {
               !hypothesis.isEmpty else { return [] }
         let basis = change.evidenceBasis.trimmingCharacters(in: .whitespacesAndNewlines)
         let basisTail = basis.isEmpty ? "" : " (\(basis))"
+        // Round-33: when the rebuild is itself a second-cycle pushback (the
+        // engine wrote the `secondCyclePushbackMarker` tag because the prior
+        // adaptation entry was also a user pushback), surface the second
+        // cycle in BOTH lines so the model recognises a repeated adapt
+        // pattern instead of treating it as a first-time pushback. The
+        // round-32 in-context "second pushback" tag only fires while the
+        // chip-row ack is carried in memory; this branch preserves the
+        // signal AFTER the engine drops that ack on the next rebuild.
+        if change.documentsSecondCyclePushback {
+            return [
+                "- Case file shifted again: the user has now flagged the prior read as off across two consecutive rebuild cycles; the working hypothesis above is the new read\(basisTail).",
+                "- Coach move on the second rebuild cycle: do not re-prescribe the same intervention unchanged. Acknowledge the repeated adapt explicitly, ask one focused question that would discriminate between this new read and the two it just replaced, and avoid strengthening either prior read.",
+            ]
+        }
         return [
             "- Case file just shifted: the user flagged the prior read as off; the working hypothesis above is the rebuilt one\(basisTail).",
             "- Coach move on the rebuild: speak to it as the live operating read, not the original. Leave room for the user to settle into the rebuild or push back again before strengthening it.",
@@ -3340,6 +3431,16 @@ enum CoachContextBuilder {
                 lines.append(contentsOf: revisedReadLines)
             } else if let change = memory.adaptationLog?.last {
                 lines.append("- Last course change: \(change.reason) (\(change.evidenceBasis)).")
+                // Round-33: when the latest course change documents a
+                // second-cycle pushback BUT round 31's `isFresh` window has
+                // already closed AND round 32's ack is no longer carried,
+                // append a one-sentence cycle note so the second-cycle
+                // signal survives the rep boundary. The model otherwise
+                // sees the entry as "another course change" and loses the
+                // repeated-adapt context the engine has already recorded.
+                if change.documentsSecondCyclePushback {
+                    lines.append("- Repeated-adapt note: the latest course change is a second-cycle pushback — the prior course change was also a user pushback rebuild, so the model should treat the new read as the SECOND adapt, not the first. Avoid re-prescribing identical work and avoid strengthening either prior read until the user weighs in on the new one.")
+                }
             }
         }
 

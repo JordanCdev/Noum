@@ -2025,10 +2025,21 @@ struct SummaryView: View {
     // (`freshRevisedReadChange`), the opener composition lives on
     // `CoachContextBuilder`, this property is the one home that picks
     // between them.
+    //
+    // Round 35 — the call routes through the `revisedReadOpener(for:…)`
+    // overload, passing the `change` itself so the second-cycle composer
+    // fires when `change.documentsSecondCyclePushback` is true (round 33's
+    // marker). The chat seed mirrors the post-rep card's round-34
+    // second-cycle copy split: the user reads "I flagged the rebuilt read
+    // as off too" on the same rep the card named the same pushback in
+    // user-verdict voice. The eligibility predicate
+    // (`freshRevisedReadChange`) is unchanged — only the composition
+    // splits per cycle.
 
     private var talkToNoumOpener: String {
-        if freshRevisedReadChange != nil {
+        if let change = freshRevisedReadChange {
             return CoachContextBuilder.revisedReadOpener(
+                for: change,
                 workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
                 voice: coachingProfileStore.profile?.speakingStyleGoal
             )
@@ -2058,19 +2069,19 @@ struct SummaryView: View {
     // Returns the latest `CoachCourseChange` iff it both (a) documents a
     // user-tapped rejection of the prior working hypothesis and (b) was
     // appended on the same rebuild that produced the current memory.
-    // Both predicates live on `CoachCourseChange` as pure-function
-    // properties so the eligibility contract is locked by the engine
-    // tests, not duplicated here. Returns nil when there is no memory,
-    // no adaptation log, or the latest entry is engine-only / older
-    // than this rebuild. See `RevisedReadCard` for the rendering
-    // contract.
+    // Round 34 collapses the local predicate through
+    // `CoachContextBuilder.freshRevisedReadChange(in:)` (round 31's
+    // pure-function lift) so the eligibility contract is shared with
+    // the chat-coach context block, the round-29 revised-read opener,
+    // and the round-30 follow-up chip row — one call site away. The
+    // engine-side predicates (`documentsUserPushback`, `isFresh`) still
+    // live on `CoachCourseChange`, so an edit there ripples to every
+    // surface that gates on the same pair. See `RevisedReadCard` for
+    // the rendering contract.
 
     private var freshRevisedReadChange: CoachCourseChange? {
-        guard let memory = coachMemoryStore.currentMemory,
-              let latest = memory.adaptationLog?.last,
-              latest.documentsUserPushback,
-              latest.isFresh(comparedTo: memory.updatedAt) else { return nil }
-        return latest
+        guard let memory = coachMemoryStore.currentMemory else { return nil }
+        return CoachContextBuilder.freshRevisedReadChange(in: memory)
     }
 
     /// Build the case-anchored opener for the review CTA. Routes
