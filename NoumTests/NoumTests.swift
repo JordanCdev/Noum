@@ -26616,6 +26616,271 @@ struct RevisedReadOpenerTests {
                 == "Picking up the case file — I flagged the prior read as off. The revised read is still forming. What does this open up?"
         )
     }
+
+    // MARK: - Round 35 — Second-cycle opener (CoachContextBuilder)
+    //
+    // Round 35 closes Future Move #13 from the round-34 HANDOFF: the chat
+    // seed dispatched by `SummaryView.talkToNoumOpener` mirrors the round-34
+    // `RevisedReadCard` second-cycle copy split. When the carrying course
+    // change carries the round-33 `documentsSecondCyclePushback` marker, the
+    // seed lead swaps to `revisedReadOpenerSecondCycleLead` ("…I flagged the
+    // rebuilt read as off too.") and the body verb swaps to "next read" —
+    // matching `RevisedReadCard.secondCycleHeadlineCopy` and
+    // `secondCycleBodyCopy` so the post-rep card and the chat thread read
+    // with one voice on the cycle distinction.
+    //
+    // Fixture mirrors the round-34 `RevisedReadCardTests` fixture and the
+    // round-33 engine fixture (`courseChangeDocumentsSecondCyclePushbackWhenMarkerEmbedded`)
+    // so all three layers gate on the same canonical reason shape.
+
+    private func secondCyclePushbackChange() -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw (after a prior pushback rebuild); revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+    }
+
+    private func firstCyclePushbackChange() -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+    }
+
+    @Test func secondCycleLeadConstantNamesRebuiltPushbackInFirstPerson() {
+        // First-person voice ("I flagged") matches the round-29 first-
+        // cycle lead — the user types the chat seed, so the perspective
+        // stays continuous on both cycles. The "too" preserves the
+        // round-34 post-rep card register ("the rebuilt read as off too")
+        // so the card and the chat seed name the same shift the same way.
+        #expect(
+            CoachContextBuilder.revisedReadOpenerSecondCycleLead
+                == "Picking up the case file — I flagged the rebuilt read as off too."
+        )
+    }
+
+    @Test func secondCycleOpenerStartsWithSecondCycleLead() {
+        // Composition contract for the second-cycle composer: a future
+        // predicate that matches on the prefix (e.g. an analytics surface
+        // that counts second-cycle vs. first-cycle dispatches) can do so
+        // without re-running the full body composition.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace appears to be the highest-leverage focus.",
+            voice: nil
+        )
+        #expect(opener.hasPrefix(CoachContextBuilder.revisedReadOpenerSecondCycleLead))
+    }
+
+    @Test func secondCycleOpenerBodyUsesNextReadVerb() {
+        // The body verb swap ("next read" instead of "revised read") is
+        // the chat-thread mirror of `RevisedReadCard.secondCycleBodyCopy`'s
+        // "Here's the next read: …" register. The user reading the chat
+        // seed reads the same cycle distinction the card surfaced.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace appears to be the highest-leverage focus.",
+            voice: nil
+        )
+        #expect(opener.contains("The next read you're holding is: "))
+        // The round-29 first-cycle body verb must NOT surface — the two
+        // cycles share a composer skeleton but not the body verb.
+        #expect(!opener.contains("The revised read you're holding is:"))
+    }
+
+    @Test func secondCycleOpenerBodyStripsTrailingPeriod() {
+        // Mirrors the round-29 first-cycle strip step: the engine's
+        // hypothesis clause typically ends with `.`, and the body wraps
+        // it in "The next read you're holding is: …" which would
+        // otherwise yield `..`. The strip keeps the seed as three
+        // discrete sentences.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace appears to be the highest-leverage focus.",
+            voice: nil
+        )
+        #expect(!opener.contains(".."))
+    }
+
+    @Test func secondCycleOpenerBodyFallsBackWhenNoHypothesis() {
+        // Defensive: nil hypothesis on the second-cycle branch must yield
+        // a calm "still forming" line, not "The next read you're holding
+        // is: ." which would read incoherently to the model. Same
+        // boundary the first-cycle path enforces.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: nil,
+            voice: nil
+        )
+        #expect(opener.contains("The next read is still forming."))
+        #expect(!opener.contains("The next read you're holding is:"))
+    }
+
+    @Test func secondCycleOpenerBodyFallsBackWhenHypothesisIsBlank() {
+        // Whitespace-only hypothesis takes the same fallback as nil. The
+        // store should never deliver a blank hypothesis, but the Codable
+        // round-trip could; defend on both branches.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "   \n  ",
+            voice: nil
+        )
+        #expect(opener.contains("The next read is still forming."))
+    }
+
+    @Test func secondCycleOpenerVoiceMappingMatchesFirstCycle() {
+        // The voice-shaped ask is cycle-agnostic — round 35 preserves
+        // the round-29 voice mapping so the seven branches keep parity
+        // across the two composers. A future ask-mapping edit must
+        // ripple to both cycles in lock-step. Lifted into a shared
+        // private helper so this contract is enforced at the composer
+        // level, not just by tests.
+        for voice in [SpeakingStyleGoal.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil] as [SpeakingStyleGoal?] {
+            let first = CoachContextBuilder.revisedReadOpener(
+                workingHypothesis: "Pace is the highest-leverage focus.",
+                voice: voice
+            )
+            let second = CoachContextBuilder.secondCycleRevisedReadOpener(
+                workingHypothesis: "Pace is the highest-leverage focus.",
+                voice: voice
+            )
+            // The opener ends in the voice-shaped ask; pull the last
+            // sentence from each and verify they match. (The leads and
+            // body verbs differ, but the ask must be identical.)
+            #expect(first.components(separatedBy: ". ").last == second.components(separatedBy: ". ").last,
+                    "voice \(String(describing: voice)) ask drifted between first-cycle and second-cycle composers")
+        }
+    }
+
+    @Test func secondCycleOpenerComposesLeadBodyAndAskWithSingleSpaces() {
+        // Lock the surface contract on the second-cycle branch: three
+        // sentences (lead + body + ask) joined by single spaces, no
+        // double spaces, no newlines.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .concise
+        )
+        #expect(!opener.contains("  "))
+        #expect(!opener.contains("\n"))
+        #expect(
+            opener
+                == "Picking up the case file — I flagged the rebuilt read as off too. The next read you're holding is: Pace is the highest-leverage focus. Where does this go?"
+        )
+    }
+
+    @Test func secondCycleOpenerFallbackComposesWithSingleSpaces() {
+        // Same composition contract for the fallback body on the second-
+        // cycle branch.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: nil,
+            voice: .warm
+        )
+        #expect(
+            opener
+                == "Picking up the case file — I flagged the rebuilt read as off too. The next read is still forming. What does this open up?"
+        )
+    }
+
+    @Test func routerReturnsSecondCycleOpenerWhenMarkerEmbedded() {
+        // Router contract: a change carrying the round-33 marker dispatches
+        // the second-cycle composer end-to-end. The chat seed names the
+        // rebuilt-read pushback explicitly — the user types the same
+        // verdict the post-rep card just surfaced.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            for: secondCyclePushbackChange(),
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .authoritative
+        )
+        #expect(opener.hasPrefix(CoachContextBuilder.revisedReadOpenerSecondCycleLead))
+        #expect(opener.contains("The next read you're holding is: Pace is the highest-leverage focus."))
+        #expect(opener.hasSuffix("Where does the read land now?"))
+    }
+
+    @Test func routerReturnsFirstCycleOpenerWithoutMarker() {
+        // No-regression contract: a first-cycle entry routes to the
+        // round-29 composer verbatim — same lead, same body verb, same
+        // ask. The round-29 RevisedReadOpenerTests still pin the
+        // composition; this test pins that the new router does not
+        // accidentally route a first-cycle entry to the second-cycle
+        // branch.
+        let opener = CoachContextBuilder.revisedReadOpener(
+            for: firstCyclePushbackChange(),
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .concise
+        )
+        #expect(opener.hasPrefix(CoachContextBuilder.revisedReadOpenerLead))
+        #expect(opener.contains("The revised read you're holding is: Pace is the highest-leverage focus."))
+        // The second-cycle lead must not also surface — one canonical
+        // lead per cycle.
+        #expect(!opener.contains(CoachContextBuilder.revisedReadOpenerSecondCycleLead))
+    }
+
+    @Test func routerFirstCycleComposesIdenticallyToBareCompositor() {
+        // The router's first-cycle branch is the existing first-cycle
+        // composer — pin string equality so a future router edit can't
+        // silently change the no-regression contract.
+        let bare = CoachContextBuilder.revisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .executive
+        )
+        let routed = CoachContextBuilder.revisedReadOpener(
+            for: firstCyclePushbackChange(),
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .executive
+        )
+        #expect(bare == routed)
+    }
+
+    @Test func routerSecondCycleComposesIdenticallyToBareSecondCycleCompositor() {
+        // Mirror of the first-cycle composer-equality pin on the
+        // second-cycle branch.
+        let bare = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .executive
+        )
+        let routed = CoachContextBuilder.revisedReadOpener(
+            for: secondCyclePushbackChange(),
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .executive
+        )
+        #expect(bare == routed)
+    }
+
+    @Test func openerLeadsHaveNoSharedPrefixBeyondCaseFilePhrase() {
+        // The two leads diverge after "Picking up the case file — I
+        // flagged the " — the next word names the cycle ("prior" vs.
+        // "rebuilt"). This pin protects the follow-up chip-row predicate:
+        // each lead is a complete, unambiguous prefix the predicate can
+        // match against. Round 35's `shouldShowRevisedReadFollowUp`
+        // matches against the full lead, not the shared phrase.
+        let firstCycle = CoachContextBuilder.revisedReadOpenerLead
+        let secondCycle = CoachContextBuilder.revisedReadOpenerSecondCycleLead
+        // Neither lead is a prefix of the other.
+        #expect(!firstCycle.hasPrefix(secondCycle))
+        #expect(!secondCycle.hasPrefix(firstCycle))
+        // Both end with `.` so the lead is a discrete sentence.
+        #expect(firstCycle.hasSuffix("."))
+        #expect(secondCycle.hasSuffix("."))
+    }
+
+    @Test func secondCycleOpenerLeadAndBodyAvoidBannedPhrasings() {
+        // Brand-voice rules from round 34: no exclamation, no "Let's",
+        // no "we", no apology. Mirror of the round-34 post-rep card
+        // brand-voice pin so the chat seed reads with the same calm
+        // register as the card on the cycle distinction.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace is the highest-leverage focus.",
+            voice: .warm
+        )
+        #expect(!opener.contains("!"))
+        #expect(!opener.contains("Let's"))
+        #expect(!opener.contains("let's"))
+        #expect(!opener.contains(" we "))
+        #expect(!opener.lowercased().contains("sorry"))
+    }
 }
 
 // MARK: - RevisedReadFollowUpTests
@@ -26891,6 +27156,77 @@ struct RevisedReadFollowUpTests {
         #expect(labels.contains("Stick with the new read"))
         #expect(labels.contains("Here's what I'd add"))
         #expect(labels.contains("Try a different read"))
+    }
+
+    // MARK: - Round 35 — Predicate covers the second-cycle opener too
+    //
+    // Round 35 introduced `revisedReadOpenerSecondCycleLead` and routed the
+    // chat seed through it whenever `freshRevisedReadChange.documentsSecondCyclePushback`
+    // is true. The round-30 follow-up chip row owns the rebuild-verdict
+    // surface on BOTH cycles — a user who pushed back twice deserves the
+    // same one-tap stick / refine / push-back row as a user who pushed
+    // back once. These tests pin that the predicate matches on either
+    // lead AND that the case-review opener still excludes the row.
+
+    @Test func shouldShowReturnsTrueWhenCoachRepliedToSecondCycleOpener() {
+        // Happy path on the second-cycle branch: the user dispatched the
+        // round-35 second-cycle seed, the coach replied, no later user
+        // turn. The chip row eligible.
+        let opener = CoachContextBuilder.secondCycleRevisedReadOpener(
+            workingHypothesis: "Pace appears to be the highest-leverage focus; keep checking against future reps.",
+            voice: .authoritative
+        )
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: opener),
+            CoachMessage(role: .coach, text: "Two cycles in a row is case history. One focused question first: when you tested pace this rep, did the change feel external or internal?", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == true)
+    }
+
+    @Test func shouldShowReturnsTrueOnSecondCycleLeadEvenIfRestDiffers() {
+        // Prefix-match contract on the second-cycle lead: a future copy
+        // edit to the body or ask must not break detection.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerSecondCycleLead) Some future body. Some future ask?"),
+            CoachMessage(role: .coach, text: "Reply.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == true)
+    }
+
+    @Test func shouldShowReturnsFalseWhenSecondCycleReplyIsPending() {
+        // Pending guard still applies on the second-cycle branch — no
+        // flash of chips on the typing dots.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerSecondCycleLead) The next read is X."),
+            CoachMessage(role: .coach, text: "", isPending: true),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == false)
+    }
+
+    @Test func shouldShowReturnsFalseWhenSecondCycleConversationMovedOn() {
+        // After the user types a follow-up on the second-cycle thread,
+        // the chip row collapses — same staleness contract as the
+        // first-cycle branch.
+        let messages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerSecondCycleLead) The next read you're holding is: X. Where does this go?"),
+            CoachMessage(role: .coach, text: "Here's where the second cycle lands."),
+            CoachMessage(role: .user, text: "Tell me more about the discriminating question."),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: messages) == false)
+    }
+
+    @Test func secondCycleAndCaseReviewPredicatesAreMutuallyExclusive() {
+        // Cross-predicate exclusion on the new lead: the round-26
+        // hypothesis-ack predicate must NOT fire on a second-cycle
+        // revised-read opener (the case-review opener uses a different
+        // lead constant), AND the round-30 follow-up predicate must
+        // fire. Mirror of the first-cycle mutual-exclusion contract.
+        let secondCycleMessages: [CoachMessage] = [
+            CoachMessage(role: .user, text: "\(CoachContextBuilder.revisedReadOpenerSecondCycleLead) X."),
+            CoachMessage(role: .coach, text: "Reply.", isPending: false),
+        ]
+        #expect(CoachContextBuilder.shouldShowRevisedReadFollowUp(messages: secondCycleMessages) == true)
+        #expect(CoachContextBuilder.shouldShowHypothesisAcknowledgement(messages: secondCycleMessages) == false)
     }
 }
 

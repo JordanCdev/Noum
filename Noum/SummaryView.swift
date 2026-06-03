@@ -2025,10 +2025,21 @@ struct SummaryView: View {
     // (`freshRevisedReadChange`), the opener composition lives on
     // `CoachContextBuilder`, this property is the one home that picks
     // between them.
+    //
+    // Round 35 — the call routes through the `revisedReadOpener(for:…)`
+    // overload, passing the `change` itself so the second-cycle composer
+    // fires when `change.documentsSecondCyclePushback` is true (round 33's
+    // marker). The chat seed mirrors the post-rep card's round-34
+    // second-cycle copy split: the user reads "I flagged the rebuilt read
+    // as off too" on the same rep the card named the same pushback in
+    // user-verdict voice. The eligibility predicate
+    // (`freshRevisedReadChange`) is unchanged — only the composition
+    // splits per cycle.
 
     private var talkToNoumOpener: String {
-        if freshRevisedReadChange != nil {
+        if let change = freshRevisedReadChange {
             return CoachContextBuilder.revisedReadOpener(
+                for: change,
                 workingHypothesis: coachMemoryStore.currentMemory?.workingHypothesis,
                 voice: coachingProfileStore.profile?.speakingStyleGoal
             )
