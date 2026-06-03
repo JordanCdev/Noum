@@ -211,6 +211,7 @@ struct ProfileView: View {
                 weeklyCheckInCard
                 caseReviewCard
                 deliveryProfileCard
+                coachParityReadinessCard
                 speechPatternsCard
                 skillProgressPanel
                 activeChallengePanel
@@ -1001,6 +1002,24 @@ struct ProfileView: View {
     @ViewBuilder
     private var weeklyCheckInCard: some View {
         WeeklyCheckInCard(store: coachCheckInStore)
+    }
+
+    /// F5: "How well Noum knows you" — the honest per-user readiness read across
+    /// the 7 coaching-loop stages. Shown once there's at least some forming or
+    /// earned signal (a fully-thin card on a brand-new account would just read
+    /// as noise). Validation is capped at "forming" by design.
+    @ViewBuilder
+    private var coachParityReadinessCard: some View {
+        let readiness = CoachParityReadiness.build(
+            memory: coachMemoryStore.currentMemory,
+            sessionCount: sessions.count,
+            recommendationOutcomeCount: RecommendationLearningStore.shared.outcomes.count,
+            transferReportCount: BigMomentStore.shared.outcomeReports.count,
+            checkInCount: coachCheckInStore.checkIns.count
+        )
+        if readiness.earnedCount > 0 || readiness.stages.contains(where: { $0.status == .forming }) {
+            CoachParityReadinessCard(readiness: readiness)
+        }
     }
 
     /// M20: Forward Plan card inside the Coaching Direction card. Pure

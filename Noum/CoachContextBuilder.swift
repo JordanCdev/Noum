@@ -410,6 +410,22 @@ enum CoachContextBuilder {
             lines.append("- Use these to ask a sharper follow-up or adapt the plan; treat the drill verdict as the user's read, not proof of causation.")
         }
 
+        // COACHING READINESS (F5) — claim-scaling. Always present so the coach
+        // never asserts more certainty than the accumulated evidence supports,
+        // and never claims validation/parity (capped by design). Counts here
+        // are lower bounds (recent windows); under-counting only biases toward
+        // humility, the safe direction.
+        let parityReadiness = CoachParityReadiness.build(
+            memory: coachMemory,
+            sessionCount: sessions.count,
+            recommendationOutcomeCount: recommendationOutcomes.count,
+            transferReportCount: max(recentMomentOutcomes.count, (coachMemory?.lastTransferReview != nil) ? 1 : 0),
+            checkInCount: recentCheckIns.count
+        )
+        lines.append("")
+        lines.append("COACHING READINESS (scale your certainty to this)")
+        lines.append(contentsOf: parityReadiness.coachContextLines)
+
         // PLAN — current week of the active forward plan + completed-vs-target
         // for the current week. Lets the coach say "your plan says X this week
         // and you're at 2 of 3 reps" without the user having to ask. Stale

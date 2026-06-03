@@ -25154,6 +25154,98 @@ struct PrepSessionReadinessTests {
     }
 }
 
+// MARK: - Coach-Parity Readiness Tests (F5)
+//
+// The honesty instrument for stage 7. These lock the core contracts: validation
+// is NEVER self-certified (capped at forming), cold start earns nothing, the
+// transfer ladder, formulation needs user confirmation, and the coach-context
+// claim-scaling always forbids parity claims.
+
+@Suite("CoachParityReadiness")
+struct CoachParityReadinessTests {
+
+    private func memory(
+        confidence: BaselineConfidence = .insufficient,
+        lever: SkillArea? = nil,
+        hypothesis: String? = nil,
+        ack: CoachHypothesisAcknowledgement? = nil
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            evidenceCount: 5,
+            evidenceConfidence: confidence,
+            currentLever: lever,
+            goalFit: .noLever,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: hypothesis,
+            hypothesisAcknowledgement: ack
+        )
+    }
+
+    @Test func coldStartHasNothingEarned() {
+        let r = CoachParityReadiness.build(memory: nil, sessionCount: 0, recommendationOutcomeCount: 0, transferReportCount: 0, checkInCount: 0)
+        #expect(r.earnedCount == 0)
+        #expect(r.status(for: .diagnosis) == .thin)
+        #expect(r.status(for: .validation) == .thin)
+    }
+
+    @Test func validationIsNeverEarnedEvenWithManyTransfers() {
+        // THE core honesty contract: the app cannot self-certify parity.
+        let r = CoachParityReadiness.build(
+            memory: memory(confidence: .stable, lever: .fillerReduction),
+            sessionCount: 50,
+            recommendationOutcomeCount: 50,
+            transferReportCount: 99,
+            checkInCount: 50
+        )
+        #expect(r.status(for: .validation) != .earned)
+        #expect(r.status(for: .validation) == .forming)
+    }
+
+    @Test func transferLadderThinFormingEarned() {
+        func transfer(_ count: Int) -> CoachParityReadiness.StageStatus {
+            CoachParityReadiness.build(memory: nil, sessionCount: 0, recommendationOutcomeCount: 0, transferReportCount: count, checkInCount: 0).status(for: .transfer)
+        }
+        #expect(transfer(0) == .thin)
+        #expect(transfer(1) == .forming)
+        #expect(transfer(2) == .earned)
+    }
+
+    @Test func diagnosisEarnedWithModerateConfidenceAndLever() {
+        let r = CoachParityReadiness.build(
+            memory: memory(confidence: .moderate, lever: .fillerReduction),
+            sessionCount: 5, recommendationOutcomeCount: 0, transferReportCount: 0, checkInCount: 0
+        )
+        #expect(r.status(for: .diagnosis) == .earned)
+    }
+
+    @Test func formulationEarnedOnlyWhenHypothesisConfirmed() {
+        let hypothesis = "Filler reduction is the lever."
+        let unconfirmed = CoachParityReadiness.build(
+            memory: memory(hypothesis: hypothesis),
+            sessionCount: 5, recommendationOutcomeCount: 0, transferReportCount: 0, checkInCount: 0
+        )
+        #expect(unconfirmed.status(for: .formulation) == .forming)
+
+        let ack = CoachHypothesisAcknowledgement(confidence: .confirmed, hypothesisSnapshot: hypothesis, acknowledgedAt: Date())
+        let confirmed = CoachParityReadiness.build(
+            memory: memory(hypothesis: hypothesis, ack: ack),
+            sessionCount: 5, recommendationOutcomeCount: 0, transferReportCount: 0, checkInCount: 0
+        )
+        #expect(confirmed.status(for: .formulation) == .earned)
+    }
+
+    @Test func contextLinesAlwaysForbidParityClaim() {
+        let r = CoachParityReadiness.build(
+            memory: memory(confidence: .stable, lever: .fillerReduction),
+            sessionCount: 50, recommendationOutcomeCount: 50, transferReportCount: 99, checkInCount: 50
+        )
+        let joined = r.coachContextLines.joined(separator: " ").lowercased()
+        #expect(joined.contains("never claim coach-parity"))
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics
