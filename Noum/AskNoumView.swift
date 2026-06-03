@@ -1878,7 +1878,10 @@ struct AskNoumView: View {
             // name the trade-off on a change) while the goal card under the
             // reply carries the explicit confirm. The model never writes; this
             // only shapes the reply's framing.
-            pendingGoalIntent: pendingGoalIntent
+            pendingGoalIntent: pendingGoalIntent,
+            // F1 — surface the most-recent weekly check-in so the coach can
+            // ask a sharper follow-up grounded in the user's own words.
+            recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2)
         )
         // Deterministic-fallback context (A1). Assembled HERE, in the same
         // main-actor prologue as the `userContext` store reads above (before any

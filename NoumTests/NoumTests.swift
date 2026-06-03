@@ -24917,6 +24917,86 @@ struct DeliveryProfileTests {
     }
 }
 
+// MARK: - Weekly Coach Check-In Tests (F1)
+//
+// The bidirectional weekly check-in. These lock persistence + cap/ordering,
+// the no-nag cadence gate, the all-empty no-op, and the user-reported /
+// non-causal shape of the coach-context lines.
+
+@MainActor
+@Suite("CoachCheckIn")
+struct CoachCheckInStoreTests {
+
+    @Test func recordPersistsAndReloadsNewestFirst() {
+        let suite = "coachCheckIn-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let accountID = "acct-\(UUID().uuidString)"
+        let store = CoachCheckInStore(defaults: defaults, accountIDProvider: { accountID })
+
+        store.record(hardest: "Saying no", at: Date(timeIntervalSince1970: 1_000))
+        store.record(outsideApp: "Team standup", at: Date(timeIntervalSince1970: 2_000))
+        #expect(store.checkIns.count == 2)
+        #expect(store.checkIns.first?.outsideApp == "Team standup") // newest first
+
+        let reloaded = CoachCheckInStore(defaults: defaults, accountIDProvider: { accountID })
+        reloaded.reloadForCurrentAccount() // mirrors the auth reload path (init does not auto-load)
+        #expect(reloaded.checkIns.count == 2)
+        #expect(reloaded.checkIns.first?.outsideApp == "Team standup")
+    }
+
+    @Test func allEmptyRecordIsNoOp() {
+        let suite = "coachCheckIn-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = CoachCheckInStore(defaults: defaults, accountIDProvider: { "a" })
+        let result = store.record(hardest: "   ", outsideApp: nil, drillVerdict: nil)
+        #expect(result == nil)
+        #expect(store.checkIns.isEmpty)
+    }
+
+    @Test func capBoundsAtEightNewestFirst() {
+        let suite = "coachCheckIn-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = CoachCheckInStore(defaults: defaults, accountIDProvider: { "a" })
+        for i in 0..<12 {
+            store.record(hardest: "week \(i)", at: Date(timeIntervalSince1970: Double(i) * 1_000))
+        }
+        #expect(store.checkIns.count == CoachCheckInStore.cap)
+        #expect(store.checkIns.first?.hardest == "week 11")
+    }
+
+    @Test func cadenceGateIsNoNag() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(CoachCheckInStore.isCheckInDue(latest: nil, now: now) == true)
+        let recent = CoachCheckIn(recordedAt: now.addingTimeInterval(-3 * 86_400), hardest: "x")
+        #expect(CoachCheckInStore.isCheckInDue(latest: recent, now: now) == false)
+        let old = CoachCheckIn(recordedAt: now.addingTimeInterval(-7 * 86_400), hardest: "x")
+        #expect(CoachCheckInStore.isCheckInDue(latest: old, now: now) == true)
+    }
+
+    @Test func contextLinesAreUserReportedAndNonCausal() {
+        let checkIn = CoachCheckIn(
+            hardest: "Pushback in reviews",
+            outsideApp: "1:1 with my manager",
+            drillVerdict: .stalled
+        )
+        let lines = checkIn.coachContextLines
+        #expect(lines.count == 3)
+        #expect(lines.contains { $0.contains("Hardest this week") && $0.contains("Pushback in reviews") })
+        #expect(lines.contains { $0.contains("outside the app") && $0.contains("1:1 with my manager") })
+        #expect(lines.contains { $0.contains("the current drill felt stalled") })
+    }
+
+    @Test func fieldsAreTrimmedAndBounded() {
+        let long = String(repeating: "a", count: 500)
+        let checkIn = CoachCheckIn(hardest: "  spaced   out  ", outsideApp: long)
+        #expect(checkIn.hardest == "spaced out")
+        #expect(checkIn.outsideApp?.count == CoachCheckIn.fieldCharacterLimit)
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

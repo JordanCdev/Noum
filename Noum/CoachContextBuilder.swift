@@ -293,7 +293,11 @@ enum CoachContextBuilder {
         // coach PROPOSES rather than assumes a write — the user still confirms
         // in-app via the goal card. Defaults to nil so existing callers compile
         // unchanged and non-goal turns emit no extra lines.
-        pendingGoalIntent: GoalIntent? = nil
+        pendingGoalIntent: GoalIntent? = nil,
+        // F1 — recent weekly check-ins (newest-first): the user's own
+        // bidirectional answers (hardest / outside-app transfer / drill
+        // verdict). Defaults to empty so existing callers compile unchanged.
+        recentCheckIns: [CoachCheckIn] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -383,6 +387,18 @@ enum CoachContextBuilder {
                 lines.append("- \(report.coachContextLine)")
             }
             lines.append("- These are the user's reported outcome and read of the room, not objective evidence or proof that training caused the result.")
+        }
+
+        // WEEKLY CHECK-IN (F1) — the user's own answers from the most-recent
+        // weekly check-in: what felt hardest, where it showed up outside the
+        // app, and their read on whether the current drill is working.
+        // User-reported, never inferred; the drill verdict guides review but
+        // never proves the drill caused anything.
+        if let latestCheckIn = recentCheckIns.first(where: { !$0.coachContextLines.isEmpty }) {
+            lines.append("")
+            lines.append("WEEKLY CHECK-IN (user-reported)")
+            lines.append(contentsOf: latestCheckIn.coachContextLines)
+            lines.append("- Use these to ask a sharper follow-up or adapt the plan; treat the drill verdict as the user's read, not proof of causation.")
         }
 
         // PLAN — current week of the active forward plan + completed-vs-target

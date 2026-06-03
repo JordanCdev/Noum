@@ -36,6 +36,7 @@ struct ProfileView: View {
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var suddenDeathRunHistoryStore = SuddenDeathRunHistoryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var coachCheckInStore = CoachCheckInStore.shared
 
     @State private var showAchievementsPage = false
     @State private var showPaywall = false
@@ -207,6 +208,7 @@ struct ProfileView: View {
 
                 clusterHeader("Coaching")
                 coachingDirectionCard
+                weeklyCheckInCard
                 caseReviewCard
                 deliveryProfileCard
                 speechPatternsCard
@@ -991,6 +993,14 @@ struct ProfileView: View {
         if let profile = coachMemoryStore.currentMemory?.deliveryProfile {
             DeliveryProfileCard(profile: profile)
         }
+    }
+
+    /// F1: the weekly coach check-in prompt. Renders only when the no-nag
+    /// cadence is due (the card self-guards too); hidden otherwise so Profile
+    /// never nags. Saving records a CoachCheckIn that feeds the coach context.
+    @ViewBuilder
+    private var weeklyCheckInCard: some View {
+        WeeklyCheckInCard(store: coachCheckInStore)
     }
 
     /// M20: Forward Plan card inside the Coaching Direction card. Pure
