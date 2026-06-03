@@ -28978,6 +28978,650 @@ struct RebuildVerdictContextTests {
     }
 }
 
+// MARK: - CaseAnchoredAmplificationTests
+//
+// Round 37 — closes future move #10 ("`.confirmed` confidence amplification
+// on the active intervention") from the round-36 HANDOFF, the next-most-
+// aligned coach-parity gap after the round-33–36 second-cycle work.
+//
+// Predicate-driven, pure-context surface. Five gates: `.confirmed` ack on a
+// hypothesis that still applies, ack inside the recency window, latest
+// adaptation entry documents a user pushback, and the ack post-dates the
+// rebuild. When all five hold, the chat-coach user-context block emits ONE
+// additional INTERVENTION CYCLE line telling the model to treat follow-on
+// evidence on the active intervention as case-anchored, not exploratory.
+//
+// Cross-surface contract: round 37 is a STRICTER subset of round 32's
+// `rebuildVerdictPair` on the `.confirmed` branch — round 37 implies round
+// 32, but round 32 does not imply round 37 (round 32 fires on
+// `.uncertain`/`.rejected` and on confirmations outside the recency
+// window). Both lines layer cleanly on the same chat reply: round 32 names
+// the rebuild-verdict event; round 37 names the durable case-anchoring
+// state.
+//
+// Anti-overclaim rails:
+//   - The line surfaces ONLY when an active intervention exists. Without
+//     a carrying intervention, "case-anchored" has nothing to point at.
+//   - The recency window is bounded (14 days). Stale confirmation does
+//     not amplify follow-on evidence indefinitely.
+//   - The predicate requires the prior rebuild to be USER-DRIVEN (a
+//     `documentsUserPushback` change). Engine-only lever shifts followed
+//     by a confirmation do NOT satisfy the predicate — the user did not
+//     ratify a hypothesis they themselves pushed back on.
+
+@MainActor
+@Suite("CaseAnchoredAmplificationTests")
+struct CaseAnchoredAmplificationTests {
+
+    // MARK: - Fixtures
+
+    private static let rebuiltHypothesis =
+        "Pace appears to be the highest-leverage focus across recent reps."
+
+    private static func pushbackChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "user-tapped rejection of: \"prior read\""
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func engineOnlyChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "declining trend in recent reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func ack(
+        _ confidence: CoachHypothesisConfidence,
+        at acknowledgedAt: Date,
+        snapshot: String = rebuiltHypothesis
+    ) -> CoachHypothesisAcknowledgement {
+        CoachHypothesisAcknowledgement(
+            confidence: confidence,
+            hypothesisSnapshot: snapshot,
+            acknowledgedAt: acknowledgedAt
+        )
+    }
+
+    private static func sampleIntervention() -> CoachIntervention {
+        CoachIntervention(
+            title: "Ah Counter",
+            focus: "filler reduction",
+            target: "Two clean closing sentences",
+            mode: .ahCounter,
+            prescribedAt: Date(timeIntervalSince1970: 1_000),
+            lastObservedAt: nil,
+            followedRepCount: 1,
+            minimumFollowedRepsForReview: 2,
+            reviewStatus: .formingEvidence,
+            reviewBasis: "evidence is still forming on this prescription"
+        )
+    }
+
+    private static func memory(
+        updatedAt: Date = Date(),
+        adaptationLog: [CoachCourseChange]?,
+        workingHypothesis: String? = rebuiltHypothesis,
+        hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil,
+        activeIntervention: CoachIntervention? = sampleIntervention()
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            voice: .authoritative,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "rebuilt after user pushback",
+            previousLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis,
+            activeIntervention: activeIntervention,
+            hypothesisAcknowledgement: hypothesisAcknowledgement,
+            adaptationLog: adaptationLog
+        )
+    }
+
+    private func sampleProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .authoritative,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    // MARK: - Pure constant
+
+    @Test func recencyWindowIsCalmCoachingHorizon() {
+        // Two weeks tracks the post-rep follow-up horizon and gives the
+        // case-anchored signal enough room to live across a typical
+        // coaching cycle without amplifying stale confirmations. Pure
+        // constant pin — a copy edit that drifts the window has to update
+        // this test deliberately.
+        #expect(CoachContextBuilder.caseAnchoredAmplificationRecencyDays == 14)
+    }
+
+    // MARK: - Pure predicate
+
+    @Test func predicateFiresWhenConfirmedAckPostDatesPushbackRebuildWithinWindow() {
+        // Happy path: all five gates open. Latest adaptation entry is a
+        // user pushback; the carried ack is `.confirmed`; ack snapshot
+        // matches current hypothesis; ack timestamp is after the rebuild
+        // and within the recency window of `now`. Predicate fires.
+        let now = Date()
+        let changedAt = now.addingTimeInterval(-3600)
+        let ackAt = changedAt.addingTimeInterval(60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == true)
+    }
+
+    @Test func predicateDarkOnUncertainAck() {
+        // `.uncertain` is the "still settling" verdict — the user has not
+        // ratified the rebuilt read. Amplification must NOT fire; the
+        // round-32 rebuild-verdict block carries the uncertain branch.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnRejectedAck() {
+        // `.rejected` on a rebuilt read is a SECOND pushback — the user
+        // pushed back twice. Amplification must NOT fire; the round-32
+        // rebuild-verdict block carries the second-pushback branch and the
+        // round-33 second-cycle markers carry the cycle distinction.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenNoAckCarried() {
+        // No ack lodged: the predicate has no confirmation to amplify
+        // against. The window between the rebuild folding in and the user
+        // tapping the chip is round 31's territory, not round 37's.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: nil
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenAckSnapshotNoLongerApplies() {
+        // The ack's snapshot is the rebuilt hypothesis the user ratified.
+        // If a later memory rebuild rewrote the working hypothesis, the
+        // ack does not apply to the current case — amplification must
+        // drop. Mirrors the round-32 same-case-spine contract.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            workingHypothesis: "An entirely different read after a later rebuild.",
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenWorkingHypothesisIsNil() {
+        // A missing working hypothesis has nothing for the ack snapshot to
+        // apply to — `appliesTo` returns false for nil/blank. Defensive
+        // pin: amplification must not surface against an empty case.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            workingHypothesis: nil,
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt, snapshot: "")
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenAckIsOutsideRecencyWindow() {
+        // The recency window guards amplification against stale
+        // confirmation. 14 days + a second past the ack-lodge time must
+        // close the window — the carrying intervention may have aged
+        // enough that the original confirmation no longer anchors today's
+        // follow-on evidence.
+        let now = Date()
+        let outsideWindowSeconds: TimeInterval = TimeInterval(15 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-outsideWindowSeconds)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresAtExactRecencyBoundary() {
+        // Edge case: ack timestamp is exactly `recencyDays * 86400` seconds
+        // before `now`. The predicate uses `<=` so the boundary is inclusive
+        // — a confirmation lodged exactly 14 days ago still amplifies. A
+        // future round can tighten this to `<` if real-device QA shows the
+        // boundary causes noise, but the inclusive form matches the
+        // `>=` ordering on `acknowledgedAt`/`changedAt` for symmetry.
+        let now = Date()
+        let exactWindowSeconds: TimeInterval = TimeInterval(14 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-exactWindowSeconds)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == true)
+    }
+
+    @Test func predicateDarkWhenLatestChangeIsEngineOnly() {
+        // The prior rebuild must be USER-DRIVEN. An engine-only lever
+        // shift followed by a `.confirmed` ack on the new hypothesis does
+        // NOT satisfy the predicate — the user did not push back on the
+        // prior read, they only ratified the engine's shift. Round 26's
+        // hypothesis-ack block carries the engine-only confirmation
+        // signal; amplification is reserved for the
+        // pushback-then-confirm pattern.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.engineOnlyChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnNilAdaptationLog() {
+        // No adaptation log = no rebuild history. Memory persisted before
+        // the round-19 adaptation-log lift decodes with nil; predicate
+        // must be dark automatically, no migration needed.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: nil,
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnEmptyAdaptationLog() {
+        // Defensive: empty log is the same shape as nil for the predicate.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenAckPreDatesRebuild() {
+        // An ack lodged BEFORE the rebuild was folded in cannot ratify
+        // it. Same ordering contract as `rebuildVerdictPair` — the
+        // `>= changedAt` check is the structural pin that ties the ack
+        // to THIS rebuild.
+        let now = Date()
+        let changedAt = now.addingTimeInterval(-60)
+        let staleAckAt = changedAt.addingTimeInterval(-300)
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: staleAckAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresWhenAckExactlyAtRebuildTime() {
+        // Inclusive boundary on the ack-after-rebuild ordering. Mirrors
+        // the `rebuildVerdictPair` `>= changedAt` contract so a fixture
+        // (or real clock skew within the same millisecond) does not flip
+        // the predicate.
+        let now = Date()
+        let sharedTime = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: sharedTime,
+            adaptationLog: [Self.pushbackChange(at: sharedTime)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: sharedTime)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == true)
+    }
+
+    @Test func predicateReadsLatestChangeOnly() {
+        // Mixed history: earlier pushback (the rebuild the user
+        // confirmed), latest engine-only shift on top. The predicate
+        // reads `.last` — the latest is engine-only — so amplification
+        // must drop. The user's `.confirmed` belongs to a case that has
+        // since been course-corrected by the engine, so follow-on
+        // evidence is no longer anchored to the original
+        // pushback-confirm pair.
+        let now = Date()
+        let earlier = Self.pushbackChange(at: now.addingTimeInterval(-3600))
+        let latest = Self.engineOnlyChange(at: now.addingTimeInterval(-60))
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [earlier, latest],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now.addingTimeInterval(-300))
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false)
+    }
+
+    // MARK: - Pure context-line helper
+
+    @Test func contextLineFiresWhenPredicateAndActiveInterventionPresent() {
+        // Happy path: predicate fires AND an active intervention exists →
+        // line emits. Pure-helper return is non-nil and starts with the
+        // canonical lead `"- Case-anchored amplification:"`.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let line = CoachContextBuilder.caseAnchoredAmplificationContextLine(
+            memory: mem,
+            now: now
+        )
+        #expect(line != nil)
+        #expect(line?.hasPrefix("- Case-anchored amplification:") == true)
+    }
+
+    @Test func contextLineDarkWhenNoActiveIntervention() {
+        // The amplification BY DEFINITION refers to the active
+        // intervention. With no carrying intervention there is nothing
+        // to amplify — the line must drop even when the predicate fires.
+        // Restraint pin: a future round that surfaces case-anchored copy
+        // OUTSIDE the active-intervention block (e.g. on a coach-letter
+        // surface) must build a different helper rather than overload
+        // this one.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt),
+            activeIntervention: nil
+        )
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationContextLine(
+                memory: mem,
+                now: now
+            ) == nil
+        )
+    }
+
+    @Test func contextLineDarkWhenPredicateDark() {
+        // Sanity pin: when the predicate is dark, the helper returns nil
+        // regardless of whether the active intervention is present.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationContextLine(
+                memory: mem,
+                now: now
+            ) == nil
+        )
+    }
+
+    @Test func contextLineNamesCaseAnchoredStateAndTreatmentOfFollowOnEvidence() {
+        // Behavioural contract: the line names BOTH halves of the
+        // case-anchored state — the user pushed back AND confirmed — and
+        // tells the model to treat follow-on evidence as case-anchored,
+        // not exploratory. A future copy edit that drops either clause
+        // fails this test.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let line = CoachContextBuilder.caseAnchoredAmplificationContextLine(
+            memory: mem,
+            now: now
+        ) ?? ""
+        #expect(line.contains("pushed back on the original read"))
+        #expect(line.contains("confirmed the rebuilt working hypothesis"))
+        #expect(line.contains("case-anchored, not exploratory"))
+        #expect(line.contains("Speak with conviction"))
+        #expect(line.contains("do not re-open the original"))
+    }
+
+    // MARK: - Brand voice
+
+    @Test func contextLineIsBrandVoiceCompliant() {
+        // Standard brand-voice rails on the new context line: no
+        // exclamation, no "Let's", no "we", no "sorry". Mirrors the
+        // round-33/34/35/36 brand-voice rules so the case-anchoring
+        // copy reads in the same register as the rest of the case-spine
+        // surfaces.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let line = CoachContextBuilder.caseAnchoredAmplificationContextLine(
+            memory: mem,
+            now: now
+        ) ?? ""
+        #expect(!line.contains("!"))
+        #expect(!line.lowercased().contains("let's"))
+        #expect(!line.lowercased().contains(" we "))
+        #expect(!line.lowercased().contains("sorry"))
+    }
+
+    // MARK: - Cross-surface contract (round 32 ↔ round 37)
+
+    @Test func round37IsStricterSubsetOfRound32OnConfirmedBranch() {
+        // Cross-surface contract: round 37 implies round 32 on the
+        // `.confirmed` branch — every memory state where round 37 fires
+        // must ALSO satisfy round 32's `rebuildVerdictPair`. The two
+        // surfaces share the rebuild-then-confirm structural anchor;
+        // round 37 adds the recency gate on top.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == true
+        )
+        // Round 32's rebuildVerdictPair must also fire on the same state.
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem)?.ack.confidence == .confirmed)
+    }
+
+    @Test func round32CanFireWithoutRound37WhenAckIsUncertain() {
+        // Reverse direction: round 32 does NOT imply round 37. An
+        // `.uncertain` ack fires round 32 (the round-30 chip row's
+        // "still settling" branch) but must NOT fire round 37. The two
+        // surfaces are coordinated, not duplicates.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false
+        )
+    }
+
+    @Test func round32CanFireWithoutRound37WhenAckIsRejected() {
+        // `.rejected` ack is the second-pushback signal — round 32's
+        // rejected branch fires (and the round-33 second-cycle markers
+        // amplify it), but round 37 must NOT fire because the user did
+        // not RATIFY the rebuild — they pushed back on it. The
+        // case-anchored state has not been established.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false
+        )
+    }
+
+    @Test func round32FiresOutsideRecencyButRound37Drops() {
+        // Cross-surface contract: round 32 has no recency gate; round 37
+        // does. A `.confirmed` ack lodged outside the 14-day window still
+        // fires round 32 (the verdict survives the rep boundary — see
+        // `userContextSurfacesVerdictLinesEvenWhenRound31FreshnessWindowHasExpired`
+        // in `RebuildVerdictContextTests`) but must NOT fire round 37 —
+        // the stale confirmation does not amplify today's evidence.
+        let now = Date()
+        let outsideWindowSeconds: TimeInterval = TimeInterval(20 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-outsideWindowSeconds)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false
+        )
+    }
+
+    // MARK: - userContext integration
+
+    @Test func userContextSurfacesAmplificationLineInInterventionCycle() {
+        // Integration: full `userContext` build should carry the
+        // amplification line in the INTERVENTION CYCLE block when the
+        // predicate fires AND the memory carries an active intervention.
+        // Pins the wiring path (active-intervention block in
+        // `interventionCycleLines`) end-to-end, not just the pure helper.
+        let ackAt = Date()
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
+        #expect(ctx.contains("Case-anchored amplification:"))
+        #expect(ctx.contains("treat follow-on evidence on the active intervention as case-anchored"))
+    }
+
+    @Test func userContextDoesNotSurfaceAmplificationWhenNoActiveIntervention() {
+        // Predicate fires but memory has no active intervention →
+        // amplification line must not surface. The round-32 verdict line
+        // can still fire (it does not require an active intervention),
+        // so the chat coach still sees the verdict — just not the
+        // case-anchored amplification clause.
+        let ackAt = Date()
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt),
+            activeIntervention: nil
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Case-anchored amplification:") == false)
+        // Round-32 line is still expected (verdict survives without
+        // an active intervention) — sanity pin on the layered design.
+        #expect(ctx.contains("Case file rebuild verdict:"))
+    }
+
+    @Test func userContextLayersRound32AndRound37LinesOnHappyPath() {
+        // The two lines coexist on a confirmed-rebuild-in-recency state.
+        // Round 32 names the verdict event; round 37 names the durable
+        // case-anchoring state. Both surface in the same chat reply when
+        // the predicate fires.
+        let ackAt = Date()
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Case file rebuild verdict:"))
+        #expect(ctx.contains("Case-anchored amplification:"))
+    }
+}
+
 // MARK: - SecondCyclePushbackContextTests
 //
 // Round 33 — pins the chat-coach user-context block's response to a

@@ -2263,6 +2263,120 @@ enum CoachContextBuilder {
         ]
     }
 
+    // MARK: - Case-anchored amplification (round 37 — future moves #10)
+    //
+    // Round 37 — the active-intervention complement to rounds 30–36. When the
+    // user has lodged a `.confirmed` verdict on a rebuilt working hypothesis
+    // (the rebuild was itself user-driven via a prior pushback rebuild) the
+    // chat coach should treat follow-on evidence on the carrying active
+    // intervention as case-anchored, not exploratory: the user has now BOTH
+    // pushed back on the original read AND confirmed the rebuilt read, so the
+    // case file's hypothesis carries the user's own ratification, not just the
+    // engine's inference.
+    //
+    // Pure additive surface — the active intervention's persisted fields are
+    // untouched (no `reviewStatus` lift, no schema bump, no migration). The
+    // amplification is signalled to the model via ONE additional context line
+    // in `interventionCycleLines`, which the chat coach reads on every reply.
+    // Restraint pin: the line is the LIGHTEST possible surface that signals
+    // case anchoring — it does not duplicate the round-32 rebuild-verdict
+    // block (which fires on every confirmed-rebuild ack regardless of cycle
+    // history) and it does not duplicate the round-26 hypothesis-ack block
+    // (which fires on any ack confidence). The line specifically reads as
+    // "the active intervention is case-anchored" — the new signal round 37
+    // adds to the model's awareness.
+    //
+    // Cross-surface contract: the amplification predicate is a STRICTER
+    // subset of the round-32 `rebuildVerdictPair` predicate on the
+    // `.confirmed` branch — round 37 implies round 32, but round 32 does not
+    // imply round 37 (round 32 fires on uncertain/rejected acks too, and on
+    // acks lodged outside the recency window). The two lines layer cleanly:
+    // round 32 names the rebuild-verdict event; round 37 names the durable
+    // case-anchoring state that the verdict establishes for the carrying
+    // intervention. Both can fire on the same reply.
+
+    /// Recency window for the case-anchored amplification predicate. The
+    /// user's confirmation must have been lodged within this many days for
+    /// the active intervention to be treated as case-anchored. Beyond this
+    /// window the ack is durable in memory but the carrying intervention may
+    /// have aged enough that fresh follow-on evidence belongs to a different
+    /// case state — the chat coach should fall back to the round-32
+    /// rebuild-verdict line (which carries no recency gate) rather than
+    /// double-emit an amplification line on stale confirmation.
+    ///
+    /// Tuned to the same horizon as the post-rep follow-up window so the
+    /// signal stays live across roughly two weeks of practice before
+    /// expiring. Pure constant, locked by a brand-voice-style test for
+    /// regression protection.
+    static let caseAnchoredAmplificationRecencyDays: Int = 14
+
+    /// Pure predicate: returns true iff the carrying active intervention's
+    /// follow-on evidence should be treated as case-anchored, i.e. the user
+    /// has both pushed back on the original read AND confirmed the rebuilt
+    /// read within the recency window. Five gates, ALL required:
+    ///
+    ///   1. `memory.hypothesisAcknowledgement` carries a `.confirmed`
+    ///      confidence (the user ratified the rebuilt read).
+    ///   2. The ack `appliesTo(currentHypothesis: memory.workingHypothesis)`
+    ///      — the rebuilt read the user ratified is still the operating
+    ///      hypothesis (a later memory rebuild that rewrote the read drops
+    ///      the predicate; the user's confirmation belongs to a hypothesis
+    ///      that no longer exists).
+    ///   3. The ack was lodged within `caseAnchoredAmplificationRecencyDays`
+    ///      of `now` (defensive — stale confirmation does not anchor a
+    ///      current case state).
+    ///   4. The latest `adaptationLog` entry `documentsUserPushback` — the
+    ///      rebuild that produced the carrying hypothesis was itself
+    ///      user-driven, not an engine-only lever shift. (An engine-only
+    ///      shift followed by a confirmation does not satisfy "the user
+    ///      both pushed back and confirmed".)
+    ///   5. The ack's `acknowledgedAt` is at or after the change's
+    ///      `changedAt` (same ordering contract as `rebuildVerdictPair` —
+    ///      a stale ack from before the rebuild does not ratify it).
+    ///
+    /// All five gates are pure reads on memory fields the engine already
+    /// writes; no new persisted state, no schema bump, no migration. Memories
+    /// persisted before round 37 read `false` automatically — the predicate
+    /// is dark until both signals (pushback + confirmation) coexist.
+    static func caseAnchoredAmplificationApplies(
+        in memory: CoachMemory,
+        now: Date
+    ) -> Bool {
+        guard let ack = memory.hypothesisAcknowledgement,
+              ack.confidence == .confirmed,
+              ack.appliesTo(currentHypothesis: memory.workingHypothesis) else { return false }
+        let recencyInterval = TimeInterval(caseAnchoredAmplificationRecencyDays * 24 * 60 * 60)
+        guard now.timeIntervalSince(ack.acknowledgedAt) <= recencyInterval else { return false }
+        guard let lastChange = memory.adaptationLog?.last,
+              lastChange.documentsUserPushback,
+              ack.acknowledgedAt >= lastChange.changedAt else { return false }
+        return true
+    }
+
+    /// Returns ONE additional context line when the case-anchored
+    /// amplification predicate fires AND an active intervention is being
+    /// surfaced. Returns `nil` otherwise so the caller can skip emitting.
+    ///
+    /// Read by `interventionCycleLines` after the active-intervention block.
+    /// The line is intentionally short — one calm sentence that names the
+    /// case-anchored state AND tells the model to treat follow-on evidence
+    /// as case-anchored rather than exploratory. Brand-voice rules: no
+    /// exclamation, no "Let's", no "we", no "sorry", no hype.
+    ///
+    /// The line does NOT duplicate the round-32 rebuild-verdict block's
+    /// content (that block names the rebuild-verdict event); round 37 names
+    /// the durable case-anchoring state the verdict establishes for the
+    /// carrying intervention's follow-on evidence — a related but distinct
+    /// signal the model can act on independently.
+    static func caseAnchoredAmplificationContextLine(
+        memory: CoachMemory,
+        now: Date
+    ) -> String? {
+        guard caseAnchoredAmplificationApplies(in: memory, now: now) else { return nil }
+        guard memory.activeIntervention != nil else { return nil }
+        return "- Case-anchored amplification: the user has both pushed back on the original read AND confirmed the rebuilt working hypothesis above; treat follow-on evidence on the active intervention as case-anchored, not exploratory. Speak with conviction on the carrying read; do not re-open the original."
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -3396,6 +3510,18 @@ enum CoachContextBuilder {
             }
             if let due = intervention.reviewDueAt {
                 lines.append("- Review cadence: revisit by \(caseReviewLabel(for: due)).")
+            }
+            // Round-37: case-anchored amplification. Anchored against
+            // `memory.updatedAt` as the time origin (same anchor round 31
+            // uses for `isFresh`) so the predicate is pure and locked by
+            // tests without standing up a real wall clock. The recency
+            // window guards a stale confirmation from amplifying follow-on
+            // evidence across multiple weeks of practice.
+            if let amplificationLine = caseAnchoredAmplificationContextLine(
+                memory: memory,
+                now: memory.updatedAt
+            ) {
+                lines.append(amplificationLine)
             }
         }
 
