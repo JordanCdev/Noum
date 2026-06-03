@@ -42,6 +42,21 @@ import SwiftUI
 //   • `memory.adaptationLog?.last` exists.
 //   • `change.documentsUserPushback == true`.
 //   • `change.isFresh(comparedTo: memory.updatedAt) == true`.
+//
+// Round 34 — second-cycle pushback copy split:
+//   • When `change.documentsSecondCyclePushback == true` (round 33's
+//     marker, written by the engine when the latest rebuild itself
+//     followed a prior pushback rebuild), the headline + body swap to
+//     a second-cycle register: the user reads that they flagged the
+//     REBUILT read as off too, and the body names the repeated adapt
+//     pattern instead of a first-time rebuild.
+//   • Mirrors the round-33 split inside
+//     `CoachContextBuilder.freshRevisedReadContextLines(...)` — the
+//     post-rep card and the chat-coach context surface the same
+//     cycle distinction to the user and to the model in lock-step.
+//   • Brand-voice rules unchanged: no exclamation, no "Let's", no
+//     "we", no apology. The second-cycle line is direct and calm,
+//     framing the repeated adapt as case history, not as a problem.
 
 @available(iOS 17.0, *)
 struct RevisedReadCard: View {
@@ -62,12 +77,12 @@ struct RevisedReadCard: View {
                 Spacer(minLength: 0)
             }
 
-            Text(RevisedReadCard.headlineCopy)
+            Text(RevisedReadCard.headlineCopy(for: change))
                 .font(Typography.subheadline.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(RevisedReadCard.bodyCopy(workingHypothesis: workingHypothesis))
+            Text(RevisedReadCard.bodyCopy(for: change, workingHypothesis: workingHypothesis))
                 .font(Typography.caption)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -84,36 +99,92 @@ struct RevisedReadCard: View {
         )
         .shadow(color: AppColor.pro.opacity(0.06), radius: 8, y: 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Revised coaching read. \(RevisedReadCard.headlineCopy) \(RevisedReadCard.bodyCopy(workingHypothesis: workingHypothesis))")
+        .accessibilityLabel("Revised coaching read. \(RevisedReadCard.headlineCopy(for: change)) \(RevisedReadCard.bodyCopy(for: change, workingHypothesis: workingHypothesis))")
         .accessibilityIdentifier("summary.revisedRead.card")
     }
 
     // MARK: - Copy (pure, locked by tests)
 
-    /// Headline copy. The user sees their own action named ("you flagged")
+    /// First-cycle headline. The user sees their own action named ("you flagged")
     /// so the line reads as the coach acknowledging the pushback, not as a
     /// generic "your plan changed" notification. Brand-voice compliant: no
     /// exclamation, no apology, no "we", no "Let's".
     static let headlineCopy: String = "You flagged the prior read as off."
 
-    /// Body copy. Names the revised working hypothesis when one exists so
-    /// the user reads what the coach has updated to. Falls back to a calm
-    /// "forming the next read" line when the rebuild produced no current
-    /// hypothesis (rare — typically only with no current lever). Trims +
-    /// strips a trailing period so the body line never reads as two
-    /// sentences ending in one when the hypothesis already ends with `.`.
+    /// Round-34 second-cycle headline. Surfaced when the latest course
+    /// change carries the `secondCyclePushbackMarker` (round 33). The user
+    /// sees their pushback named in the second cycle ("the rebuilt read as
+    /// off too") so the card lands as the coach acknowledging the repeated
+    /// adapt explicitly — no silent revision, no "we", no apology. Keeps
+    /// the user-verdict register the first-cycle headline established.
+    static let secondCycleHeadlineCopy: String = "You flagged the rebuilt read as off too."
+
+    /// Round-34 headline router. Reads `documentsSecondCyclePushback` on
+    /// the passed change and returns the second-cycle copy when the marker
+    /// is present, falling back to the first-cycle copy otherwise. Pure
+    /// function — same shape as the engine + context-builder predicates,
+    /// so a future copy edit on either branch stays in one place.
+    static func headlineCopy(for change: CoachCourseChange) -> String {
+        change.documentsSecondCyclePushback ? secondCycleHeadlineCopy : headlineCopy
+    }
+
+    /// First-cycle body copy. Names the revised working hypothesis when one
+    /// exists so the user reads what the coach has updated to. Falls back
+    /// to a calm "forming the next read" line when the rebuild produced no
+    /// current hypothesis (rare — typically only with no current lever).
+    /// Trims + strips a trailing period so the body line never reads as
+    /// two sentences ending in one when the hypothesis already ends with `.`.
     static func bodyCopy(workingHypothesis: String?) -> String {
         guard let raw = workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else {
             return "The coach noted it and is forming the next read."
         }
-        let stripped: String
-        if raw.hasSuffix(".") {
-            stripped = String(raw.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            stripped = raw
-        }
+        let stripped = strippedHypothesis(raw)
         return "Here's the revised read: \(stripped)."
+    }
+
+    /// Round-34 second-cycle body copy. Surfaced when the latest course
+    /// change carries the `secondCyclePushbackMarker`. Names the rebuilt
+    /// read as the operating hypothesis AND tells the user the coach
+    /// will treat the repeated adapt as case history — one focused
+    /// question instead of re-prescribing identical work. Mirrors the
+    /// round-33 second-cycle coach-move line inside
+    /// `CoachContextBuilder.freshRevisedReadContextLines(...)` so the
+    /// card and the chat thread read with one voice. Falls back to a
+    /// calm "forming a new read" line when the rebuild produced no
+    /// current hypothesis (defensive — same boundary as the first-cycle
+    /// path).
+    static func secondCycleBodyCopy(workingHypothesis: String?) -> String {
+        guard let raw = workingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return "The coach noted the repeated adapt and is forming a new read."
+        }
+        let stripped = strippedHypothesis(raw)
+        return "Here's the next read: \(stripped). Expect one focused question, not the same intervention again."
+    }
+
+    /// Round-34 body router. Reads `documentsSecondCyclePushback` on the
+    /// passed change and returns the second-cycle copy when the marker is
+    /// present, falling back to the first-cycle copy otherwise. Pure
+    /// function on the persisted predicate; the workingHypothesis trim +
+    /// trailing-period strip applies on both branches via
+    /// `strippedHypothesis(_:)`.
+    static func bodyCopy(for change: CoachCourseChange, workingHypothesis: String?) -> String {
+        if change.documentsSecondCyclePushback {
+            return secondCycleBodyCopy(workingHypothesis: workingHypothesis)
+        }
+        return bodyCopy(workingHypothesis: workingHypothesis)
+    }
+
+    /// Shared hypothesis trim. The engine's hypothesis clause typically ends
+    /// with `.`; both body copy paths wrap it in a "…: <hypothesis>." line
+    /// which would otherwise produce `..`. Lifted so first-cycle and
+    /// second-cycle bodies share one strip implementation.
+    private static func strippedHypothesis(_ raw: String) -> String {
+        if raw.hasSuffix(".") {
+            return String(raw.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return raw
     }
 }
 

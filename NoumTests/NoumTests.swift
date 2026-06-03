@@ -26239,6 +26239,180 @@ struct RevisedReadCardTests {
         let body = RevisedReadCard.bodyCopy(workingHypothesis: "   \n  ")
         #expect(body == "The coach noted it and is forming the next read.")
     }
+
+    // MARK: - Round 34 — second-cycle pushback copy split
+    //
+    // Round 33 wrote a `secondCyclePushbackMarker` parenthetical into the
+    // adaptation log's `reason` whenever the user pushed back on the
+    // rebuilt read after already pushing back on the original (two
+    // consecutive cycles). The chat-coach context split in round 33
+    // surfaced the second-cycle pattern to the model via
+    // `freshRevisedReadContextLines` + the generic-arm note. Round 34
+    // mirrors that split on the post-rep card itself so the user, the
+    // coach, and the model read the same cycle distinction on the same
+    // rep. The router functions (`headlineCopy(for:)`, `bodyCopy(for:
+    // workingHypothesis:)`) gate purely on `documentsSecondCyclePushback`
+    // — no other inputs, no UI dependency.
+
+    /// Builds a fixture `CoachCourseChange` whose `reason` carries both the
+    /// first-cycle and second-cycle pushback markers, matching what
+    /// `CoachMemoryEngine.build(...)`'s ack arms emit on a round-33
+    /// second-cycle rebuild. Mirrors the round-33 engine test fixture
+    /// (`courseChangeDocumentsSecondCyclePushbackWhenMarkerEmbedded`) so
+    /// the post-rep card tests and the engine tests gate on the same
+    /// canonical reason shape.
+    private func secondCyclePushbackChange() -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw (after a prior pushback rebuild); revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+    }
+
+    /// First-cycle fixture — same reason shape minus the round-33
+    /// parenthetical. Used to lock the no-regression contract on the
+    /// router functions: a first-cycle entry must still surface the
+    /// round-28 headline + body copy verbatim.
+    private func firstCyclePushbackChange() -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+    }
+
+    @Test func headlineCopyOnSecondCycleEntryNamesRebuiltPushback() {
+        // The user reads their pushback named in the second cycle
+        // ("the rebuilt read as off too") so the card lands as the
+        // coach acknowledging the repeated adapt — not as a silent
+        // re-rebuild. The "too" preserves the round-33 chat-coach
+        // copy's "shifted again" register on the summary surface.
+        #expect(
+            RevisedReadCard.secondCycleHeadlineCopy
+                == "You flagged the rebuilt read as off too."
+        )
+    }
+
+    @Test func headlineCopyRouterReturnsSecondCycleCopyWhenMarkerEmbedded() {
+        // Router contract: a change carrying the round-33 second-cycle
+        // marker routes to the second-cycle headline. Locks the post-rep
+        // card to the same predicate the chat-coach context block reads.
+        let headline = RevisedReadCard.headlineCopy(for: secondCyclePushbackChange())
+        #expect(headline == RevisedReadCard.secondCycleHeadlineCopy)
+        // The first-cycle copy must NOT surface alongside it — the card
+        // shows one canonical headline per cycle, not both.
+        #expect(headline != RevisedReadCard.headlineCopy)
+    }
+
+    @Test func headlineCopyRouterReturnsFirstCycleCopyWithoutMarker() {
+        // No-regression contract: a first-cycle entry routes to the
+        // round-28 headline verbatim. Pre-round-34 behaviour preserved.
+        let headline = RevisedReadCard.headlineCopy(for: firstCyclePushbackChange())
+        #expect(headline == RevisedReadCard.headlineCopy)
+        #expect(headline == "You flagged the prior read as off.")
+    }
+
+    @Test func bodyCopyOnSecondCycleEntryQuotesNextReadAndNamesFocusedQuestion() {
+        // Second-cycle body names the rebuilt read as the operating
+        // hypothesis AND tells the user the coach will treat the
+        // repeated adapt as case history — one focused question instead
+        // of re-prescribing identical work. Mirrors the round-33
+        // second-cycle coach-move line inside
+        // `CoachContextBuilder.freshRevisedReadContextLines(...)`.
+        let hypothesis = "Pace appears to be the highest-leverage focus because stable at developing; keep checking against future reps."
+        let body = RevisedReadCard.bodyCopy(
+            for: secondCyclePushbackChange(),
+            workingHypothesis: hypothesis
+        )
+        #expect(body.hasPrefix("Here's the next read: "))
+        #expect(body.contains("Pace appears to be the highest-leverage focus"))
+        #expect(body.contains("Expect one focused question, not the same intervention again."))
+    }
+
+    @Test func bodyCopyOnSecondCycleEntryStripsTrailingPeriodToAvoidDoubleStop() {
+        // The engine's hypothesis clause already ends with `.`; the
+        // second-cycle body wraps it in "Here's the next read: …."
+        // which would otherwise produce `..`. Lock the strip step on
+        // the new branch too — same contract as the round-28 first-cycle
+        // strip, lifted into `strippedHypothesis(_:)` in round 34.
+        let hypothesis = "Pace appears to be the highest-leverage focus; keep checking against future reps."
+        let body = RevisedReadCard.bodyCopy(
+            for: secondCyclePushbackChange(),
+            workingHypothesis: hypothesis
+        )
+        #expect(!body.contains(".."))
+    }
+
+    @Test func bodyCopyOnSecondCycleEntryFallsBackWhenNoHypothesis() {
+        // Defensive: a second-cycle rebuild with no current lever
+        // produces `workingHypothesis == nil`. The card must still
+        // read as a calm acknowledgement of the repeated adapt
+        // rather than rendering an empty line.
+        let body = RevisedReadCard.bodyCopy(
+            for: secondCyclePushbackChange(),
+            workingHypothesis: nil
+        )
+        #expect(body == "The coach noted the repeated adapt and is forming a new read.")
+    }
+
+    @Test func bodyCopyOnSecondCycleEntryFallsBackWhenHypothesisIsBlank() {
+        // Whitespace-only hypothesis takes the same fallback as nil so
+        // the card never renders "Here's the next read: ." on the
+        // second-cycle branch. Matches the round-28 first-cycle defence.
+        let body = RevisedReadCard.bodyCopy(
+            for: secondCyclePushbackChange(),
+            workingHypothesis: "   \n  "
+        )
+        #expect(body == "The coach noted the repeated adapt and is forming a new read.")
+    }
+
+    @Test func bodyCopyRouterReturnsFirstCycleCopyWithoutMarker() {
+        // No-regression contract on the body router: a first-cycle
+        // entry routes to the round-28 body verbatim. The "Here's the
+        // revised read: …" wrapper and trailing-period strip behave
+        // exactly as before round 34.
+        let hypothesis = "Pace is the highest-leverage focus."
+        let body = RevisedReadCard.bodyCopy(
+            for: firstCyclePushbackChange(),
+            workingHypothesis: hypothesis
+        )
+        #expect(body == RevisedReadCard.bodyCopy(workingHypothesis: hypothesis))
+        #expect(body == "Here's the revised read: Pace is the highest-leverage focus.")
+    }
+
+    @Test func bodyCopyRouterReturnsFirstCycleFallbackOnNilHypothesisWithoutMarker() {
+        // Defensive: nil hypothesis on a first-cycle entry routes to the
+        // round-28 fallback verbatim. The second-cycle fallback must NOT
+        // fire when the marker is absent.
+        let body = RevisedReadCard.bodyCopy(
+            for: firstCyclePushbackChange(),
+            workingHypothesis: nil
+        )
+        #expect(body == "The coach noted it and is forming the next read.")
+    }
+
+    @Test func headlineAndBodyDoNotUseExclamationOrApology() {
+        // Brand-voice lock on the second-cycle copy. Round 33's HANDOFF
+        // pinned the same rules on the chat-coach context lines (no
+        // exclamation, no "Let's", no "we", no apology). Round 34
+        // mirrors them on the post-rep card so the cross-surface read
+        // is consistent.
+        let headline = RevisedReadCard.secondCycleHeadlineCopy
+        let body = RevisedReadCard.secondCycleBodyCopy(workingHypothesis: "Pace is the focus.")
+        let fallback = RevisedReadCard.secondCycleBodyCopy(workingHypothesis: nil)
+        for line in [headline, body, fallback] {
+            #expect(!line.contains("!"))
+            #expect(!line.lowercased().contains("let's"))
+            #expect(!line.lowercased().contains(" we "))
+            #expect(!line.lowercased().contains("sorry"))
+        }
+    }
 }
 
 // MARK: - Round 29 — Revised-read opener tests (CoachContextBuilder)
