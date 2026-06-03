@@ -1513,12 +1513,34 @@ struct AskNoumView: View {
 
     private var inputBar: some View {
         VStack(spacing: 0) {
+            micNoticeRow
             partialTranscriptPreview
             inputBarRow
         }
         .background(.ultraThinMaterial)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: voiceInput.partialTranscript)
+    }
+
+    /// A2: surfaces a brief reason when voice can't proceed (permission /
+    /// locale / temporary), so the mic never silently "does nothing" — paired
+    /// with the mic control hiding itself. Renders only when set.
+    @ViewBuilder
+    private var micNoticeRow: some View {
+        if let notice = voiceInput.notice {
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(Typography.captionSmall)
+                Text(notice)
+                    .font(Typography.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.xs)
+            .accessibilityIdentifier("askNoum.micNotice")
+        }
     }
 
     private var inputBarRow: some View {

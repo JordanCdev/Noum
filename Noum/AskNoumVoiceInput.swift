@@ -140,6 +140,27 @@ final class AskNoumVoiceInput: ObservableObject {
         #endif
     }
 
+    /// A brief, honest user-facing line for when voice can't proceed — so the
+    /// mic never silently "does nothing". Nil when voice is fine.
+    var notice: String? { Self.notice(for: unavailableReason) }
+
+    /// Pure reason → message mapping, isolated so it's unit-testable without
+    /// standing up the recognizer or touching the `private(set)` state.
+    nonisolated static func notice(for reason: UnavailableReason?) -> String? {
+        switch reason {
+        case .none:
+            return nil
+        case .localeUnsupported:
+            return "Voice input isn't supported for your language yet — type your question instead."
+        case .permissionDenied:
+            return "Speech access is off. Turn it on in Settings, or type your question."
+        case .microphoneDenied:
+            return "Mic access is off. Turn it on in Settings, or type your question."
+        case .temporarilyUnavailable:
+            return "Voice isn't ready just now — try again in a moment, or type your question."
+        }
+    }
+
     // MARK: - Tap-to-toggle lifecycle
 
     /// Primary entry point: tap once to start recording, tap again to stop
@@ -276,13 +297,15 @@ final class AskNoumVoiceInput: ObservableObject {
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        // Prefer on-device recognition where the recognizer supports it.
-        // Keeps the user's coaching questions off Apple's servers and
-        // adds zero latency vs cloud. If on-device isn't supported the
-        // request falls back to cloud automatically.
-        if recognizer.supportsOnDeviceRecognition {
-            req.requiresOnDeviceRecognition = true
-        }
+        // Prefer on-device recognition WITHOUT hard-requiring it. Leaving
+        // `requiresOnDeviceRecognition` at its default (false) lets the system
+        // use on-device when it's available/ready (the common case on a warmed-
+        // up device — keeps the user's coaching questions off the network) AND
+        // fall back to cloud when the on-device model isn't ready yet (first
+        // use, still downloading, or the simulator). Previously this HARD-
+        // required on-device (`= true`), which DEFEATED the documented cloud
+        // fallback: when the model wasn't ready, recognition failed silently
+        // and the mic appeared to "do nothing". We no longer force the flag.
         request = req
 
         let engine = AVAudioEngine()

@@ -25255,6 +25255,23 @@ struct CoachParityReadinessTests {
     }
 }
 
+// MARK: - Ask Noum voice-input notice (A2)
+//
+// The mic must never silently "do nothing": when voice can't proceed, the input
+// bar shows an honest reason. Lock the pure reason → message mapping.
+
+@Suite("AskNoumVoiceInputNotice")
+struct AskNoumVoiceInputNoticeTests {
+    @Test func noticeMapsEveryReasonAndNilWhenAvailable() {
+        guard #available(iOS 17.0, *) else { return }
+        #expect(AskNoumVoiceInput.notice(for: nil) == nil)
+        #expect(AskNoumVoiceInput.notice(for: .permissionDenied)?.contains("Speech access") == true)
+        #expect(AskNoumVoiceInput.notice(for: .microphoneDenied)?.contains("Mic access") == true)
+        #expect(AskNoumVoiceInput.notice(for: .localeUnsupported)?.contains("language") == true)
+        #expect(AskNoumVoiceInput.notice(for: .temporarilyUnavailable)?.contains("try again") == true)
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics
