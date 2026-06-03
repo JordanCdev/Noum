@@ -24816,6 +24816,107 @@ struct HypothesisAcknowledgementTests {
     }
 }
 
+// MARK: - Delivery Profile Tests (F3)
+//
+// The user-facing "how you come across" surface composes existing engines into
+// four answers. These lock the pure decision logic (improvement selection,
+// next-target priority, pattern copy, nil-omission) and the no-person-label
+// contract without standing up heavy session fixtures — the underlying
+// per-rep reads are already covered by the Composure/ConfidenceMarker suites.
+
+@Suite("DeliveryProfile")
+struct DeliveryProfileTests {
+
+    private func trend(_ dim: String, prior: Double, recent: Double, _ dir: DerivedReadDirection) -> DerivedReadTrend {
+        DerivedReadTrend(dimension: dim, recentMean: recent, priorMean: prior, recentCount: 5, priorCount: 5, direction: dir)
+    }
+
+    @Test func strongestImprovementPicksLargestDelta() {
+        let trends = [
+            trend("Composure", prior: 0.60, recent: 0.66, .improving),          // +0.06
+            trend("Confidence markers", prior: 0.50, recent: 0.72, .improving), // +0.22 (wins)
+            trend("Structural", prior: 0.70, recent: 0.60, .declining),
+        ]
+        let line = DeliveryProfile.strongestImprovement(in: trends)
+        #expect(line?.contains("Confidence markers") == true)
+        #expect(line?.contains("improved") == true)
+    }
+
+    @Test func strongestImprovementNilWithoutImprovingTrend() {
+        let trends = [
+            trend("Composure", prior: 0.60, recent: 0.60, .stable),
+            trend("Structural", prior: 0.70, recent: 0.60, .declining),
+        ]
+        #expect(DeliveryProfile.strongestImprovement(in: trends) == nil)
+    }
+
+    @Test func nextTargetPrefersDecliningDimension() {
+        let trends = [
+            trend("Composure", prior: 0.60, recent: 0.66, .improving),
+            trend("Confidence markers", prior: 0.72, recent: 0.55, .declining),
+        ]
+        let line = DeliveryProfile.nextTarget(in: trends, pattern: .clear)
+        #expect(line?.contains("Confidence markers") == true)
+        #expect(line?.contains("slipped") == true)
+    }
+
+    @Test func nextTargetFallsBackToTimidMarkers() {
+        let trends = [trend("Composure", prior: 0.60, recent: 0.62, .stable)]
+        let line = DeliveryProfile.nextTarget(in: trends, pattern: .timid)
+        #expect(line?.contains("Confidence markers") == true)
+    }
+
+    @Test func nextTargetNamesLowestWeakStableOnlyBelowHalf() {
+        let weak = [trend("Vocal energy steadiness", prior: 0.40, recent: 0.42, .stable)]
+        #expect(DeliveryProfile.nextTarget(in: weak, pattern: .clear)?.contains("Vocal energy steadiness") == true)
+
+        let solid = [trend("Vocal energy steadiness", prior: 0.70, recent: 0.71, .stable)]
+        #expect(DeliveryProfile.nextTarget(in: solid, pattern: .clear) == nil)
+    }
+
+    @Test func patternLineIsHypothesisFramedNeverPersonLabel() {
+        let clear = DeliveryProfile(pattern: .clear, evidenceDepth: 4, improvedLine: nil, pressureLine: nil, nextTargetLine: nil)
+        let timid = DeliveryProfile(pattern: .timid, evidenceDepth: 4, improvedLine: nil, pressureLine: nil, nextTargetLine: nil)
+        let forming = DeliveryProfile(pattern: .forming, evidenceDepth: 0, improvedLine: nil, pressureLine: nil, nextTargetLine: nil)
+
+        #expect(clear.patternLine?.contains("reading as clear") == true)
+        #expect(timid.patternLine?.contains("reading as tentative") == true)
+        #expect(forming.patternLine == nil)
+        for line in [clear.patternLine, timid.patternLine].compactMap({ $0 }) {
+            #expect(!line.lowercased().contains("you are"))
+            #expect(line.contains("these reps") || line.contains("recent reps"))
+        }
+    }
+
+    @Test func buildReturnsNilWhenNoSignal() {
+        // No sessions + no durable read -> forming, no lines -> nil (no empty shell).
+        let profile = DeliveryProfile.build(
+            sessions: [],
+            snapshots: [],
+            hedgingPerMinute: 3.0,
+            paceBaseline: 130,
+            deliveryRead: nil
+        )
+        #expect(profile == nil)
+    }
+
+    @Test func buildSurfacesDurablePatternEvenWithThinTrends() {
+        // A characterised read carried forward must surface even when the trend
+        // windows are too thin to produce improvement/target lines.
+        let read = CoachDeliveryRead(dominantPattern: .clear, evidenceDepth: 4, tentativeLine: "x")
+        let profile = DeliveryProfile.build(
+            sessions: [],
+            snapshots: [],
+            hedgingPerMinute: 3.0,
+            paceBaseline: 130,
+            deliveryRead: read
+        )
+        #expect(profile?.pattern == .clear)
+        #expect(profile?.patternLine != nil)
+        #expect(profile?.improvedLine == nil)
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

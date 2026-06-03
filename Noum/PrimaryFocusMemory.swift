@@ -787,6 +787,16 @@ struct CoachMemory: Codable, Equatable {
     // decode to nil via `decodeIfPresent`.
     var coachDeliveryRead: CoachDeliveryRead?
 
+    // F3 — the user-facing delivery profile (recurring pattern / what improved
+    // / what breaks under pressure / next delivery target). Composed by
+    // `DeliveryProfile.build` from the SAME engines the coach context uses;
+    // persisted here ALONGSIDE `coachDeliveryRead` (same rationale: the 5
+    // post-hoc caseFile mutators copy `CoachMemory` by value and never touch
+    // this field, so it survives them) and carried forward across thin windows.
+    // Optional for backward compat — memories persisted before this field
+    // decode to nil via `decodeIfPresent`.
+    var deliveryProfile: DeliveryProfile?
+
     // Explicit memberwise init — required because the custom
     // `init(from:)` below suppresses the synthesized one.
     init(
@@ -823,7 +833,8 @@ struct CoachMemory: Codable, Equatable {
         fillerTrendDirection: TrendDirection? = nil,
         weeklyRepCount: Int? = nil,
         isLatestSessionPersonalBest: Bool? = nil,
-        coachDeliveryRead: CoachDeliveryRead? = nil
+        coachDeliveryRead: CoachDeliveryRead? = nil,
+        deliveryProfile: DeliveryProfile? = nil
     ) {
         self.updatedAt = updatedAt
         self.lastSessionID = lastSessionID
@@ -859,6 +870,7 @@ struct CoachMemory: Codable, Equatable {
         self.weeklyRepCount = weeklyRepCount
         self.isLatestSessionPersonalBest = isLatestSessionPersonalBest
         self.coachDeliveryRead = coachDeliveryRead
+        self.deliveryProfile = deliveryProfile
     }
 
     // Custom Decodable for backward compatibility — all momentum
@@ -880,6 +892,7 @@ struct CoachMemory: Codable, Equatable {
         case consecutiveCleanReps, fillerTrendDirection, weeklyRepCount
         case isLatestSessionPersonalBest
         case coachDeliveryRead
+        case deliveryProfile
     }
 
     init(from decoder: Decoder) throws {
@@ -918,6 +931,7 @@ struct CoachMemory: Codable, Equatable {
         weeklyRepCount = try c.decodeIfPresent(Int.self, forKey: .weeklyRepCount)
         isLatestSessionPersonalBest = try c.decodeIfPresent(Bool.self, forKey: .isLatestSessionPersonalBest)
         coachDeliveryRead = try c.decodeIfPresent(CoachDeliveryRead.self, forKey: .coachDeliveryRead)
+        deliveryProfile = try c.decodeIfPresent(DeliveryProfile.self, forKey: .deliveryProfile)
     }
 }
 
@@ -1312,6 +1326,16 @@ enum CoachMemoryEngine {
         )
         memory.coachDeliveryRead = freshDeliveryRead.flatMap { $0.isCharacterized ? $0 : nil }
             ?? previous?.coachDeliveryRead
+        // F3 — the user-facing delivery profile, composed from the SAME inputs +
+        // the just-resolved durable read. Carry a previous profile forward
+        // across a thin window (mirrors the coachDeliveryRead carry-forward).
+        memory.deliveryProfile = DeliveryProfile.build(
+            sessions: sessions,
+            snapshots: [],
+            hedgingPerMinute: baselineHedgingPerMin,
+            paceBaseline: baselinePace,
+            deliveryRead: memory.coachDeliveryRead
+        ) ?? previous?.deliveryProfile
         // Derive the upcoming-moment line HERE (not inside the pure build) so
         // the case file knows what the user is preparing for. Mirrors the
         // `lastTransferReview` wiring: the store is read at the SessionFinalizer

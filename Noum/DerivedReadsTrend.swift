@@ -166,6 +166,157 @@ struct CoachDeliveryRead: Codable, Equatable {
     var isCharacterized: Bool { dominantPattern != .forming }
 }
 
+// MARK: - Delivery Profile (F3 — user-facing Perception surface)
+//
+// The user can already FEEL their delivery read in the coach's replies; this
+// is the durable, glanceable version for Profile — the four questions a coach
+// answers about HOW you come across:
+//   1. What pattern recurs?        (mirrored from the fused CoachDeliveryRead)
+//   2. What has improved?          (strongest improving DerivedReadTrend)
+//   3. What breaks under pressure? (Sudden Death reads vs calmer reps)
+//   4. What is the next target?    (declining / weakest dimension, or markers)
+//
+// NOT a new analyzer — it composes the SAME engines that feed the coach
+// context (DerivedReadsTrendEngine + the per-rep Composure/ConfidenceMarker
+// reads). Every line is a HYPOTHESIS about the rep SET, never a label on the
+// person, and each self-suppresses (nil = omit the row) below its evidence
+// floor. No absolute-loudness/pitch term — all reads are baseline-relative.
+struct DeliveryProfile: Codable, Equatable {
+    let pattern: CoachDeliveryRead.DeliveryPattern
+    let evidenceDepth: Int
+    let improvedLine: String?
+    let pressureLine: String?
+    let nextTargetLine: String?
+
+    /// A named pattern OR any substantive line — the card hides entirely below
+    /// this, so Profile never shows an empty delivery shell.
+    var hasContent: Bool {
+        pattern != .forming || improvedLine != nil || pressureLine != nil || nextTargetLine != nil
+    }
+
+    /// User-facing line for the recurring pattern. Distinct from the fused
+    /// read's COACH-facing `tentativeLine` (which addresses the model) — this
+    /// addresses the user: second person, calm, hypothesis-framed, never a
+    /// trait. `.forming` returns nil (nothing has earned the floor yet).
+    var patternLine: String? {
+        switch pattern {
+        case .forming:
+            return nil
+        case .clear:
+            return "Your recent reps have been reading as clear — composure holding, few tentative markers. A read of these reps, not a fixed trait."
+        case .timid:
+            return "Your recent reps have been reading as tentative — hedging and tentative phrasing landing relative to your own baseline. A read of these reps, not a label on you."
+        }
+    }
+
+    // MARK: Build
+
+    /// Each pressure group needs at least this many scored reps before the
+    /// app will compare them — one or two reps can't characterise "under
+    /// pressure" honestly.
+    static let pressureMinRepsPerGroup: Int = 3
+
+    /// The non-pressure mean must exceed the pressure mean by at least this
+    /// (on the 0-1 composite) before the app names a pressure dip. Below it,
+    /// the difference is noise and the line is suppressed.
+    static let pressureGapThreshold: Double = 0.08
+
+    /// Compose the profile from the same inputs the coach context uses. Returns
+    /// nil when nothing has earned a line (so the card omits entirely).
+    static func build(
+        sessions: [PracticeSession],
+        snapshots: [SkillSnapshot],
+        hedgingPerMinute: Double?,
+        paceBaseline: Double?,
+        deliveryRead: CoachDeliveryRead?
+    ) -> DeliveryProfile? {
+        let trends = DerivedReadsTrendEngine.compute(
+            sessions: sessions,
+            snapshots: snapshots,
+            hedgingPerMinutePerSession: { _ in hedgingPerMinute },
+            paceBaselinePerSession: { _ in paceBaseline }
+        )
+
+        let pattern = deliveryRead?.dominantPattern ?? .forming
+        let profile = DeliveryProfile(
+            pattern: pattern,
+            evidenceDepth: deliveryRead?.evidenceDepth ?? 0,
+            improvedLine: strongestImprovement(in: trends),
+            pressureLine: pressureRead(
+                sessions: sessions,
+                hedgingPerMinute: hedgingPerMinute,
+                paceBaseline: paceBaseline
+            ),
+            nextTargetLine: nextTarget(in: trends, pattern: pattern)
+        )
+        return profile.hasContent ? profile : nil
+    }
+
+    private static func fmt(_ x: Double) -> String { String(format: "%.2f", x) }
+
+    /// The improving dimension with the largest positive delta, or nil.
+    /// `internal` so tests can lock the selection without session fixtures.
+    static func strongestImprovement(in trends: [DerivedReadTrend]) -> String? {
+        guard let best = trends
+            .filter({ $0.direction == .improving })
+            .max(by: { ($0.recentMean - $0.priorMean) < ($1.recentMean - $1.priorMean) })
+        else { return nil }
+        return "\(best.dimension) has improved — \(fmt(best.priorMean)) to \(fmt(best.recentMean)) across your recent reps."
+    }
+
+    /// The next delivery target: a declining dimension wins (movement matters
+    /// most), else the timid-pattern markers, else the lowest weak-but-steady
+    /// dimension. nil when nothing stands out. `internal` for testability.
+    static func nextTarget(in trends: [DerivedReadTrend], pattern: CoachDeliveryRead.DeliveryPattern) -> String? {
+        if let declining = trends
+            .filter({ $0.direction == .declining })
+            .min(by: { ($0.recentMean - $0.priorMean) < ($1.recentMean - $1.priorMean) }) {
+            return "\(declining.dimension) has slipped lately (\(fmt(declining.priorMean)) to \(fmt(declining.recentMean))) — a good next focus."
+        }
+        if pattern == .timid {
+            return "Confidence markers are the next target — easing the tentative phrasing so more reps read as clear."
+        }
+        if let lowestStable = trends
+            .filter({ $0.direction == .stable })
+            .min(by: { $0.recentMean < $1.recentMean }),
+           lowestStable.recentMean < 0.5 {
+            return "\(lowestStable.dimension) is the lowest of your steady reads — the next area to lift."
+        }
+        return nil
+    }
+
+    /// Sudden-Death composite vs non-Sudden-Death composite. Names a dip only
+    /// when each group clears the rep floor AND the gap clears the threshold —
+    /// otherwise nil (no fabricated pressure story, and never a dip claim when
+    /// pressure reads at or above calm).
+    private static func pressureRead(
+        sessions: [PracticeSession],
+        hedgingPerMinute: Double?,
+        paceBaseline: Double?
+    ) -> String? {
+        func composite(_ s: PracticeSession) -> Double? {
+            let comp = ComposureReadEngine.derive(session: s, hedgingPerMinute: hedgingPerMinute)
+            let conf = ConfidenceMarkerEngine.derive(
+                session: s,
+                hedgingPerMinute: hedgingPerMinute,
+                paceWPM: paceBaseline,
+                composure: comp
+            )
+            let scores = [comp?.score, conf?.score].compactMap { $0 }
+            guard !scores.isEmpty else { return nil }
+            return scores.reduce(0, +) / Double(scores.count)
+        }
+        let pressure = sessions.filter { $0.mode == .suddenDeath }.compactMap(composite)
+        let calm = sessions.filter { $0.mode != .suddenDeath }.compactMap(composite)
+        guard pressure.count >= pressureMinRepsPerGroup,
+              calm.count >= pressureMinRepsPerGroup else { return nil }
+        let pMean = pressure.reduce(0, +) / Double(pressure.count)
+        let cMean = calm.reduce(0, +) / Double(calm.count)
+        guard cMean - pMean >= pressureGapThreshold else { return nil }
+        return "Under pressure (Sudden Death) your delivery reads lower than in calmer reps — composure and confidence markers dip when the clock is on."
+    }
+}
+
 enum DerivedReadsTrendEngine {
 
     /// Minimum reps in the RECENT window to compute a direction.

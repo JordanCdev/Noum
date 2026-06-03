@@ -208,6 +208,7 @@ struct ProfileView: View {
                 clusterHeader("Coaching")
                 coachingDirectionCard
                 caseReviewCard
+                deliveryProfileCard
                 speechPatternsCard
                 skillProgressPanel
                 activeChallengePanel
@@ -978,6 +979,17 @@ struct ProfileView: View {
                     coachMemoryStore.noteHypothesisAcknowledgement(confidence)
                 }
             )
+        }
+    }
+
+    /// F3: the user-facing delivery profile ("how you come across"). Reads the
+    /// durable `CoachMemory.deliveryProfile`, computed in `CoachMemory.build`
+    /// from the same engines the coach context uses. Self-hides when the profile
+    /// is nil (nothing has earned a line yet), so Profile never over-promises.
+    @ViewBuilder
+    private var deliveryProfileCard: some View {
+        if let profile = coachMemoryStore.currentMemory?.deliveryProfile {
+            DeliveryProfileCard(profile: profile)
         }
     }
 
