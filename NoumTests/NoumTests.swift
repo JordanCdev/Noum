@@ -27006,6 +27006,189 @@ struct RevisedReadCardTests {
     }
 }
 
+// MARK: - Round 36 — CaseReviewCard second-cycle history badge
+//
+// Round 33 wrote a `secondCyclePushbackMarker` parenthetical into
+// `CoachCourseChange.reason` whenever a user pushback rebuild itself
+// followed a prior pushback rebuild (two consecutive cycles). Round 34
+// mirrored that signal on the post-rep `RevisedReadCard` headline + body;
+// round 35 mirrored it on the chat-seed lead. Round 36 closes the third
+// surface: the Profile-tab `CaseReviewCard` now renders a small "2nd cycle"
+// capsule beside the "Last shift" eyebrow when the latest adaptation entry
+// documents the second-cycle pattern. Cross-surface coherence on a single
+// predicate (`CoachCourseChange.documentsSecondCyclePushback`) — no new
+// state, no schema bump, no migration.
+//
+// These tests pin the pure constant + pure predicate the SwiftUI view
+// reads. The view layer is intentionally simple (a Text inside a Capsule
+// gated on `showsSecondCycleBadge(for:)`); the predicate is the testable
+// surface.
+
+@MainActor
+@Suite("CaseReviewSecondCycleBadgeTests")
+struct CaseReviewSecondCycleBadgeTests {
+
+    /// Mirrors the round-34 `RevisedReadCardTests` and round-33 engine
+    /// fixtures so the badge tests, the post-rep card tests, and the
+    /// engine tests gate on the same canonical reason shape.
+    private func secondCyclePushbackChange() -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw (after a prior pushback rebuild); revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+    }
+
+    /// First-cycle fixture — same reason shape minus the round-33
+    /// parenthetical. Locks the no-regression contract: a first-cycle
+    /// entry must NOT surface the badge.
+    private func firstCyclePushbackChange() -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .paceControl,
+            toLever: .paceControl,
+            reason: "User reported the prior hypothesis did not match what they saw; revising the read.",
+            evidenceBasis: "user-tapped rejection of: \"…\""
+        )
+    }
+
+    // MARK: - Pure constant
+
+    @Test func secondCycleBadgeLabelIsCalmShortHistoryTag() {
+        // The badge is a calm history qualifier — short so it scans
+        // alongside the existing eyebrow label without crowding the
+        // five-section case spine. Mirrors `RevisedReadCard`'s
+        // `secondCycleHeadlineCopy` register (no exclamation, no
+        // urgency framing).
+        #expect(CaseReviewCard.secondCycleBadgeLabel == "2nd cycle")
+    }
+
+    // MARK: - Pure predicate
+
+    @Test func showsBadgeTrueWhenChangeCarriesSecondCycleMarker() {
+        // Predicate contract: a change carrying the round-33
+        // second-cycle marker gates the badge on. Locks the
+        // `CaseReviewCard` history surface to the same predicate the
+        // post-rep card (round 34) and the chat seed (round 35) read.
+        #expect(
+            CaseReviewCard.showsSecondCycleBadge(for: secondCyclePushbackChange()) == true
+        )
+    }
+
+    @Test func showsBadgeFalseOnFirstCyclePushbackEntry() {
+        // No-regression contract: a first-cycle pushback entry must
+        // NOT surface the badge. The "Last shift" row still renders;
+        // it just reads as the round-29 first-cycle entry would, with
+        // no qualifier.
+        #expect(
+            CaseReviewCard.showsSecondCycleBadge(for: firstCyclePushbackChange()) == false
+        )
+    }
+
+    @Test func showsBadgeFalseOnEngineLeverShiftEntry() {
+        // Defensive: an engine-only lever shift (no user pushback, no
+        // marker) routes through `documentsSecondCyclePushback == false`
+        // and therefore surfaces no badge. The reason text reads as
+        // case history; the badge surface is exclusively the cycle
+        // qualifier.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: .fillerReduction,
+            toLever: .paceControl,
+            reason: "Pace evidence overtook filler evidence; shifting focus.",
+            evidenceBasis: "engine-detected pace decay"
+        )
+        #expect(CaseReviewCard.showsSecondCycleBadge(for: change) == false)
+    }
+
+    @Test func showsBadgeFalseOnVoiceChangeEntry() {
+        // Defensive: a user-confirmed voice-goal change writes its own
+        // marker (`voiceChangeMarker`) but NOT the second-cycle
+        // pushback marker. The badge must stay off — a voice change is
+        // not a repeated-adapt signal.
+        let change = CoachCourseChange(
+            id: UUID(),
+            changedAt: Date(timeIntervalSince1970: 1_000),
+            fromLever: nil,
+            toLever: nil,
+            reason: CoachCourseChange.voiceChangeReason(from: .warm, to: .concise),
+            evidenceBasis: "user-confirmed voice change"
+        )
+        #expect(CaseReviewCard.showsSecondCycleBadge(for: change) == false)
+    }
+
+    // MARK: - Brand voice
+
+    @Test func secondCycleBadgeLabelIsBrandVoiceCompliant() {
+        // The badge is short enough that brand-voice violations would
+        // surface immediately; lock it explicitly so a future copy edit
+        // can't drift into "Cycle 2!" or "let's adapt" style violations.
+        let label = CaseReviewCard.secondCycleBadgeLabel
+        #expect(!label.contains("!"))
+        #expect(!label.lowercased().contains("let's"))
+        #expect(!label.lowercased().contains(" we "))
+        #expect(!label.lowercased().contains("sorry"))
+    }
+
+    // MARK: - Cross-surface contract
+
+    @Test func badgePredicateMatchesPostRepCardSecondCycleGate() {
+        // The post-rep `RevisedReadCard` (round 34) gates its second-
+        // cycle headline + body on the SAME predicate. A change that
+        // surfaces the badge here must surface the second-cycle copy on
+        // the post-rep card; a change that surfaces the first-cycle
+        // copy on the card must NOT surface the badge here.
+        let secondCycle = secondCyclePushbackChange()
+        let firstCycle = firstCyclePushbackChange()
+
+        #expect(
+            CaseReviewCard.showsSecondCycleBadge(for: secondCycle)
+                == (RevisedReadCard.headlineCopy(for: secondCycle)
+                    == RevisedReadCard.secondCycleHeadlineCopy)
+        )
+        #expect(
+            CaseReviewCard.showsSecondCycleBadge(for: firstCycle)
+                == (RevisedReadCard.headlineCopy(for: firstCycle)
+                    == RevisedReadCard.secondCycleHeadlineCopy)
+        )
+    }
+
+    @Test func badgePredicateMatchesChatSeedSecondCycleGate() {
+        // The chat-seed `revisedReadOpener(for:workingHypothesis:voice:)`
+        // router (round 35) gates the second-cycle lead on the SAME
+        // predicate. Cross-surface contract: the three surfaces — case
+        // history badge, post-rep card, and chat seed — agree on every
+        // change about whether the cycle distinction surfaces.
+        let secondCycle = secondCyclePushbackChange()
+        let firstCycle = firstCyclePushbackChange()
+
+        let secondCycleSeed = CoachContextBuilder.revisedReadOpener(
+            for: secondCycle,
+            workingHypothesis: "Pace is the focus.",
+            voice: nil
+        )
+        let firstCycleSeed = CoachContextBuilder.revisedReadOpener(
+            for: firstCycle,
+            workingHypothesis: "Pace is the focus.",
+            voice: nil
+        )
+
+        #expect(
+            CaseReviewCard.showsSecondCycleBadge(for: secondCycle)
+                == secondCycleSeed.hasPrefix(CoachContextBuilder.revisedReadOpenerSecondCycleLead)
+        )
+        #expect(
+            CaseReviewCard.showsSecondCycleBadge(for: firstCycle)
+                == firstCycleSeed.hasPrefix(CoachContextBuilder.revisedReadOpenerSecondCycleLead)
+        )
+    }
+}
+
 // MARK: - Round 29 — Revised-read opener tests (CoachContextBuilder)
 //
 // Round 29 closes Future Move #11 from the round-28 HANDOFF: a tap on

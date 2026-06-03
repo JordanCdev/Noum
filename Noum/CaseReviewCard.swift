@@ -81,13 +81,15 @@ struct CaseReviewCard: View {
                 interventionRow(intervention)
             }
 
-            // 3. Latest adaptation — why the focus shifted
+            // 3. Latest adaptation — why the focus shifted. Round 36
+            // surfaces a small "2nd cycle" badge inline on the row when the
+            // latest entry documents the round-33 second-cycle pushback
+            // marker, so the Profile-tab history surface reads the cycle
+            // distinction the post-rep `RevisedReadCard` (round 34) and the
+            // chat seed (round 35) already surface. Cross-surface coherence
+            // on the same predicate (`documentsSecondCyclePushback`).
             if let latest = memory.adaptationLog?.last {
-                caseRow(
-                    icon: "arrow.triangle.branch",
-                    label: "Last shift",
-                    text: latest.reason
-                )
+                lastShiftRow(latest)
             }
 
             // 4. Real-world transfer — the case's latest off-app check-in.
@@ -140,6 +142,52 @@ struct CaseReviewCard: View {
     }
 
     // MARK: - Row Components
+
+    // Round 36 — "Last shift" row with optional second-cycle badge.
+    //
+    // Renders the latest adaptation entry as the standard `caseRow` shape,
+    // but when `showsSecondCycleBadge(for:)` returns true the row carries a
+    // small "2nd cycle" capsule inline beside the eyebrow label. The capsule
+    // uses the same `AppColor.pro` accent the post-rep `RevisedReadCard`
+    // (round 34) uses for its REVISED READ eyebrow + stroke, so the two
+    // surfaces read with one visual register on the cycle distinction.
+    // Pure-predicate gate; no new state, no analytics, no CTA.
+    private func lastShiftRow(_ latest: CoachCourseChange) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(Typography.captionSmall)
+                .foregroundStyle(.tertiary)
+                .frame(width: 16)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Last shift")
+                        .font(Typography.micro.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+
+                    if Self.showsSecondCycleBadge(for: latest) {
+                        Text(Self.secondCycleBadgeLabel)
+                            .font(Typography.micro.weight(.semibold))
+                            .foregroundStyle(AppColor.pro)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(AppColor.pro.opacity(0.10), in: Capsule())
+                            .overlay(Capsule().stroke(AppColor.pro.opacity(0.32), lineWidth: 1))
+                            .accessibilityLabel("Second adapt cycle")
+                            .accessibilityIdentifier("profile.caseReview.lastShift.secondCycleBadge")
+                    }
+                }
+
+                Text(latest.reason)
+                    .font(Typography.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
 
     private func caseRow(icon: String, label: String, text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -331,6 +379,47 @@ struct CaseReviewCard: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return formatter.string(from: date)
+    }
+
+    // MARK: - Second-cycle history badge (round 36)
+    //
+    // The Profile-tab `CaseReviewCard` is the long-term coaching record
+    // surface. Round 33 wrote the `secondCyclePushbackMarker` parenthetical
+    // into `CoachCourseChange.reason` whenever the latest pushback rebuild
+    // itself followed a prior pushback rebuild. Round 34 surfaced that
+    // signal on the post-rep `RevisedReadCard` ("You flagged the rebuilt
+    // read as off too."); round 35 surfaced it on the chat seed ("I flagged
+    // the rebuilt read as off too."). Round 36 closes the third surface:
+    // the "Last shift" row now carries a small "2nd cycle" badge inline
+    // beside the eyebrow label when the latest entry documents the
+    // second-cycle pattern.
+    //
+    // Restraint:
+    //   • A badge, not a row. The case spine stays five sections; the
+    //     second-cycle distinction is a qualifier on an existing row.
+    //   • Reads the existing `documentsSecondCyclePushback` predicate. No
+    //     new field, no new storage, no migration. Memories persisted
+    //     before round 33 read `false` and surface no badge.
+    //   • Calm phrasing ("2nd cycle") — no exclamation, no urgency
+    //     framing. Brand voice matches `RevisedReadCard.secondCycleHeadlineCopy`.
+
+    /// Inline badge label surfaced on the "Last shift" row when the latest
+    /// adaptation entry documents a round-33 second-cycle pushback. Short
+    /// + calm so the row scans without crowding. Cross-surface contract
+    /// with `RevisedReadCard.secondCycleHeadlineCopy` ("You flagged the
+    /// rebuilt read as off too.") on the post-rep card and the round-35
+    /// chat-seed second-cycle lead — same predicate, three coordinated
+    /// visual registers.
+    static let secondCycleBadgeLabel: String = "2nd cycle"
+
+    /// Pure-predicate gate for the second-cycle badge. Static + pure so
+    /// tests can pin it without standing up a SwiftUI view, mirror of the
+    /// `hasUnacknowledgedHypothesis(in:)` / `acknowledgedEcho(for:)`
+    /// pattern. Reads `documentsSecondCyclePushback` directly — a copy
+    /// edit on the marker in `CoachCourseChange` automatically ripples to
+    /// the badge surface in one place.
+    static func showsSecondCycleBadge(for change: CoachCourseChange) -> Bool {
+        change.documentsSecondCyclePushback
     }
 
     // MARK: - Acknowledgement
