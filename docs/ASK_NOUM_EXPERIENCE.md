@@ -178,3 +178,65 @@ build where known.
   turns from this host — needs a real device); fine-grained aesthetic polish
   (iterative, to Jordan's eye); a continuous hands-free turn loop (currently
   tap-to-talk → review → send, which is the safe default).
+- **2026-06-03 (A8 — continuous hands-free turn loop)** — Built the opt-in
+  loop end-to-end as three pure decision layers + the voice-input
+  endpointing the loop needs to actually be hands-free, so the user can
+  hold a turn-taking conversation with the coach without tapping each
+  side of the exchange.
+  - **New setting** — `IMVoicePlaybackSettingsManager.askNoumHandsFreeEnabled`
+    (default OFF, opt-in) persisted under `askNoumHandsFreeEnabled`,
+    resolved at launch via `handsFreeDefault(objectPresent:stored:)` so an
+    absent preference always stays OFF and existing users keep the safe
+    tap-to-talk → review → send baseline byte-for-byte.
+  - **Loop predicates** — `AskNoumSpokenMode.shouldAutoSend(...)` and
+    `AskNoumSpokenMode.shouldRearmMic(...)` collapse the question "should
+    we act on the user's behalf right now?" into pure, view-free
+    functions. Both default to "no": auto-send only fires when hands-free
+    AND spoken replies AND locale-supports-AI are all ON, the transcript
+    is non-empty, and no reply is in flight; auto-rearm only fires when
+    hands-free is ON, the mic is available + idle, and no reply is in
+    flight. Non-English Ask Noum (no AI support) keeps text-only, end to
+    end. The two predicates pin every gate as a unit test in
+    `AskNoumHandsFreeAutoSendTests` and `AskNoumHandsFreeRearmMicTests`.
+  - **Real endpointing** — `AskNoumVoiceInput.autoFinishOnSilence`
+    (opt-in TimeInterval?). When non-nil, a `silenceWatcher` task polls
+    every 250ms during recording; once the partial transcript has been
+    stable for the configured window AND the partial is non-empty,
+    `stopAndSend()` fires and the transcript dispatches through the
+    existing `onFinalTranscript` callback. Clamped UP to a
+    `minimumAutoFinishSilence` floor (1.0s) so a future tuning pass can
+    never clip the user mid-thought, and the partial-equality guard in
+    the recognizer callback stops same-text partials from pinning the
+    watcher open. Without this, `SFSpeechRecognizer` would never emit
+    `.isFinal` on its own — only an explicit `endAudio()` finalises a
+    buffered recognition — so the loop genuinely needed VAD-style
+    endpointing to be hands-free, not just a flag.
+  - **View wiring** — `AskNoumView.onAppear` initialises
+    `voiceInput.autoFinishOnSilence` from the persisted preference and
+    sets `speaker.onPlaybackFinished` to the auto-rearm path (the hook
+    `IMMessageSpeaker` already had for exactly this listen → speak →
+    listen handoff). `.onChange(of: askNoumHandsFreeEnabled)` keeps the
+    auto-finish window in lock-step with a mid-mount toggle. `.onDisappear`
+    clears the speaker callback + cancels any in-flight recording so the
+    mic doesn't keep capturing in the background after a nav pop.
+  - **Header toggle** — `handsFreeToggle` (infinity glyph, brand-blue when
+    on, secondary when off) renders ONLY when BOTH sides of the loop are
+    viable — `voiceInput.isAvailable` AND `speaker.canSpeakReplies` —
+    same dead-toggle discipline the `voiceModeToggle` uses for the mic
+    and the spoken-replies switch. Turning the toggle off mid-recording
+    cancels the recording cleanly, so the user is back in tap-to-talk
+    → review → send territory immediately rather than racing the
+    silence watcher one beat late.
+  - **Status copy** — `voiceFirstStatus(...)` gained an additive
+    `handsFree:` parameter (defaulted false, so existing call sites keep
+    working). In hands-free mode the status reads "Listening — pause to
+    send" / "Coach is speaking — your turn next" / "Hands-free on — say
+    something"; in the OFF baseline the prior copy is preserved byte for
+    byte. Pinned by `AskNoumHandsFreeStatusCopyTests`.
+
+  **Still open:** on-device QA of the actual turn loop (silence-window
+  feel, end-to-end record → auto-send → TTS reply → auto-rearm), which
+  needs a real device — same gating constraint as A2 mic-capture / A5
+  spoken replies; fine-grained aesthetic polish (iterative, to Jordan's
+  eye); tuning the 1.0s silence window if real conversations show it as
+  too eager or too patient.

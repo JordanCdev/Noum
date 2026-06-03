@@ -93,6 +93,30 @@ final class AskNoumVoiceInput: ObservableObject {
     /// chat turn and resets to idle silently.
     private static let minUtteranceCharacters = 2
 
+    /// A8 — minimum silence-window the auto-finish path will accept. Anything
+    /// shorter would clip the user mid-thought; the recognizer itself often
+    /// has natural ~300-500ms gaps within a single sentence as it ingests
+    /// audio. Surfaced as a constant so a future tuning pass has one place to
+    /// touch. `nonisolated` so callers (and tests) can read the floor from
+    /// any context without round-tripping the main actor — same pattern the
+    /// `notice(for:)` pure mapping uses.
+    nonisolated static let minimumAutoFinishSilence: TimeInterval = 1.0
+
+    /// A8 — when non-nil, the recognizer auto-finalizes (calls
+    /// `stopAndSend()`) after the partial transcript has been stable for this
+    /// many seconds AND the partial is non-empty. Enables the continuous
+    /// hands-free turn loop: the user just pauses naturally to send; the
+    /// coach's next reply triggers an auto-rearm via the speaker's playback-
+    /// finished hook on the view side.
+    ///
+    /// Settable from the view at any time. When nil (default), behavior is
+    /// the existing tap-to-send: only an explicit `toggle()` or `stopAndSend()`
+    /// finalizes the recognition. Honest fallback: if the value is below
+    /// `minimumAutoFinishSilence` we clamp UP rather than fire too eagerly.
+    /// Cancelling or finishing the recognition tears down the silence task —
+    /// no zombie timers.
+    var autoFinishOnSilence: TimeInterval?
+
     #if canImport(Speech)
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -102,6 +126,14 @@ final class AskNoumVoiceInput: ObservableObject {
     private var audioEngine: AVAudioEngine?
     #endif
     private var maxDurationTimer: Task<Void, Never>?
+    /// A8 — drives the silence-based auto-finish path. Mirrors the
+    /// `maxDurationTimer` lifecycle: spawned at recognition start when an
+    /// auto-finish window is configured, cancelled on teardown / finish.
+    private var silenceWatcher: Task<Void, Never>?
+    /// A8 — timestamp of the most-recent partial-transcript change. The
+    /// silence watcher reads this to decide whether the user has paused long
+    /// enough to end the utterance. Nil before any partial has landed.
+    private var lastPartialChange: Date?
 
     /// Called exactly once per successful utterance with the final
     /// transcript. The view turns this into a user turn (same path as
@@ -217,6 +249,9 @@ final class AskNoumVoiceInput: ObservableObject {
         partialTranscript = ""
         maxDurationTimer?.cancel()
         maxDurationTimer = nil
+        silenceWatcher?.cancel()
+        silenceWatcher = nil
+        lastPartialChange = nil
         state = .idle
     }
 
@@ -325,15 +360,26 @@ final class AskNoumVoiceInput: ObservableObject {
         audioEngine = engine
 
         partialTranscript = ""
+        lastPartialChange = nil
         state = .recording
 
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
             guard let self = self else { return }
             Task { @MainActor in
                 if let result = result {
-                    self.partialTranscript = result.bestTranscription.formattedString
+                    let newText = result.bestTranscription.formattedString
+                    // A8 — only stamp the silence-watcher's "last change"
+                    // when the partial actually changed. A recognizer can
+                    // emit duplicate same-text partials while it's ingesting
+                    // audio; treating them as "the user just spoke" would
+                    // pin the watcher open forever and the auto-finish
+                    // would never fire.
+                    if newText != self.partialTranscript {
+                        self.partialTranscript = newText
+                        self.lastPartialChange = Date()
+                    }
                     if result.isFinal {
-                        self.deliverFinalIfAble(textOverride: result.bestTranscription.formattedString)
+                        self.deliverFinalIfAble(textOverride: newText)
                         self.resetToIdle()
                     }
                 }
@@ -350,6 +396,33 @@ final class AskNoumVoiceInput: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(Self.maxUtteranceDuration * 1_000_000_000))
             if self.state == .recording {
                 self.endPressAndSend()
+            }
+        }
+
+        // A8 — silence-based auto-finish for the hands-free turn loop. Only
+        // spawned when the view has opted in (`autoFinishOnSilence` set);
+        // when nil this code path is dormant and behavior is identical to
+        // the existing tap-to-send. The watcher polls every 250ms and fires
+        // `stopAndSend()` once:
+        //   • the partial transcript has been stable for `window` seconds,
+        //   • the partial is non-empty (don't auto-fire on dead silence
+        //     before the user has said anything — the max-duration timer
+        //     handles a stuck mic).
+        // Clamped UP to `minimumAutoFinishSilence` so an over-eager caller
+        // can't clip the user mid-thought.
+        if let raw = autoFinishOnSilence {
+            let window = max(raw, Self.minimumAutoFinishSilence)
+            silenceWatcher = Task { @MainActor in
+                while self.state == .recording {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard self.state == .recording else { return }
+                    guard !self.partialTranscript.isEmpty else { continue }
+                    guard let last = self.lastPartialChange else { continue }
+                    if Date().timeIntervalSince(last) >= window {
+                        self.stopAndSend()
+                        return
+                    }
+                }
             }
         }
         #endif
@@ -377,6 +450,9 @@ final class AskNoumVoiceInput: ObservableObject {
         partialTranscript = ""
         maxDurationTimer?.cancel()
         maxDurationTimer = nil
+        silenceWatcher?.cancel()
+        silenceWatcher = nil
+        lastPartialChange = nil
         state = .idle
     }
 

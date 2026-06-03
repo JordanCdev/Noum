@@ -25625,6 +25625,282 @@ struct AskNoumVoiceFirstDefaultTests {
     }
 }
 
+// MARK: - Ask Noum hands-free turn loop (A8)
+//
+// The continuous turn-loop landed in three pure decision layers — pinned
+// here so the loop can never silently change behavior without these tests
+// breaking:
+//
+//   • `IMVoicePlaybackSettingsManager.handsFreeDefault` resolves an absent
+//     preference to OFF (opt-in baseline) and respects an explicit choice.
+//   • `AskNoumSpokenMode.shouldAutoSend` only auto-dispatches a final
+//     transcript when ALL of (hands-free ON, spoken replies ON, locale
+//     supports AI, transcript non-empty, no reply in flight) hold.
+//   • `AskNoumSpokenMode.shouldRearmMic` only re-arms the mic on a natural
+//     end-of-TTS when ALL of (hands-free ON, voice input available, voice
+//     input idle, no reply in flight) hold.
+//
+// The two predicates collapse the same intuition: never act on the user's
+// behalf unless every precondition for a viable loop is satisfied. They
+// also guarantee text-only and locale-blocked users keep the existing
+// tap-to-talk → review → send baseline verbatim.
+
+@MainActor
+@Suite("AskNoumHandsFreeDefault")
+struct AskNoumHandsFreeDefaultTests {
+
+    @Test func absentPreferenceResolvesOff() {
+        #expect(IMVoicePlaybackSettingsManager.handsFreeDefault(objectPresent: false, stored: false) == false)
+        // Even if some bit somewhere reads true off an absent key, the
+        // resolver still treats absent as "no — user hasn't opted in."
+        #expect(IMVoicePlaybackSettingsManager.handsFreeDefault(objectPresent: false, stored: true) == false)
+    }
+
+    @Test func explicitPreferenceRespected() {
+        #expect(IMVoicePlaybackSettingsManager.handsFreeDefault(objectPresent: true, stored: false) == false)
+        #expect(IMVoicePlaybackSettingsManager.handsFreeDefault(objectPresent: true, stored: true) == true)
+    }
+}
+
+@Suite("AskNoumHandsFreeAutoSend")
+struct AskNoumHandsFreeAutoSendTests {
+
+    @Test func autoSendsWhenEveryPreconditionHolds() {
+        #expect(AskNoumSpokenMode.shouldAutoSend(
+            handsFreeEnabled: true,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true,
+            transcript: "what should I do next?",
+            awaitingReply: false
+        ) == true)
+    }
+
+    @Test func neverAutoSendsWhenHandsFreeIsOff() {
+        // The OFF baseline is the project's safety contract: nothing
+        // dispatches without an explicit user tap.
+        #expect(AskNoumSpokenMode.shouldAutoSend(
+            handsFreeEnabled: false,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true,
+            transcript: "hello",
+            awaitingReply: false
+        ) == false)
+    }
+
+    @Test func neverAutoSendsWhenSpokenRepliesAreOff() {
+        // Auto-sending into a mute coach would surprise the user — they'd
+        // dictate a question and nothing audible would happen.
+        #expect(AskNoumSpokenMode.shouldAutoSend(
+            handsFreeEnabled: true,
+            spokenRepliesEnabled: false,
+            localeSupportsAI: true,
+            transcript: "hello",
+            awaitingReply: false
+        ) == false)
+    }
+
+    @Test func neverAutoSendsWhenLocaleDoesNotSupportAI() {
+        // Mirror of the spoken-reply locale gate: non-English Ask Noum
+        // stays text-only, end to end.
+        #expect(AskNoumSpokenMode.shouldAutoSend(
+            handsFreeEnabled: true,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: false,
+            transcript: "hola",
+            awaitingReply: false
+        ) == false)
+    }
+
+    @Test func neverAutoSendsWhenTranscriptIsBlank() {
+        for blank in ["", " ", "   ", "\n", "\t  \n"] {
+            #expect(AskNoumSpokenMode.shouldAutoSend(
+                handsFreeEnabled: true,
+                spokenRepliesEnabled: true,
+                localeSupportsAI: true,
+                transcript: blank,
+                awaitingReply: false
+            ) == false)
+        }
+    }
+
+    @Test func neverAutoSendsMidReply() {
+        // The coach is mid-turn — a second dispatch would race the
+        // in-flight reply and shove the UI into an inconsistent state.
+        #expect(AskNoumSpokenMode.shouldAutoSend(
+            handsFreeEnabled: true,
+            spokenRepliesEnabled: true,
+            localeSupportsAI: true,
+            transcript: "and another thing",
+            awaitingReply: true
+        ) == false)
+    }
+}
+
+@Suite("AskNoumHandsFreeRearmMic")
+struct AskNoumHandsFreeRearmMicTests {
+
+    @Test func rearmsWhenEveryPreconditionHolds() {
+        #expect(AskNoumSpokenMode.shouldRearmMic(
+            handsFreeEnabled: true,
+            voiceInputAvailable: true,
+            voiceInputIdle: true,
+            awaitingReply: false
+        ) == true)
+    }
+
+    @Test func neverRearmsWhenHandsFreeIsOff() {
+        #expect(AskNoumSpokenMode.shouldRearmMic(
+            handsFreeEnabled: false,
+            voiceInputAvailable: true,
+            voiceInputIdle: true,
+            awaitingReply: false
+        ) == false)
+    }
+
+    @Test func neverRearmsWhenVoiceInputIsUnavailable() {
+        // Voice input may be gated by permission denial or locale support
+        // — we never fire a mic that can't capture.
+        #expect(AskNoumSpokenMode.shouldRearmMic(
+            handsFreeEnabled: true,
+            voiceInputAvailable: false,
+            voiceInputIdle: true,
+            awaitingReply: false
+        ) == false)
+    }
+
+    @Test func neverRearmsWhileVoiceInputIsBusy() {
+        // A `.toggle()` while the mic is recording would STOP the user's
+        // current capture — exactly the opposite of "re-arm."
+        #expect(AskNoumSpokenMode.shouldRearmMic(
+            handsFreeEnabled: true,
+            voiceInputAvailable: true,
+            voiceInputIdle: false,
+            awaitingReply: false
+        ) == false)
+    }
+
+    @Test func neverRearmsMidReply() {
+        // A reply is in flight — wait for its own playback-finished
+        // event to decide whether to re-arm.
+        #expect(AskNoumSpokenMode.shouldRearmMic(
+            handsFreeEnabled: true,
+            voiceInputAvailable: true,
+            voiceInputIdle: true,
+            awaitingReply: true
+        ) == false)
+    }
+}
+
+@MainActor
+@Suite("AskNoumHandsFreeStatusCopy")
+struct AskNoumHandsFreeStatusCopyTests {
+
+    @Test func handsFreeIdleNamesTheLoop() {
+        guard #available(iOS 17.0, *) else { return }
+        // The user opts into hands-free and needs to read what the surface
+        // is doing: it's listening for them, no tap required.
+        #expect(AskNoumView.voiceFirstStatus(
+            recording: false,
+            processing: false,
+            speaking: false,
+            hasText: false,
+            handsFree: true
+        ) == "Hands-free on \u{2014} say something")
+    }
+
+    @Test func handsFreeRecordingPromisesPauseToSend() {
+        guard #available(iOS 17.0, *) else { return }
+        // The auto-finish silence path lands the transcript when the user
+        // pauses; the copy should communicate that rather than ask for a
+        // tap they don't need to make.
+        let copy = AskNoumView.voiceFirstStatus(
+            recording: true,
+            processing: false,
+            speaking: false,
+            hasText: false,
+            handsFree: true
+        )
+        #expect(copy.contains("pause to send"))
+    }
+
+    @Test func handsFreeSpeakingPromisesYourTurnNext() {
+        guard #available(iOS 17.0, *) else { return }
+        // When the coach is mid-reply in hands-free mode, the next event
+        // is the auto-rearm — the user shouldn't read "tap to talk" as
+        // their only option.
+        let copy = AskNoumView.voiceFirstStatus(
+            recording: false,
+            processing: false,
+            speaking: true,
+            hasText: false,
+            handsFree: true
+        )
+        #expect(copy.contains("your turn next"))
+    }
+
+    @Test func handsFreeOffPreservesTapToTalkBaseline() {
+        guard #available(iOS 17.0, *) else { return }
+        // The OFF baseline copy is the existing tap-to-talk flow, byte
+        // for byte. A regression here would mean a default-OFF user saw
+        // hands-free language without opting in.
+        #expect(AskNoumView.voiceFirstStatus(
+            recording: false,
+            processing: false,
+            speaking: false,
+            hasText: false,
+            handsFree: false
+        ) == "Tap to talk")
+        #expect(AskNoumView.voiceFirstStatus(
+            recording: true,
+            processing: false,
+            speaking: false,
+            hasText: false,
+            handsFree: false
+        ) == "Listening \u{2014} tap to send")
+        #expect(AskNoumView.voiceFirstStatus(
+            recording: false,
+            processing: false,
+            speaking: true,
+            hasText: false,
+            handsFree: false
+        ) == "Coach is speaking \u{2014} tap to talk")
+    }
+
+    @Test func processingAndDraftCopyDoNotDriftOnHandsFree() {
+        guard #available(iOS 17.0, *) else { return }
+        // Processing is the recognizer finalising — a brief inert state
+        // that reads the same regardless of mode. Draft-with-text is a
+        // typed message; hands-free doesn't change the send action.
+        #expect(AskNoumView.voiceFirstStatus(
+            recording: false,
+            processing: true,
+            speaking: false,
+            hasText: false,
+            handsFree: true
+        ).contains("Thinking"))
+        #expect(AskNoumView.voiceFirstStatus(
+            recording: false,
+            processing: false,
+            speaking: false,
+            hasText: true,
+            handsFree: true
+        ) == "Tap to send")
+    }
+}
+
+@Suite("AskNoumVoiceInputSilenceWindow")
+struct AskNoumVoiceInputSilenceWindowTests {
+
+    @Test func minimumWindowGuardsAgainstClippedThoughts() {
+        guard #available(iOS 17.0, *) else { return }
+        // The silence window is clamped UP to this floor so a future
+        // tuning pass that sets a too-eager value can't clip the user
+        // mid-thought. A user-facing change to this constant should be
+        // a deliberate, reviewed decision — the test pin is the friction.
+        #expect(AskNoumVoiceInput.minimumAutoFinishSilence >= 1.0)
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

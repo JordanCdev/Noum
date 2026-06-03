@@ -3878,6 +3878,26 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
         }
     }
 
+    /// A8 — continuous hands-free turn loop. When ON (default OFF, explicit
+    /// opt-in), Ask Noum stops requiring the user to tap-to-send a captured
+    /// utterance and tap-to-talk for the next turn: the recognizer's final
+    /// transcript auto-dispatches, and a natural end of TTS playback auto-arms
+    /// the mic for the next user turn. Off by default because:
+    ///   • the safe baseline is tap-to-talk → review → send (no surprises,
+    ///     no accidental sends of mid-thought sentences),
+    ///   • hands-free needs BOTH a working mic (`AskNoumVoiceInput.isAvailable`)
+    ///     AND a working TTS layer (`IMMessageSpeaker.canSpeakReplies`) to make
+    ///     sense — and even then, "auto-send what the mic heard" is a behavior
+    ///     change the user should turn on consciously.
+    /// The toggle in AskNoumView's header hides itself when either side of the
+    /// loop is unavailable, mirroring the `voiceModeToggle` / `isAvailable`
+    /// discipline so we never render a dead control.
+    @Published var askNoumHandsFreeEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(askNoumHandsFreeEnabled, forKey: askNoumHandsFreeKey)
+        }
+    }
+
     @Published private(set) var lastResolvedEngineTitle: String = "None"
     @Published private(set) var lastPlaybackStatus: String = "Idle"
     @Published private(set) var lastPlaybackError: String?
@@ -3885,6 +3905,7 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
     private let engineKey = "imVoicePlaybackEngine"
     private let playbackEnabledKey = "imVoicePlaybackEnabled"
     private let askNoumSpokenRepliesKey = "askNoumSpokenRepliesEnabled"
+    private let askNoumHandsFreeKey = "askNoumHandsFreeEnabled"
 
     private init() {
         if UserDefaults.standard.object(forKey: playbackEnabledKey) == nil {
@@ -3907,6 +3928,21 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
             objectPresent: UserDefaults.standard.object(forKey: askNoumSpokenRepliesKey) != nil,
             stored: UserDefaults.standard.bool(forKey: askNoumSpokenRepliesKey)
         )
+        // A8 — hands-free is OPT-IN. An absent preference resolves OFF (the
+        // existing tap-to-talk → review → send behavior is preserved); a
+        // present preference respects the stored value. Pure resolver, same
+        // shape as `voiceFirstDefault` but inverted default for the safer
+        // baseline.
+        askNoumHandsFreeEnabled = Self.handsFreeDefault(
+            objectPresent: UserDefaults.standard.object(forKey: askNoumHandsFreeKey) != nil,
+            stored: UserDefaults.standard.bool(forKey: askNoumHandsFreeKey)
+        )
+    }
+
+    /// A8 — hands-free default: absent preference → OFF (opt-in baseline);
+    /// present preference → respect the stored value. Pure + testable.
+    static func handsFreeDefault(objectPresent: Bool, stored: Bool) -> Bool {
+        objectPresent ? stored : false
     }
 
     /// A5 — voice-first default semantics for the coach-chat voice: an absent
