@@ -7045,6 +7045,15 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("never punish-shame"))
     }
 
+    @Test func systemPromptInstructsGracefulShortInputHandling() {
+        // A1 EQ anti-pattern guard: the coach must never answer a short /
+        // partial / voice-garbled message with a bare "clarify your question"
+        // (the canonical low-EQ reply). Locks the guidance in the prompt.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("Read the person, not just the words"))
+        #expect(prompt.contains("bare clarification request"))
+    }
+
     @Test func systemPromptIncludesVoicePersonalityWhenProfileSet() {
         // When the user has set a voice, the system prompt must
         // include that voice's personality block. The authoritative
