@@ -127,6 +127,10 @@ struct AskNoumView: View {
     @ObservedObject var sessionStore: PracticeSessionStore
     @ObservedObject var ratingStore: RatingStore
     @ObservedObject var coachingProfileStore: CoachingProfileStore
+    /// A3: lets a coach reply that names a concrete mode/exercise surface a
+    /// tappable launch card that pushes the matching practice destination onto
+    /// the shared stack (same routing Home/Summary use).
+    @Binding var navigationPath: NavigationPath
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
@@ -238,7 +242,14 @@ struct AskNoumView: View {
                                     .id("revisedReadFollowUp")
                                 goalProposalRow
                                     .id("goalProposal")
-                                if let chips = followUpChips, !chips.isEmpty {
+                                // A3: ONE prompt at a time. A concrete mode/
+                                // exercise recommendation (the stronger, more
+                                // actionable CTA) takes precedence over the
+                                // keep-going suggestion chips.
+                                if let modeDestination = suggestedModeDestination {
+                                    modeLaunchRow(destination: modeDestination)
+                                        .id("modeLaunch")
+                                } else if let chips = followUpChips, !chips.isEmpty {
                                     followUpRow(chips: chips)
                                         .id("followups")
                                 }
@@ -692,6 +703,49 @@ struct AskNoumView: View {
             forCoachReply: last.text,
             voice: voice
         )
+    }
+
+    /// A3: the single launchable practice destination the LATEST coach reply
+    /// points at, if any. Lifecycle is implicit + clean: it is computed from
+    /// `store.messages.last` only, so it appears under the freshest coach reply
+    /// that names a mode, is superseded the moment a new turn lands, and is
+    /// dismissed by navigating away on tap. Nil while awaiting a reply, on a
+    /// user turn, or when the reply names no mode (no card rather than a guess).
+    private var suggestedModeDestination: AppDestination? {
+        guard !store.isAwaitingReply,
+              let last = store.messages.last,
+              last.role == .coach,
+              !last.isPending,
+              !last.text.isEmpty
+        else { return nil }
+        return AskNoumModeSuggestion.detect(in: last.text)
+    }
+
+    /// The one mode-launch card — a calm, single CTA that pushes the matching
+    /// practice destination onto the shared stack. Reuses AppDestination
+    /// routing; no parallel navigation.
+    private func modeLaunchRow(destination: AppDestination) -> some View {
+        Button {
+            CoachHaptic.selectionTap()
+            navigationPath.append(destination)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.forward.circle.fill")
+                    .font(Typography.caption.weight(.semibold))
+                Text(AskNoumModeSuggestion.label(for: destination))
+                    .font(Typography.caption.weight(.semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(AppColor.pro)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(AppColor.pro.opacity(0.10), in: Capsule())
+            .overlay(Capsule().stroke(AppColor.pro.opacity(0.30), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, Spacing.md)
+        .accessibilityIdentifier("askNoum.modeLaunch")
+        .accessibilityLabel(AskNoumModeSuggestion.label(for: destination))
     }
 
     /// Coach message ID of the most-recent landed reply, if any. Drives

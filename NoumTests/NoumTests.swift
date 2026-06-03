@@ -25272,6 +25272,39 @@ struct AskNoumVoiceInputNoticeTests {
     }
 }
 
+// MARK: - Ask Noum mode-launch suggestion (A3)
+//
+// Detects whether a coach reply points at a concrete practice mode so ONE
+// tappable launch card can appear. Conservative: explicit names + a few
+// high-confidence skill phrases map; ambiguous advice yields no card.
+
+@Suite("AskNoumModeSuggestion")
+struct AskNoumModeSuggestionTests {
+    @Test func detectsExplicitModes() {
+        #expect(AskNoumModeSuggestion.detect(in: "Do an Ah-Counter round next, target under 4 fillers.") == .ahCounterPractice)
+        #expect(AskNoumModeSuggestion.detect(in: "Try a Sudden Death round to test composure.") == .suddenDeathPractice)
+        #expect(AskNoumModeSuggestion.detect(in: "Run a difficult conversation rep next.") == .imPractice(scenario: nil, tone: nil))
+        #expect(AskNoumModeSuggestion.detect(in: "Warm up with a Timed rep first.") == .timedPractice)
+    }
+
+    @Test func mapsHighConfidenceSkillPhrasesToTimed() {
+        #expect(AskNoumModeSuggestion.detect(in: "Let's focus on vocal variety.") == .timedPractice)
+        #expect(AskNoumModeSuggestion.detect(in: "For your next rep, vary your pitch more.") == .timedPractice)
+    }
+
+    @Test func returnsNilOnAmbiguousAdvice() {
+        #expect(AskNoumModeSuggestion.detect(in: "Try to be more confident and own the room.") == nil)
+        #expect(AskNoumModeSuggestion.detect(in: "That was a strong answer — nice work.") == nil)
+    }
+
+    @Test func labelsAreActionShaped() {
+        #expect(AskNoumModeSuggestion.label(for: .timedPractice) == "Start a Timed rep")
+        #expect(AskNoumModeSuggestion.label(for: .ahCounterPractice) == "Start an Ah-Counter round")
+        #expect(AskNoumModeSuggestion.label(for: .suddenDeathPractice).contains("Sudden Death"))
+        #expect(AskNoumModeSuggestion.label(for: .imPractice(scenario: nil, tone: nil)).contains("conversation"))
+    }
+}
+
 // MARK: - M26 Vocal Energy Metrics Tests
 //
 // Per VISION roadmap #2 (Delivery intelligence). VocalEnergyMetrics

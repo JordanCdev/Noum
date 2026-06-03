@@ -367,7 +367,8 @@ struct ContentView: View {
                     AskNoumView(
                         sessionStore: sessionStore,
                         ratingStore: ratingStore,
-                        coachingProfileStore: coachingProfileStore
+                        coachingProfileStore: coachingProfileStore,
+                        navigationPath: $navigationPath
                     )
                 case .growthLibrary:
                     GrowthLibraryView()
