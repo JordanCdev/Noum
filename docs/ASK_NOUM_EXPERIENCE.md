@@ -164,6 +164,17 @@ build where known.
   - **A6 polish** — verified the rendered state: clean + premium-leaning
     (situational chips + voice-first confirmed). Substantive aesthetic polish
     deferred to specific direction — a taste call best made on a real render.
-  **Still open (device QA / design):** the FULL voice-first UI rebuild
-  (talk-button-centric layout, text demoted to a small opt-in icon, continuous
-  turn loop); on-device mic-capture verification; aesthetic polish direction.
+- **2026-06-03 (A7 — voice-first rebuild)** — Built the voice-first input UI
+  and **verified it renders** on the iPhone 17 Pro simulator (screenshot): a
+  prominent centered talk button is the default ("Tap to talk"), text demoted to
+  a small "Type instead" opt-in, a "waveform" toggle returns from text →
+  voice, conversation thread + chips unchanged. Reuses the existing
+  `inputControlMode` + a now-shared `performInputAction`, so the
+  record→transcript→send flow can't drift. Also fixed a **latent build break**
+  it surfaced: a never-compiled M24-round suite (`SecondCyclePushbackContextTests`)
+  had a spurious `@available` on its `@Suite` (Swift Testing forbids it) — that
+  suite now compiles AND runs.
+  **Still open:** on-device **mic-capture + TTS QA** (can't verify spoken
+  turns from this host — needs a real device); fine-grained aesthetic polish
+  (iterative, to Jordan's eye); a continuous hands-free turn loop (currently
+  tap-to-talk → review → send, which is the safe default).
