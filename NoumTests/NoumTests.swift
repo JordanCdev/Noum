@@ -29337,7 +29337,7 @@ struct CaseAnchoredAmplificationTests {
         )
     }
 
-    private static func sampleIntervention() -> CoachIntervention {
+    nonisolated private static func sampleIntervention() -> CoachIntervention {
         CoachIntervention(
             title: "Ah Counter",
             focus: "filler reduction",
@@ -30004,7 +30004,7 @@ struct InterventionUnderRepeatedPushbackTests {
         )
     }
 
-    private static func sampleIntervention() -> CoachIntervention {
+    nonisolated private static func sampleIntervention() -> CoachIntervention {
         CoachIntervention(
             title: "Ah Counter",
             focus: "filler reduction",
@@ -30804,7 +30804,7 @@ struct CaseAnchoredContinuationTests {
         )
     }
 
-    private static func sampleIntervention() -> CoachIntervention {
+    nonisolated private static func sampleIntervention() -> CoachIntervention {
         CoachIntervention(
             title: "Ah Counter",
             focus: "filler reduction",
@@ -31620,7 +31620,7 @@ struct InterventionUnderPushbackContinuationTests {
         )
     }
 
-    private static func sampleIntervention() -> CoachIntervention {
+    nonisolated private static func sampleIntervention() -> CoachIntervention {
         CoachIntervention(
             title: "Ah Counter",
             focus: "filler reduction",
