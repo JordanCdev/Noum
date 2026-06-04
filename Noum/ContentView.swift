@@ -364,7 +364,7 @@ struct ContentView: View {
                 case .pathJourney:
                     PathJourneyView()
                 case .askNoum:
-                    AskNoumView(
+                    CoachSessionView(
                         sessionStore: sessionStore,
                         ratingStore: ratingStore,
                         coachingProfileStore: coachingProfileStore,

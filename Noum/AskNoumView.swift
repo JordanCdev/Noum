@@ -12,12 +12,14 @@ import SwiftUI
 //   • Eyebrow: "ASK NOUM · <Voice>" — micro caps label, brand-purple
 //     so the coach surface reads as a distinct register from the
 //     brand-blue path/journey card.
-//   • Header: NoumCharacter (voice-tinted orb) + the coach's name. It
-//     COLLAPSES on scroll (S4) — the orb shrinks 60→28 and the subtitle
-//     drops once the thread scrolls past a small deadband, driven by a
-//     scroll-offset probe (`AskNoumScrollOffsetKey`) exactly like the
-//     home screen. The full header greets a first-time / top-of-thread
-//     user; the conversation gets the screen back once you're in it.
+//   • Header: NoumCharacter (voice-tinted orb) + the coach's name. The orb
+//     REACTS to the thread (`orbMood`) — `.thinking` while a reply is
+//     composing/writing, `.coaching` once a conversation exists, a `.calm`
+//     greeting at the empty state. It COLLAPSES on scroll (S4) — shrinks
+//     60→34 but never disappears, staying a present embodiment — and the
+//     subtitle drops once the thread scrolls past a small deadband, driven
+//     by a scroll-offset probe (`AskNoumScrollOffsetKey`) like the home
+//     screen. The full header greets a first-time / top-of-thread user.
 //   • Empty state (no messages): voice-specific starter prompts as
 //     tappable chips. Removes the friction of the first message.
 //   • Thread: alternating user (right-aligned brand-blue bubble) +
@@ -26,7 +28,10 @@ import SwiftUI
 //     as noise) — left-alignment + the brand-purple stroke read as the
 //     coach, and the header carries embodiment. The in-flight bubble
 //     keeps a `.thinking` orb as its typing indicator, the one place the
-//     orb earns its keep.
+//     orb earns its keep. A just-landed reply then REVEALS word by word
+//     (the coach reads as writing to you, not popping in fully formed) —
+//     view-only timing, the store still holds the full text, and
+//     reduce-motion lands it instantly.
 //   • Input bar: rounded text field + ONE 44pt trailing control (S4)
 //     that swaps glyph by draft state — mic when empty, arrow.up when
 //     there's text, stop.fill while recording. Replaced the old greyed
@@ -131,6 +136,9 @@ struct AskNoumView: View {
     /// tappable launch card that pushes the matching practice destination onto
     /// the shared stack (same routing Home/Summary use).
     @Binding var navigationPath: NavigationPath
+    /// When set, the chat header shows a "Live" pill that returns to the live
+    /// call (`LiveCoachCallView`). Nil for any standalone use.
+    var onGoLive: (() -> Void)? = nil
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
@@ -165,6 +173,19 @@ struct AskNoumView: View {
     // the user scrolls into the conversation. Resting value is 0 (top);
     // it goes negative as content scrolls up.
     @State private var scrollOffset: CGFloat = 0
+
+    // Living-coach-presence (Pillar A) — progressive reply reveal. The store
+    // holds the full reply text (source of truth); the view reveals it word by
+    // word so the coach reads as *writing to you* rather than the reply popping
+    // in fully-formed. `revealingMessageID` marks the one coach row currently
+    // animating; `revealedText` is its visible prefix. Both reset when the
+    // reveal completes (the bubble falls back to the full `message.text`).
+    // Fully gated on reduce-motion — when it's on, no reveal is armed and
+    // replies land instantly. `revealTask` is cancelled on a new turn and on
+    // disappear so a superseded reveal never mutates state for the wrong row.
+    @State private var revealingMessageID: UUID? = nil
+    @State private var revealedText: String = ""
+    @State private var revealTask: Task<Void, Never>? = nil
 
     // Voice input wrapper — shipped in `AskNoumVoiceInput.swift`. Single
     // instance per view so the tap-to-toggle lifecycle owns the audio
@@ -205,6 +226,17 @@ struct AskNoumView: View {
 
     private var characterStage: NoumCharacter.Stage {
         ProgressionRatchet.resolvedStage(forXP: ProfileManager.shared.xp)
+    }
+
+    /// Conversational mood for the header presence. Reacts to the thread so the
+    /// orb reads as a coach who is *with you*: `.thinking` while a reply is
+    /// composing OR writing (the progressive reveal), settling to `.coaching`
+    /// (the warmer, leaning-in read) once a conversation exists, and a gentle
+    /// `.calm` greeting before the first message. Pure read — no state, same
+    /// shape as `isHeaderCompact`.
+    private var orbMood: NoumCharacter.Mood {
+        if store.isAwaitingReply || revealingMessageID != nil { return .thinking }
+        return store.messages.isEmpty ? .calm : .coaching
     }
 
     var body: some View {
@@ -276,13 +308,46 @@ struct AskNoumView: View {
                     }
                     .onChange(of: store.isAwaitingReply) { _, awaiting in
                         scrollToBottom(proxy: proxy)
-                        // The reply hydrated — fire the AI chip request
-                        // for the freshly landed coach message. The
-                        // generator dedupes via the cache; this hook is
-                        // safe to fire on every transition out of an
-                        // in-flight state.
-                        if !awaiting, let coachID = latestLandedCoachID {
-                            requestAIChipsIfNeeded(for: coachID)
+                        if awaiting {
+                            // A reply just went in-flight. Pre-arm the reveal on
+                            // the pending coach row NOW (on main) so the instant
+                            // it lands it renders an empty prefix and writes out
+                            // — never a one-frame flash of the full text. Cancel
+                            // any superseded reveal first. Skipped under
+                            // reduce-motion (no reveal is ever armed).
+                            revealTask?.cancel()
+                            if !reduceMotion,
+                               let pendingID = store.messages.last(where: { $0.role == .coach })?.id {
+                                revealingMessageID = pendingID
+                                revealedText = ""
+                            } else {
+                                revealingMessageID = nil
+                                revealedText = ""
+                            }
+                        } else {
+                            // The reply hydrated — fire the AI chip request for
+                            // the freshly landed coach message (idempotent;
+                            // cache-deduped).
+                            if let coachID = latestLandedCoachID {
+                                requestAIChipsIfNeeded(for: coachID)
+                            }
+                            // Reveal the landed reply word by word. Normally the
+                            // row was pre-armed above; the cross-surface inject
+                            // path (Summary bridge) sets isAwaitingReply before
+                            // this view observes it, so fall back to the latest
+                            // landed coach id. Only reveal a REAL coach bubble —
+                            // a `.failure` becomes a systemNotice, so don't
+                            // re-reveal an older message.
+                            let revealID = revealingMessageID ?? latestLandedCoachID
+                            if !reduceMotion,
+                               let id = revealID,
+                               let landed = store.messages.first(where: { $0.id == id }),
+                               landed.role == .coach, !landed.isPending, !landed.text.isEmpty {
+                                startReveal(of: landed, proxy: proxy)
+                            } else {
+                                revealingMessageID = nil
+                                revealedText = ""
+                            }
                         }
                     }
                     .onAppear {
@@ -332,6 +397,8 @@ struct AskNoumView: View {
             // calling `IMMessageSpeaker.shared.stop()` on `.onDisappear`. Cheap
             // no-op when nothing is playing.
             speaker.stop()
+            // Never let a half-written reveal mutate state after we've left.
+            revealTask?.cancel()
         }
     }
 
@@ -349,6 +416,20 @@ struct AskNoumView: View {
                     .textCase(.uppercase)
                     .tracking(0.8)
                 Spacer()
+                if let onGoLive {
+                    Button(action: onGoLive) {
+                        HStack(spacing: 5) {
+                            Circle().fill(AppColor.pro).frame(width: 6, height: 6)
+                            Text("Live").font(Typography.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(AppColor.pro)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(AppColor.pro.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Switch to live call")
+                }
                 voiceModeToggle
                 if !store.messages.isEmpty {
                     Menu {
@@ -370,18 +451,15 @@ struct AskNoumView: View {
             }
             HStack(spacing: isHeaderCompact ? Spacing.sm : Spacing.md) {
                 NoumCharacter(
-                    // `.thinking` reads more accurately than `.listening`
-                    // here — the user just sent a message; the orb is
-                    // composing a reply, not actively hearing audio.
-                    // Distinct visuals separate "Noum is reading what
-                    // you said" from "Noum is hearing you in a rep."
-                    // The orb shrinks but never disappears when the header
-                    // collapses, so the coach stays embodied even compact —
-                    // and its `.thinking` mood keeps signalling an in-flight
-                    // reply once the subtitle is gone.
-                    mood: store.isAwaitingReply ? .thinking : .calm,
+                    // Living-coach-presence: the orb REACTS to the thread via
+                    // `orbMood` — `.thinking` while composing/writing a reply,
+                    // `.coaching` (warmer, leaning-in) once a conversation
+                    // exists, a gentle `.calm` greeting before the first
+                    // message. It shrinks on scroll but never disappears, so the
+                    // coach stays a present, reacting embodiment even compact.
+                    mood: orbMood,
                     tint: AppColor.pro,
-                    size: isHeaderCompact ? 28 : 60,
+                    size: isHeaderCompact ? 34 : 60,
                     stage: characterStage
                 )
                 VStack(alignment: .leading, spacing: 2) {
@@ -1478,7 +1556,11 @@ struct AskNoumView: View {
                 pendingDots
                     .padding(.vertical, 4)
             } else {
-                Text(message.text)
+                // Living-coach-presence: the just-landed reply reveals word by
+                // word (see `revealingMessageID`); every other row shows its
+                // full text. The accessibility label always reads the COMPLETE
+                // reply so VoiceOver is never handed a half-written sentence.
+                Text(message.id == revealingMessageID ? revealedText : message.text)
                     .font(Typography.body)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2065,100 +2147,57 @@ struct AskNoumView: View {
     }
 
     private func runReply(coachID: UUID) async {
-        let systemPrompt = CoachContextBuilder.systemPrompt(for: coachingProfileStore.profile)
-        // Run the trend analyzer at call time — cheap pure work over the
-        // current snapshot store. Lets the coach quote direction
-        // ("filler reduction declining for 3 weeks") not just the noun
-        // labels in baseline strengths/blockers.
-        let snapshots = SkillTrendStore.shared.snapshots
-        let trends = TrendAnalyzer.analyze(snapshots: snapshots)
-        let context = CoachContextBuilder.userContext(
-            profile: coachingProfileStore.profile,
-            baseline: baselineStore.baseline,
-            rating: ratingStore.rating,
-            sessions: sessionStore.sessions,
-            currentStreak: streakFreezeManager.currentStreak,
-            pathStatus: pathProgress.currentNode,
-            pathGatingPhrase: pathProgress.currentNodeGatingPhrase,
-            recentProofs: proofStore.recent(limit: 3),
-            bigMoment: bigMomentStore.activeMoment,
-            recentMomentOutcomes: bigMomentStore.recentOutcomeReports(limit: 2),
-            forwardPlan: forwardPlanStore.activePlan,
-            latestRepNote: postRepCoachNoteStore.latestNote(),
-            coachMemory: coachMemoryStore.currentMemory,
-            pendingRecommendation: recommendationLearningStore.pendingExposure,
-            recommendationOutcomes: recommendationLearningStore.outcomes,
-            trends: trends,
-            latestSnapshot: snapshots.last,
-            snapshotsForTrends: snapshots,
-            // S3 — the detected set/change intent for THIS turn (if any). Makes
-            // the coach PROPOSE the voice in prose ("want me to set that?" /
-            // name the trade-off on a change) while the goal card under the
-            // reply carries the explicit confirm. The model never writes; this
-            // only shapes the reply's framing.
-            pendingGoalIntent: pendingGoalIntent,
-            // F1 — surface the most-recent weekly check-in so the coach can
-            // ask a sharper follow-up grounded in the user's own words.
-            recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2)
+        // Context assembly + model call + row hydration is shared with the live
+        // call view via `CoachReplyPipeline` (one brain for both surfaces). The
+        // spoken-reply decision stays here because it differs by surface.
+        let outcome = await CoachReplyPipeline.generate(
+            coachID: coachID,
+            pendingGoalIntent: pendingGoalIntent
         )
-        // Deterministic-fallback context (A1). Assembled HERE, in the same
-        // main-actor prologue as the `userContext` store reads above (before any
-        // `await`), so an OFFLINE / no-provider / locale-blocked turn still gets
-        // a grounded, in-voice coach reply instead of an error notice. Reads the
-        // most-recent TIMED rep (the mode the prompt-answer verdict is about)
-        // and the already-summarized standing case off the case file — never
-        // re-derives, never fabricates. The service ignores this on the live
-        // path; it only consumes it on the handled failure paths.
-        let recentTimed = sessionStore.sessions.last(where: { $0.mode == .timed })
-        let recentTimedWPM: Int = recentTimed.map {
-            PracticeEvaluator.paceSnapshot(forTranscript: $0.transcript, duration: $0.duration).wordsPerMinute
-        } ?? 0
-        let fallbackCaseFile = coachMemoryStore.currentMemory?.caseFile
-        let fallbackContext = ChatFallbackContext(
-            voice: voice,
-            recentTimedTranscript: recentTimed?.transcript,
-            recentTimedPrompt: recentTimed?.prompt,
-            recentWordsPerMinute: recentTimedWPM,
-            recentFillerCount: recentTimed?.fillerWordCount ?? 0,
-            hypothesis: fallbackCaseFile?.hypothesis,
-            observableTarget: fallbackCaseFile?.observableTarget,
-            successMeasure: fallbackCaseFile?.successMeasure,
-            nextQuestion: fallbackCaseFile?.nextQuestion
-        )
-        let history = await MainActor.run { store.replayForModel }
-        let outcome = await AICoachChatService.shared.reply(
-            history: history,
-            systemPrompt: systemPrompt,
-            userContext: context,
-            fallback: fallbackContext
-        )
-        await MainActor.run {
-            store.completeCoachTurn(id: coachID, outcome: outcome)
-            // S5 — spoken coach mode. This is the single chokepoint where a
-            // reply becomes visible, so it's the one place the spoken path is
-            // triggered. `shouldSpeak` gates on: toggle ON, locale supports AI
-            // (non-English stays text-only, mirroring the chat-reply gate), and
-            // a real non-empty `.reply` (a `.failure` system notice is NEVER
-            // spoken). `speak()` internally `stop()`s any in-flight clip and
-            // bumps its generation token, so back-to-back replies stay paired
-            // with their own audio. When no TTS provider is configured the
-            // toggle is hidden upstream, so this only ever fires when speaking
-            // can actually be served; if it somehow fires without a provider,
-            // `speak()` records a failure and plays nothing — no raw error
-            // reaches the user, and the text reply is already on screen.
-            if AskNoumSpokenMode.shouldSpeak(
-                outcome: outcome,
-                spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
-                localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
-            ), case .reply(let replyText) = outcome {
-                speaker.speak(
-                    replyText,
-                    setup: IMConversationSetup(
-                        scenario: .workUpdate,
-                        targetTone: AskNoumSpokenMode.coachTone(for: voice)
-                    )
+        if AskNoumSpokenMode.shouldSpeak(
+            outcome: outcome,
+            spokenRepliesEnabled: voiceSettings.askNoumSpokenRepliesEnabled,
+            localeSupportsAI: LocaleSettingsManager.shared.current.aiSupported
+        ), case .reply(let replyText) = outcome {
+            speaker.speak(
+                replyText,
+                setup: IMConversationSetup(
+                    scenario: .workUpdate,
+                    targetTone: AskNoumSpokenMode.coachTone(for: voice)
                 )
+            )
+        }
+    }
+
+    /// Progressively reveal a just-landed coach reply, word by word, so the
+    /// coach reads as *writing to you* rather than the text popping in. The
+    /// store already holds the full text; this only drives the visible prefix
+    /// (`revealedText`) for `message.id`. Cancellable — a new turn or a view
+    /// teardown cancels the task so it never writes state for a superseded row.
+    /// Caller guarantees reduce-motion is OFF (the instant path skips this).
+    @MainActor
+    private func startReveal(of message: CoachMessage, proxy: ScrollViewProxy) {
+        revealTask?.cancel()
+        revealingMessageID = message.id
+        revealedText = ""
+        let words = message.text.split(separator: " ", omittingEmptySubsequences: false)
+        revealTask = Task { @MainActor in
+            var assembled = ""
+            for (i, word) in words.enumerated() {
+                if Task.isCancelled { return }
+                assembled += i == 0 ? String(word) : " " + word
+                revealedText = assembled
+                // Keep the growing bubble in view without thrashing the
+                // scroller — nudge every few words, not every word.
+                if i % 4 == 0 { scrollToBottom(proxy: proxy) }
+                try? await Task.sleep(nanoseconds: 30_000_000) // ~30ms/word
             }
+            if Task.isCancelled { return }
+            // Hand back to the store's full `message.text` (identical to the
+            // assembled string) so the bubble's source of truth is the store.
+            revealingMessageID = nil
+            revealedText = ""
+            scrollToBottom(proxy: proxy)
         }
     }
 
