@@ -2377,6 +2377,159 @@ enum CoachContextBuilder {
         return "- Case-anchored amplification: the user has both pushed back on the original read AND confirmed the rebuilt working hypothesis above; treat follow-on evidence on the active intervention as case-anchored, not exploratory. Speak with conviction on the carrying read; do not re-open the original."
     }
 
+    // MARK: - Intervention under repeated pushback (round 38 — round-37 mirror on the .rejected branch)
+    //
+    // Round 38 — the dampening complement to round 37's case-anchored
+    // amplification. When the user has BOTH pushed back on the original read
+    // AND lodged a `.rejected` verdict on the rebuilt read within the recency
+    // window, the active intervention is under repeated pushback. The chat
+    // coach should DAMPEN — slow down on follow-on reads, ask one focused
+    // question that would discriminate the next read from the two the user
+    // has rejected, and not re-prescribe the same intervention unchanged.
+    //
+    // Round 37 covered the `.confirmed` branch (user ratified the rebuild →
+    // case-anchored amplification, speak with conviction). Round 38 closes
+    // the symmetric gap on the `.rejected` branch (user rejected the rebuild
+    // too → intervention is under repeated pushback, slow down). The
+    // `.uncertain` branch deliberately has no dedicated dampening or
+    // amplification line: the round-32 rebuild-verdict block already carries
+    // the .uncertain instruction ("ask one focused question that would
+    // discriminate this read from the alternatives") and the intervention is
+    // neither anchored nor under pushback — it is awaiting evidence.
+    //
+    // Round 38 is the SAME shape as round 37: pure additive surface, the
+    // active intervention's persisted fields are untouched (no `reviewStatus`
+    // lift, no schema bump, no migration). The dampening is signalled to the
+    // model via ONE additional context line in `interventionCycleLines`,
+    // which the chat coach reads on every reply.
+    //
+    // Mutual exclusion with round 37: the two predicates gate on opposite
+    // `confidence` values (`.confirmed` for round 37, `.rejected` for round
+    // 38). Only one can fire per memory state. They cannot both surface a
+    // line on the same chat reply.
+    //
+    // Cross-surface contract with the round-32 `rebuildVerdictContextLines`:
+    // round 38 is a STRICTER subset of round 32 on the `.rejected` branch —
+    // round 38 implies round 32, but round 32 does not imply round 38 (round
+    // 32 fires on confirmed/uncertain acks and on acks lodged outside the
+    // recency window). The two lines layer cleanly: round 32 names the
+    // rebuild-verdict event (the user pushed back twice); round 38 names the
+    // durable under-repeated-pushback state for the carrying intervention.
+    // Both can fire on the same reply.
+    //
+    // Cross-surface contract with the round-33 `freshRevisedReadContextLines`
+    // second-cycle branch: round 33 fires on the NEXT memory rebuild after
+    // the user pushed back twice (the engine has folded the second-cycle
+    // pushback into the adaptation log; the chip-row ack is dropped). Round
+    // 38 fires BEFORE the engine has rebuilt — the ack is still carried and
+    // the chat coach reads the dampening signal directly. The two are
+    // sequential on the timeline: round 38 (chip-row ack carried) → engine
+    // rebuild → round 33 (adaptation log marker, ack dropped). Both surfaces
+    // tell the model the intervention is under repeated pushback; round 38
+    // does it on the immediate chat reply, round 33 does it after the next
+    // rebuild folds the signal in.
+
+    /// Recency window for the round-38 under-repeated-pushback predicate.
+    /// The user's rejection of the rebuilt read must have been lodged within
+    /// this many days for the active intervention to be treated as under
+    /// repeated pushback. Beyond this window the ack is durable in memory
+    /// but the case may have aged enough that today's follow-on evidence is
+    /// no longer dampened by an old rejection — the chat coach should fall
+    /// back to the round-32 rebuild-verdict line (which carries no recency
+    /// gate) rather than double-emit a dampening line on a stale rejection.
+    ///
+    /// Pinned to the same horizon as round 37's amplification recency
+    /// (`caseAnchoredAmplificationRecencyDays`) so the case-anchoring and
+    /// the under-pushback windows close on the same day after the verdict
+    /// — coaching parity stays symmetric on the two branches. Pure
+    /// constant, locked by a brand-voice-style test for regression
+    /// protection and by an equality test against the round-37 constant.
+    static let repeatedPushbackRecencyDays: Int = 14
+
+    /// Pure predicate: returns true iff the carrying active intervention's
+    /// follow-on evidence should be dampened, i.e. the user has both pushed
+    /// back on the original read AND lodged a `.rejected` verdict on the
+    /// rebuilt read within the recency window. Five gates, ALL required —
+    /// the exact mirror of `caseAnchoredAmplificationApplies` on the
+    /// `.rejected` branch:
+    ///
+    ///   1. `memory.hypothesisAcknowledgement` carries a `.rejected`
+    ///      confidence (the user pushed back on the rebuilt read too).
+    ///   2. The ack `appliesTo(currentHypothesis: memory.workingHypothesis)`
+    ///      — the rebuilt read the user rejected is still the operating
+    ///      hypothesis (a later memory rebuild that rewrote the read drops
+    ///      the predicate; the user's rejection belongs to a hypothesis
+    ///      that no longer exists).
+    ///   3. The ack was lodged within `repeatedPushbackRecencyDays` of
+    ///      `now` (defensive — stale rejection does not dampen a current
+    ///      case state).
+    ///   4. The latest `adaptationLog` entry `documentsUserPushback` — the
+    ///      rebuild that produced the carrying hypothesis was itself
+    ///      user-driven, not an engine-only lever shift. (An engine-only
+    ///      shift followed by a rejection does not satisfy "the user
+    ///      pushed back on both the original AND the rebuilt read".)
+    ///   5. The ack's `acknowledgedAt` is at or after the change's
+    ///      `changedAt` (same ordering contract as round 37 and
+    ///      `rebuildVerdictPair` — a stale ack from before the rebuild
+    ///      does not register as a rejection of it).
+    ///
+    /// All five gates are pure reads on memory fields the engine already
+    /// writes; no new persisted state, no schema bump, no migration.
+    /// Memories persisted before round 38 read `false` automatically — the
+    /// predicate is dark until both signals (pushback rebuild + rejection)
+    /// coexist.
+    ///
+    /// Mutual exclusion with `caseAnchoredAmplificationApplies`: the two
+    /// predicates gate on `ack.confidence == .confirmed` and
+    /// `ack.confidence == .rejected` respectively. The two cannot both
+    /// return `true` for the same memory state — `confidence` is a single
+    /// enum case at any point in time.
+    static func interventionUnderRepeatedPushbackApplies(
+        in memory: CoachMemory,
+        now: Date
+    ) -> Bool {
+        guard let ack = memory.hypothesisAcknowledgement,
+              ack.confidence == .rejected,
+              ack.appliesTo(currentHypothesis: memory.workingHypothesis) else { return false }
+        let recencyInterval = TimeInterval(repeatedPushbackRecencyDays * 24 * 60 * 60)
+        guard now.timeIntervalSince(ack.acknowledgedAt) <= recencyInterval else { return false }
+        guard let lastChange = memory.adaptationLog?.last,
+              lastChange.documentsUserPushback,
+              ack.acknowledgedAt >= lastChange.changedAt else { return false }
+        return true
+    }
+
+    /// Returns ONE additional context line when the under-repeated-pushback
+    /// predicate fires AND an active intervention is being surfaced.
+    /// Returns `nil` otherwise so the caller can skip emitting.
+    ///
+    /// Read by `interventionCycleLines` after the active-intervention block,
+    /// at the same call site as round 37's amplification line. The two
+    /// surfaces are mutually exclusive at the predicate level (confirmed
+    /// XOR rejected ack), so the worst-case line count stays the same as
+    /// it was after round 37 landed.
+    ///
+    /// The line is intentionally short — one calm sentence that names the
+    /// repeated-pushback state AND tells the model to slow down, ask a
+    /// discriminating question, and avoid re-prescribing the same
+    /// intervention. Brand-voice rules: no exclamation, no "Let's", no
+    /// "we", no "sorry", no hype, no shame framing on the rejection (the
+    /// user steering the coach is a healthy signal, not a failure state).
+    ///
+    /// The line does NOT duplicate the round-32 rebuild-verdict block's
+    /// content (that block names the rebuild-verdict event); round 38
+    /// names the durable under-repeated-pushback state the rejection
+    /// establishes for the carrying intervention's follow-on evidence —
+    /// a related but distinct signal the model can act on independently.
+    static func interventionUnderRepeatedPushbackContextLine(
+        memory: CoachMemory,
+        now: Date
+    ) -> String? {
+        guard interventionUnderRepeatedPushbackApplies(in: memory, now: now) else { return nil }
+        guard memory.activeIntervention != nil else { return nil }
+        return "- Intervention under repeated pushback: the user has both pushed back on the original read AND lodged a no-fit verdict on the rebuilt working hypothesis above; treat the active intervention as under repeated pushback. Slow down on follow-on reads, ask one focused question that would discriminate the next read from the two the user has rejected, and do not re-prescribe the same intervention unchanged."
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -3522,6 +3675,19 @@ enum CoachContextBuilder {
                 now: memory.updatedAt
             ) {
                 lines.append(amplificationLine)
+            }
+            // Round-38: under-repeated-pushback dampening — mirror of round
+            // 37 on the `.rejected` branch. Mutually exclusive with the
+            // round-37 amplification at the predicate level (confirmed XOR
+            // rejected ack), so at most ONE of the two lines fires per
+            // chat reply. The 9-line cap on this block is preserved:
+            // worst case (5 base intervention lines + 1 round-37-or-38
+            // line + 2 round-32 verdict lines) = 8, under cap.
+            if let repeatedPushbackLine = interventionUnderRepeatedPushbackContextLine(
+                memory: memory,
+                now: memory.updatedAt
+            ) {
+                lines.append(repeatedPushbackLine)
             }
         }
 

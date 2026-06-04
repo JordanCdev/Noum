@@ -29622,6 +29622,793 @@ struct CaseAnchoredAmplificationTests {
     }
 }
 
+// MARK: - InterventionUnderRepeatedPushbackTests
+//
+// Round 38 — companion to round 37 on the `.rejected` branch.
+//
+// Round 37 added a `.confirmed`-recency predicate + intervention-cycle
+// context line saying the active intervention is CASE-ANCHORED and
+// telling the model to treat follow-on evidence as case-anchored (speak
+// with conviction). Round 38 mirrors that work on the `.rejected`
+// branch: when the user has BOTH pushed back on the original read AND
+// lodged a no-fit verdict on the rebuilt read within the recency window,
+// the active intervention is under repeated pushback. The chat coach
+// should DAMPEN — slow down, ask one focused question that would
+// discriminate the next read from the two the user has rejected, and
+// not re-prescribe the same intervention unchanged.
+//
+// Predicate-driven, pure-context surface. Five gates (mirror of round 37):
+// `.rejected` ack on a hypothesis that still applies, ack inside the
+// recency window, latest adaptation entry documents a user pushback, and
+// the ack post-dates the rebuild. When all five hold, the chat-coach
+// user-context block emits ONE additional INTERVENTION CYCLE line
+// telling the model to treat the active intervention as under repeated
+// pushback.
+//
+// Cross-surface contract:
+//   - Round 38 is a STRICTER subset of round 32's `rebuildVerdictPair`
+//     on the `.rejected` branch — round 38 implies round 32, but round
+//     32 does not imply round 38 (round 32 fires on
+//     `.confirmed`/`.uncertain` and on rejections outside the recency
+//     window).
+//   - Round 37 and round 38 are MUTUALLY EXCLUSIVE at the predicate
+//     level — `ack.confidence == .confirmed` for round 37 vs
+//     `ack.confidence == .rejected` for round 38. The two cannot both
+//     return true on the same memory state.
+//   - Round 33's `freshRevisedReadContextLines` second-cycle branch
+//     fires AFTER the next engine rebuild folds the second-cycle
+//     pushback into the adaptation log (the chip-row ack is dropped).
+//     Round 38 fires BEFORE that rebuild — the ack is still carried.
+//     The two surfaces are sequential on the timeline, not duplicated.
+//
+// Anti-overclaim rails:
+//   - The line surfaces ONLY when an active intervention exists. Without
+//     a carrying intervention, "under repeated pushback" has nothing to
+//     point at.
+//   - The recency window is bounded (14 days, pinned to the same
+//     constant as round 37 for symmetry). Stale rejection does not
+//     dampen follow-on evidence indefinitely.
+//   - The predicate requires the prior rebuild to be USER-DRIVEN (a
+//     `documentsUserPushback` change). Engine-only lever shifts followed
+//     by a rejection do NOT satisfy the predicate — the user did not
+//     push back on BOTH the original AND the rebuilt read; they only
+//     rejected the engine's shift.
+//   - The line copy reads the rejection as the user steering the coach,
+//     not as a failure state. No shame framing, brand-voice compliant.
+
+@MainActor
+@Suite("InterventionUnderRepeatedPushbackTests")
+struct InterventionUnderRepeatedPushbackTests {
+
+    // MARK: - Fixtures
+
+    private static let rebuiltHypothesis =
+        "Pace appears to be the highest-leverage focus across recent reps."
+
+    private static func pushbackChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "user-tapped rejection of: \"prior read\""
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func engineOnlyChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "declining trend in recent reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func ack(
+        _ confidence: CoachHypothesisConfidence,
+        at acknowledgedAt: Date,
+        snapshot: String = rebuiltHypothesis
+    ) -> CoachHypothesisAcknowledgement {
+        CoachHypothesisAcknowledgement(
+            confidence: confidence,
+            hypothesisSnapshot: snapshot,
+            acknowledgedAt: acknowledgedAt
+        )
+    }
+
+    private static func sampleIntervention() -> CoachIntervention {
+        CoachIntervention(
+            title: "Ah Counter",
+            focus: "filler reduction",
+            target: "Two clean closing sentences",
+            mode: .ahCounter,
+            prescribedAt: Date(timeIntervalSince1970: 1_000),
+            lastObservedAt: nil,
+            followedRepCount: 1,
+            minimumFollowedRepsForReview: 2,
+            reviewStatus: .formingEvidence,
+            reviewBasis: "evidence is still forming on this prescription"
+        )
+    }
+
+    private static func memory(
+        updatedAt: Date = Date(),
+        adaptationLog: [CoachCourseChange]?,
+        workingHypothesis: String? = rebuiltHypothesis,
+        hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil,
+        activeIntervention: CoachIntervention? = sampleIntervention()
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            voice: .authoritative,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "rebuilt after user pushback",
+            previousLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis,
+            activeIntervention: activeIntervention,
+            hypothesisAcknowledgement: hypothesisAcknowledgement,
+            adaptationLog: adaptationLog
+        )
+    }
+
+    private func sampleProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .authoritative,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    // MARK: - Pure constant
+
+    @Test func recencyWindowMatchesRound37Horizon() {
+        // Two weeks tracks the same horizon round 37's amplification
+        // recency uses, so case-anchoring and under-pushback windows
+        // close on the same day after the verdict. Coaching parity stays
+        // symmetric on the two branches.
+        #expect(CoachContextBuilder.repeatedPushbackRecencyDays == 14)
+    }
+
+    @Test func recencyWindowEqualsRound37AmplificationWindow() {
+        // Cross-surface symmetry pin: the two recency constants must
+        // stay equal. A future copy edit that drifts one without the
+        // other fails this test deliberately. The case-anchoring and
+        // under-pushback signals are coordinated, not independently
+        // tunable.
+        #expect(
+            CoachContextBuilder.repeatedPushbackRecencyDays
+                == CoachContextBuilder.caseAnchoredAmplificationRecencyDays
+        )
+    }
+
+    // MARK: - Pure predicate
+
+    @Test func predicateFiresWhenRejectedAckPostDatesPushbackRebuildWithinWindow() {
+        // Happy path: all five gates open. Latest adaptation entry is a
+        // user pushback; the carried ack is `.rejected`; ack snapshot
+        // matches current hypothesis; ack timestamp is after the rebuild
+        // and within the recency window of `now`. Predicate fires.
+        let now = Date()
+        let changedAt = now.addingTimeInterval(-3600)
+        let ackAt = changedAt.addingTimeInterval(60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == true)
+    }
+
+    @Test func predicateDarkOnConfirmedAck() {
+        // `.confirmed` is round 37's territory — the case-anchored
+        // amplification path. The dampening predicate must NOT fire on
+        // a ratified rebuild; the two surfaces are mutually exclusive.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnUncertainAck() {
+        // `.uncertain` is the "still settling" verdict — the user has not
+        // pushed back on the rebuild AND has not ratified it. Dampening
+        // must NOT fire; the round-32 rebuild-verdict block carries the
+        // uncertain branch with an "ask a focused question" instruction.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenNoAckCarried() {
+        // No ack lodged: the predicate has no rejection to dampen
+        // against. The window between the rebuild folding in and the
+        // user tapping a chip is round 31's territory, not round 38's.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now)],
+            hypothesisAcknowledgement: nil
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenAckSnapshotNoLongerApplies() {
+        // The ack's snapshot is the rebuilt hypothesis the user rejected.
+        // If a later memory rebuild rewrote the working hypothesis, the
+        // ack does not apply to the current case — dampening must drop.
+        // Mirrors the round-32 and round-37 same-case-spine contract.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            workingHypothesis: "An entirely different read after a later rebuild.",
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenWorkingHypothesisIsNil() {
+        // A missing working hypothesis has nothing for the ack snapshot
+        // to apply to — `appliesTo` returns false for nil/blank.
+        // Defensive pin: dampening must not surface against an empty
+        // case.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            workingHypothesis: nil,
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt, snapshot: "")
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenAckIsOutsideRecencyWindow() {
+        // The recency window guards dampening against a stale rejection.
+        // 14 days + a second past the ack-lodge time must close the
+        // window — the carrying intervention may have aged enough that
+        // today's follow-on evidence is no longer dampened by an old
+        // rejection.
+        let now = Date()
+        let outsideWindowSeconds: TimeInterval = TimeInterval(15 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-outsideWindowSeconds)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresAtExactRecencyBoundary() {
+        // Edge case: ack timestamp is exactly `recencyDays * 86400`
+        // seconds before `now`. The predicate uses `<=` so the boundary
+        // is inclusive — a rejection lodged exactly 14 days ago still
+        // dampens. Mirrors the round-37 inclusive boundary for symmetry.
+        let now = Date()
+        let exactWindowSeconds: TimeInterval = TimeInterval(14 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-exactWindowSeconds)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == true)
+    }
+
+    @Test func predicateDarkWhenLatestChangeIsEngineOnly() {
+        // The prior rebuild must be USER-DRIVEN. An engine-only lever
+        // shift followed by a `.rejected` ack on the new hypothesis does
+        // NOT satisfy the predicate — the user did not push back on the
+        // prior read, they only rejected the engine's shift. Round 32's
+        // rebuildVerdictPair carries the engine-only rejection signal
+        // through its own pair; round 38 is reserved for the
+        // pushback-then-reject pattern (two user pushbacks in a row).
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.engineOnlyChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnNilAdaptationLog() {
+        // No adaptation log = no rebuild history. Memory persisted
+        // before the round-19 adaptation-log lift decodes with nil;
+        // predicate must be dark automatically, no migration needed.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: nil,
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnEmptyAdaptationLog() {
+        // Defensive: empty log is the same shape as nil for the
+        // predicate.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenAckPreDatesRebuild() {
+        // An ack lodged BEFORE the rebuild was folded in cannot register
+        // as a rejection of it. Same ordering contract as
+        // `rebuildVerdictPair` and round 37 — the `>= changedAt` check
+        // is the structural pin that ties the ack to THIS rebuild.
+        let now = Date()
+        let changedAt = now.addingTimeInterval(-60)
+        let staleAckAt = changedAt.addingTimeInterval(-300)
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: changedAt)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: staleAckAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresWhenAckExactlyAtRebuildTime() {
+        // Inclusive boundary on the ack-after-rebuild ordering. Mirrors
+        // the `rebuildVerdictPair` `>= changedAt` contract and the
+        // round-37 boundary so a fixture (or real clock skew within the
+        // same millisecond) does not flip the predicate.
+        let now = Date()
+        let sharedTime = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: sharedTime,
+            adaptationLog: [Self.pushbackChange(at: sharedTime)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: sharedTime)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == true)
+    }
+
+    @Test func predicateReadsLatestChangeOnly() {
+        // Mixed history: earlier pushback (the rebuild the user
+        // rejected), latest engine-only shift on top. The predicate
+        // reads `.last` — the latest is engine-only — so dampening must
+        // drop. The user's `.rejected` belongs to a case that has since
+        // been course-corrected by the engine, so follow-on evidence is
+        // no longer dampened by the original pushback-reject pair.
+        let now = Date()
+        let earlier = Self.pushbackChange(at: now.addingTimeInterval(-3600))
+        let latest = Self.engineOnlyChange(at: now.addingTimeInterval(-60))
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [earlier, latest],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now.addingTimeInterval(-300))
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false)
+    }
+
+    // MARK: - Pure context-line helper
+
+    @Test func contextLineFiresWhenPredicateAndActiveInterventionPresent() {
+        // Happy path: predicate fires AND an active intervention exists
+        // → line emits. Pure-helper return is non-nil and starts with
+        // the canonical lead `"- Intervention under repeated pushback:"`.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let line = CoachContextBuilder.interventionUnderRepeatedPushbackContextLine(
+            memory: mem,
+            now: now
+        )
+        #expect(line != nil)
+        #expect(line?.hasPrefix("- Intervention under repeated pushback:") == true)
+    }
+
+    @Test func contextLineDarkWhenNoActiveIntervention() {
+        // The under-pushback state BY DEFINITION refers to the active
+        // intervention. With no carrying intervention there is nothing
+        // to dampen — the line must drop even when the predicate fires.
+        // Restraint pin: a future round that surfaces under-pushback copy
+        // OUTSIDE the active-intervention block must build a different
+        // helper rather than overload this one.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt),
+            activeIntervention: nil
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackContextLine(
+                memory: mem,
+                now: now
+            ) == nil
+        )
+    }
+
+    @Test func contextLineDarkWhenPredicateDark() {
+        // Sanity pin: when the predicate is dark, the helper returns nil
+        // regardless of whether the active intervention is present.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now)
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackContextLine(
+                memory: mem,
+                now: now
+            ) == nil
+        )
+    }
+
+    @Test func contextLineNamesUnderPushbackStateAndDampeningInstruction() {
+        // Behavioural contract: the line names BOTH halves of the
+        // repeated-pushback state — the user pushed back AND rejected
+        // the rebuild — AND tells the model to slow down, ask a
+        // discriminating question, and not re-prescribe the same
+        // intervention. A future copy edit that drops any clause fails
+        // this test.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let line = CoachContextBuilder.interventionUnderRepeatedPushbackContextLine(
+            memory: mem,
+            now: now
+        ) ?? ""
+        #expect(line.contains("pushed back on the original read"))
+        #expect(line.contains("no-fit verdict on the rebuilt working hypothesis"))
+        #expect(line.contains("under repeated pushback"))
+        #expect(line.contains("Slow down"))
+        #expect(line.contains("discriminate"))
+        #expect(line.contains("do not re-prescribe the same intervention unchanged"))
+    }
+
+    // MARK: - Brand voice
+
+    @Test func contextLineIsBrandVoiceCompliant() {
+        // Standard brand-voice rails on the new context line: no
+        // exclamation, no "Let's", no "we", no "sorry", no shame
+        // framing on the rejection (the user steering the coach is a
+        // healthy signal, not a failure state). Mirrors round 37's
+        // brand-voice rules so the under-pushback copy reads in the
+        // same register as the rest of the case-spine surfaces.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let line = CoachContextBuilder.interventionUnderRepeatedPushbackContextLine(
+            memory: mem,
+            now: now
+        ) ?? ""
+        #expect(!line.contains("!"))
+        #expect(!line.lowercased().contains("let's"))
+        #expect(!line.lowercased().contains(" we "))
+        #expect(!line.lowercased().contains("sorry"))
+        // Shame-adjacent terms reserved for the round-32 verdict block's
+        // anti-overclaim rails — also kept off the round-38 surface for
+        // consistency. The line is calm and instructional, not punitive.
+        #expect(!line.lowercased().contains("failed"))
+        #expect(!line.lowercased().contains("failure"))
+        #expect(!line.lowercased().contains("wrong"))
+    }
+
+    // MARK: - Cross-surface contract (round 32 ↔ round 38)
+
+    @Test func round38IsStricterSubsetOfRound32OnRejectedBranch() {
+        // Cross-surface contract: round 38 implies round 32 on the
+        // `.rejected` branch — every memory state where round 38 fires
+        // must ALSO satisfy round 32's `rebuildVerdictPair`. The two
+        // surfaces share the rebuild-then-reject structural anchor;
+        // round 38 adds the recency gate on top.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == true
+        )
+        // Round 32's rebuildVerdictPair must also fire on the same state.
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem)?.ack.confidence == .rejected)
+    }
+
+    @Test func round32CanFireWithoutRound38WhenAckIsConfirmed() {
+        // Reverse direction: round 32 does NOT imply round 38. A
+        // `.confirmed` ack fires round 32 (and round 37's case-anchored
+        // amplification) but must NOT fire round 38. The two surfaces
+        // are mutually exclusive on the `confidence` field.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false
+        )
+    }
+
+    @Test func round32CanFireWithoutRound38WhenAckIsUncertain() {
+        // `.uncertain` ack is the "still settling" signal — round 32's
+        // uncertain branch fires (and asks for a focused discriminating
+        // question), but round 38 must NOT fire because the user did
+        // not REJECT the rebuild — they signalled uncertainty. The
+        // under-pushback state has not been established.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false
+        )
+    }
+
+    @Test func round32FiresOutsideRecencyButRound38Drops() {
+        // Cross-surface contract: round 32 has no recency gate; round 38
+        // does. A `.rejected` ack lodged outside the 14-day window still
+        // fires round 32 (the verdict survives the rep boundary) but
+        // must NOT fire round 38 — the stale rejection does not dampen
+        // today's evidence.
+        let now = Date()
+        let outsideWindowSeconds: TimeInterval = TimeInterval(20 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-outsideWindowSeconds)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) != nil)
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false
+        )
+    }
+
+    // MARK: - Mutual exclusion with round 37
+
+    @Test func round37AndRound38AreMutuallyExclusiveOnConfirmedAck() {
+        // The two predicates gate on opposite `confidence` values. A
+        // `.confirmed` ack fires round 37 → round 38 must be dark.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == true
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false
+        )
+    }
+
+    @Test func round37AndRound38AreMutuallyExclusiveOnRejectedAck() {
+        // The mirror: a `.rejected` ack fires round 38 → round 37 must
+        // be dark. The two surfaces cannot coexist on the same chat
+        // reply.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == true
+        )
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false
+        )
+    }
+
+    @Test func round37AndRound38BothDarkOnUncertainAck() {
+        // `.uncertain` belongs to neither branch — round 32's "still
+        // settling" instruction is the canonical surface. Pin both as
+        // dark together so a future refactor that drops the confidence
+        // gate on either path is caught.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: ackAt)
+        )
+        #expect(
+            CoachContextBuilder.caseAnchoredAmplificationApplies(in: mem, now: now) == false
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: mem, now: now) == false
+        )
+    }
+
+    // MARK: - userContext integration
+
+    @Test func userContextSurfacesUnderPushbackLineInInterventionCycle() {
+        // Integration: full `userContext` build should carry the
+        // dampening line in the INTERVENTION CYCLE block when the
+        // predicate fires AND the memory carries an active intervention.
+        // Pins the wiring path (active-intervention block in
+        // `interventionCycleLines`) end-to-end, not just the pure helper.
+        let ackAt = Date()
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
+        #expect(ctx.contains("Intervention under repeated pushback:"))
+        #expect(ctx.contains("treat the active intervention as under repeated pushback"))
+    }
+
+    @Test func userContextDoesNotSurfaceUnderPushbackWhenNoActiveIntervention() {
+        // Predicate fires but memory has no active intervention →
+        // dampening line must not surface. The round-32 verdict line
+        // can still fire (it does not require an active intervention),
+        // so the chat coach still sees the rejection verdict — just not
+        // the under-pushback clause.
+        let ackAt = Date()
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt),
+            activeIntervention: nil
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Intervention under repeated pushback:") == false)
+        // Round-32 line is still expected (verdict survives without
+        // an active intervention) — sanity pin on the layered design.
+        #expect(ctx.contains("Case file rebuild verdict:"))
+    }
+
+    @Test func userContextLayersRound32AndRound38LinesOnHappyPath() {
+        // The two lines coexist on a rejected-rebuild-in-recency state.
+        // Round 32 names the verdict event; round 38 names the durable
+        // under-pushback state. Both surface in the same chat reply
+        // when the predicate fires.
+        let ackAt = Date()
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Case file rebuild verdict:"))
+        #expect(ctx.contains("Intervention under repeated pushback:"))
+    }
+
+    @Test func userContextNeverSurfacesBothRound37AndRound38OnSameReply() {
+        // The two intervention-cycle additions are mutually exclusive at
+        // the predicate level (confirmed XOR rejected ack). End-to-end
+        // pin: the rendered context must never contain BOTH lines on the
+        // same chat reply, regardless of the ack confidence.
+        let ackAt = Date()
+
+        let confirmedMem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let confirmedCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: confirmedMem
+        )
+        #expect(confirmedCtx.contains("Case-anchored amplification:"))
+        #expect(confirmedCtx.contains("Intervention under repeated pushback:") == false)
+
+        let rejectedMem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [Self.pushbackChange(at: ackAt.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        let rejectedCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: rejectedMem
+        )
+        #expect(rejectedCtx.contains("Intervention under repeated pushback:"))
+        #expect(rejectedCtx.contains("Case-anchored amplification:") == false)
+    }
+}
+
 // MARK: - SecondCyclePushbackContextTests
 //
 // Round 33 — pins the chat-coach user-context block's response to a
