@@ -265,12 +265,14 @@ final class AskNoumVoiceInput: ObservableObject {
 
         #if canImport(AVFoundation)
         let session = AVAudioSession.sharedInstance()
-        // Use `.record` with `.spokenAudio` mode so the OS treats our
-        // capture as voice input — quieter mic processing, no music
-        // ducking surprises. Ask Noum's chat doesn't need playback so
-        // we don't entangle with the soundscape mixer.
+        // `.playAndRecord` (not `.record`) because the live coach call
+        // interleaves mic capture with the coach's TTS playback — a `.record`
+        // session can't coexist with playback, so alternating the two thrashed
+        // the audio route (failed mic starts / "timed out waiting for Stop").
+        // `.spokenAudio` keeps voice-optimised processing; `.defaultToSpeaker`
+        // routes the coach's voice out loud; `.duckOthers` quiets the soundscape.
         do {
-            try session.setCategory(.record, mode: .spokenAudio, options: [])
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
             try session.setActive(true, options: [])
         } catch {
             unavailableReason = .temporarilyUnavailable
