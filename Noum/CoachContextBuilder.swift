@@ -2530,6 +2530,195 @@ enum CoachContextBuilder {
         return "- Intervention under repeated pushback: the user has both pushed back on the original read AND lodged a no-fit verdict on the rebuilt working hypothesis above; treat the active intervention as under repeated pushback. Slow down on follow-on reads, ask one focused question that would discriminate the next read from the two the user has rejected, and do not re-prescribe the same intervention unchanged."
     }
 
+    // MARK: - Case-anchored continuation through engine refinement (round 39 — durability for round 37)
+    //
+    // Round 39 — the durability complement to round 37's case-anchored
+    // amplification. Round 37 fires only while the LATEST adaptation entry
+    // documents a user pushback (the rebuild that produced the carrying
+    // hypothesis was user-driven). The first subsequent engine-only
+    // refinement — a quiet lever adjustment the engine writes without the
+    // user pushing back — drops the latest-entry predicate AND the chat
+    // coach loses the case-anchoring signal, even though the user's
+    // confirmation snapshot still applies to the working hypothesis and
+    // sits well within the recency window.
+    //
+    // That is a coach-parity gap on stage #2 (Case formulation) and stage
+    // #4 (Adaptation): the user's ratification of the rebuilt read should
+    // survive routine engine refinements that operate WITHIN that ratified
+    // frame, not be silenced by the first one. A human coach who heard a
+    // user ratify "pace is the focus" would not abandon that anchor the
+    // moment they noticed a small drift in the same direction; they would
+    // name the drift AS a refinement of the user-anchored read, not as a
+    // departure from it.
+    //
+    // Round 39 closes the gap with the LIGHTEST possible surface: ONE
+    // additional INTERVENTION CYCLE line, appended INSIDE the active-
+    // intervention block at the same call site as round 37/38 (mutually
+    // exclusive with BOTH at the predicate level — see below — so the
+    // worst-case line count is unchanged from round 38).
+    //
+    // Defensive scoping (intentional restraint, same shape as rounds 37/38):
+    //
+    //   - **Pure context surface, not engine state change.** No engine-level
+    //     amplification (e.g. extending the active intervention's
+    //     `reviewDueAt`, lifting its `reviewStatus`). Round 39 keeps the
+    //     impact bounded to the chat coach's context block — the same
+    //     surface rounds 30–38 fan out across — so the new signal is
+    //     testable in isolation and reversible if real-conversation
+    //     evidence shows the line as off.
+    //   - **Recency-gated, pinned to rounds 37/38.** The user's
+    //     confirmation within the round-37 recency window dampens; beyond
+    //     that, the carrying intervention may have aged enough that today's
+    //     engine-only refinements are no longer a continuation of the
+    //     ratified read — the chat coach should fall back to the generic
+    //     "Last course change" line. Round 39 reads the SAME constant
+    //     (`caseAnchoredAmplificationRecencyDays`) as rounds 37/38 by
+    //     deliberate cross-surface symmetry — all three windows close on
+    //     the same day after the verdict.
+    //   - **Mutually exclusive with round 37 on the latest entry's nature.**
+    //     Round 37 requires `lastChange.documentsUserPushback == true`;
+    //     round 39 requires `lastChange.documentsUserPushback == false`.
+    //     `documentsUserPushback` is a single boolean at any point in time,
+    //     so the two surfaces cannot BOTH fire on the same reply — pinned
+    //     end-to-end by `userContextNeverSurfacesBothRound37AndRound39OnSameReply`.
+    //   - **Mutually exclusive with round 38 on the ack confidence AND on
+    //     the latest entry's nature.** Round 38 requires `.rejected` ack
+    //     AND `lastChange.documentsUserPushback == true`. Round 39 requires
+    //     `.confirmed` ack AND `lastChange.documentsUserPushback == false`.
+    //     Two orthogonal gates flip — round 39 is dark whenever round 38
+    //     fires and vice versa. Pinned end-to-end by
+    //     `userContextNeverSurfacesBothRound38AndRound39OnSameReply`.
+    //   - **Cross-surface contract with round 32.** Round 32 requires the
+    //     LATEST entry to document a user pushback; round 39 requires it
+    //     NOT to. So round 32 is DARK whenever round 39 fires. That is the
+    //     point: round 32 names the rebuild-verdict EVENT (which fired on
+    //     the prior user pushback rebuild and surfaced in the chat coach's
+    //     context at that time); round 39 names the DURABLE case-anchoring
+    //     state that survives the subsequent engine refinement, when round
+    //     32 has gone dark. The two are sequential on the timeline:
+    //     pushback rebuild → round 32 + round 37 fire → engine refinement →
+    //     round 32 + round 37 go dark, round 39 fires.
+    //   - **Cross-surface contract with round 31.** Round 31
+    //     (`freshRevisedReadContextLines`) also requires the LATEST entry
+    //     to document a user pushback, so round 31 is dark whenever round
+    //     39 fires. The generic "Last course change" else-arm in
+    //     `interventionCycleLines` is what surfaces the engine refinement
+    //     as a course change; round 39 layers ON TOP of that line as the
+    //     durable case-anchoring signal. The two layer cleanly: the
+    //     generic line names the engine refinement; round 39 frames the
+    //     active intervention's read as the user's previously-ratified
+    //     rebuild that the engine has refined.
+
+    /// Pure predicate: returns true iff the carrying active intervention's
+    /// follow-on evidence should still be treated as case-anchored — even
+    /// after an engine-only refinement has post-dated the user's
+    /// confirmation — because the ratified hypothesis snapshot still
+    /// applies and the engine has refined WITHIN that anchor, not replaced
+    /// it. Five gates, ALL required:
+    ///
+    ///   1. `memory.hypothesisAcknowledgement` carries a `.confirmed`
+    ///      confidence (the user ratified the rebuilt read).
+    ///   2. The ack `appliesTo(currentHypothesis: memory.workingHypothesis)`
+    ///      — the rebuilt read the user ratified is still the operating
+    ///      hypothesis. A later memory rebuild that materially rewrote the
+    ///      working hypothesis drops the predicate; the user's
+    ///      confirmation belongs to a hypothesis that no longer exists,
+    ///      not to today's engine-refined frame.
+    ///   3. The ack was lodged within `caseAnchoredAmplificationRecencyDays`
+    ///      of `now` (defensive — stale confirmation does not anchor a
+    ///      current case state across an indefinite series of refinements).
+    ///   4. The LATEST `adaptationLog` entry is engine-only
+    ///      (`documentsUserPushback == false`) AND its `changedAt` is at
+    ///      or after the ack's `acknowledgedAt` (the engine refinement
+    ///      post-dates the user's ratification — without this gate, an
+    ///      engine refinement that pre-dates the ack would falsely fire
+    ///      the predicate, which is round 37's territory, not round 39's).
+    ///   5. There exists an entry in `adaptationLog` such that
+    ///      `documentsUserPushback == true` AND its `changedAt <=
+    ///      ack.acknowledgedAt` — the user's ratification was lodged on a
+    ///      USER-DRIVEN rebuild that's still represented in the log. This
+    ///      gate is the structural anchor that distinguishes round 39
+    ///      ("engine refined the user-ratified rebuild") from an entirely
+    ///      different state ("engine drifted the lever from a baseline
+    ///      reading the user happened to confirm with no prior pushback
+    ///      anywhere in the log"). Without this gate, a `.confirmed` ack
+    ///      on an engine-only baseline with later engine refinements would
+    ///      surface a case-anchored line that has no user-driven anchor
+    ///      behind it.
+    ///
+    /// All five gates are pure reads on memory fields the engine already
+    /// writes; no new persisted state, no schema bump, no migration.
+    /// Memories persisted before round 39 read `false` on the predicate
+    /// automatically — the predicate is dark until all five signals
+    /// (`.confirmed` ack, current snapshot match, recency, engine-only
+    /// latest entry post-dating the ack, prior user-pushback entry
+    /// pre-dating the ack) coexist.
+    ///
+    /// Mutual exclusion with `caseAnchoredAmplificationApplies` (round 37):
+    /// round 37 requires the latest entry to document a user pushback;
+    /// round 39 requires it NOT to. `documentsUserPushback` is a single
+    /// boolean per entry, so at most one of the two predicates returns
+    /// true for any memory state.
+    ///
+    /// Mutual exclusion with `interventionUnderRepeatedPushbackApplies`
+    /// (round 38): round 38 requires `.rejected` ack; round 39 requires
+    /// `.confirmed`. `confidence` is a single enum case at any point in
+    /// time, so the two predicates cannot both fire on the same memory.
+    static func caseAnchoredContinuationApplies(
+        in memory: CoachMemory,
+        now: Date
+    ) -> Bool {
+        guard let ack = memory.hypothesisAcknowledgement,
+              ack.confidence == .confirmed,
+              ack.appliesTo(currentHypothesis: memory.workingHypothesis) else { return false }
+        let recencyInterval = TimeInterval(caseAnchoredAmplificationRecencyDays * 24 * 60 * 60)
+        guard now.timeIntervalSince(ack.acknowledgedAt) <= recencyInterval else { return false }
+        guard let lastChange = memory.adaptationLog?.last,
+              lastChange.documentsUserPushback == false,
+              lastChange.changedAt >= ack.acknowledgedAt else { return false }
+        guard memory.adaptationLog?.contains(where: { change in
+            change.documentsUserPushback && change.changedAt <= ack.acknowledgedAt
+        }) == true else { return false }
+        return true
+    }
+
+    /// Returns ONE additional context line when the case-anchored
+    /// continuation predicate fires AND an active intervention is being
+    /// surfaced. Returns `nil` otherwise so the caller can skip emitting.
+    ///
+    /// Read by `interventionCycleLines` after rounds 37 and 38's call
+    /// sites, at the same call site within the active-intervention block.
+    /// Round 39 is mutually exclusive with both rounds 37 and 38 at the
+    /// predicate level (see the doc comment on
+    /// `caseAnchoredContinuationApplies`), so the worst-case line count
+    /// stays the same as it was after round 38 landed — at most one of
+    /// the three case-state lines (round 37 amplify / round 38 dampen /
+    /// round 39 continue) fires per chat reply.
+    ///
+    /// The line is intentionally short — one calm sentence that names the
+    /// case-anchored state AND tells the model how to resolve the natural
+    /// tension between two surfaces on the same reply: the generic "Last
+    /// course change" line above will name the engine refinement; round
+    /// 39 frames the active intervention's carrying read as the user's
+    /// previously-ratified rebuild that the engine has refined within,
+    /// not replaced. The model is invited to name how the engine's
+    /// refinement COMPLEMENTS the ratified read rather than departing
+    /// from it. Brand-voice rules: no exclamation, no "Let's", no "we",
+    /// no "sorry", no hype, no shame framing.
+    ///
+    /// The line does NOT duplicate the round-32 rebuild-verdict block's
+    /// content (round 32 is DARK whenever round 39 fires, by construction);
+    /// it complements the generic "Last course change" line that the
+    /// `interventionCycleLines` else-arm emits on the engine refinement.
+    static func caseAnchoredContinuationContextLine(
+        memory: CoachMemory,
+        now: Date
+    ) -> String? {
+        guard caseAnchoredContinuationApplies(in: memory, now: now) else { return nil }
+        guard memory.activeIntervention != nil else { return nil }
+        return "- Case-anchored continuation: the latest course change is an engine-only refinement applied on top of the user's previously-confirmed rebuild (still within the recency window); the active intervention's read remains the ratified rebuild, not a fresh exploration. Speak with quiet conviction on the carrying read. If you reference the latest course change, name how it complements the ratified read rather than replacing it; do not re-open the original."
+    }
+
     // MARK: - Starter prompts (per-voice)
 
     /// Suggested starter prompts shown above the input bar when the
@@ -3688,6 +3877,26 @@ enum CoachContextBuilder {
                 now: memory.updatedAt
             ) {
                 lines.append(repeatedPushbackLine)
+            }
+            // Round-39: case-anchored continuation through engine refinement
+            // — durability complement to round 37. Fires AFTER round 37
+            // would have fired and a subsequent engine-only refinement
+            // post-dated the user's confirmation. Mutually exclusive with
+            // BOTH round 37 (opposite latest-entry-nature gate) and round
+            // 38 (opposite ack-confidence gate) at the predicate level, so
+            // at most ONE of the three case-state lines (37/38/39) fires
+            // per chat reply. The 9-line cap on this block is preserved:
+            // worst case (5 base intervention lines + 1 round-37/38/39
+            // line + 2 round-32 verdict lines) = 8, under cap; AND in the
+            // round-39 firing state, round 32 is dark BY CONSTRUCTION
+            // (round 32 requires `last.documentsUserPushback`, round 39
+            // requires `!last.documentsUserPushback`), so the worst case
+            // in the round-39 branch is 6, well under cap.
+            if let continuationLine = caseAnchoredContinuationContextLine(
+                memory: memory,
+                now: memory.updatedAt
+            ) {
+                lines.append(continuationLine)
             }
         }
 
