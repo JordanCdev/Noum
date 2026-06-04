@@ -37,6 +37,9 @@ struct LiveCoachCallView: View {
     @State private var loopActive = false
     /// Last time the live transcript changed — drives silence detection.
     @State private var lastPartialAt = Date()
+    /// Typed-turn fallback (simulator / no mic) — drive the call without voice.
+    @State private var draft = ""
+    @FocusState private var typing: Bool
 
     /// Polls for end-of-turn silence. Cheap no-op unless we're recording.
     private let tick = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
@@ -88,6 +91,7 @@ struct LiveCoachCallView: View {
                 presence
                 captionArea
                 Spacer(minLength: 0)
+                composer
                 controlBar
             }
             .padding(.horizontal, Spacing.lg)
@@ -300,6 +304,57 @@ struct LiveCoachCallView: View {
               !speaker.isSpeaking
         else { return }
         startRecording()
+    }
+
+    // MARK: - Typed-turn fallback (simulator / no mic)
+
+    /// Always shown on the simulator (its audio I/O is unreliable); on device
+    /// only when the mic is unavailable. Lets you drive the whole call loop —
+    /// orb, reply, captions — without voice.
+    private var showComposer: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return !voiceInput.isAvailable
+        #endif
+    }
+
+    @ViewBuilder
+    private var composer: some View {
+        if showComposer {
+            HStack(spacing: Spacing.sm) {
+                TextField("Type your turn…", text: $draft, axis: .vertical)
+                    .foregroundStyle(.white)
+                    .tint(AppColor.proLight)
+                    .focused($typing)
+                    .submitLabel(.send)
+                    .onSubmit(submitDraft)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.10), in: Capsule())
+                Button(action: submitDraft) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(isDraftEmpty ? .white.opacity(0.3) : AppColor.proLight)
+                }
+                .buttonStyle(.plain)
+                .disabled(isDraftEmpty)
+                .accessibilityLabel("Send")
+            }
+            .padding(.top, Spacing.md)
+        }
+    }
+
+    private var isDraftEmpty: Bool {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submitDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        draft = ""
+        typing = false
+        handleUtterance(text)
     }
 
     private func handleUtterance(_ text: String) {
