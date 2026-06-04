@@ -654,8 +654,21 @@ enum CoachContextBuilder {
         // over the user's own IM reps; surfaced only when the prescribed
         // scenario carries a trajectory (≥4 evaluated reps), so the coach
         // never claims a movement it can't see.
+        //
+        // Round 42 — freshness gate. `toneDrillSignal` itself has no recency
+        // bound on the latest evaluated rep, so a scenario the user
+        // practiced 60+ days ago and still hasn't returned to would surface
+        // a TRAJECTORY line on every chat reply forever. Anchored against
+        // the user's most-recent rep across all history
+        // (`sessions.lazy.map(\.date).max()`), the section now drops past
+        // `toneDrillSolvedRecencyDays` (14 days, shared with the round-41
+        // SOLVED surface) from the prescribed scenario's latest evaluated
+        // rep. The recommendation engine still prescribes the drill (the
+        // gap is real) — only the chat-coach context surface gates.
         if let toneSignal = IMHistorySummary.toneDrillSignal(from: sessions),
-           let trajectoryLines = toneDrillTrajectoryLines(for: toneSignal) {
+           let trajectoryLines = toneDrillTrajectoryLines(for: toneSignal),
+           let mostRecentRepDate = sessions.lazy.map(\.date).max(),
+           toneDrillTrajectoryIsFresh(signal: toneSignal, in: sessions, now: mostRecentRepDate) {
             lines.append("")
             lines.append("TONE-DRILL TRAJECTORY (is the prescribed tone drill working?)")
             lines.append(contentsOf: trajectoryLines)
@@ -1033,6 +1046,71 @@ enum CoachContextBuilder {
 
     static func toneDrillSolvedIsFresh(_ resolved: IMToneDrillResolved, now: Date) -> Bool {
         let elapsed = now.timeIntervalSince(resolved.lastEvaluatedDate)
+        guard elapsed >= 0 else { return false }
+        let windowInterval = TimeInterval(toneDrillSolvedRecencyDays * 24 * 60 * 60)
+        return elapsed <= windowInterval
+    }
+
+    // MARK: - Tone-drill trajectory freshness window (round 42)
+    //
+    // The mirror of round 41's SOLVED freshness gate on the still-in-flight
+    // TRAJECTORY surface. `toneDrillSignal(from:)` returns a sub-bar scenario
+    // whenever `evaluatedCount >= 3` AND the hit rate is below
+    // `toneDrillMatchRateThreshold`. There is no recency gate on the
+    // latest-evaluated rep, so a scenario the user practiced 60 days ago,
+    // never returned to, and is still below the bar would surface a
+    // TRAJECTORY line on every chat reply forever — the same "beating a dead
+    // horse" register round 41 closed on the SOLVED side.
+    //
+    // The recommendation engine should still prescribe the drill on the next
+    // IM launch (the gap is real — the user has not closed it). The freshness
+    // gate is ONLY on the chat-coach context surface — past the window, the
+    // chat coach doesn't re-issue the trajectory commentary on a long-stale
+    // read, and the coach naturally moves on to a scenario the user is
+    // actually practicing.
+    //
+    // Defensive scoping (intentional restraint, same shape as round 41):
+    //
+    //   • SAME constant as the SOLVED surface (`toneDrillSolvedRecencyDays`).
+    //     The chat coach's freshness contract is one number — "fresh
+    //     relative to the user's cadence" — and SOLVED + TRAJECTORY share
+    //     the same coach-parity ramp on stage #3 (Intervention) and #4
+    //     (Adaptation). A future tune of the constant touches both surfaces
+    //     in lockstep, which is the right semantics.
+    //
+    //   • SAME anchor (`sessions.lazy.map(\.date).max()`, the user's
+    //     most-recent practice rep across all history). A user actively
+    //     practicing other scenarios deserves to see the trajectory named
+    //     for longer; a user who's stopped practicing entirely sees it age
+    //     out at 14 days flat.
+    //
+    //   • SAME inclusive 14-day boundary contract as rounds 38/39/40/41.
+    //
+    //   • Defensive negative-elapsed guard (a `now` pre-dating the latest
+    //     evaluated rep returns false — bad anchor, refuse to fire).
+    //
+    //   • Per-scenario gate, not a global TRAJECTORY-off switch. The freshness
+    //     anchor is the LATEST evaluated rep in the prescribed scenario.
+    //     `toneDrillSignal(from:)` picks the worst-hit-rate scenario, so the
+    //     prescribed scenario can differ from the user's most-recent rep's
+    //     scenario; the gate compares the prescribed scenario's last
+    //     evaluated rep against the user's overall most-recent rep — drops
+    //     the section when the prescribed scenario itself has gone cold,
+    //     regardless of what else the user is practicing.
+    //
+    // Engine state: NOTHING changes. The recommendation engine still
+    // prescribes the drill (the gap is real). The TONE-DRILL TRAJECTORY block
+    // is the only surface that gates on the freshness window.
+    static func toneDrillTrajectoryIsFresh(
+        signal: IMToneDrillSignal,
+        in sessions: [PracticeSession],
+        now: Date
+    ) -> Bool {
+        guard let lastEvaluatedDate = IMHistorySummary.latestEvaluatedRepDate(
+            from: sessions,
+            scenario: signal.scenario
+        ) else { return false }
+        let elapsed = now.timeIntervalSince(lastEvaluatedDate)
         guard elapsed >= 0 else { return false }
         let windowInterval = TimeInterval(toneDrillSolvedRecencyDays * 24 * 60 * 60)
         return elapsed <= windowInterval
