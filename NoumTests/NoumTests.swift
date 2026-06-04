@@ -31230,6 +31230,907 @@ struct CaseAnchoredContinuationTests {
     }
 }
 
+// MARK: - InterventionUnderPushbackContinuationTests
+//
+// Round 40 — the dampening-durability complement to round 38's
+// under-repeated-pushback line. Round 38 fires only while the LATEST
+// adaptation entry documents a user pushback. The FIRST subsequent
+// engine-only refinement — a quiet lever adjustment the engine writes
+// WITHOUT the user pushing back — drops round 38's predicate AND the
+// chat coach loses the under-pushback dampening signal, even though
+// the user's rejection snapshot still applies to the working
+// hypothesis and sits well within the recency window.
+//
+// Round 40 restores the signal with the LIGHTEST possible surface:
+// ONE additional INTERVENTION CYCLE line, appended INSIDE the
+// active-intervention block at the same call site as rounds 37/38/39
+// (mutually exclusive with ALL THREE at the predicate level).
+//
+// The four case-state predicates (37/38/39/40) now form one closed
+// 2×2 matrix on (ack confidence) × (latest entry's nature):
+//
+//                    | latest = pushback     | latest = engine-only         |
+//   ---------------- | --------------------- | ---------------------------- |
+//   .confirmed ack   | round 37 (amplify)    | round 39 (continuation)      |
+//   .rejected ack    | round 38 (dampen)     | round 40 (under-pushback     |
+//                    |                       |             continuation)    |
+//
+// Cross-surface contracts:
+//   - **Round 37 ↔ round 40 are mutually exclusive on TWO axes** (ack
+//     confidence AND latest-entry nature). Two orthogonal gates flip.
+//   - **Round 38 ↔ round 40 are mutually exclusive on the latest-
+//     entry-nature gate.** Round 38 requires `last.documentsUserPushback`;
+//     round 40 requires `!last.documentsUserPushback`.
+//   - **Round 39 ↔ round 40 are mutually exclusive on the ack-
+//     confidence gate.** Round 39 requires `.confirmed`; round 40
+//     requires `.rejected`.
+//   - **Round 32 is DARK whenever round 40 fires.** Round 32 requires
+//     the latest entry to document a user pushback; round 40 requires
+//     it NOT to. So when round 40 surfaces, round 32 has no verdict
+//     line on the same reply — round 40 carries the under-pushback
+//     signal alone.
+//   - **Round 31 is also DARK whenever round 40 fires.** Round 31
+//     (`freshRevisedReadContextLines`) also requires the latest entry
+//     to document a user pushback. The generic "Last course change"
+//     else-arm in `interventionCycleLines` is what surfaces the engine
+//     refinement as a course change; round 40 layers ON TOP of that
+//     line as the durable under-pushback signal.
+//
+// Anti-overclaim rails:
+//   - The line surfaces ONLY when an active intervention exists.
+//     Without a carrying intervention, "under-pushback continuation"
+//     has nothing to point at.
+//   - The recency window is bounded (14 days, pinned to the same
+//     constant as round 38 for symmetry). Stale rejection does not
+//     dampen follow-on engine refinements indefinitely.
+//   - The predicate requires a PRIOR user-pushback entry in the log
+//     pre-dating the ack (gate 5). A `.rejected` ack on an engine-only
+//     baseline with later engine refinements does NOT satisfy the
+//     predicate — without a user-driven rebuild somewhere in the log,
+//     there is no rejection-anchored read to continue dampening from.
+//   - The latest engine refinement must POST-DATE the ack (gate 4).
+//     An engine refinement that pre-dates the ack is round 38's
+//     territory, not round 40's.
+
+@MainActor
+@Suite("InterventionUnderPushbackContinuationTests")
+struct InterventionUnderPushbackContinuationTests {
+
+    // MARK: - Fixtures
+
+    private static let rebuiltHypothesis =
+        "Pace appears to be the highest-leverage focus across recent reps."
+
+    private static func pushbackChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "user-tapped rejection of: \"prior read\""
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .paceControl,
+            toLever: .fillerReduction,
+            reason: "Shifted focus from Pace to Filler Words after the user reported the prior hypothesis did not match what they saw.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func engineOnlyChange(
+        at changedAt: Date = Date(),
+        evidenceBasis: String = "declining trend in recent reps"
+    ) -> CoachCourseChange {
+        CoachCourseChange(
+            id: UUID(),
+            changedAt: changedAt,
+            fromLever: .fillerReduction,
+            toLever: .fillerReduction,
+            reason: "Engine-only refinement on the carrying focus; quiet lever adjustment with no user pushback.",
+            evidenceBasis: evidenceBasis
+        )
+    }
+
+    private static func ack(
+        _ confidence: CoachHypothesisConfidence,
+        at acknowledgedAt: Date,
+        snapshot: String = rebuiltHypothesis
+    ) -> CoachHypothesisAcknowledgement {
+        CoachHypothesisAcknowledgement(
+            confidence: confidence,
+            hypothesisSnapshot: snapshot,
+            acknowledgedAt: acknowledgedAt
+        )
+    }
+
+    private static func sampleIntervention() -> CoachIntervention {
+        CoachIntervention(
+            title: "Ah Counter",
+            focus: "filler reduction",
+            target: "Two clean closing sentences",
+            mode: .ahCounter,
+            prescribedAt: Date(timeIntervalSince1970: 1_000),
+            lastObservedAt: nil,
+            followedRepCount: 1,
+            minimumFollowedRepsForReview: 2,
+            reviewStatus: .formingEvidence,
+            reviewBasis: "evidence is still forming on this prescription"
+        )
+    }
+
+    private static func memory(
+        updatedAt: Date = Date(),
+        adaptationLog: [CoachCourseChange]?,
+        workingHypothesis: String? = rebuiltHypothesis,
+        hypothesisAcknowledgement: CoachHypothesisAcknowledgement? = nil,
+        activeIntervention: CoachIntervention? = sampleIntervention()
+    ) -> CoachMemory {
+        CoachMemory(
+            updatedAt: updatedAt,
+            evidenceCount: 5,
+            evidenceConfidence: .moderate,
+            voice: .authoritative,
+            currentLever: .fillerReduction,
+            currentLeverConfidence: .medium,
+            currentLeverBasis: "rebuilt after user pushback; user rejected the rebuild; engine refined within the standing no-fit verdict",
+            previousLever: .paceControl,
+            goalFit: .aligned,
+            strengths: [],
+            blockers: [],
+            workingHypothesis: workingHypothesis,
+            activeIntervention: activeIntervention,
+            hypothesisAcknowledgement: hypothesisAcknowledgement,
+            adaptationLog: adaptationLog
+        )
+    }
+
+    private func sampleProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .reduceFillers,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .fillerWords,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .authoritative,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    // Canonical happy-path state: user pushed back (rebuild fired), user
+    // REJECTED the rebuild via the chip row, engine subsequently made
+    // an engine-only refinement. All five gates open.
+    private static func canonicalUnderPushbackContinuationState(now: Date = Date()) -> (memory: CoachMemory, now: Date) {
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                pushbackChange(at: pushbackAt),
+                engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: ack(.rejected, at: ackAt)
+        )
+        return (mem, now)
+    }
+
+    // MARK: - Pure predicate (happy path)
+
+    @Test func predicateFiresOnCanonicalUnderPushbackContinuationState() {
+        // Happy path: pushback rebuild → user rejected → engine refined.
+        // All five gates open. Round 40 fires.
+        let (mem, now) = Self.canonicalUnderPushbackContinuationState()
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == true)
+    }
+
+    // MARK: - Pure predicate (dark cases — ack confidence)
+
+    @Test func predicateDarkOnUncertainAck() {
+        // `.uncertain` is round 32's "still settling" territory — the
+        // user has not lodged a no-fit verdict. Round 40 must NOT fire.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.uncertain, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnConfirmedAck() {
+        // `.confirmed` is round 39's territory — round 40 must NOT
+        // fire on confirmed acks even when the latest entry is engine-
+        // only. The user ratified the rebuild; there is no no-fit
+        // verdict to continue dampening from.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenNoAckCarried() {
+        // No ack: nothing to dampen against. Round 40 drops.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let refinementAt = pushbackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: nil
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    // MARK: - Pure predicate (dark cases — snapshot/applies)
+
+    @Test func predicateDarkWhenAckSnapshotNoLongerApplies() {
+        // A later memory rebuild rewrote the working hypothesis. The
+        // user's rejection belongs to a hypothesis that no longer
+        // exists — round 40 must drop.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            workingHypothesis: "An entirely different read after a later rebuild.",
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenWorkingHypothesisIsNil() {
+        // Missing working hypothesis: `appliesTo` returns false for
+        // nil. Round 40 must drop.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            workingHypothesis: nil,
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt, snapshot: "")
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    // MARK: - Pure predicate (dark cases — recency)
+
+    @Test func predicateDarkWhenAckIsOutsideRecencyWindow() {
+        // 15 days past `now` is outside the round-38-pinned recency
+        // window. Round 40 must drop: a stale rejection does not
+        // dampen today's engine refinements.
+        let now = Date()
+        let outsideWindowSeconds: TimeInterval = TimeInterval(15 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-outsideWindowSeconds)
+        let pushbackAt = ackAt.addingTimeInterval(-300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresAtExactRecencyBoundary() {
+        // Edge case: ack timestamp is exactly `recencyDays * 86400`
+        // seconds before `now`. The predicate uses `<=` (mirrors
+        // round 38/39 inclusive boundary) — predicate fires on the
+        // boundary.
+        let now = Date()
+        let exactWindowSeconds: TimeInterval = TimeInterval(14 * 24 * 60 * 60)
+        let ackAt = now.addingTimeInterval(-exactWindowSeconds)
+        let pushbackAt = ackAt.addingTimeInterval(-300)
+        let refinementAt = ackAt.addingTimeInterval(60)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == true)
+    }
+
+    // MARK: - Pure predicate (dark cases — latest entry nature)
+
+    @Test func predicateDarkWhenLatestEntryIsUserPushback() {
+        // Round 38's territory: latest entry is a user pushback. Round
+        // 40 must drop — the under-pushback continuation shape
+        // requires the latest entry to be engine-only.
+        let now = Date()
+        let earlierPushback = Self.pushbackChange(at: now.addingTimeInterval(-7200))
+        let ackAt = earlierPushback.changedAt.addingTimeInterval(300)
+        let laterPushback = Self.pushbackChange(at: ackAt.addingTimeInterval(3600))
+        let mem = Self.memory(
+            updatedAt: laterPushback.changedAt,
+            adaptationLog: [earlierPushback, laterPushback],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkWhenLatestEngineRefinementPreDatesAck() {
+        // The latest engine refinement is BEFORE the user's rejection.
+        // That is round 38's territory (or no signal at all if the
+        // latest entry is engine-only AND pre-dates the ack — the
+        // user rejected AFTER the engine refinement, so the ack was
+        // lodged on top of an already-refined state, not a
+        // continuation through one). Round 40 must drop.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let refinementAt = pushbackAt.addingTimeInterval(60)
+        let ackAt = refinementAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresAtExactAckEqualsRefinementBoundary() {
+        // Inclusive boundary on the engine-refinement-after-ack
+        // ordering: `lastChange.changedAt >= ack.acknowledgedAt` uses
+        // `>=`, so a refinement at exactly the ack timestamp counts as
+        // a continuation.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == true)
+    }
+
+    // MARK: - Pure predicate (dark cases — prior pushback gate)
+
+    @Test func predicateDarkWhenNoPriorUserPushbackInLog() {
+        // The structural anchor gate: a `.rejected` ack on an
+        // engine-only baseline with later engine refinements does NOT
+        // fire round 40. Without a USER-DRIVEN rebuild somewhere in
+        // the log pre-dating the ack, there is no rejection-anchored
+        // read to continue dampening from. This is the gate that
+        // distinguishes "engine refined the user-rejected rebuild"
+        // from "engine drifted the lever from a baseline reading the
+        // user happened to reject".
+        let now = Date()
+        let firstEngineAt = now.addingTimeInterval(-7200)
+        let ackAt = firstEngineAt.addingTimeInterval(300)
+        let secondEngineAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: secondEngineAt,
+            adaptationLog: [
+                Self.engineOnlyChange(at: firstEngineAt),
+                Self.engineOnlyChange(at: secondEngineAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnNilAdaptationLog() {
+        // No adaptation log = no continuation context. Memory
+        // persisted before the round-19 adaptation-log lift decodes
+        // with nil; predicate must be dark automatically, no
+        // migration needed.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: nil,
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateDarkOnEmptyAdaptationLog() {
+        // Defensive: empty log is the same shape as nil — no latest
+        // entry to read, no prior pushback to anchor against.
+        let now = Date()
+        let ackAt = now.addingTimeInterval(-60)
+        let mem = Self.memory(
+            updatedAt: ackAt,
+            adaptationLog: [],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == false)
+    }
+
+    @Test func predicateFiresWithMultipleEngineRefinementsAfterAck() {
+        // Realistic scenario: user pushed back, rejected, engine
+        // refined TWICE. Round 40 should still fire — the predicate
+        // requires the LATEST entry to be engine-only AND post-date
+        // the ack, both of which hold across multiple refinements.
+        // The prior-pushback gate finds the original user pushback in
+        // the log.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-10800)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let firstRefineAt = ackAt.addingTimeInterval(3600)
+        let secondRefineAt = firstRefineAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: secondRefineAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: firstRefineAt),
+                Self.engineOnlyChange(at: secondRefineAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt)
+        )
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == true)
+    }
+
+    // MARK: - Pure context-line helper
+
+    @Test func contextLineFiresWhenPredicateAndActiveInterventionPresent() {
+        // Happy path: predicate fires AND an active intervention
+        // exists → line emits. Pure-helper return is non-nil and
+        // starts with the canonical lead
+        // `"- Intervention still under pushback:"`.
+        let (mem, now) = Self.canonicalUnderPushbackContinuationState()
+        let line = CoachContextBuilder.interventionUnderPushbackContinuationContextLine(
+            memory: mem,
+            now: now
+        )
+        #expect(line != nil)
+        #expect(line?.hasPrefix("- Intervention still under pushback:") == true)
+    }
+
+    @Test func contextLineDarkWhenNoActiveIntervention() {
+        // The under-pushback continuation BY DEFINITION refers to the
+        // active intervention. With no carrying intervention there is
+        // nothing to dampen against — the line must drop even when the
+        // predicate fires. Restraint pin: a future round that surfaces
+        // under-pushback continuation copy OUTSIDE the active-
+        // intervention block must build a different helper rather
+        // than overload this one.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt),
+            activeIntervention: nil
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderPushbackContinuationContextLine(
+                memory: mem,
+                now: now
+            ) == nil
+        )
+    }
+
+    @Test func contextLineDarkWhenPredicateDark() {
+        // Sanity pin: when the predicate is dark, the helper returns
+        // nil regardless of whether the active intervention is
+        // present.
+        let now = Date()
+        let mem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.engineOnlyChange(at: now)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now)
+        )
+        #expect(
+            CoachContextBuilder.interventionUnderPushbackContinuationContextLine(
+                memory: mem,
+                now: now
+            ) == nil
+        )
+    }
+
+    @Test func contextLineNamesEngineRefinementAndRejectedRebuild() {
+        // Behavioural contract: the line names BOTH halves of the
+        // under-pushback continuation state — the engine-only
+        // refinement AND the user's previously-rejected rebuild AND
+        // tells the model how to resolve the tension between the two
+        // surfaces (frame the refinement as operating within the
+        // standing no-fit verdict, not closing it; continue to
+        // dampen). A future copy edit that drops any clause fails
+        // this test.
+        let (mem, now) = Self.canonicalUnderPushbackContinuationState()
+        let line = CoachContextBuilder.interventionUnderPushbackContinuationContextLine(
+            memory: mem,
+            now: now
+        ) ?? ""
+        #expect(line.contains("engine-only refinement"))
+        #expect(line.contains("previously-rejected rebuild"))
+        #expect(line.contains("no-fit verdict"))
+        #expect(line.contains("slow down on follow-on reads"))
+        #expect(line.contains("focused discriminating question"))
+        #expect(line.contains("do not re-prescribe the same intervention"))
+        #expect(line.contains("operates within the standing no-fit verdict"))
+    }
+
+    // MARK: - Brand voice
+
+    @Test func contextLineIsBrandVoiceCompliant() {
+        // Standard brand-voice rails on the new context line: no
+        // exclamation, no "Let's", no "we", no "sorry", no shame
+        // framing. Mirrors rounds 37/38/39 brand-voice rules so the
+        // under-pushback continuation copy reads in the same register
+        // as the rest of the case-spine surfaces.
+        let (mem, now) = Self.canonicalUnderPushbackContinuationState()
+        let line = CoachContextBuilder.interventionUnderPushbackContinuationContextLine(
+            memory: mem,
+            now: now
+        ) ?? ""
+        #expect(!line.contains("!"))
+        #expect(!line.lowercased().contains("let's"))
+        #expect(!line.lowercased().contains(" we "))
+        #expect(!line.lowercased().contains("sorry"))
+        #expect(!line.lowercased().contains("failed"))
+        #expect(!line.lowercased().contains("failure"))
+        #expect(!line.lowercased().contains("wrong"))
+    }
+
+    // MARK: - Mutual exclusion with round 37
+
+    @Test func round37AndRound40AreMutuallyExclusive() {
+        // Round 37 requires `.confirmed` AND `last.documentsUserPushback`.
+        // Round 40 requires `.rejected` AND `!last.documentsUserPushback`.
+        // Two orthogonal gates flip — at most one fires per memory.
+        let now = Date()
+
+        // Branch A: round 37 firing state (.confirmed + latest=pushback).
+        let pushbackOnTopMem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: pushbackOnTopMem, now: now) == true)
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: pushbackOnTopMem, now: now) == false)
+
+        // Branch B: round 40 firing state (.rejected + latest=engine-only on prior pushback).
+        let (continuationMem, continuationNow) = Self.canonicalUnderPushbackContinuationState()
+        #expect(CoachContextBuilder.caseAnchoredAmplificationApplies(in: continuationMem, now: continuationNow) == false)
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: continuationMem, now: continuationNow) == true)
+    }
+
+    // MARK: - Mutual exclusion with round 38
+
+    @Test func round38AndRound40AreMutuallyExclusiveOnLatestEntryNature() {
+        // Round 38 requires `last.documentsUserPushback == true`.
+        // Round 40 requires it `== false`. On any single memory state,
+        // at most one fires. Pin both branches.
+        let now = Date()
+
+        // Branch A: latest is user pushback → round 38 may fire,
+        // round 40 must NOT.
+        let pushbackOnTopMem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now)
+        )
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: pushbackOnTopMem, now: now) == true)
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: pushbackOnTopMem, now: now) == false)
+
+        // Branch B: latest is engine-only on top of a prior pushback
+        // → round 40 fires, round 38 must NOT.
+        let (continuationMem, continuationNow) = Self.canonicalUnderPushbackContinuationState()
+        #expect(CoachContextBuilder.interventionUnderRepeatedPushbackApplies(in: continuationMem, now: continuationNow) == false)
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: continuationMem, now: continuationNow) == true)
+    }
+
+    // MARK: - Mutual exclusion with round 39
+
+    @Test func round39AndRound40AreMutuallyExclusiveOnAckConfidence() {
+        // Round 39 requires `.confirmed`. Round 40 requires
+        // `.rejected`. The two cannot coexist on the same memory
+        // state — pin both branches.
+        let now = Date()
+
+        // Branch A: confirmed ack + engine refinement on top → round
+        // 39 fires. Round 40 must NOT fire.
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let confirmedMem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        #expect(CoachContextBuilder.caseAnchoredContinuationApplies(in: confirmedMem, now: now) == true)
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: confirmedMem, now: now) == false)
+
+        // Branch B: rejected ack + engine refinement on top → round
+        // 40 fires. Round 39 must NOT fire.
+        let (rejectedMem, rejectedNow) = Self.canonicalUnderPushbackContinuationState()
+        #expect(CoachContextBuilder.caseAnchoredContinuationApplies(in: rejectedMem, now: rejectedNow) == false)
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: rejectedMem, now: rejectedNow) == true)
+    }
+
+    // MARK: - Cross-surface contract with round 32
+
+    @Test func round32IsDarkWheneverRound40Fires() {
+        // Structural pin: round 32's `rebuildVerdictPair` requires
+        // the latest entry to document a user pushback; round 40
+        // requires it NOT to. So round 32 is GUARANTEED dark whenever
+        // round 40 fires. This is the point of round 40: it carries
+        // the under-pushback signal alone, after round 32 has gone
+        // dark from the engine refinement.
+        let (mem, now) = Self.canonicalUnderPushbackContinuationState()
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == true)
+        #expect(CoachContextBuilder.rebuildVerdictPair(in: mem) == nil)
+    }
+
+    // MARK: - Cross-surface contract with round 31
+
+    @Test func round31IsDarkWheneverRound40Fires() {
+        // Round 31's `freshRevisedReadChange` also requires the
+        // latest entry to document a user pushback. So round 31 is
+        // GUARANTEED dark whenever round 40 fires. The generic "Last
+        // course change" else-arm in `interventionCycleLines` is what
+        // surfaces the engine refinement; round 40 layers on top as
+        // the durable under-pushback signal.
+        let (mem, now) = Self.canonicalUnderPushbackContinuationState()
+        #expect(CoachContextBuilder.interventionUnderPushbackContinuationApplies(in: mem, now: now) == true)
+        #expect(CoachContextBuilder.freshRevisedReadChange(in: mem) == nil)
+    }
+
+    // MARK: - userContext integration
+
+    @Test func userContextSurfacesUnderPushbackContinuationLineInInterventionCycle() {
+        // Integration: full `userContext` build should carry the
+        // under-pushback continuation line in the INTERVENTION CYCLE
+        // block when the predicate fires AND the memory carries an
+        // active intervention. Pins the wiring path (active-
+        // intervention block in `interventionCycleLines`) end-to-end,
+        // not just the pure helper.
+        let (mem, _) = Self.canonicalUnderPushbackContinuationState()
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("INTERVENTION CYCLE (prescribe → observe → adapt)"))
+        #expect(ctx.contains("Intervention still under pushback:"))
+        #expect(ctx.contains("engine-only refinement"))
+    }
+
+    @Test func userContextDoesNotSurfaceUnderPushbackContinuationWhenNoActiveIntervention() {
+        // Predicate fires but memory has no active intervention →
+        // under-pushback continuation line must not surface.
+        let now = Date()
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let mem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: ackAt),
+            activeIntervention: nil
+        )
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Intervention still under pushback:") == false)
+    }
+
+    @Test func userContextNeverSurfacesBothRound38AndRound40OnSameReply() {
+        // The two surfaces are mutually exclusive at the predicate
+        // level (latest-entry-nature gate). End-to-end pin: the
+        // rendered context must never contain BOTH lines on the same
+        // chat reply, regardless of the latest entry's nature.
+        let now = Date()
+
+        // Round-38 firing state.
+        let pushbackAt = now.addingTimeInterval(-60)
+        let rejectedMem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: pushbackAt)],
+            hypothesisAcknowledgement: Self.ack(.rejected, at: now)
+        )
+        let rejectedCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: rejectedMem
+        )
+        #expect(rejectedCtx.contains("Intervention under repeated pushback:"))
+        #expect(rejectedCtx.contains("Intervention still under pushback:") == false)
+
+        // Round-40 firing state.
+        let (continuationMem, _) = Self.canonicalUnderPushbackContinuationState()
+        let continuationCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: continuationMem
+        )
+        #expect(continuationCtx.contains("Intervention still under pushback:"))
+        #expect(continuationCtx.contains("Intervention under repeated pushback:") == false)
+    }
+
+    @Test func userContextNeverSurfacesBothRound39AndRound40OnSameReply() {
+        // Mirror of the round-38/40 mutual-exclusion test on the
+        // ack-confidence axis: the two surfaces are mutually
+        // exclusive on `confidence` (.confirmed for round 39,
+        // .rejected for round 40). End-to-end pin.
+        let now = Date()
+
+        // Round-39 firing state.
+        let pushbackAt = now.addingTimeInterval(-7200)
+        let ackAt = pushbackAt.addingTimeInterval(300)
+        let refinementAt = ackAt.addingTimeInterval(3600)
+        let confirmedMem = Self.memory(
+            updatedAt: refinementAt,
+            adaptationLog: [
+                Self.pushbackChange(at: pushbackAt),
+                Self.engineOnlyChange(at: refinementAt),
+            ],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: ackAt)
+        )
+        let confirmedCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: confirmedMem
+        )
+        #expect(confirmedCtx.contains("Case-anchored continuation:"))
+        #expect(confirmedCtx.contains("Intervention still under pushback:") == false)
+
+        // Round-40 firing state.
+        let (rejectedMem, _) = Self.canonicalUnderPushbackContinuationState()
+        let rejectedCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: rejectedMem
+        )
+        #expect(rejectedCtx.contains("Intervention still under pushback:"))
+        #expect(rejectedCtx.contains("Case-anchored continuation:") == false)
+    }
+
+    @Test func userContextNeverSurfacesBothRound37AndRound40OnSameReply() {
+        // The two surfaces are mutually exclusive on TWO axes (ack
+        // confidence AND latest-entry nature). End-to-end pin: the
+        // rendered context must never contain BOTH lines on the same
+        // chat reply.
+        let now = Date()
+
+        // Round-37 firing state.
+        let pushbackOnTopMem = Self.memory(
+            updatedAt: now,
+            adaptationLog: [Self.pushbackChange(at: now.addingTimeInterval(-60))],
+            hypothesisAcknowledgement: Self.ack(.confirmed, at: now)
+        )
+        let pushbackOnTopCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: pushbackOnTopMem
+        )
+        #expect(pushbackOnTopCtx.contains("Case-anchored amplification:"))
+        #expect(pushbackOnTopCtx.contains("Intervention still under pushback:") == false)
+
+        // Round-40 firing state.
+        let (continuationMem, _) = Self.canonicalUnderPushbackContinuationState()
+        let continuationCtx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: continuationMem
+        )
+        #expect(continuationCtx.contains("Intervention still under pushback:"))
+        #expect(continuationCtx.contains("Case-anchored amplification:") == false)
+    }
+
+    @Test func userContextLayersUnderPushbackContinuationOverGenericLastCourseChange() {
+        // Cross-surface pin: when round 40 fires, the generic "Last
+        // course change" else-arm in `interventionCycleLines` also
+        // fires (rounds 31 and 32 are dark by construction, so the
+        // generic else-arm carries the engine refinement). Both
+        // lines must coexist on the same chat reply — the generic
+        // line names the engine refinement; round 40 frames the
+        // active intervention as still under the user's standing
+        // no-fit verdict.
+        let (mem, _) = Self.canonicalUnderPushbackContinuationState()
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            coachMemory: mem
+        )
+        #expect(ctx.contains("Intervention still under pushback:"))
+        #expect(ctx.contains("Last course change:"))
+        // Round 32 must NOT fire (latest entry is engine-only).
+        #expect(ctx.contains("Case file rebuild verdict:") == false)
+    }
+}
+
 // MARK: - SecondCyclePushbackContextTests
 //
 // Round 33 — pins the chat-coach user-context block's response to a
