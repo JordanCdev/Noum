@@ -664,7 +664,20 @@ enum CoachContextBuilder {
         // scenario (a scenario is either a still-sub-bar drill or a
         // resolved win, never both), but a drill in one scenario and a win
         // in another can — and should — both surface.
-        if let resolved = IMHistorySummary.toneDrillResolved(from: sessions) {
+        //
+        // Round 41 — freshness gate. `toneDrillResolved` returns the read
+        // forever once a scenario holds the bar; without a gate, the chat
+        // coach reads the same SOLVED section on every reply for months
+        // after the crossing. Anchored against the user's most-recent rep
+        // (`sessions.lazy.map(\.date).max()`), the section now drops past
+        // `toneDrillSolvedRecencyDays` (14 days) — the same window
+        // `repeatedPushbackRecencyDays` uses for the rejection-dampening
+        // line on the case-state matrix. The chat coach moves on to the
+        // current target, which is what the line's own guidance has been
+        // asking the model to do since round 13.
+        if let resolved = IMHistorySummary.toneDrillResolved(from: sessions),
+           let mostRecentRepDate = sessions.lazy.map(\.date).max(),
+           toneDrillSolvedIsFresh(resolved, now: mostRecentRepDate) {
             lines.append("")
             lines.append("TONE-DRILL SOLVED (a past tone gap the user has closed)")
             lines.append(contentsOf: toneDrillResolvedLines(for: resolved))
@@ -977,6 +990,44 @@ enum CoachContextBuilder {
         let dataLine = "- \(tone) tone in \(scenario): tone-match \(earlierPct)% to \(recentPct)% (earliest vs latest reps) — holding above the drill bar now."
         let guidance = "- The user closed this tone gap; name the win once and point them at the next target rather than re-prescribing the solved drill. Observed in their own reps, not proof a drill caused it."
         return [dataLine, guidance]
+    }
+
+    // MARK: - Tone-drill solved freshness window (round 41)
+    //
+    // `IMHistorySummary.toneDrillResolved(from:)` returns the resolved read
+    // forever once a scenario crosses the drill bar — the engine self-clears
+    // only on a real relapse below the threshold, which is correct for the
+    // recommendation engine (a once-solved drill should not be re-prescribed
+    // out of nowhere). But surfaced verbatim into the chat-coach context, it
+    // means the chat coach reads the same TONE-DRILL SOLVED section on every
+    // reply for months after the crossing — beating a dead horse on a win the
+    // user closed weeks ago, exactly the register a human coach moves past.
+    //
+    // The line's own guidance ("name the win once and point them at the next
+    // target rather than re-prescribing the solved drill") was the in-context
+    // intent from round 13; this freshness gate is the structural backstop —
+    // after the recency window, the context simply doesn't carry the SOLVED
+    // section, so the chat coach moves on whether the model remembered to or
+    // not.
+    //
+    // The window mirrors `repeatedPushbackRecencyDays` (round 38) by deliberate
+    // cross-surface symmetry — "win is fresh enough to name" and "pushback
+    // verdict is fresh enough to dampen" share the same coach-parity ramp on
+    // stage #3 (Intervention) and #4 (Adaptation), and a single number is
+    // easier for a future round to tune than two parallel constants.
+    //
+    // Anchored against the user's most-recent practice rep (not wall-clock)
+    // so the predicate is pure, intrinsically test-stable, and reads as
+    // "fresh relative to the user's cadence" — a user who's actively
+    // practicing other scenarios deserves to see the win named for longer
+    // than a user who hasn't practiced at all in a month.
+    static let toneDrillSolvedRecencyDays: Int = 14
+
+    static func toneDrillSolvedIsFresh(_ resolved: IMToneDrillResolved, now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(resolved.lastEvaluatedDate)
+        guard elapsed >= 0 else { return false }
+        let windowInterval = TimeInterval(toneDrillSolvedRecencyDays * 24 * 60 * 60)
+        return elapsed <= windowInterval
     }
 
     // MARK: - Prompt-grounded relevance (the substance read for the chat coach)

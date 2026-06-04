@@ -21655,6 +21655,285 @@ struct ToneDrillResolvedContextTests {
     }
 }
 
+// MARK: - Tone-drill SOLVED freshness window (round 41)
+//
+// `IMHistorySummary.toneDrillResolved(from:)` returns the resolved read
+// forever once a scenario crosses the drill bar — correct for the
+// recommendation engine, but the chat-coach context block surfaced it on
+// every reply for months after the crossing. Round 41 adds a freshness
+// gate to the TONE-DRILL SOLVED section in `CoachContextBuilder.userContext`,
+// anchored against the user's most-recent practice rep, so the line drops
+// past `toneDrillSolvedRecencyDays` (14 days) — mirroring the round-38
+// `repeatedPushbackRecencyDays` window on the case-state matrix.
+//
+// These tests pin the pure predicate (every branch + boundary), the
+// userContext integration (fires when fresh, drops when stale, drops when
+// no sessions), and the cross-surface contract that a fresh SOLVED can
+// still coexist with an active TRAJECTORY in another scenario after the
+// freshness gate (the gate is per-scenario via the SOLVED-resolved primitive,
+// not a global "no more SOLVED ever" once a single window passes).
+struct ToneDrillSolvedFreshnessTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    private func resolvedFixture(daysSinceBase: Double) -> IMToneDrillResolved {
+        IMToneDrillResolved(
+            scenario: .difficultConversation,
+            targetTone: .calm,
+            earlierRate: 0.0,
+            recentRate: 1.0,
+            evaluatedCount: 6,
+            lastEvaluatedDate: baseDate.addingTimeInterval(daysSinceBase * 86_400)
+        )
+    }
+
+    // MARK: - Pure predicate — happy path
+
+    @Test func predicateFiresWhenNowEqualsLastEvaluatedDate() {
+        // Zero elapsed time → fresh by definition.
+        let resolved = resolvedFixture(daysSinceBase: 0)
+        #expect(CoachContextBuilder.toneDrillSolvedIsFresh(resolved, now: baseDate))
+    }
+
+    @Test func predicateFiresWithinTheRecencyWindow() {
+        // 7 days elapsed → comfortably inside the 14-day window.
+        let resolved = resolvedFixture(daysSinceBase: -7)
+        #expect(CoachContextBuilder.toneDrillSolvedIsFresh(resolved, now: baseDate))
+    }
+
+    // MARK: - Pure predicate — boundary
+
+    @Test func predicateFiresAtExactRecencyBoundary() {
+        // Inclusive 14-day boundary mirrors rounds 38/39/40's identical
+        // recency-pin shape. A win at exactly 14 days old still surfaces;
+        // a win past 14 days drops. The exact boundary is the contract.
+        let resolved = resolvedFixture(daysSinceBase: -Double(CoachContextBuilder.toneDrillSolvedRecencyDays))
+        #expect(CoachContextBuilder.toneDrillSolvedIsFresh(resolved, now: baseDate))
+    }
+
+    @Test func predicateDropsJustBeyondRecencyBoundary() {
+        // 14 days + 1 second past → drops. Mirrors the round-38/40
+        // strict-greater-than-window-edge contract on the rejection ack.
+        let resolved = resolvedFixture(daysSinceBase: -Double(CoachContextBuilder.toneDrillSolvedRecencyDays))
+        let justBeyond = baseDate.addingTimeInterval(1)
+        #expect(!CoachContextBuilder.toneDrillSolvedIsFresh(resolved, now: justBeyond))
+    }
+
+    // MARK: - Pure predicate — outside the window
+
+    @Test func predicateDropsOutsideRecencyWindow() {
+        // 30 days elapsed → well past the 14-day window.
+        let resolved = resolvedFixture(daysSinceBase: -30)
+        #expect(!CoachContextBuilder.toneDrillSolvedIsFresh(resolved, now: baseDate))
+    }
+
+    // MARK: - Pure predicate — defensive (negative elapsed)
+
+    @Test func predicateDropsWhenNowPredatesLastEvaluatedDate() {
+        // A `now` that pre-dates `lastEvaluatedDate` is a bad anchor; the
+        // predicate refuses to fire rather than returning true on a
+        // mathematically-fresh-but-impossible state. Defensive pin so a
+        // future caller that passes a stale `now` doesn't silently
+        // re-surface a dropped win.
+        let resolved = resolvedFixture(daysSinceBase: 0)
+        let earlier = baseDate.addingTimeInterval(-86_400)  // 1 day before lastEvaluatedDate
+        #expect(!CoachContextBuilder.toneDrillSolvedIsFresh(resolved, now: earlier))
+    }
+
+    // MARK: - userContext integration — fires when fresh
+
+    @Test func userContextSurfacesSolvedWhenLastEvaluatedRepIsFresh() {
+        // Most-recent rep at daysOffset -1 (and the SOLVED scenario's
+        // lastEvaluatedDate is also -1, since it IS the most-recent rep)
+        // → 0 days elapsed → fresh → section fires.
+        let sessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -4),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("TONE-DRILL SOLVED"))
+        #expect(ctx.contains("Calm tone in Difficult Conversation"))
+    }
+
+    // MARK: - userContext integration — drops when stale
+
+    @Test func userContextDropsSolvedWhenLastEvaluatedRepIsStale() {
+        // The user crossed the bar over 30 days ago and has practiced a
+        // DIFFERENT scenario since, but has NOT touched the held scenario
+        // for over a month. The chat coach should move on — the SOLVED
+        // line drops while the held scenario stays held in the engine.
+        // Anchor: most-recent rep is the workUpdate at daysOffset -1, but
+        // the SOLVED scenario's lastEvaluatedDate is daysOffset -30 (the
+        // win is over a month old).
+        var sessions: [PracticeSession] = [
+            // Held SOLVED scenario — last evaluated 30+ days before the
+            // anchor, with the same "0% to 100%" climb the SOLVED line
+            // would otherwise narrate.
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -35),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -34),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -33),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -32),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -31),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -30)
+        ]
+        // Recent unrelated reps in a different scenario — the user IS
+        // practicing, just not in the SOLVED scenario.
+        sessions += [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: -1)
+        ]
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!ctx.contains("TONE-DRILL SOLVED"))
+    }
+
+    // MARK: - userContext integration — cross-surface contract
+
+    @Test func userContextLayersFreshSolvedOverActiveTrajectoryInOtherScenario() {
+        // A drill in flight (Work Update, sub-40% over 4 reps) and a
+        // recently-solved win (Networking, 0% → 100%, last evaluated 4
+        // days before the most-recent rep — well inside the freshness
+        // window) must STILL both surface. The freshness gate is
+        // per-scenario via the resolved primitive — it never drops a
+        // fresh SOLVED just because another scenario carries a
+        // trajectory.
+        var sessions = [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",     daysOffset: -4),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "scattered", daysOffset: -3),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "vague",     daysOffset: -2),
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "rushed",    daysOffset: -1)
+        ]
+        sessions += [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -10),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "rushed",    daysOffset: -9),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "flat",      daysOffset: -8),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -7),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -6),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -5)
+        ]
+        let ctx = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: sessions,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctx.contains("TONE-DRILL TRAJECTORY"))
+        #expect(ctx.contains("Professional tone in Work Update"))
+        #expect(ctx.contains("TONE-DRILL SOLVED"))
+        #expect(ctx.contains("Confident tone in Networking"))
+    }
+
+    @Test func userContextDropsSolvedAtExactRecencyBoundaryWhenAnchorMovesPast() {
+        // Boundary contract end-to-end: the SOLVED scenario's last
+        // evaluated rep is at daysOffset -14, the anchor (most-recent
+        // rep) is at daysOffset 0, delta is exactly 14 days, so the
+        // freshness predicate fires inclusive of the boundary AND the
+        // section surfaces. Moving the anchor 1 second past the boundary
+        // drops the section. Pinning both halves of the boundary
+        // structurally so a future tune of the constant doesn't silently
+        // drift the boundary by a day on one half.
+        let solvedSessions = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -19),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -18),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -17),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -16),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -15),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -14)
+        ]
+        // Anchor exactly on the 14-day boundary — inclusive freshness.
+        let onBoundary = solvedSessions + [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: 0)
+        ]
+        let ctxOnBoundary = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: onBoundary,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(ctxOnBoundary.contains("TONE-DRILL SOLVED"))
+
+        // Anchor 1 day past the boundary — drops.
+        let beyondBoundary = solvedSessions + [
+            imSession(scenario: .workUpdate, targetTone: .professional, actualTone: "professional", daysOffset: 1)
+        ]
+        let ctxBeyond = CoachContextBuilder.userContext(
+            profile: nil,
+            baseline: .empty,
+            rating: .initial,
+            sessions: beyondBoundary,
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil
+        )
+        #expect(!ctxBeyond.contains("TONE-DRILL SOLVED"))
+    }
+
+    // MARK: - Predicate-line constants
+
+    @Test func recencyWindowConstantMatchesRound38PushbackWindow() {
+        // Cross-surface symmetry pin from the round-41 design: the SOLVED
+        // freshness window and the round-38 pushback dampening window
+        // share the same number (14 days). A future round that tunes one
+        // should be made to consider whether to tune the other too —
+        // this test forces the consideration by failing when they
+        // diverge.
+        #expect(
+            CoachContextBuilder.toneDrillSolvedRecencyDays
+            == CoachContextBuilder.repeatedPushbackRecencyDays
+        )
+    }
+}
+
 // MARK: - Tone-drill trajectory threaded into the post-rep coach note
 //
 // The same Adaptation read also reaches the post-rep `CoachReadCard` via
