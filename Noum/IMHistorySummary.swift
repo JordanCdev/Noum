@@ -771,4 +771,40 @@ enum IMHistorySummary {
               let lastDate = best?.value.map(\.date).max() else { return nil }
         return (tone, lastDate)
     }
+
+    // MARK: - Latest evaluated rep date for a scenario (round 42)
+    //
+    // The freshness anchor for `CoachContextBuilder.toneDrillTrajectoryIsFresh`.
+    // Returns the date of the most-recent evaluated (actualTone-bearing) rep
+    // in the given scenario, mirroring the filter `toneMatchStats` already
+    // uses — `.imConversation` mode + scenario match + non-empty actualTone.
+    //
+    // The chat coach's TONE-DRILL TRAJECTORY block fires whenever
+    // `toneDrillSignal(from:)` returns a sub-bar scenario with ≥4 evaluated
+    // reps. Without a recency gate, a scenario the user practiced 60 days
+    // ago, never returned to, and is still below the bar would surface a
+    // TRAJECTORY line on every chat reply forever. Round 42 closes that gap
+    // by gating the section on this helper's output (compared against the
+    // user's most-recent rep across all history, the same anchor round 41
+    // uses on the SOLVED surface).
+    //
+    // Pure read; nil when no evaluated rep exists for the scenario (defensive
+    // — `toneDrillSignal(from:)` already requires `evaluatedCount >= 3`, so
+    // in practice this returns non-nil whenever the trajectory section would
+    // otherwise fire, but the guard keeps the helper safe to call on any
+    // session set).
+    static func latestEvaluatedRepDate(
+        from sessions: [PracticeSession],
+        scenario: IMConversationScenario
+    ) -> Date? {
+        sessions.lazy.compactMap { session -> Date? in
+            guard session.mode == .imConversation,
+                  let details = session.imConversationDetails,
+                  details.setup.scenario == scenario,
+                  let actual = details.actualTone,
+                  !actual.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return session.date
+        }.max()
+    }
 }
