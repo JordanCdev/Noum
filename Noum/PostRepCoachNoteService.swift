@@ -350,6 +350,95 @@ enum MomentumComputer {
         guard let priorMax = priorScores.max() else { return false }
         return currentScore > priorMax
     }
+
+    // MARK: - IM tone-drill note fields anchored on the just-finished rep (round 43)
+    //
+    // The post-rep coach note's TRAJECTORY branch (recovering / slipping) and
+    // SOLVED branch (the crossing win) both read from the just-finished rep's
+    // scenario — never from a "freshest trajectory anywhere" global read. The
+    // finalizer used to inline this block; round 43 lifts it into a pure
+    // helper so the anchoring contract is testable in isolation.
+    //
+    // The defensive symmetric pin to round 41 (SOLVED freshness on the chat-
+    // coach context surface) and round 42 (TRAJECTORY freshness on the chat-
+    // coach context surface): the post-rep note doesn't need a freshness gate
+    // because, by construction, the read IS the just-finished rep's scenario
+    // — the user just produced the rep that anchors the read. The contract
+    // worth locking is that the helper NEVER picks up scenario B's trajectory
+    // when the just-finished rep is in scenario A, even when scenario B is
+    // the user's loudest active sub-bar slip. `IMHistorySummary.toneDrillProgress`
+    // already filters strictly by scenario; this helper threads the just-
+    // finished rep's scenario through and surfaces the per-rep titles, so the
+    // structural impossibility of cross-rep cold opens reads in one place.
+    static func imToneDrillNoteFields(
+        forJustFinished session: PracticeSession,
+        in allSessions: [PracticeSession]
+    ) -> IMToneDrillNoteFields {
+        guard session.mode == .imConversation,
+              let details = session.imConversationDetails else {
+            return .empty
+        }
+        let scenario = details.setup.scenario
+        let progress = IMHistorySummary.toneDrillProgress(
+            from: allSessions, scenario: scenario
+        )
+        let scenarioTitle = scenario.title
+        let toneTitle = details.setup.targetTone.title
+
+        // Crossing detection routes through the same primitive as the hero
+        // SOLVED ribbon (round 21) so the two surfaces can never drift. A
+        // scenario already across the bar before this rep returns nil here —
+        // SOLVED headlines exactly once, not on every rep after the crossing.
+        if let crossed = IMHistorySummary.toneDrillCrossing(
+            in: allSessions,
+            scenario: scenario,
+            currentRepId: session.id
+        ) {
+            return IMToneDrillNoteFields(
+                progress: progress,
+                scenarioTitle: scenarioTitle,
+                toneTitle: toneTitle,
+                resolved: crossed,
+                resolvedScenarioTitle: scenarioTitle,
+                resolvedToneTitle: crossed.targetTone.title
+            )
+        }
+        return IMToneDrillNoteFields(
+            progress: progress,
+            scenarioTitle: scenarioTitle,
+            toneTitle: toneTitle,
+            resolved: nil,
+            resolvedScenarioTitle: nil,
+            resolvedToneTitle: nil
+        )
+    }
+}
+
+// MARK: - IMToneDrillNoteFields (round 43)
+//
+// Pure data snapshot of the IM tone-drill trio (trajectory + titles) and the
+// SOLVED trio (resolved + titles) routed into the post-rep note's
+// `PostRepCoachNoteInput`. Mirrors the `MomentumSignals` shape: inputs in,
+// fields out, no I/O. The structural invariant: every non-nil field on this
+// struct is derived from the just-finished rep's `imConversationDetails`
+// (scenario + targetTone) — never from another scenario's history.
+
+struct IMToneDrillNoteFields {
+    let progress: IMToneDrillProgress?
+    let scenarioTitle: String?
+    let toneTitle: String?
+    let resolved: IMToneDrillResolved?
+    let resolvedScenarioTitle: String?
+    let resolvedToneTitle: String?
+
+    static let empty = IMToneDrillNoteFields(
+        progress: nil,
+        scenarioTitle: nil,
+        toneTitle: nil,
+        resolved: nil,
+        resolvedScenarioTitle: nil,
+        resolvedToneTitle: nil
+    )
 }
 
 @available(iOS 17.0, macOS 12.0, *)
