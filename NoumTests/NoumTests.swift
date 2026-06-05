@@ -23417,6 +23417,142 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(lowerNote.contains("difficult conversation"))
         #expect(!lowerNote.contains("networking"))
     }
+
+    // MARK: - Cross-surface contract: SOLVED-branch symmetric companion (round 45)
+    //
+    // Round 45 closes future move #25 from round 44's HANDOFF — the
+    // TRAJECTORY-branch cross-surface contract pinned by
+    // `userPromptAndDeterministicNoteNameSameJustFinishedRepsScenario`
+    // above is symmetrically pinned on the SOLVED branch. Same shape: a
+    // crossing rep in scenario A as the just-finished rep, a parallel
+    // scenario B carrying loud signals (current slip, prior crossing) in
+    // the same session set, and both surfaces — AI prompt + deterministic
+    // note — MUST headline scenario A's SOLVED win and NEITHER may name
+    // scenario B. Three angles cover (1) the baseline thin-B case,
+    // (2) the parallel-currently-slipping-B case where the recommendation
+    // engine would prescribe B's drill, and (3) the parallel-prior-
+    // crossing-C case where a past win in another scenario could tempt a
+    // "you've done it before" pivot. All three are pinned in lockstep —
+    // a future regression on either surface trips the cross-surface
+    // contract independently of which path broke first.
+
+    @Test func userPromptAndDeterministicNoteSolvedBranchAnchorOnJustFinishedScenario() {
+        // Baseline SOLVED cross-surface contract — symmetric to round 44's
+        // `userPromptAndDeterministicNoteNameSameJustFinishedRepsScenario`
+        // on the TRAJECTORY surface. Just-finished rep IS the crossing rep
+        // in scenario A; scenario B sits in the session set as a thin
+        // parallel (one rep, no qualifying history). Both surfaces name
+        // scenario A's title in the SOLVED clause; neither names B.
+        let crossingId = UUID()
+        let crossingA = crossingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", onBrandTone: "calm",
+            crossingRepId: crossingId, earliestDayOffset: -3
+        )
+        let thinB = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "shaky", daysOffset: -1
+        )
+        let justFinished = crossingA.last!
+        #expect(justFinished.id == crossingId)
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: crossingA + [thinB]
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — SOLVED clause names scenario A, not B.
+        #expect(prompt.contains("SOLVED this rep"))
+        #expect(prompt.contains("Difficult Conversation"))
+        #expect(!prompt.contains("Networking"))
+        // Note — SOLVED sentence names scenario A, not B. The deterministic
+        // priority chain hits SOLVED first (branch 0 in
+        // `metricSentence(for:persona:)`), so the metric reads "Your calm
+        // tone in Difficult Conversation is solved — …".
+        let lowerNote = note.noteText.lowercased()
+        #expect(lowerNote.contains("difficult conversation"))
+        #expect(lowerNote.contains("solved"))
+        #expect(!lowerNote.contains("networking"))
+    }
+
+    @Test func userPromptAndDeterministicNoteSolvedBranchHoldsWhenParallelScenarioIsRecentlySlipping() {
+        // Defensive — scenario B has a current 4-rep below-bar slip in
+        // the same session set (the recommendation engine would prescribe
+        // B's drill next). The helper threads scenario A only through
+        // `toneDrillCrossing` and `toneDrillProgress`, so B's slip is
+        // invisible to BOTH the AI prompt's MOMENTUM clauses and the
+        // deterministic note's metric chain. Both surfaces remain on
+        // scenario A's SOLVED win; B's loudest open thread never surfaces.
+        let crossingId = UUID()
+        let crossingA = crossingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", onBrandTone: "calm",
+            crossingRepId: crossingId, earliestDayOffset: -3
+        )
+        let slippingB = slippingScenarioSessions(
+            scenario: .networking, targetTone: .confident,
+            offBrandTone: "shaky", earliestDayOffset: -4
+        )
+        let justFinished = crossingA.last!
+        #expect(justFinished.id == crossingId)
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: crossingA + slippingB
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — SOLVED clause names scenario A; B's slip never surfaces.
+        #expect(prompt.contains("SOLVED this rep"))
+        #expect(prompt.contains("Difficult Conversation"))
+        #expect(!prompt.contains("Networking"))
+        // Note — SOLVED branch wins the priority chain even when B's
+        // trajectory would have been the loudest open thread.
+        let lowerNote = note.noteText.lowercased()
+        #expect(lowerNote.contains("difficult conversation"))
+        #expect(lowerNote.contains("solved"))
+        #expect(!lowerNote.contains("networking"))
+    }
+
+    @Test func userPromptAndDeterministicNoteSolvedBranchNeverNamesParallelPriorCrossing() {
+        // Defensive — scenario C (Work Update, professional) had its own
+        // crossing rep at an earlier date in the session set. The
+        // "you've already done it before" pivot is structurally
+        // impossible: the helper threads ONLY scenario A through
+        // `toneDrillCrossing(in:scenario:currentRepId:)`, so C's old win
+        // is invisible to both surfaces. The prompt + note headline
+        // scenario A's fresh SOLVED only.
+        let crossingIdA = UUID()
+        let crossingA = crossingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", onBrandTone: "calm",
+            crossingRepId: crossingIdA, earliestDayOffset: -3
+        )
+        let priorCrossingC = crossingScenarioSessions(
+            scenario: .workUpdate, targetTone: .professional,
+            offBrandTone: "vague", onBrandTone: "professional",
+            crossingRepId: UUID(), earliestDayOffset: -20
+        )
+        let justFinished = crossingA.last!
+        #expect(justFinished.id == crossingIdA)
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: crossingA + priorCrossingC
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — SOLVED on A only; C's old win is invisible.
+        #expect(prompt.contains("SOLVED this rep"))
+        #expect(prompt.contains("Difficult Conversation"))
+        #expect(!prompt.contains("Work Update"))
+        #expect(!prompt.contains("Professional"))
+        #expect(!prompt.lowercased().contains("work update"))
+        // Note — same anchoring on the deterministic surface.
+        let lowerNote = note.noteText.lowercased()
+        #expect(lowerNote.contains("difficult conversation"))
+        #expect(lowerNote.contains("solved"))
+        #expect(!lowerNote.contains("work update"))
+        #expect(!lowerNote.contains("professional"))
+    }
 }
 
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
