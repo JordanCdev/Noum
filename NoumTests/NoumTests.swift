@@ -23850,6 +23850,181 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(!lowerNote.contains("difficult conversation"))
         #expect(!lowerNote.contains("calm tone"))
     }
+
+    // MARK: - Cross-surface contract: stalled just-finished boundary completion (round 48)
+    //
+    // Round 48 closes future moves #30 + #31 from round 47's HANDOFF — the
+    // last three angles needed to fully pin the stalled-trajectory corner
+    // of the 2x2 direction × locus matrix the round-44 / round-45 / round-
+    // 46 / round-47 cross-surface tests set up. Round 47 covered the
+    // 50%-stalled (alternating off/on) own-scenario baseline and the
+    // parallel-slipping-B / parallel-recovering-B defensives; round 48
+    // extends to (1) the parallel-prior-crossing-C defensive on stalled-A
+    // — the direct symmetric companion to round 46's third test (thin-A
+    // + prior-crossing-C) — and (2) the two stalled-rate boundary
+    // extremes: 0%-stalled (all reps off-brand → earlierRate=0,
+    // recentRate=0, delta=0 → stalled; resolved is nil because the
+    // recent window never holds at or above `toneDrillResolvedHoldRate`)
+    // and 100%-stalled (all reps on-brand → earlierRate=1, recentRate=1,
+    // delta=0 → stalled; resolved is nil because the earlier window
+    // never sat below `matchRateThreshold`). Both surfaces gate the
+    // trajectory clause on `progress.direction != .stalled` and the
+    // SOLVED clause on non-nil `imToneDrillResolved`; round 48 locks
+    // both surfaces in lockstep across the three remaining stalled
+    // angles so a future regression on EITHER surface (helper, prompt,
+    // deterministic note) trips at least one of the three round-48 tests
+    // independently of which surface broke first. The full stalled
+    // corner of the matrix — own-scenario (50% baseline + 0% boundary +
+    // 100% boundary) and parallel (slipping + recovering + prior-
+    // crossing) — is now structurally pinned in lockstep on both
+    // surfaces.
+
+    @Test func userPromptAndDeterministicNoteStalledJustFinishedNeverNameParallelPriorCrossing() {
+        // Defensive — same stalled-A just-finished (50% alternating
+        // off/on shape) + scenario C (Work Update, professional) carries
+        // a prior crossing at -20 days. The "you've done it before in
+        // another scenario, here's a flat trajectory in front of you —
+        // pivot to C's old win" cold-open is the trickiest stalled-A
+        // failure mode: the helper has a non-nil progress for A (the
+        // stalled gate closes the TRAJECTORY clause), and the engine has
+        // a real crossing in history (the SOLVED clause could be
+        // tempted). Neither fires on either surface: the helper threads
+        // ONLY scenario A through `toneDrillCrossing`, so C's old win is
+        // invisible; A's own `toneDrillResolved` is nil because
+        // earlierRate (0.5) is NOT below the match-rate threshold. Both
+        // IM branches are dark on both surfaces. Symmetric companion to
+        // round 46's `userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelPriorCrossing`.
+        let stalledA = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0)
+        ]
+        let priorCrossingC = crossingScenarioSessions(
+            scenario: .workUpdate, targetTone: .professional,
+            offBrandTone: "vague", onBrandTone: "professional",
+            crossingRepId: UUID(), earliestDayOffset: -20
+        )
+        let justFinished = stalledA.last!
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: stalledA + priorCrossingC
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — stalled-A closes the trajectory clause; C's old
+        // crossing is invisible because the helper threads only A
+        // through `toneDrillCrossing`. Neither IM clause fires on the
+        // AI path.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Work Update"))
+        #expect(!prompt.contains("Professional"))
+        #expect(!prompt.lowercased().contains("work update"))
+        // Note — same anchoring on the deterministic surface. Branch 0
+        // (SOLVED) skips on nil `imToneDrillResolved` (A's earlierRate
+        // of 0.5 is at/above the 0.4 match-rate threshold, so the
+        // turnaround predicate gates off); branch 0d (TRAJECTORY) skips
+        // on `direction == .stalled`. The metric chain takes over; C's
+        // title never headlines.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("work update"))
+        #expect(!lowerNote.contains("professional"))
+    }
+
+    @Test func userPromptAndDeterministicNoteFullyOffBrandStalledJustFinishedNeverProducesOwnTrajectoryClause() {
+        // Boundary — 0%-stalled own-scenario. All 4 reps in scenario A
+        // (Networking, confident) are off-brand ("shaky"), so the
+        // helper computes `progress = IMToneDrillProgress(direction:
+        // .stalled, earlierRate: 0.0, recentRate: 0.0, windowSize: 2)`
+        // (earlier prefix `[shaky, shaky]` → 0% match; recent suffix
+        // `[shaky, shaky]` → 0% match; delta = 0 → stalled). The
+        // recommendation engine still has a real drill to prescribe
+        // (the scenario is squarely below the bar), but the per-rep
+        // post-rep note's IM tone-drill TRAJECTORY clause stays silent
+        // because `direction == .stalled` — the right per-rep read is
+        // the metric chain (filler, score, pace), not a coaching-shaped
+        // trajectory clause on a flat-line miss. The SOLVED clause also
+        // stays silent: `toneDrillResolved` requires `recentRate >=
+        // toneDrillResolvedHoldRate (0.6)`, and 0% is far below that —
+        // the user hasn't climbed at all. Both IM branches dark on
+        // both surfaces. This is the rate-extreme companion to round
+        // 47's 50%-alternating baseline.
+        let fullyOffBrandStalledA = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky", daysOffset: 0)
+        ]
+        let justFinished = fullyOffBrandStalledA.last!
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: fullyOffBrandStalledA
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — direction gate closes the trajectory clause even at
+        // 0%-stalled (the loudest off-brand-only signal); resolved gate
+        // closes the SOLVED clause because the recent window never
+        // climbed.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Confident tone in Networking"))
+        // Note — same gating on the deterministic surface. Branch 0d
+        // skips on `direction == .stalled`; branch 0 skips on nil
+        // `imToneDrillResolved`. The metric chain takes over.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("confident tone in networking"))
+    }
+
+    @Test func userPromptAndDeterministicNoteFullyOnBrandStalledJustFinishedNeverProducesOwnTrajectoryClause() {
+        // Boundary — 100%-stalled own-scenario. All 4 reps in scenario
+        // A (Networking, confident) are on-brand ("confident"), so the
+        // helper computes `progress = IMToneDrillProgress(direction:
+        // .stalled, earlierRate: 1.0, recentRate: 1.0, windowSize: 2)`
+        // (earlier prefix `[confident, confident]` → 100% match; recent
+        // suffix `[confident, confident]` → 100% match; delta = 0 →
+        // stalled). The user is *holding* — the trajectory is flat at
+        // the top, not the bottom. The per-rep post-rep note's IM
+        // tone-drill TRAJECTORY clause stays silent because `direction
+        // == .stalled` (a held-at-100% trajectory is not coaching
+        // language — "you're still on-brand" reads as filler, not
+        // signal). The SOLVED clause also stays silent: the user
+        // *never* sat below the bar (`earlierRate (1.0)` is NOT below
+        // `matchRateThreshold (0.4)`), so the turnaround predicate
+        // gates off — there was no gap to close, so no "you solved
+        // this" coaching language fits. Both IM branches dark on both
+        // surfaces. This is the rate-extreme companion to round 47's
+        // 50%-alternating baseline on the opposite end of the gradient
+        // from the 0%-stalled test above.
+        let fullyOnBrandStalledA = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0)
+        ]
+        let justFinished = fullyOnBrandStalledA.last!
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: fullyOnBrandStalledA
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — direction gate closes the trajectory clause even at
+        // 100%-stalled (steady-state on-brand competence is not a
+        // coaching moment); resolved gate closes the SOLVED clause
+        // because there was no climb to acknowledge.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Confident tone in Networking"))
+        // Note — same gating on the deterministic surface. Branch 0d
+        // skips on `direction == .stalled`; branch 0 skips on nil
+        // `imToneDrillResolved`. The metric chain takes over; the
+        // held-at-100% read never produces an IM tone-drill clause on
+        // either path.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("confident tone in networking"))
+    }
 }
 
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
