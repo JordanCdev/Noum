@@ -111,7 +111,7 @@ final class M17VerificationTour: XCTestCase {
         //   13: max_tokens 700 — replies don't truncate mid-sentence
         // ============================================================
 
-        let ask = launchSeededAt("noum://ask")
+        let ask = launchSeededAt("noum://ask/type")
         // Coach opener line seeds on appear — wait for the initial reply
         // to land so we can verify the "Reading your context…" subtitle
         // is the pre-reply state.

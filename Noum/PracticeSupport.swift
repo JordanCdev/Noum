@@ -28,6 +28,9 @@ enum AppDestination: Hashable {
     case speakingRank
     case pathJourney
     case askNoum
+    /// Typed Ask Noum entry for accessibility, UI tests, and users who want the
+    /// thread directly. The main `askNoum` case remains the live coach session.
+    case askNoumTyped
     case growthLibrary
     /// Detail view for a single past session, addressable by session ID so
     /// surfaces like the Growth Library can deep-link straight to "the

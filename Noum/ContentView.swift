@@ -368,7 +368,16 @@ struct ContentView: View {
                         sessionStore: sessionStore,
                         ratingStore: ratingStore,
                         coachingProfileStore: coachingProfileStore,
-                        navigationPath: $navigationPath
+                        navigationPath: $navigationPath,
+                        initialMode: .live
+                    )
+                case .askNoumTyped:
+                    CoachSessionView(
+                        sessionStore: sessionStore,
+                        ratingStore: ratingStore,
+                        coachingProfileStore: coachingProfileStore,
+                        navigationPath: $navigationPath,
+                        initialMode: .type
                     )
                 case .growthLibrary:
                     GrowthLibraryView()
@@ -1884,7 +1893,20 @@ struct ContentView: View {
             navigationPath.append(AppDestination.pathJourney)
         case "ask", "asknoum":
             navigationPath = NavigationPath()
-            navigationPath.append(AppDestination.askNoum)
+            let pathMode = path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+            let queryMode = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name.lowercased() == "mode" })?
+                .value?
+                .lowercased()
+            if pathMode == "type" || pathMode == "chat" || queryMode == "type" || queryMode == "chat" {
+                navigationPath.append(AppDestination.askNoumTyped)
+            } else {
+                navigationPath.append(AppDestination.askNoum)
+            }
+        case "asktype", "askchat":
+            navigationPath = NavigationPath()
+            navigationPath.append(AppDestination.askNoumTyped)
         case "growth", "library":
             navigationPath.append(AppDestination.growthLibrary)
         case "lessons":

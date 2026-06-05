@@ -139,6 +139,9 @@ struct AskNoumView: View {
     /// When set, the chat header shows a "Live" pill that returns to the live
     /// call (`LiveCoachCallView`). Nil for any standalone use.
     var onGoLive: (() -> Void)? = nil
+    /// Typed deep links and test routes should land on the actual composer,
+    /// while the main Ask Noum entry remains voice-first.
+    private let startsInTextMode: Bool
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
@@ -153,7 +156,7 @@ struct AskNoumView: View {
     /// A7 voice-first: when true (and voice is available) Ask Noum shows the
     /// prominent talk bar as the default input; the user taps "Type instead"
     /// to fall back to the text bar. Defaults true so the front door is voice.
-    @State private var voiceFirstMode: Bool = true
+    @State private var voiceFirstMode: Bool
     @State private var didLandFirstAppear = false
     @FocusState private var inputFocused: Bool
 
@@ -205,6 +208,23 @@ struct AskNoumView: View {
     @StateObject private var voiceSettings = IMVoicePlaybackSettingsManager.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        sessionStore: PracticeSessionStore,
+        ratingStore: RatingStore,
+        coachingProfileStore: CoachingProfileStore,
+        navigationPath: Binding<NavigationPath>,
+        onGoLive: (() -> Void)? = nil,
+        startsInTextMode: Bool = false
+    ) {
+        self.sessionStore = sessionStore
+        self.ratingStore = ratingStore
+        self.coachingProfileStore = coachingProfileStore
+        self._navigationPath = navigationPath
+        self.onGoLive = onGoLive
+        self.startsInTextMode = startsInTextMode
+        self._voiceFirstMode = State(initialValue: !startsInTextMode)
+    }
 
     private var voice: SpeakingStyleGoal? {
         // The CHOSEN voice, not the always-populated effective default — so the

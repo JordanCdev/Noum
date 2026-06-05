@@ -17,7 +17,21 @@ struct CoachSessionView: View {
     @Binding var navigationPath: NavigationPath
 
     enum Mode { case live, type }
-    @State private var mode: Mode = .live
+    @State private var mode: Mode
+
+    init(
+        sessionStore: PracticeSessionStore,
+        ratingStore: RatingStore,
+        coachingProfileStore: CoachingProfileStore,
+        navigationPath: Binding<NavigationPath>,
+        initialMode: Mode = .live
+    ) {
+        self.sessionStore = sessionStore
+        self.ratingStore = ratingStore
+        self.coachingProfileStore = coachingProfileStore
+        self._navigationPath = navigationPath
+        self._mode = State(initialValue: initialMode)
+    }
 
     var body: some View {
         Group {
@@ -33,7 +47,8 @@ struct CoachSessionView: View {
                     ratingStore: ratingStore,
                     coachingProfileStore: coachingProfileStore,
                     navigationPath: $navigationPath,
-                    onGoLive: { withAnimation(.easeInOut(duration: 0.25)) { mode = .live } }
+                    onGoLive: { withAnimation(.easeInOut(duration: 0.25)) { mode = .live } },
+                    startsInTextMode: true
                 )
             }
         }

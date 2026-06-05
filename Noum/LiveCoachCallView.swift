@@ -31,15 +31,16 @@ struct LiveCoachCallView: View {
     @StateObject private var speaker = IMMessageSpeaker.shared
     @StateObject private var voiceSettings = IMVoicePlaybackSettingsManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The hands-free session is engaged (auto silence-send + auto re-arm).
     @State private var loopActive = false
     /// Last time the live transcript changed — drives silence detection.
     @State private var lastPartialAt = Date()
-    /// Typed-turn fallback (simulator / no mic) — drive the call without voice.
-    @State private var draft = ""
-    @FocusState private var typing: Bool
+    /// Keeps old chat history from leaking into the live landing. The live call
+    /// only shows captions after this session has produced a new turn.
+    @State private var hasLiveExchange = false
 
     /// Polls for end-of-turn silence. Cheap no-op unless we're recording.
     private let tick = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
@@ -60,7 +61,8 @@ struct LiveCoachCallView: View {
     }
 
     private var stateLine: String {
-        if !loopActive { return "Tap the mic to talk" }
+        if !voiceInput.isAvailable { return "Use Type to write instead" }
+        if !loopActive { return "Tap Talk to begin" }
         if voiceInput.state == .recording { return "Listening — pause when you're done" }
         if store.isAwaitingReply { return "Thinking…" }
         if speaker.isSpeaking { return "Speaking…" }
@@ -74,11 +76,19 @@ struct LiveCoachCallView: View {
             return voiceInput.partialTranscript.isEmpty ? nil : voiceInput.partialTranscript
         }
         if store.isAwaitingReply { return nil }
+        guard hasLiveExchange || speaker.isSpeaking else { return nil }
         return store.messages.last(where: { $0.role == .coach && !$0.isPending })?.text
     }
 
     private var captionSpeaker: String {
         voiceInput.state == .recording ? "YOU" : "NOUM"
+    }
+
+    private var shouldShowCoachingBrief: Bool {
+        !hasLiveExchange &&
+        voiceInput.state != .recording &&
+        !store.isAwaitingReply &&
+        !speaker.isSpeaking
     }
 
     var body: some View {
@@ -89,9 +99,12 @@ struct LiveCoachCallView: View {
                 liveBar
                 Spacer(minLength: 0)
                 presence
-                captionArea
+                if shouldShowCoachingBrief {
+                    coachingBriefCard
+                } else {
+                    captionArea
+                }
                 Spacer(minLength: 0)
-                composer
                 controlBar
             }
             .padding(.horizontal, Spacing.lg)
@@ -129,8 +142,8 @@ struct LiveCoachCallView: View {
 
     private var liveBar: some View {
         HStack(spacing: 8) {
-            Circle().fill(Color.red.opacity(loopActive ? 0.9 : 0.35)).frame(width: 8, height: 8)
-            Text("LIVE")
+            Circle().fill((loopActive ? Color.red : AppColor.pro).opacity(loopActive ? 0.9 : 0.65)).frame(width: 8, height: 8)
+            Text(loopActive ? "LIVE" : "COACH")
                 .font(Typography.micro.weight(.bold))
                 .tracking(1.5)
                 .foregroundStyle(.white.opacity(0.85))
@@ -187,6 +200,95 @@ struct LiveCoachCallView: View {
             .padding(.top, Spacing.lg)
             .transition(.opacity)
         }
+    }
+
+    // MARK: - Coaching brief
+
+    private var coachingBriefCard: some View {
+        let brief = liveCoachBrief
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 8) {
+                Image(systemName: "target")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppColor.proLight)
+                Text("COACHING READ")
+                    .font(Typography.micro.weight(.bold))
+                    .tracking(1)
+                    .foregroundStyle(.white.opacity(0.58))
+            }
+
+            Text(brief.headline)
+                .font(Typography.headline)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            briefRow(label: "Current work", value: brief.currentWork)
+            briefRow(label: "Target", value: brief.target)
+            briefRow(label: "Next move", value: brief.nextMove)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
+        )
+        .padding(.top, Spacing.lg)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Coaching read. \(brief.headline) Current work: \(brief.currentWork). Target: \(brief.target). Next move: \(brief.nextMove).")
+        .accessibilityIdentifier("askNoum.live.coachBrief")
+    }
+
+    private func briefRow(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(Typography.micro.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.42))
+            Text(value)
+                .font(Typography.caption)
+                .foregroundStyle(.white.opacity(0.82))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var liveCoachBrief: LiveCoachBrief {
+        guard let caseFile = coachMemoryStore.currentMemory?.caseFile else {
+            let voiceLabel = voice?.title.lowercased() ?? "speaking"
+            return LiveCoachBrief(
+                headline: "I need one clean rep to sharpen the read.",
+                currentWork: "Establish a baseline for your \(voiceLabel) goal.",
+                target: "Speak naturally for one focused answer.",
+                nextMove: "Run one rep, then I can name the pattern with evidence."
+            )
+        }
+
+        let headline = bounded(caseFile.hypothesis)
+            ?? caseFile.focus.map { "The current lever is \($0.displayName.lowercased())." }
+            ?? "The case is forming from your recent reps."
+        let currentWork = bounded(caseFile.activeIntervention)
+            ?? caseFile.focus.map { "Build \($0.displayName.lowercased()) with the next clean rep." }
+            ?? "Gather another rep before strengthening the read."
+        let target = bounded(caseFile.observableTarget)
+            ?? bounded(caseFile.successMeasure)
+            ?? "Make the next rep observable enough to compare."
+        let nextMove = bounded(caseFile.nextMove.contextLabel)
+            ?? "Gather evidence"
+
+        return LiveCoachBrief(
+            headline: headline,
+            currentWork: currentWork,
+            target: target,
+            nextMove: nextMove
+        )
+    }
+
+    private func bounded(_ value: String?, maximumLength: Int = 96) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        if trimmed.count <= maximumLength { return trimmed }
+        let clipped = String(trimmed.prefix(maximumLength)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return clipped + "..."
     }
 
     // MARK: - Control bar (Zoom-style)
@@ -306,58 +408,8 @@ struct LiveCoachCallView: View {
         startRecording()
     }
 
-    // MARK: - Typed-turn fallback (simulator / no mic)
-
-    /// Always shown on the simulator (its audio I/O is unreliable); on device
-    /// only when the mic is unavailable. Lets you drive the whole call loop —
-    /// orb, reply, captions — without voice.
-    private var showComposer: Bool {
-        #if targetEnvironment(simulator)
-        return true
-        #else
-        return !voiceInput.isAvailable
-        #endif
-    }
-
-    @ViewBuilder
-    private var composer: some View {
-        if showComposer {
-            HStack(spacing: Spacing.sm) {
-                TextField("Type your turn…", text: $draft, axis: .vertical)
-                    .foregroundStyle(.white)
-                    .tint(AppColor.proLight)
-                    .focused($typing)
-                    .submitLabel(.send)
-                    .onSubmit(submitDraft)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.10), in: Capsule())
-                Button(action: submitDraft) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(isDraftEmpty ? .white.opacity(0.3) : AppColor.proLight)
-                }
-                .buttonStyle(.plain)
-                .disabled(isDraftEmpty)
-                .accessibilityLabel("Send")
-            }
-            .padding(.top, Spacing.md)
-        }
-    }
-
-    private var isDraftEmpty: Bool {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func submitDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        draft = ""
-        typing = false
-        handleUtterance(text)
-    }
-
     private func handleUtterance(_ text: String) {
+        hasLiveExchange = true
         let ids = store.appendUserTurn(text)
         Task {
             let outcome = await CoachReplyPipeline.generate(coachID: ids.coachID)
@@ -381,6 +433,13 @@ struct LiveCoachCallView: View {
         voiceSettings.askNoumSpokenRepliesEnabled.toggle()
         if !voiceSettings.askNoumSpokenRepliesEnabled { speaker.stop() }
     }
+}
+
+private struct LiveCoachBrief {
+    let headline: String
+    let currentWork: String
+    let target: String
+    let nextMove: String
 }
 
 #endif
