@@ -37,6 +37,11 @@ PLAN.md
 .screenshots/**/*.png
 .screenshots/**/*.jpg
 .screenshots/**/*.jpeg
+
+# Screen recordings are local-only — heavy, and a single one can exceed
+# GitHub's 100MB push limit (this is what blocked a push). Never commit them.
+*.mov
+*.mp4
 .claude/worktrees/
 
 # Per-developer / per-worktree Claude Code permission overrides.
