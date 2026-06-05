@@ -23692,6 +23692,164 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(!lowerNote.contains("work update"))
         #expect(!lowerNote.contains("professional"))
     }
+
+    // MARK: - Cross-surface contract: stalled just-finished trajectory (round 47)
+    //
+    // Round 47 closes future move #28 from round 46's HANDOFF — the stalled-
+    // trajectory cross-surface contract that completes the 2x2 direction ×
+    // locus matrix the round-44 / round-45 / round-46 cross-surface tests set
+    // up. The recovering branch is pinned by round 44's
+    // `userPromptAndDeterministicNoteNameSameJustFinishedRepsScenario`, the
+    // crossing branch by round 45's three SOLVED tests, the thin/empty
+    // branch by round 46's three thin-just-finished tests. The stalled
+    // branch (delta in (-15%, +15%) — a flat trajectory not worth coaching
+    // language) is the last direction left to pin in lockstep. Both
+    // surfaces gate the trajectory clause on `progress.direction != .stalled`
+    // — `PostRepCoachNoteService.userPrompt(from:)` at line ~1340 and
+    // `metricSentence(for:persona:)` branch 0d at line ~656. Single-surface
+    // companions are already pinned: the AI-path stalled gate by
+    // `userPromptOmitsTrajectoryClauseOnStalledDirection` above (which uses
+    // a constructed-by-hand `IMToneDrillProgress`), and the deterministic-
+    // path stalled fall-through by `PostRepCoachNoteToneTrajectoryTests`.
+    // What's missing is the cross-surface lockstep: a single test driving
+    // BOTH surfaces on the same fixture that lands a stalled trajectory
+    // through the helper (not a constructed-by-hand progress), so a future
+    // regression on the helper-then-surface wire trips at least one of the
+    // three round-47 tests independently of which surface broke first.
+    //
+    // Three angles cover (1) the baseline stalled-A own-scenario case
+    // (just-finished rep is in a stalled-A trajectory; both surfaces stay
+    // silent on the trajectory clause), (2) the parallel-slipping-B
+    // defensive (stalled-A + loud sub-bar slip in B — the recommendation
+    // engine's next prescription is invisible to both surfaces), and (3)
+    // the parallel-recovering-B defensive (stalled-A + loud recovering arc
+    // in B — the "you're recovering elsewhere" pivot is structurally
+    // impossible on both surfaces). All three are pinned in lockstep.
+
+    @Test func userPromptAndDeterministicNoteStalledJustFinishedNeverProducesOwnTrajectoryClause() {
+        // Baseline stalled cross-surface contract. Just-finished rep is the
+        // 4th rep in scenario A (Networking, confident) with an alternating
+        // off/on/off/on hit pattern → `toneDrillProgress` returns a non-nil
+        // progress with `direction == .stalled` (earlierRate=0.5,
+        // recentRate=0.5, delta=0). Both surfaces' trajectory clauses gate
+        // on `direction != .stalled`, so neither emits the "tone-match"
+        // phrasing. `toneDrillResolved` also returns nil (earlierRate of 0.5
+        // is NOT below the 0.4 match-rate threshold the resolved read
+        // requires), so the SOLVED clause never fires either.
+        let stalledA = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0)
+        ]
+        let justFinished = stalledA.last!
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: stalledA
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — stalled direction gates BOTH the trajectory clause
+        // ("tone-match" structural marker) AND the SOLVED clause
+        // (resolved is nil because earlierRate >= match-rate threshold).
+        // Neither IM clause fires; the tone-shaped phrasing for the just-
+        // finished rep's own scenario is silent.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Confident tone in Networking"))
+        // Note — same gating on the deterministic surface. Branch 0d
+        // skips on `direction == .stalled`; branch 0 (SOLVED) skips on
+        // nil `imToneDrillResolved`. The metric chain takes over; the
+        // tone-in-scenario phrasing for A is structurally invisible.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("confident tone in networking"))
+    }
+
+    @Test func userPromptAndDeterministicNoteStalledJustFinishedNeverNameParallelSlippingScenario() {
+        // Defensive — scenario B (Difficult Conversation, calm) carries a
+        // 4-rep below-bar slip in the same session set (the recommendation
+        // engine would prescribe B's drill next). The helper threads
+        // scenario A only through `toneDrillProgress`, so B's slip is
+        // invisible to BOTH the AI prompt's MOMENTUM clauses and the
+        // deterministic note's metric chain. Both surfaces stay silent on
+        // B's title; the stalled-A read does not pivot to B's loud open
+        // thread.
+        let stalledA = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0)
+        ]
+        let slippingB = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -7
+        )
+        let justFinished = stalledA.last!
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: stalledA + slippingB
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — stalled-A gates A's own trajectory clause; B's slip
+        // never surfaces because the helper threads only A through.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Difficult Conversation"))
+        #expect(!prompt.lowercased().contains("difficult conversation"))
+        #expect(!prompt.contains("Calm tone in Difficult Conversation"))
+        // Note — same anchoring on the deterministic surface. B's title
+        // never appears because A's read is structurally the only IM
+        // surface either path can speak from.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("difficult conversation"))
+        #expect(!lowerNote.contains("calm tone"))
+    }
+
+    @Test func userPromptAndDeterministicNoteStalledJustFinishedNeverNameParallelRecoveringScenario() {
+        // Defensive — scenario B (Difficult Conversation, calm) carries a
+        // 4-rep recovering trajectory in the same session set (the "you're
+        // recovering elsewhere" pivot would be the loudest open positive
+        // thread the recommendation engine could surface). The helper
+        // threads scenario A only through `toneDrillProgress`, so B's
+        // recovery is invisible to BOTH the AI prompt's MOMENTUM clauses
+        // and the deterministic note's metric chain. Both surfaces stay
+        // silent on B; the stalled-A read does not pivot to B's positive
+        // arc even when A's own read offers no coaching language.
+        let stalledA = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: 0)
+        ]
+        let recoveringB = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -10),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -9),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -8),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -7)
+        ]
+        let justFinished = stalledA.last!
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: stalledA + recoveringB
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — stalled-A gates A's own trajectory clause; B's
+        // recovering arc is silent because the helper threads only A
+        // through `toneDrillProgress`.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Difficult Conversation"))
+        #expect(!prompt.lowercased().contains("difficult conversation"))
+        #expect(!prompt.contains("Calm tone in Difficult Conversation"))
+        // Note — same anchoring. B's recovery never headlines because A's
+        // read is the only IM surface either path can speak from, and A's
+        // stalled gate closes both IM branches.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("difficult conversation"))
+        #expect(!lowerNote.contains("calm tone"))
+    }
 }
 
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
