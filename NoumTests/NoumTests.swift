@@ -7054,6 +7054,36 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("bare clarification request"))
     }
 
+    @Test func systemPromptIncludesHumanCoachAttunementFloor() {
+        // High-EQ guard: the coach should meet the human signal before it
+        // prescribes. Without this, the intelligence floor can collapse into
+        // a cold data report.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("Human-coach attunement floor"))
+        #expect(prompt.contains("frustration, nerves, avoidance"))
+        #expect(prompt.contains("Do not perform empathy"))
+        #expect(prompt.contains("fake intimacy"))
+        #expect(prompt.contains("human read -> evidence -> next move"))
+        #expect(prompt.contains("one question only if it advances the case"))
+    }
+
+    @Test func systemPromptRejectsRoboticTemplateLanguage() {
+        // The model is allowed to cite data, but not in a dashboard register.
+        // Pin the banned phrases that made Ask Noum feel robotic.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        let normalized = prompt.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+        #expect(normalized.contains("Based on your data"))
+        #expect(normalized.contains("The key insight is"))
+        #expect(normalized.contains("concrete next move"))
+        #expect(normalized.contains("this indicates"))
+        #expect(normalized.contains("as an AI"))
+        #expect(normalized.contains("not a dashboard"))
+    }
+
     @Test func systemPromptIncludesVoicePersonalityWhenProfileSet() {
         // When the user has set a voice, the system prompt must
         // include that voice's personality block. The authoritative
