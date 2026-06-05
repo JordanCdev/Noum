@@ -23553,6 +23553,145 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(!lowerNote.contains("work update"))
         #expect(!lowerNote.contains("professional"))
     }
+
+    // MARK: - Cross-surface contract: thin just-finished + loud parallel scenario (round 46)
+    //
+    // Round 46 closes future move #28 from round 45's HANDOFF — the
+    // TRAJECTORY + thin-just-finished symmetric companion to round 44's
+    // `userPromptAndDeterministicNoteNameSameJustFinishedRepsScenario`
+    // (recovering-A + slipping-B) and round 45's three SOLVED-branch
+    // cross-surface tests (crossing-A + thin-B / slipping-B / prior-
+    // crossing-C). The shape is inverted: the just-finished rep is THIN
+    // in scenario A (one rep, no qualifying history → helper returns nil
+    // progress AND nil resolved), and the loudest open thread in the
+    // session set sits in another scenario. Three angles cover (1) the
+    // baseline parallel-slipping case where B's drill would be the
+    // recommendation engine's next prescription, (2) the parallel-
+    // recovering case where B's "you're recovering elsewhere" pivot would
+    // be tempting, and (3) the parallel-prior-crossing case where C's
+    // "you've done it before" pivot would be tempting. All three pinned
+    // in lockstep — both surfaces stay silent on the parallel scenario
+    // because the helper threads only the just-finished rep's scenario
+    // through `toneDrillProgress` + `toneDrillCrossing`; a future
+    // regression that lets either surface name a non-just-finished
+    // scenario when progress is nil trips at least one of these three
+    // tests independently of which path broke first. The single-surface
+    // companions (`userPromptNeverNamesAnotherScenarioWhenJustFinishedRepIsThin`
+    // + `deterministicNoteNeverNamesAnotherScenarioWhenJustFinishedRepIsThin`)
+    // continue to fail-fast in isolation if their single surface regresses;
+    // the round-46 tests add the cross-surface coupling.
+
+    @Test func userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelSlippingScenario() {
+        // Baseline thin-just-finished cross-surface contract. Just-
+        // finished rep is the lone evaluated rep in scenario A
+        // (Networking, confident) → helper returns nil progress AND nil
+        // resolved. Scenario B (Difficult Conversation) has a 4-rep
+        // below-bar slip — the loudest open trajectory in the session
+        // set and the recommendation engine's next prescription. Both
+        // surfaces stay silent on B; the tone-match clause never fires
+        // because the helper's `imToneDrillProgress` for scenario A is
+        // nil.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let slippingB = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -3
+        )
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: slippingB + [justFinished]
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — no tone-drill trajectory clause at all; B's title never appears.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Difficult Conversation"))
+        #expect(!prompt.lowercased().contains("difficult conversation"))
+        // Note — same anchoring on the deterministic surface. The metric
+        // chain takes over (no IM tone-drill branch can fire), and B's
+        // title is structurally invisible.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("difficult conversation"))
+        #expect(!lowerNote.contains("calm tone"))
+    }
+
+    @Test func userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelRecoveringScenario() {
+        // Defensive — scenario B carries a 4-rep recovering trajectory in
+        // the same session set (the "you're recovering elsewhere" pivot
+        // would be the loudest open positive thread the recommendation
+        // engine could surface). The helper threads scenario A only
+        // through `toneDrillProgress`, so B's recovery is invisible to
+        // BOTH the AI prompt's MOMENTUM clauses and the deterministic
+        // note's metric chain. Both surfaces stay silent on B.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let recoveringB = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -7),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: recoveringB + [justFinished]
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — no trajectory clause fires; B's recovering arc is silent.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Difficult Conversation"))
+        #expect(!prompt.lowercased().contains("difficult conversation"))
+        #expect(!prompt.contains("Calm tone in Difficult Conversation"))
+        // Note — same anchoring; B's recovery never headlines.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("difficult conversation"))
+        #expect(!lowerNote.contains("calm tone"))
+    }
+
+    @Test func userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelPriorCrossing() {
+        // Defensive — scenario C (Work Update, professional) had a prior
+        // crossing rep at -20 days. The "you've done it before in
+        // another scenario, here's a fresh thin rep elsewhere — pivot to
+        // C's old win" cold-open is structurally impossible: the helper
+        // threads ONLY scenario A through `toneDrillCrossing`, so C's
+        // old win is invisible to both surfaces. The just-finished rep
+        // in A is thin → resolved is nil for A → no SOLVED clause on
+        // either path. The cross-rep cold open never happens.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let priorCrossingC = crossingScenarioSessions(
+            scenario: .workUpdate, targetTone: .professional,
+            offBrandTone: "vague", onBrandTone: "professional",
+            crossingRepId: UUID(), earliestDayOffset: -20
+        )
+        let input = makeInput(
+            justFinished: justFinished,
+            allSessions: priorCrossingC + [justFinished]
+        )
+        let prompt = PostRepCoachNoteService.userPrompt(from: input)
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        // Prompt — neither the trajectory nor the SOLVED clause fires;
+        // C's old crossing is invisible on the AI path.
+        #expect(!prompt.contains("tone-match"))
+        #expect(!prompt.contains("SOLVED this rep"))
+        #expect(!prompt.contains("Work Update"))
+        #expect(!prompt.contains("Professional"))
+        #expect(!prompt.lowercased().contains("work update"))
+        // Note — the deterministic priority chain's branch 0 (SOLVED)
+        // skips when `imToneDrillResolved` is nil, and the branch can't
+        // pull a parallel scenario's crossing in. C never headlines.
+        let lowerNote = note.noteText.lowercased()
+        #expect(!lowerNote.contains("work update"))
+        #expect(!lowerNote.contains("professional"))
+    }
 }
 
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
