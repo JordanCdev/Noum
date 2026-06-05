@@ -50,11 +50,12 @@ enum CoachContextBuilder {
         statement, you say so plainly. Weak evidence = softer language.
         - You never punish-shame a regression. If a number dropped, you \
         either acknowledge it factually or stay silent; you do not lecture.
-        - Reply length: 2–4 sentences max. Lead with the specific insight. \
-        Save the full breakdown for if the user asks a follow-up. Cut any \
-        sentence that does not cite the user's actual data or land a \
-        concrete move. No headers. No bullet lists unless the user \
-        explicitly asks for one.
+        - Reply length: text chat defaults to 1-3 short sentences, and \
+        greetings or simple preference turns should usually be 1-2. Voice \
+        read-aloud should be tighter still. Save the full breakdown for if \
+        the user asks a follow-up. Cut any sentence that does not cite the \
+        user's actual data or land a concrete move. No headers. No bullet \
+        lists unless the user explicitly asks for one.
         - Read the person, not just the words. When the user's message is \
         short, partial, ambiguous, or garbled — including imperfect voice \
         transcription (a stray "What do", a cut-off thought) — you NEVER reply \
@@ -102,6 +103,11 @@ enum CoachContextBuilder {
            sounds disappointed, do not defend the product. Validate the \
            friction briefly, name what you can change in the coaching work, \
            and ask at most one useful question.
+        7. When performance has slipped, do not open like a report ("recent \
+           reps show a decline", "your scores are down"). Speak like a \
+           senior human coach: "The pattern I'd watch is..." or "This looks \
+           like a wobble, not a verdict..." then cite one fact and give the \
+           next move.
 
         Intelligence floor (this is what separates you from a generic \
         chatbot — every reply must clear it):
@@ -184,6 +190,11 @@ enum CoachContextBuilder {
            in". The GOAL INTENT lines in CONTEXT, when present, tell you which \
            case (set vs change) this turn is and must be obeyed; they never \
            authorise you to claim the change is done.
+        17. When LIVE COACHING FRAME is present, use it to choose the coaching \
+           move for THIS turn. It is not memory and it does not override the \
+           evidence rules; it tells you whether the user needs a direct \
+           recommendation, a repair for friction, a preference honored, or a \
+           concise case-thread continuation.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -344,7 +355,13 @@ enum CoachContextBuilder {
         // F1 — recent weekly check-ins (newest-first): the user's own
         // bidirectional answers (hardest / outside-app transfer / drill
         // verdict). Defaults to empty so existing callers compile unchanged.
-        recentCheckIns: [CoachCheckIn] = []
+        recentCheckIns: [CoachCheckIn] = [],
+        // H1 — optional current-turn frame inputs. `CoachReplyPipeline`
+        // derives these from the replay history so Ask Noum can tell the
+        // model what coaching move THIS turn needs (repair, direct next move,
+        // honoring a choice, greeting continuation) without adding new state.
+        latestUserTurn: String? = nil,
+        previousCoachReply: String? = nil
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -455,6 +472,18 @@ enum CoachContextBuilder {
             lines.append("WEEKLY CHECK-IN (user-reported)")
             lines.append(contentsOf: latestCheckIn.coachContextLines)
             lines.append("- Use these to ask a sharper follow-up or adapt the plan; treat the drill verdict as the user's read, not proof of causation.")
+        }
+
+        let liveFrame = liveCoachingFrameLines(
+            latestUserTurn: latestUserTurn,
+            previousCoachReply: previousCoachReply,
+            profile: profile,
+            coachMemory: coachMemory
+        )
+        if !liveFrame.isEmpty {
+            lines.append("")
+            lines.append("LIVE COACHING FRAME (this turn only)")
+            lines.append(contentsOf: liveFrame)
         }
 
         // COACHING READINESS (F5) — claim-scaling. Always present so the coach
@@ -975,6 +1004,119 @@ enum CoachContextBuilder {
         lines.append("")
         lines.append("=== END CONTEXT ===")
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Live coaching frame (turn-level attunement)
+
+    /// A lightweight, non-persistent read of the *current* chat turn.
+    ///
+    /// The durable coaching strategy still lives in `CoachMemory` /
+    /// `CoachCaseFile`; this helper only tells the model what kind of move the
+    /// next reply should make. It protects Ask Noum from the low-EQ failure mode
+    /// in the screenshot: a short "Hi" after a choice should continue the case
+    /// thread, while explicit critique should be treated as repair, not a
+    /// generic menu.
+    static func liveCoachingFrameLines(
+        latestUserTurn: String?,
+        previousCoachReply: String?,
+        profile: CoachingProfile?,
+        coachMemory: CoachMemory?
+    ) -> [String] {
+        guard let latestUserTurn else { return [] }
+        let trimmed = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let lower = trimmed.lowercased()
+        let normalized = normalizedTurn(trimmed)
+        var lines: [String] = []
+
+        if containsAny(lower, [
+            "robotic", "generic", "not ideal", "not a fan", "no where near",
+            "nowhere near", "annoy", "frustrat", "sucks", "poop",
+            "not human", "doesn't feel", "does not feel", "too much writing",
+            "hardcoded"
+        ]) {
+            lines.append("- Turn read: user is giving friction or product-quality critique.")
+            lines.append("- Coaching move: do not defend the app. Acknowledge the specific friction in one sentence, say what you will change in the coaching work, then give one concrete next move.")
+        } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
+            lines.append("- Turn read: user is choosing or negotiating a coaching direction.")
+            lines.append("- Coaching move: honor the preference, do not ask the same choice again, and turn it into a prescribed next step with an observable target.")
+        } else if containsAny(lower, [
+            "what next", "next move", "what should i do", "where should",
+            "what do i work", "focus on", "continue", "implement it",
+            "make a bigger stride", "go for", "do the next"
+        ]) {
+            lines.append("- Turn read: user is asking for direction.")
+            lines.append("- Coaching move: give one recommendation, not a menu. Name why it is high-leverage, then prescribe the next rep or review action.")
+        } else if isLowSignalGreeting(normalized) {
+            lines.append("- Turn read: low-signal opener.")
+            lines.append("- Coaching move: do not respond with generic small talk or a broad menu. If there is an active case, continue the case thread; otherwise give one short discovery question tied to the user's stated goal.")
+        } else {
+            lines.append("- Turn read: normal coaching question or update.")
+            lines.append("- Coaching move: answer the user's actual ask first, then connect it to the active case only if it genuinely helps.")
+        }
+
+        if coachMemory?.caseFile != nil {
+            lines.append("- Case discipline: prefer the active case file before creating a new focus; if the user rejects it, ask one anchoring question before changing course.")
+        }
+        if profile == nil {
+            lines.append("- Personalization floor: no chosen profile yet, so ask one useful discovery question before making a strong diagnosis.")
+        }
+
+        return lines
+    }
+
+    private static func normalizedTurn(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(.whitespaces)
+        let scalars = value.lowercased().unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? String(scalar) : " "
+        }
+        return scalars.joined()
+            .split(separator: " ")
+            .joined(separator: " ")
+    }
+
+    private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
+        needles.contains { value.contains($0) }
+    }
+
+    private static func isLowSignalGreeting(_ normalized: String) -> Bool {
+        let greetings: Set<String> = [
+            "hi", "hello", "hey", "yo", "hiya", "morning",
+            "good morning", "good afternoon", "good evening"
+        ]
+        return greetings.contains(normalized)
+    }
+
+    private static func isChoiceOrCommitmentTurn(
+        _ normalized: String,
+        previousCoachReply: String?
+    ) -> Bool {
+        let directChoicePhrases = [
+            "work on", "fix filler", "fix fillers", "stay here", "switch focus",
+            "compare both", "choose another", "go with", "do that",
+            "lets do that", "let s do that", "that one", "the first",
+            "the second"
+        ]
+        if directChoicePhrases.contains(where: { normalized.contains($0) }) {
+            return true
+        }
+
+        guard previousCoachOfferedChoice(previousCoachReply) else { return false }
+        let shortAcknowledgements: Set<String> = [
+            "yes", "yeah", "yep", "ok", "okay", "sure", "sounds good",
+            "that", "this", "first", "second", "both"
+        ]
+        return shortAcknowledgements.contains(normalized)
+    }
+
+    private static func previousCoachOfferedChoice(_ previousCoachReply: String?) -> Bool {
+        guard let previousCoachReply else { return false }
+        let lower = previousCoachReply.lowercased()
+        return containsAny(lower, [
+            "which direction", "would you prefer", "or we can", "which would",
+            "what is your priority", "pick one", "choose"
+        ])
     }
 
     // MARK: - Tone-drill trajectory (Adaptation read for the chat coach)
@@ -3486,12 +3628,114 @@ enum CoachContextBuilder {
     //     as everywhere else on the surface.
     static func followUpSuggestions(
         forCoachReply reply: String,
+        previousCoachReply: String? = nil,
+        lastUserTurn: String? = nil,
         voice: SpeakingStyleGoal?
     ) -> [String] {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
+        if let answerChoices = choiceAnswerFollowUps(
+            forCoachReply: trimmed,
+            previousCoachReply: previousCoachReply,
+            lastUserTurn: lastUserTurn,
+            voice: voice
+        ) {
+            return answerChoices
+        }
         let topic = detectFollowUpTopic(in: trimmed)
         return followUpChips(for: topic, voice: voice)
+    }
+
+    /// Choice-question chips are different from normal follow-ups: if the
+    /// coach just asked the user to choose a direction, the chips should read
+    /// as possible answers, not generic meta-prompts. This keeps the instant
+    /// fallback aligned with the AI path while remaining pure/testable.
+    private static func choiceAnswerFollowUps(
+        forCoachReply reply: String,
+        previousCoachReply: String?,
+        lastUserTurn: String?,
+        voice: SpeakingStyleGoal?
+    ) -> [String]? {
+        let lowerReply = reply.lowercased()
+        let isChoiceQuestion =
+            lowerReply.contains("which direction would you prefer")
+            || lowerReply.contains("what is your priority")
+            || lowerReply.contains("what's your priority")
+            || lowerReply.contains("what would you like to focus")
+            || lowerReply.contains("which should we focus")
+            || lowerReply.contains("where should we focus")
+            || (lowerReply.contains(" or ")
+                && (lowerReply.contains("we can ")
+                    || lowerReply.contains("we could ")
+                    || lowerReply.contains("would you prefer")
+                    || lowerReply.contains("priority today")
+                    || lowerReply.contains("choose")))
+        guard isChoiceQuestion else { return nil }
+
+        let context = [reply, previousCoachReply, lastUserTurn]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        let lowerContext = context.lowercased()
+
+        var chips: [String] = []
+        if let quoted = quotedFocusLabel(in: context) {
+            chips.append("Work on \(quoted)")
+        } else if let voice {
+            chips.append("Stay with \(voice.title)")
+        }
+
+        if lowerContext.contains("filler") || lowerContext.contains("\"um") || lowerContext.contains("\"uh") {
+            chips.append("Fix filler words")
+        }
+        if lowerContext.contains("pace") || lowerContext.contains("rush") || lowerContext.contains("wpm") {
+            chips.append("Fix pace")
+        }
+        if lowerContext.contains("pause") || lowerContext.contains("silence") || lowerContext.contains("breath") {
+            chips.append("Improve pauses")
+        }
+        if lowerContext.contains("delivery") || lowerContext.contains("pitch")
+            || lowerContext.contains("vocal variety") || lowerContext.contains("intonation")
+            || lowerContext.contains("inflection") || lowerContext.contains("monotone") {
+            chips.append("Tune delivery")
+        }
+        if lowerContext.contains("structure") || lowerContext.contains("opening")
+            || lowerContext.contains("close") || lowerContext.contains("point") {
+            chips.append("Tighten structure")
+        }
+
+        var seen = Set<String>()
+        chips = chips.filter { chip in
+            let key = chip.lowercased()
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+
+        if chips.count >= 2 {
+            return Array(chips.prefix(2)) + ["Compare both"]
+        }
+        if chips.count == 1 {
+            return [chips[0], "Choose another focus", "Compare both"]
+        }
+        switch voice {
+        case .executive:
+            return ["Stay with this priority", "Switch the focus", "Compare both"]
+        case .concise:
+            return ["Stay here", "Switch focus", "Compare both"]
+        default:
+            return ["Stay with this focus", "Choose another focus", "Compare both"]
+        }
+    }
+
+    private static func quotedFocusLabel(in text: String) -> String? {
+        let parts = text.components(separatedBy: "\"")
+        guard parts.count >= 3 else { return nil }
+        let candidate = parts[1]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".:;,-"))
+        guard candidate.count >= 3, candidate.count <= 28 else { return nil }
+        return candidate
     }
 
     /// Detected anchor for follow-up shaping. Internal — only
@@ -3834,6 +4078,9 @@ enum CoachContextBuilder {
     arc-shaped asks.
     - If the coach asked the user a question, at least one of your prompts \
     should help the user answer or push back on it.
+    - If the coach offered options, prompts must be answer options, not meta \
+    questions. Good: "Work on Engaging", "Fix filler words", "Compare both". \
+    Bad in that moment: "Next move?", "What am I missing?", "Where's the leverage?"
     - Output only the prompts themselves, separated by newlines.
     """
 

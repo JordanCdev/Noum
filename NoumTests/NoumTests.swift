@@ -7084,6 +7084,29 @@ struct CoachContextBuilderTests {
         #expect(normalized.contains("not a dashboard"))
     }
 
+    @Test func systemPromptKeepsTextModeBriefAndHumanOnDeclines() {
+        // Text mode should not read like a mini-report, especially when
+        // performance has slipped. This pins the shorter default and the
+        // human-coach decline phrasing.
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        let normalized = prompt.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+        #expect(normalized.contains("text chat defaults to 1-3 short sentences"))
+        #expect(normalized.contains("Voice read-aloud should be tighter still"))
+        #expect(normalized.contains("recent reps show a decline"))
+        #expect(normalized.contains("The pattern I'd watch is"))
+    }
+
+    @Test func systemPromptReferencesLiveCoachingFrame() {
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+        #expect(prompt.contains("LIVE COACHING FRAME"))
+        #expect(prompt.contains("preference honored"))
+        #expect(prompt.contains("concise case-thread continuation"))
+    }
+
     @Test func systemPromptIncludesVoicePersonalityWhenProfileSet() {
         // When the user has set a voice, the system prompt must
         // include that voice's personality block. The authoritative
@@ -7101,6 +7124,87 @@ struct CoachContextBuilderTests {
         let prompt = CoachContextBuilder.systemPrompt(for: nil)
         #expect(prompt.contains("calm, direct speaking coach"),
                 "Nil profile should use the default personality string")
+    }
+
+    // MARK: - Live coaching frame
+
+    @Test func liveCoachingFrameOmitsWhenNoTurn() {
+        let missing = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: nil,
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil
+        )
+        let empty = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "   ",
+            previousCoachReply: nil,
+            profile: nil,
+            coachMemory: nil
+        )
+
+        #expect(missing.isEmpty)
+        #expect(empty.isEmpty)
+    }
+
+    @Test func liveCoachingFrameTreatsCritiqueAsRepair() {
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "The coach feels robotic and generic right now.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .concise),
+            coachMemory: nil
+        ).joined(separator: " ")
+
+        #expect(lines.contains("friction or product-quality critique"))
+        #expect(lines.contains("do not defend the app"))
+        #expect(lines.contains("one concrete next move"))
+    }
+
+    @Test func liveCoachingFrameTurnsDirectionIntoOneRecommendation() {
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "What next? Implement it.",
+            previousCoachReply: nil,
+            profile: sampleProfile(voice: .executive),
+            coachMemory: nil
+        ).joined(separator: " ")
+
+        #expect(lines.contains("user is asking for direction"))
+        #expect(lines.contains("one recommendation, not a menu"))
+        #expect(lines.contains("next rep or review action"))
+    }
+
+    @Test func liveCoachingFrameTreatsChoiceAsCommitment() {
+        let previous = """
+        We can resume working on your Engaging style, or we can focus on filler words.
+        Which direction would you prefer?
+        """
+        let lines = CoachContextBuilder.liveCoachingFrameLines(
+            latestUserTurn: "Fix filler words",
+            previousCoachReply: previous,
+            profile: sampleProfile(voice: .concise),
+            coachMemory: nil
+        ).joined(separator: " ")
+
+        #expect(lines.contains("choosing or negotiating a coaching direction"))
+        #expect(lines.contains("honor the preference"))
+        #expect(lines.contains("do not ask the same choice again"))
+    }
+
+    @Test func userContextAddsGreetingFrame() {
+        let ctx = CoachContextBuilder.userContext(
+            profile: sampleProfile(voice: .concise),
+            baseline: .empty,
+            rating: .initial,
+            sessions: [],
+            currentStreak: 0,
+            pathStatus: nil,
+            pathGatingPhrase: nil,
+            latestUserTurn: "Hi",
+            previousCoachReply: "Which direction would you prefer?"
+        )
+
+        #expect(ctx.contains("LIVE COACHING FRAME"))
+        #expect(ctx.contains("low-signal opener"))
+        #expect(ctx.contains("do not respond with generic small talk"))
     }
 
     // MARK: - User context block
@@ -7863,6 +7967,31 @@ struct CoachContextBuilderTests {
         // collapse the row entirely.
         let generic = CoachContextBuilder.detectFollowUpTopic(in: "You're holding steady. Stay with it.")
         #expect(generic == .generic)
+    }
+
+    @Test func followUpSuggestionsTurnCoachChoiceIntoAnswerChips() {
+        // Regression from the Ask Noum screenshot: after the coach asked
+        // the user to choose a direction, the deterministic fallback showed
+        // generic meta-prompts. It should offer useful answer choices.
+        let previous = """
+        Alternatively, we could address your persistent blocker of filler words, which returned in your last rep.
+        Which direction would you prefer?
+        """
+        let reply = """
+        Hello.
+
+        We can resume working on your "Engaging" communication style, or we can focus on another area. What is your priority today?
+        """
+        let chips = CoachContextBuilder.followUpSuggestions(
+            forCoachReply: reply,
+            previousCoachReply: previous,
+            lastUserTurn: "Hi",
+            voice: .concise
+        )
+        #expect(chips == ["Work on Engaging", "Fix filler words", "Compare both"])
+        #expect(!chips.contains("Next move?"))
+        #expect(!chips.contains("What am I missing?"))
+        #expect(!chips.contains("Where's the leverage?"))
     }
 
     @Test func followUpSuggestionsEveryVoiceProducesThreeChips() {

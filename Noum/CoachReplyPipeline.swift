@@ -34,6 +34,12 @@ enum CoachReplyPipeline {
 
         let sessionStore = PracticeSessionStore.shared
         let coachMemoryStore = CoachMemoryStore.shared
+        let history = AskNoumStore.shared.replayForModel
+        let latestUserIndex = history.lastIndex { $0.role == .user }
+        let latestUserTurn = latestUserIndex.map { history[$0].text }
+        let previousCoachReply = latestUserIndex.flatMap { index in
+            history[..<index].last { $0.role == .coach }?.text
+        }
 
         let context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
@@ -55,7 +61,9 @@ enum CoachReplyPipeline {
             latestSnapshot: snapshots.last,
             snapshotsForTrends: snapshots,
             pendingGoalIntent: pendingGoalIntent,
-            recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2)
+            recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2),
+            latestUserTurn: latestUserTurn,
+            previousCoachReply: previousCoachReply
         )
 
         // Deterministic-fallback context — assembled in the same main-actor
@@ -79,7 +87,6 @@ enum CoachReplyPipeline {
             nextQuestion: fallbackCaseFile?.nextQuestion
         )
 
-        let history = AskNoumStore.shared.replayForModel
         let outcome = await AICoachChatService.shared.reply(
             history: history,
             systemPrompt: systemPrompt,

@@ -801,8 +801,17 @@ struct AskNoumView: View {
         if let cached = store.aiChips(for: last.id), !cached.isEmpty {
             return cached
         }
+        let previousMessages = store.messages.dropLast()
+        let previousCoachReply = previousMessages
+            .last(where: { $0.role == .coach && !$0.isPending })?
+            .text
+        let lastUserTurn = previousMessages
+            .last(where: { $0.role == .user })?
+            .text
         return CoachContextBuilder.followUpSuggestions(
             forCoachReply: last.text,
+            previousCoachReply: previousCoachReply,
+            lastUserTurn: lastUserTurn,
             voice: voice
         )
     }
