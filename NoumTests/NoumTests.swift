@@ -22465,6 +22465,534 @@ struct PostRepCoachNoteToneTrajectoryTests {
     }
 }
 
+// MARK: - Round 43: post-rep coach note's IM tone-drill anchoring on the just-finished rep
+//
+// M24 deferred slate round 43 — defensive symmetric pin to round 41 (SOLVED
+// freshness on the chat-coach context surface) and round 42 (TRAJECTORY
+// freshness on the chat-coach context surface). The post-rep note doesn't
+// need a freshness gate because, by construction, the read IS the just-
+// finished rep's scenario — the user just produced the rep that anchors the
+// read. Round 43's job is to lock that structural anchoring contract in
+// tests so a future refactor that drifts the helper toward a global
+// "freshest trajectory anywhere" read fails loudly.
+//
+// The cross-rep cold-open path — where the user finishes an IM rep in
+// scenario A and the deterministic note's TRAJECTORY branch references
+// scenario B's old trajectory — must be structurally impossible. The pin
+// lives in `MomentumComputer.imToneDrillNoteFields(forJustFinished:in:)`,
+// which threads the just-finished rep's `details.setup.scenario` through
+// `IMHistorySummary.toneDrillProgress(from:scenario:)` (and
+// `IMHistorySummary.toneDrillCrossing(in:scenario:currentRepId:)` for the
+// SOLVED branch). Both primitives filter strictly by scenario, so the trio
+// is anchored on the just-finished rep by construction — round 43 makes
+// that contract testable in isolation by lifting the block out of the
+// finalizer's private `recordPostRepCoachNote`.
+//
+// The cross-surface tests through `deterministicNote(input:)` close the
+// loop: even when scenario B has a textbook slipping below-bar trajectory
+// in the session set, a note for a just-finished rep in scenario A NEVER
+// mentions scenario B's title. The same SOLVED contract holds — a crossing
+// in scenario B that pre-dates the just-finished rep doesn't headline the
+// note for a sub-bar rep in scenario A.
+
+struct PostRepCoachNoteJustFinishedRepAnchoringTests {
+
+    private let baseDate: Date = {
+        DateComponents(calendar: .current, year: 2026, month: 5, day: 1, hour: 12).date!
+    }()
+
+    private func imSession(
+        id: UUID = UUID(),
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        actualTone: String?,
+        daysOffset: Double
+    ) -> PracticeSession {
+        PracticeSession(
+            id: id,
+            transcript: "im rep",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate.addingTimeInterval(daysOffset * 86_400),
+            mode: .imConversation,
+            imConversationDetails: IMConversationDetails(
+                setup: IMConversationSetup(scenario: scenario, targetTone: targetTone),
+                turns: [],
+                actualTone: actualTone,
+                finalState: IMConversationState(trust: 6, engagement: 6, tension: 5, beat: "x"),
+                outcome: nil
+            ),
+            score: 7
+        )
+    }
+
+    private func nonIMSession(daysOffset: Double = 0) -> PracticeSession {
+        PracticeSession(
+            transcript: "timed rep",
+            fillerWordCount: 1,
+            duration: 60,
+            date: baseDate.addingTimeInterval(daysOffset * 86_400),
+            mode: .timed,
+            score: 7
+        )
+    }
+
+    /// A 4-rep below-bar slip in the given scenario — all reps off-brand.
+    /// Produces `toneDrillProgress` of `(stalled, 0.0, 0.0, 2)` (the same
+    /// shape the round-41/42 fixtures use). Useful as the "scenario B"
+    /// half of an anchoring test — the trajectory the helper must NOT
+    /// pick up when the just-finished rep is in scenario A.
+    private func slippingScenarioSessions(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        offBrandTone: String,
+        earliestDayOffset: Double
+    ) -> [PracticeSession] {
+        [
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: offBrandTone, daysOffset: earliestDayOffset),
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: offBrandTone, daysOffset: earliestDayOffset + 1),
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: offBrandTone, daysOffset: earliestDayOffset + 2),
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: offBrandTone, daysOffset: earliestDayOffset + 3)
+        ]
+    }
+
+    /// A 4-rep recovering trajectory in the given scenario — first two
+    /// off-brand, last two on-brand. Earlier rate 0%, recent rate 100%,
+    /// overall 50% (above the 40% drill bar). With the last rep included,
+    /// `toneDrillResolved` fires; without it, the 3-rep history is below
+    /// `toneDrillProgress`'s 4-rep floor and resolved returns nil — so the
+    /// last rep IS the crossing rep.
+    private func crossingScenarioSessions(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        offBrandTone: String,
+        onBrandTone: String,
+        crossingRepId: UUID,
+        earliestDayOffset: Double
+    ) -> [PracticeSession] {
+        [
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: offBrandTone, daysOffset: earliestDayOffset),
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: offBrandTone, daysOffset: earliestDayOffset + 1),
+            imSession(scenario: scenario, targetTone: targetTone, actualTone: onBrandTone, daysOffset: earliestDayOffset + 2),
+            imSession(id: crossingRepId, scenario: scenario, targetTone: targetTone, actualTone: onBrandTone, daysOffset: earliestDayOffset + 3)
+        ]
+    }
+
+    // MARK: - Helper — non-IM rep returns empty
+
+    @Test func helperReturnsEmptyForNonIMReps() {
+        // The just-finished rep is a Timed rep — there's no scenario to
+        // anchor on. Every field is nil.
+        let justFinished = nonIMSession(daysOffset: 0)
+        let allSessions = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -3
+        ) + [justFinished]
+
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: allSessions
+        )
+        #expect(fields.progress == nil)
+        #expect(fields.scenarioTitle == nil)
+        #expect(fields.toneTitle == nil)
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+    }
+
+    @Test func helperReturnsEmptyForIMRepWithoutConversationDetails() {
+        // Defensive — legacy persisted IM sessions could carry `mode ==
+        // .imConversation` but a nil `imConversationDetails`. The helper
+        // must read all-nil rather than crash on the forced unwrap.
+        let legacy = PracticeSession(
+            transcript: "legacy",
+            fillerWordCount: 0,
+            duration: 30,
+            date: baseDate,
+            mode: .imConversation,
+            imConversationDetails: nil,
+            score: 7
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: legacy, in: [legacy]
+        )
+        #expect(fields.progress == nil)
+        #expect(fields.scenarioTitle == nil)
+        #expect(fields.toneTitle == nil)
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+    }
+
+    // MARK: - Helper — title anchoring
+
+    @Test func helperAnchorsScenarioTitleOnJustFinishedRep() {
+        // The scenario title comes from the just-finished rep's
+        // `details.setup.scenario.title`, not from any "most common
+        // scenario" read across history.
+        let justFinished = imSession(
+            scenario: .workUpdate, targetTone: .professional,
+            actualTone: "professional", daysOffset: 0
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: [justFinished]
+        )
+        #expect(fields.scenarioTitle == IMConversationScenario.workUpdate.title)
+    }
+
+    @Test func helperAnchorsToneTitleOnJustFinishedRep() {
+        // The tone title comes from the just-finished rep's
+        // `details.setup.targetTone.title`, not from a "most committed
+        // tone in scenario" read across history. Even when the
+        // just-finished rep targets a DIFFERENT tone than prior reps in
+        // the same scenario (the user re-targeted), the title surfaces
+        // the JUST-FINISHED rep's tone.
+        let priors = (1...4).map { i in
+            imSession(
+                scenario: .difficultConversation, targetTone: .calm,
+                actualTone: "calm", daysOffset: -Double(i)
+            )
+        }
+        let justFinished = imSession(
+            scenario: .difficultConversation, targetTone: .assertive,
+            actualTone: "assertive", daysOffset: 0
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: priors + [justFinished]
+        )
+        #expect(fields.toneTitle == IMTargetTone.assertive.title)
+        #expect(fields.scenarioTitle == IMConversationScenario.difficultConversation.title)
+    }
+
+    // MARK: - Helper — thin per-scenario history
+
+    @Test func helperReturnsThinHistoryNilProgressWithNonNilTitles() {
+        // Just-finished rep is the only IM rep in its scenario. Per-
+        // scenario history is below the 4-rep floor → `toneDrillProgress`
+        // returns nil → progress field is nil. Titles remain set (they
+        // come from `details.setup`, not from history).
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "shaky", daysOffset: 0
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: [justFinished]
+        )
+        #expect(fields.progress == nil)
+        #expect(fields.scenarioTitle == IMConversationScenario.networking.title)
+        #expect(fields.toneTitle == IMTargetTone.confident.title)
+    }
+
+    // MARK: - Helper — cross-rep anchoring (the core round-43 contract)
+
+    @Test func helperProgressIgnoresOtherScenariosWhenJustFinishedRepIsThin() {
+        // The just-finished rep is in scenario A (Networking, thin
+        // history). Scenario B (Difficult Conversation) has a textbook 4-
+        // rep below-bar slip. The "freshest trajectory anywhere" read
+        // would surface scenario B's slip; the helper MUST NOT — it
+        // threads scenario A through `toneDrillProgress`, which filters
+        // strictly by scenario. Progress for the just-finished rep's
+        // scenario is nil; the slipping trajectory in scenario B is
+        // invisible to the helper.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "shaky", daysOffset: 0
+        )
+        let scenarioBSlip = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -10
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: scenarioBSlip + [justFinished]
+        )
+        #expect(fields.progress == nil)
+        #expect(fields.scenarioTitle == IMConversationScenario.networking.title)
+        // The helper MUST NOT surface scenario B's title under either field.
+        #expect(fields.scenarioTitle != IMConversationScenario.difficultConversation.title)
+        #expect(fields.resolvedScenarioTitle == nil)
+    }
+
+    @Test func helperProgressReadsFromJustFinishedRepsScenarioOnlyWhenBothQualify() {
+        // Both scenarios have 4-rep histories that would qualify for
+        // `toneDrillProgress`. Scenario A (Difficult Conversation) is
+        // RECOVERING (first 2 off, last 2 on); scenario B (Networking)
+        // is SLIPPING (first 2 on, last 2 off). The just-finished rep is
+        // in scenario A → returned progress direction must be
+        // `.recovering`, NOT `.slipping`. Strict per-scenario anchoring.
+        let recoveringA = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -7),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: 0)
+        ]
+        let slippingB = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1)
+        ]
+        // Just-finished rep IS the last rep in scenario A.
+        let justFinished = recoveringA.last!
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: recoveringA + slippingB
+        )
+        #expect(fields.progress?.direction == .recovering)
+        #expect(fields.scenarioTitle == IMConversationScenario.difficultConversation.title)
+        #expect(fields.toneTitle == IMTargetTone.calm.title)
+    }
+
+    @Test func helperProgressIsForJustFinishedScenarioEvenWhenOtherScenarioWouldFireMoreLoudly() {
+        // The just-finished rep is in scenario A (Networking), where the
+        // user has practiced ONCE — too thin for `toneDrillProgress`.
+        // Scenario B (Difficult Conversation) has a textbook 4-rep
+        // below-bar slip that the recommendation engine would prescribe
+        // as the next drill. The helper must still surface only scenario
+        // A's titles (with nil progress) — the post-rep note must NOT
+        // pivot to commenting on scenario B's trajectory just because
+        // it's the loudest open thread.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let scenarioBSlip = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -10
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: scenarioBSlip + [justFinished]
+        )
+        #expect(fields.progress == nil)
+        #expect(fields.scenarioTitle == IMConversationScenario.networking.title)
+        #expect(fields.toneTitle == IMTargetTone.confident.title)
+    }
+
+    // MARK: - Helper — SOLVED resolved trio anchoring
+
+    @Test func helperReturnsNilResolvedWhenJustFinishedRepIsNotTheCrossingRep() {
+        // The just-finished rep is in a sub-bar drill scenario (still
+        // failing — first 2 windows of 4 reps are all off-brand). Even
+        // though a crossing happened EARLIER in time in another scenario,
+        // the resolved trio for the just-finished rep is nil — the
+        // helper threads scenario A through `toneDrillCrossing`, which
+        // only fires when the just-finished rep itself is the crossing.
+        let crossingScenarioBPriorWin = crossingScenarioSessions(
+            scenario: .workUpdate, targetTone: .professional,
+            offBrandTone: "vague", onBrandTone: "professional",
+            crossingRepId: UUID(), earliestDayOffset: -20
+        )
+        let justFinishedA = imSession(
+            scenario: .difficultConversation, targetTone: .calm,
+            actualTone: "tense", daysOffset: 0
+        )
+        let scenarioASlip = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -3
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinishedA,
+            in: crossingScenarioBPriorWin + scenarioASlip + [justFinishedA]
+        )
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+        // Trajectory still surfaces for scenario A (the just-finished
+        // rep's scenario).
+        #expect(fields.scenarioTitle == IMConversationScenario.difficultConversation.title)
+    }
+
+    @Test func helperPopulatesResolvedTrioOnCrossingRep() {
+        // Construct a crossing rep: first 2 reps off-brand, last 2
+        // on-brand. With all 4 reps, `toneDrillResolved` fires; without
+        // the 4th, the 3-rep history is below the 4-rep floor of
+        // `toneDrillProgress` so resolved returns nil → the 4th rep IS
+        // the crossing.
+        let crossingId = UUID()
+        let crossingFour = crossingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", onBrandTone: "calm",
+            crossingRepId: crossingId, earliestDayOffset: -3
+        )
+        let justFinished = crossingFour.last!
+        #expect(justFinished.id == crossingId)
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: crossingFour
+        )
+        #expect(fields.resolved != nil)
+        #expect(fields.resolvedScenarioTitle == IMConversationScenario.difficultConversation.title)
+        #expect(fields.resolvedToneTitle == IMTargetTone.calm.title)
+        #expect(fields.resolved?.scenario == .difficultConversation)
+        #expect(fields.resolved?.targetTone == .calm)
+    }
+
+    @Test func helperResolvedTrioAnchorsOnJustFinishedRepScenarioTitle() {
+        // Title equality contract: the resolved scenario title equals
+        // the just-finished rep's scenario title (both routed through
+        // `IMConversationScenario.title`).
+        let crossingId = UUID()
+        let crossingFour = crossingScenarioSessions(
+            scenario: .networking, targetTone: .confident,
+            offBrandTone: "shaky", onBrandTone: "confident",
+            crossingRepId: crossingId, earliestDayOffset: -3
+        )
+        let justFinished = crossingFour.last!
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: crossingFour
+        )
+        #expect(fields.resolvedScenarioTitle == fields.scenarioTitle)
+    }
+
+    // MARK: - Cross-surface contract via deterministicNote
+
+    @Test func deterministicNoteNeverNamesAnotherScenarioWhenJustFinishedRepIsThin() {
+        // End-to-end pin on the cross-rep cold-open path. The just-
+        // finished rep is in scenario A (Networking, thin history).
+        // Scenario B (Difficult Conversation) has a fresh 4-rep below-
+        // bar slip — the loudest open trajectory in the session set. The
+        // deterministic note must NOT name scenario B; the only IM
+        // surface the note can speak from is the just-finished rep's
+        // scenario, which has nil trajectory → the metric chain takes
+        // over instead.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let scenarioBSlip = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -3
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: scenarioBSlip + [justFinished]
+        )
+        let input = PostRepCoachNoteInput(
+            sessionID: justFinished.id,
+            mode: .imConversation,
+            score: 7,
+            fillerCount: 2,
+            duration: 60,
+            wordCount: 120,
+            voice: nil,
+            intentLabel: nil,
+            baselineFillerRate: nil,
+            baselinePaceWPM: nil,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil,
+            totalSessionCount: 8,
+            imToneDrillProgress: fields.progress,
+            imToneDrillScenarioTitle: fields.scenarioTitle,
+            imToneDrillToneTitle: fields.toneTitle,
+            imToneDrillResolved: fields.resolved,
+            imToneDrillResolvedScenarioTitle: fields.resolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: fields.resolvedToneTitle
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        #expect(!note.noteText.contains("Difficult Conversation"))
+        #expect(!note.noteText.lowercased().contains("difficult conversation"))
+    }
+
+    @Test func deterministicNoteSpeaksToJustFinishedScenarioOnRecoveringTrajectory() {
+        // Happy path through the helper + deterministic note. The just-
+        // finished rep is in scenario A (Difficult Conversation, calm)
+        // and scenario A's trajectory is recovering BUT not yet solved
+        // (recent rate 50% — below the 60% hold bar). Scenario B
+        // (Networking, confident) has a textbook slipping trajectory in
+        // the same session set. The note headlines scenario A; the note
+        // must NOT mention scenario B; only the just-finished rep's
+        // scenario can be the subject of the trajectory read.
+        let recoveringA = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -7),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: 0)
+        ]
+        let slippingB = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -4),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1)
+        ]
+        let justFinished = recoveringA.last!
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: recoveringA + slippingB
+        )
+        let input = PostRepCoachNoteInput(
+            sessionID: justFinished.id,
+            mode: .imConversation,
+            score: 7,
+            fillerCount: 2,
+            duration: 60,
+            wordCount: 120,
+            voice: nil,
+            intentLabel: nil,
+            baselineFillerRate: nil,
+            baselinePaceWPM: nil,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil,
+            totalSessionCount: 8,
+            imToneDrillProgress: fields.progress,
+            imToneDrillScenarioTitle: fields.scenarioTitle,
+            imToneDrillToneTitle: fields.toneTitle,
+            imToneDrillResolved: fields.resolved,
+            imToneDrillResolvedScenarioTitle: fields.resolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: fields.resolvedToneTitle
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        let lower = note.noteText.lowercased()
+        #expect(lower.contains("difficult conversation"))
+        #expect(lower.contains("calm"))
+        #expect(!lower.contains("networking"))
+        #expect(!lower.contains("confident"))
+    }
+
+    @Test func deterministicNoteHeadlinesResolvedWinOnlyForJustFinishedRepsScenario() {
+        // SOLVED-branch cross-surface pin. The just-finished rep is a
+        // sub-bar IM rep in scenario A; scenario B had a crossing rep at
+        // an EARLIER date in history. The deterministic note must not
+        // headline scenario B's old crossing — the helper threads
+        // scenario A through `toneDrillCrossing` so the resolved trio is
+        // nil for the just-finished rep, and the note's SOLVED branch
+        // stays quiet.
+        let priorCrossingB = crossingScenarioSessions(
+            scenario: .workUpdate, targetTone: .professional,
+            offBrandTone: "vague", onBrandTone: "professional",
+            crossingRepId: UUID(), earliestDayOffset: -20
+        )
+        let scenarioASlip = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -3
+        )
+        let justFinished = scenarioASlip.last!
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: priorCrossingB + scenarioASlip
+        )
+        #expect(fields.resolved == nil)
+        let input = PostRepCoachNoteInput(
+            sessionID: justFinished.id,
+            mode: .imConversation,
+            score: 5,
+            fillerCount: 2,
+            duration: 60,
+            wordCount: 120,
+            voice: nil,
+            intentLabel: nil,
+            baselineFillerRate: nil,
+            baselinePaceWPM: nil,
+            bigMoment: nil,
+            bigMomentDaysUntil: nil,
+            totalSessionCount: 12,
+            imToneDrillProgress: fields.progress,
+            imToneDrillScenarioTitle: fields.scenarioTitle,
+            imToneDrillToneTitle: fields.toneTitle,
+            imToneDrillResolved: fields.resolved,
+            imToneDrillResolvedScenarioTitle: fields.resolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: fields.resolvedToneTitle
+        )
+        let note = PostRepCoachNoteService.deterministicNote(input: input)
+        let lower = note.noteText.lowercased()
+        #expect(!lower.contains("work update"))
+        #expect(!lower.contains("professional"))
+    }
+}
+
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
 //
 // The terminal state of the loop. When the just-finished IM rep is the one

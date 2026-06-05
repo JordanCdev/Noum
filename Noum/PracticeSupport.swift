@@ -7796,52 +7796,14 @@ enum PracticeSessionFinalizer {
         // IM tone-drill Adaptation read for the just-finished rep's
         // scenario, so the post-rep note can speak to whether the tone
         // work is landing — the same Adaptation signal the next-practice
-        // card and the chat coach read. Only computed for IM reps; nil for
-        // every other mode and for thin histories.
-        let imToneProgress: IMToneDrillProgress?
-        let imToneScenarioTitle: String?
-        let imToneToneTitle: String?
-        // SOLVED read — set only when THIS rep is the one that crossed the
-        // scenario over the bar. See the crossing comparison below.
-        let imToneResolved: IMToneDrillResolved?
-        let imToneResolvedScenarioTitle: String?
-        let imToneResolvedToneTitle: String?
-        if session.mode == .imConversation, let details = session.imConversationDetails {
-            let scenario = details.setup.scenario
-            imToneProgress = IMHistorySummary.toneDrillProgress(from: allSessions, scenario: scenario)
-            imToneScenarioTitle = scenario.title
-            imToneToneTitle = details.setup.targetTone.title
-
-            // Crossing detection: headline a solved tone-drill exactly once
-            // — on the rep that pushes the scenario across the bar, not on
-            // every rep after. The with-vs-without-this-rep comparison
-            // lives in `IMHistorySummary.toneDrillCrossing` (round 21), so
-            // this surface and the hero score card SOLVED ribbon route
-            // through the same primitive and can never drift apart. A
-            // scenario already solved before this rep stays quiet (no
-            // repeat); a genuine relapse-then-reclear reads as a new
-            // crossing, which is correct.
-            if let crossed = IMHistorySummary.toneDrillCrossing(
-                in: allSessions,
-                scenario: scenario,
-                currentRepId: session.id
-            ) {
-                imToneResolved = crossed
-                imToneResolvedScenarioTitle = scenario.title
-                imToneResolvedToneTitle = crossed.targetTone.title
-            } else {
-                imToneResolved = nil
-                imToneResolvedScenarioTitle = nil
-                imToneResolvedToneTitle = nil
-            }
-        } else {
-            imToneProgress = nil
-            imToneScenarioTitle = nil
-            imToneToneTitle = nil
-            imToneResolved = nil
-            imToneResolvedScenarioTitle = nil
-            imToneResolvedToneTitle = nil
-        }
+        // card and the chat coach read. Round 43 lifted this block out
+        // of the finalizer and into `MomentumComputer.imToneDrillNoteFields`
+        // so the per-rep anchoring contract (the trio reads from the
+        // just-finished rep's scenario, NEVER another scenario's
+        // trajectory) is testable in isolation. See `IMToneDrillNoteFields`.
+        let imToneFields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: session, in: allSessions
+        )
 
         let input = PostRepCoachNoteInput(
             sessionID: session.id,
@@ -7866,12 +7828,12 @@ enum PracticeSessionFinalizer {
             weeklyRepCount: momentum.weeklyRepCount,
             isPersonalBest: momentum.isPersonalBest,
             totalSessionCount: momentum.totalSessionCount,
-            imToneDrillProgress: imToneProgress,
-            imToneDrillScenarioTitle: imToneScenarioTitle,
-            imToneDrillToneTitle: imToneToneTitle,
-            imToneDrillResolved: imToneResolved,
-            imToneDrillResolvedScenarioTitle: imToneResolvedScenarioTitle,
-            imToneDrillResolvedToneTitle: imToneResolvedToneTitle
+            imToneDrillProgress: imToneFields.progress,
+            imToneDrillScenarioTitle: imToneFields.scenarioTitle,
+            imToneDrillToneTitle: imToneFields.toneTitle,
+            imToneDrillResolved: imToneFields.resolved,
+            imToneDrillResolvedScenarioTitle: imToneFields.resolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: imToneFields.resolvedToneTitle
         )
 
         // Deterministic note lands synchronously so the Summary
