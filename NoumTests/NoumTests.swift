@@ -8008,10 +8008,12 @@ struct CoachContextBuilderTests {
 
     @Test func followUpTopicDetectionFallsBackToGeneric() {
         // A reply with no detectable topic anchor should land on
-        // .generic so we still surface evergreen chips rather than
-        // collapse the row entirely.
+        // .generic. Generic replies now collapse the continuation row
+        // unless the user turn itself carries a repair/direction/greeting job.
         let generic = CoachContextBuilder.detectFollowUpTopic(in: "You're holding steady. Stay with it.")
         #expect(generic == .generic)
+        let chips = CoachContextBuilder.followUpSuggestions(forCoachReply: "You're holding steady. Stay with it.", voice: .warm)
+        #expect(chips.isEmpty)
     }
 
     @Test func followUpSuggestionsTurnCoachChoiceIntoAnswerChips() {
@@ -8076,15 +8078,14 @@ struct CoachContextBuilderTests {
 
     @Test func followUpSuggestionsEveryVoiceProducesThreeChips() {
         // Coverage invariant: every voice × every topic produces
-        // exactly three chips. Adding a voice / a topic in future
-        // must wire chips for every cell — this test catches a miss.
+        // exactly three chips for ANCHORED topics. Generic replies earn no
+        // continuation row now — silence is better than chatbot furniture.
         let topicReplies: [(String, String)] = [
             ("Try this drill.", "drill"),
             ("Hold a pause.", "pause"),
             ("Watch your pace.", "pace"),
             ("Cut the fillers.", "filler"),
             ("This week, hit three reps.", "weekly"),
-            ("Keep building.", "generic"),
         ]
         for voice in SpeakingStyleGoal.allCases {
             for (reply, label) in topicReplies {
@@ -8099,6 +8100,20 @@ struct CoachContextBuilderTests {
             #expect(chips.count == 3,
                     "nil voice × topic '\(label)' should produce 3 chips, got \(chips.count)")
         }
+    }
+
+    @Test func followUpSuggestionsCollapseForGenericReplies() {
+        for voice in SpeakingStyleGoal.allCases {
+            let chips = CoachContextBuilder.followUpSuggestions(
+                forCoachReply: "That is the right direction. Stay with it.",
+                voice: voice
+            )
+            #expect(chips.isEmpty, "Generic reply should not force chips for \(voice)")
+        }
+        #expect(CoachContextBuilder.followUpSuggestions(
+            forCoachReply: "That is the right direction. Stay with it.",
+            voice: nil
+        ).isEmpty)
     }
 
     @Test func followUpSuggestionsAreVoiceShapedForDrillTopic() {
@@ -8328,6 +8343,45 @@ struct AskNoumStoreTests {
                 "Relaunch should restore only the user row, not the pending coach placeholder")
         #expect(store2.messages.first?.role == .user)
         #expect(!store2.isAwaitingReply)
+    }
+
+    @Test func legacyRoboticCoachBubbleIsCleanedOnLoad() throws {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let key = "askNoum.thread.tester"
+        let old = CoachMessage(
+            role: .coach,
+            text: "Recent reps show a decline in scores, so we can work on fillers or pace. What is your priority today?",
+            createdAt: Date(timeIntervalSince1970: 10),
+            isPending: false
+        )
+        let data = try JSONEncoder().encode([old])
+        suite.set(data, forKey: key)
+
+        let store = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+
+        #expect(store.messages.count == 1)
+        #expect(store.messages[0].role == .systemNotice)
+        #expect(store.messages[0].text.contains("older coach note"))
+        #expect(!store.messages[0].text.lowercased().contains("recent reps show"))
+    }
+
+    @Test func legacyUsefulCoachBubbleSurvivesOnLoad() throws {
+        let suite = UserDefaults(suiteName: UUID().uuidString)!
+        let key = "askNoum.thread.tester"
+        let useful = CoachMessage(
+            role: .coach,
+            text: "Your last rep had 3 fillers; next rep, hold one beat before sentence two.",
+            createdAt: Date(timeIntervalSince1970: 10),
+            isPending: false
+        )
+        let data = try JSONEncoder().encode([useful])
+        suite.set(data, forKey: key)
+
+        let store = AskNoumStore(defaults: suite, accountIDProvider: { "tester" })
+
+        #expect(store.messages.count == 1)
+        #expect(store.messages[0].role == .coach)
+        #expect(store.messages[0].text == useful.text)
     }
 
     // MARK: - Cross-surface inject (Summary → Ask Noum bridge)
@@ -19206,6 +19260,20 @@ struct AICoachChatReplyQualityGateTests {
         #expect(issue == .roboticPhrase("recent reps show"))
     }
 
+    @Test func rejectsUnderstoodOpening() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Understood. Your last rep suggests the close needs more authority."
+        )
+        #expect(issue == .roboticPhrase("understood"))
+    }
+
+    @Test func rejectsLetsRegister() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Let's focus on vocal variety in the next rep."
+        )
+        #expect(issue == .roboticPhrase("let's"))
+    }
+
     @Test func rejectsBareClarification() {
         let issue = AICoachChatService.replyQualityIssue(
             in: "Can you clarify what you mean?"
@@ -19232,6 +19300,16 @@ struct AICoachChatReplyQualityGateTests {
         You are making progress, and there are several things we can work on from here. First, your pacing needs attention because you sometimes rush into your second sentence. Second, your filler words still appear when the pressure rises. Third, your closing line could be more decisive. Fourth, your delivery would benefit from stronger pauses. Fifth, your next step is to choose one of those areas and practice it today.
         """
         #expect(AICoachChatService.replyQualityIssue(in: reply) == .tooLong)
+    }
+
+    @Test func normalTurnRejectsThreeSentenceReport() {
+        let reply = "Your last rep held the opening. The middle softened under pressure. Next rep, hold a beat before sentence two."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "What next?") == .tooLong)
+    }
+
+    @Test func expandedPlanTurnAllowsLongerShape() {
+        let reply = "Day one, run one baseline rep and mark the rushed sentence. Day two, repeat the same prompt and hold a beat before sentence two. Day three, make the final line the ask. Day four, review the transcript for hedging. Day five, test it under Sudden Death."
+        #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "Give me a 7-day plan.") == nil)
     }
 
     @Test func seniorCoachRubricAcceptsAttunedAnchoredAction() {
@@ -29320,13 +29398,26 @@ struct AskNoumVoiceFirstDefaultTests {
         #expect(IMVoicePlaybackSettingsManager.voiceFirstDefault(objectPresent: true, stored: true) == true)
     }
 
-    @Test func voiceFirstStatusReadsLikeAConversation() {
+    @Test func coachOptionLayoutPromotesOnePrimaryAndDedupesOverflow() {
         guard #available(iOS 17.0, *) else { return }
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: false) == "Ready")
-        #expect(AskNoumView.voiceFirstStatus(recording: true, processing: false, speaking: false, hasText: false) == "Listening")
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: true, speaking: false, hasText: false) == "Sending...")
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: true, hasText: false) == "Coach speaking")
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: true) == "Ready to send")
+        let layout = AskNoumView.coachOptionLayout(for: [
+            " Give me the drill ",
+            "Use my last rep",
+            "Give me the drill",
+            "Define the success metric"
+        ])
+        #expect(layout.primary == "Give me the drill")
+        #expect(layout.overflow == ["Use my last rep", "Define the success metric"])
+    }
+
+    @Test func shortCaseLineKeepsCurrentFocusCompact() {
+        guard #available(iOS 17.0, *) else { return }
+        let line = AskNoumView.shortCaseLine(
+            "Hold the close with one clean final sentence before adding supporting detail",
+            maxLength: 36
+        )
+        #expect(line == "Hold the close with one clean final\u{2026}")
+        #expect(line.count <= 37)
     }
 }
 

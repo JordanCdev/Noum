@@ -313,12 +313,21 @@ actor AICoachChatService {
         guard !trimmed.isEmpty else { return nil }
 
         let lower = trimmed.lowercased()
-        if trimmed.count > 700 || sentenceCount(in: trimmed) > 4 {
-            return .tooLong
+        if lower.hasPrefix("understood.")
+            || lower.hasPrefix("understood,")
+            || lower.hasPrefix("understood ") {
+            return .roboticPhrase("understood")
         }
 
         if let phrase = roboticPhrases.first(where: { lower.contains($0) }) {
             return .roboticPhrase(phrase)
+        }
+
+        let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
+        let maxCharacters = expandedAnswer ? 560 : 380
+        let maxSentences = expandedAnswer ? 5 : 2
+        if trimmed.count > maxCharacters || sentenceCount(in: trimmed) > maxSentences {
+            return .tooLong
         }
 
         if (lower.contains("can you clarify") || lower.contains("could you clarify")
@@ -390,7 +399,10 @@ actor AICoachChatService {
             }
         }
 
-        if trimmed.count > 420 || sentenceCount(in: trimmed) > 3 {
+        let expandedAnswer = turnRequestsExpandedAnswer(latestUserTurn)
+        let maxCharacters = expandedAnswer ? 560 : 360
+        let maxSentences = expandedAnswer ? 5 : 2
+        if trimmed.count > maxCharacters || sentenceCount(in: trimmed) > maxSentences {
             apply(.overlong, penalty: 2)
         }
 
@@ -432,6 +444,7 @@ actor AICoachChatService {
         "this indicates",
         "recent reps show",
         "scores are down",
+        "let's",
         "as an ai",
         "as your ai",
         "optimize your",
@@ -455,6 +468,15 @@ actor AICoachChatService {
             "nowhere near", "annoy", "frustrat", "sucks", "poop",
             "not human", "doesn't feel", "does not feel", "too much writing",
             "hardcoded", "low eq", "not high eq"
+        ])
+    }
+
+    private nonisolated static func turnRequestsExpandedAnswer(_ turn: String?) -> Bool {
+        guard let lower = turn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !lower.isEmpty else { return false }
+        return containsAny(lower, [
+            "plan", "full", "breakdown", "detail", "explain", "list",
+            "7-day", "7 day", "week", "roadmap", "step by step"
         ])
     }
 

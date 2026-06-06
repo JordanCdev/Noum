@@ -118,6 +118,19 @@ enum CoachContextBuilder {
            plain language for emotions — never clinical labels, never "I \
            detect", never "your emotional state is".
 
+        Senior-coach examples to copy in shape, not words:
+        - User: "Hi" -> "Good to have you back. The useful move is to stay \
+          with the current target: one clean close, then stop."
+        - User: "This feels robotic" -> "Fair push. I'll cut the report \
+          voice: your last rep gives one signal, so we work the close and \
+          ignore the rest for now."
+        - User: "What next?" -> "Next rep: hold a beat before sentence two \
+          and make the final line the ask. That tests whether the rush is \
+          actually the blocker."
+        - User: "Use my last rep" -> "Your last rep is enough to coach from. \
+          The opening carried the point; the close softened, so make the \
+          next attempt only about the final sentence."
+
         Intelligence floor (this is what separates you from a generic \
         chatbot — every reply must clear it):
         1. Quote at least one concrete fact from CONTEXT — a baseline \
@@ -4076,35 +4089,29 @@ enum CoachContextBuilder {
 
     // MARK: - Follow-up suggestions (post-reply)
     //
-    // Shown as quiet chips beneath the most-recent coach reply inside
-    // `AskNoumView`. Different register from `starterPrompts`: starters
-    // are first-message friction-removers shown above an empty input
-    // bar; follow-ups are "keep the thread alive" nudges shown after
-    // a real reply lands. Three short voice-shaped options is the
-    // sweet spot — fewer than that reads as random; more crowds the
-    // thread and starts to feel like a quiz.
+    // Feeds the single "Next move" continuation panel in `AskNoumView`.
+    // Different register from `starterPrompts`: starters are first-message
+    // friction-removers; follow-ups have to earn their place after a real
+    // reply lands. Generic replies intentionally return no chips.
     //
     // Topic detection rules:
     //   • Lightweight, deterministic, case-insensitive substring match
     //     on the coach's last reply. No NLP, no per-token analysis —
     //     the chips are nudges, not a parsed response.
     //   • Order of detection is intentional. We pick at most ONE topic
-    //     to anchor the chips; the rest fall back to voice-default
-    //     evergreen prompts. Anchoring on the first detected topic
-    //     keeps the chips coherent (three chips about three different
-    //     things would read as scattershot).
+    //     to anchor the chips. Anchoring on the first detected topic keeps
+    //     the continuation coherent.
     //   • Topics intentionally narrow to surfaces the coach actually
     //     talks about: drills, pauses, pace, fillers, weekly cadence,
-    //     and a generic "next move" fallback. Adding a topic means
-    //     adding chips that read in every voice — we keep the catalog
+    //     and turn-aware repair/direction/greeting fallbacks. Adding a topic
+    //     means adding chips that read in every voice — we keep the catalog
     //     tight on purpose.
     //
     // Restraint contract:
     //   • If the reply is empty (e.g. mid-pending state, never
     //     happens in practice but defensively safe), return an empty
     //     array — `AskNoumView` collapses the chip row entirely.
-    //   • Voice-shaped — six voices + nil fallback. Every voice
-    //     handled; the test suite asserts this.
+    //   • Voice-shaped for anchored topics — six voices + nil fallback.
     //   • No exclamations, no "Let's", no emoji — same brand rules
     //     as everywhere else on the surface.
     static func followUpSuggestions(
@@ -4131,6 +4138,9 @@ enum CoachContextBuilder {
                voice: voice
            ) {
             return turnAware
+        }
+        if topic == .generic {
+            return []
         }
         return followUpChips(for: topic, voice: voice)
     }

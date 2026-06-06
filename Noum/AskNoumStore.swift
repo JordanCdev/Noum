@@ -382,8 +382,37 @@ final class AskNoumStore: ObservableObject {
         // Defensive: don't restore a row that was pending when the app
         // exited — the model never returned, so this is effectively
         // dead. Drop it.
-        messages = decoded.filter { !$0.isPending }
+        var didCleanLegacyCoachNotes = false
+        messages = decoded.filter { !$0.isPending }.map { message in
+            guard message.role == .coach,
+                  Self.shouldCleanLegacyCoachMessage(message.text) else {
+                return message
+            }
+            didCleanLegacyCoachNotes = true
+            return CoachMessage(
+                id: message.id,
+                role: .systemNotice,
+                text: Self.legacyCoachMessageNotice,
+                createdAt: message.createdAt,
+                isPending: false
+            )
+        }
+        if didCleanLegacyCoachNotes {
+            persist()
+        }
     }
+
+    nonisolated static func shouldCleanLegacyCoachMessage(_ text: String) -> Bool {
+        guard let issue = AICoachChatService.replyQualityIssue(in: text) else { return false }
+        switch issue {
+        case .roboticPhrase, .bareClarification, .defensiveProductLanguage, .menuInsteadOfDecision:
+            return true
+        case .tooLong, .missedTrustRepair, .missingPrescribedAction, .unanchoredCoaching, .overclaimsEvidence:
+            return false
+        }
+    }
+
+    private static let legacyCoachMessageNotice = "I cleaned up an older coach note that no longer meets the current standard. Ask for the current read and I'll use your latest case file."
 
     private func trimAndPersist() {
         if messages.count > Self.maxStoredMessages {

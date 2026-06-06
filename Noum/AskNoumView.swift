@@ -9,19 +9,15 @@ import SwiftUI
 // by `CoachContextBuilder` at send-time.
 //
 // Layout (top to bottom):
-//   • Eyebrow: "ASK NOUM · <Voice>" — micro caps label, brand-purple
-//     so the coach surface reads as a distinct register from the
-//     brand-blue path/journey card.
 //   • Header: NoumCharacter (voice-tinted orb) + the coach's name. The orb
 //     REACTS to the thread (`orbMood`) — `.thinking` while a reply is
 //     composing/writing, `.coaching` once a conversation exists, a `.calm`
-//     greeting at the empty state. It COLLAPSES on scroll (S4) — shrinks
-//     60→34 but never disappears, staying a present embodiment — and the
-//     subtitle drops once the thread scrolls past a small deadband, driven
-//     by a scroll-offset probe (`AskNoumScrollOffsetKey`) like the home
-//     screen. The full header greets a first-time / top-of-thread user.
-//   • Empty state (no messages): voice-specific starter prompts as
-//     tappable chips. Removes the friction of the first message.
+//     greeting at the empty state. Existing threads open compact by default;
+//     first contact gets the fuller identity moment.
+//   • Current focus strip: visible only when the thread has messages and the
+//     case file has an active target/focus.
+//   • Empty state (no messages): one recommended ask, with alternatives tucked
+//     into a menu. Removes first-message friction without a prompt tray.
 //   • Thread: alternating user (right-aligned brand-blue bubble) +
 //     coach (left-aligned full-width card) rows. The coach card carries
 //     NO per-bubble glyph (S4 removed the repeated orb the user flagged
@@ -32,11 +28,12 @@ import SwiftUI
 //     (the coach reads as writing to you, not popping in fully formed) —
 //     view-only timing, the store still holds the full text, and
 //     reduce-motion lands it instantly.
-//   • Input bar: rounded text field + ONE 44pt trailing control (S4)
-//     that swaps glyph by draft state — mic when empty, arrow.up when
-//     there's text, stop.fill while recording. Replaced the old greyed
-//     send circle + oversized separate mic. Disabled while a reply is in
-//     flight; falls back to send-only when voice can't be served.
+//   • Continuation: a single "Next move" panel when a drill/choice/follow-up
+//     is earned; generic replies stay quiet.
+//   • Input bar: rounded text field + ONE 44pt trailing control that swaps
+//     glyph by draft state — mic when empty, arrow.up when there's text,
+//     stop.fill while recording. Disabled while a reply is in flight; falls
+//     back to send-only when voice can't be served.
 //
 // Brand alignment: white cards on light background, brand-purple accents
 // for the coach surface, NoumCharacter as the coach's embodiment.
@@ -140,13 +137,9 @@ struct AskNoumView: View {
     /// of the visible header row so it reads as an action, not a false "live"
     /// status.
     var onGoLive: (() -> Void)? = nil
-    /// Typed deep links and test routes should land on the actual composer,
-    /// while the main Ask Noum entry remains voice-first.
-    private let startsInTextMode: Bool
     @StateObject private var baselineStore = BaselineStore.shared
     @StateObject private var streakFreezeManager = StreakFreezeManager.shared
     @StateObject private var pathProgress = PathProgressManager.shared
-    @StateObject private var proofStore = ProofMomentStore.shared
     @StateObject private var bigMomentStore = BigMomentStore.shared
     @StateObject private var forwardPlanStore = ForwardPlanStore.shared
     @StateObject private var postRepCoachNoteStore = PostRepCoachNoteStore.shared
@@ -154,10 +147,6 @@ struct AskNoumView: View {
     @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
 
     @State private var draft: String = ""
-    /// A7 voice-first: when true (and voice is available) Ask Noum shows the
-    /// prominent talk bar as the default input; the user taps "Type instead"
-    /// to fall back to the text bar. Defaults true so the front door is voice.
-    @State private var voiceFirstMode: Bool
     @State private var didLandFirstAppear = false
     @FocusState private var inputFocused: Bool
 
@@ -223,8 +212,7 @@ struct AskNoumView: View {
         self.coachingProfileStore = coachingProfileStore
         self._navigationPath = navigationPath
         self.onGoLive = onGoLive
-        self.startsInTextMode = startsInTextMode
-        self._voiceFirstMode = State(initialValue: !startsInTextMode)
+        _ = startsInTextMode
     }
 
     private var voice: SpeakingStyleGoal? {
@@ -242,7 +230,7 @@ struct AskNoumView: View {
     /// when there are messages to scroll — the empty state never scrolls far
     /// enough to trip it, so the full header greets a first-time user.
     private var isHeaderCompact: Bool {
-        scrollOffset < -24
+        !store.messages.isEmpty || scrollOffset < -24
     }
 
     private var characterStage: NoumCharacter.Stage {
@@ -267,6 +255,7 @@ struct AskNoumView: View {
 
             VStack(spacing: 0) {
                 header
+                currentFocusStrip
                 Divider()
                     .opacity(0.4)
                 ScrollViewReader { proxy in
@@ -299,17 +288,15 @@ struct AskNoumView: View {
                                     .id("revisedReadFollowUp")
                                 goalProposalRow
                                     .id("goalProposal")
-                                // A3: ONE prompt at a time. A concrete mode/
-                                // exercise recommendation (the stronger, more
-                                // actionable CTA) takes precedence over the
-                                // keep-going suggestion chips.
-                                if let modeDestination = suggestedModeDestination {
-                                    modeLaunchRow(destination: modeDestination)
-                                        .id("modeLaunch")
-                                } else if let chips = followUpChips, !chips.isEmpty {
-                                    followUpRow(chips: chips)
-                                        .id("followups")
-                                }
+                                // One visible continuation surface. A
+                                // launchable drill wins as the primary action;
+                                // conversational follow-ups move into the
+                                // same calm panel instead of a row of chips.
+                                coachNextMovePanel(
+                                    destination: suggestedModeDestination,
+                                    chips: followUpChips ?? []
+                                )
+                                .id("coachNextMove")
                             }
                             // Bottom spacer keeps the last message off
                             // the input bar so it's never visually cramped.
@@ -387,27 +374,19 @@ struct AskNoumView: View {
                         }
                     }
                 }
-                insightsCaption
                 inputArea
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            // Wire the voice-input transcript callback. In voice-first mode a
-            // stopped recording is a submitted turn; in typed fallback it still
-            // behaves like dictation so the user can edit before sending.
+            // Voice dictation lands in the composer as editable draft text.
+            // Sending remains explicit through the single trailing control.
             voiceInput.onFinalTranscript = { transcript in
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
-                if voiceFirstMode && !store.isAwaitingReply {
-                    draft = ""
-                    inputFocused = false
-                    send(trimmed)
-                } else {
-                    draft = trimmed
-                    inputFocused = true
-                }
+                draft = trimmed
+                inputFocused = true
             }
             // Pick up any cross-surface inject (e.g. Summary's "Talk to
             // your coach about this rep" bridge dropped a seed message
@@ -466,6 +445,28 @@ struct AskNoumView: View {
         .padding(.top, Spacing.xs)
         .padding(.bottom, Spacing.sm)
         .background(AppColor.cardBackground.opacity(0.5))
+    }
+
+    @ViewBuilder
+    private var currentFocusStrip: some View {
+        if !store.messages.isEmpty, let line = activeCaseSubtitle {
+            HStack(spacing: 6) {
+                Image(systemName: "scope")
+                    .font(Typography.captionSmall.weight(.semibold))
+                    .foregroundStyle(AppColor.pro.opacity(0.85))
+                Text(line)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, 6)
+            .background(AppColor.cardBackground.opacity(0.35))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Current focus: \(line)")
+            .accessibilityIdentifier("askNoum.currentFocus")
+        }
     }
 
     // MARK: - Thread options
@@ -544,75 +545,61 @@ struct AskNoumView: View {
         if store.isAwaitingReply {
             return store.hasLandedCoachReply ? "Thinking\u{2026}" : "Reading your context\u{2026}"
         }
+        if let line = activeCaseSubtitle {
+            return line
+        }
         if let voice = voice {
             return "Your \(voice.title.lowercased()) coach."
         }
         return "Your speaking coach."
     }
 
+    private var activeCaseSubtitle: String? {
+        guard let memory = coachMemoryStore.currentMemory,
+              let caseFile = memory.caseFile else { return nil }
+        if let target = caseFile.observableTarget?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !target.isEmpty {
+            return "Working on \(Self.shortCaseLine(target).lowercased())"
+        }
+        if let focus = caseFile.focus {
+            return "Working on \(focus.displayName.lowercased())"
+        }
+        if let intervention = caseFile.activeIntervention?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !intervention.isEmpty {
+            return "Current drill: \(Self.shortCaseLine(intervention).lowercased())"
+        }
+        return nil
+    }
+
+    static func shortCaseLine(_ raw: String, maxLength: Int = 58) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maxLength else { return trimmed }
+        let prefix = trimmed.prefix(maxLength)
+        if let lastSpace = prefix.lastIndex(of: " ") {
+            return String(prefix[..<lastSpace]) + "\u{2026}"
+        }
+        return String(prefix) + "\u{2026}"
+    }
+
     // MARK: - Empty state (starter prompts)
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            // Calmer framing — coach voice. Set context for the user
-            // about what this surface is FOR before they have to make
-            // the first move.
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(emptyStateHeadline)
                     .font(Typography.cardTitle)
                     .foregroundStyle(.primary)
                 Text(emptyStateBody)
-                    .font(Typography.body)
+                    .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Case-review priority chip — only renders when the active
-            // intervention has reached its review threshold. Conditional
-            // sibling to `InterventionReviewPromptCard` on SummaryView,
-            // wired below the empty-state intro so a user who lands in
-            // Ask Noum directly (not through the post-rep flow) still
-            // gets a one-tap entry into the same case-review conversation.
             caseReviewStarterChip
 
-            Text("Starters")
-                .font(Typography.micro.weight(.bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-                .padding(.top, Spacing.xs)
-
-            VStack(spacing: Spacing.sm) {
-                ForEach(displayedStarters, id: \.self) { prompt in
-                    Button {
-                        send(prompt)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.up.right.circle")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(AppColor.pro)
-                            Text(prompt)
-                                .font(Typography.body)
-                                .foregroundStyle(.primary)
-                                .multilineTextAlignment(.leading)
-                            Spacer(minLength: Spacing.xs)
-                        }
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            AppColor.cardBackground,
-                            in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                                .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(prompt)
-                }
-            }
+            starterPrimaryAction
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -639,10 +626,13 @@ struct AskNoumView: View {
     }
 
     private var emptyStateHeadline: String {
-        if let voice = voice {
-            return "Coaching your \(voice.title.lowercased())."
+        if activeCaseSubtitle != nil {
+            return "Start with the current case."
         }
-        return "Your coaching thread."
+        if let voice = voice {
+            return "Start with your \(voice.title.lowercased())."
+        }
+        return "Start with a coaching read."
     }
 
     // MARK: - Case-review starter chip
@@ -725,20 +715,85 @@ struct AskNoumView: View {
     private var emptyStateBody: String {
         switch voice {
         case .authoritative:
-            return "Ask about your delivery, plan an upcoming pitch, or get a verdict on this week's data. I read your last 30 days before every reply."
+            return "I'll keep it direct: one read, one reason, one move."
         case .warm:
-            return "Tell me about your speaking week — what felt natural, what didn't. I'll help you find the moves that read as warmer."
+            return "Bring the moment that felt awkward or important. We'll make the next attempt feel more like you."
         case .concise:
-            return "Ask short questions, get short answers. I read your last 30 days before every reply."
+            return "Short question in, sharp coaching move out."
         case .persuasive:
-            return "Tell me what you're trying to convince someone of. I'll work backwards from there to the move you need to make."
+            return "Tell me who you need to move. I'll work backwards to the line that carries weight."
         case .executive:
-            return "Top-line first. Tell me what's on the calendar; I'll give you a read on the moves that matter."
+            return "Top-line first. We'll stay on the move that changes the room."
         case .storytelling:
-            return "Where are you in your speaking arc this week? I read your last 30 days before every reply, then I'll help you find the next chapter."
+            return "Give me the scene. I'll help you find the turn that makes it land."
         case .none:
-            return "Ask me anything about your speaking practice. I read your goal, baseline, and last 30 days before every reply."
+            return "I read your practice history before replying, then keep the answer focused."
         }
+    }
+
+    @ViewBuilder
+    private var starterPrimaryAction: some View {
+        let layout = Self.coachOptionLayout(for: displayedStarters)
+        if let primary = layout.primary {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Button {
+                    send(primary)
+                } label: {
+                    HStack(alignment: .center, spacing: 10) {
+                        Image(systemName: "arrow.up.right.circle.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(AppColor.pro)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Recommended ask")
+                                .font(Typography.micro.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.7)
+                            Text(primary)
+                                .font(Typography.body.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: Spacing.xs)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        AppColor.cardBackground,
+                        in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Recommended ask: \(primary)")
+
+                if !layout.overflow.isEmpty {
+                    starterMoreMenu(options: layout.overflow)
+                }
+            }
+        }
+    }
+
+    private func starterMoreMenu(options: [String]) -> some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button(option) {
+                    send(option)
+                }
+            }
+        } label: {
+            Label("Other useful asks", systemImage: "ellipsis.circle")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(AppColor.pro)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 2)
+        }
+        .accessibilityLabel("Other useful asks")
     }
 
     // MARK: - Follow-up chips
@@ -777,13 +832,6 @@ struct AskNoumView: View {
               !last.isPending,
               !last.text.isEmpty
         else { return nil }
-        // Prefer cached AI chips for this coach reply. Falls back to the
-        // deterministic catalog if the cache hasn't hydrated yet (request
-        // in flight) or the AI returned nil (provider cold / locale /
-        // failure).
-        if let cached = store.aiChips(for: last.id), !cached.isEmpty {
-            return cached
-        }
         let previousMessages = store.messages.dropLast()
         let previousCoachReply = previousMessages
             .last(where: { $0.role == .coach && !$0.isPending })?
@@ -791,12 +839,20 @@ struct AskNoumView: View {
         let lastUserTurn = previousMessages
             .last(where: { $0.role == .user })?
             .text
-        return CoachContextBuilder.followUpSuggestions(
+        let deterministic = CoachContextBuilder.followUpSuggestions(
             forCoachReply: last.text,
             previousCoachReply: previousCoachReply,
             lastUserTurn: lastUserTurn,
             voice: voice
         )
+        guard !deterministic.isEmpty else { return [] }
+        // Prefer cached AI chips only after the deterministic policy says this
+        // reply earned a continuation. This prevents generic replies from
+        // sprouting a chip tray just because the provider invented one.
+        if let cached = store.aiChips(for: last.id), !cached.isEmpty {
+            return cached
+        }
+        return deterministic
     }
 
     /// A3: the single launchable practice destination the LATEST coach reply
@@ -813,33 +869,6 @@ struct AskNoumView: View {
               !last.text.isEmpty
         else { return nil }
         return AskNoumModeSuggestion.detect(in: last.text)
-    }
-
-    /// The one mode-launch card — a calm, single CTA that pushes the matching
-    /// practice destination onto the shared stack. Reuses AppDestination
-    /// routing; no parallel navigation.
-    private func modeLaunchRow(destination: AppDestination) -> some View {
-        Button {
-            CoachHaptic.selectionTap()
-            navigationPath.append(destination)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.forward.circle.fill")
-                    .font(Typography.caption.weight(.semibold))
-                Text(AskNoumModeSuggestion.label(for: destination))
-                    .font(Typography.caption.weight(.semibold))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(AppColor.pro)
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .background(AppColor.pro.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(AppColor.pro.opacity(0.30), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, Spacing.md)
-        .accessibilityIdentifier("askNoum.modeLaunch")
-        .accessibilityLabel(AskNoumModeSuggestion.label(for: destination))
     }
 
     /// Coach message ID of the most-recent landed reply, if any. Drives
@@ -872,6 +901,17 @@ struct AskNoumView: View {
             .last(where: { $0.role == .user })?
             .text ?? ""
         guard !lastUserTurn.isEmpty else { return }
+        let previousCoachReply = store.messages
+            .prefix(coachIdx)
+            .last(where: { $0.role == .coach && !$0.isPending })?
+            .text
+        let deterministic = CoachContextBuilder.followUpSuggestions(
+            forCoachReply: coachReply,
+            previousCoachReply: previousCoachReply,
+            lastUserTurn: lastUserTurn,
+            voice: voice
+        )
+        guard !deterministic.isEmpty else { return }
         let voiceCapture = voice
         // Privacy-bounded summary of the user's recent reps (score / theme
         // / declared-intent / coach headline — NEVER raw transcript). Gives
@@ -1476,50 +1516,108 @@ struct AskNoumView: View {
         coachingProfileStore.save(profile)
     }
 
-    private func followUpRow(chips: [String]) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Keep going")
-                .font(Typography.micro.weight(.bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-                .accessibilityHidden(true)
+    struct CoachOptionLayout: Equatable {
+        let primary: String?
+        let overflow: [String]
+    }
 
-            // Wrapping flow — chips lay out horizontally and wrap onto
-            // a second row when the screen can't hold them all. Three
-            // chips on a regular-width iPhone usually fit on one row;
-            // smaller widths break naturally without truncating the
-            // copy. Reuses the `FlowLayout` already defined for the
-            // AIWeeklyInsightCard evidence pills so the chip rhythm
-            // matches that surface visually.
-            FlowLayout(spacing: 8, runSpacing: 6) {
-                ForEach(chips, id: \.self) { chip in
-                    Button {
-                        send(chip)
+    static func coachOptionLayout(for options: [String]) -> CoachOptionLayout {
+        var seen = Set<String>()
+        let cleaned = options.compactMap { option -> String? in
+            let trimmed = option.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard !seen.contains(key) else { return nil }
+            seen.insert(key)
+            return trimmed
+        }
+        return CoachOptionLayout(primary: cleaned.first, overflow: Array(cleaned.dropFirst()))
+    }
+
+    @ViewBuilder
+    private func coachNextMovePanel(destination: AppDestination?, chips: [String]) -> some View {
+        let layout = Self.coachOptionLayout(for: chips)
+        if destination != nil || layout.primary != nil {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Next move")
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .accessibilityHidden(true)
+
+                Button {
+                    CoachHaptic.selectionTap()
+                    if let destination {
+                        navigationPath.append(destination)
+                    } else if let primary = layout.primary {
+                        send(primary)
+                    }
+                } label: {
+                    HStack(alignment: .center, spacing: 8) {
+                        Image(systemName: destination == nil ? "arrow.up.right.circle.fill" : "play.circle.fill")
+                            .font(Typography.caption.weight(.bold))
+                            .foregroundStyle(AppColor.pro)
+                        Text(primaryNextMoveLabel(destination: destination, fallback: layout.primary))
+                            .font(Typography.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        AppColor.cardBackground,
+                        in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .stroke(AppColor.pro.opacity(0.18), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("askNoum.nextMove.primary")
+                .accessibilityLabel(primaryNextMoveAccessibilityLabel(destination: destination, fallback: layout.primary))
+
+                if !layout.overflow.isEmpty {
+                    Menu {
+                        ForEach(layout.overflow, id: \.self) { option in
+                            Button(option) {
+                                send(option)
+                            }
+                        }
                     } label: {
-                        Text(chip)
+                        Label("Other directions", systemImage: "ellipsis.circle")
                             .font(Typography.caption.weight(.semibold))
                             .foregroundStyle(AppColor.pro)
-                            .multilineTextAlignment(.leading)
-                            .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, 6)
-                            .background(
-                                AppColor.cardBackground,
-                                in: Capsule()
-                            )
-                            .overlay(
-                                Capsule()
-                                    .stroke(AppColor.pro.opacity(0.22), lineWidth: 1)
-                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 2)
                     }
-                    .buttonStyle(.pressable)
-                    .accessibilityLabel("Follow up: \(chip)")
+                    .accessibilityIdentifier("askNoum.nextMove.more")
+                    .accessibilityLabel("Other directions")
                 }
             }
+            .padding(.top, 2)
+            .padding(.bottom, Spacing.xs)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+            .accessibilityIdentifier("askNoum.nextMovePanel")
         }
-        .padding(.top, 2)
-        .padding(.bottom, Spacing.xs)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func primaryNextMoveLabel(destination: AppDestination?, fallback: String?) -> String {
+        if let destination {
+            return AskNoumModeSuggestion.label(for: destination)
+        }
+        return fallback ?? "Continue"
+    }
+
+    private func primaryNextMoveAccessibilityLabel(destination: AppDestination?, fallback: String?) -> String {
+        if let destination {
+            return AskNoumModeSuggestion.label(for: destination)
+        }
+        return "Follow up: \(fallback ?? "Continue")"
     }
 
     // MARK: - Message rows
@@ -1633,157 +1731,14 @@ struct AskNoumView: View {
         .accessibilityLabel("Noum is thinking")
     }
 
-    // MARK: - Insights caption (M15 Phase 5)
-    //
-    // Ambient signal that the coach has banked N proof moments about
-    // you. Reads `ProofMomentStore.shared.records.count` directly — no
-    // new store, no tap-through, no animation. Hidden when the archive
-    // is empty so we never render "0 insights" or any "you lost your
-    // streak" loss-aversion copy. VISION.md anti-goal #2.
-    @ViewBuilder
-    private var insightsCaption: some View {
-        let count = proofStore.records.count
-        if count > 0 {
-            let noun = count == 1 ? "insight" : "insights"
-            HStack(spacing: 6) {
-                Image(systemName: "quote.opening")
-                    .font(.caption2)
-                    .foregroundStyle(AppColor.pro.opacity(0.75))
-                Text("\(count) \(noun) banked")
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.xs)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(count) \(noun) banked.")
-        }
-    }
-
-    // MARK: - Input area (voice-first default / text fallback)
-
-    /// A7: voice-first is the default front door whenever the mic is available.
-    /// Text is the explicit opt-in ("Type instead"), and the automatic fallback
-    /// when voice can't be served.
-    private var voiceFirstActive: Bool {
-        voiceFirstMode && voiceInput.isAvailable
-    }
+    // MARK: - Input area (integrated text + voice composer)
 
     @ViewBuilder
     private var inputArea: some View {
-        if voiceFirstActive {
-            voiceFirstBar
-        } else {
-            inputBar
-        }
+        inputBar
     }
 
-    /// The prominent talk surface. Reuses the EXACT control logic the text bar
-    /// uses (`inputControlMode` + `performInputAction`) — only the presentation
-    /// changes: a compact talk control, the spoken words shown inline, and
-    /// text demoted to a keyboard icon. The record → transcript → send flow is
-    /// identical, so this can't drift from the text path.
-    private var voiceFirstBar: some View {
-        let mode = inputControlMode
-        return VStack(spacing: 0) {
-            micNoticeRow
-
-            HStack(alignment: .center, spacing: Spacing.sm) {
-                Button {
-                    performInputAction(for: mode)
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(inputControlFill(for: mode))
-                            .frame(width: 52, height: 52)
-                        if mode == .recording {
-                            Circle()
-                                .stroke(AppColor.brandBlue.opacity(0.32), lineWidth: 2)
-                                .frame(width: 60, height: 60)
-                                .transition(.opacity)
-                        }
-                        Image(systemName: inputControlGlyph(for: mode))
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white)
-                            .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-                            .symbolEffect(.pulse, options: .repeating, isActive: mode == .processing && !reduceMotion)
-                    }
-                }
-                .disabled(inputControlDisabled(for: mode))
-                .opacity((store.isAwaitingReply && mode != .speaking) ? 0.45 : 1.0)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: mode)
-                .accessibilityIdentifier("askNoum.voiceFirst.talk")
-                .accessibilityLabel(inputControlAccessibilityLabel(for: mode))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.voiceFirstStatus(
-                        recording: voiceInput.state == .recording,
-                        processing: voiceInput.state == .processing,
-                        speaking: mode == .speaking,
-                        hasText: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ))
-                    .font(Typography.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .animation(nil, value: mode)
-
-                    Text(voiceFirstPreviewText)
-                        .font(Typography.caption)
-                        .foregroundStyle(voiceFirstPreviewIsPlaceholder ? .tertiary : .secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                        voiceFirstMode = false
-                    }
-                    inputFocused = true
-                } label: {
-                    Image(systemName: "keyboard")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppColor.pro)
-                        .frame(width: 40, height: 40)
-                        .background(AppColor.pro.opacity(0.08), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("askNoum.voiceFirst.typeInstead")
-                .accessibilityLabel("Type a message")
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-        }
-        .background(.ultraThinMaterial)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
-    }
-
-    private var voiceFirstPreviewText: String {
-        let partial = voiceInput.partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !partial.isEmpty { return partial }
-        let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedDraft.isEmpty { return trimmedDraft }
-        return "Ask by voice"
-    }
-
-    private var voiceFirstPreviewIsPlaceholder: Bool {
-        voiceInput.partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// Status line under the talk button. Pure + static so it's testable
-    /// without the private `InputControlMode`.
-    static func voiceFirstStatus(recording: Bool, processing: Bool, speaking: Bool, hasText: Bool) -> String {
-        if recording { return "Listening" }
-        if processing { return "Sending..." }
-        if speaking { return "Coach speaking" }
-        if hasText { return "Ready to send" }
-        return "Ready"
-    }
-
-    /// Shared tap action for BOTH the compact text-bar control and the
-    /// prominent voice-first talk button, so the two never diverge.
+    /// Shared tap action for the single trailing composer control.
     private func performInputAction(for mode: InputControlMode) {
         switch mode {
         case .send, .sendOnly:
@@ -1837,24 +1792,6 @@ struct AskNoumView: View {
 
     private var inputBarRow: some View {
         HStack(alignment: .bottom, spacing: Spacing.sm) {
-            // A7: small affordance back to the voice-first talk bar. Only shown
-            // when voice is available (otherwise text is the only option).
-            if voiceInput.isAvailable {
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                        voiceFirstMode = true
-                    }
-                    inputFocused = false
-                } label: {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("askNoum.textBar.voiceToggle")
-                .accessibilityLabel("Back to voice")
-            }
             ZStack(alignment: .leading) {
                 if draft.isEmpty {
                     Text(textFieldPlaceholder)
@@ -2041,8 +1978,8 @@ struct AskNoumView: View {
     /// we show a soft "Listening…" line, NOT a stale stuck preview.
     /// The transcript replaces it as soon as the recognizer lands a
     /// word. After release-to-send the preview hides — the final
-    /// transcript lands in the chat thread as a user turn (same path
-    /// as typed messages) and the preview's job is done.
+    /// transcript lands in the composer as editable draft text and the preview
+    /// hides. The user sends it with the same trailing control.
     ///
     /// Visual register: small italic body text, brand-blue tint at
     /// 75% opacity, brand-blue 10% backdrop. Same accent the mic
@@ -2092,15 +2029,14 @@ struct AskNoumView: View {
         case .idle:
             return "Tap to record your message"
         case .recording:
-            return "Recording — tap to stop and send"
+            return "Recording — tap to stop"
         case .processing:
             return "Processing your message"
         }
     }
 
     private var canSend: Bool {
-        // Send is active when there's draft text OR when recording is live
-        // (tapping Send while recording stops and sends the current transcript).
+        // Recording is an active stop state; typed text is the send state.
         (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
          || voiceInput.state == .recording)
         && !store.isAwaitingReply
