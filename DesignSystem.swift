@@ -82,11 +82,15 @@ enum AppColor {
     static let modeAhCounter = Color(red: 0.14, green: 0.60, blue: 0.44)
     /// IM Conversation mode
     static let modeIM = Color(red: 0.32, green: 0.43, blue: 0.94)
+    /// Cut the Crutch — control / restraint drill (warm rose, distinct from pressure tints)
+    static let modeCrutch = Color(red: 0.78, green: 0.32, blue: 0.50)
+    /// Pace Training mode — teal, distinct from modeAhCounter's green
+    static let modePace = Color(red: 0.15, green: 0.72, blue: 0.78)
 
     // MARK: Semantic Feedback
 
-    /// Positive / good score
-    static let positive = Color(red: 0.10, green: 0.56, blue: 0.40)
+    /// Positive / good score (#199966)
+    static let positive = Color(red: 0.10, green: 0.60, blue: 0.40)
     /// Caution / okay score
     static let caution = Color(red: 0.83, green: 0.52, blue: 0.10)
     /// Warning / needs improvement
@@ -126,6 +130,25 @@ extension Animation {
     static let snappySpring = Animation.spring(response: 0.26, dampingFraction: 0.88)
     /// Bouncy spring for celebrations, emphasis
     static let bouncySpring = Animation.spring(response: 0.40, dampingFraction: 0.65)
+
+    // MARK: Reward & Progress Animations
+
+    /// Score number count-up landing — smooth deceleration
+    static let scoreReveal = Animation.easeOut(duration: 0.8)
+    /// Stat delta badge pop-in — delayed bouncy spring
+    static let statDelta = Animation.spring(response: 0.4, dampingFraction: 0.65).delay(0.3)
+    /// Achievement badge or icon appearance
+    static let achievementPop = Animation.spring(response: 0.5, dampingFraction: 0.55)
+    /// Progress bar fill — smooth linear-to-ease
+    static let progressFill = Animation.easeOut(duration: 0.6)
+    /// Staggered list item entrance — pass index for delay
+    static func stagger(_ index: Int) -> Animation {
+        .spring(response: 0.34, dampingFraction: 0.84).delay(Double(index) * 0.08)
+    }
+    /// Coach note line appearance — staggered reading rhythm
+    static func coachLineStagger(_ index: Int) -> Animation {
+        .easeOut(duration: 0.3).delay(0.15 + Double(index) * 0.15)
+    }
 }
 
 // MARK: - Shared View Components
@@ -193,20 +216,38 @@ struct ErrorCard: View {
 }
 
 /// Standardized section header with optional trailing content.
+///
+/// Optionally accepts a `glyph: NoumCharacter.Inline?` so the coach can
+/// narrate the section — e.g. the "Today" and "This week" headers on the
+/// Home screen carry a small Noum glyph that signals "this is what the
+/// coach is reading from your data". The glyph is mutually-exclusive
+/// with the SF Symbol `icon` slot: when both are set the glyph wins, so
+/// the coach voice always takes precedence over a generic symbol.
 struct SectionHeader<Trailing: View>: View {
     let title: String
     let icon: String?
+    let glyph: NoumCharacter.Inline?
     @ViewBuilder let trailing: () -> Trailing
 
-    init(_ title: String, icon: String? = nil, @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
+    init(
+        _ title: String,
+        icon: String? = nil,
+        glyph: NoumCharacter.Inline? = nil,
+        @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }
+    ) {
         self.title = title
         self.icon = icon
+        self.glyph = glyph
         self.trailing = trailing
     }
 
     var body: some View {
-        HStack {
-            if let icon {
+        HStack(spacing: Spacing.xs) {
+            // Coach glyph wins over the SF Symbol icon — when both are
+            // set, the coach voice is the one narrating this section.
+            if let glyph {
+                glyph
+            } else if let icon {
                 Image(systemName: icon)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -221,12 +262,13 @@ struct SectionHeader<Trailing: View>: View {
 }
 
 /// Button style that provides a subtle press-down effect for tactile feedback.
+/// Uses only opacity (no scaleEffect) to avoid shrinking the hit-test area on press.
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .opacity(configuration.isPressed ? 0.85 : 1.0)
-            .animation(.snappySpring, value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -315,6 +357,107 @@ func dismissRecursively(from dismiss: DismissAction, times: Int = 2) {
         DispatchQueue.main.async {
             dismissRecursively(from: dismiss, times: times - 1)
         }
+    }
+}
+
+// MARK: - Milestone Celebration Overlay
+
+/// A full-screen milestone celebration that interrupts to celebrate achievements.
+struct MilestoneCelebrationOverlay: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    let detail: String?
+    let onDismiss: () -> Void
+
+    @State private var appeared = false
+    @State private var dismissed = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(appeared ? 0.45 : 0)
+                .ignoresSafeArea()
+                .onTapGesture { dismissCelebration() }
+
+            VStack(spacing: 20) {
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(0.15))
+                        .frame(width: 100, height: 100)
+                        .scaleEffect(appeared ? 1.2 : 0.5)
+                    Circle()
+                        .stroke(tint.opacity(0.25), lineWidth: 2)
+                        .frame(width: 110, height: 110)
+                        .scaleEffect(appeared ? 1.3 : 0.4)
+                    Image(systemName: icon)
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundStyle(tint)
+                        .scaleEffect(appeared ? 1.0 : 0.3)
+                }
+
+                Text(title)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+
+                Text(subtitle)
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+
+                if let detail {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                }
+                // M25: Continue button removed. The celebration is a
+                // moment the user reads, not a screen they navigate.
+                // Auto-dismiss after 5s lands on summary without an
+                // interaction tax; tap-to-dismiss-anywhere stays so a
+                // user who wants to move on faster still can.
+            }
+            .padding(32)
+            .scaleEffect(appeared ? 1.0 : 0.7)
+            .opacity(appeared ? 1.0 : 0)
+        }
+        .opacity(dismissed ? 0 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture { dismissCelebration() }
+        .onAppear {
+            withAnimation(.bouncySpring) { appeared = true }
+#if canImport(UIKit)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+#endif
+            // Auto-advance to summary after 5s. Cancelled implicitly if
+            // the user taps to dismiss earlier (the second call into
+            // dismissCelebration is idempotent — `dismissed` already
+            // true on the second pass).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                guard !dismissed else { return }
+                dismissCelebration()
+            }
+        }
+    }
+
+    private func dismissCelebration() {
+        withAnimation(.easeOut(duration: 0.25)) { dismissed = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onDismiss() }
+    }
+}
+
+/// Represents a milestone event to celebrate.
+struct MilestoneEvent: Identifiable, Equatable {
+    let id = UUID()
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    let detail: String?
+
+    static func == (lhs: MilestoneEvent, rhs: MilestoneEvent) -> Bool {
+        lhs.id == rhs.id
     }
 }
 #endif

@@ -5,11 +5,9 @@ import SwiftUI
 #if canImport(AVFoundation)
 import AVFoundation
 #endif
-@preconcurrency import AWSSDKIdentity
-@preconcurrency import AWSTranscribeStreaming
-@preconcurrency import AWSClientRuntime
-
-
+#if canImport(AudioToolbox)
+import AudioToolbox
+#endif
 
 #if canImport(AVFoundation)
 @MainActor
@@ -21,40 +19,154 @@ class SpeechRecognizerViewModel: ObservableObject {
     @Published var lastSessionDuration: TimeInterval = 0
     @Published var pastSessions: [PracticeSession] = []
     @Published var connectionError: String?
+    @Published var activeProviderName: String = ""
 
-    private let authManager: AuthManager = .shared
+    /// The session prompt (topic). Used by ALL modes for prompt-echo exclusion
+    /// in semantic filler detection. Set this before recording starts.
+    var sessionPrompt: String?
+
+    /// When set, enables the stricter Pressure Drill filler path.
+    /// Uses `sessionPrompt` for echo exclusion with the sudden death threshold.
+    var pressureDrillPrompt: String? {
+        get { _pressureDrillMode ? sessionPrompt : nil }
+        set { _pressureDrillMode = newValue != nil; if let v = newValue { sessionPrompt = v } }
+    }
+    private var _pressureDrillMode = false
+
+    @Published var pressureDrillFillerCount: Int = 0
+    @Published var fillerAlertDebugLine: String?
+    /// Count of uncertain filler detections (below general threshold but above noise).
+    /// UI can show a "?" indicator for these.
+    @Published var uncertainFillerCount: Int = 0
+
+    /// Smoothed live audio amplitude envelope, 0.0–1.0, updated on the main
+    /// actor at ~30Hz while recording. Driven by the input-tap RMS of the
+    /// mic buffer. Consumers (e.g. `NoumCharacter(audioLevel:)`) read this
+    /// to render real-time presence — the orb visibly tracking the user's
+    /// voice. Resets to 0 between sessions so a teardown doesn't leave the
+    /// orb stuck at the last live value.
+    @Published var audioLevel: Double = 0.0
+
+    /// M26 — per-session vocal-energy accumulator. Captures raw RMS
+    /// samples on the audio thread (lock-light). Reset on every
+    /// session start; finalized at session end via
+    /// `currentSessionVocalEnergy()`.
+    private let vocalEnergyAccumulator = VocalEnergyAccumulator()
+    /// RMS smoothing coefficient — higher = snappier, lower = calmer. 0.30
+    /// reads as "alive" without jittering on consonants.
+    private static let audioLevelSmoothing: Double = 0.30
+
+    /// Confidence threshold for the general filler count (non-pressure modes).
+    /// Detections at or above this level are counted. Default: 0.65 (catches clear
+    /// fillers like "um", "uh", "you know" and high-confidence "like"/"so" but
+    /// excludes ambiguous low-confidence matches).
+    private let generalFillerThreshold: Double = 0.65
+    private var fillerAlertGate = FillerAlertGate()
+
     private let sessionStore = PracticeSessionStore.shared
     private let recommendationLearningStore = RecommendationLearningStore.shared
 
-    private var audioEngine: AVAudioEngine?
-    private var transcribeClient: TranscribeStreamingClient?
-    private var streamConnection: StartStreamTranscriptionOutput?
-    private var requestStream: AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error>.Continuation?
+    // Provider abstraction — replaces direct AWS SDK usage
+    private var provider: any TranscriptionProvider
+    private var activeSession: (any TranscriptionSession)?
+    private var transcriptListenerTask: Task<Void, Never>?
 
+    private var audioEngine: AVAudioEngine?
+    /// Captures audio samples in parallel with transcription so we can
+    /// emit `PitchMetrics` at session end. Created fresh per recording;
+    /// reset whenever a new session starts.
+    private var pitchAnalyzer: PitchAnalyzer?
     private var sessionStart: Date?
     private var finalTranscript: String = ""
     private var partialTranscript: String = ""
     private var currentSessionMode: PracticeMode = .ahCounter
     private var hasPreparedInteractiveUse = false
+    var shouldRecordPracticeSession = true
 
+    // Quality tracking
+    private var sessionUpdateCount: Int = 0
+    private var totalLatencyMs: Int = 0
+    private var confidenceValues: [Double] = []
+    private var providerFillerCount: Int = 0
+
+    // Pause-metric raw inputs. Word timings stay transient (we don't
+    // persist them — only the computed `PauseMetrics` lands on the
+    // session) but we accumulate across the whole rep so finalization
+    // can compute pause stats from the full word stream.
+    private var sessionWordTimings: [TranscriptUpdate.WordTiming] = []
+    /// `startTime` of every word the filler detector has flagged. Read
+    /// at finalize to classify pauses as filled vs unfilled.
+    private var fillerStartTimes: [TimeInterval] = []
+
+    /// Snapshot of accumulated word timings, intended for SessionFinalizer
+    /// to compute pause metrics. Returns an empty array if the active
+    /// transcription provider didn't emit word-level data.
+    var capturedWordTimings: [TranscriptUpdate.WordTiming] {
+        sessionWordTimings
+    }
+
+    /// Compute pause metrics from the session's captured word timings.
+    /// Returns nil when the provider didn't emit word data (so we don't
+    /// store a misleading "0 pauses" reading on a session we couldn't
+    /// actually measure). Public so per-mode views (Sudden Death, IM)
+    /// can attach metrics to their own session drafts.
+    func currentSessionPauseMetrics() -> PauseMetrics? {
+        guard !sessionWordTimings.isEmpty else { return nil }
+        // Cross-reference filler detector findings against the word stream
+        // by lowercased text. Each filler-classified word's `startTime`
+        // becomes a timestamp the pause computer uses to mark "filled" gaps.
+        let fillers = FillerWordDetector.detections(
+            in: finalTranscript,
+            prompt: sessionPrompt ?? ""
+        )
+        let fillerTexts = Set(fillers.map { $0.word.lowercased() })
+        let filledStarts = sessionWordTimings
+            .filter { fillerTexts.contains($0.word.lowercased()) }
+            .map { $0.startTime }
+        return PauseMetrics.compute(
+            words: sessionWordTimings,
+            fillerStartTimes: filledStarts
+        )
+    }
+
+    /// Pitch metrics for the just-completed session. Runs autocorrelation
+    /// across the captured audio buffer; safe to call from the main actor
+    /// (analysis is a few hundred milliseconds at most for a 60s rep).
+    /// Returns nil when no analyzer was attached, when the buffer is too
+    /// short to analyze, or when no window crossed the voicing threshold.
+    ///
+    /// Hum-vs-speech gate: also returns nil when the rep produced almost
+    /// no transcribed words or ran for under a few seconds. Closes the
+    /// gap documented in `PitchMetrics.swift` — without a transcript
+    /// signal, voiced f0 in the 70–400 Hz band may be HVAC, background
+    /// music, or a TV in the room, not the user's voice. We need the
+    /// transcript to credibly attribute the pitch reading to speech.
+    /// Thresholds are conservative: 8 words covers "uh, sorry — let me
+    /// start over" half-aborts; 4 seconds covers reps where the mic
+    /// barely opened.
+    func currentSessionPitchMetrics() -> PitchMetrics? {
+        guard let analyzer = pitchAnalyzer else { return nil }
+        let words = finalTranscript.split { !$0.isLetter && !$0.isNumber }.count
+        let duration = sessionStart.map { Date().timeIntervalSince($0) } ?? 0
+        guard words >= 8, duration >= 4 else { return nil }
+        let metrics = analyzer.analyze()
+        return metrics.windowCount > 0 ? metrics : nil
+    }
 
     init(preloadOnInit: Bool = true) {
+        self.provider = Self.resolveProvider()
+        self.activeProviderName = provider.name
         guard preloadOnInit else { return }
         loadSessions()
         prepareForInteractiveUse()
     }
 
-    private func preloadTranscribeClient() async {
-        guard transcribeClient == nil else { return }
-        do {
-            _ = try await authManager.currentCredentials()
-            let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                awsCredentialIdentityResolver: authManager.credentialResolver(),
-                region: authManager.region
-            )
-            transcribeClient = TranscribeStreamingClient(config: config)
-        } catch {
-            print("Transcribe pre-load failed: \(error)")
+    private static func resolveProvider() -> any TranscriptionProvider {
+        let selected = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "deepgram"
+        switch selected {
+        case "deepgram": return DeepgramProvider()
+        case "google": return GoogleSpeechProvider()
+        default: return AWSTranscribeProvider()
         }
     }
 
@@ -67,7 +179,6 @@ class SpeechRecognizerViewModel: ObservableObject {
         hasPreparedInteractiveUse = true
         loadSessions()
         requestRecordAuthorization()
-        Task(priority: .utility) { await preloadTranscribeClient() }
     }
 
     func annotateLatestSession(
@@ -103,106 +214,97 @@ class SpeechRecognizerViewModel: ObservableObject {
     func startRecording() {
         guard !isRecording else { return }
         prepareForInteractiveUse()
+
+        // Re-resolve provider in case user changed settings
+        provider = Self.resolveProvider()
+        activeProviderName = provider.name
+
         Task {
-            print("Starting transcription")
-            do {
-                _ = try await authManager.currentCredentials()
-                await self.startRecordingWith()
-            } catch {
-                print("Failed to fetch AWS credentials: \(error)")
-                await MainActor.run {
-                    self.connectionError = error.localizedDescription
-                    self.transcribedText = AuthManager.missingCredentialsMessage
-                }
-            }
+            print("Starting transcription with \(provider.name)")
+            await startRecordingWithProvider()
         }
     }
 
-    private func startRecordingWith() async {
+    private func startRecordingWithProvider() async {
+        let shouldRestorePressureMode = _pressureDrillMode
+        let promptBeforeReset = sessionPrompt
         resetCurrentSession()
+        if shouldRestorePressureMode {
+            _pressureDrillMode = true
+            sessionPrompt = promptBeforeReset
+        }
         sessionStart = Date()
+        sessionUpdateCount = 0
+        totalLatencyMs = 0
+        confidenceValues = []
+        providerFillerCount = 0
+        sessionWordTimings = []
+        fillerStartTimes = []
+        // Pitch analyzer carries the previous rep's audio buffer until
+        // we explicitly drop it. Discard so the new session starts fresh.
+        pitchAnalyzer?.reset()
+        pitchAnalyzer = nil
 
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            // .allowBluetoothHFP lets AirPods serve as both mic and speaker.
+            // Must be set before AVAudioEngine inspects inputNode so the simulator
+            // returns a valid (non-zero-channel) input format.
+            try AVAudioSession.sharedInstance().setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
+            )
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Audio session error: \(error)")
         }
 
-        let stream = AsyncThrowingStream<TranscribeStreamingClientTypes.AudioStream, Error> { continuation in
-            self.requestStream = continuation
-        }
-
         let sampleRate = Int(AVAudioSession.sharedInstance().sampleRate)
-        let request = StartStreamTranscriptionInput(
-            audioStream: stream,
-            languageCode: .enUs,
-            mediaEncoding: .pcm,
-            mediaSampleRateHertz: sampleRate
+        let practiceLocale = LocaleSettingsManager.shared.current
+        let config = TranscriptionConfig(
+            languageCode: practiceLocale.code,
+            sampleRate: sampleRate,
+            encoding: .pcmSigned16Bit,
+            enableFillerWordDetection: true
         )
 
-        // Configure client with custom credentials if needed
-        if transcribeClient == nil {
-            do {
-                let config = try await TranscribeStreamingClient.TranscribeStreamingClientConfiguration(
-                    awsCredentialIdentityResolver: authManager.credentialResolver(),
-                    region: authManager.region
-                )
-                transcribeClient = TranscribeStreamingClient(config: config)
-            } catch {
-                print("Failed to create AWS client: \(error)")
-                failStartRecording(with: error)
-                return
-            }
-        }
-
         do {
-            try startAudioStream()
-        } catch {
-            failStartRecording(with: error)
-            return
-        }
-        isRecording = true
+            let session = try await provider.startSession(config: config)
+            self.activeSession = session
 
-        Task {
-            do {
-                if let client = transcribeClient {
-                    let output = try await client.startStreamTranscription(input: request)
-                    streamConnection = output
-                    Task.detached { [weak self] in
-                        if let events = output.transcriptResultStream {
-                            for try await event in events {
-                                await self?.handleTranscribeEvent(event)
-                            }
-                        }
-                    }
-                    print("Transcribe streaming started")
-                }
-            } catch {
-                print("Transcribe start failed: \(error)")
-                await MainActor.run {
-                    self.failStartRecording(with: error)
+            // Start audio capture and feed into the session
+            try startAudioStream(sendingTo: session)
+            isRecording = true
+
+            // Listen for transcript updates
+            transcriptListenerTask = Task { [weak self] in
+                for await update in session.transcriptUpdates {
+                    self?.handleTranscriptUpdate(update)
                 }
             }
+        } catch {
+            print("Failed to start \(provider.name) session: \(error)")
+            failStartRecording(with: error)
         }
     }
-
-
 
     func stopRecording() {
         guard isRecording else { return }
         print("Stopping transcription")
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
-        requestStream?.finish()
-        requestStream = nil
-        streamConnection = nil
         isRecording = false
 
         Task {
+            try? await activeSession?.endAudio()
+            activeSession = nil
+            transcriptListenerTask?.cancel()
+            transcriptListenerTask = nil
+
             // Allow time for any final transcripts to arrive before finalizing
             try? await Task.sleep(for: .milliseconds(500))
             finalizeTranscript()
+            recordQualityMetrics()
         }
     }
 
@@ -217,6 +319,41 @@ class SpeechRecognizerViewModel: ObservableObject {
         saveCurrentSession()
     }
 
+    // MARK: - Transcript Update Handling (provider-agnostic)
+
+    private func handleTranscriptUpdate(_ update: TranscriptUpdate) {
+        sessionUpdateCount += 1
+        if let latency = update.latencyMs { totalLatencyMs += latency }
+        if let confidence = update.confidence { confidenceValues.append(confidence) }
+        if let providerFillers = update.providerFillerWords {
+            providerFillerCount += providerFillers.count
+        }
+
+        let snippet = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { return }
+
+        if update.isFinal {
+            if !finalTranscript.isEmpty { finalTranscript += " " }
+            finalTranscript += snippet
+            partialTranscript = ""
+
+            // Accumulate word timings only on `isFinal` updates so we
+            // don't double-count partials. Provider word arrays are the
+            // authoritative source for pause computation.
+            if let words = update.words, !words.isEmpty {
+                sessionWordTimings.append(contentsOf: words)
+            }
+        } else {
+            partialTranscript = snippet
+        }
+
+        let combined = [finalTranscript, partialTranscript].filter { !$0.isEmpty }.joined(separator: " ")
+        transcribedText = combined
+        highlightAndCountFillerWords(in: combined)
+    }
+
+    // MARK: - Audio Engine (provider-agnostic)
+
     private func requestRecordAuthorization() {
         AVAudioApplication.requestRecordPermission { granted in
             DispatchQueue.main.async {
@@ -226,18 +363,58 @@ class SpeechRecognizerViewModel: ObservableObject {
         }
     }
 
-    private func startAudioStream() throws {
+    private enum AudioStreamError: LocalizedError {
+        case invalidInputFormat
+        var errorDescription: String? {
+            // Shown to the user via `connectionError`. Common on the simulator
+            // when the audio session category wasn't fully committed before
+            // AVAudioEngine inspected the input node.
+            "Microphone unavailable — check that no other app is using it and try again."
+        }
+    }
+
+    private func startAudioStream(sendingTo session: any TranscriptionSession) throws {
         audioEngine = AVAudioEngine()
         let inputNode = audioEngine!.inputNode
         let inputFormat = inputNode.inputFormat(forBus: 0)
+
+        // A zero-channel or zero-sampleRate format means the audio session
+        // category wasn't fully applied (common on the iOS simulator after a
+        // .playback session). Throw instead of crashing in installTap.
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            audioEngine = nil
+            throw AudioStreamError.invalidInputFormat
+        }
+
         inputNode.removeTap(onBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            guard let self = self else { return }
+        // Spin up a fresh pitch analyzer per recording. Lock-light so the
+        // audio tap can append samples without contention; analysis runs
+        // off-thread at session end.
+        let analyzer = PitchAnalyzer()
+        pitchAnalyzer = analyzer
+        let captureSampleRate = inputFormat.sampleRate
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self, analyzer] buffer, _ in
+            // Capture samples for pitch analysis (cheap append, no DSP here).
+            analyzer.appendBuffer(buffer, sampleRate: captureSampleRate)
+            guard let self else { return }
+            // Compute RMS amplitude on the audio thread, then hop to main
+            // to smooth + publish. Cheap: one pass over the buffer with a
+            // running sum-of-squares. The published envelope drives any
+            // surface that wants the orb to track the user's voice.
+            let level = Self.normalizedRMSLevel(buffer: buffer)
+            // M26 — accumulate raw (unsmoothed) RMS for the per-session
+            // VocalEnergyMetrics aggregate. Lock-light append; finalize()
+            // happens off the audio thread in `currentSessionVocalEnergy()`.
+            self.vocalEnergyAccumulator.append(level: level)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let blended = self.audioLevel * (1 - Self.audioLevelSmoothing) + level * Self.audioLevelSmoothing
+                self.audioLevel = min(max(blended, 0), 1)
+            }
             let data = self.convertBufferToPCMData(buffer: buffer)
-            self.requestStream?.yield(
-                .audioevent(TranscribeStreamingClientTypes.AudioEvent(audioChunk: data))
-            )
+            Task { try? await session.sendAudio(data) }
         }
 
         audioEngine!.prepare()
@@ -249,15 +426,38 @@ class SpeechRecognizerViewModel: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         self.audioEngine = nil
+        // Drop the live envelope to silence so any orb bound to it
+        // visibly settles instead of holding the last spoken level.
+        audioLevel = 0.0
+    }
+
+    /// Convert a mic input buffer into a 0.0–1.0 amplitude envelope.
+    /// Uses RMS over the channel-0 float samples + a dB-scaled mapping
+    /// so quiet speech reads visibly above silence without the orb
+    /// pinning to 1.0 on every consonant. Tuned by ear: -50dB → 0, -10dB → 1.
+    nonisolated static func normalizedRMSLevel(buffer: AVAudioPCMBuffer) -> Double {
+        guard let channelData = buffer.floatChannelData?[0] else { return 0 }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return 0 }
+        var sumSquares: Double = 0
+        for i in 0..<frameLength {
+            let s = Double(channelData[i])
+            sumSquares += s * s
+        }
+        let rms = (sumSquares / Double(frameLength)).squareRoot()
+        // dB conversion + clamp to a usable visual range.
+        let db = 20.0 * log10(max(rms, 1e-7))
+        let normalized = (db + 50.0) / 40.0  // -50dB → 0, -10dB → 1
+        return min(max(normalized, 0), 1)
     }
 
     private func failStartRecording(with error: Error) {
         connectionError = "\(error)"
         teardownAudioStream()
         try? AVAudioSession.sharedInstance().setActive(false)
-        requestStream?.finish()
-        requestStream = nil
-        streamConnection = nil
+        activeSession = nil
+        transcriptListenerTask?.cancel()
+        transcriptListenerTask = nil
         isRecording = false
         sessionStart = nil
     }
@@ -276,52 +476,71 @@ class SpeechRecognizerViewModel: ObservableObject {
         return Data()
     }
 
-    private func handleTranscribeEvent(_ event: TranscribeStreamingClientTypes.TranscriptResultStream) async {
-        switch event {
-        case .transcriptevent(let transcriptEvent):
-            for result in transcriptEvent.transcript?.results ?? [] {
-                guard let alternative = result.alternatives?.first,
-                      let snippet = alternative.transcript?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !snippet.isEmpty else { continue }
-
-                DispatchQueue.main.async {
-                    if result.isPartial == false {
-                        if !self.finalTranscript.isEmpty { self.finalTranscript += " " }
-                        self.finalTranscript += snippet
-                        self.partialTranscript = ""
-                    } else {
-                        self.partialTranscript = snippet
-                    }
-
-                    let combined = [self.finalTranscript, self.partialTranscript].filter { !$0.isEmpty }.joined(separator: " ")
-                    self.transcribedText = combined
-                    self.highlightAndCountFillerWords(in: combined)
-                }
-            }
-        default: break
-        }
-    }
+    // MARK: - Filler Word Detection
 
     private func highlightAndCountFillerWords(in text: String) {
-        let matches = FillerWordDetector.matches(in: text)
-        let count = matches.count
+        // Always use semantic detection — prompt-aware, confidence-scored.
+        let prompt = sessionPrompt ?? ""
+        let allDetections = FillerWordDetector.detections(in: text, prompt: prompt)
+
+        // General filler count: detections at or above the general threshold.
+        // This catches clear fillers but excludes ambiguous "like a", "so that", prompt echoes.
+        let generalDetections = allDetections.filter { $0.confidence >= generalFillerThreshold }
+        let count = generalDetections.count
+
+        // Highlight confirmed fillers in the transcript
         let attributed = NSMutableAttributedString(string: text)
-        for match in matches {
-            attributed.addAttribute(.foregroundColor, value: UIColor.red, range: match.range)
+        for detection in generalDetections {
+            attributed.addAttribute(.foregroundColor, value: UIColor.red, range: detection.range)
         }
-        DispatchQueue.main.async {
-            self.fillerWordCount = count
-            self.highlightedText = AttributedString(attributed)
+
+        let previousCount = fillerWordCount
+        fillerWordCount = count
+        highlightedText = AttributedString(attributed)
+
+        let alertDecision = fillerAlertGate.evaluate(
+            previousAdjustedCount: previousCount,
+            adjustedCount: count,
+            detections: allDetections,
+            isEnabled: PracticeSettingsManager.shared.fillerAlertSoundEnabled
+        )
+        fillerAlertDebugLine = alertDecision.debugLine
+
+        if alertDecision.shouldPlay {
+            CoachHaptic.fillerAlert()
+            #if canImport(AudioToolbox)
+            AudioServicesPlaySystemSound(1104)
+            #endif
+            print("[FillerAlert] \(alertDecision.debugLine)")
+        } else if alertDecision.detectionFired {
+            print("[FillerAlert] \(alertDecision.debugLine)")
+        }
+
+        // Pressure Drill mode: stricter sudden death threshold
+        if _pressureDrillMode {
+            pressureDrillFillerCount = allDetections.filter { $0.confidence >= FillerDetection.suddenDeathThreshold }.count
+            uncertainFillerCount = allDetections.filter { $0.confidence >= 0.4 && $0.confidence < FillerDetection.suddenDeathThreshold }.count
         }
     }
+
+    // MARK: - Session Management
 
     func resetCurrentSession() {
         transcribedText = ""
         highlightedText = AttributedString("")
         fillerWordCount = 0
+        pressureDrillFillerCount = 0
+        uncertainFillerCount = 0
+        fillerAlertDebugLine = nil
+        fillerAlertGate.reset()
+        _pressureDrillMode = false
         finalTranscript = ""
         partialTranscript = ""
         connectionError = nil
+        // M26 — drop the prior session's vocal-energy samples so the
+        // accumulator starts clean for the next rep. The audio tap
+        // begins appending again the moment recording resumes.
+        vocalEnergyAccumulator.reset()
     }
 
     private func saveCurrentSession() {
@@ -332,11 +551,25 @@ class SpeechRecognizerViewModel: ObservableObject {
             sessionStart = nil
             return
         }
-        guard currentSessionMode != .imConversation else {
+        guard shouldRecordPracticeSession, currentSessionMode != .imConversation else {
             sessionStart = nil
             pastSessions = sessionStore.sessions
             return
         }
+        let avgConfidence = confidenceValues.isEmpty ? nil : confidenceValues.reduce(0, +) / Double(confidenceValues.count)
+        let pressureOn = PracticeSettingsManager.shared.pressureModeEnabled
+        let pressure = BaselineEngine.classifyPressure(
+            mode: currentSessionMode,
+            isPressureModeOn: pressureOn,
+            streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
+        )
+        let pauseMetrics = currentSessionPauseMetrics()
+        let pitchMetrics = currentSessionPitchMetrics()
+        // M26 — finalize the vocal-energy accumulator. Returns nil
+        // when the rep is too thin (≥ minimumSampleFloor samples
+        // required) so we never persist a fabricated read on a 1-2s
+        // session.
+        let vocalEnergyMetrics = vocalEnergyAccumulator.finalize()
         _ = PracticeSessionFinalizer.finalize(
             store: sessionStore,
             draft: PracticeSessionDraft(
@@ -344,7 +577,14 @@ class SpeechRecognizerViewModel: ObservableObject {
                 fillerWordCount: fillerWordCount,
                 duration: duration,
                 date: sessionStart ?? Date(),
-                mode: currentSessionMode
+                mode: currentSessionMode,
+                transcriptConfidence: avgConfidence,
+                transcriptionProvider: provider.identifier,
+                pressureLevel: pressure,
+                isRated: pressureOn,
+                pauseMetrics: pauseMetrics,
+                pitchMetrics: pitchMetrics,
+                vocalEnergyMetrics: vocalEnergyMetrics
             )
         )
         pastSessions = sessionStore.sessions
@@ -354,6 +594,28 @@ class SpeechRecognizerViewModel: ObservableObject {
     private func loadSessions() {
         sessionStore.reload()
         pastSessions = sessionStore.sessions
+    }
+
+    // MARK: - Quality Metrics
+
+    private func recordQualityMetrics() {
+        let duration = Date().timeIntervalSince(sessionStart ?? Date())
+        let avgLatency = sessionUpdateCount > 0 ? totalLatencyMs / sessionUpdateCount : 0
+        let avgConfidence = confidenceValues.isEmpty ? nil : confidenceValues.reduce(0, +) / Double(confidenceValues.count)
+        let wordCount = transcribedText.split { !$0.isLetter && !$0.isNumber }.count
+
+        let metric = TranscriptionQualityMetrics(
+            provider: provider.identifier,
+            sessionId: UUID(),
+            date: Date(),
+            totalLatencyMs: avgLatency,
+            finalTranscriptLength: wordCount,
+            fillerWordsDetected: fillerWordCount,
+            providerFillersDetected: providerFillerCount,
+            averageConfidence: avgConfidence,
+            sessionDuration: duration
+        )
+        TranscriptionQualityStore.shared.record(metric)
     }
 }
 #endif
@@ -374,6 +636,46 @@ struct PracticeSession: Identifiable, Codable {
     var aiCoachFeedback: AICoachFeedback? = nil
     var prompt: String? = nil
     var theme: PromptTheme? = nil
+    var drillResult: DrillResult? = nil
+    var transcriptConfidence: Double? = nil
+    var transcriptionProvider: String? = nil
+    var pressureLevel: PressureLevel = .standard
+    var isRated: Bool = false
+    /// Pause statistics for this session. Optional because (a) older
+    /// persisted sessions decode without it, and (b) some transcription
+    /// providers may not emit word-level timings on certain reps.
+    var pauseMetrics: PauseMetrics? = nil
+    /// Pitch statistics for this session (M10). Optional because legacy
+    /// persisted sessions don't carry it and because some recording paths
+    /// (paused-mid-rep, extremely short reps) won't produce reliable f0.
+    var pitchMetrics: PitchMetrics? = nil
+    // NOTE: parallel teammate `pitch-intonation-v1` is also adding a field
+    // at the end of this struct. Merge order is mechanical — both fields
+    // co-exist without interaction.
+    /// Grammar findings for this session (M16). Optional because (a) older
+    /// sessions decode without it, (b) the grammar pass skips short / noisy /
+    /// non-English / non-Pro reps, and (c) the rubric is strict — most reps
+    /// produce nothing. Empty array means "ran and found nothing worth
+    /// surfacing"; nil means "didn't run".
+    var grammarFindings: [GrammarFinding]? = nil
+    /// M21: the coaching priority the user declared they were focusing on
+    /// before this rep started, if any. Nil for sessions where the user
+    /// dismissed the intent prompt or for older persisted sessions. Drives
+    /// the "You aimed for this" chip on the summary cards + the "Intent
+    /// declared" line in the Ask Noum context block.
+    var intentFocus: CoachingPriority? = nil
+    /// M21: the user-visible chip label that matched the declared intent
+    /// (e.g. "Cut fillers", "Tighten structure"). Persisted alongside
+    /// `intentFocus` so the coach can quote the exact label back at the
+    /// user rather than paraphrasing.
+    var intentLabel: String? = nil
+    /// M26: per-session vocal-energy aggregate (mean RMS, peak,
+    /// steadiness). Optional because (a) older persisted sessions
+    /// decode without it and (b) reps shorter than the accumulator's
+    /// minimumSampleFloor return nil rather than a fabricated read.
+    /// Feeds the coach context block so the AI can comment on HOW the
+    /// user sounded, not only what they said.
+    var vocalEnergyMetrics: VocalEnergyMetrics? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -391,6 +693,17 @@ struct PracticeSession: Identifiable, Codable {
         case aiCoachFeedback
         case prompt
         case theme
+        case drillResult
+        case transcriptConfidence
+        case transcriptionProvider
+        case pressureLevel
+        case isRated
+        case pauseMetrics
+        case pitchMetrics
+        case grammarFindings
+        case intentFocus
+        case intentLabel
+        case vocalEnergyMetrics
     }
 
     init(
@@ -408,7 +721,18 @@ struct PracticeSession: Identifiable, Codable {
         coachSummary: String? = nil,
         aiCoachFeedback: AICoachFeedback? = nil,
         prompt: String? = nil,
-        theme: PromptTheme? = nil
+        theme: PromptTheme? = nil,
+        drillResult: DrillResult? = nil,
+        transcriptConfidence: Double? = nil,
+        transcriptionProvider: String? = nil,
+        pressureLevel: PressureLevel = .standard,
+        isRated: Bool = false,
+        pauseMetrics: PauseMetrics? = nil,
+        pitchMetrics: PitchMetrics? = nil,
+        grammarFindings: [GrammarFinding]? = nil,
+        intentFocus: CoachingPriority? = nil,
+        intentLabel: String? = nil,
+        vocalEnergyMetrics: VocalEnergyMetrics? = nil
     ) {
         self.id = id
         self.transcript = transcript
@@ -425,6 +749,17 @@ struct PracticeSession: Identifiable, Codable {
         self.aiCoachFeedback = aiCoachFeedback
         self.prompt = prompt
         self.theme = theme
+        self.drillResult = drillResult
+        self.transcriptConfidence = transcriptConfidence
+        self.transcriptionProvider = transcriptionProvider
+        self.pressureLevel = pressureLevel
+        self.isRated = isRated
+        self.pauseMetrics = pauseMetrics
+        self.pitchMetrics = pitchMetrics
+        self.grammarFindings = grammarFindings
+        self.intentFocus = intentFocus
+        self.intentLabel = intentLabel
+        self.vocalEnergyMetrics = vocalEnergyMetrics
     }
 
     init(from decoder: Decoder) throws {
@@ -444,5 +779,16 @@ struct PracticeSession: Identifiable, Codable {
         aiCoachFeedback = try container.decodeIfPresent(AICoachFeedback.self, forKey: .aiCoachFeedback)
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
         theme = try container.decodeIfPresent(PromptTheme.self, forKey: .theme)
+        drillResult = try container.decodeIfPresent(DrillResult.self, forKey: .drillResult)
+        transcriptConfidence = try container.decodeIfPresent(Double.self, forKey: .transcriptConfidence)
+        transcriptionProvider = try container.decodeIfPresent(String.self, forKey: .transcriptionProvider)
+        pressureLevel = try container.decodeIfPresent(PressureLevel.self, forKey: .pressureLevel) ?? .standard
+        isRated = try container.decodeIfPresent(Bool.self, forKey: .isRated) ?? false
+        pauseMetrics = try container.decodeIfPresent(PauseMetrics.self, forKey: .pauseMetrics)
+        pitchMetrics = try container.decodeIfPresent(PitchMetrics.self, forKey: .pitchMetrics)
+        grammarFindings = try container.decodeIfPresent([GrammarFinding].self, forKey: .grammarFindings)
+        intentFocus = try container.decodeIfPresent(CoachingPriority.self, forKey: .intentFocus)
+        intentLabel = try container.decodeIfPresent(String.self, forKey: .intentLabel)
+        vocalEnergyMetrics = try container.decodeIfPresent(VocalEnergyMetrics.self, forKey: .vocalEnergyMetrics)
     }
 }

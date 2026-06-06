@@ -19,6 +19,12 @@ import FirebaseRemoteConfig
 public enum FirebaseBootstrap {
     /// Configure Firebase services as early as possible (e.g., in App.init())
     public static func configure() {
+        #if canImport(FirebaseCore)
+        guard hasConfigurationPlist else { return }
+        #else
+        return
+        #endif
+
         #if canImport(FirebaseAppCheck)
         #if DEBUG
         AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
@@ -29,6 +35,10 @@ public enum FirebaseBootstrap {
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
+        guard shouldStartOptionalServices(
+            configurationPresent: true,
+            configured: FirebaseApp.app() != nil
+        ) else { return }
         #endif
 
         #if canImport(FirebaseAuth)
@@ -59,5 +69,13 @@ public enum FirebaseBootstrap {
             }
         }
         #endif
+    }
+
+    static var hasConfigurationPlist: Bool {
+        Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil
+    }
+
+    static func shouldStartOptionalServices(configurationPresent: Bool, configured: Bool) -> Bool {
+        configurationPresent && configured
     }
 }

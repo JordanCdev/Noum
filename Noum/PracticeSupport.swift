@@ -6,6 +6,216 @@ import SwiftUI
 import AVFAudio
 #endif
 
+// MARK: - Navigation Destination Types
+
+enum AppDestination: Hashable {
+    case practiceSelection
+    case timedPractice
+    case suddenDeathPractice
+    case ahCounterPractice
+    case imPractice(scenario: IMConversationScenario?, tone: IMTargetTone?)
+    case cutTheCrutchPractice
+    case paceTrainingPractice
+    case friendLeaderboard
+    case league
+    case speechProjects
+    case lessons
+    case lesson(id: String)
+    case summary(SummaryPayload)
+    case sessionHistory
+    case socialProfile
+    case settings
+    case speakingRank
+    case pathJourney
+    case askNoum
+    /// Typed Ask Noum entry for accessibility, UI tests, and users who want the
+    /// thread directly. The main `askNoum` case remains the live coach session.
+    case askNoumTyped
+    case growthLibrary
+    /// Detail view for a single past session, addressable by session ID so
+    /// surfaces like the Growth Library can deep-link straight to "the
+    /// session that produced this proof" without going through the History
+    /// list. Falls back to the History list when the session has been
+    /// deleted or isn't in the store anymore — see `ContentView`'s
+    /// destination switch.
+    case sessionDetail(sessionID: UUID)
+    case bigMomentIntake
+    /// M23 Situational Preparation Mode landing surface. Available when
+    /// the user has an active BigMoment within 14 days; the HomeCoachCard
+    /// surfaces a CTA that pushes here. The view assembles the
+    /// PrepSessionPlanner's plan and provides per-step launchers into
+    /// Timed, Sudden Death, and IM.
+    case prepSession
+    /// Per-difficulty drill-down for Sudden Death runs. Reached from
+    /// the breakdown card on `SessionHistoryView` when the user filters
+    /// to Sudden Death and taps a difficulty row. Renders the full run
+    /// list at that difficulty + a plain-text export affordance.
+    case suddenDeathDifficultyDetail(difficulty: SuddenDeathDifficulty)
+    /// Per-scenario drill-down for IM Mode reps. Reached from the
+    /// IM history breakdown card when the user filters to IM Mode and
+    /// taps a scenario row. Mirrors `suddenDeathDifficultyDetail`:
+    /// renders the full rep list at that scenario + plain-text export.
+    case imScenarioDetail(scenario: IMConversationScenario)
+}
+
+/// Pure router for the Summary "Practice Again" CTA. Carved out of
+/// `SummaryView`'s path-based init so the destination choice is
+/// independent of SwiftUI/navigation plumbing and can be locked in tests.
+///
+/// IM-mode reps carry a `setup` (scenario + tone) on the finished rep's
+/// `IMConversationDetails`. Practice Again must re-arm the *same* scenario
+/// and tone the user just ran — dropping back to the picker on every rep
+/// is friction the rest of the modes never inflict on Timed/Sudden Death/
+/// Ah-Counter. The other modes have no per-rep setup to preserve, so they
+/// route to their plain practice destinations.
+enum SummaryPracticeAgainRouter {
+    static func destination(
+        for mode: PracticeMode,
+        imSetup: IMConversationSetup?
+    ) -> AppDestination {
+        switch mode {
+        case .timed: return .timedPractice
+        case .suddenDeath: return .suddenDeathPractice
+        case .ahCounter: return .ahCounterPractice
+        case .imConversation:
+            return .imPractice(
+                scenario: imSetup?.scenario,
+                tone: imSetup?.targetTone
+            )
+        }
+    }
+}
+
+/// Pure router for the Summary "Looking ahead" recommendation launch.
+/// Mirrors `SummaryPracticeAgainRouter` but maps the *forward-looking*
+/// `RecommendationBiasBlueprint` (the same shape Home's coach card and
+/// the mode-picker recommendation tile already consume) into the
+/// destination that running the recommendation should push.
+///
+/// The blueprint carries the recommended scenario + tone for IM reps —
+/// when the tone-drill signal fires, those carry the exact pair the user
+/// keeps missing, so launching directly into that scenario closes the
+/// loop in one tap instead of dropping the user back on the picker. When
+/// the blueprint is the goal-biased fallback (no tone-drill signal,
+/// non-IM mode), the scenario/tone are nil and the router still routes
+/// cleanly to the plain practice destination for that mode.
+///
+/// IM mode is gated by `imAvailable` so the caller can hand up the same
+/// `IMModeAvailability.isAvailable` flag that the other launch surfaces
+/// honor. When IM is the recommendation but IM Mode is unconfigured on
+/// the device, the router falls back to `.timedPractice` — so the
+/// recommendation never sends the user to a surface that can't run. Pure
+/// data in, pure destination out — no SwiftUI, no nav path, no
+/// availability lookups; the caller owns those.
+///
+/// As of round 17, both `HomeCoachCard.destination()` (zero-arg as of
+/// round 18) and `ContentView.practiceAppDestination(for:)` route their
+/// destination calculation through this router so the mode-to-destination
+/// mapping and the IM-unavailable fallback live in exactly one place.
+/// `ContentView` calls the lower-level
+/// `destination(for:scenario:tone:imAvailable:)` overload because its
+/// private `PracticeSuggestion` value type holds the three fields the
+/// router reads outside a full `RecommendationBiasBlueprint`;
+/// `HomeCoachCard` holds the blueprint directly and calls the
+/// blueprint-shaped overload.
+enum SummaryLookingAheadRouter {
+    static func destination(
+        for blueprint: RecommendationBiasBlueprint,
+        imAvailable: Bool
+    ) -> AppDestination {
+        destination(
+            for: blueprint.recommendedMode,
+            scenario: blueprint.recommendedScenario,
+            tone: blueprint.recommendedTone,
+            imAvailable: imAvailable
+        )
+    }
+
+    /// Lower-level form for callers that hold the recommended mode +
+    /// scenario + tone outside a full `RecommendationBiasBlueprint`
+    /// (e.g. `ContentView`'s private `PracticeSuggestion` value type).
+    /// Behavior is identical to the blueprint overload — the blueprint
+    /// form delegates straight through to this one — so both call sites
+    /// get the same mode-to-destination mapping and the same IM-
+    /// unavailable fallback to `.timedPractice` without re-deriving them.
+    static func destination(
+        for mode: PracticeMode,
+        scenario: IMConversationScenario?,
+        tone: IMTargetTone?,
+        imAvailable: Bool
+    ) -> AppDestination {
+        switch mode {
+        case .timed: return .timedPractice
+        case .suddenDeath: return .suddenDeathPractice
+        case .ahCounter: return .ahCounterPractice
+        case .imConversation:
+            guard imAvailable else { return .timedPractice }
+            return .imPractice(scenario: scenario, tone: tone)
+        }
+    }
+}
+
+struct SummaryPayload: Identifiable, Hashable {
+    let id: UUID
+    let mode: PracticeMode
+}
+
+/// Holds the non-Hashable data that SummaryView needs, keyed by SummaryPayload.id.
+/// Practice views store their data here before pushing a `.summary(payload)` onto the navigation path.
+@MainActor
+final class SummaryDataStore {
+    static let shared = SummaryDataStore()
+    private init() {}
+
+    struct Entry {
+        let transcript: AttributedString
+        let fillerCount: Int
+        let duration: TimeInterval
+        let score: Int?
+        let progressSegments: Int
+        let xpEarned: Int
+        /// Set when a mode commits reward/coaching side effects before
+        /// opening Summary. Summary renders this result without finalizing
+        /// the same session a second time.
+        let committedFinalization: SessionFinalizationResult?
+        let suddenDeathGamePoints: Int?
+        let suddenDeathMultiplierLabels: [String]
+        let suddenDeathTotalWords: Int?
+        let showDuration: Bool
+        let practiceTitle: String
+        let feedbackOverride: String?
+        let headlineOverride: String?
+        let scoreBreakdown: [PracticeScoreSegment]
+        let insights: [String]
+        let recentSessions: [PracticeSession]
+        let imConversationDetails: IMConversationDetails?
+        let explicitMode: PracticeMode?
+        let recordingURL: URL?
+        let sessionPrompt: String?
+        let sessionTheme: PromptTheme?
+        let feedbackCategories: [FeedbackCategory]
+        let strongMoments: [String]
+        let weakMoments: [String]
+        let durationAssessment: DurationAssessment
+        let targetRange: (min: Double, target: Double, max: Double)
+        let onStartDrill: ((DrillRecommendation) -> Void)?
+    }
+
+    private var entries: [UUID: Entry] = [:]
+
+    func store(_ entry: Entry, for id: UUID) {
+        entries[id] = entry
+    }
+
+    func retrieve(for id: UUID) -> Entry? {
+        entries[id]
+    }
+
+    func remove(for id: UUID) {
+        entries.removeValue(forKey: id)
+    }
+}
+
 enum LocalConfigLoader {
     static func value(forKey key: String, plistNamed plistName: String) -> String? {
         guard let url = Bundle.main.url(forResource: plistName, withExtension: "plist"),
@@ -61,6 +271,71 @@ enum TimedPracticeDifficulty: String, CaseIterable, Codable, Identifiable {
         case .easy: return 1.0
         case .medium: return 1.15
         case .hard: return 1.35
+        }
+    }
+
+    /// Target duration range: (minimum acceptable, ideal target, maximum acceptable) in seconds.
+    /// Duration within this range scores highest. Too short or too long both reduce the score.
+    var targetRange: (min: Double, target: Double, max: Double) {
+        switch self {
+        case .free:   return (min: 30, target: 60,  max: 120)  // Free: aim for 30–120s, sweet spot 60s
+        case .easy:   return (min: 45, target: 60,  max: 90)   // Easy (60s): aim for 45–90s
+        case .medium: return (min: 20, target: 30,  max: 50)   // Medium (30s): aim for 20–50s
+        case .hard:   return (min: 10, target: 15,  max: 25)   // Hard (15s): aim for 10–25s
+        }
+    }
+}
+
+/// How the speaker's duration compares to the target range.
+enum DurationAssessment: String {
+    case tooShort = "Too short"
+    case onTarget = "On target"
+    case tooLong = "Too long"
+
+    var icon: String {
+        switch self {
+        case .tooShort: return "arrow.down.circle.fill"
+        case .onTarget: return "checkmark.circle.fill"
+        case .tooLong: return "arrow.up.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .tooShort: return AppColor.caution
+        case .onTarget: return AppColor.positive
+        case .tooLong: return AppColor.caution
+        }
+    }
+}
+
+extension PracticeEvaluator {
+    /// Assess how the actual duration compares to the difficulty's target range.
+    static func assessDuration(_ duration: TimeInterval, difficulty: TimedPracticeDifficulty) -> DurationAssessment {
+        let range = difficulty.targetRange
+        if duration < range.min { return .tooShort }
+        if duration > range.max { return .tooLong }
+        return .onTarget
+    }
+
+    /// Score duration on a 0–1 scale using the target range. 1.0 = ideal, tapering toward 0 outside range.
+    static func durationRangeScore(_ duration: TimeInterval, difficulty: TimedPracticeDifficulty) -> Double {
+        let range = difficulty.targetRange
+        if duration >= range.min && duration <= range.max {
+            // Within acceptable range — score based on closeness to target
+            let distanceFromTarget = abs(duration - range.target)
+            let maxDistance = max(range.target - range.min, range.max - range.target)
+            return maxDistance > 0 ? 1.0 - (distanceFromTarget / maxDistance) * 0.2 : 1.0
+        } else if duration < range.min {
+            // Too short — linear taper from min down to 0
+            let shortfall = range.min - duration
+            let maxShortfall = range.min // At 0s, score = 0
+            return max(0, 1.0 - (shortfall / maxShortfall))
+        } else {
+            // Too long — gentler penalty, max penalty at 2x max
+            let overshoot = duration - range.max
+            let maxOvershoot = range.max // At 2x max, score ≈ 0
+            return max(0, 1.0 - (overshoot / maxOvershoot))
         }
     }
 }
@@ -221,11 +496,45 @@ struct CoachingProfile: Codable, Equatable {
     var confidenceLevel: ConfidenceLevel
     var biggestChallenge: SpeakingChallenge
     var desiredOutcome: SpeakingOutcome
+    /// The user's EFFECTIVE voice goal — always a concrete value so the many
+    /// surfaces that tailor copy/persona to a voice never have to branch on nil.
+    /// This is NOT proof the user chose it: a brand-new or tap-through profile
+    /// carries the neutral default here. Ask `hasChosenVoice` / `chosenStyleGoal`
+    /// to know whether the user actually picked, and gate "tailored vs generic"
+    /// coaching on that — never assume this value was chosen.
     var speakingStyleGoal: SpeakingStyleGoal
+    /// The voice the user EXPLICITLY chose (onboarding, or the in-chat goal
+    /// card), or `nil` when they haven't chosen yet. The source of truth for
+    /// "is the experience tailored to a real choice." Optional + decoded via
+    /// `decodeIfPresent`, so profiles persisted before this field decode as nil
+    /// and then back-fill from the (possibly-defaulted) `speakingStyleGoal` only
+    /// when that legacy value was genuinely user-set. `nil` => coach stays
+    /// generic and offers to set the voice rather than inventing one.
+    var chosenStyleGoal: SpeakingStyleGoal?
+    /// True once the user has actively chosen a voice. Every "tailor to the
+    /// user's voice" decision should read THIS, not the always-populated
+    /// `speakingStyleGoal`.
+    var hasChosenVoice: Bool { chosenStyleGoal != nil }
     var styleReference: String
     var coachingBrief: String
     var motivationWhyNow: String
     var successVision: String
+    /// AI-paraphrased, single-sentence rendering of the user's goal. Set once
+    /// at onboarding by `GoalParaphraseService` (best-effort, never blocks).
+    /// Read-only post-capture: raw inputs stay for export, the paraphrase is
+    /// the sanitised version safe to surface in UI and notifications.
+    var paraphrasedGoal: String?
+    /// Points at the active `BigMoment` in `BigMomentStore`. Optional so
+    /// existing persisted profiles (without this field) decode cleanly as nil.
+    var bigMomentID: UUID?
+    /// Optional secondary voice for a BLENDED goal — set only when the user
+    /// explicitly chooses "Blend <old> + <new>" from the in-chat goal-change
+    /// card (`AskNoumView.recordGoalChange`). `speakingStyleGoal` stays the
+    /// primary; this is the secondary the coach also reads. `nil` means a
+    /// single-voice goal (the overwhelming default). Optional + decoded via
+    /// `decodeIfPresent` so every profile persisted before this field decodes
+    /// cleanly as `nil` — mirrors `paraphrasedGoal` / `bigMomentID`.
+    var secondaryStyleGoal: SpeakingStyleGoal?
 
     var isComplete: Bool { true }
     var personalGoalReference: String {
@@ -256,6 +565,10 @@ struct CoachingProfile: Codable, Equatable {
         case coachingBrief
         case motivationWhyNow
         case successVision
+        case paraphrasedGoal
+        case bigMomentID
+        case secondaryStyleGoal
+        case chosenStyleGoal
     }
 
     init(
@@ -268,7 +581,11 @@ struct CoachingProfile: Codable, Equatable {
         styleReference: String,
         coachingBrief: String,
         motivationWhyNow: String,
-        successVision: String
+        successVision: String,
+        paraphrasedGoal: String? = nil,
+        bigMomentID: UUID? = nil,
+        secondaryStyleGoal: SpeakingStyleGoal? = nil,
+        chosenStyleGoal: SpeakingStyleGoal? = nil
     ) {
         self.speakingContext = speakingContext
         self.primaryGoal = primaryGoal
@@ -280,6 +597,10 @@ struct CoachingProfile: Codable, Equatable {
         self.coachingBrief = coachingBrief
         self.motivationWhyNow = motivationWhyNow
         self.successVision = successVision
+        self.paraphrasedGoal = paraphrasedGoal
+        self.bigMomentID = bigMomentID
+        self.secondaryStyleGoal = secondaryStyleGoal
+        self.chosenStyleGoal = chosenStyleGoal
     }
 
     init(from decoder: Decoder) throws {
@@ -289,15 +610,140 @@ struct CoachingProfile: Codable, Equatable {
         confidenceLevel = try container.decode(ConfidenceLevel.self, forKey: .confidenceLevel)
         biggestChallenge = try container.decode(SpeakingChallenge.self, forKey: .biggestChallenge)
         desiredOutcome = try container.decode(SpeakingOutcome.self, forKey: .desiredOutcome)
-        speakingStyleGoal = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .speakingStyleGoal) ?? .authoritative
+        // The effective voice always has a concrete value. The neutral default
+        // is `.concise` (least editorialising register) and is only ever read
+        // when no voice was set — `hasChosenVoice` stays false in that case so
+        // the default never reads as a real choice.
+        let decodedStyle = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .speakingStyleGoal)
+        speakingStyleGoal = decodedStyle ?? .concise
+        // `chosenStyleGoal` is the source of truth for "the user picked."
+        // Distinguish three cases by KEY PRESENCE (not just decodeIfPresent,
+        // which conflates absent with null):
+        //  • key absent  → persisted before this field existed. A present
+        //    `speakingStyleGoal` means the user completed the old onboarding
+        //    (which always wrote a voice), so back-fill the choice from it;
+        //    a fully-unset legacy profile stays nil (generic coach).
+        //  • key present (value or null) → written by the current encoder, so
+        //    take it verbatim — preserves a deliberate nil across a round-trip.
+        if container.contains(.chosenStyleGoal) {
+            chosenStyleGoal = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .chosenStyleGoal)
+        } else {
+            chosenStyleGoal = decodedStyle
+        }
         styleReference = try container.decodeIfPresent(String.self, forKey: .styleReference) ?? ""
         coachingBrief = try container.decodeIfPresent(String.self, forKey: .coachingBrief) ?? ""
         motivationWhyNow = try container.decodeIfPresent(String.self, forKey: .motivationWhyNow) ?? ""
         successVision = try container.decodeIfPresent(String.self, forKey: .successVision) ?? ""
+        paraphrasedGoal = try container.decodeIfPresent(String.self, forKey: .paraphrasedGoal)
+        bigMomentID = try container.decodeIfPresent(UUID.self, forKey: .bigMomentID)
+        secondaryStyleGoal = try container.decodeIfPresent(SpeakingStyleGoal.self, forKey: .secondaryStyleGoal)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(speakingContext, forKey: .speakingContext)
+        try container.encode(primaryGoal, forKey: .primaryGoal)
+        try container.encode(confidenceLevel, forKey: .confidenceLevel)
+        try container.encode(biggestChallenge, forKey: .biggestChallenge)
+        try container.encode(desiredOutcome, forKey: .desiredOutcome)
+        try container.encode(speakingStyleGoal, forKey: .speakingStyleGoal)
+        try container.encode(styleReference, forKey: .styleReference)
+        try container.encode(coachingBrief, forKey: .coachingBrief)
+        try container.encode(motivationWhyNow, forKey: .motivationWhyNow)
+        try container.encode(successVision, forKey: .successVision)
+        try container.encodeIfPresent(paraphrasedGoal, forKey: .paraphrasedGoal)
+        try container.encodeIfPresent(bigMomentID, forKey: .bigMomentID)
+        try container.encodeIfPresent(secondaryStyleGoal, forKey: .secondaryStyleGoal)
+        // ALWAYS write `chosenStyleGoal` (even when nil → JSON null) so the
+        // decoder can tell "this profile was written by the current encoder and
+        // deliberately has no chosen voice" (key present) from "persisted before
+        // the field existed" (key absent → legacy back-fill). This is what makes
+        // a nil choice survive a round-trip instead of being back-filled.
+        try container.encode(chosenStyleGoal, forKey: .chosenStyleGoal)
     }
 }
 
 extension CoachingProfile {
+    /// On-voice, single-sentence rendering of the user's goal — safe for any
+    /// user-facing surface including lock-screen notifications, weekly digests,
+    /// and result cards. Prefers the AI paraphrase set at onboarding by
+    /// `GoalParaphraseService`; falls back to a deterministic template when
+    /// no paraphrase has been written yet (no provider, network failure, or
+    /// legacy profile).
+    var displayableGoal: String {
+        if let trimmed = paraphrasedGoal?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmed.isEmpty {
+            return trimmed
+        }
+        let action = primaryGoal.title.lowercased()
+        let style = speakingStyleGoal.coachingDescription
+        return "You want to \(action) and \(style)."
+    }
+
+    /// The set of high-leverage skill areas for this profile's voice goal,
+    /// blended across the primary and (when set) the secondary voice. For a
+    /// single-voice profile this is exactly `speakingStyleGoal.alignedSkillAreas`
+    /// — identical to the pre-blend read, so every existing consumer that reads
+    /// the enum-level set directly keeps the same behaviour. For a BLENDED goal
+    /// (the user tapped "Blend <old> + <new>" in chat) it is the union of both
+    /// voices' aligned skills, so a blend re-weights the read toward both voices
+    /// without erasing either — the secondary widens the leverage set rather than
+    /// replacing the primary's. Consumers that want the blended view read this;
+    /// the single-voice `SpeakingStyleGoal.alignedSkillAreas` is unchanged for
+    /// the many call sites that operate on a bare voice with no profile.
+    var blendedAlignedSkillAreas: Set<SkillArea> {
+        guard let secondary = secondaryStyleGoal, secondary != speakingStyleGoal else {
+            return speakingStyleGoal.alignedSkillAreas
+        }
+        return speakingStyleGoal.alignedSkillAreas.union(secondary.alignedSkillAreas)
+    }
+
+    // MARK: - Chosen-voice coaching copy (S2)
+    //
+    // Pure, deterministic helpers that turn the user's EXPLICIT voice choice
+    // into coaching copy, so the generic Profile/Summary surfaces visibly
+    // reflect what the user picked. SINGLE SOURCE OF TRUTH = `chosenStyleGoal`
+    // (NOT the always-populated `speakingStyleGoal` default): a never-chosen
+    // profile returns nil from both, and every caller keeps its existing
+    // generic copy as the fallback — so an un-chosen profile stays neutral
+    // (`CoachPersona.default`) instead of impersonating `.concise`.
+    //
+    // NO model call: no grounding gate, no locale gate, no numeric score
+    // touched. The voice name comes from `CoachPersona.persona(for:).registerName`
+    // and the aim from `SpeakingStyleGoal.coachingDescription`. A BLEND
+    // (secondary set, and not equal to the primary) names both voices.
+
+    /// Short uppercase-friendly register label for the chosen voice, e.g.
+    /// "Authoritative register" — or "Authoritative + Warm register" for a
+    /// blend. `nil` when the user has not chosen a voice, so the caller falls
+    /// back to its existing generic eyebrow. Used by `CaseReviewCard`.
+    var chosenVoiceRegisterLabel: String? {
+        guard let chosen = chosenStyleGoal else { return nil }
+        let primary = CoachPersona.persona(for: chosen).registerName
+        if let secondary = secondaryStyleGoal, secondary != chosen {
+            let secondaryName = CoachPersona.persona(for: secondary).registerName
+            return "\(primary) + \(secondaryName) register"
+        }
+        return "\(primary) register"
+    }
+
+    /// A full lead sentence that anchors the coaching read in the user's
+    /// chosen voice, CoachPersona-derived, e.g. "Coaching toward your
+    /// Authoritative voice — sound steady, assured, and hard to ignore." For a
+    /// blend it names both. `nil` when the user has not chosen a voice, so the
+    /// Profile read keeps the existing generic `CoachingPlanner` string
+    /// verbatim. No exclamations, no emoji — brand voice. Used to PREPEND the
+    /// generic read on Profile, and to voice-shape the Summary empty-state line.
+    var chosenVoiceCoachingLead: String? {
+        guard let chosen = chosenStyleGoal else { return nil }
+        let primaryName = CoachPersona.persona(for: chosen).registerName
+        if let secondary = secondaryStyleGoal, secondary != chosen {
+            let secondaryName = CoachPersona.persona(for: secondary).registerName
+            return "Coaching toward your \(primaryName) voice, blended with \(secondaryName) — \(chosen.coachingDescription)."
+        }
+        return "Coaching toward your \(primaryName) voice — \(chosen.coachingDescription)."
+    }
+
     var communicationNorthStar: String {
         let goalReference = personalGoalReference.isEmpty
             ? desiredOutcome.title.lowercased()
@@ -370,7 +816,7 @@ enum AIProvider: String, CaseIterable, Codable, Identifiable {
     var model: String {
         switch self {
         case .none: return ""
-        case .openAI: return "gpt-5-mini"
+        case .openAI: return "gpt-4o-mini"
         case .deepSeek: return "deepseek-chat"
         case .gemini: return "gemini-2.5-flash"
         }
@@ -1435,7 +1881,8 @@ struct IMConversationEvaluation: Codable, Equatable {
     }
 }
 
-private struct BackendIMConversationEvaluationRequest: Encodable {
+// Internal (not private) so its CodingKeys contract can be unit-tested.
+struct BackendIMConversationEvaluationRequest: Encodable {
     let setup: IMConversationSetup
     let turns: [IMConversationTurn]
     let finalState: IMConversationState?
@@ -1456,6 +1903,11 @@ private struct BackendIMConversationEvaluationRequest: Encodable {
         case duration
         case recentSessions = "recent_sessions"
         case profile
+        // `relationship` and `context` are single words, so they encode
+        // verbatim — matching the synthesized keys on the sibling
+        // BackendIMConversationReplyRequest, which the backend already reads.
+        case relationship
+        case context
     }
 }
 
@@ -2926,11 +3378,23 @@ final class PracticeSettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(timedDifficulty.rawValue, forKey: timedDifficultyKey) }
     }
 
+    @Published var pressureModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(pressureModeEnabled, forKey: pressureModeKey) }
+    }
+
+    @Published var fillerAlertSoundEnabled: Bool {
+        didSet { UserDefaults.standard.set(fillerAlertSoundEnabled, forKey: fillerAlertSoundKey) }
+    }
+
     private let timedDifficultyKey = "timedPracticeDifficulty"
+    private let pressureModeKey = "pressureModeEnabled"
+    private let fillerAlertSoundKey = "fillerAlertSoundEnabled"
 
     private init() {
         let rawValue = UserDefaults.standard.string(forKey: timedDifficultyKey)
         timedDifficulty = TimedPracticeDifficulty(rawValue: rawValue ?? "") ?? .easy
+        pressureModeEnabled = UserDefaults.standard.bool(forKey: pressureModeKey)
+        fillerAlertSoundEnabled = UserDefaults.standard.bool(forKey: fillerAlertSoundKey)
     }
 }
 
@@ -2959,6 +3423,14 @@ final class CoachingProfileStore: ObservableObject {
 
     func save(_ profile: CoachingProfile) {
         guard let accountID = currentAccountID else { return }
+        // Snapshot the prior voice BEFORE mutating self.profile so we
+        // can detect a voice change and trigger a retroactive regen of
+        // the most-recent PostRepCoachNote in the new voice. Initial
+        // capture (previousVoice == nil) does not trigger a regen
+        // because there's no rep history to regenerate against on a
+        // fresh account; the next finalize will produce the first note
+        // in the chosen voice naturally.
+        let previousVoice = self.profile?.speakingStyleGoal
         self.profile = profile
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
@@ -2966,6 +3438,37 @@ final class CoachingProfileStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
         shouldPresentInitialOnboarding = false
         syncProfileIfPossible(profile, accountID: accountID)
+        paraphraseGoalIfNeeded(profile: profile, accountID: accountID)
+
+        if let previousVoice, previousVoice != profile.speakingStyleGoal {
+            PracticeSessionFinalizer.regenerateMostRecentNoteIfVoiceChanged(
+                newVoice: profile.speakingStyleGoal
+            )
+        }
+    }
+
+    /// Single-shot AI paraphrase of the user's goal at capture time. Best-effort:
+    /// silent on failure (no provider, no network, model error) — `displayableGoal`
+    /// falls back to the deterministic template. Guarded so we never repeat the
+    /// pass for the same profile, even across launches.
+    private func paraphraseGoalIfNeeded(profile: CoachingProfile, accountID: String) {
+        guard profile.paraphrasedGoal == nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let paraphrase = await GoalParaphraseService.shared.paraphrase(profile: profile),
+                  !paraphrase.isEmpty
+            else { return }
+            await MainActor.run {
+                guard self.currentAccountID == accountID else { return }
+                guard var current = self.profile, current.paraphrasedGoal == nil else { return }
+                current.paraphrasedGoal = paraphrase
+                self.profile = current
+                if let data = try? JSONEncoder().encode(current) {
+                    UserDefaults.standard.set(data, forKey: self.profileKey(for: accountID))
+                }
+                self.syncProfileIfPossible(current, accountID: accountID)
+            }
+        }
     }
 
     func reloadForCurrentAccount() {
@@ -3008,6 +3511,27 @@ final class CoachingProfileStore: ObservableObject {
         }
         shouldPresentInitialOnboarding = false
     }
+
+    #if DEBUG
+    /// Debug-only injector for `DevSeedData`. Writes the profile against
+    /// the current account ID (Keychain) or the `"guest"` namespace when
+    /// no account is set, and refreshes the published `profile` so SwiftUI
+    /// surfaces gated on `coachingProfileStore.profile != nil` light up
+    /// immediately. Skips the backend sync + AI paraphrase side effects
+    /// the production `save(_:)` triggers — seeded data is local-only.
+    func replaceForDebug(_ profile: CoachingProfile?) {
+        let accountID = currentAccountID ?? "guest"
+        if let profile, let data = try? JSONEncoder().encode(profile) {
+            UserDefaults.standard.set(data, forKey: profileKey(for: accountID))
+            UserDefaults.standard.set(true, forKey: onboardingCompletionKey(for: accountID))
+        } else {
+            UserDefaults.standard.removeObject(forKey: profileKey(for: accountID))
+            UserDefaults.standard.removeObject(forKey: onboardingCompletionKey(for: accountID))
+        }
+        self.profile = profile
+        shouldPresentInitialOnboarding = false
+    }
+    #endif
 
     private func profileKey(for accountID: String) -> String {
         "\(profileKeyPrefix)\(accountID)"
@@ -3175,7 +3699,23 @@ final class AISettingsManager: ObservableObject {
 
     private let countKey = "aiMonthlyAnalysisCount"
     private let monthKey = "aiMonthlyAnalysisMonth"
-    private let monthlyAnalysisLimit = 20
+    private let disclosureKeyPrefix = "hasAcknowledgedAIDisclosure."
+
+    // MARK: - Usage Tiers
+    // Premium: generous 100/month — most active users won't hit this.
+    // Free: 20/month — enough to experience value, encourages upgrade.
+    // Exposed for the Settings AI-usage card so the upgrade CTA can
+    // honestly cite the Pro number rather than hard-code a stale
+    // duplicate. The runtime cap (used by `monthlyLimit`) still reads
+    // these same constants.
+    static let premiumMonthlyDebriefLimit: Int = 100
+    static let freeMonthlyDebriefLimit: Int = 20
+    private static let premiumMonthlyLimit = premiumMonthlyDebriefLimit
+    private static let freeMonthlyLimit = freeMonthlyDebriefLimit
+
+    /// The threshold (as fraction of limit) at which we surface a gentle heads-up.
+    /// Set at 90% so users get a soft nudge, not a wall.
+    static let usageAwarenessThreshold: Double = 0.90
 
     private init() {
         analysisCountThisMonth = UserDefaults.standard.integer(forKey: countKey)
@@ -3183,15 +3723,51 @@ final class AISettingsManager: ObservableObject {
     }
 
     var activeProvider: AIProvider? {
-        [.gemini, .openAI, .deepSeek].first(where: hasAPIKey(for:))
+        [.gemini, .openAI].first(where: hasAPIKey(for:))
+    }
+
+    /// Current monthly limit based on subscription tier.
+    var monthlyLimit: Int {
+        PremiumManager.shared.isPremium ? Self.premiumMonthlyLimit : Self.freeMonthlyLimit
     }
 
     var remainingAnalyses: Int {
-        max(0, monthlyAnalysisLimit - analysisCountThisMonth)
+        max(0, monthlyLimit - analysisCountThisMonth)
     }
 
     var canRequestAnalysis: Bool {
         activeProvider != nil && remainingAnalyses > 0
+    }
+
+    /// Whether the user is approaching their limit (≥90% used).
+    /// Returns false if they still have plenty of headroom.
+    var isApproachingLimit: Bool {
+        let limit = monthlyLimit
+        guard limit > 0 else { return true }
+        return Double(analysisCountThisMonth) / Double(limit) >= Self.usageAwarenessThreshold
+    }
+
+    /// True when the monthly cap has been reached.
+    var hasReachedLimit: Bool {
+        analysisCountThisMonth >= monthlyLimit
+    }
+
+    /// Estimated date when the counter resets (first of next month).
+    var resetDate: Date {
+        let cal = Calendar.current
+        let now = Date()
+        if let nextMonth = cal.date(byAdding: .month, value: 1, to: cal.startOfDay(for: now)) {
+            let comps = cal.dateComponents([.year, .month], from: nextMonth)
+            return cal.date(from: comps) ?? nextMonth
+        }
+        return now
+    }
+
+    /// Human-readable reset date (e.g., "May 1").
+    var resetDateFormatted: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMMM d"
+        return fmt.string(from: resetDate)
     }
 
     func recordAnalysis() {
@@ -3207,6 +3783,28 @@ final class AISettingsManager: ObservableObject {
         if savedMonth != currentMonth {
             UserDefaults.standard.set(currentMonth, forKey: monthKey)
             analysisCountThisMonth = 0
+        }
+    }
+
+    // MARK: - AI Transcript Disclosure
+
+    /// Whether the current user has acknowledged that speech transcripts are sent to cloud AI.
+    var hasAcknowledgedAIDisclosure: Bool {
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        return UserDefaults.standard.bool(forKey: disclosureKeyPrefix + accountID)
+    }
+
+    func acknowledgeAIDisclosure() {
+        let accountID = KeychainHelper.load(key: "NoumAccountID") ?? "guest"
+        UserDefaults.standard.set(true, forKey: disclosureKeyPrefix + accountID)
+    }
+
+    /// The user-facing name of the active AI provider (e.g., "Google Gemini", "OpenAI").
+    var activeProviderDisplayName: String {
+        switch activeProvider {
+        case .gemini: return "Google Gemini"
+        case .openAI: return "OpenAI"
+        default: return "a cloud AI provider"
         }
     }
 
@@ -3265,12 +3863,31 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(isEnabled, forKey: playbackEnabledKey) }
     }
 
+    /// S5 — spoken replies in the Ask-Noum *coach chat* (distinct from the
+    /// `isEnabled` flag above, which governs the IM *conversation rep* mode).
+    /// They are deliberately separate surfaces with different defaults:
+    ///   • IM rep voice (`isEnabled`) defaults ON — a conversation partner
+    ///     that never speaks is a broken rep.
+    ///   • Coach-chat voice (`askNoumSpokenRepliesEnabled`) now defaults ON
+    ///     (A5 voice-first) — the coach speaks its replies by default so Ask
+    ///     Noum reads as a spoken conversation with a coach, not a text thread.
+    ///     The mute toggle is the explicit opt-out, and it is always respected.
+    /// Reusing this existing settings owner (rather than a new store) keeps
+    /// every voice-playback preference in one inspectable place. Persisted
+    /// under its own key so toggling one never moves the other.
+    @Published var askNoumSpokenRepliesEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(askNoumSpokenRepliesEnabled, forKey: askNoumSpokenRepliesKey)
+        }
+    }
+
     @Published private(set) var lastResolvedEngineTitle: String = "None"
     @Published private(set) var lastPlaybackStatus: String = "Idle"
     @Published private(set) var lastPlaybackError: String?
 
     private let engineKey = "imVoicePlaybackEngine"
     private let playbackEnabledKey = "imVoicePlaybackEnabled"
+    private let askNoumSpokenRepliesKey = "askNoumSpokenRepliesEnabled"
 
     private init() {
         if UserDefaults.standard.object(forKey: playbackEnabledKey) == nil {
@@ -3283,6 +3900,24 @@ final class IMVoicePlaybackSettingsManager: ObservableObject {
             engine = .auto
         }
         isEnabled = UserDefaults.standard.bool(forKey: playbackEnabledKey)
+        // A5 voice-first: resolve the coach-chat voice ON when the user has
+        // never set it (absent key), so the coach speaks by default and Ask
+        // Noum reads as a spoken conversation. An explicit opt-out (key present
+        // = the user used the mute toggle) is always respected. Setting the
+        // property in init does not fire `didSet`, so an untouched preference
+        // stays absent and re-resolves to ON each launch until the user mutes.
+        askNoumSpokenRepliesEnabled = Self.voiceFirstDefault(
+            objectPresent: UserDefaults.standard.object(forKey: askNoumSpokenRepliesKey) != nil,
+            stored: UserDefaults.standard.bool(forKey: askNoumSpokenRepliesKey)
+        )
+    }
+
+    /// A5 — voice-first default semantics for the coach-chat voice: an absent
+    /// preference resolves ON (the coach speaks by default); a present
+    /// preference respects the stored value (the user's explicit mute choice).
+    /// Pure + testable.
+    static func voiceFirstDefault(objectPresent: Bool, stored: Bool) -> Bool {
+        objectPresent ? stored : true
     }
 
     func recordPlaybackAttempt(resolvedEngine: IMVoiceEngine) {
@@ -3314,7 +3949,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
     case auto
     case backend
     case googleCloud
-    case elevenLabs
     case openAI
 
     static var allCases: [IMVoiceEngine] {
@@ -3331,8 +3965,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
             return "Backend"
         case .googleCloud:
             return "Google Cloud"
-        case .elevenLabs:
-            return "ElevenLabs"
         case .openAI:
             return "AI"
         }
@@ -3346,8 +3978,6 @@ enum IMVoiceEngine: String, Codable, Identifiable {
             return "Use Noum backend voice synthesis when cloud voice providers are unavailable."
         case .googleCloud:
             return "Use Google Cloud Text-to-Speech as the primary premium voice path."
-        case .elevenLabs:
-            return "Use ElevenLabs voice synthesis when API keys and voice IDs are configured."
         case .openAI:
             return "Use OpenAI TTS as the backup premium voice if Google Cloud is unavailable."
         }
@@ -3356,17 +3986,96 @@ enum IMVoiceEngine: String, Codable, Identifiable {
 
 #if canImport(AVFAudio)
 @MainActor
-final class IMMessageSpeaker: NSObject, ObservableObject {
+final class IMMessageSpeaker: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = IMMessageSpeaker()
 
     private let playbackSettings = IMVoicePlaybackSettingsManager.shared
     private var audioPlayer: AVAudioPlayer?
     private var speechTask: Task<Void, Never>?
+
+    /// True only while a cloud-TTS clip is *actually* playing on the
+    /// shared `AVAudioPlayer`. Set true the moment `play()` succeeds in
+    /// `playAudioData`, and cleared on BOTH natural finish
+    /// (`audioPlayerDidFinishPlaying`) and barge-in (`stop()`) — so a
+    /// "coach is speaking" UI can never stick.
+    ///
+    /// Bound to the REAL audio lifecycle, never a timer: `speak()` /
+    /// `speakPrompt()` return on `play()` (clip start), not on finish,
+    /// so any timer-based state would drift from the actual clip length.
+    /// Additive `@Published` — no existing caller of `speak` / `speakPrompt`
+    /// / `stop` changes behavior; views may OR this with their own
+    /// on-device `AVSpeechSynthesizer.isSpeaking` for a combined state.
+    ///
+    /// Scope note: the on-device `AVSpeechSynthesizer` *offline fallback*
+    /// is owned by the practice views (`TimedPracticeView` /
+    /// `SuddenDeathPracticeView`), not by this class, so this flag tracks
+    /// the cloud `AVAudioPlayer` path only.
+    @Published private(set) var isSpeaking: Bool = false
+
+    /// Optional listen → speak → listen handoff hook for the S5 voice
+    /// conversation UI. Fired on the main actor exactly once per clip,
+    /// when playback finishes *naturally* (not on barge-in `stop()`, where
+    /// the caller initiated the interruption and already knows). Defaulted
+    /// nil for back-compat; no current caller sets it.
+    var onPlaybackFinished: (() -> Void)?
     private var lastFailureReason: String?
     private var hasPreparedAudioSession = false
     private var prewarmingKeys: Set<String> = []
     private var warmedKeys: Set<String> = []
     private var hasPrewarmedDefaultConnection = false
+
+    // M25: monotonic generation counter for speak() invocations. Each
+    // speak() increments this and captures the new value locally before
+    // spawning the playback Task. Before audio actually plays we re-read
+    // currentGeneration and bail if it moved — meaning a later speak()
+    // (or stop()) has invalidated this in-flight request.
+    //
+    // Why: this single guard fixes BOTH the bug where round 1's audio
+    // replays in round 2+ (an old fetch lands after stop() and plays
+    // anyway) AND the text/audio drift bug (visible text matches the
+    // latest reply.message but the audio still belongs to the previous
+    // one because its fetch landed later). One source of truth — the
+    // generation token — collapses both races.
+    //
+    // Exposed `internal` (not `private`) so the M25 race-fix tests can
+    // verify advancement contracts without a network provider.
+    internal private(set) var currentGeneration: UInt64 = 0
+
+    /// Test seam: returns true when the supplied generation matches the
+    /// current one (i.e. the in-flight request is still valid). This is
+    /// the exact predicate the production playback paths use before
+    /// calling `playAudioData`. Deterministic, no network.
+    internal func isGenerationStillCurrent(_ generation: UInt64) -> Bool {
+        generation == currentGeneration
+    }
+
+    /// Test seam: increments the generation counter the way `speak()`
+    /// does and returns the new value, without doing any network or
+    /// audio work. Lets the M25 tests exercise the token guard
+    /// deterministically.
+    internal func advanceGenerationForTesting() -> UInt64 {
+        currentGeneration &+= 1
+        return currentGeneration
+    }
+
+    /// Test seam: simulate a natural end-of-clip when there is no live
+    /// `AVAudioPlayer` to deliver a real `audioPlayerDidFinishPlaying`
+    /// callback (no audio is ever played in the test environment).
+    /// Mirrors the natural-finish branch exactly: clears `isSpeaking` and
+    /// fires `onPlaybackFinished`. Deterministic, no audio.
+    internal func finishPlaybackForTesting() {
+        audioPlayer = nil
+        isSpeaking = false
+        onPlaybackFinished?()
+    }
+
+    /// Test seam: deterministically set the speaking flag the way a
+    /// successful `play()` in `playAudioData` does, without real audio.
+    /// Lets the state-transition tests assert that `stop()` /
+    /// `finishPlaybackForTesting()` clear a flag that was actually set.
+    internal func setSpeakingForTesting(_ value: Bool) {
+        isSpeaking = value
+    }
 
     override private init() {
         super.init()
@@ -3376,6 +4085,8 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         stop()
+        currentGeneration &+= 1
+        let myGeneration = currentGeneration
         speechTask = Task { [weak self] in
             guard let self else { return }
             let candidateEngines = candidateEngines(for: setup)
@@ -3387,8 +4098,12 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 return
             }
             for (index, engine) in candidateEngines.enumerated() {
+                // Generation gate before each engine attempt — a later
+                // speak() or stop() in the meantime invalidates this
+                // whole fallback chain too, not just the current request.
+                guard myGeneration == self.currentGeneration else { return }
                 playbackSettings.recordPlaybackAttempt(resolvedEngine: engine)
-                if await play(trimmed, using: engine, setup: setup) {
+                if await play(trimmed, using: engine, setup: setup, generation: myGeneration) {
                     playbackSettings.recordPlaybackSuccess(resolvedEngine: engine)
                     return
                 }
@@ -3400,6 +4115,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                     )
                 }
             }
+            // Final guard: don't record a stale failure if we've already
+            // been invalidated by a newer speak().
+            guard myGeneration == self.currentGeneration else { return }
             playbackSettings.recordPlaybackFailure(
                 resolvedEngine: selectedEngine,
                 reason: lastFailureReason ?? "Provider playback did not return playable audio."
@@ -3453,11 +4171,121 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
 
     func resetSessionPlaybackState() { stop() }
 
+    // MARK: - Prompt Readout (Timed Practice Mode)
+
+    /// Speak a practice prompt using the best available cloud TTS provider.
+    /// Returns true if cloud audio was successfully played, false if caller should fall back to on-device TTS.
+    func speakPrompt(_ text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        stop()
+
+        // Build a minimal setup for voice selection — use a calm, coaching-like persona
+        let setup = IMConversationSetup(scenario: .workUpdate, targetTone: .confident)
+        let engines = candidateEngines(for: setup)
+        guard !engines.isEmpty else { return false }
+
+        for engine in engines {
+            if await playPrompt(trimmed, using: engine, setup: setup) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func playPrompt(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+        // Prompt readout shares the M25 generation token so a new speak()
+        // arriving mid-readout invalidates the in-flight prompt fetch the
+        // same way it invalidates a stale message fetch. The prompt path
+        // doesn't increment the token itself; it threads the current
+        // value through so the same `playAudioData` guard applies.
+        let generation = currentGeneration
+        switch engine {
+        case .openAI:
+            return await playPromptWithOpenAI(text)
+        case .googleCloud:
+            return await playWithGoogleCloud(text, setup: setup, generation: generation)
+        case .backend:
+            return await playWithBackend(text, setup: setup, generation: generation)
+        case .auto:
+            return false
+        }
+    }
+
+    /// OpenAI TTS specifically tuned for prompt readout — calm, clear coaching voice
+    private func playPromptWithOpenAI(_ text: String) async -> Bool {
+        guard let apiKey = openAIAPIKey(),
+              let endpoint = URL(string: "https://api.openai.com/v1/audio/speech") else {
+            return false
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8
+
+        let body = OpenAITTSSpeechRequest(
+            model: "tts-1",
+            voice: "nova",
+            input: text,
+            responseFormat: "mp3",
+            instructions: "Read this speaking prompt clearly and warmly, like a calm speaking coach presenting a question. Natural pace, confident tone, slight warmth. Do not rush."
+        )
+        request.httpBody = try? JSONEncoder().encode(body)
+        guard request.httpBody != nil else { return false }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled,
+                  let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                return false
+            }
+            return playAudioData(data)
+        } catch {
+            return false
+        }
+    }
+
     func stop() {
+        // Why: bumping the generation invalidates any in-flight playback
+        // request whose Task body has already passed the network fetch
+        // but not yet hit playAudioData. The Task.cancel() below catches
+        // pre-fetch and during-fetch cases via URLSession's cancellation;
+        // the generation token catches the post-fetch, pre-play window
+        // that was the root cause of stale-audio replay in M25.
+        currentGeneration &+= 1
         speechTask?.cancel()
         speechTask = nil
         audioPlayer?.stop()
         audioPlayer = nil
+        // Barge-in / teardown: clear the speaking flag immediately so a
+        // "coach is speaking" UI never sticks. AVAudioPlayer.stop() does
+        // not invoke audioPlayerDidFinishPlaying, and onPlaybackFinished
+        // is intentionally NOT fired here (the caller initiated the
+        // interruption and already knows).
+        isSpeaking = false
+    }
+
+    /// S5 — true when at least one cloud TTS provider is configured, so the
+    /// spoken-reply path can actually produce audio. Lets a voice-mode toggle
+    /// follow `AskNoumVoiceInput.isAvailable` discipline: HIDE the affordance
+    /// when speaking can't be served rather than offering a dead toggle that
+    /// silently no-ops on tap.
+    ///
+    /// Mirrors the engine resolution `candidateEngines(for:)` does for the
+    /// `.auto` engine (the user-facing default) — any of Google Cloud (token
+    /// or key), OpenAI, or a configured backend voice. Unlike the practice
+    /// views, the Ask-Noum coach chat does NOT own an on-device
+    /// `AVSpeechSynthesizer` fallback (that owner lives in the rep views), so
+    /// "no cloud provider" genuinely means "no spoken reply here" — and the
+    /// honest UI is to hide the toggle, never to pretend.
+    var canSpeakReplies: Bool {
+        googleCloudAccessToken() != nil
+            || googleCloudAPIKey() != nil
+            || openAIAPIKey() != nil
+            || backendTTSAvailable()
     }
 
     private func candidateEngines(for setup: IMConversationSetup) -> [IMVoiceEngine] {
@@ -3488,16 +4316,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             if backendTTSAvailable() {
                 appendUnique(.backend, to: &engines)
             }
-        case .elevenLabs:
-            if elevenLabsAPIKey() != nil, elevenLabsVoiceID(for: setup.scenario) != nil {
-                appendUnique(.elevenLabs, to: &engines)
-            }
-            if openAIAPIKey() != nil {
-                appendUnique(.openAI, to: &engines)
-            }
-            if backendTTSAvailable() {
-                appendUnique(.backend, to: &engines)
-            }
         case .openAI:
             appendUnique(.openAI, to: &engines)
             if backendTTSAvailable() {
@@ -3507,16 +4325,14 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         return engines
     }
 
-    private func play(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup) async -> Bool {
+    private func play(_ text: String, using engine: IMVoiceEngine, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         switch engine {
         case .backend:
-            return await playWithBackend(text, setup: setup)
+            return await playWithBackend(text, setup: setup, generation: generation)
         case .googleCloud:
-            return await playWithGoogleCloud(text, setup: setup)
-        case .elevenLabs:
-            return await playWithElevenLabs(text, setup: setup)
+            return await playWithGoogleCloud(text, setup: setup, generation: generation)
         case .openAI:
-            return await playWithOpenAI(text, setup: setup)
+            return await playWithOpenAI(text, setup: setup, generation: generation)
         case .auto:
             return false
         }
@@ -3529,9 +4345,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
             return await executeWarmupRequest(request)
         case .openAI:
             guard let request = openAIRequest(for: ".", setup: setup) else { return false }
-            return await executeWarmupRequest(request)
-        case .elevenLabs:
-            guard let request = elevenLabsRequest(for: ".", setup: setup) else { return false }
             return await executeWarmupRequest(request)
         case .backend:
             guard let request = backendRequest(for: ".", setup: setup) else { return false }
@@ -3578,7 +4391,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         LocalConfigLoader.value(forKey: "BACKEND_API_KEY", plistNamed: "BackendConfig")
     }
 
-    private func playWithBackend(_ text: String, setup: IMConversationSetup) async -> Bool {
+    private func playWithBackend(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         guard let request = backendRequest(for: text, setup: setup) else { return false }
 
         do {
@@ -3589,6 +4402,12 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 lastFailureReason = "Backend TTS request failed."
                 return false
             }
+
+            // Why: generation gate before any audio actually plays — a
+            // newer speak() (or a stop()) since this fetch began means
+            // this audio belongs to a stale text. Drop it silently so
+            // round-1 audio never replays over round-2 text.
+            guard generation == currentGeneration else { return false }
 
             if let mimeType = http.value(forHTTPHeaderField: "Content-Type"),
                mimeType.contains("audio"),
@@ -3601,6 +4420,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 lastFailureReason = "Backend TTS returned invalid audio."
                 return false
             }
+            guard generation == currentGeneration else { return false }
             return playAudioData(audioData)
         } catch {
             lastFailureReason = "Backend TTS error: \(error.localizedDescription)"
@@ -3612,14 +4432,40 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         do {
             prepareForPlayback()
             let player = try AVAudioPlayer(data: data)
+            player.delegate = self
             player.prepareToPlay()
             audioPlayer = player
-            player.play()
+            // Only treat the clip as "speaking" if play() actually starts.
+            // The generation token is already verified by every caller
+            // before this method runs, so the clip we're starting here is
+            // the current one — never stale audio.
+            let didStart = player.play()
+            isSpeaking = didStart
             lastFailureReason = nil
-            return true
+            return didStart
         } catch {
+            isSpeaking = false
             lastFailureReason = "Audio playback error: \(error.localizedDescription)"
             return false
+        }
+    }
+
+    // MARK: - AVAudioPlayerDelegate
+
+    /// Natural end-of-clip. Hops to the main actor (the protocol callback
+    /// is `nonisolated`) and clears `isSpeaking` only if the player that
+    /// finished is still the live one — a clip superseded by a newer
+    /// `speak()` / barge-in must not clear the state of the new clip.
+    /// Fires `onPlaybackFinished` for the listen → speak → listen handoff.
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Identity check: ignore a finish callback from a player we've
+            // already replaced (a newer clip is now current).
+            guard self.audioPlayer === player else { return }
+            self.audioPlayer = nil
+            self.isSpeaking = false
+            self.onPlaybackFinished?()
         }
     }
 
@@ -3730,7 +4576,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func playWithGoogleCloud(_ text: String, setup: IMConversationSetup) async -> Bool {
+    private func playWithGoogleCloud(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         guard let request = googleCloudRequest(for: text, setup: setup) else {
             lastFailureReason = "Google Cloud TTS key or access token is missing."
             return false
@@ -3756,6 +4602,9 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 return false
             }
 
+            // Why: see speak() — generation gate stops stale audio from a
+            // since-superseded request from being played over fresh text.
+            guard generation == currentGeneration else { return false }
             return playAudioData(audioData)
         } catch {
             lastFailureReason = "Google Cloud TTS error: \(error.localizedDescription)"
@@ -3783,7 +4632,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func playWithOpenAI(_ text: String, setup: IMConversationSetup) async -> Bool {
+    private func playWithOpenAI(_ text: String, setup: IMConversationSetup, generation: UInt64) async -> Bool {
         guard let request = openAIRequest(for: text, setup: setup) else {
             lastFailureReason = "OpenAI TTS credentials are missing."
             return false
@@ -3798,6 +4647,13 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
                 return false
             }
 
+            // Why: see speak() — generation gate. This is the canonical
+            // race-fix path: an in-flight openAIRequest from round N can
+            // finish AFTER round N+1's speak() has started; without this
+            // guard playAudioData(data) would play N's audio over N+1's
+            // visible text. Bailing here keeps spoken audio aligned with
+            // the latest reply.message the user sees.
+            guard generation == currentGeneration else { return false }
             return playAudioData(data)
         } catch {
             lastFailureReason = "OpenAI TTS error: \(error.localizedDescription)"
@@ -3818,65 +4674,7 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         }
     }
 
-    private func elevenLabsAPIKey() -> String? {
-        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: "ELEVENLABS_API_KEY", plistNamed: "AIConfig")
-    }
 
-    private func elevenLabsModelID() -> String {
-        ProcessInfo.processInfo.environment["ELEVENLABS_MODEL_ID"]
-            ?? LocalConfigLoader.value(forKey: "ELEVENLABS_MODEL_ID", plistNamed: "AIConfig")
-            ?? "eleven_flash_v2_5"
-    }
-
-    private func elevenLabsVoiceID(for scenario: IMConversationScenario) -> String? {
-        let scenarioKey: String
-        switch scenario {
-        case .socialCatchUp:
-            scenarioKey = "ELEVENLABS_VOICE_ID_MAYA"
-        case .workUpdate:
-            scenarioKey = "ELEVENLABS_VOICE_ID_JORDAN"
-        case .difficultConversation:
-            scenarioKey = "ELEVENLABS_VOICE_ID_SAM"
-        case .networking:
-            scenarioKey = "ELEVENLABS_VOICE_ID_ALEX"
-        }
-
-        if let value = ProcessInfo.processInfo.environment[scenarioKey], !value.isEmpty {
-            return value
-        }
-        if let value = LocalConfigLoader.value(forKey: scenarioKey, plistNamed: "AIConfig") {
-            return value
-        }
-        if let value = ProcessInfo.processInfo.environment["ELEVENLABS_VOICE_ID_DEFAULT"], !value.isEmpty {
-            return value
-        }
-        return LocalConfigLoader.value(forKey: "ELEVENLABS_VOICE_ID_DEFAULT", plistNamed: "AIConfig")
-    }
-
-    private func playWithElevenLabs(_ text: String, setup: IMConversationSetup) async -> Bool {
-        guard let request = elevenLabsRequest(for: text, setup: setup) else {
-            lastFailureReason = "ElevenLabs credentials or voice ID are missing."
-            return false
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard !Task.isCancelled,
-                  let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                lastFailureReason = "ElevenLabs request failed."
-                return false
-            }
-
-            return playAudioData(data)
-        } catch {
-            lastFailureReason = "ElevenLabs error: \(error.localizedDescription)"
-            return false
-        }
-    }
 
     private func backendRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
         guard let baseURL = backendBaseURL() else { return nil }
@@ -3964,33 +4762,6 @@ final class IMMessageSpeaker: NSObject, ObservableObject {
         return request.httpBody == nil ? nil : request
     }
 
-    private func elevenLabsRequest(for text: String, setup: IMConversationSetup) -> URLRequest? {
-        guard let apiKey = elevenLabsAPIKey(),
-              let voiceID = elevenLabsVoiceID(for: setup.scenario),
-              let endpoint = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)") else {
-            return nil
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
-
-        let body = ElevenLabsSpeechRequest(
-            text: text,
-            modelID: elevenLabsModelID(),
-            voiceSettings: ElevenLabsVoiceSettings(
-                stability: 0.48,
-                similarityBoost: 0.78,
-                style: 0.22,
-                useSpeakerBoost: true,
-                speed: 0.96
-            )
-        )
-        request.httpBody = try? JSONEncoder().encode(body)
-        return request.httpBody == nil ? nil : request
-    }
 }
 
 private struct BackendIMTTSRequest: Codable {
@@ -4077,33 +4848,7 @@ private struct GoogleCloudTTSSpeechResponse: Codable {
     }
 }
 
-private struct ElevenLabsSpeechRequest: Codable {
-    let text: String
-    let modelID: String
-    let voiceSettings: ElevenLabsVoiceSettings
 
-    enum CodingKeys: String, CodingKey {
-        case text
-        case modelID = "model_id"
-        case voiceSettings = "voice_settings"
-    }
-}
-
-private struct ElevenLabsVoiceSettings: Codable {
-    let stability: Double
-    let similarityBoost: Double
-    let style: Double
-    let useSpeakerBoost: Bool
-    let speed: Double
-
-    enum CodingKeys: String, CodingKey {
-        case stability
-        case similarityBoost = "similarity_boost"
-        case style
-        case useSpeakerBoost = "use_speaker_boost"
-        case speed
-    }
-}
 #endif
 #endif
 
@@ -4117,6 +4862,8 @@ struct PracticeEvaluation {
     var categories: [FeedbackCategory] = []
     var strongMoments: [String] = []
     var weakMoments: [String] = []
+    var durationAssessment: DurationAssessment = .onTarget
+    var targetRange: (min: Double, target: Double, max: Double) = (30, 60, 120)
 }
 
 struct PracticeScoreSegment: Identifiable {
@@ -4124,6 +4871,214 @@ struct PracticeScoreSegment: Identifiable {
     let title: String
     let value: String
     let tintName: String
+}
+
+// MARK: - Next Rep Drill System
+
+/// A single, opinionated drill recommendation generated from session metrics.
+struct DrillRecommendation: Identifiable {
+    let id = UUID()
+    let type: DrillType
+    let title: String
+    let reason: String           // Why this drill, based on what happened
+    let constraint: String       // The one rule to follow
+    let successGoal: String      // How to know you nailed it
+    let icon: String             // SF Symbol
+    let tint: Color
+
+    /// The drill types available in the system, ordered by priority.
+    enum DrillType: String {
+        case pauseAndBreathe       // High fillers — replace fillers with silence
+        case slowOpen              // Rushed pace — deliberately slow first 2 sentences
+        case extendAndDevelop      // Too short — hit a minimum duration
+        case structuredResponse    // No structure — use intro/point/close
+        case cleanRun              // Moderate fillers — aim for zero
+        case powerOpen             // Weak opening — nail the first sentence
+        case paceSetter            // Too slow — hit a natural pace
+        case closingStatement      // Weak close — end with a deliberate sentence
+        case depthDive             // Shallow content — develop one idea fully
+        case confidenceHold        // Good session — maintain under harder conditions
+        case freeRepeat            // Clean session — just do it again
+    }
+}
+
+/// Generates a single drill recommendation from raw session metrics.
+/// Deterministic, template-driven — no AI call needed.
+enum DrillEngine {
+
+    static func recommend(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        score: Int,
+        feedbackCategories: [FeedbackCategory],
+        durationAssessment: DurationAssessment
+    ) -> DrillRecommendation {
+
+        let wpm = duration > 0 ? Double(wordCount) / duration * 60 : 0
+        let isMinimal = wordCount < 5 || duration < 5
+
+        // Helper to find worst category
+        func rating(for dimension: String) -> FeedbackRating? {
+            feedbackCategories.first(where: { $0.dimension == dimension })?.rating
+        }
+
+        // --- Priority cascade (most impactful issue first) ---
+
+        // 1. No speech / minimal effort → just get them talking
+        if wordCount == 0 || isMinimal {
+            return DrillRecommendation(
+                type: .extendAndDevelop,
+                title: "Commit to 30 Seconds",
+                reason: "Your last attempt was too short to practice anything meaningful.",
+                constraint: "Keep talking for at least 30 seconds — no stopping early.",
+                successGoal: "Reach 30 seconds with a clear point",
+                icon: "timer",
+                tint: .orange
+            )
+        }
+
+        // 2. High fillers (≥5) → pause & breathe drill
+        if fillerCount >= 5 {
+            return DrillRecommendation(
+                type: .pauseAndBreathe,
+                title: "Silent Transitions",
+                reason: "You used \(fillerCount) filler words — most appeared between ideas when your brain was searching for the next thought.",
+                constraint: "Pause silently for a full beat before every new point. No \"um\", \"uh\", or \"like\" allowed.",
+                successGoal: "Fewer than 2 filler words",
+                icon: "waveform.path",
+                tint: .red
+            )
+        }
+
+        // 3. Very short duration (<15s) → extend
+        if duration < 15 {
+            return DrillRecommendation(
+                type: .extendAndDevelop,
+                title: "Develop the Thought",
+                reason: "Your answer was only \(Int(duration)) seconds — too short to show structure or control.",
+                constraint: "After your opening, add one example and one closing sentence. Don't stop until you've made all three.",
+                successGoal: "Speak for at least 30 seconds with 3 distinct sections",
+                icon: "text.line.last.and.arrowtriangle.forward",
+                tint: .orange
+            )
+        }
+
+        // 4. Rushed pace (>160 WPM) → slow open
+        if wpm > 160 {
+            return DrillRecommendation(
+                type: .slowOpen,
+                title: "Slow Your Start",
+                reason: "Your pace hit \(Int(wpm)) WPM — noticeably fast. Speed undermines clarity even when the content is strong.",
+                constraint: "Deliberately slow your first two sentences. Count one beat between them.",
+                successGoal: "Pace below 150 WPM",
+                icon: "hare.fill",
+                tint: .orange
+            )
+        }
+
+        // 5. Moderate fillers (2-4) → clean run
+        if fillerCount >= 2 {
+            return DrillRecommendation(
+                type: .cleanRun,
+                title: "Zero Filler Run",
+                reason: "You had \(fillerCount) filler words — they cluster at transition points and make you sound less certain.",
+                constraint: "Deliver your answer with zero filler words. Replace every urge to say \"um\" with silence.",
+                successGoal: "Zero filler words",
+                icon: "sparkles",
+                tint: Color(.systemIndigo)
+            )
+        }
+
+        // 6. Weak opening
+        if rating(for: "Opening") == .couldImprove {
+            return DrillRecommendation(
+                type: .powerOpen,
+                title: "Nail the First Line",
+                reason: "Your opening didn't grab attention. A strong first sentence sets confidence for everything after.",
+                constraint: "Start with a clear, declarative statement — no hedge words, no throat-clearing.",
+                successGoal: "Opening rated OK or better",
+                icon: "bolt.fill",
+                tint: .blue
+            )
+        }
+
+        // 7. Weak structure
+        if rating(for: "Structure") == .couldImprove {
+            return DrillRecommendation(
+                type: .structuredResponse,
+                title: "Build a Framework",
+                reason: "Your answer lacked clear structure. Without a framework, ideas blur together.",
+                constraint: "Use a strict 3-part structure: opening statement, one supporting example, closing sentence.",
+                successGoal: "Structure rated OK or better",
+                icon: "list.number",
+                tint: .blue
+            )
+        }
+
+        // 8. Weak close
+        if rating(for: "Close") == .couldImprove {
+            return DrillRecommendation(
+                type: .closingStatement,
+                title: "Stick the Landing",
+                reason: "Your answer trailed off instead of ending with intention. A strong close leaves a lasting impression.",
+                constraint: "End with one deliberate closing sentence that summarizes your main point.",
+                successGoal: "Close rated OK or better",
+                icon: "flag.checkered",
+                tint: .purple
+            )
+        }
+
+        // 9. Too slow (<100 WPM, duration ≥15s)
+        if wpm > 0 && wpm < 100 && duration >= 15 {
+            return DrillRecommendation(
+                type: .paceSetter,
+                title: "Find Your Flow",
+                reason: "Your pace was \(Int(wpm)) WPM — quite slow. Hesitation can make you sound uncertain.",
+                constraint: "Commit to each sentence before starting it, then deliver at conversational speed — no long pauses mid-thought.",
+                successGoal: "Pace above 110 WPM",
+                icon: "metronome.fill",
+                tint: .blue
+            )
+        }
+
+        // 10. Shallow depth
+        if rating(for: "Depth") == .couldImprove {
+            return DrillRecommendation(
+                type: .depthDive,
+                title: "Go Deeper",
+                reason: "Your answer stayed surface-level. One well-developed idea beats three shallow ones.",
+                constraint: "Pick one point and give a specific, concrete example to support it.",
+                successGoal: "Depth rated OK or better",
+                icon: "arrow.down.to.line",
+                tint: .blue
+            )
+        }
+
+        // 11. Good session (score ≥7) → confidence hold / free repeat
+        if score >= 7 {
+            return DrillRecommendation(
+                type: .confidenceHold,
+                title: "Hold the Standard",
+                reason: "Strong session. Now prove it wasn't a one-off — repeat the same quality on the same prompt.",
+                constraint: "Match or beat your score. Stay clean, stay structured, stay in control.",
+                successGoal: "Score \(score) or higher",
+                icon: "flame.fill",
+                tint: .green
+            )
+        }
+
+        // 12. Default fallback — free repeat with structure focus
+        return DrillRecommendation(
+            type: .freeRepeat,
+            title: "One More Rep",
+            reason: "Your delivery had room to improve. The best way to get better is to try again with intention.",
+            constraint: "Focus on a strong open, one clear point, and a deliberate close.",
+            successGoal: "Improve your overall score",
+            icon: "arrow.clockwise",
+            tint: .blue
+        )
+    }
 }
 
 // MARK: - Feedback Categories (7 dimensions)
@@ -4210,26 +5165,47 @@ enum PracticeEvaluator {
         duration: TimeInterval,
         difficulty: TimedPracticeDifficulty,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil,
+        question: String? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
-        let targetDuration = Double(difficulty.duration ?? 45)
-        let durationProgress = min(duration / targetDuration, 1.0)
-        let contentProgress = min(Double(wordCount) / 35.0, 1.0)
+        let durationProgress = durationRangeScore(duration, difficulty: difficulty)
+        // Content cap raised from 35 → 65 words. 35 was ~12s of speech and
+        // gave full content credit too easily — the user's real-device
+        // 8/10 read came partly from this cap being too lenient.
+        let contentProgress = min(Double(wordCount) / 65.0, 1.0)
+        // Prompt-grounded relevance read — feeds the Relevance *rating* only.
+        // The numeric score below still reads contentProgress, so no score
+        // moves from this. nil/thin prompt -> high default (no down-rate).
+        let relevanceRead = promptRelevance(prompt: question, transcript: cleanTranscript)
         let wordsPerMinute = paceValue(wordCount: wordCount, duration: duration)
         let paceSnapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 0.7, 3.0)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0  // Reduce 40% when audio quality is poor
+        // Filler penalty: linear up to 4 fillers, then accelerates so 6+
+        // genuinely costs the score. Old cap of 3.0 meant 10 fillers
+        // looked the same as 4 — that hid bad reps.
+        let fillerPenalty: Double = {
+            let raw: Double
+            if fillerCount <= 4 {
+                raw = Double(fillerCount) * 0.8
+            } else {
+                raw = 3.2 + Double(fillerCount - 4) * 1.1
+            }
+            return min(raw * fillerPenaltyMultiplier, 5.5)
+        }()
         let difficultyBonus: Double = {
             switch difficulty {
             case .free: return 0.0
             case .easy: return 0.2
-            case .medium: return 0.6
-            case .hard: return 1.0
+            case .medium: return 0.5
+            case .hard: return 0.8
             }
         }()
 
@@ -4239,7 +5215,31 @@ enum PracticeEvaluator {
         if wordCount < 3 || duration < 3 {
             score = 1
         } else {
-            let rawScore = 1.0 + (durationProgress * 3.2) + (contentProgress * 2.8) + (paceProgress * 2.0) + (styleAlignment * 1.5) - fillerPenalty + difficultyBonus
+            // Honest-assessment recalibration. Old formula: base 1.0 +
+            // (3.2 * dur + 2.8 * content + 2.0 * pace + 1.5 * style) -
+            // fillerPenalty + diffBonus. That floored the score at ~6 even
+            // for poor speech because pace 80 WPM still scored 0.72 and
+            // content capped at 35 words. New formula:
+            //   • drops the base 1.0 floor (0.5 instead)
+            //   • content carries less weight (was 2.8, now 2.4) since the cap is harder to hit
+            //   • pace and duration carry more (they're the honest signal)
+            //   • style alignment carries less (it's a soft signal that
+            //     shouldn't lift a poor delivery)
+            let voiceBonus = voiceDeliveryBonus(
+                profile: profile,
+                wordCount: wordCount,
+                duration: duration,
+                fillerCount: fillerCount,
+                wordsPerMinute: wordsPerMinute
+            )
+            let rawScore = 0.5
+                + (durationProgress * 3.4)
+                + (contentProgress * 2.4)
+                + (paceProgress * 2.6)
+                + (styleAlignment * 1.0)
+                - fillerPenalty
+                + difficultyBonus
+                + voiceBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -4247,21 +5247,30 @@ enum PracticeEvaluator {
         let xpFromDuration = durationProgress * 18
         let xpEarned = max(5, Int(round((xpBase + xpFromDuration) * difficulty.xpMultiplier)))
 
-        let headline: String
+        let baseHeadline: String
         switch score {
         case 9...10:
-            headline = "Table-topics ready"
+            baseHeadline = "Table-topics ready"
         case 7...8:
-            headline = "Solid response"
+            baseHeadline = "Solid response"
         case 4...6:
-            headline = "Getting there"
+            baseHeadline = "Building momentum"
         default:
-            headline = "Needs another rep"
+            baseHeadline = "Good warmup"
         }
+        let headline = isLowConfidence ? "Based on what we could hear" : baseHeadline
+
+        let durationAssessment = assessDuration(duration, difficulty: difficulty)
 
         let feedback: String
         if wordCount < 3 || duration < 3 {
             feedback = "This response ended before the answer could develop. Aim for a clear opening, one supporting point, and a brief close."
+        } else if durationAssessment == .tooShort && fillerCount <= 2 {
+            let range = difficulty.targetRange
+            feedback = "Your answer was only \(Int(duration))s — the target range is \(Int(range.min))–\(Int(range.max))s. Give your answer more room to develop."
+        } else if durationAssessment == .tooLong {
+            let range = difficulty.targetRange
+            feedback = "At \(Int(duration))s you went well past the \(Int(range.max))s mark. Tighten the structure: opening, one strong point, then close."
         } else if fillerCount == 0 && durationProgress >= 0.8 {
             feedback = "Strong control. You kept the answer clean while giving it enough shape to sound complete."
         } else if fillerCount <= 2 && durationProgress >= 0.6 {
@@ -4273,7 +5282,7 @@ enum PracticeEvaluator {
         }
 
         let segments = [
-            PracticeScoreSegment(title: "Depth", value: "+\(Int(round(durationProgress * 3)))", tintName: "blue"),
+            PracticeScoreSegment(title: "Timing", value: durationAssessment.rawValue, tintName: durationAssessment == .onTarget ? "green" : "orange"),
             PracticeScoreSegment(title: "Content", value: "+\(Int(round(contentProgress * 3)))", tintName: "orange"),
             PracticeScoreSegment(title: "Pace", value: paceSnapshot.label, tintName: "green"),
             PracticeScoreSegment(title: "Voice", value: styleAlignmentLabel(for: styleAlignment), tintName: "indigo"),
@@ -4287,13 +5296,18 @@ enum PracticeEvaluator {
             wordCount: wordCount,
             wordsPerMinute: wordsPerMinute,
             trends: trends,
-            paceSnapshot: paceSnapshot
+            paceSnapshot: paceSnapshot,
+            transcript: cleanTranscript,
+            relevance: relevanceRead
         )
         insights.append(styleAlignmentInsight(styleSnapshot: styleSnapshot, profile: profile, alignment: styleAlignment))
         if let styleTrendNote = styleTrendInsight(styleTrend, profile: profile) {
             insights.append(styleTrendNote)
         }
         insights.append(styleSnapshot.coachingNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
 
         // Generate 7-dimension feedback categories
         let categories = buildFeedbackCategories(
@@ -4304,7 +5318,13 @@ enum PracticeEvaluator {
             durationProgress: durationProgress,
             contentProgress: contentProgress,
             paceProgress: paceProgress,
-            transcript: cleanTranscript
+            transcript: cleanTranscript,
+            // When the evidence floor isn't met (nil/thin prompt or thin
+            // transcript) pass nil so buildFeedbackCategories falls back to
+            // the old contentProgress proxy — byte-identical to today on
+            // weak evidence, never an upward or downward drift. Only a real,
+            // floor-met read overrides the rating.
+            relevanceProgress: relevanceRead.evidenceFloorMet ? relevanceRead.progress : nil
         )
 
         // Strong and weak moments
@@ -4320,7 +5340,9 @@ enum PracticeEvaluator {
             insights: Array(insights.prefix(3)),
             categories: categories,
             strongMoments: strongMoments,
-            weakMoments: weakMoments
+            weakMoments: weakMoments,
+            durationAssessment: durationAssessment,
+            targetRange: difficulty.targetRange
         )
     }
 
@@ -4329,7 +5351,7 @@ enum PracticeEvaluator {
     private static func buildFeedbackCategories(
         wordCount: Int, duration: TimeInterval, fillerCount: Int,
         wordsPerMinute: Double, durationProgress: Double, contentProgress: Double,
-        paceProgress: Double, transcript: String
+        paceProgress: Double, transcript: String, relevanceProgress: Double? = nil
     ) -> [FeedbackCategory] {
         let sentences = transcript.components(separatedBy: CharacterSet(charactersIn: ".!?"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -4346,7 +5368,12 @@ enum PracticeEvaluator {
 
         let opening: FeedbackRating = hasStrongOpen && fillerCount <= 1 ? .good : (hasStrongOpen ? .ok : .couldImprove)
         let structure: FeedbackRating = sentenceCount >= 3 && duration >= 20 ? .good : (sentenceCount >= 2 ? .ok : .couldImprove)
-        let relevance: FeedbackRating = contentProgress >= 0.7 ? .good : (contentProgress >= 0.4 ? .ok : .couldImprove)
+        // Relevance now rates on the prompt-grounded read when available
+        // (drop-in for the old contentProgress proxy), falling back to
+        // contentProgress for back-compat (nil prompt / legacy callers).
+        // Same thresholds, same copy — only the gating signal changes.
+        let relevanceBasis = relevanceProgress ?? contentProgress
+        let relevance: FeedbackRating = relevanceBasis >= 0.7 ? .good : (relevanceBasis >= 0.4 ? .ok : .couldImprove)
         let depth: FeedbackRating = durationProgress >= 0.7 && wordCount >= 40 ? .good : (durationProgress >= 0.4 ? .ok : .couldImprove)
         let clarity: FeedbackRating = fillerCount <= 1 && wordsPerMinute <= 160 ? .good : (fillerCount <= 3 ? .ok : .couldImprove)
         let pace: FeedbackRating = paceProgress >= 0.7 ? .good : (paceProgress >= 0.4 ? .ok : .couldImprove)
@@ -4357,7 +5384,7 @@ enum PracticeEvaluator {
             FeedbackCategory(dimension: "Structure", rating: structure, note: structure == .good ? "Well-organized answer" : structure == .ok ? "Add one more supporting point" : "Break into intro → point → close"),
             FeedbackCategory(dimension: "Relevance", rating: relevance, note: relevance == .good ? "Stayed on topic" : relevance == .ok ? "Mostly relevant" : "Connect more directly to the prompt"),
             FeedbackCategory(dimension: "Depth", rating: depth, note: depth == .good ? "Good detail and development" : depth == .ok ? "Push for more examples" : "Expand your supporting points"),
-            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Too many verbal crutches"),
+            FeedbackCategory(dimension: "Clarity", rating: clarity, note: clarity == .good ? "Clean, minimal fillers" : clarity == .ok ? "A few fillers crept in" : "Filler words interrupted flow"),
             FeedbackCategory(dimension: "Pace", rating: pace, note: pace == .good ? "Comfortable, natural pace" : pace == .ok ? "Slightly rushed" : "Slow down and use pauses"),
             FeedbackCategory(dimension: "Close", rating: close, note: close == .good ? "Strong finish" : close == .ok ? "Ended a bit abruptly" : "Add a deliberate closing sentence"),
         ]
@@ -4387,7 +5414,8 @@ enum PracticeEvaluator {
         duration: TimeInterval,
         pressureEventsHandled: Int,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4396,11 +5424,13 @@ enum PracticeEvaluator {
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let level = max(1, Int(duration / 30.0) + 1)
         let durationProgress = min(duration / Double(level * 30), 1.0)
         let contentProgress = min(Double(wordCount) / 24.0, 1.0)
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 2.0, 6.0)
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
+        let fillerPenalty = min(Double(fillerCount) * 2.0 * fillerPenaltyMultiplier, 6.0)
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
@@ -4411,7 +5441,14 @@ enum PracticeEvaluator {
         } else {
             let pressureBonus = min(Double(level - 1) * 0.8, 3.2)
             let eventBonus = min(Double(pressureEventsHandled) * 0.35, 1.4)
-            let rawScore = 2.0 + (durationProgress * 2.4) + (contentProgress * 2.5) + (paceProgress * 1.2) + (styleAlignment * 1.4) - fillerPenalty + (fillerCount == 0 ? 2.0 : 0.0) + pressureBonus + eventBonus
+            let voiceBonus = voiceDeliveryBonus(
+                profile: profile,
+                wordCount: wordCount,
+                duration: duration,
+                fillerCount: fillerCount,
+                wordsPerMinute: wordsPerMinute
+            )
+            let rawScore = 2.0 + (durationProgress * 2.4) + (contentProgress * 2.5) + (paceProgress * 1.2) + (styleAlignment * 1.4) - fillerPenalty + (fillerCount == 0 ? 2.0 : 0.0) + pressureBonus + eventBonus + voiceBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -4421,9 +5458,9 @@ enum PracticeEvaluator {
         case 9...10:
             headline = level >= 3 ? "High-pressure composure" : "Composed under pressure"
         case 6...8:
-            headline = "Pressure exposed a few cracks"
+            headline = "Held up under pressure"
         default:
-            headline = "Needs another rep"
+            headline = "Good warmup"
         }
         let feedback: String
         if wordCount < 3 || duration < 3 {
@@ -4466,6 +5503,9 @@ enum PracticeEvaluator {
             insights.append(styleTrendNote)
         }
         insights.append(paceSnapshot.coachNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
         insights.append(styleSnapshot.coachingNote)
 
         return PracticeEvaluation(
@@ -4483,7 +5523,8 @@ enum PracticeEvaluator {
         fillerCount: Int,
         duration: TimeInterval,
         recentSessions: [PracticeSession],
-        profile: CoachingProfile?
+        profile: CoachingProfile?,
+        transcriptConfidence: Double? = nil
     ) -> PracticeEvaluation {
         let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = wordCount(in: cleanTranscript)
@@ -4494,15 +5535,24 @@ enum PracticeEvaluator {
         let styleSnapshot = speakingIdentitySnapshot(for: cleanTranscript, profile: profile)
         let styleTrend = styleTrendSnapshot(transcript: cleanTranscript, recentSessions: recentSessions, profile: profile)
         let styleAlignment = styleAlignmentScore(snapshot: styleSnapshot, profile: profile)
+        let isLowConfidence = (transcriptConfidence ?? 1.0) < 0.6
         let paceProgress = paceScore(for: wordsPerMinute, wordCount: wordCount)
-        let fillerPenalty = min(Double(fillerCount) * 0.8, 5.0)
+        let fillerPenaltyMultiplier = isLowConfidence ? 0.6 : 1.0
+        let fillerPenalty = min(Double(fillerCount) * 0.8 * fillerPenaltyMultiplier, 5.0)
         let trends = trendSnapshot(fillerCount: fillerCount, duration: duration, recentSessions: recentSessions)
 
         let score: Int
         if wordCount < 4 || duration < 4 {
             score = 1
         } else {
-            let rawScore = 2.0 + (durationProgress * 2.5) + (contentProgress * 2.0) + (paceProgress * 1.5) + (styleAlignment * 1.6) + max(0, 3.0 - fillerPenalty)
+            let voiceBonus = voiceDeliveryBonus(
+                profile: profile,
+                wordCount: wordCount,
+                duration: duration,
+                fillerCount: fillerCount,
+                wordsPerMinute: wordsPerMinute
+            )
+            let rawScore = 2.0 + (durationProgress * 2.5) + (contentProgress * 2.0) + (paceProgress * 1.5) + (styleAlignment * 1.6) + max(0, 3.0 - fillerPenalty) + voiceBonus
             score = max(1, min(10, Int(round(rawScore))))
         }
 
@@ -4511,7 +5561,7 @@ enum PracticeEvaluator {
         switch score {
         case 8...10: headline = "Good awareness"
         case 5...7: headline = "Useful awareness rep"
-        default: headline = "Needs another rep"
+        default: headline = "Good warmup"
         }
 
         let feedback: String
@@ -4546,6 +5596,9 @@ enum PracticeEvaluator {
         }
         insights.append(paceSnapshot.coachNote)
         insights.append(styleSnapshot.coachingNote)
+        if isLowConfidence {
+            insights.insert("Audio quality was lower than usual — filler count may be approximate.", at: 0)
+        }
 
         return PracticeEvaluation(
             score: score,
@@ -4561,13 +5614,549 @@ enum PracticeEvaluator {
         transcript.split { !$0.isLetter && !$0.isNumber }.count
     }
 
+    // MARK: - Prompt-grounded relevance (deterministic, association not causation)
+    //
+    // Replaces the old wordCount/65 relevance proxy for the Relevance
+    // *rating* on the 7-dimension card. The proxy rewarded length: a long
+    // fluent answer that never engaged the question's content words read
+    // "Stayed on topic". This reducer instead asks the one thing a coach
+    // checks first — did the answer engage what was actually asked — by
+    // lexical overlap of the prompt's content words with the transcript's.
+    //
+    // It is deliberately CONSERVATIVE. Lexical overlap is association on
+    // weak evidence, never a verdict: a nil/thin prompt or a thin
+    // transcript defaults the rating HIGH (it can never *down-rate* on
+    // absent/weak evidence — it behaves exactly like the old length proxy
+    // there), and even a clear miss only ever softens the rating to
+    // "Mostly relevant", never to a confident "off-topic" from overlap
+    // alone. The harsh band stays reachable only via the existing
+    // contentProgress fallback (truly tiny/empty reps).
+    //
+    // The numeric SCORE is untouched: contentProgress still feeds rawScore.
+    // Only the Relevance category *rating* consumes this read this pass.
+
+    /// Conservative 0...1 relevance read of `transcript` against `prompt`
+    /// by content-word lexical overlap. Pure: no I/O, no singletons.
+    struct PromptRelevanceRead: Equatable {
+        /// 0...1 fraction of the prompt's distinct content words echoed in
+        /// the WHOLE transcript (Jaccard-lite: |prompt ∩ transcript| / |prompt|).
+        /// This is the *magnitude* read — "is the point present anywhere" — and
+        /// is what the deterministic Relevance rating consumes.
+        let overlap: Double
+        /// Count of distinct prompt content words considered (post stop-filter).
+        let promptContentWords: Int
+        /// True once `promptContentWords >= minPromptContentWordsForRelevance`
+        /// AND the transcript is long enough to judge against. When false the
+        /// rating falls back to the high `relevanceAbsentDefault`.
+        let evidenceFloorMet: Bool
+        /// 0...1 value the Relevance rating consumes (drop-in for the old
+        /// contentProgress in the rating only).
+        let progress: Double
+        /// 0...1 fraction of the prompt's distinct content words echoed in just
+        /// the FIRST sentence/clause of the transcript (same split as
+        /// `openerAnchor`). This is the *positional* read — "did the point lead
+        /// or arrive late" — and is what makes `promptAnswerVerdict` genuinely
+        /// distinguish a buried lede (present overall, absent from the lead)
+        /// from an answer that led with the point. Defaulted to 0 so the field
+        /// is back-compatible for any construction that predates the positional
+        /// read; the rating never consumes it, so a 0 default cannot move a
+        /// score. Always 0 below the evidence floor (no positional claim on
+        /// thin evidence).
+        var firstSentenceOverlap: Double = 0
+
+        init(
+            overlap: Double,
+            promptContentWords: Int,
+            evidenceFloorMet: Bool,
+            progress: Double,
+            firstSentenceOverlap: Double = 0
+        ) {
+            self.overlap = overlap
+            self.promptContentWords = promptContentWords
+            self.evidenceFloorMet = evidenceFloorMet
+            self.progress = progress
+            self.firstSentenceOverlap = firstSentenceOverlap
+        }
+    }
+
+    // Named, asserted thresholds — every boundary is locked by a test.
+    /// Below this the prompt is too thin to judge an answer against.
+    static let minPromptContentWordsForRelevance: Int = 3
+    /// Below this the transcript is too thin for a confident relevance read
+    /// (mirrors the thin-rep gates elsewhere in the evaluator).
+    static let minTranscriptWordsForRelevance: Int = 12
+    /// >= this fraction of prompt content words echoed -> clearly on-topic.
+    static let relevanceStrongOverlap: Double = 0.30
+    /// < this fraction -> a clear miss (still only "mostly relevant", never
+    /// a confident off-topic verdict from overlap alone).
+    static let relevanceWeakOverlap: Double = 0.12
+    /// nil/thin prompt OR thin transcript -> high default so the rating can
+    /// never down-rate on absent/weak evidence.
+    static let relevanceAbsentDefault: Double = 0.70
+
+    /// Local content-word stop set for relevance overlap. Mirrors the
+    /// established local-set pattern in this file (`repeatedContentWords`'s
+    /// set) — the private `WordChoiceMetrics.stopWords` /
+    /// `EloquenceEngine.stopwords` are private to other types and cannot be
+    /// reused cross-type. Broader than the repeated-content set because the
+    /// prompt phrasing ("should we", "what is", "tell me about") carries
+    /// more function words than a transcript body.
+    private static let relevanceStopWords: Set<String> = [
+        "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+        "her", "was", "one", "our", "out", "his", "has", "had", "how", "who",
+        "why", "did", "does", "this", "that", "with", "your", "from", "they",
+        "have", "what", "when", "were", "will", "would", "should", "could",
+        "about", "there", "their", "them", "then", "than", "into", "more",
+        "some", "such", "only", "very", "just", "most", "over", "also", "been",
+        "being", "which", "while", "these", "those", "here", "make", "made",
+        "much", "many", "like", "well", "even", "ever", "because", "really"
+    ]
+
+    /// Content words in `text`: lowercased tokens, tokenized with the same
+    /// `split { !$0.isLetter && !$0.isNumber }` as `wordCount(in:)`, kept
+    /// only when >= 4 chars and not in `relevanceStopWords`.
+    ///
+    /// Internal (not `private`) so the deterministic framework-drill detectors
+    /// (`FrameworkDrillChecks`) reuse the SAME content-word tokenizer the prompt-
+    /// relevance reducer uses — one canonical "what counts as a content word"
+    /// rule across the prompt-answer verdict and the STAR/elevator-pitch checks,
+    /// matching how `relevanceFirstSentence` / `promptAnswerVerdict` are already
+    /// shared cross-file. Pure: no I/O, no singletons.
+    static func relevanceContentWords(in text: String) -> [String] {
+        text.lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count >= 4 && !relevanceStopWords.contains($0) }
+    }
+
+    /// The first sentence/clause of `text`, used for the positional ("lead vs
+    /// buried lede") read. Splits on `.`, `!`, `?` and returns the leading span
+    /// — the IDENTICAL first-sentence rule `AICoachService.openerAnchor` uses to
+    /// pick the quote it shows the user, so the verdict's notion of "the lead"
+    /// is the same span the coach copy anchors to. Pure. Returns the whole
+    /// trimmed string when there is no terminal punctuation (a single-sentence
+    /// answer's lead IS the whole answer). Empty in, empty out.
+    static func relevanceFirstSentence(in text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return trimmed
+            .split(whereSeparator: { $0 == "." || $0 == "!" || $0 == "?" })
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? trimmed
+    }
+
+    /// Pure. Lexical-overlap relevance of `transcript` to `prompt`.
+    ///
+    /// Conservative contract:
+    /// - nil/thin prompt OR thin transcript -> `evidenceFloorMet == false`,
+    ///   `progress == relevanceAbsentDefault` (no down-rate on weak evidence).
+    /// - otherwise map overlap to progress: `>= relevanceStrongOverlap` -> 1.0
+    ///   (".good"); `< relevanceWeakOverlap` -> clamped to 0.45 (the ".ok"
+    ///   band — never below 0.4, so overlap alone can never assert a confident
+    ///   off-topic); linear in between.
+    static func promptRelevance(prompt: String?, transcript: String) -> PromptRelevanceRead {
+        let transcriptWords = wordCount(in: transcript)
+        let promptWords = prompt.map(relevanceContentWords(in:)) ?? []
+        let distinctPromptWords = Set(promptWords)
+        let promptContentWordCount = distinctPromptWords.count
+
+        // Evidence floor: too-thin prompt or too-thin transcript -> default
+        // HIGH so relevance can never pull the rating down on weak evidence.
+        guard promptContentWordCount >= minPromptContentWordsForRelevance,
+              transcriptWords >= minTranscriptWordsForRelevance else {
+            return PromptRelevanceRead(
+                overlap: 0,
+                promptContentWords: promptContentWordCount,
+                evidenceFloorMet: false,
+                progress: relevanceAbsentDefault
+            )
+        }
+
+        let transcriptWordSet = Set(relevanceContentWords(in: transcript))
+        let echoed = distinctPromptWords.intersection(transcriptWordSet).count
+        let overlap = Double(echoed) / Double(promptContentWordCount)
+
+        // Positional read: overlap of the prompt's content words against ONLY
+        // the first sentence/clause. This is the signal that separates "the
+        // point led" from "the point arrived late" — the whole-transcript
+        // `overlap` above can't see WHERE the point landed. Computed over the
+        // same distinct prompt set so the two fractions share a denominator and
+        // `firstSentenceOverlap <= overlap` always holds (the lead is a subset
+        // of the whole). The numeric SCORE never reads this; it feeds the
+        // verdict (the rating) only.
+        let firstSentenceWordSet = Set(relevanceContentWords(in: relevanceFirstSentence(in: transcript)))
+        let echoedInLead = distinctPromptWords.intersection(firstSentenceWordSet).count
+        let firstSentenceOverlap = Double(echoedInLead) / Double(promptContentWordCount)
+
+        let progress: Double
+        if overlap >= relevanceStrongOverlap {
+            progress = 1.0
+        } else if overlap < relevanceWeakOverlap {
+            // Clear miss -> soften to the ".ok" band only. Never below 0.4,
+            // so the rating can never assert a confident off-topic from
+            // overlap alone (association not causation on weak evidence).
+            progress = 0.45
+        } else {
+            // Linear ramp between the weak and strong thresholds, mapped onto
+            // the [0.45, 1.0] rating range so the worst overlap-driven read is
+            // still ".ok".
+            let span = relevanceStrongOverlap - relevanceWeakOverlap
+            let t = (overlap - relevanceWeakOverlap) / span
+            progress = 0.45 + t * (1.0 - 0.45)
+        }
+
+        return PromptRelevanceRead(
+            overlap: overlap,
+            promptContentWords: promptContentWordCount,
+            evidenceFloorMet: true,
+            progress: progress,
+            firstSentenceOverlap: firstSentenceOverlap
+        )
+    }
+
+    /// The shared, now-POSITIONAL "lead vs buried lede" verdict that all four
+    /// coaching surfaces read — the live chat coach (`CoachContextBuilder`
+    /// PROMPT RELEVANCE), the Timed three-part coach note
+    /// (`FeedbackEngine.buildPromptRelevanceNote`), the post-rep deterministic
+    /// fallback (`AICoachService.deterministicFeedback`), and the AICoachService
+    /// rubric line — so every surface speaks from ONE read of the stored
+    /// `PracticeSession.prompt` rather than each re-deriving its own. Boundaries
+    /// are the same named, test-locked overlap thresholds the Relevance rating
+    /// uses, so the verdict can never disagree with the 7-dimension card.
+    ///
+    /// The bands are now about WHERE the point landed, not only HOW MUCH of the
+    /// question was echoed — because "lead with your point" is the substance
+    /// thing a coach actually checks, and four surfaces already claimed that
+    /// positional reasoning in copy ("lead vs arrived late") the verdict never
+    /// performed. The magnitude read still gates the Relevance *rating*; the
+    /// position read decides the *verdict*.
+    enum PromptAnswerVerdict: Equatable {
+        /// The point LED: the question's key terms appeared in the first
+        /// sentence/clause (`firstSentenceOverlap >= relevanceStrongOverlap`).
+        /// The answer opened on the answer.
+        case answered
+        /// The point neither clearly led nor was clearly present-but-late:
+        /// either it engaged the question only loosely, or it barely engaged it
+        /// at all. This absorbs both the genuine in-between case and the
+        /// low-whole-overlap "barely engaged it" case; it never claims a
+        /// confident "off-topic" and never claims a buried lede it cannot see.
+        /// Lexical association on the rep's own words only.
+        case partial
+        /// The point was BURIED: it is present across the rep
+        /// (`overlap >= relevanceStrongOverlap`) but NOT in the lead
+        /// (`firstSentenceOverlap < relevanceWeakOverlap`) — the answer was in
+        /// there, it just arrived late. This is the only band that asserts the
+        /// positional "arrived late" claim, and it is honest by construction:
+        /// it requires the point to actually be present somewhere first. Lexical
+        /// association on the rep's own words, never a confident "off-topic".
+        case buried
+    }
+
+    /// Pure. Maps a `PromptRelevanceRead` onto the shared POSITIONAL verdict.
+    /// Returns `nil` below the evidence floor (`evidenceFloorMet == false`)
+    /// — no verdict on weak/absent evidence, exactly as the rating defaults
+    /// HIGH there. The single point all four surfaces call into so they can
+    /// never drift apart.
+    ///
+    /// Order matters and is deliberate:
+    /// 1. The point led (`firstSentenceOverlap >= relevanceStrongOverlap`) ->
+    ///    `.answered`. Because `firstSentenceOverlap <= overlap` always, an
+    ///    `.answered` rep also clears the strong whole-overlap bar, so the
+    ///    verdict can never say "answered" while the rating says weak.
+    /// 2. The point is present overall (`overlap >= relevanceStrongOverlap`) but
+    ///    NOT in the lead (`firstSentenceOverlap < relevanceWeakOverlap`) ->
+    ///    `.buried`. The "arrived late" claim is TRUE here, not asserted.
+    /// 3. Everything else -> `.partial`. This absorbs both the genuinely
+    ///    in-between case AND the low-whole-overlap "barely engaged it" case;
+    ///    neither earns the confident positional `.buried` claim.
+    static func promptAnswerVerdict(for read: PromptRelevanceRead) -> PromptAnswerVerdict? {
+        guard read.evidenceFloorMet else { return nil }
+        if read.firstSentenceOverlap >= relevanceStrongOverlap { return .answered }
+        if read.overlap >= relevanceStrongOverlap,
+           read.firstSentenceOverlap < relevanceWeakOverlap {
+            return .buried
+        }
+        return .partial
+    }
+
+    // MARK: - Argument logic (claim -> evidence -> implication chain)
+    //
+    // A deterministic, transcript-only read of whether an answer is structured
+    // as an ARGUMENT — a claim that is both justified (evidence) and carried
+    // forward to a consequence (implication) — rather than a bare assertion.
+    //
+    // This is DELIBERATELY DISTINCT from `promptAnswerVerdict` (topic
+    // relevance / "did you answer the question"). A rep can be perfectly
+    // on-topic and still be a flat assertion with no reasoning chain; and a rep
+    // can be a tight claim->evidence->implication argument about something the
+    // prompt never asked. Relevance reads the prompt overlap; this reads the
+    // rep's own internal logical scaffold. The two never share a band.
+    //
+    // It is also distinct from the persuasion `claimCounter` framework drill
+    // (`FrameworkDrillChecks`), which checks ACKNOWLEDGE-then-bridge ordering for
+    // a two-sided argument. This checks the one-sided spine — claim, why, so-what
+    // — which is the thing a coach asks for on an unstructured impromptu answer.
+    //
+    // Conservative by construction: lexical-marker association, never causation,
+    // and `nil` below the content-word floor (no confident "no argument" on a
+    // fragment). Marker presence is necessary but not sufficient for a real
+    // argument — so the strongest verdict the read ever asserts is "the shape of
+    // an argument is present", framed as a hypothesis everywhere it surfaces.
+
+    /// Minimum distinct content words (post `relevanceContentWords` stop-filter)
+    /// before any argument-structure verdict is asserted. Below this the rep is
+    /// too thin to claim a missing reasoning chain — the read returns `nil`
+    /// (tentative, never punitive). Matches the spirit of the framework-drill
+    /// floor (`FrameworkDrillChecks.minContentWordsForVerdict`) so "too thin to
+    /// judge structure" is one bar across the structural reads.
+    static let minContentWordsForArgument: Int = 6
+
+    /// EVIDENCE markers — the speaker justifies WHY the claim is true (backward
+    /// support). Deliberately scoped to JUSTIFICATION, not consequence: this band
+    /// answers "why should I believe this." Multi-word phrases are listed so they
+    /// match as whole runs. Distinct from `StyleSignalSnapshot.persuasiveScore`'s
+    /// band (which mixes justification and consequence into one persuasion score)
+    /// — here evidence and implication are split so the chain can be read as a
+    /// chain. Note `because` is in `relevanceContentWords`'s stop set (so it
+    /// never inflates the content-word floor) but still matches here as a
+    /// discourse marker; marker matching is independent of the content-word count.
+    static let argumentEvidenceMarkers: [String] = [
+        "because", "since", "the reason", "the reason is", "reason being",
+        "due to", "given that", "the data", "the evidence", "research shows",
+        "studies show", "for example", "for instance", "based on", "in fact"
+    ]
+
+    /// IMPLICATION / consequence markers — the speaker carries the claim FORWARD
+    /// to what follows from it (the "so what"). Deliberately scoped to
+    /// CONSEQUENCE, not justification: this band answers "so what does this
+    /// mean." Distinct from the evidence band above so a rep with only a "why"
+    /// and a rep with only a "so what" land in different verdicts. Whole-run
+    /// matched.
+    static let argumentImplicationMarkers: [String] = [
+        "which means", "so that", "therefore", "as a result", "the result is",
+        "that leads to", "which is why", "so we should", "the takeaway",
+        "the upshot", "this means", "that means", "in turn", "consequently",
+        "the implication", "what this means"
+    ]
+
+    /// The internal-logic read of an answer's claim->evidence->implication chain.
+    /// Pure, transcript-only.
+    struct ArgumentStructureRead: Equatable {
+        /// True once the lead sentence carries at least one content word — the
+        /// answer actually opens on a claim rather than a pure hedge. Uses the
+        /// SAME `relevanceFirstSentence` lead span the positional BLUF read uses
+        /// (single source of truth for "the lead").
+        let hasClaim: Bool
+        /// True when a backward-justification marker is present anywhere.
+        let hasEvidence: Bool
+        /// True when a forward-consequence marker is present anywhere.
+        let hasImplication: Bool
+        /// True once the content-word floor is met. When false the read is
+        /// tentative and the verdict mapping returns `nil` (no confident
+        /// "no argument" on thin evidence).
+        let evidenceFloorMet: Bool
+    }
+
+    /// The shared argument-logic verdict — a HYPOTHESIS about the rep's internal
+    /// reasoning shape, never a claim that the argument is correct. Distinct from
+    /// `PromptAnswerVerdict` by construction (that reads prompt relevance; this
+    /// reads the rep's own claim/evidence/implication markers).
+    enum ArgumentLogicVerdict: Equatable {
+        /// Claim + evidence + implication all present: the shape of a complete
+        /// argument (point, why, so-what). Lexical association, never proof the
+        /// reasoning is sound.
+        case fullChain
+        /// A claim plus EXACTLY ONE of evidence or implication — supported or
+        /// carried forward, but not both. A partial spine.
+        case claimWithSupport
+        /// A claim with neither a justification nor a consequence marker — the
+        /// point was asserted but never backed or carried forward. Constructive,
+        /// never a verdict on correctness, never a confident negative below the
+        /// floor (that path returns `nil`).
+        case assertionOnly
+    }
+
+    /// Pure. Reads the claim->evidence->implication scaffold of `transcript`.
+    /// Marker scanning uses the SAME normalisation discipline as the framework
+    /// detectors (whole-run, word-boundary aware) via a local padded-string scan,
+    /// so "but" never matches inside "contribute" and a trailing comma never
+    /// hides a marker. Below the content-word floor every structural flag is
+    /// reported but `evidenceFloorMet` is false, and the verdict mapping returns
+    /// `nil`.
+    static func argumentStructure(transcript: String) -> ArgumentStructureRead {
+        let contentCount = relevanceContentWords(in: transcript).count
+        let floorMet = contentCount >= minContentWordsForArgument
+        let lead = relevanceFirstSentence(in: transcript)
+        let hasClaim = !relevanceContentWords(in: lead).isEmpty
+        let padded = argumentNormalisedPadded(transcript)
+        let hasEvidence = argumentContains(any: argumentEvidenceMarkers, in: padded)
+        let hasImplication = argumentContains(any: argumentImplicationMarkers, in: padded)
+        return ArgumentStructureRead(
+            hasClaim: hasClaim,
+            hasEvidence: hasEvidence,
+            hasImplication: hasImplication,
+            evidenceFloorMet: floorMet
+        )
+    }
+
+    /// Pure. Maps an `ArgumentStructureRead` onto the shared argument-logic
+    /// verdict. Returns `nil` below the evidence floor — no verdict on thin
+    /// evidence — and `nil` when the lead carries no claim at all (there is no
+    /// argument spine to grade if nothing was even asserted). Order:
+    /// 1. claim + evidence + implication -> `.fullChain`.
+    /// 2. claim + (evidence XOR implication) -> `.claimWithSupport`.
+    /// 3. claim alone -> `.assertionOnly`.
+    static func argumentLogicVerdict(for read: ArgumentStructureRead) -> ArgumentLogicVerdict? {
+        guard read.evidenceFloorMet, read.hasClaim else { return nil }
+        if read.hasEvidence && read.hasImplication { return .fullChain }
+        if read.hasEvidence != read.hasImplication { return .claimWithSupport }
+        return .assertionOnly
+    }
+
+    // MARK: - Concision of meaning (meaning-density + answer-arrival)
+    //
+    // A deterministic "how much meaning per word, and how soon did it arrive"
+    // read. DISTINCT from raw `wordCount` (length) and from
+    // `StyleSignalSnapshot.uniqueWordRatio` (lexical DIVERSITY — how many
+    // *different* words). A rep can be long and word-diverse yet meaning-thin
+    // (varied function words, slow arrival); this measures SUBSTANCE density:
+    // the fraction of tokens that are content words, combined with how early the
+    // point landed (the answer-arrival signal, reused from the positional BLUF
+    // read so the two surfaces share one notion of "the lead").
+    //
+    // Conservative: `nil` below the transcript floor, no confident "padded"
+    // on a fragment. Lexical association, never a verdict on whether the content
+    // itself was good.
+
+    /// Below this many tokens the transcript is too short to read meaning
+    /// density honestly (a five-word reply is not "padded"). Reuses the same raw
+    /// floor as the relevance read (`minTranscriptWordsForRelevance`, 12 words)
+    /// so "too thin to judge" is one bar.
+    static let minWordsForMeaningDensity: Int = minTranscriptWordsForRelevance
+    /// >= this content-word fraction reads as point-packed ("dense"). Hand-traced
+    /// against the real `relevanceContentWords` stop set + `wordCount` tokenizer:
+    /// natural conversational speech carrying real substance clears this; a
+    /// hedge-and-filler answer ("well you know I think maybe…") falls below it.
+    static let meaningDensityHighFraction: Double = 0.50
+    /// < this content-word fraction reads as padded — many words, little meaning
+    /// per word. Never below this is a confident negative; it only ever softens
+    /// to the constructive "took a while to land" nudge.
+    static let meaningDensityLowFraction: Double = 0.35
+
+    /// The meaning-density / answer-arrival read. Pure.
+    struct MeaningDensityRead: Equatable {
+        /// 0...1 fraction of tokens that are content words
+        /// (`relevanceContentWords.count / wordCount`). The substance-density
+        /// signal. 0 when the transcript has no tokens.
+        let contentWordFraction: Double
+        /// Total tokens considered (`wordCount(in:)`).
+        let totalWords: Int
+        /// Whether the answer ARRIVED early — the lead sentence carried the
+        /// point. Nil when there is no prompt to judge arrival against (a
+        /// nil/thin-prompt rep still gets a density read, just no arrival term).
+        /// Reused from the positional BLUF read so "arrived early" means the
+        /// SAME thing here as in `promptAnswerVerdict`.
+        let answerArrivedEarly: Bool?
+        /// True once the token floor is met. False -> verdict mapping returns
+        /// `nil`.
+        let evidenceFloorMet: Bool
+    }
+
+    /// The shared concision-of-meaning verdict — a HYPOTHESIS about substance
+    /// density, never a claim the content was good. Distinct from raw word count
+    /// and from lexical diversity by construction.
+    enum ConcisionOfMeaningVerdict: Equatable {
+        /// High content-word fraction AND (when a prompt is present) the point
+        /// arrived in the lead — meaning-dense and front-loaded.
+        case dense
+        /// A middling content-word fraction — some substance, some padding.
+        /// Also the band a high-density-but-late-arrival rep lands in, so a
+        /// front-loading nudge can apply without overclaiming the answer was thin.
+        case measured
+        /// Low content-word fraction — many words, little meaning per word.
+        /// Constructive "tighten it" nudge, never a confident negative (that
+        /// path returns `nil` below the floor).
+        case padded
+    }
+
+    /// Pure. Reads meaning density (content-word fraction) and answer arrival
+    /// for `transcript`, taking the already-computed `PromptRelevanceRead` so the
+    /// arrival signal is single-sourced with the positional BLUF read rather than
+    /// re-derived. Below the token floor `evidenceFloorMet` is false and the
+    /// verdict mapping returns `nil`.
+    static func meaningDensity(transcript: String, relevance: PromptRelevanceRead) -> MeaningDensityRead {
+        let totalWords = wordCount(in: transcript)
+        let contentCount = relevanceContentWords(in: transcript).count
+        let fraction = totalWords > 0 ? Double(contentCount) / Double(totalWords) : 0
+        // Answer arrival only when the relevance read itself cleared its floor
+        // (there is a real prompt to judge "did the point lead" against).
+        let arrived: Bool? = relevance.evidenceFloorMet
+            ? relevance.firstSentenceOverlap >= relevanceStrongOverlap
+            : nil
+        return MeaningDensityRead(
+            contentWordFraction: fraction,
+            totalWords: totalWords,
+            answerArrivedEarly: arrived,
+            evidenceFloorMet: totalWords >= minWordsForMeaningDensity
+        )
+    }
+
+    /// Pure. Maps a `MeaningDensityRead` onto the concision-of-meaning verdict.
+    /// Returns `nil` below the token floor. Order:
+    /// 1. `< meaningDensityLowFraction` -> `.padded` (meaning-thin).
+    /// 2. `>= meaningDensityHighFraction` AND the point arrived early (or no
+    ///    prompt to judge arrival) -> `.dense`.
+    /// 3. everything else (mid fraction, or dense-but-late arrival) -> `.measured`.
+    static func concisionOfMeaningVerdict(for read: MeaningDensityRead) -> ConcisionOfMeaningVerdict? {
+        guard read.evidenceFloorMet else { return nil }
+        if read.contentWordFraction < meaningDensityLowFraction { return .padded }
+        if read.contentWordFraction >= meaningDensityHighFraction {
+            // Dense — but only call it front-loaded when arrival is unknown
+            // (no prompt) or genuinely early. A dense-but-late rep is `.measured`
+            // so the nudge can still say "lead with it" without claiming thinness.
+            if read.answerArrivedEarly ?? true { return .dense }
+            return .measured
+        }
+        return .measured
+    }
+
+    /// Whole-run, word-boundary-aware substring check over a pre-padded,
+    /// normalised string. Mirrors `FrameworkDrillChecks.contains(any:in:)` but
+    /// kept local to `PracticeEvaluator` so the argument-logic read does not
+    /// depend on a sibling enum's private helpers (single-file ownership of its
+    /// own marker scan). Pure.
+    private static func argumentContains(any phrases: [String], in padded: String) -> Bool {
+        for phrase in phrases where padded.contains(" \(phrase) ") { return true }
+        return false
+    }
+
+    /// Lowercased, punctuation-folded, space-padded transcript for whole-run
+    /// marker scanning. Every non-letter/number/apostrophe maps to a space, runs
+    /// of whitespace collapse, the curly apostrophe folds onto the straight one,
+    /// and the result is wrapped in leading/trailing spaces so the first and last
+    /// tokens are matchable as whole runs. Same discipline as
+    /// `FrameworkDrillChecks.normalised`, kept local. Pure.
+    private static func argumentNormalisedPadded(_ text: String) -> String {
+        let folded = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        let scrubbed = String(folded.map { ch -> Character in
+            (ch.isLetter || ch.isNumber || ch == "'") ? ch : " "
+        })
+        let collapsed = scrubbed
+            .split(whereSeparator: { $0 == " " })
+            .joined(separator: " ")
+        return " \(collapsed) "
+    }
+
     private static func timedModeInsights(
         fillerCount: Int,
         duration: TimeInterval,
         wordCount: Int,
         wordsPerMinute: Double,
         trends: TrendSnapshot,
-        paceSnapshot: PaceSnapshot
+        paceSnapshot: PaceSnapshot,
+        transcript: String,
+        relevance: PromptRelevanceRead
     ) -> [String] {
         var insights = sharedTrendInsights(trends: trends)
         if wordCount < 8 || duration < 8 {
@@ -4577,7 +6166,71 @@ enum PracticeEvaluator {
         if fillerCount > 4 {
             insights.append("Too much processing is happening out loud. Replace the next filler with a short pause.")
         }
+        // Argument-logic read — claim -> evidence -> implication scaffold. A
+        // deterministic structural HYPOTHESIS about the rep's own reasoning
+        // shape, distinct from the prompt-relevance read (topic) and from the
+        // pace/filler signals. Adds NOTHING below the content-word floor (the
+        // verdict is nil there), so a thin rep is byte-identical to today.
+        if let argumentLine = argumentLogicInsight(transcript: transcript) {
+            insights.append(argumentLine)
+        }
+        // Concision-of-meaning read — content-word density + answer arrival.
+        // Distinct from raw word count and from lexical diversity. Adds nothing
+        // below the token floor (verdict nil there).
+        if let densityLine = meaningDensityInsight(transcript: transcript, relevance: relevance) {
+            insights.append(densityLine)
+        }
         return insights
+    }
+
+    /// Deterministic argument-logic insight line, or `nil` below the floor /
+    /// when no claim was even asserted. Coaching copy only — never a score, never
+    /// a confident negative. Every line is framed as a HYPOTHESIS about the
+    /// reasoning shape, association on the rep's own discourse markers.
+    private static func argumentLogicInsight(transcript: String) -> String? {
+        let read = argumentStructure(transcript: transcript)
+        guard let verdict = argumentLogicVerdict(for: read) else { return nil }
+        switch verdict {
+        case .fullChain:
+            return "Your point, your reason, and what it means all landed — that's the shape of a complete argument. Keep building answers on that spine."
+        case .claimWithSupport:
+            if read.hasEvidence {
+                return "You made a point and backed it, but did not carry it forward. Add one line on what it means before you close."
+            } else {
+                return "You stated a point and where it leads, but not why. One reason — \"because…\" — would make the argument hold."
+            }
+        case .assertionOnly:
+            return "You led with a clear point but did not back it. Try claim, then reason, then what it means — even one of each gives the answer a backbone."
+        }
+    }
+
+    /// Deterministic concision-of-meaning insight line, or `nil` below the floor.
+    /// Coaching copy only. The "padded" band only ever softens to a constructive
+    /// "tighten it" nudge — never a confident negative on the content itself.
+    private static func meaningDensityInsight(transcript: String, relevance: PromptRelevanceRead) -> String? {
+        let read = meaningDensity(transcript: transcript, relevance: relevance)
+        guard let verdict = concisionOfMeaningVerdict(for: read) else { return nil }
+        switch verdict {
+        case .dense:
+            // Only claim "arrived early" when a prompt was present to judge
+            // arrival against (answerArrivedEarly == true). With no prompt the
+            // arrival is unknown, so praise density without the unfounded
+            // positional claim — never overclaim from absent evidence.
+            if read.answerArrivedEarly == true {
+                return "High signal — most of your words carried meaning and the point arrived early. That density is hard to do under pressure."
+            }
+            return "High signal — most of your words carried real meaning, very little padding. That density is hard to do under pressure."
+        case .measured:
+            // Distinguish "the point was there but late" from a plain mid read,
+            // using the single-sourced arrival signal — only when a prompt was
+            // present to judge arrival against.
+            if read.answerArrivedEarly == false {
+                return "There was real substance here, but the point took a while to arrive. Lead with it and the same content lands faster."
+            }
+            return "A reasonable balance of substance and connective words. To sharpen it, cut one qualifier and let the point stand."
+        case .padded:
+            return "A lot of words carried little of the meaning. Say the same point in fewer words and it will land with more weight."
+        }
     }
 
     static func paceSnapshot(forTranscript transcript: String, duration: TimeInterval) -> PaceSnapshot {
@@ -4593,14 +6246,87 @@ enum PracticeEvaluator {
         duration > 0 ? (Double(wordCount) / duration) * 60.0 : 0
     }
 
+    /// Test hook — exposes the private `paceScore` for honest-assessment
+    /// regression tests. Internal-visibility only; production callers go
+    /// through the full evaluation pipeline.
+    static func paceScoreForTesting(wpm: Double, wordCount: Int) -> Double {
+        paceScore(for: wpm, wordCount: wordCount)
+    }
+
+    /// Test hook — exposes the private `paceSnapshot` for label
+    /// regression tests after the M14 calibration fix.
+    static func paceSnapshotForTesting(wpm: Double, wordCount: Int) -> PaceSnapshot {
+        paceSnapshot(for: wpm, wordCount: wordCount)
+    }
+
+    /// Test hook — exposes the private `buildFeedbackCategories` so the
+    /// prompt-grounded relevance override + contentProgress back-compat can
+    /// be pinned directly (the 7-dimension card is otherwise only reachable
+    /// through the full `evaluateTimedPractice` pipeline).
+    static func buildFeedbackCategoriesForTesting(
+        wordCount: Int, duration: TimeInterval, fillerCount: Int,
+        wordsPerMinute: Double, durationProgress: Double, contentProgress: Double,
+        paceProgress: Double, transcript: String, relevanceProgress: Double? = nil
+    ) -> [FeedbackCategory] {
+        buildFeedbackCategories(
+            wordCount: wordCount, duration: duration, fillerCount: fillerCount,
+            wordsPerMinute: wordsPerMinute, durationProgress: durationProgress,
+            contentProgress: contentProgress, paceProgress: paceProgress,
+            transcript: transcript, relevanceProgress: relevanceProgress
+        )
+    }
+
+    /// Test hook — exposes the private `timedModeInsights` builder UNCAPPED (the
+    /// production `evaluateTimedPractice` path applies `.prefix(3)` after
+    /// appending the style insights, which would hide the later argument-logic /
+    /// concision lines behind the cap in a full-pipeline assertion). Lets the
+    /// argument-logic + concision-of-meaning consumer lines be pinned directly:
+    /// they surface above the floor and are absent below it. Internal-visibility
+    /// only; production callers go through the full evaluation pipeline.
+    static func timedModeInsightsForTesting(
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordCount: Int,
+        wordsPerMinute: Double,
+        recentSessions: [PracticeSession],
+        transcript: String,
+        prompt: String?
+    ) -> [String] {
+        let trends = trendSnapshot(
+            fillerCount: fillerCount,
+            duration: duration,
+            recentSessions: recentSessions
+        )
+        let snapshot = paceSnapshot(for: wordsPerMinute, wordCount: wordCount)
+        let relevance = promptRelevance(prompt: prompt, transcript: transcript)
+        return timedModeInsights(
+            fillerCount: fillerCount,
+            duration: duration,
+            wordCount: wordCount,
+            wordsPerMinute: wordsPerMinute,
+            trends: trends,
+            paceSnapshot: snapshot,
+            transcript: transcript,
+            relevance: relevance
+        )
+    }
+
+    /// Pace scoring bands recalibrated for honest assessment — typical
+    /// confident conversational speech is 130–160 WPM, and anything under
+    /// 100 WPM is genuinely halting/disfluent rather than "controlled and
+    /// calm." Old bands (70–95 WPM = 0.72 "Measured") were too generous.
+    /// Now: only 130–160 WPM gets full credit; 100–130 is acceptable;
+    /// below 100 is honestly poor; above 175 is rushed.
     private static func paceScore(for wordsPerMinute: Double, wordCount: Int) -> Double {
         guard wordCount >= 6 else { return 0.15 }
         switch wordsPerMinute {
-        case ..<70: return 0.35
-        case 70..<95: return 0.72
-        case 95..<145: return 1.0
-        case 145..<170: return 0.72
-        default: return 0.35
+        case ..<70:           return 0.10  // halting, often disfluent
+        case 70..<100:        return 0.35  // slow, hesitant
+        case 100..<130:       return 0.70  // deliberate but acceptable
+        case 130..<160:       return 1.00  // target — confident conversational
+        case 160..<180:       return 0.78  // edges fast
+        case 180..<200:       return 0.50  // rushed
+        default:              return 0.25  // unintelligibly fast
         }
     }
 
@@ -4616,15 +6342,19 @@ enum PracticeEvaluator {
 
         switch wordsPerMinute {
         case ..<70:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Too slow", coachNote: "Your pace is very measured. Bring a little more forward energy so the answer feels more alive.")
-        case 70..<95:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Measured", coachNote: "Your pace is controlled and calm. Keep that composure while sharpening the structure.")
-        case 95..<145:
-            return PaceSnapshot(wordsPerMinute: rounded, label: "Strong", coachNote: "Your pace is in a strong range for clear, confident speech.")
-        case 145..<170:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Halting", coachNote: "Your pace was below 70 WPM — that's slow enough to feel disfluent to a listener. Aim for 130–160 WPM with deliberate pauses, not pauses inside sentences.")
+        case 70..<100:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Hesitant", coachNote: "Your pace is well below conversational speed. Push the engine harder — start the next answer with the strongest opening line you have, then let momentum carry you.")
+        case 100..<130:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Deliberate", coachNote: "Your pace is steady but slower than a confident conversational rhythm. Lean a touch faster on the connective material; reserve slowness for the points that need weight.")
+        case 130..<160:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Confident", coachNote: "Your pace is in the target range for clear, confident speech.")
+        case 160..<180:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Quick", coachNote: "Your pace is edging fast. Create a little more space between points so authority can come through.")
-        default:
+        case 180..<200:
             return PaceSnapshot(wordsPerMinute: rounded, label: "Rushed", coachNote: "Your pace is rushing the message. Slow the opening and finish each sentence before moving on.")
+        default:
+            return PaceSnapshot(wordsPerMinute: rounded, label: "Sprinting", coachNote: "Above 200 WPM is hard for any listener to keep up with. Cut the pace by ~30% and the same content will land with twice the authority.")
         }
     }
 
@@ -4756,6 +6486,85 @@ enum PracticeEvaluator {
         case 0.9...: return "Aligned"
         case 0.55..<0.9: return "Building"
         default: return "Off target"
+        }
+    }
+
+    // MARK: - Goal-aware delivery bonus
+    //
+    // Closes the last M14 verdict-loop edge documented in `docs/VISION.md`:
+    // every line of coaching copy already speaks the user's chosen voice
+    // (`enrichMomentumWithStyleAlignment`, `enrichLeverageWithStyleAlignment`,
+    // `enrichNextStepWithStyleAlignment`, `drillRationale`), but the 0–10
+    // score itself was voice-blind. This helper adds a small bonus to the
+    // raw score when the *delivery profile* — fillers, pace, duration,
+    // word count — matches what the user's chosen voice asks for. The
+    // existing `styleAlignment * 1.0` slot reads *word choice*; this
+    // reads *delivery*. They're orthogonal signals.
+    //
+    // Restraint contract (matches the copy enrichments):
+    //   • Returns 0 when there's no profile / no goal.
+    //   • Returns 0 when the delivery does not fit the voice — no penalty,
+    //     because the existing dimension weights already penalise misses
+    //     and a second penalty would double-hit the user.
+    //   • Caps at 0.6 raw, so the bonus rounds the final 0/10 up by at most
+    //     1 point on a borderline case. No mid-stream shock.
+    //   • Mirrors `SpeakingStyleGoal.alignedSkillAreas` so the score uplift
+    //     lands on the same dimensions the drill picker / verdict copy
+    //     already lean on — score, copy, and drill stay in agreement.
+    //
+    // Voice deltas (each measured against the criteria the corresponding
+    // `alignedSkillAreas` set already names):
+    //   .concise        → tight delivery: few fillers, restrained pace, short answer with real content
+    //   .warm           → natural pace, content depth (conversational lift, not breakneck)
+    //   .authoritative  → composed delivery: zero fillers, room to land the message
+    //   .persuasive     → developed content + sustained duration (reason-stack room)
+    //   .executive      → composed clarity: zero fillers + controlled pace
+    //   .storytelling   → long-form: room for arc + scene
+    //
+    // Each delta uses a 0.3 / 0.2 split (cap 0.5–0.6). The two halves are
+    // independent — a partial match (one condition out of two) still earns
+    // half the bonus, so the signal degrades gracefully instead of going
+    // binary.
+    static func voiceDeliveryBonus(
+        profile: CoachingProfile?,
+        wordCount: Int,
+        duration: TimeInterval,
+        fillerCount: Int,
+        wordsPerMinute: Double
+    ) -> Double {
+        guard let profile, wordCount >= 8, duration >= 8 else { return 0 }
+        switch profile.speakingStyleGoal {
+        case .concise:
+            var bonus = 0.0
+            if fillerCount <= 1 { bonus += 0.2 }
+            if duration <= 35 && wordCount >= 15 { bonus += 0.2 }
+            if wordsPerMinute >= 110 && wordsPerMinute <= 145 { bonus += 0.2 }
+            return min(bonus, 0.6)
+        case .warm:
+            var bonus = 0.0
+            if wordsPerMinute >= 125 && wordsPerMinute <= 155 { bonus += 0.3 }
+            if wordCount >= 30 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .authoritative:
+            var bonus = 0.0
+            if fillerCount == 0 { bonus += 0.3 }
+            if duration >= 25 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .persuasive:
+            var bonus = 0.0
+            if wordCount >= 40 { bonus += 0.3 }
+            if duration >= 30 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .executive:
+            var bonus = 0.0
+            if fillerCount == 0 { bonus += 0.3 }
+            if wordsPerMinute >= 115 && wordsPerMinute <= 150 { bonus += 0.2 }
+            return min(bonus, 0.5)
+        case .storytelling:
+            var bonus = 0.0
+            if duration >= 35 { bonus += 0.3 }
+            if wordCount >= 50 { bonus += 0.2 }
+            return min(bonus, 0.5)
         }
     }
 
@@ -4951,6 +6760,49 @@ extension PracticeSession {
         guard duration > 0 else { return 0 }
         return Int((Double(wordCount) / duration * 60).rounded())
     }
+
+    // MARK: - Streak Calculation
+
+    /// Calculates the current practice streak from a list of sessions.
+    ///
+    /// A streak counts consecutive days with at least one session, starting from
+    /// today and walking backward. A **one-day grace period** allows a single
+    /// missed day inside the streak without breaking it (two consecutive missed
+    /// days end the streak).
+    static func calculateStreak(from sessions: [PracticeSession]) -> Int {
+        let calendar = Calendar.current
+        let uniqueDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        guard !uniqueDays.isEmpty else { return 0 }
+
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        var gracePeriodUsed = false
+
+        // Check if today has a session; if not, start from yesterday
+        if !uniqueDays.contains(cursor) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor) else { return 0 }
+            // If yesterday also doesn't have a session, streak is 0
+            guard uniqueDays.contains(yesterday) else { return 0 }
+            cursor = yesterday
+        }
+
+        while true {
+            if uniqueDays.contains(cursor) {
+                streak += 1
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                cursor = previousDay
+            } else if !gracePeriodUsed {
+                // One grace day — skip this day but keep counting
+                gracePeriodUsed = true
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                cursor = previousDay
+            } else {
+                break
+            }
+        }
+
+        return streak
+    }
 }
 
 struct PracticeSessionDraft {
@@ -4960,6 +6812,24 @@ struct PracticeSessionDraft {
     let date: Date
     let mode: PracticeMode
     let imDetails: IMConversationDetails?
+    let transcriptConfidence: Double?
+    let transcriptionProvider: String?
+    let pressureLevel: PressureLevel
+    let isRated: Bool
+    let pauseMetrics: PauseMetrics?
+    let pitchMetrics: PitchMetrics?
+    /// M21: the declared focus the user committed to before the rep,
+    /// when they tapped a chip in the SessionIntent prompt. Threaded
+    /// through `append(_:)` → `PracticeSession.intentFocus` so the
+    /// summary cards and Ask Noum can reference it.
+    let intentFocus: CoachingPriority?
+    let intentLabel: String?
+    /// M26: per-session vocal-energy aggregate. Optional default nil
+    /// so existing draft call sites compile unchanged; only the
+    /// `SpeechRecognizerViewModel.saveCurrentSession` path opts in by
+    /// passing the accumulator's finalized output. Other draft
+    /// builders (debug seeds, IM session synthesis) leave it nil.
+    let vocalEnergyMetrics: VocalEnergyMetrics?
 
     init(
         transcript: String,
@@ -4967,7 +6837,16 @@ struct PracticeSessionDraft {
         duration: TimeInterval,
         date: Date,
         mode: PracticeMode,
-        imDetails: IMConversationDetails? = nil
+        imDetails: IMConversationDetails? = nil,
+        transcriptConfidence: Double? = nil,
+        transcriptionProvider: String? = nil,
+        pressureLevel: PressureLevel = .standard,
+        isRated: Bool = false,
+        pauseMetrics: PauseMetrics? = nil,
+        pitchMetrics: PitchMetrics? = nil,
+        intentFocus: CoachingPriority? = nil,
+        intentLabel: String? = nil,
+        vocalEnergyMetrics: VocalEnergyMetrics? = nil
     ) {
         self.transcript = transcript
         self.fillerWordCount = fillerWordCount
@@ -4975,6 +6854,15 @@ struct PracticeSessionDraft {
         self.date = date
         self.mode = mode
         self.imDetails = imDetails
+        self.transcriptConfidence = transcriptConfidence
+        self.transcriptionProvider = transcriptionProvider
+        self.pressureLevel = pressureLevel
+        self.isRated = isRated
+        self.pauseMetrics = pauseMetrics
+        self.pitchMetrics = pitchMetrics
+        self.intentFocus = intentFocus
+        self.intentLabel = intentLabel
+        self.vocalEnergyMetrics = vocalEnergyMetrics
     }
 }
 
@@ -5024,6 +6912,8 @@ final class PracticeSessionStore: ObservableObject {
 
     func endSession() {
         sessions = []
+        // Also clear persisted data so old sessions don't reappear on reload
+        UserDefaults.standard.removeObject(forKey: Self.storageKey(for: currentAccountID))
     }
 
     @discardableResult
@@ -5034,7 +6924,16 @@ final class PracticeSessionStore: ObservableObject {
             duration: draft.duration,
             date: draft.date,
             mode: draft.mode,
-            imConversationDetails: draft.imDetails
+            imConversationDetails: draft.imDetails,
+            transcriptConfidence: draft.transcriptConfidence,
+            transcriptionProvider: draft.transcriptionProvider,
+            pressureLevel: draft.pressureLevel,
+            isRated: draft.isRated,
+            pauseMetrics: draft.pauseMetrics,
+            pitchMetrics: draft.pitchMetrics,
+            intentFocus: draft.intentFocus,
+            intentLabel: draft.intentLabel,
+            vocalEnergyMetrics: draft.vocalEnergyMetrics
         )
         sessions.insert(session, at: 0)
         persist()
@@ -5074,6 +6973,11 @@ final class PracticeSessionStore: ObservableObject {
         sessions[index].aiCoachFeedback = feedback
         persist()
         syncSessionIfPossible(sessions[index])
+    }
+
+    func deleteSession(id: UUID) {
+        sessions.removeAll { $0.id == id }
+        persist()
     }
 
     func replaceFromRemote(_ remoteSessions: [PracticeSession]) {
@@ -5117,6 +7021,52 @@ final class PracticeSessionStore: ObservableObject {
 }
 #endif
 
+// MARK: - Rank Helpers (shared across ContentView, ProfileView, SpeakingRankView)
+
+#if canImport(SwiftUI)
+import SwiftUI
+
+extension ProfileManager {
+    var rankSymbol: String {
+        let title = levelTitle
+        if title.contains("Beginner") { return "sparkles" }
+        if title.contains("Novice") { return "figure.stand" }
+        if title.contains("Average") { return "waveform.path.ecg" }
+        if title.contains("Professional") { return "shield.lefthalf.filled" }
+        return "crown.fill"
+    }
+
+    var rankTint: Color {
+        let title = levelTitle
+        if title.contains("Beginner") { return .blue }
+        if title.contains("Novice") { return .teal }
+        if title.contains("Average") { return .indigo }
+        if title.contains("Professional") { return .orange }
+        return .yellow
+    }
+
+    var rankDescriptor: String {
+        let title = levelTitle
+        if title.contains("Beginner") { return "Foundational tier" }
+        if title.contains("Novice") { return "Developing tier" }
+        if title.contains("Average") { return "Steady tier" }
+        if title.contains("Professional") { return "Advanced tier" }
+        return "Elite tier"
+    }
+
+    var rankTitle: String {
+        "Speaker \(max(1, (xp / 1000) + 1))"
+    }
+
+    var nextRankTitle: String {
+        "Next: Speaker \(max(2, (xp / 1000) + 2))"
+    }
+
+    var levelProgressLabel: String {
+        "\(Int((progressTowardsNextLevel * 100).rounded()))%"
+    }
+}
+#endif
 #if canImport(SwiftUI)
 struct RecommendationExposure: Codable, Equatable {
     let fingerprint: String
@@ -5133,13 +7083,391 @@ struct RecommendationOutcome: Codable, Equatable, Identifiable {
     let id: UUID
     let fingerprint: String
     let title: String
+    /// The coaching purpose shown when this mode was prescribed.
+    /// Optional so outcomes persisted before intervention-response
+    /// coaching continue to decode cleanly.
+    let focus: String?
+    let target: String?
     let mode: PracticeMode
     let sessionID: UUID
     let followed: Bool
     let completedAt: Date
     let scoreDelta: Double
+    /// True only when both this rep and earlier reps supplied scores.
+    /// Older outcomes decode as nil and are excluded from score claims.
+    let hasComparableScore: Bool?
     let fillerDelta: Double
     let durationDelta: Double
+}
+
+enum RecommendationResponseAssessment: Equatable {
+    case forming
+    case promising
+    case mixed
+    case needsAdjustment
+
+    var coachingGuidance: String {
+        switch self {
+        case .forming:
+            return "one observation only; treat it as tentative"
+        case .promising:
+            return "associated with improvement so far; continue and verify"
+        case .mixed:
+            return "results are mixed; diagnose before simply repeating it"
+        case .needsAdjustment:
+            return "associated with worse results so far; adapt before repeating it"
+        }
+    }
+}
+
+struct RecommendationResponseSummary: Equatable {
+    let mode: PracticeMode
+    let focus: String?
+    let followedCount: Int
+    let averageScoreDelta: Double?
+    let averageFillerDelta: Double
+    let assessment: RecommendationResponseAssessment
+}
+
+/// Bounded interpretation of the modes Noum prescribed and the user
+/// actually attempted. This is association, not causal attribution:
+/// the user may have faced a harder prompt or a different pressure level.
+enum RecommendationResponseAnalyzer {
+    private struct GroupKey: Hashable {
+        let mode: PracticeMode
+        let focus: String?
+    }
+
+    static func summarize(
+        outcomes: [RecommendationOutcome],
+        limit: Int = 2
+    ) -> [RecommendationResponseSummary] {
+        guard limit > 0 else { return [] }
+        let recentFollowed = outcomes
+            .filter(\.followed)
+            .sorted { $0.completedAt > $1.completedAt }
+            .prefix(12)
+
+        var grouped: [GroupKey: [RecommendationOutcome]] = [:]
+        for outcome in recentFollowed {
+            let focus = normalizedFocus(outcome.focus)
+            grouped[GroupKey(mode: outcome.mode, focus: focus), default: []].append(outcome)
+        }
+
+        return grouped.map { key, groupedOutcomes in
+            let averageFillerDelta = average(groupedOutcomes.map(\.fillerDelta))
+            let comparableScores = groupedOutcomes
+                .filter { $0.hasComparableScore == true }
+                .map(\.scoreDelta)
+            let averageScoreDelta = comparableScores.isEmpty ? nil : average(comparableScores)
+            return RecommendationResponseSummary(
+                mode: key.mode,
+                focus: key.focus,
+                followedCount: groupedOutcomes.count,
+                averageScoreDelta: averageScoreDelta,
+                averageFillerDelta: averageFillerDelta,
+                assessment: assessment(
+                    count: groupedOutcomes.count,
+                    averageScoreDelta: averageScoreDelta,
+                    averageFillerDelta: averageFillerDelta
+                )
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.followedCount != rhs.followedCount {
+                return lhs.followedCount > rhs.followedCount
+            }
+            return lhs.mode.displayLabel < rhs.mode.displayLabel
+        }
+        .prefix(limit)
+        .map { $0 }
+    }
+
+    static func promptLines(from outcomes: [RecommendationOutcome]) -> [String] {
+        summarize(outcomes: outcomes).map { summary in
+            let repNoun = summary.followedCount == 1 ? "rep" : "reps"
+            let focusClause = summary.focus.map { " for \($0)" } ?? ""
+            var metrics: [String] = []
+            if let scoreDelta = summary.averageScoreDelta {
+                metrics.append("score \(signed(scoreDelta))")
+            }
+            metrics.append("fillers \(signed(summary.averageFillerDelta))")
+            return "- \(summary.mode.displayLabel)\(focusClause), followed for \(summary.followedCount) \(repNoun): \(metrics.joined(separator: ", ")) vs preceding reps; \(summary.assessment.coachingGuidance)."
+        }
+    }
+
+    private static func assessment(
+        count: Int,
+        averageScoreDelta: Double?,
+        averageFillerDelta: Double
+    ) -> RecommendationResponseAssessment {
+        guard count >= 2 else { return .forming }
+        let scoreImproved = averageScoreDelta.map { $0 >= 0.5 } ?? false
+        let scoreWorsened = averageScoreDelta.map { $0 <= -0.5 } ?? false
+        let fillersImproved = averageFillerDelta <= -0.75
+        let fillersWorsened = averageFillerDelta >= 0.75
+
+        if (scoreImproved || fillersImproved), !scoreWorsened, !fillersWorsened {
+            return .promising
+        }
+        if (scoreWorsened || fillersWorsened), !scoreImproved, !fillersImproved {
+            return .needsAdjustment
+        }
+        return .mixed
+    }
+
+    private static func normalizedFocus(_ focus: String?) -> String? {
+        guard let trimmed = focus?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(80))
+    }
+
+    private static func average(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func signed(_ value: Double) -> String {
+        String(format: "%+.1f", value)
+    }
+}
+
+/// A decision — not just narration — over the outcome ledger for one
+/// `(mode, focus)` prescription: should the coach REINFORCE the current drill,
+/// VARY the approach, or REPLACE the mode? This is the general-loop analog of
+/// the IM tone-drill Adaptation read (`IMHistorySummary.toneDrillProgress` /
+/// `toneDrillResolved`).
+///
+/// Honesty contract (mirrors the IM loop):
+/// - Pure function of the stored outcomes; no `UserDefaults`, no main actor.
+/// - Association only: a mode "has / has not moved alongside your metric over N
+///   measurable reps" — never "this drill caused / failed".
+/// - Never a verdict below its evidence floor: vary/replace need ≥3 reps that
+///   recorded real movement; a confident replace needs ≥6 and a genuinely
+///   negative recent window. Thin evidence reinforces tentatively and stays
+///   silent in copy.
+struct RecommendationAdaptationVerdict: Equatable {
+    enum Action: String, Equatable { case reinforce, vary, replace }
+    enum Confidence: String, Equatable { case tentative, confident }
+    /// Raw direction of the recent-vs-earlier window on the net-read scale.
+    enum Trend: String, Equatable { case recovering, stalled, slipping }
+
+    let action: Action
+    let confidence: Confidence
+    /// Followed reps for the key in the recent window (the effort count).
+    let followedReps: Int
+    /// Subset of `followedReps` that recorded MEANINGFUL movement (the floor count).
+    let movementReps: Int
+    let improvedRate: Double      // favorable / movementReps, 0…1 (0 when none)
+    let unfavorableRate: Double   // unfavorable / movementReps
+    let trend: Trend
+    let mode: PracticeMode
+    let normalizedFocus: String?  // key evaluated; nil for the mode-only overload
+}
+
+/// Pure reducer that collapses the outcome ledger into a reinforce/vary/replace
+/// verdict. Mirrors `RecommendationResponseAnalyzer`'s shape (free enum of
+/// statics + named, test-asserted constants) so it stays unit-testable off the
+/// main actor without touching the store.
+enum RecommendationAdaptationAnalyzer {
+    // Evidence floors — counted in reps that recorded ACTUAL movement.
+    static let minMovementRepsToAdapt = 3        // mirror IMHistorySummary.toneDrillMinEvaluatedReps
+    static let minMovementRepsToReplace = 6      // confident-replace bar (selection-biasing > narration)
+    static let minTrendWindowForReplace = 3      // late window must be ≥3 reps before trend can authorise replace
+    static let minMovementRepsForTrendRescue = 4 // a recovering trend may rescue reinforce only at ≥4 (toneDrillProgress window floor)
+    static let recentWindowCap = 12              // mirror summarize() .prefix(12)
+    // Per-rep favorable/unfavorable magnitudes — the SHIPPED analyzer constants.
+    static let scoreSwing = 0.5                  // mirror assessment scoreImproved/Worsened
+    static let fillerSwing = 0.75                // mirror assessment fillersImproved/Worsened (polarity-inverted)
+    static let fillerMovementFloor = 0.375       // = fillerSwing * 0.5; below this, filler jitter is NOT movement
+    // Trend + rate thresholds.
+    static let netReadTrendThreshold = 0.5       // recovering/slipping vs stalled on the {-1,0,+1} net-read scale
+    static let favorableRateThreshold = 0.5
+    static let replaceUnfavorableRate = 0.6      // confident-replace bar ABOVE a coin-flip (anti-autocorrelation)
+    /// The late-window net-read MEAN must be at least this negative to confidently
+    /// replace. Keying replace on the recent *level* (not `trend == .slipping`)
+    /// is deliberate: the {-1,0,+1} quantization makes a uniformly-bad history
+    /// read as `stalled` (flat trend), so a slipping-only gate would never fire on
+    /// the clearest replace case. A negative late level catches both "all bad" and
+    /// "was good, now bad", while a mean-reversion bounce (… , 0, +1, +1) reads
+    /// positive here and correctly lands on `.vary`.
+    static let replaceRecentLevelCeiling = -0.5
+    static let stalenessDecayHorizon = 8         // a replaced mode unrevisited this long decays .replace -> .vary
+
+    /// Per-rep favorable/unfavorable/neutral read, polarity-correct and gated on
+    /// the fabricated-score honesty flag.
+    private enum Read: Int { case unfavorable = -1, neutral = 0, favorable = 1 }
+
+    private struct Resolved {
+        let verdict: RecommendationAdaptationVerdict
+        let belowFloor: Bool   // true when movementReps < minMovementRepsToAdapt
+    }
+
+    /// Verdict for one `(mode, focus)` prescription key.
+    static func adaptationVerdict(mode: PracticeMode, focus: String?, in outcomes: [RecommendationOutcome]) -> RecommendationAdaptationVerdict? {
+        resolve(mode: mode, focus: focus, matchFocus: true, in: outcomes)?.verdict
+    }
+
+    /// Mode-only verdict for the selection path (`NextActionInput` carries no
+    /// focus). Aggregates every focus under the mode, so it deliberately
+    /// UNDER-fires replace when a mode's focuses net out — the safe direction.
+    static func adaptationVerdict(mode: PracticeMode, in outcomes: [RecommendationOutcome]) -> RecommendationAdaptationVerdict? {
+        resolve(mode: mode, focus: nil, matchFocus: false, in: outcomes)?.verdict
+    }
+
+    /// One association-only rationale line for the INTERVENTION RESPONSE block.
+    /// `nil` on cold start OR below the movement floor (silence is the honest
+    /// output below the floor — never a placeholder).
+    static func adaptationRationale(mode: PracticeMode, focus: String?, in outcomes: [RecommendationOutcome]) -> String? {
+        guard let resolved = resolve(mode: mode, focus: focus, matchFocus: true, in: outcomes),
+              !resolved.belowFloor else { return nil }
+        return rationale(for: resolved.verdict)
+    }
+
+    private static func resolve(mode: PracticeMode, focus: String?, matchFocus: Bool, in outcomes: [RecommendationOutcome]) -> Resolved? {
+        let key = normalizedFocus(focus)
+        let scoped = outcomes.filter { outcome in
+            outcome.followed
+                && outcome.mode == mode
+                && (!matchFocus || normalizedFocus(outcome.focus) == key)
+        }
+        guard !scoped.isEmpty else { return nil }   // cold start
+
+        let window = scoped
+            .sorted { $0.completedAt > $1.completedAt }
+            .prefix(recentWindowCap)
+        let followedReps = window.count
+
+        // Movement gate — only reps that recorded MEANINGFUL movement count toward
+        // the floor (the evaluatedCount discipline), so trivial filler jitter can
+        // never inflate the sample toward the replace bar.
+        let movingNewestFirst = window.filter(hasMovement)
+        let movementReps = movingNewestFirst.count
+        let moving = Array(movingNewestFirst.reversed())   // oldest -> newest
+
+        let favorableCount = moving.filter { read(of: $0) == .favorable }.count
+        let unfavorableCount = moving.filter { read(of: $0) == .unfavorable }.count
+        let improvedRate = movementReps == 0 ? 0 : Double(favorableCount) / Double(movementReps)
+        let unfavorableRate = movementReps == 0 ? 0 : Double(unfavorableCount) / Double(movementReps)
+
+        // Disjoint-window trend over the net reads (oldest -> newest), mirroring
+        // toneDrillProgress: w = min(3, count/2) guarantees the two windows never
+        // overlap.
+        let netReads = moving.map { Double(read(of: $0).rawValue) }
+        let w = min(3, movementReps / 2)
+        var lateMean = 0.0
+        var trend: RecommendationAdaptationVerdict.Trend = .stalled
+        if w >= 1 {
+            let earlyMean = mean(Array(netReads.prefix(w)))
+            lateMean = mean(Array(netReads.suffix(w)))
+            let trendDelta = lateMean - earlyMean
+            if trendDelta >= netReadTrendThreshold { trend = .recovering }
+            else if trendDelta <= -netReadTrendThreshold { trend = .slipping }
+            else { trend = .stalled }
+        }
+
+        func make(_ action: RecommendationAdaptationVerdict.Action, _ confidence: RecommendationAdaptationVerdict.Confidence) -> RecommendationAdaptationVerdict {
+            RecommendationAdaptationVerdict(
+                action: action,
+                confidence: confidence,
+                followedReps: followedReps,
+                movementReps: movementReps,
+                improvedRate: improvedRate,
+                unfavorableRate: unfavorableRate,
+                trend: trend,
+                mode: mode,
+                normalizedFocus: matchFocus ? key : nil
+            )
+        }
+
+        // Thin evidence — never vary/replace; reinforce tentatively, omit rationale.
+        if movementReps < minMovementRepsToAdapt {
+            return Resolved(verdict: make(.reinforce, .tentative), belowFloor: true)
+        }
+
+        let confidentEvidence = movementReps >= minMovementRepsToReplace
+
+        // (a) Sticky reinforce — a high lifetime favorable rate keeps reinforce even
+        //     on a small dip (anti-fickle), BUT never reinforce a drill whose recent
+        //     window is clearly negative.
+        let recovers = movementReps >= minMovementRepsForTrendRescue && trend == .recovering
+        let recentlyNegative = trend == .slipping && lateMean < 0
+        if (improvedRate >= favorableRateThreshold || recovers) && !recentlyNegative {
+            return Resolved(verdict: make(.reinforce, confidentEvidence ? .confident : .tentative), belowFloor: false)
+        }
+
+        // (b) Confident replace — autocorrelation-hardened. Requires a genuinely
+        //     negative RECENT window (lateMean), not merely a flat ledger of
+        //     minus-running-mean deltas, plus an above-coin-flip unfavorable rate.
+        if confidentEvidence
+            && w >= minTrendWindowForReplace
+            && unfavorableRate >= replaceUnfavorableRate
+            && improvedRate < 0.34
+            && lateMean <= replaceRecentLevelCeiling {
+            // (c) Staleness-decay / latch escape-hatch — a replaced mode stops being
+            //     handed out, so its window freezes; if the user has not revisited it
+            //     within the last `stalenessDecayHorizon` followed reps across ALL
+            //     keys, decay to .vary so the engine re-offers it and fresh evidence
+            //     can re-decide.
+            if isStale(newestMovingDate: movingNewestFirst.first?.completedAt, in: outcomes) {
+                return Resolved(verdict: make(.vary, .tentative), belowFloor: false)
+            }
+            return Resolved(verdict: make(.replace, .confident), belowFloor: false)
+        }
+
+        // (d) Everything else above the floor — vary, tentative (inert in selection).
+        return Resolved(verdict: make(.vary, .tentative), belowFloor: false)
+    }
+
+    private static func hasMovement(_ outcome: RecommendationOutcome) -> Bool {
+        outcome.hasComparableScore == true || abs(outcome.fillerDelta) >= fillerMovementFloor
+    }
+
+    private static func read(of outcome: RecommendationOutcome) -> Read {
+        let scoreFavorable = outcome.hasComparableScore == true && outcome.scoreDelta >= scoreSwing
+        let scoreUnfavorable = outcome.hasComparableScore == true && outcome.scoreDelta <= -scoreSwing
+        let fillerFavorable = outcome.fillerDelta <= -fillerSwing   // negative filler delta = improvement
+        let fillerUnfavorable = outcome.fillerDelta >= fillerSwing
+        let favorable = scoreFavorable || fillerFavorable
+        let unfavorable = scoreUnfavorable || fillerUnfavorable
+        if favorable && !unfavorable { return .favorable }
+        if unfavorable && !favorable { return .unfavorable }
+        return .neutral
+    }
+
+    private static func isStale(newestMovingDate: Date?, in outcomes: [RecommendationOutcome]) -> Bool {
+        guard let newestMovingDate else { return false }
+        let followedDates = outcomes.filter(\.followed).map(\.completedAt).sorted(by: >)
+        guard followedDates.count >= stalenessDecayHorizon else { return false }
+        let boundary = followedDates[stalenessDecayHorizon - 1]
+        return newestMovingDate < boundary
+    }
+
+    private static func rationale(for verdict: RecommendationAdaptationVerdict) -> String {
+        let n = verdict.movementReps
+        let repNoun = n == 1 ? "measurable rep" : "measurable reps"
+        let label = verdict.mode.displayLabel
+        let focusClause = verdict.normalizedFocus.map { " for \($0)" } ?? ""
+        switch verdict.action {
+        case .reinforce:
+            return "- \(label)\(focusClause) has moved alongside your metric across your last \(n) \(repNoun) — keep it."
+        case .vary:
+            return "- \(label)\(focusClause) has not moved alongside your metric over your last \(n) \(repNoun); worth varying the approach, not abandoning it yet."
+        case .replace:
+            return "- Across \(n) \(repNoun), your metric has trended down alongside \(label)\(focusClause) — time to swap it for a different angle."
+        }
+    }
+
+    private static func normalizedFocus(_ focus: String?) -> String? {
+        guard let trimmed = focus?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(80))
+    }
+
+    private static func mean(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
+    }
 }
 
 @MainActor
@@ -5209,9 +7537,12 @@ final class RecommendationLearningStore: ObservableObject {
         guard let pendingExposure else { return }
 
         let relevantHistory = previousSessions.isEmpty ? PracticeSessionStore.shared.sessions.filter { $0.id != session.id } : previousSessions
-        let averageScore = relevantHistory.compactMap(\.score).isEmpty
-            ? Double(session.score ?? 0)
-            : Double(relevantHistory.compactMap(\.score).reduce(0, +)) / Double(relevantHistory.compactMap(\.score).count)
+        let priorScores = relevantHistory.compactMap(\.score)
+        let comparableScoreDelta: Double? = {
+            guard let score = session.score, !priorScores.isEmpty else { return nil }
+            let averageScore = Double(priorScores.reduce(0, +)) / Double(priorScores.count)
+            return Double(score) - averageScore
+        }()
         let averageFillers = relevantHistory.isEmpty
             ? Double(session.fillerWordCount)
             : Double(relevantHistory.map(\.fillerWordCount).reduce(0, +)) / Double(relevantHistory.count)
@@ -5223,11 +7554,14 @@ final class RecommendationLearningStore: ObservableObject {
             id: UUID(),
             fingerprint: pendingExposure.fingerprint,
             title: pendingExposure.title,
+            focus: pendingExposure.focus,
+            target: pendingExposure.target,
             mode: pendingExposure.mode,
             sessionID: session.id,
             followed: pendingExposure.mode == session.mode,
             completedAt: Date(),
-            scoreDelta: Double(session.score ?? 0) - averageScore,
+            scoreDelta: comparableScoreDelta ?? 0,
+            hasComparableScore: comparableScoreDelta != nil,
             fillerDelta: Double(session.fillerWordCount) - averageFillers,
             durationDelta: session.duration - averageDuration
         )
@@ -5338,11 +7672,290 @@ enum PracticeSessionFinalizer {
         draft: PracticeSessionDraft,
         annotation: PracticeSessionAnnotation = .empty
     ) -> PracticeSession {
-        let session = store.append(draft)
+        // M21: consume any pending SessionIntent before appending so the
+        // session row carries the user's declared focus from the start.
+        // Mutating the draft inline keeps every call site (Timed, Sudden
+        // Death, Ah-Counter, drill mini-runs) untouched; the intent
+        // landing is a single-source decision here.
+        let intent = SessionIntentStore.shared.pendingIntent
+        let intentAwareDraft: PracticeSessionDraft = {
+            // Preserve any caller-supplied intent (tests can pass one
+            // directly); only inject from the store when the draft has
+            // none of its own.
+            if draft.intentFocus != nil { return draft }
+            guard let intent else { return draft }
+            return PracticeSessionDraft(
+                transcript: draft.transcript,
+                fillerWordCount: draft.fillerWordCount,
+                duration: draft.duration,
+                date: draft.date,
+                mode: draft.mode,
+                imDetails: draft.imDetails,
+                transcriptConfidence: draft.transcriptConfidence,
+                transcriptionProvider: draft.transcriptionProvider,
+                pressureLevel: draft.pressureLevel,
+                isRated: draft.isRated,
+                pauseMetrics: draft.pauseMetrics,
+                pitchMetrics: draft.pitchMetrics,
+                intentFocus: intent.priority,
+                intentLabel: intent.label
+            )
+        }()
+        let session = store.append(intentAwareDraft)
+        // Link the pending intent to the session and drop it from
+        // pending state — single-rep lifecycle, no leakage to the next
+        // rep if the user goes straight back into another session.
+        SessionIntentStore.shared.consume(sessionID: session.id)
         if annotation != .empty {
             store.annotate(sessionID: session.id, annotation: annotation)
         }
-        return store.sessions.first(where: { $0.id == session.id }) ?? session
+        let finalized = store.sessions.first(where: { $0.id == session.id }) ?? session
+
+        // Speech-backed modes record recommendation outcomes once their
+        // delayed evaluation annotates the captured rep. IM Conversation
+        // arrives here already evaluated, so it must enter the same
+        // intervention cycle here or prescribed conversation reps vanish
+        // from the coach's evidence.
+        if finalized.mode == .imConversation, annotation != .empty {
+            RecommendationLearningStore.shared.recordOutcome(
+                for: finalized,
+                previousSessions: store.sessions.filter { $0.id != finalized.id }
+            )
+        }
+
+        // Analyze verbal habits before refreshing the baseline so clutch words are included immediately.
+        ClutchWordStore.shared.analyzeSession(transcript: draft.transcript)
+
+        // Record baseline data
+        BaselineStore.shared.recordSession(finalized, pressure: draft.pressureLevel)
+
+        // Check personal bests (for all sessions)
+        let streak = PracticeSession.calculateStreak(from: store.sessions)
+        RatingStore.shared.checkPersonalBests(session: finalized, currentStreak: streak)
+
+        // Update speaking rating (only for rated/pressure sessions)
+        if draft.isRated, let score = finalized.score {
+            RatingStore.shared.recordRatedSession(
+                score: score,
+                sessionId: finalized.id,
+                pressureLevel: draft.pressureLevel
+            )
+        }
+
+        // Evaluate achievements
+        AchievementStore.shared.evaluate(sessions: store.sessions, streak: streak)
+
+        // M24 Track 1 — drop a deterministic post-rep coach note in
+        // the store immediately so the Summary surface can render the
+        // coach's voice in the very same paint cycle as the verdict.
+        // The AI upgrade fires concurrently and replaces the
+        // deterministic record on completion (de-dupe by sessionID is
+        // enforced by `PostRepCoachNoteStore.record`).
+        Self.recordPostRepCoachNote(for: finalized)
+
+        return finalized
+    }
+
+    /// Build a `PostRepCoachNoteInput` from the finalized session +
+    /// live stores, write the deterministic note immediately, then fire
+    /// the AI upgrade as a detached task. Pure boilerplate — keeps
+    /// `finalize` readable.
+    private static func recordPostRepCoachNote(for session: PracticeSession) {
+        let profile = CoachingProfileStore.shared.profile
+        let baseline = BaselineStore.shared.baseline
+        let bigMoment = BigMomentStore.shared.activeMoment
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
+
+        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient ? nil : baseline.fillerRate.value
+        let baselinePace: Double? = baseline.pace.confidence == .insufficient ? nil : baseline.pace.value
+
+        // Pull the recents + proofs the AI needs to write a continuity-aware
+        // note ("third time you've leaned on…") rather than a stat dashboard.
+        let allSessions = PracticeSessionStore.shared.sessions
+        let recentSummaries: [String] = allSessions
+            .filter { $0.id != session.id }
+            .prefix(3)
+            .map { rep in
+                var parts: [String] = [rep.mode.displayLabel]
+                if let s = rep.score { parts.append("score \(s)/10") }
+                parts.append("\(rep.fillerWordCount) filler\(rep.fillerWordCount == 1 ? "" : "s")")
+                parts.append("\(Int(rep.duration.rounded()))s")
+                return parts.joined(separator: ", ")
+            }
+        let recentProofs: [String] = ProofMomentStore.shared
+            .recent(limit: 2)
+            .map { $0.proof.quote }
+            .filter { !$0.isEmpty }
+
+        // Compute cross-session momentum signals so the deterministic
+        // note can reference trajectory (consecutive clean reps, filler
+        // trend, personal bests) rather than just today's numbers.
+        let momentum = MomentumComputer.compute(
+            currentSession: session,
+            allSessions: allSessions,
+            baselineFillerRate: baselineFillerRate
+        )
+
+        // IM tone-drill Adaptation read for the just-finished rep's
+        // scenario, so the post-rep note can speak to whether the tone
+        // work is landing — the same Adaptation signal the next-practice
+        // card and the chat coach read. Round 43 lifted this block out
+        // of the finalizer and into `MomentumComputer.imToneDrillNoteFields`
+        // so the per-rep anchoring contract (the trio reads from the
+        // just-finished rep's scenario, NEVER another scenario's
+        // trajectory) is testable in isolation. See `IMToneDrillNoteFields`.
+        let imToneFields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: session, in: allSessions
+        )
+
+        let input = PostRepCoachNoteInput(
+            sessionID: session.id,
+            mode: session.mode,
+            score: session.score,
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            voice: profile?.speakingStyleGoal,
+            intentLabel: session.intentLabel,
+            baselineFillerRate: baselineFillerRate,
+            baselinePaceWPM: baselinePace,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDays,
+            transcript: session.transcript,
+            prompt: session.prompt ?? "",
+            recentSessionSummaries: recentSummaries,
+            recentProofQuotes: recentProofs,
+            consecutiveCleanReps: momentum.consecutiveCleanReps,
+            fillerTrendDirection: momentum.fillerTrendDirection,
+            scoreTrendDirection: momentum.scoreTrendDirection,
+            weeklyRepCount: momentum.weeklyRepCount,
+            isPersonalBest: momentum.isPersonalBest,
+            totalSessionCount: momentum.totalSessionCount,
+            imToneDrillProgress: imToneFields.progress,
+            imToneDrillScenarioTitle: imToneFields.scenarioTitle,
+            imToneDrillToneTitle: imToneFields.toneTitle,
+            imToneDrillResolved: imToneFields.resolved,
+            imToneDrillResolvedScenarioTitle: imToneFields.resolvedScenarioTitle,
+            imToneDrillResolvedToneTitle: imToneFields.resolvedToneTitle
+        )
+
+        // Deterministic note lands synchronously so the Summary
+        // surface already has a coach voice to show on the first frame.
+        let deterministic = PostRepCoachNoteService.deterministicNote(input: input)
+        PostRepCoachNoteStore.shared.record(deterministic)
+
+        // AI upgrade fires concurrently. If the network is unreachable
+        // or the locale is non-English, `generate` returns the same
+        // deterministic note (no second write needed but harmless).
+        Task { [input] in
+            let upgraded = await PostRepCoachNoteService.shared.generate(input: input)
+            await MainActor.run {
+                // Only replace when the upgrade is actually AI-backed
+                // — same-deterministic re-writes are no-ops but waste
+                // a published change.
+                if upgraded.isAIBacked {
+                    PostRepCoachNoteStore.shared.record(upgraded)
+                }
+            }
+        }
+    }
+
+    // MARK: - Voice-change retroactive read (M24 Track 1 future move)
+    //
+    // When the user changes their `speakingStyleGoal`, the most recent
+    // PostRepCoachNote is still written in the OLD voice. The persistent
+    // Ask Noum chat coach reads that note as "your current voice" via
+    // `CoachContextBuilder.userContext`'s LAST REP NOTE section — so
+    // until the user finishes another rep, the chat coach quotes a
+    // stale-voice note as if it were the live voice. This regen closes
+    // the gap: when the voice changes, the most recent note is rewritten
+    // immediately in the new voice. Same sessionID, so the store's
+    // dedupe-by-sessionID contract replaces the prior record rather
+    // than stacking.
+
+    /// Pure helper: build a `PostRepCoachNoteInput` for re-generating
+    /// the note that's already attached to a finalized session, in a
+    /// new voice. Session metrics carry through; baseline + BigMoment
+    /// come from the live stores at regen time (a baseline that's
+    /// evolved since the rep is the right read for "current voice on
+    /// past rep" — the deterministic priority chain is mostly
+    /// session-derived anyway). Exposed for tests.
+    nonisolated static func regenerationInput(
+        from session: PracticeSession,
+        newVoice: SpeakingStyleGoal?,
+        baseline: CommunicationBaseline,
+        bigMoment: BigMoment?,
+        bigMomentDaysUntil: Int?,
+        recentSessionSummaries: [String] = [],
+        recentProofQuotes: [String] = []
+    ) -> PostRepCoachNoteInput {
+        let baselineFillerRate: Double? = baseline.fillerRate.confidence == .insufficient
+            ? nil : baseline.fillerRate.value
+        let baselinePace: Double? = baseline.pace.confidence == .insufficient
+            ? nil : baseline.pace.value
+        return PostRepCoachNoteInput(
+            sessionID: session.id,
+            mode: session.mode,
+            score: session.score,
+            fillerCount: session.fillerWordCount,
+            duration: session.duration,
+            wordCount: session.wordCount,
+            voice: newVoice,
+            intentLabel: session.intentLabel,
+            baselineFillerRate: baselineFillerRate,
+            baselinePaceWPM: baselinePace,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDaysUntil,
+            transcript: session.transcript,
+            prompt: session.prompt ?? "",
+            recentSessionSummaries: recentSessionSummaries,
+            recentProofQuotes: recentProofQuotes
+        )
+    }
+
+    /// Fired from `CoachingProfileStore.save(_:)` when the user changes
+    /// their voice. No-op when: no note has been recorded yet (cold
+    /// start), the latest note's voice already matches the new voice
+    /// (idempotent — onboarding "save" with no actual change), or the
+    /// originating session has been deleted from history since the
+    /// note was written (defensive — never invent a note for a session
+    /// that no longer exists).
+    @MainActor
+    static func regenerateMostRecentNoteIfVoiceChanged(newVoice: SpeakingStyleGoal?) {
+        guard let latest = PostRepCoachNoteStore.shared.latestNote() else { return }
+        guard latest.voice != newVoice else { return }
+        guard let session = PracticeSessionStore.shared.sessions
+            .first(where: { $0.id == latest.sessionID }) else { return }
+
+        let baseline = BaselineStore.shared.baseline
+        let bigMoment = BigMomentStore.shared.activeMoment
+        let bigMomentDays = bigMoment.flatMap { BigMomentStore.daysUntil($0) }
+
+        let input = regenerationInput(
+            from: session,
+            newVoice: newVoice,
+            baseline: baseline,
+            bigMoment: bigMoment,
+            bigMomentDaysUntil: bigMomentDays
+        )
+
+        // Deterministic note lands synchronously so the Ask Noum chat
+        // coach reads the new-voice note on the very next reply rather
+        // than quoting the stale-voice line one more time.
+        let deterministic = PostRepCoachNoteService.deterministicNote(input: input)
+        PostRepCoachNoteStore.shared.record(deterministic)
+
+        // AI upgrade fires concurrently — same shape as the finalize
+        // path so the polished phrasing eventually lands once the
+        // model rewrites in the new voice.
+        Task { [input] in
+            let upgraded = await PostRepCoachNoteService.shared.generate(input: input)
+            await MainActor.run {
+                if upgraded.isAIBacked {
+                    PostRepCoachNoteStore.shared.record(upgraded)
+                }
+            }
+        }
     }
 }
 
@@ -5541,6 +8154,71 @@ struct AICoachSessionInput {
     let duration: TimeInterval
     let wordsPerMinute: Int
     let speakingIdentity: String
+    // --- new, all defaulted (initiative #9: Coach Read parity) ---
+    /// The question this rep answered (`PracticeSession.prompt`). Lets the
+    /// read judge "did you answer it / where did the point land" — the one
+    /// thing a coach checks first. Empty when unknown (legacy/silence).
+    let prompt: String
+    /// The user's voice goal. Drives the per-voice register line + the
+    /// deterministic fallback persona. Nil when not yet set (cold start).
+    let voice: SpeakingStyleGoal?
+    /// Short descriptors of the last few reps for continuity ("Timed | score
+    /// 7 | 2 fillers"). Never invented — built from real sessions at the call
+    /// site, current rep dropped.
+    let recentSessionSummaries: [String]
+    /// Confidence-gated baseline (nil when insufficient data — never a fake
+    /// number). Mirrors `PostRepCoachNoteInput.baselineFillerRate`/`PaceWPM`.
+    let baselineFillerRate: Double?
+    let baselinePaceWPM: Double?
+    // --- new, all defaulted (SUBSTANCE-4: standing-case context) ---
+    /// The user's STANDING working hypothesis from `CoachMemory` — the durable
+    /// read the coach is carrying across reps, not this rep's evidence. Lets the
+    /// Coach Read reason over the standing goal/target, not just the last rep.
+    /// Nil when no durable hypothesis exists yet (cold start). Built at the call
+    /// site from `coachMemoryStore.currentMemory?.workingHypothesis`.
+    let standingHypothesis: String?
+    /// The observable target of the user's active intervention (reused from the
+    /// already-built `CoachCaseFile.observableTarget`, single source of truth —
+    /// never re-derived from the raw `activeIntervention`). Nil when no active
+    /// intervention.
+    let standingObservableTarget: String?
+    /// What success on the standing intervention looks like (reused from
+    /// `CoachCaseFile.successMeasure`). Nil when no active intervention.
+    let standingSuccessMeasure: String?
+
+    init(
+        transcript: String,
+        mode: PracticeMode,
+        score: Int?,
+        fillerCount: Int,
+        duration: TimeInterval,
+        wordsPerMinute: Int,
+        speakingIdentity: String,
+        prompt: String = "",
+        voice: SpeakingStyleGoal? = nil,
+        recentSessionSummaries: [String] = [],
+        baselineFillerRate: Double? = nil,
+        baselinePaceWPM: Double? = nil,
+        standingHypothesis: String? = nil,
+        standingObservableTarget: String? = nil,
+        standingSuccessMeasure: String? = nil
+    ) {
+        self.transcript = transcript
+        self.mode = mode
+        self.score = score
+        self.fillerCount = fillerCount
+        self.duration = duration
+        self.wordsPerMinute = wordsPerMinute
+        self.speakingIdentity = speakingIdentity
+        self.prompt = prompt
+        self.voice = voice
+        self.recentSessionSummaries = recentSessionSummaries
+        self.baselineFillerRate = baselineFillerRate
+        self.baselinePaceWPM = baselinePaceWPM
+        self.standingHypothesis = standingHypothesis
+        self.standingObservableTarget = standingObservableTarget
+        self.standingSuccessMeasure = standingSuccessMeasure
+    }
 }
 
 protocol AICoachServicing {
@@ -5643,6 +8321,13 @@ struct PracticeModePlaybookEntry {
     let bestFor: String
 }
 
+enum RecommendationBlueprintSource: Equatable {
+    case coldStart
+    case goalBias
+    case imToneDrill
+    case caseIntervention
+}
+
 struct RecommendationBiasBlueprint {
     let recommendedMode: PracticeMode
     let recommendedTone: IMTargetTone?
@@ -5652,6 +8337,128 @@ struct RecommendationBiasBlueprint {
     let modeBenefit: String
     let whyMode: String
     let whyNow: String
+    /// Suggested Timed difficulty based on the user's coaching goal.
+    /// `nil` if the recommended mode is not Timed or no profile is set.
+    let suggestedTimedDifficulty: TimedPracticeDifficulty?
+    /// Prompt theme that best matches this user's coaching goal.
+    let suggestedTheme: PromptTheme
+    /// Why this blueprint won precedence. Surfaces can use this to keep an
+    /// active coaching intervention from being displaced by stale AI copy.
+    let source: RecommendationBlueprintSource
+
+    init(
+        recommendedMode: PracticeMode,
+        recommendedTone: IMTargetTone?,
+        recommendedScenario: IMConversationScenario?,
+        focus: String,
+        target: String,
+        modeBenefit: String,
+        whyMode: String,
+        whyNow: String,
+        suggestedTimedDifficulty: TimedPracticeDifficulty?,
+        suggestedTheme: PromptTheme,
+        source: RecommendationBlueprintSource = .goalBias
+    ) {
+        self.recommendedMode = recommendedMode
+        self.recommendedTone = recommendedTone
+        self.recommendedScenario = recommendedScenario
+        self.focus = focus
+        self.target = target
+        self.modeBenefit = modeBenefit
+        self.whyMode = whyMode
+        self.whyNow = whyNow
+        self.suggestedTimedDifficulty = suggestedTimedDifficulty
+        self.suggestedTheme = suggestedTheme
+        self.source = source
+    }
+}
+
+/// How a scenario's tone-match rate has moved across the user's recent
+/// reps — the *Adaptation* read (docs/VISION.md coach-parity stage #4).
+/// The drill prescription says "work on this"; this says whether the
+/// work is paying off, so the coach can reinforce a drill that is landing
+/// or change the approach on one that is not. Produced by
+/// `IMHistorySummary.toneDrillProgress(from:scenario:)`, which compares
+/// the hit rate of the earliest vs the latest window of evaluated reps.
+/// `nil` (carried as `IMToneDrillSignal.progress == nil`) when there
+/// aren't enough evaluated reps to compare two disjoint windows honestly.
+struct IMToneDrillProgress: Equatable {
+    /// The value-judged direction of the tone-match rate. Unlike the raw
+    /// `IMScenarioRelationalTrend.Movement`, this is goal-oriented — a
+    /// higher hit rate is unambiguously better — because its only
+    /// consumer is the deterministic recommendation copy, not a chip the
+    /// view colours itself.
+    enum Direction: Equatable {
+        case recovering   // recent window beats the earlier one — the drill is working
+        case stalled      // flat within the threshold — not getting better, not worse
+        case slipping     // recent window is worse — the approach needs to change
+    }
+    let direction: Direction
+    /// Tone-match rate (0.0–1.0) of the earliest `windowSize` evaluated reps.
+    let earlierRate: Double
+    /// Tone-match rate (0.0–1.0) of the latest `windowSize` evaluated reps.
+    let recentRate: Double
+    /// Reps averaged in each window (the `min(3, count / 2)` bound, so the
+    /// earliest and latest stretches never overlap).
+    let windowSize: Int
+}
+
+/// A scenario where the user reliably misses the IM tone they committed
+/// to at setup, surfaced as a focused, auto-fillable drill. Produced by
+/// `IMHistorySummary.toneDrillSignal(from:)` only when the evidence bar
+/// clears (≥ `toneDrillMinEvaluatedReps` evaluated reps AND a hit rate
+/// below `toneDrillMatchRateThreshold`), so a thin or random miss never
+/// fabricates a recommendation. `matchRate` is 0.0–1.0; `targetTone` is
+/// the tone the user committed to most in that scenario — the exact
+/// target the re-rep should re-set, not a generic profile default.
+/// `progress` carries the Adaptation read for that scenario (whether the
+/// hit rate is recovering, stalled, or slipping) so the engine can
+/// reinforce a working drill or change the approach on a stuck one; it is
+/// `nil` below the 4-rep two-window bar, in which case the engine gives
+/// the neutral prescription.
+struct IMToneDrillSignal: Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    let matchRate: Double
+    let evaluatedCount: Int
+    let progress: IMToneDrillProgress?
+
+    init(
+        scenario: IMConversationScenario,
+        targetTone: IMTargetTone,
+        matchRate: Double,
+        evaluatedCount: Int,
+        progress: IMToneDrillProgress? = nil
+    ) {
+        self.scenario = scenario
+        self.targetTone = targetTone
+        self.matchRate = matchRate
+        self.evaluatedCount = evaluatedCount
+        self.progress = progress
+    }
+}
+
+/// A scenario where the user *used to* miss the IM tone they committed to
+/// but has since recovered and is now holding above the drill bar — the
+/// win, surfaced so the coach can name it instead of going silent the
+/// moment a drill is won. The complement to `IMToneDrillSignal` (which
+/// prescribes a still-failing drill and self-clears on recovery) and
+/// `IMToneDrillProgress` (the in-flight Adaptation read). Produced by
+/// `IMHistorySummary.toneDrillResolved(from:)` only with genuine
+/// turnaround evidence: an earliest window below the drill bar (a real gap
+/// existed), a latest window holding at/above `toneDrillResolvedHoldRate`
+/// (the climb stuck), and an overall rate at/above the drill bar so the
+/// active-drill signal has already cleared — "solved" and "still drilling"
+/// can never both fire for one scenario. `earlierRate`/`recentRate` are
+/// 0.0–1.0; `lastEvaluatedDate` is the most-recent evaluated rep so the
+/// coach can acknowledge the freshest win first.
+struct IMToneDrillResolved: Equatable {
+    let scenario: IMConversationScenario
+    let targetTone: IMTargetTone
+    let earlierRate: Double
+    let recentRate: Double
+    let evaluatedCount: Int
+    let lastEvaluatedDate: Date
 }
 
 enum RecommendationBiasEngine {
@@ -5681,8 +8488,38 @@ enum RecommendationBiasEngine {
     static func blueprint(
         profile: CoachingProfile?,
         input: AIHomeRecommendationInput,
-        plan: CoachingPlan?
+        plan: CoachingPlan?,
+        imToneSignal: IMToneDrillSignal? = nil,
+        coachMemory: CoachMemory? = nil
     ) -> RecommendationBiasBlueprint {
+        // The durable case file is the professional-coach layer: if the
+        // coach has prescribed an intervention and has not yet gathered
+        // enough honest evidence, keep the next recommendation on that
+        // intervention. This prevents the app from behaving like a fresh
+        // stateless recommender after every rep.
+        if let caseBlueprint = caseInterventionBlueprint(
+            profile: profile,
+            input: input,
+            memory: coachMemory
+        ) {
+            return caseBlueprint
+        }
+
+        // A scenario where the committed tone reliably misses is a
+        // concrete, evidence-backed intervention — the read side of
+        // this loop (the trust/tension + tone-match chips on IM
+        // History) is already surfaced, so the next coaching move is
+        // to *act* on it. When the caller hands up a signal it has
+        // already cleared the honest bar (≥3 evaluated reps, sub-40%
+        // hit rate), so it takes precedence over the generic
+        // goal-based bias and prescribes the exact scenario + tone to
+        // re-drill. The signal self-clears once the hit rate recovers,
+        // so this never gets stuck recommending a scenario the user
+        // has already fixed.
+        if let imToneSignal {
+            return toneDrillBlueprint(signal: imToneSignal)
+        }
+
         guard let profile else {
             let mode: PracticeMode = input.averageFillers >= 4 ? .ahCounter : (input.averageDuration < 20 ? .timed : .suddenDeath)
             return RecommendationBiasBlueprint(
@@ -5693,7 +8530,10 @@ enum RecommendationBiasEngine {
                 target: mode == .ahCounter ? "Cut fillers by 1" : "One complete rep",
                 modeBenefit: playbookEntry(for: mode).benefit,
                 whyMode: playbookEntry(for: mode).bestFor,
-                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline."
+                whyNow: input.daysSinceLastSession > 2 ? "The fastest win is getting back into a clean practice rhythm." : "Your recent sessions still need a steadier baseline.",
+                suggestedTimedDifficulty: nil,
+                suggestedTheme: .all,
+                source: .coldStart
             )
         }
 
@@ -5705,6 +8545,8 @@ enum RecommendationBiasEngine {
         let target = target(for: mode, profile: profile, input: input)
         let focus = focus(for: mode, profile: profile)
         let whyNow = whyNow(for: mode, profile: profile, input: input)
+        let difficulty = mode == .timed ? suggestedTimedDifficulty(for: profile) : nil
+        let theme = suggestedTheme(for: profile)
 
         return RecommendationBiasBlueprint(
             recommendedMode: mode,
@@ -5714,8 +8556,198 @@ enum RecommendationBiasEngine {
             target: target,
             modeBenefit: benefit.benefit,
             whyMode: benefit.bestFor + " This lines up with the user's north star.",
-            whyNow: whyNow
+            whyNow: whyNow,
+            suggestedTimedDifficulty: difficulty,
+            suggestedTheme: theme,
+            source: .goalBias
         )
+    }
+
+    private static func caseInterventionBlueprint(
+        profile: CoachingProfile?,
+        input: AIHomeRecommendationInput,
+        memory: CoachMemory?
+    ) -> RecommendationBiasBlueprint? {
+        guard let memory,
+              memory.evidenceConfidence >= .tentative,
+              let intervention = memory.activeIntervention,
+              shouldContinueCaseIntervention(intervention) else {
+            return nil
+        }
+
+        let mode = intervention.mode
+        let benefit = playbookEntry(for: mode)
+        let focus = caseFocus(for: intervention)
+        let target = caseTarget(for: intervention)
+        let theme = profile.map { suggestedTheme(for: $0) } ?? .all
+        let timedDifficulty = mode == .timed ? profile.map { suggestedTimedDifficulty(for: $0) } : nil
+        let tone = mode == .imConversation ? profile.map { recommendedTone(for: $0) } : nil
+        let scenario = mode == .imConversation ? profile.map { recommendedScenario(for: $0) } : nil
+
+        return RecommendationBiasBlueprint(
+            recommendedMode: mode,
+            recommendedTone: tone,
+            recommendedScenario: scenario,
+            focus: focus,
+            target: target,
+            modeBenefit: benefit.benefit,
+            whyMode: caseWhyMode(for: intervention, focus: focus),
+            whyNow: caseWhyNow(for: intervention, input: input),
+            suggestedTimedDifficulty: timedDifficulty,
+            suggestedTheme: theme,
+            source: .caseIntervention
+        )
+    }
+
+    private static func shouldContinueCaseIntervention(_ intervention: CoachIntervention) -> Bool {
+        switch intervention.reviewStatus {
+        case .awaitingAttempt, .formingEvidence, .continueAndVerify:
+            return true
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return false
+        }
+    }
+
+    private static func caseFocus(for intervention: CoachIntervention) -> String {
+        let candidates = [intervention.focus, intervention.title]
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+            ?? intervention.mode.displayLabel
+    }
+
+    private static func caseTarget(for intervention: CoachIntervention) -> String {
+        if let target = intervention.target?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !target.isEmpty {
+            return target
+        }
+        if let criterion = intervention.successCriterion?.summary.trimmingCharacters(in: .whitespacesAndNewlines),
+           !criterion.isEmpty {
+            return criterion
+        }
+        return "One followed rep"
+    }
+
+    private static func caseWhyMode(for intervention: CoachIntervention, focus: String) -> String {
+        let modeName = intervention.mode.displayLabel
+        switch intervention.reviewStatus {
+        case .awaitingAttempt:
+            return "\(modeName) is the open case-file intervention for \(focus.lowercased()); Noum needs one followed rep before judging it."
+        case .formingEvidence:
+            return "\(modeName) is still the active intervention for \(focus.lowercased()); keep collecting reps before strengthening the claim."
+        case .continueAndVerify:
+            return "\(modeName) is showing promise for \(focus.lowercased()); verify it once more before raising the confidence."
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return intervention.reviewBasis
+        }
+    }
+
+    private static func caseWhyNow(
+        for intervention: CoachIntervention,
+        input: AIHomeRecommendationInput
+    ) -> String {
+        let observed = intervention.followedRepCount
+        let minimum = max(1, intervention.minimumFollowedRepsForReview)
+        let remaining = max(0, minimum - observed)
+
+        switch intervention.reviewStatus {
+        case .awaitingAttempt:
+            return "This was prescribed in the current case file, but Noum has not observed a followed rep yet."
+        case .formingEvidence:
+            if remaining <= 1 {
+                return "The case file has \(observed) of \(minimum) followed reps. One more makes the review more honest."
+            }
+            return "The case file has \(observed) of \(minimum) followed reps. \(remaining) more reps make the review more honest."
+        case .continueAndVerify:
+            if let status = intervention.criterionStatus {
+                return "Early response is \(status.contextLabel); run one more rep to verify it holds."
+            }
+            return "Early response looks promising; run one more rep to verify it holds."
+        case .diagnoseBeforeRepeating, .adaptBeforeRepeating:
+            return input.daysSinceLastSession > 2
+                ? "The case needs a fresh read before repeating the same prescription."
+                : intervention.reviewBasis
+        }
+    }
+
+    /// Builds the focused "drill this scenario's tone" recommendation
+    /// from a tone-drill signal. Biases to IM (the relevant skill area
+    /// for tone) and prefills the exact scenario + the tone the user
+    /// keeps missing, so the home CTA is a one-tap re-rep of the
+    /// weakest setup. Copy reports the *observed* hit rate — no AI
+    /// reframe, no shame; the amber read is informative, the fix is a
+    /// rep, not a lecture.
+    ///
+    /// When the signal carries an Adaptation read (`progress`), the copy
+    /// closes the coach-parity loop's fourth stage: a *recovering* rate
+    /// reinforces the drill the user is already on ("it's working — one
+    /// more"); a *slipping* rate changes the approach ("same scenario,
+    /// open it differently") rather than repeating the identical ask;
+    /// a *stalled* read or no read falls back to the neutral prescription
+    /// reporting the overall hit rate. The mode/scenario/tone prefill is
+    /// identical across all branches — only the rationale adapts.
+    private static func toneDrillBlueprint(signal: IMToneDrillSignal) -> RecommendationBiasBlueprint {
+        let benefit = playbookEntry(for: .imConversation)
+        let scenario = signal.scenario.title
+        let tone = signal.targetTone.title
+        let lowerTone = tone.lowercased()
+        let pct = Int((signal.matchRate * 100).rounded())
+
+        let whyMode: String
+        let whyNow: String
+        switch signal.progress?.direction {
+        case .recovering:
+            let recentPct = Int(((signal.progress?.recentRate ?? 0) * 100).rounded())
+            let earlierPct = Int(((signal.progress?.earlierRate ?? 0) * 100).rounded())
+            whyMode = "Your \(lowerTone) tone is landing more often than it was — the drill is working. One more focused rep locks it in."
+            whyNow = "Across your latest \(scenario) reps your \(lowerTone) tone is up to \(recentPct)% from \(earlierPct)%. Keep the same scenario and hold the tone end to end."
+        case .slipping:
+            let recentPct = Int(((signal.progress?.recentRate ?? 0) * 100).rounded())
+            let earlierPct = Int(((signal.progress?.earlierRate ?? 0) * 100).rounded())
+            whyMode = "Your \(lowerTone) tone slipped back in this setup — same scenario, but change how you open it."
+            whyNow = "Your \(lowerTone) tone dropped to \(recentPct)% across your latest \(scenario) reps, down from \(earlierPct)%. Re-run it slower and commit to the tone from the first beat."
+        case .stalled, .none:
+            whyMode = "Your committed tone keeps slipping in this exact setup — drilling the same scenario is where it gets fixed."
+            whyNow = "Across your last \(signal.evaluatedCount) \(scenario) reps your \(lowerTone) tone landed only \(pct)% of the time. Re-run the same scenario and hold the tone end to end."
+        }
+
+        return RecommendationBiasBlueprint(
+            recommendedMode: .imConversation,
+            recommendedTone: signal.targetTone,
+            recommendedScenario: signal.scenario,
+            focus: "\(scenario) tone",
+            target: "Land \(lowerTone) in \(scenario)",
+            modeBenefit: benefit.benefit,
+            whyMode: whyMode,
+            whyNow: whyNow,
+            suggestedTimedDifficulty: nil,
+            suggestedTheme: .all,
+            source: .imToneDrill
+        )
+    }
+
+    /// Maps a coaching goal to a suggested Timed difficulty.
+    private static func suggestedTimedDifficulty(for profile: CoachingProfile) -> TimedPracticeDifficulty {
+        switch profile.primaryGoal {
+        case .moreConcise:  return .hard    // 15s forces conciseness
+        case .thinkFaster:  return .medium  // 30s balanced speed + structure
+        case .reduceFillers: return .medium // 30s — enough time to self-monitor
+        case .calmerDelivery: return .easy  // 60s — room to compose and pace
+        }
+    }
+
+    /// Maps a coaching goal to the prompt theme most likely to surface useful practice.
+    private static func suggestedTheme(for profile: CoachingProfile) -> PromptTheme {
+        switch profile.primaryGoal {
+        case .moreConcise:
+            return profile.speakingContext == .interviews ? .interviewPrep : .workCareer
+        case .thinkFaster:
+            return profile.biggestChallenge == .freezing ? .general : .funRandom
+        case .reduceFillers:
+            return .all
+        case .calmerDelivery:
+            return profile.speakingContext == .social ? .socialConfidence : .ethicsOpinions
+        }
     }
 
     private static func prioritizedModes(for profile: CoachingProfile) -> [PracticeMode] {
@@ -6271,9 +9303,32 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         relationship: IMRelationshipProfile?,
         context: IMSessionContext
     ) async throws -> IMConversationEvaluation {
-        guard IMModeAvailability.isAvailable else {
-            throw IMModeServiceError.unavailable
-        }
+        // Fallback-first + gated-accept (mirrors PostRepCoachNoteService.generate
+        // :369 and AICoachService.generateDeeperFeedback :9021). IM is the
+        // highest-fidelity role-play surface and its grade drives the saved
+        // score, the relationship state, and the next move — so a finished
+        // conversation must NEVER dead-end with a thrown error. The deterministic
+        // read is computed up front from the SAME IM analyzers the per-turn reads
+        // use (IMUserMessageAnalyzer + IMToneMatcher), and is returned on every
+        // gated failure (no provider / no key / no endpoint / non-2xx / decode /
+        // ungrounded AI read) and when the locale doesn't support an English LLM
+        // grade. The protocol stays `async throws` for type-compat; the body
+        // simply stops throwing on the gated paths.
+        let fallback = Self.deterministicEvaluation(
+            setup: setup,
+            turns: turns,
+            finalState: finalState,
+            transcript: transcript,
+            fillerCount: fillerCount,
+            duration: duration,
+            recentSessions: recentSessions,
+            relationship: relationship
+        )
+
+        // Locale gate — the same one-liner the rest of PracticeSupport.swift
+        // uses (:9301). A Spanish/French IM rep gets the deterministic grounded
+        // read, not an English LLM grade that would be worse than the template.
+        guard activeLocaleSupportsAI() else { return fallback }
 
         guard let provider = settings.activeProvider,
               let apiKey = apiKey(for: provider),
@@ -6289,10 +9344,10 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 profile: profile,
                 relationship: relationship,
                 context: context
-            ) {
+            ), Self.evaluationEngagesTranscript(backendEvaluation, transcript: transcript) {
                 return backendEvaluation
             }
-            throw IMModeServiceError.unavailable
+            return fallback
         }
 
         var request = URLRequest(url: endpoint)
@@ -6314,7 +9369,7 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
         switch provider {
         case .none:
-            throw IMModeServiceError.unavailable
+            return fallback
         case .openAI, .deepSeek:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             let body = OpenAICompatibleChatRequest(
@@ -6343,11 +9398,22 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                throw IMModeServiceError.evaluationFailed("HTTP request failed")
+                return fallback
             }
 
             let jsonData = try extractJSONData(from: data, provider: provider)
-            return try JSONDecoder().decode(IMConversationEvaluation.self, from: jsonData)
+            let evaluation = try JSONDecoder().decode(IMConversationEvaluation.self, from: jsonData)
+            // Grounding gate (mirrors PostRepCoachNoteService.engagesTranscript
+            // :1112 + AICoachService.engagesTranscript :9545): the headline +
+            // insights must actually engage a real turn from the conversation —
+            // share a >= 4-char non-stop content word OR a >= 12-char verbatim
+            // slice — else it's a generic grade dressed as a coach read and we
+            // return the grounded deterministic fallback. Empty transcript ->
+            // passes (nothing to quote).
+            guard Self.evaluationEngagesTranscript(evaluation, transcript: transcript) else {
+                return fallback
+            }
+            return evaluation
         } catch {
             if let backendEvaluation = try? await backendEvaluation(
                 setup: setup,
@@ -6360,11 +9426,21 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
                 profile: profile,
                 relationship: relationship,
                 context: context
-            ) {
+            ), Self.evaluationEngagesTranscript(backendEvaluation, transcript: transcript) {
                 return backendEvaluation
             }
-            throw IMModeServiceError.evaluationFailed(error.localizedDescription)
+            return fallback
         }
+    }
+
+    /// Locale gate — `true` only when the active locale supports an English
+    /// coaching read (mirrors `AICoachService.activeLocaleSupportsAI` :9301 and
+    /// `PostRepCoachNoteService.activeLocaleSupportsAI`). On `false`,
+    /// `evaluateConversation` returns the deterministic fallback rather than an
+    /// English LLM grade. `IMConversationEvaluationService` is already
+    /// `@MainActor`, so this is a plain method, not an actor hop.
+    private func activeLocaleSupportsAI() -> Bool {
+        LocaleSettingsManager.shared.current.aiSupported
     }
 
     private func backendEvaluation(
@@ -6404,16 +9480,47 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
 
     private var systemPrompt: String {
         """
-        You are evaluating a short voice-driven instant message conversation for a speaking coach app.
+        You are a sharp, experienced communication coach evaluating an instant-message conversation.
+        You think in three layers:
+
+        LAYER 1 — FUNDAMENTALS (universal)
+        Clarity, composure, filler-word discipline, vocabulary range.
+        These are table stakes. Judge them honestly but don't belabor what's fine.
+
+        LAYER 2 — CONTEXT FIT (conversation-specific)
+        Did the user read the room? Did they move the conversation forward?
+        Did trust or engagement shift in the right direction?
+        Was the tone appropriate for this specific scenario and relationship?
+        A technically clear message that ignores the other person's state is still a miss.
+
+        LAYER 3 — IDENTITY LENS (personal style direction)
+        The user has a speaking-style goal. This is a direction, not a destination.
+        Map their goal to traits (e.g. "speak like a king" → authority, decisiveness, calm).
+        Judge whether they moved toward those traits in this conversation — even slightly.
+        Never evaluate whether they literally sounded like someone else.
+
+        BASELINE CONTEXT:
+        If a speaker baseline is provided, use it to calibrate your evaluation:
+        - Compare this session's metrics against their established baseline, not abstract ideals.
+        - If they improved relative to their baseline, acknowledge the progress specifically.
+        - If they regressed, name the regression honestly but without alarm — one session doesn't define a trend.
+        - Reference persistent blockers if provided — these are the patterns they've been stuck on.
+        - Reference strengths if provided — these are what they can rely on.
+        - If baseline confidence is low ("tentative" or "early"), frame comparisons softly: "early signal" or "initial read."
+        - If the session was under elevated or high pressure, weight composure-under-pressure more heavily.
+        - If a style goal is provided, note whether this session moved toward it.
+
+        WRITING RULES:
+        - Write like a coach who's watched the tape, not like an AI summarizing.
+        - Use plain, direct language. No corporate jargon. No "Great job!" unless they genuinely nailed it.
+        - headline: a short, honest read. "You held the room" or "You backed off too early" — not a compliment sandwich.
+        - feedback: 2-3 sentences max. One thing they did well, one thing to work on. Be specific — reference an actual moment or turn from the conversation. When baseline data is available, ground your feedback in it (e.g. "filler rate dropped below your usual" rather than "good job on fillers").
+        - insights: exactly 3 concise strings. Each should be a concrete observation, not a vague principle. At least one insight should reference the baseline or a trend when available.
+        - If the conversation was very short (under 3 turns), soften your confidence. Use language like "early read" or "hard to tell from this much" rather than definitive judgments.
+
         Return JSON only with keys:
         actualTone, toneMatch, clarityScore, composureScore, vocabularyScore, conversationScore, headline, feedback, insights, suggestedDrill.
-        Scoring rules:
-        - all numeric scores are integers from 1 to 10
-        - insights must contain exactly 3 concise strings
-        - headline must be short
-        - feedback should be 2-4 sentences, practical and coach-like
-        - actualTone should describe how the speaker actually came across
-        - judge target tone vs actual tone, conversational relevance, clarity, pacing signals, vocabulary, and composure
+        All numeric scores are integers from 1 to 10.
         """
     }
 
@@ -6438,51 +9545,52 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             return "\(speaker): \(turn.text)"
         }.joined(separator: "\n")
 
+        let turnCount = turns.filter { $0.speaker == .user }.count
+        let isShortSession = turnCount <= 2 || duration < 30
+
         return """
+        --- LAYER 1: FUNDAMENTALS ---
+        Filler words: \(fillerCount) (recent avg: \(String(format: "%.1f", recentAverageFillers)))
+        Duration: \(Int(duration))s (recent avg: \(Int(recentAverageDuration))s)
+        Words per minute: \(pace.wordsPerMinute) (\(pace.label))
+        User turns: \(turnCount)
+        \(isShortSession ? "⚠️ SHORT SESSION — soften confidence in all judgments." : "")
+
+        --- LAYER 2: CONTEXT FIT ---
         Scenario: \(setup.scenario.title)
-        Target tone: \(setup.targetTone.title)
-        Tone goal: \(setup.targetTone.coachingPrompt)
-        Scenario coaching focus: \(setup.scenario.coachingFocus)
-        Final trust: \(finalState?.normalizedTrust ?? 5)/10
-        Final engagement: \(finalState?.normalizedEngagement ?? 5)/10
-        Final tension: \(finalState?.normalizedTension ?? 4)/10
-        Final conversation beat: \(finalState?.beat ?? "Not captured")
-        Speaker context: \(profile?.speakingContext.title ?? "unknown")
-        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
-        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
-        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
-        Desired style: \(profile?.speakingStyleGoal.title ?? "unknown")
-        Personal goal reference: \(profile?.personalGoalReference ?? "none")
-        Communication north star: \(profile?.communicationNorthStar ?? "Help the user become a stronger communicator over time.")
-        In-conversation training focus: \(profile?.inConversationTrainingFocus ?? "Reward clear, human, well-calibrated communication that would strengthen a real relationship.")
-        Relationship baseline before this session: \(relationship?.promptSummary ?? "No stored relationship history.")
-        Filler words: \(fillerCount)
-        Duration seconds: \(Int(duration))
-        Words per minute: \(pace.wordsPerMinute)
-        Pace label: \(pace.label)
-        Speaking identity: \(identity.identity)
-        Identity evidence: \(identity.evidence)
-        Recent average fillers: \(String(format: "%.1f", recentAverageFillers))
-        Recent average duration: \(Int(recentAverageDuration))
+        Coaching focus: \(setup.scenario.coachingFocus)
+        Target tone: \(setup.targetTone.title) — \(setup.targetTone.coachingPrompt)
+        Trust: \(finalState?.normalizedTrust ?? 5)/10
+        Engagement: \(finalState?.normalizedEngagement ?? 5)/10
+        Tension: \(finalState?.normalizedTension ?? 4)/10
+        Beat reached: \(finalState?.beat ?? "Not captured")
+        Relationship history: \(relationship?.promptSummary ?? "First conversation.")
         Real-world context:
         \(context.summaryLines.joined(separator: "\n"))
 
-        Full conversation:
+        --- LAYER 3: IDENTITY LENS ---
+        Style direction: \(profile?.speakingStyleGoal.title ?? "not set")
+        Biggest challenge: \(profile?.biggestChallenge.title ?? "unknown")
+        North star: \(profile?.communicationNorthStar ?? "Become a stronger communicator over time.")
+        Training focus: \(profile?.inConversationTrainingFocus ?? "Clear, human, well-calibrated communication.")
+        Current speaking identity: \(identity.identity)
+        Identity evidence: \(identity.evidence)
+
+        \(BaselineEngine.promptContext(baseline: BaselineStore.shared.baseline, pressure: BaselineStore.shared.pressureProfile, currentPressureLevel: BaselineEngine.classifyPressure(mode: .imConversation, isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled, streakDays: PracticeSession.calculateStreak(from: recentSessions)), styleGoal: profile?.speakingStyleGoal.title))
+
+        --- FULL CONVERSATION ---
         \(transcriptLog)
 
-        Combined user transcript:
+        --- USER TRANSCRIPT ONLY ---
         \(transcript)
 
-        Evaluate not only speaking delivery but conversational quality:
-        - directness
-        - relevance to the other person
-        - tone consistency
-        - recovery after awkward or pressured moments
-        - whether the user actually moved the conversation forward
-        - whether trust/engagement improved or tension escalated appropriately
-        - whether any gain in trust feels earned through responsiveness, steadiness, and specificity rather than empty positivity
-        - whether the user got meaningfully closer to their communication north star
-        - whether the user handled their biggest challenge better than they usually do
+        EVALUATION FOCUS:
+        Layer 2 matters most here. This is a conversation, not a speech.
+        - Did the user read the other person and respond to what was actually happening?
+        - Did they move the conversation forward or just react?
+        - Was any trust gain earned through specificity and responsiveness, or just politeness?
+        - Did tension resolve productively or get avoided?
+        - For Layer 3: did the user move even slightly toward their style direction? Note it if so.
         """
     }
 
@@ -6584,6 +9692,351 @@ struct IMConversationEvaluationService: IMConversationEvaluatorServicing {
             return contentData
         }
     }
+
+    // MARK: - Deterministic fallback + grounding gate (pure, exposed for tests)
+
+    /// Local content-word stop set for the IM grounding gate. Same established
+    /// local-set pattern as `PostRepCoachNoteService.engagementStopWords` :1089,
+    /// `AICoachService.engagementStopWords` :9313, and
+    /// `PracticeEvaluator.relevanceStopWords` — those are private to their own
+    /// types and cannot be reused cross-type. Tokens here don't count as
+    /// "engaging the transcript", so a grade that only echoes filler words like
+    /// "the"/"with" still falls back.
+    private nonisolated static let engagementStopWords: Set<String> = [
+        "the", "and", "for", "are", "but", "not", "you", "your", "with",
+        "this", "that", "they", "them", "from", "have", "what", "when",
+        "were", "will", "would", "should", "could", "about", "there",
+        "their", "then", "than", "into", "more", "some", "such", "only",
+        "very", "just", "most", "over", "also", "been", "being", "which",
+        "while", "these", "those", "here", "make", "made", "much", "many",
+        "like", "well", "even", "ever", "because", "really"
+    ]
+
+    /// Pure deterministic IM conversation grade — the always-on path offline /
+    /// non-English / no-provider, and the `fallback` every gated failure returns.
+    /// Mirrors `AICoachService.deterministicFeedback` :9341 and
+    /// `PostRepCoachNoteService.deterministicNote` :457. Built entirely from the
+    /// inputs + the SAME IM analyzers the per-turn reads already use
+    /// (`IMToneMatcher.score` for `toneMatch`, `IMUserMessageAnalyzer.analyze`
+    /// for warmth/specificity/reciprocity/hostility/disengagement aggregated
+    /// across the user's turns) so the fallback grade AGREES with the live tone
+    /// and relationship reads — single source of truth. No singletons, so it is
+    /// unit-testable, and it quotes a real user turn in the headline rather than
+    /// emitting a generic stat-restate.
+    ///
+    /// Honesty contract:
+    /// - Short sessions (<= 2 user turns or < 30s) soften the headline to an
+    ///   "early read" rather than a confident verdict, matching the LLM prompt's
+    ///   own short-session rule.
+    /// - Never invents a quote: the headline quotes the longest substantive user
+    ///   turn; with no usable turn it states a grounded scenario read instead.
+    /// - The outcome is resolved by the SAME `IMConversationOutcomeResolver` the
+    ///   relationship layer uses, so the call site's `outcome?.closingMessage`
+    ///   path is preserved end-to-end.
+    nonisolated static func deterministicEvaluation(
+        setup: IMConversationSetup,
+        turns: [IMConversationTurn],
+        finalState: IMConversationState?,
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        recentSessions: [PracticeSession],
+        relationship: IMRelationshipProfile?
+    ) -> IMConversationEvaluation {
+        let scenario = setup.scenario
+        let tone = setup.targetTone
+        let state = finalState ?? IMConversationState.starting
+
+        // --- Aggregate the SAME per-turn signals the live reads use ---
+        let userTurns = turns.filter { $0.speaker == .user && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let userTurnCount = userTurns.count
+        let isShortSession = userTurnCount <= 2 || duration < 30
+
+        var warmthTotal = 0
+        var specificityTotal = 0
+        var reciprocityTotal = 0
+        var hostilityTotal = 0
+        var disengagementTotal = 0
+        var runningState = IMConversationState.starting
+        for turn in userTurns {
+            let signal = IMUserMessageAnalyzer.analyze(
+                text: turn.text,
+                currentState: runningState,
+                scenario: scenario,
+                relationship: relationship
+            )
+            warmthTotal += signal.warmthScore
+            specificityTotal += signal.specificityScore
+            reciprocityTotal += signal.reciprocityScore
+            hostilityTotal += signal.hostilityScore
+            disengagementTotal += signal.disengagementScore
+            runningState = signal.adjustedState
+        }
+        let divisor = max(1, userTurnCount)
+        let avgWarmth = warmthTotal / divisor
+        let avgSpecificity = specificityTotal / divisor
+        let avgReciprocity = reciprocityTotal / divisor
+        let avgHostility = hostilityTotal / divisor
+        let avgDisengagement = disengagementTotal / divisor
+
+        // --- Scores: SAME tone matcher the per-turn read uses, plus state ---
+        let toneMatch = IMToneMatcher.score(for: tone, transcript: transcript)
+
+        // Clarity rewards specificity, penalizes filler density. (Pure ints,
+        // clamped 1...10 — no fake precision.)
+        let fillerPenalty = min(3, fillerCount / max(1, userTurnCount) / 2)
+        let clarityScore = Self.clampScore(3 + avgSpecificity - fillerPenalty)
+        // Composure tracks the resolved tension + how hostile the user's own
+        // turns read (a hostile user is escalating, not composed).
+        let composureScore = Self.clampScore(11 - state.normalizedTension - max(0, avgHostility - 2))
+        // Vocabulary is a conservative read of specificity + warmth range.
+        let vocabularyScore = Self.clampScore(3 + (avgSpecificity + avgWarmth) / 3)
+        // Conversation = did trust/engagement land + reciprocity, minus
+        // disengagement. This is the heaviest-weighted dimension (Layer 2).
+        let conversationScore = Self.clampScore(
+            (state.normalizedTrust + state.normalizedEngagement) / 2
+            + min(2, avgReciprocity / 3)
+            - min(3, avgDisengagement / 3)
+        )
+
+        // --- Headline: quote a real user turn (the grounding anchor) ---
+        let quotedTurn = Self.longestSubstantiveTurn(in: userTurns)
+        let headline = Self.deterministicHeadline(
+            quotedTurn: quotedTurn,
+            scenario: scenario,
+            state: state,
+            isShortSession: isShortSession
+        )
+
+        // --- Feedback: one earned strength + one grounded next move ---
+        let feedback = Self.deterministicFeedbackLine(
+            tone: tone,
+            avgReciprocity: avgReciprocity,
+            avgSpecificity: avgSpecificity,
+            state: state,
+            isShortSession: isShortSession
+        )
+
+        // --- Insights: 3 concrete observations, at least one quoting a turn ---
+        let insights = Self.deterministicInsights(
+            quotedTurn: quotedTurn,
+            tone: tone,
+            avgSpecificity: avgSpecificity,
+            avgReciprocity: avgReciprocity,
+            state: state,
+            fillerCount: fillerCount,
+            isShortSession: isShortSession
+        )
+
+        let suggestedDrill = Self.deterministicDrill(
+            tone: tone,
+            avgSpecificity: avgSpecificity,
+            avgReciprocity: avgReciprocity,
+            state: state
+        )
+
+        let actualTone = Self.inferredToneStatic(from: transcript)
+        let outcome = IMConversationOutcomeResolver.resolve(for: scenario, state: state)
+
+        return IMConversationEvaluation(
+            actualTone: actualTone,
+            toneMatch: toneMatch,
+            clarityScore: clarityScore,
+            composureScore: composureScore,
+            vocabularyScore: vocabularyScore,
+            conversationScore: conversationScore,
+            headline: headline,
+            feedback: feedback,
+            insights: insights,
+            suggestedDrill: suggestedDrill,
+            outcome: outcome
+        )
+    }
+
+    private nonisolated static func clampScore(_ value: Int) -> Int {
+        max(1, min(10, value))
+    }
+
+    /// The longest substantive user turn (>= 4 words), trimmed and capped to a
+    /// short span so the quote stays tight. Returns nil when no usable turn
+    /// exists — the headline then states a grounded scenario read instead of
+    /// fabricating a quote.
+    private nonisolated static func longestSubstantiveTurn(in userTurns: [IMConversationTurn]) -> String? {
+        let candidates = userTurns
+            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.split(whereSeparator: \.isWhitespace).count >= 4 }
+        guard let longest = candidates.max(by: { $0.count < $1.count }) else { return nil }
+        let words = longest.split(whereSeparator: \.isWhitespace).prefix(14)
+        let span = words.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard span.count >= 10 else { return nil }
+        return span
+    }
+
+    private nonisolated static func deterministicHeadline(
+        quotedTurn: String?,
+        scenario: IMConversationScenario,
+        state: IMConversationState,
+        isShortSession: Bool
+    ) -> String {
+        let landed = state.normalizedTrust >= 6 && state.normalizedTension <= 5
+        if let quotedTurn {
+            let quoted = "'\(quotedTurn.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"")))'"
+            if isShortSession {
+                return "Early read on a short exchange — \(quoted) set the tone, but there wasn't much to go on yet."
+            }
+            if landed {
+                return "You held the thread with \(quotedTurn.isEmpty ? "the chat" : quoted) and kept \(scenario.personaName) engaged."
+            }
+            return "You opened with \(quoted), but the conversation stayed tighter than it needed to."
+        }
+        if isShortSession {
+            return "Early read — the exchange ended before there was much to judge."
+        }
+        if landed {
+            return "You kept \(scenario.personaName) engaged and the conversation moving."
+        }
+        return "The conversation with \(scenario.personaName) stayed guarded — there's room to open it up."
+    }
+
+    private nonisolated static func deterministicFeedbackLine(
+        tone: IMTargetTone,
+        avgReciprocity: Int,
+        avgSpecificity: Int,
+        state: IMConversationState,
+        isShortSession: Bool
+    ) -> String {
+        let softener = isShortSession ? "From this much it's an early read, but " : ""
+        if avgReciprocity >= 4 {
+            return "\(softener)you brought the other person into it — asking back and responding to what they said is what kept this from going flat. To push further, aim to \(tone.coachingPrompt)."
+        }
+        if avgSpecificity <= 2 {
+            return "\(softener)your replies stayed short and general. Adding one concrete detail per message gives the other person something real to respond to, and it's what would help you \(tone.coachingPrompt)."
+        }
+        if state.normalizedTension >= 7 {
+            return "\(softener)the tension climbed and didn't fully resolve. Naming the awkwardness directly, then steering back, keeps you composed — that's the core of being able to \(tone.coachingPrompt)."
+        }
+        return "\(softener)you kept the conversation steady. The next lever is to \(tone.coachingPrompt) — that's the edge between holding a chat and leading one."
+    }
+
+    private nonisolated static func deterministicInsights(
+        quotedTurn: String?,
+        tone: IMTargetTone,
+        avgSpecificity: Int,
+        avgReciprocity: Int,
+        state: IMConversationState,
+        fillerCount: Int,
+        isShortSession: Bool
+    ) -> [String] {
+        var insights: [String] = []
+        if let quotedTurn {
+            insights.append("Your line '\(quotedTurn.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"")))' carried the most weight — it's where the conversation turned.")
+        } else if isShortSession {
+            insights.append("The exchange was short, so treat this as an early signal rather than a verdict.")
+        } else {
+            insights.append("Your replies stayed brief — there wasn't a standout line for the other person to grab onto.")
+        }
+
+        if avgReciprocity >= 4 {
+            insights.append("You drew the other person in rather than just reacting — that reciprocity is what built engagement.")
+        } else {
+            insights.append("Most replies answered without inviting more back. One genuine question would have kept the thread alive.")
+        }
+
+        if avgSpecificity <= 2 {
+            insights.append("Specificity ran low. A concrete detail per message is the fastest way to sound clear and \(tone.title.lowercased()).")
+        } else if fillerCount >= 4 {
+            insights.append("Fillers crept in across the chat — trimming them sharpens the \(tone.title.lowercased()) read you're going for.")
+        } else if state.normalizedTrust >= 6 {
+            insights.append("Trust landed above the midpoint — the other person was reading you as someone worth staying in it with.")
+        } else {
+            insights.append("Trust stayed guarded — leading with intent earlier would move it in the right direction.")
+        }
+
+        return Array(insights.prefix(3))
+    }
+
+    private nonisolated static func deterministicDrill(
+        tone: IMTargetTone,
+        avgSpecificity: Int,
+        avgReciprocity: Int,
+        state: IMConversationState
+    ) -> String {
+        if avgReciprocity < 4 {
+            return "Reciprocity drill: end each reply with one genuine question that moves the conversation, not just acknowledges it."
+        }
+        if avgSpecificity <= 2 {
+            return "Specificity drill: rewrite three short replies to each carry one concrete detail."
+        }
+        if state.normalizedTension >= 7 {
+            return "Composure drill: name the tension in one line, then steer back to the point without softening it away."
+        }
+        return "Tone drill: take one reply and rewrite it to \(tone.coachingPrompt)."
+    }
+
+    /// Deterministic `actualTone` read used by the fallback — mirrors the
+    /// instance `inferredTone(from:paceLabel:)` :8964 lexical rules without the
+    /// pace dependency (the fallback states tone from word choice only, never a
+    /// fabricated pace claim).
+    private nonisolated static func inferredToneStatic(from transcript: String) -> String {
+        let lower = transcript.lowercased()
+        if lower.contains("thanks") || lower.contains("glad") || lower.contains("appreciate") {
+            return "Warm"
+        }
+        if lower.contains("i need") || lower.contains("let's") || lower.contains("i want") {
+            return "Assertive"
+        }
+        if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Measured"
+        }
+        return "Clear but measured"
+    }
+
+    /// Grounding gate for the AI/backend grade (mirrors
+    /// `PostRepCoachNoteService.engagesTranscript` :1112 and
+    /// `AICoachService.engagesTranscript` :9545). True when the grade genuinely
+    /// engages a real turn from the conversation: the headline OR any insight
+    /// shares a >= 4-char non-stop content word with the transcript, OR contains
+    /// a >= 12-char verbatim slice of it (case-insensitive). Empty transcript ->
+    /// true (nothing to quote; never blocks). On `false`, `evaluateConversation`
+    /// substitutes the grounded deterministic fallback.
+    nonisolated static func evaluationEngagesTranscript(_ evaluation: IMConversationEvaluation, transcript: String) -> Bool {
+        let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTranscript.isEmpty else { return true }
+
+        let lowerTranscript = trimmedTranscript.lowercased()
+        // The headline + insights are the qualitative read that must be grounded.
+        let candidate = ([evaluation.headline] + evaluation.insights)
+            .joined(separator: " ")
+            .lowercased()
+
+        // 1) Shared content word.
+        let transcriptWords = Set(
+            lowerTranscript
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count >= 4 && !engagementStopWords.contains($0) }
+        )
+        let candidateWords = candidate
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count >= 4 && !engagementStopWords.contains($0) }
+        if candidateWords.contains(where: { transcriptWords.contains($0) }) {
+            return true
+        }
+
+        // 2) >= 12-char verbatim slice of the transcript appears in the read.
+        let window = 12
+        let chars = Array(lowerTranscript)
+        if chars.count >= window {
+            for start in 0...(chars.count - window) {
+                let slice = String(chars[start..<(start + window)])
+                if candidate.contains(slice) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
 }
 
 @MainActor
@@ -6597,97 +10050,172 @@ struct AICoachService: AICoachServicing {
         profile: CoachingProfile?,
         plan: CoachingPlan?
     ) async throws -> AICoachFeedback {
+        // Fallback-first (mirrors PostRepCoachNoteService.generate :369). The
+        // deterministic read is computed up front and returned on EVERY gated
+        // failure instead of throwing — so a non-English rep, an offline rep,
+        // a missing key, a malformed response, or an ungrounded AI read all
+        // yield a real grounded Coach Read rather than the raw error text the
+        // old throw-path surfaced at SummaryView ("Coach Read failed: …").
+        // The protocol stays `async throws` for type-compat; this body simply
+        // stops throwing on the gated paths.
         settings.resetIfNeeded()
+        let fallback = Self.deterministicFeedback(input: input)
+
+        // Locale gate — the one-liner the whole of PracticeSupport.swift was
+        // missing (verified 0 prior occurrences). A Spanish/French rep gets the
+        // deterministic grounded read, never English LLM coaching.
+        guard activeLocaleSupportsAI() else { return fallback }
+
+        // Defense-in-depth: SummaryView already pre-checks <10 words (:2877),
+        // but a thin transcript here returns the deterministic read rather
+        // than throwing .transcriptTooShort.
         guard input.transcript.split(whereSeparator: \.isWhitespace).count >= Self.minimumTranscriptWordCount else {
-            throw AICoachError.transcriptTooShort
+            return fallback
         }
-        guard let provider = settings.activeProvider else { throw AICoachError.missingAPIKey }
-        guard let apiKey = apiKey(for: provider) else { throw AICoachError.missingAPIKey }
-        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
+        guard let provider = settings.activeProvider,
+              let apiKey = apiKey(for: provider),
+              let endpoint = provider.endpoint else {
+            return fallback
+        }
 
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let prompt = prompt(for: input, profile: profile, plan: plan)
-        switch provider {
-        case .none:
-            throw AICoachError.providerDisabled
-        case .openAI, .deepSeek:
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            let body = OpenAICompatibleChatRequest(
-                model: provider.model,
-                messages: [
-                    .init(role: "system", content: systemPrompt),
-                    .init(role: "user", content: prompt)
-                ],
-                temperature: 0.3,
-                responseFormat: .jsonObject
-            )
-            request.httpBody = try JSONEncoder().encode(body)
-        case .gemini:
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-            let body = GeminiGenerateContentRequest(
-                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
-                contents: [.init(parts: [.init(text: prompt)])],
-                generationConfig: .init(
+            let prompt = prompt(for: input, profile: profile, plan: plan)
+            let system = Self.systemPrompt(persona: CoachPersona.persona(for: input.voice))
+            switch provider {
+            case .none:
+                return fallback
+            case .openAI, .deepSeek:
+                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                let body = OpenAICompatibleChatRequest(
+                    model: provider.model,
+                    messages: [
+                        .init(role: "system", content: system),
+                        .init(role: "user", content: prompt)
+                    ],
                     temperature: 0.3,
-                    responseMimeType: "application/json"
+                    responseFormat: .jsonObject
                 )
-            )
-            request.httpBody = try JSONEncoder().encode(body)
-        }
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AICoachError.invalidResponse
-        }
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            throw apiError(from: data, provider: provider)
-        }
-
-        let jsonData: Data
-        switch provider {
-        case .none:
-            throw AICoachError.providerDisabled
-        case .openAI, .deepSeek:
-            let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
-            guard let content = completion.choices.first?.message.content,
-                  let contentData = content.data(using: .utf8) else {
-                throw AICoachError.invalidResponse
+                request.httpBody = try JSONEncoder().encode(body)
+            case .gemini:
+                request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+                let body = GeminiGenerateContentRequest(
+                    systemInstruction: .init(parts: [.init(text: system)]),
+                    contents: [.init(parts: [.init(text: prompt)])],
+                    generationConfig: .init(
+                        temperature: 0.3,
+                        responseMimeType: "application/json"
+                    )
+                )
+                request.httpBody = try JSONEncoder().encode(body)
             }
-            jsonData = contentData
-        case .gemini:
-            let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
-            let content = completion.candidates
-                .first?
-                .content
-                .parts
-                .compactMap(\.text)
-                .joined()
-            guard let content, let contentData = content.data(using: .utf8) else {
-                throw AICoachError.invalidResponse
-            }
-            jsonData = contentData
-        }
 
-        let feedback = try JSONDecoder().decode(AICoachFeedback.self, from: jsonData)
-        await MainActor.run {
-            settings.recordAnalysis()
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                return fallback
+            }
+
+            let jsonData: Data
+            switch provider {
+            case .none:
+                return fallback
+            case .openAI, .deepSeek:
+                let completion = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+                guard let content = completion.choices.first?.message.content,
+                      let contentData = content.data(using: .utf8) else {
+                    return fallback
+                }
+                jsonData = contentData
+            case .gemini:
+                let completion = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+                let content = completion.candidates
+                    .first?
+                    .content
+                    .parts
+                    .compactMap(\.text)
+                    .joined()
+                guard let content, let contentData = content.data(using: .utf8) else {
+                    return fallback
+                }
+                jsonData = contentData
+            }
+
+            guard let feedback = try? JSONDecoder().decode(AICoachFeedback.self, from: jsonData) else {
+                return fallback
+            }
+            // Brand-voice contract: no exclamation, no chirpy filler, bounded
+            // length. A policy-violating read falls back rather than rendering.
+            guard Self.passesBrandVoiceContract(feedback) else { return fallback }
+            // Transcript-grounding gate (mirrors PostRepCoachNoteService
+            // .engagesTranscript :1112 + GrammarFeedbackService's excerpt
+            // check): keyImprovement OR revisedOpening must actually engage
+            // the rep's words, else it's a generic read dressed as a coach
+            // note and we return the deterministic fallback. Empty transcript
+            // -> passes (nothing to quote).
+            guard Self.engagesTranscript(feedback, transcript: input.transcript) else {
+                return fallback
+            }
+            await MainActor.run {
+                settings.recordAnalysis()
+            }
+            return feedback
+        } catch {
+            return fallback
         }
-        return feedback
     }
 
-    private var systemPrompt: String {
+    /// Pure system-prompt builder over `persona` only (mirrors the
+    /// `nonisolated static` `userPrompt` seam). Made static + unit-testable so
+    /// the STANDING CASE rubric line and the honesty rules are verified without
+    /// a live model — single source of truth, no duplicated prompt string.
+    nonisolated static func systemPrompt(persona: CoachPersona) -> String {
         """
-        You are a supportive, professional speaking coach inspired by the tone of a thoughtful Toastmasters evaluator.
-        Coach toward the speaker's desired voice and presence, not just generic clarity.
-        Return JSON only with keys: strengths, keyImprovement, suggestedDrill, revisedOpening.
-        Keep strengths to exactly 2 concise items.
-        Keep keyImprovement to one paragraph.
-        Keep suggestedDrill to one sentence.
-        Keep revisedOpening to 1-2 sentences that improve the speaker's opening while preserving their likely intent and moving it toward the requested voice.
-        Avoid harsh language, therapy language, or overpraise.
+        You are a senior £130/hr speaking coach writing a structured read of one \
+        practice rep for your client. Voice register: \(persona.signatureTone)
+
+        What makes a good read (priority order):
+        1. SUBSTANCE FIRST. If a QUESTION ASKED is given, your read must judge \
+        whether the rep actually answered THAT question and where the main \
+        point landed — lead (in the first sentence) or buried (arrived late). \
+        Ground this in their words, never a generic relevance claim.
+        2. QUOTE A SPECIFIC PHRASE from their transcript — an opener, a claim, \
+        a structural choice. Quote it in their words. A read that never quotes \
+        is a dashboard, not a coach.
+        3. SUPPORT vs ASSERTION. Note whether claims were backed by an example \
+        or specifics, or stated bare — when the transcript shows it.
+        4. Connect to prior reps only when genuinely true (continuity), e.g. \
+        "second time the lede arrived late." Never invent past behavior.
+        5. STANDING CASE. If a STANDING CASE is given, weigh this rep against \
+        that standing target/measure (the user's ongoing goal), not just this \
+        rep in isolation — but it is durable context, NOT this-rep evidence: \
+        treat it as the hypothesis you are testing, and never assert the \
+        standing target was hit this rep unless the transcript shows it.
+        6. Stats (score, filler count, pace) are CONTEXT, not the read.
+
+        Honesty rules (hard):
+        - Patterns are HYPOTHESES, not diagnoses. Association, never causation.
+        - Make no claim the input does not support. If you lack data, say so — \
+        never invent a number, a quote, or a history.
+        - Never punish-shame. If something dropped, name it factually and \
+        anchor one small next move.
+        - No exclamation marks. No chirpy filler ("Awesome", "Great job", \
+        "Let's"). No emoji.
+
+        Output STRICT JSON, nothing else:
+        {"strengths": ["…","…"], "keyImprovement": "…", "suggestedDrill": "…", \
+        "revisedOpening": "…"}
+        - strengths: exactly 2 concise items, at least one tied to a quoted \
+        moment.
+        - keyImprovement: one short paragraph; if a QUESTION ASKED is given it \
+        must address answer/where-the-point-landed, grounded in their words.
+        - suggestedDrill: one sentence.
+        - revisedOpening: 1-2 sentences modelling a stronger opening that \
+        PRESERVES the speaker's intent and moves it toward their voice — show, \
+        don't tell.
         """
     }
 
@@ -6696,26 +10224,121 @@ struct AICoachService: AICoachServicing {
         profile: CoachingProfile?,
         plan: CoachingPlan?
     ) -> String {
-        """
-        Session mode: \(input.mode.rawValue)
-        Score: \(input.score.map(String.init) ?? "n/a") / 10
-        Filler words: \(input.fillerCount)
-        Duration seconds: \(Int(input.duration))
-        Words per minute: \(input.wordsPerMinute)
-        Current speaking identity: \(input.speakingIdentity)
-        Speaker context: \(profile?.speakingContext.title ?? "unknown")
-        Speaker priority: \(profile?.primaryGoal.title ?? "unknown")
-        Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")
-        Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")
-        Target speaking style: \(profile?.speakingStyleGoal.title ?? "unknown")
-        Personal goal reference: \(profile?.personalGoalReference ?? "none")
-        Coaching brief: \(profile?.coachingBrief ?? "none")
-        Current focus suggestion: \(plan?.currentFocus ?? "none")
-        Suggested drill: \(plan?.suggestedDrill ?? "none")
+        let baselineStore = BaselineStore.shared
+        let pressureLevel = BaselineEngine.classifyPressure(
+            mode: input.mode,
+            isPressureModeOn: PracticeSettingsManager.shared.pressureModeEnabled,
+            streakDays: PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
+        )
+        let baselineContext = BaselineEngine.promptContext(
+            baseline: baselineStore.baseline,
+            pressure: baselineStore.pressureProfile,
+            currentPressureLevel: pressureLevel,
+            styleGoal: profile?.speakingStyleGoal.title
+        )
+        return Self.userPrompt(
+            input: input,
+            profile: profile,
+            plan: plan,
+            baselineContext: baselineContext
+        )
+    }
 
-        Transcript:
-        \(input.transcript)
-        """
+    /// Pure user-prompt builder (mirrors `PostRepCoachNoteService.userPrompt`
+    /// :1174). `nonisolated static` so the omit-when-empty / surface-when-
+    /// present contract for THE QUESTION ASKED, the register line, the baseline
+    /// deltas, and the RECENT REPS block is unit-tested without singletons.
+    /// The singleton-dependent `baselineContext` is computed by the caller and
+    /// injected, so this stays pure over its arguments.
+    nonisolated static func userPrompt(
+        input: AICoachSessionInput,
+        profile: CoachingProfile?,
+        plan: CoachingPlan?,
+        baselineContext: String
+    ) -> String {
+        var lines: [String] = []
+        // Voice + per-voice register line — same register mapping the post-rep
+        // note and the session debrief use, so the Coach Read sounds like the
+        // same coach. Omitted entirely when no voice is set (cold start).
+        if let voice = input.voice {
+            lines.append("User's voice goal: \(voice.title) (\(voice.coachingDescription))")
+            lines.append(AIInsightsService.registerClause(for: voice))
+        }
+        lines.append("Mode: \(input.mode.displayLabel)")
+        lines.append("Score: \(input.score.map(String.init) ?? "n/a")/10            Filler words: \(input.fillerCount)")
+        lines.append("Duration: \(Int(input.duration))s   Words per minute: \(input.wordsPerMinute)")
+        lines.append("Current speaking identity: \(input.speakingIdentity)")
+        lines.append("Speaker context: \(profile?.speakingContext.title ?? "unknown")")
+        lines.append("Speaker priority: \(profile?.primaryGoal.title ?? "unknown")")
+        lines.append("Speaker challenge: \(profile?.biggestChallenge.title ?? "unknown")")
+        lines.append("Desired outcome: \(profile?.desiredOutcome.title ?? "unknown")")
+        lines.append("Target speaking style: \(profile?.speakingStyleGoal.title ?? "unknown")")
+        lines.append("Personal goal reference: \(profile?.personalGoalReference ?? "none")")
+        lines.append("Coaching brief: \(profile?.coachingBrief ?? "none")")
+        lines.append("Current focus suggestion: \(plan?.currentFocus ?? "none")")
+        lines.append("Suggested drill: \(plan?.suggestedDrill ?? "none")")
+        // Confidence-gated baselines — omitted when nil (never a fake number).
+        if let baselineFiller = input.baselineFillerRate {
+            lines.append(String(format: "Baseline filler rate: %.1f per minute", baselineFiller))
+        }
+        if let baselinePace = input.baselinePaceWPM {
+            lines.append(String(format: "Baseline pace: %.0f WPM", baselinePace))
+        }
+
+        let trimmedContext = baselineContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedContext.isEmpty {
+            lines.append("")
+            lines.append(trimmedContext)
+        }
+
+        // STANDING CASE — the user's durable working hypothesis + active
+        // intervention target/measure (SUBSTANCE-4). Durable context the coach
+        // is carrying, NOT this-rep evidence: the rubric weighs the rep against
+        // this standing target but never asserts it was hit without transcript
+        // support. Each component is omitted when its source field is nil; the
+        // whole block is omitted when all three are absent (no placeholder).
+        var standingCaseLines: [String] = []
+        if let hypothesis = input.standingHypothesis?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !hypothesis.isEmpty {
+            standingCaseLines.append("Working hypothesis: \(hypothesis)")
+        }
+        if let target = input.standingObservableTarget?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !target.isEmpty {
+            standingCaseLines.append("Observable target: \(target)")
+        }
+        if let measure = input.standingSuccessMeasure?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !measure.isEmpty {
+            standingCaseLines.append("Success measure: \(measure)")
+        }
+        if !standingCaseLines.isEmpty {
+            lines.append("")
+            lines.append("STANDING CASE (the user's current goal/target — reason over this, not just this rep):")
+            lines.append(contentsOf: standingCaseLines)
+        }
+
+        // THE QUESTION ASKED — the field that makes "did you answer it"
+        // possible. Omitted entirely when unknown (no placeholder injected).
+        let trimmedPrompt = input.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPrompt.isEmpty {
+            lines.append("")
+            lines.append("THE QUESTION ASKED: \(trimmedPrompt)")
+        }
+
+        lines.append("")
+        lines.append("THIS REP — TRANSCRIPT (quote a specific phrase, and say whether it answered THE QUESTION ASKED and where the main point landed):")
+        lines.append(input.transcript)
+
+        // Continuity — drop-in summaries of prior reps. Omitted when empty;
+        // the prompt forbids inventing past behavior.
+        if !input.recentSessionSummaries.isEmpty {
+            lines.append("")
+            lines.append("RECENT REPS (continuity, never invent):")
+            for summary in input.recentSessionSummaries.prefix(3) {
+                lines.append("- \(summary)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
     }
 
     private func apiKey(for provider: AIProvider) -> String? {
@@ -6731,17 +10354,311 @@ struct AICoachService: AICoachServicing {
         return nil
     }
 
-    private func apiError(from data: Data, provider: AIProvider) -> AICoachError {
-        if provider == .gemini,
-           let response = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data) {
-            return .apiFailure(response.error.message)
+    /// Locale gate — `true` only when the active locale supports an English
+    /// coaching read (mirrors `PostRepCoachNoteService.activeLocaleSupportsAI`
+    /// :1394). On `false`, `generateDeeperFeedback` returns the deterministic
+    /// fallback instead of English LLM coaching. `AICoachService` is already
+    /// `@MainActor`, so this is a plain method, not an actor hop.
+    private func activeLocaleSupportsAI() -> Bool {
+        LocaleSettingsManager.shared.current.aiSupported
+    }
+
+    // MARK: - Deterministic fallback (pure, exposed for tests)
+
+    /// Local content-word stop set for the transcript-grounding gate. Same
+    /// established local-set pattern as `PostRepCoachNoteService
+    /// .engagementStopWords` :1089 and `PracticeEvaluator.relevanceStopWords`
+    /// — those are private to their own types and cannot be reused cross-type.
+    /// Tokens here don't count as "engaging the transcript", so feedback that
+    /// only shares filler words like "the"/"with" still falls back.
+    private nonisolated static let engagementStopWords: Set<String> = [
+        "the", "and", "for", "are", "but", "not", "you", "your", "with",
+        "this", "that", "they", "them", "from", "have", "what", "when",
+        "were", "will", "would", "should", "could", "about", "there",
+        "their", "then", "than", "into", "more", "some", "such", "only",
+        "very", "just", "most", "over", "also", "been", "being", "which",
+        "while", "these", "those", "here", "make", "made", "much", "many",
+        "like", "well", "even", "ever", "because", "really"
+    ]
+
+    /// Pure deterministic Coach Read — the always-on path offline / non-English
+    /// / no-provider, and the `fallback` every gated failure returns. Mirrors
+    /// `PostRepCoachNoteService.deterministicNote` :457. Built entirely from
+    /// the input + `CoachPersona` (no singletons), so it is unit-testable and
+    /// genuinely coach-grade rather than a stat-restate: it quotes the opener
+    /// when one exists and states the SHARED answered/buried verdict
+    /// (`PracticeEvaluator.promptAnswerVerdict`) so every surface agrees.
+    ///
+    /// Honesty contract:
+    /// - The substance verdict is asserted ONLY above its evidence floor
+    ///   (`promptAnswerVerdict` returns nil on thin prompt/transcript); below
+    ///   the floor the read states delivery facts only — no fake certainty.
+    /// - Baseline comparisons fire only when the confidence-gated baseline is
+    ///   present (`baselineFillerRate`/`PaceWPM` non-nil).
+    /// - Never invents a quote: `openerAnchor` returns nil on a too-short
+    ///   transcript, and `revisedOpening` is then "" (the render path already
+    ///   handles empty `revisedOpening`).
+    /// - Every field passes `passesBrandVoiceContract` by construction.
+    nonisolated static func deterministicFeedback(input: AICoachSessionInput) -> AICoachFeedback {
+        let persona = CoachPersona.persona(for: input.voice)
+        let opener = openerAnchor(in: input.transcript)
+
+        // --- strengths[0]: quoted opener when present, else clean-delivery ---
+        let firstStrength: String
+        if let opener {
+            firstStrength = openerStrength(opener: opener, persona: persona)
+        } else if input.fillerCount == 0 {
+            firstStrength = "You kept the delivery clean — no filler words to cut."
+        } else if let score = input.score, score >= 7 {
+            firstStrength = "A solid rep — the read held together start to finish."
+        } else {
+            firstStrength = "You got the rep in and kept going under the clock."
         }
 
-        if let response = try? JSONDecoder().decode(OpenAICompatibleErrorResponse.self, from: data) {
-            return .apiFailure(response.error.message)
+        // --- strengths[1]: a delivery strength vs baseline (never invented) ---
+        let secondStrength = deliveryStrength(input: input)
+
+        // --- keyImprovement: the SHARED substance verdict above the floor ---
+        let read = PracticeEvaluator.promptRelevance(
+            prompt: input.prompt.isEmpty ? nil : input.prompt,
+            transcript: input.transcript
+        )
+        let verdict = PracticeEvaluator.promptAnswerVerdict(for: read)
+        let keyImprovement: String
+        switch verdict {
+        case .answered:
+            // The point led — `firstSentenceOverlap` cleared the strong bar.
+            keyImprovement = "You engaged the question directly and led with the point — the answer was right up front. Tighten the close so the last line lands as cleanly as the open."
+        case .partial:
+            // The point neither clearly led nor was clearly present-but-late.
+            // True for both the loose-engagement and barely-engaged cases — no
+            // "arrived late" claim (that is `.buried`'s alone) and no claim of
+            // contact the rep may not have made.
+            keyImprovement = "The question's key terms didn't clearly lead your answer. Make your main point the first sentence, then spend the rest supporting it."
+        case .buried:
+            // The point was present across the rep but absent from the lead —
+            // the positional claim is TRUE here, not asserted.
+            keyImprovement = "The answer was in there, but it arrived late. Lead with your point in the first sentence next time, then build the case behind it."
+        case .none:
+            // Below the evidence floor — NO substance claim. Delivery only.
+            keyImprovement = deliveryImprovement(input: input)
         }
 
-        return .invalidResponse
+        // --- suggestedDrill: per-verdict / per-voice deterministic line ---
+        let suggestedDrill = drillLine(verdict: verdict, persona: persona)
+
+        // --- revisedOpening: lead-with-the-point rewrite anchored to the
+        // opener, or "" when there's nothing to anchor (no fabrication). ---
+        let revisedOpening: String
+        if let opener {
+            revisedOpening = revisedOpeningLine(opener: opener, persona: persona)
+        } else {
+            revisedOpening = ""
+        }
+
+        return AICoachFeedback(
+            strengths: [firstStrength, secondStrength],
+            keyImprovement: keyImprovement,
+            suggestedDrill: suggestedDrill,
+            revisedOpening: revisedOpening
+        )
+    }
+
+    /// The first sentence-like span of the transcript, trimmed, when it is
+    /// long enough to quote (>= 10 chars, the `openerAnchoredSentence` floor).
+    /// Returns nil otherwise so the fallback never fabricates a quote.
+    private nonisolated static func openerAnchor(in transcript: String) -> String? {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // First sentence: split on . ! ? — fall back to a leading word window.
+        let firstSentence = trimmed
+            .split(whereSeparator: { $0 == "." || $0 == "!" || $0 == "?" })
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? trimmed
+        // Cap to a short opener span (first ~10 words) so the quote stays tight.
+        let words = firstSentence.split(whereSeparator: \.isWhitespace).prefix(10)
+        let opener = words.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard opener.count >= 10 else { return nil }
+        return opener
+    }
+
+    /// Per-voice quoted-opener strength (mirrors
+    /// `PostRepCoachNoteService.openerAnchoredSentence` :1042).
+    private nonisolated static func openerStrength(opener: String, persona: CoachPersona) -> String {
+        let quoted = "'\(opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\"")))'"
+        switch persona.voice {
+        case .authoritative: return "Your opener — \(quoted) — set the frame cleanly."
+        case .warm:          return "You opened with \(quoted) — it set the right tone."
+        case .concise:       return "Opener: \(quoted). It landed."
+        case .persuasive:    return "The opener — \(quoted) — set the premise well."
+        case .executive:     return "Opening with \(quoted) — effective framing."
+        case .storytelling:  return "You opened with \(quoted) — the first line drew the listener in."
+        case .none:          return "Your opener — \(quoted) — set the frame."
+        }
+    }
+
+    /// A delivery strength grounded in the metrics vs the confidence-gated
+    /// baseline — never invented. Priority: fillers at/below baseline, then a
+    /// pace in the 100-160 band, then a clean zero-filler rep, then a steady
+    /// fallback that asserts nothing it cannot support.
+    private nonisolated static func deliveryStrength(input: AICoachSessionInput) -> String {
+        if let baselineFiller = input.baselineFillerRate, baselineFiller > 0 {
+            let minutes = max(input.duration / 60.0, 0.0001)
+            let sessionRate = Double(input.fillerCount) / minutes
+            if sessionRate <= baselineFiller {
+                return "Your filler rate sat at or below your usual — the discipline is holding."
+            }
+        }
+        if input.wordsPerMinute >= 100 && input.wordsPerMinute <= 160 {
+            return "Your pace stayed in a listenable band — easy to follow, no rush."
+        }
+        if input.fillerCount == 0 {
+            return "Not a single filler word — the delivery stayed clean throughout."
+        }
+        return "You held a steady delivery and saw the rep through."
+    }
+
+    /// Delivery-only improvement used when the substance verdict is below its
+    /// evidence floor (no prompt / thin transcript) — states a pace or filler
+    /// fact, never a substance claim. No fake certainty.
+    private nonisolated static func deliveryImprovement(input: AICoachSessionInput) -> String {
+        if input.wordsPerMinute > 170 {
+            return "Your pace ran fast at \(input.wordsPerMinute) WPM. Add a beat between points so each one has room to land."
+        }
+        if input.wordsPerMinute > 0 && input.wordsPerMinute < 95 {
+            return "Your pace ran slow at \(input.wordsPerMinute) WPM. Lift the energy a touch so the line carries."
+        }
+        if input.fillerCount >= 4 {
+            return "Fillers crept in this rep. Try a deliberate pause where a filler wants to go — silence reads as composure."
+        }
+        return "Pick one concrete idea and make it the spine of the next rep, then cut anything that doesn't serve it."
+    }
+
+    /// Per-verdict / per-voice deterministic drill line.
+    private nonisolated static func drillLine(verdict: PracticeEvaluator.PromptAnswerVerdict?, persona: CoachPersona) -> String {
+        switch verdict {
+        case .buried, .partial:
+            return "BLUF drill: state your answer in one sentence first, then give two sentences of support."
+        case .answered:
+            return "Close-strong drill: end on a single declarative sentence that restates the point."
+        case .none:
+            switch persona.voice {
+            case .concise:
+                return "One-breath drill: deliver the core idea in a single breath, then stop."
+            case .storytelling:
+                return "Arc drill: open on a concrete moment, then connect it to the point."
+            default:
+                return "Pause drill: insert one deliberate beat between your two strongest points."
+            }
+        }
+    }
+
+    /// A deterministic lead-with-the-point rewrite anchored to the opener.
+    private nonisolated static func revisedOpeningLine(opener: String, persona: CoachPersona) -> String {
+        let trimmedOpener = opener.trimmingCharacters(in: CharacterSet(charactersIn: ".'\""))
+        switch persona.voice {
+        case .executive, .authoritative:
+            return "Lead with the verdict, then support it: open on your conclusion in one line before the context you started with ('\(trimmedOpener)')."
+        case .persuasive:
+            return "Open with your claim, then the evidence: state the recommendation first, then earn it — rather than building up to it from '\(trimmedOpener)'."
+        case .concise:
+            return "Cut to it: make your first sentence the point itself, not the run-up ('\(trimmedOpener)')."
+        default:
+            return "Try opening on the point itself — say what you concluded first, then walk back to '\(trimmedOpener)' as support."
+        }
+    }
+
+    // MARK: - Brand-voice contract + grounding gate (pure, exposed for tests)
+
+    /// True when every emitted text field honors the brand-voice contract:
+    /// no exclamation marks, no chirpy filler ("Awesome"/"Great job"/"Let's"),
+    /// bounded length. Mirrors `PostRepCoachNoteService.passesBrandVoiceContract`
+    /// :1070 applied across all four `AICoachFeedback` fields.
+    nonisolated static func passesBrandVoiceContract(_ feedback: AICoachFeedback) -> Bool {
+        let fields = feedback.strengths + [feedback.keyImprovement, feedback.suggestedDrill]
+        for field in fields {
+            if !fieldPassesBrandVoice(field, allowEmpty: false) { return false }
+        }
+        // revisedOpening may legitimately be empty (the render path handles it).
+        if !fieldPassesBrandVoice(feedback.revisedOpening, allowEmpty: true) { return false }
+        return true
+    }
+
+    private nonisolated static func fieldPassesBrandVoice(_ text: String, allowEmpty: Bool) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return allowEmpty }
+        let lower = trimmed.lowercased()
+        if trimmed.contains("!") { return false }
+        if lower.contains("let's") || lower.contains("lets ") { return false }
+        if lower.contains("awesome") { return false }
+        if lower.contains("great job") { return false }
+        if trimmed.count > 320 { return false }
+        return true
+    }
+
+    /// Transcript-grounding gate (mirrors `PostRepCoachNoteService
+    /// .engagesTranscript` :1112). True when the AI feedback genuinely engages
+    /// the rep's transcript: `keyImprovement` OR `revisedOpening` shares a
+    /// >= 4-char non-stop content word with the transcript, OR contains a
+    /// >= 12-char verbatim slice of it (case-insensitive). Empty transcript ->
+    /// true (nothing to quote; never blocks).
+    nonisolated static func engagesTranscript(_ feedback: AICoachFeedback, transcript: String) -> Bool {
+        let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTranscript.isEmpty else { return true }
+
+        let lowerTranscript = trimmedTranscript.lowercased()
+        // The two SUBSTANCE fields are what must be grounded.
+        let candidate = "\(feedback.keyImprovement) \(feedback.revisedOpening)".lowercased()
+
+        // 1) Shared content word.
+        let transcriptWords = Set(
+            lowerTranscript
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count >= 4 && !engagementStopWords.contains($0) }
+        )
+        let candidateWords = candidate
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count >= 4 && !engagementStopWords.contains($0) }
+        if candidateWords.contains(where: { transcriptWords.contains($0) }) {
+            return true
+        }
+
+        // 2) >= 12-char verbatim slice of the transcript appears in the field.
+        let window = 12
+        let chars = Array(lowerTranscript)
+        if chars.count >= window {
+            for start in 0...(chars.count - window) {
+                let slice = String(chars[start..<(start + window)])
+                if candidate.contains(slice) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    // MARK: - Continuity (pure, exposed for tests)
+
+    /// Build the continuity summaries the Coach Read feeds into
+    /// `recentSessionSummaries`: drop the current rep, take the next 3 prior
+    /// reps, map each to the same "Mode | score X/10 | N fillers" shape the
+    /// session debrief renders (`AIInsightsService.userPrompt` :309). Pure over
+    /// the inputs so the exclude-current-rep + bound-to-3 contract is tested
+    /// without the View. Never invents — only describes real stored sessions.
+    nonisolated static func recentSessionSummaries(
+        sessions: [PracticeSession],
+        currentRepID: UUID?
+    ) -> [String] {
+        sessions
+            .filter { currentRepID == nil || $0.id != currentRepID }
+            .prefix(3)
+            .map { rep in
+                let scoreText = rep.score.map { "\($0)/10" } ?? "n/a"
+                return "\(rep.mode.displayLabel) | score \(scoreText) | \(rep.fillerWordCount) filler\(rep.fillerWordCount == 1 ? "" : "s")"
+            }
     }
 }
 
@@ -7018,3 +10935,291 @@ private struct GeminiErrorResponse: Codable {
 
     let error: ErrorBody
 }
+// MARK: - Video Analysis Service
+
+#if canImport(AVFoundation) && canImport(UIKit)
+import AVFoundation
+import UIKit
+
+@MainActor
+final class VideoAnalysisService {
+    static let shared = VideoAnalysisService()
+
+    private let settings = AISettingsManager.shared
+    private let frameCount = 4  // Extract 4 frames evenly spaced
+
+    private init() {}
+
+    func analyzeRecording(at url: URL) async throws -> VideoAnalysisResult {
+        guard let provider = settings.activeProvider else {
+            throw AICoachError.missingAPIKey
+        }
+        guard settings.canRequestAnalysis else {
+            throw AICoachError.providerDisabled
+        }
+        guard let apiKey = apiKey(for: provider) else {
+            throw AICoachError.missingAPIKey
+        }
+
+        // Extract frames from video
+        let frames = try await extractFrames(from: url)
+        guard !frames.isEmpty else {
+            throw AICoachError.invalidResponse
+        }
+
+        // Encode frames to base64 JPEG
+        let base64Frames = frames.compactMap { image -> String? in
+            guard let data = image.jpegData(compressionQuality: 0.6) else { return nil }
+            return data.base64EncodedString()
+        }
+
+        // Build API request based on provider
+        let jsonData: Data
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI:
+            jsonData = try await callOpenAIVision(apiKey: apiKey, frames: base64Frames)
+        case .deepSeek:
+            // DeepSeek doesn't support vision — fall back to text-only analysis prompt
+            jsonData = try await callTextOnlyAnalysis(provider: provider, apiKey: apiKey)
+        case .gemini:
+            jsonData = try await callGeminiVision(apiKey: apiKey, frames: base64Frames)
+        }
+
+        let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData)
+        await MainActor.run { settings.recordAnalysis() }
+        return result
+    }
+
+    // MARK: - Frame Extraction
+
+    private func extractFrames(from url: URL) async throws -> [UIImage] {
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration)
+        let durationSeconds = CMTimeGetSeconds(duration)
+        guard durationSeconds > 0 else { return [] }
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 512, height: 512)
+
+        var frames: [UIImage] = []
+        let interval = durationSeconds / Double(frameCount + 1)
+
+        for i in 1...frameCount {
+            let time = CMTime(seconds: interval * Double(i), preferredTimescale: 600)
+            do {
+                let (cgImage, _) = try await generator.image(at: time)
+                frames.append(UIImage(cgImage: cgImage))
+            } catch {
+                continue
+            }
+        }
+        return frames
+    }
+
+    // MARK: - OpenAI Vision
+
+    private func callOpenAIVision(apiKey: String, frames: [String]) async throws -> Data {
+        let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 60
+
+        // Build multimodal content array
+        var contentParts: [[String: Any]] = [
+            ["type": "text", "text": videoAnalysisPrompt]
+        ]
+        for base64 in frames {
+            contentParts.append([
+                "type": "image_url",
+                "image_url": ["url": "data:image/jpeg;base64,\(base64)", "detail": "low"]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "model": "gpt-4o-mini",
+            "messages": [
+                ["role": "system", "content": videoAnalysisSystemPrompt],
+                ["role": "user", "content": contentParts]
+            ],
+            "temperature": 0.3,
+            "response_format": ["type": "json_object"]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+        guard let content = chatResponse.choices.first?.message.content,
+              let jsonData = content.data(using: .utf8) else {
+            throw AICoachError.invalidResponse
+        }
+        return jsonData
+    }
+
+    // MARK: - Gemini Vision
+
+    private func callGeminiVision(apiKey: String, frames: [String]) async throws -> Data {
+        let model = "gemini-2.5-flash"
+        let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.timeoutInterval = 60
+
+        // Build parts with text + images
+        var parts: [[String: Any]] = [
+            ["text": videoAnalysisPrompt]
+        ]
+        for base64 in frames {
+            parts.append([
+                "inline_data": [
+                    "mime_type": "image/jpeg",
+                    "data": base64
+                ]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "system_instruction": ["parts": [["text": videoAnalysisSystemPrompt]]],
+            "contents": [["parts": parts]],
+            "generationConfig": [
+                "temperature": 0.3,
+                "responseMimeType": "application/json"
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+        guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
+              let jsonData = content.data(using: .utf8) else {
+            throw AICoachError.invalidResponse
+        }
+        return jsonData
+    }
+
+    // MARK: - Text-Only Fallback (for providers without vision)
+
+    private func callTextOnlyAnalysis(provider: AIProvider, apiKey: String) async throws -> Data {
+        guard let endpoint = provider.endpoint else { throw AICoachError.providerDisabled }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+
+        let fallbackPrompt = """
+        I recorded a speaking practice session on video but cannot share the frames with you.
+        Please provide a balanced, generic video analysis based on common areas speakers should focus on.
+        Rate each dimension as "good", "ok", or "couldImprove" and provide brief, actionable notes.
+        """
+
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body = OpenAICompatibleChatRequest(
+                model: provider.model,
+                messages: [
+                    .init(role: "system", content: videoAnalysisSystemPrompt),
+                    .init(role: "user", content: fallbackPrompt)
+                ],
+                temperature: 0.3,
+                responseFormat: .jsonObject
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiGenerateContentRequest(
+                systemInstruction: .init(parts: [.init(text: videoAnalysisSystemPrompt)]),
+                contents: [.init(parts: [.init(text: fallbackPrompt)])],
+                generationConfig: .init(temperature: 0.3, responseMimeType: "application/json")
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw AICoachError.invalidResponse
+        }
+
+        switch provider {
+        case .none:
+            throw AICoachError.providerDisabled
+        case .openAI, .deepSeek:
+            let chatResponse = try JSONDecoder().decode(OpenAICompatibleChatResponse.self, from: data)
+            guard let content = chatResponse.choices.first?.message.content,
+                  let jsonData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return jsonData
+        case .gemini:
+            let geminiResponse = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
+            guard let content = geminiResponse.candidates.first?.content.parts.compactMap(\.text).joined(),
+                  let jsonData = content.data(using: .utf8) else {
+                throw AICoachError.invalidResponse
+            }
+            return jsonData
+        }
+    }
+
+    // MARK: - Prompts
+
+    private var videoAnalysisSystemPrompt: String {
+        """
+        You are an expert speaking coach analyzing video frames from a practice speaking session.
+        Evaluate the speaker's visual delivery across six dimensions.
+        Return JSON only with these exact keys:
+        posture, postureNote, eyeContact, eyeContactNote, facialExpression, facialExpressionNote,
+        gestureUse, gestureNote, energyConfidence, energyNote, presenceDelivery, presenceNote, overallNote.
+        Rating values must be exactly one of: "good", "ok", "couldImprove".
+        Notes should be 1 sentence, specific, and actionable.
+        overallNote should be 2 sentences summarizing the key strength and primary improvement area.
+        Be encouraging but honest. Focus on what's observable.
+        """
+    }
+
+    private var videoAnalysisPrompt: String {
+        """
+        Analyze these frames from a speaking practice session. Evaluate:
+        1. Posture — upright, stable, open body position
+        2. Eye Contact — looking at camera/audience, avoiding looking down
+        3. Facial Expression — warmth, engagement, appropriate emotion
+        4. Gesture Use — deliberate hand movements, not fidgeting or frozen
+        5. Energy & Confidence — vocal projection visible in body, forward lean, engagement
+        6. Presence & Delivery — overall command, use of space, intentional pauses reflected in stillness
+
+        Rate each as "good", "ok", or "couldImprove" and provide a brief actionable note.
+        End with an overall note summarizing the biggest strength and the #1 thing to improve.
+        """
+    }
+
+    // MARK: - Helpers
+
+    private func apiKey(for provider: AIProvider) -> String? {
+        if let keyName = provider.environmentKey,
+           let value = ProcessInfo.processInfo.environment[keyName],
+           !value.isEmpty {
+            return value
+        }
+        if let keyName = provider.environmentKey,
+           let value = LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig") {
+            return value
+        }
+        return nil
+    }
+}
+#endif

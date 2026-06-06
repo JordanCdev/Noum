@@ -50,7 +50,7 @@ struct PathJourneyView: View {
                                 .lineLimit(2)
                         }
 
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 14) {
                             PathJourneyArtwork(
                                 snapshot: snapshot,
                                 compact: false,
@@ -59,42 +59,25 @@ struct PathJourneyView: View {
                                 }
                             )
                             .frame(height: min(270, geometry.size.height * 0.37))
+                            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                                    .stroke(Color.white.opacity(0.55), lineWidth: 1)
+                            )
+                            .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 14, y: 8)
 
                             HStack(spacing: 10) {
                                 journeyPill(title: "Revealed", value: snapshot.progressLabel, icon: "map.fill", accent: .green)
                                 journeyPill(title: "Streak", value: snapshot.streakLabel, icon: "flame.fill", accent: .orange)
                             }
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("What this means")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-                                Text(snapshot.explanationLine)
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(2)
-                                Text(snapshot.consequenceLine)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                Text(snapshot.nextMilestoneLabel)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
+                            coachExplanationCard
 
                             activeChallengeCard
                             achievementsCard
                         }
-                        .padding(16)
-                        .background(
-                            Color.white,
-                            in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-                        )
+                        .padding(18)
+                        .background(journeyHeroBackground)
 
                         // MARK: - Debug day slider (developer only)
                         if AuthManager.shared.isDeveloper {
@@ -222,6 +205,76 @@ struct PathJourneyView: View {
         .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
     }
 
+    /// Hero background for the main journey card — brand-blue radial wash on white,
+    /// soft blue elevation, faint blue hairline. Mirrors the Pro-purple hero pattern
+    /// but in the "you progressing through speaking" blue register.
+    private var journeyHeroBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(Color.white)
+
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            AppColor.brandBlue.opacity(0.18),
+                            AppColor.brandBlueLight.opacity(0.06),
+                            Color.clear
+                        ],
+                        center: .top,
+                        startRadius: 8,
+                        endRadius: 320
+                    )
+                )
+
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .strokeBorder(AppColor.brandBlue.opacity(0.14), lineWidth: 1)
+        }
+        .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 18, y: 10)
+    }
+
+    /// Coach-narrated "What this means" sub-card. The Noum character glyph sits
+    /// top-left and anchors the section as the narrator of the path.
+    private var coachExplanationCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            NoumPathCharacter()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("What this means")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue.opacity(0.85))
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+
+                Text(snapshot.explanationLine)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+
+                Text(snapshot.consequenceLine)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                Text(snapshot.nextMilestoneLabel)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue.opacity(0.92))
+                    .lineLimit(2)
+                    .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .fill(AppColor.brandBlue.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .strokeBorder(AppColor.brandBlue.opacity(0.12), lineWidth: 1)
+        )
+    }
+
     private var activeChallengeCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Active Challenge")
@@ -269,78 +322,177 @@ struct PathJourneyView: View {
     }
 
     private var achievementsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Milestones")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
+        let visibleAchievements = Array(retentionSnapshot.achievements.prefix(3))
+        let unlockedCount = visibleAchievements.filter { $0.isUnlocked }.count
+        let totalCount = visibleAchievements.count
 
-            ForEach(retentionSnapshot.achievements.prefix(3)) { achievement in
-                Button {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                        selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
-                    }
-                } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 10) {
-                            Group {
-                                if achievement.isUnlocked {
-                                    PulseBadge(systemImage: achievement.symbolName, tint: .green, animated: false)
-                                } else {
-                                    Image(systemName: achievement.symbolName)
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 24, height: 24)
-                                        .padding(12)
-                                        .background(Color.black.opacity(0.06), in: Circle())
-                                }
-                            }
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Skill milestones")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("\(unlockedCount) of \(totalCount)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.black.opacity(0.05))
+                    )
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 2)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(achievement.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Text(achievement.summary)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            VStack(alignment: .trailing, spacing: 6) {
-                                Text(achievement.progressLabel)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(achievement.isUnlocked ? .green : .secondary)
-                                Image(systemName: selectedAchievementID == achievement.id ? "chevron.up" : "chevron.down")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.secondary)
-                            }
+            VStack(spacing: 10) {
+                ForEach(visibleAchievements) { achievement in
+                    Button {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                            selectedAchievementID = selectedAchievementID == achievement.id ? nil : achievement.id
                         }
-
-                        if selectedAchievementID == achievement.id {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ShimmerProgressBar(
-                                    progress: achievement.progress,
-                                    tint: achievement.isUnlocked ? .green : .blue,
-                                    animated: false
-                                )
-                                Text(
-                                    achievement.isUnlocked
-                                        ? "Unlocked. This is now part of your communication identity."
-                                        : "Keep going. This one unlocks once the habit becomes repeatable."
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
+                    } label: {
+                        milestoneRow(
+                            achievement: achievement,
+                            isExpanded: selectedAchievementID == achievement.id
+                        )
                     }
-                    .padding(12)
-                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
+    }
+
+    @ViewBuilder
+    private func milestoneRow(achievement: PracticeAchievementStatus, isExpanded: Bool) -> some View {
+        let isUnlocked = achievement.isUnlocked
+        let accent: Color = isUnlocked ? AppColor.brandBlue : Color.secondary
+        let rowBackground: Color = isUnlocked
+            ? AppColor.brandBlue.opacity(0.05)
+            : Color.black.opacity(0.025)
+        let borderColor: Color = isUnlocked
+            ? AppColor.brandBlue.opacity(0.16)
+            : Color.black.opacity(0.05)
+
+        HStack(alignment: .top, spacing: 12) {
+            // Thin colored leading bar — blue for unlocked, grayscale for locked.
+            // This is the primary at-a-glance signal between locked/unlocked.
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(isUnlocked ? AppColor.brandBlue : Color.black.opacity(0.10))
+                .frame(width: 3)
+                .frame(maxHeight: .infinity)
+
+            // Icon disc — tinted when unlocked, grayscale when locked.
+            // A small check chip is pinned bottom-trailing on unlocked rows
+            // as a concrete second-tier signal beyond the colored leading bar.
+            ZStack(alignment: .bottomTrailing) {
+                ZStack {
+                    Circle()
+                        .fill(isUnlocked ? AppColor.brandBlue.opacity(0.12) : Color.black.opacity(0.06))
+                        .frame(width: 40, height: 40)
+
+                    Image(systemName: achievement.symbolName)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(isUnlocked ? AppColor.brandBlue : Color.secondary)
+                }
+                .frame(width: 40, height: 40)
+
+                if isUnlocked {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.white, AppColor.brandBlue)
+                        .offset(x: 2, y: 2)
+                }
+            }
+            .frame(width: 44, height: 44, alignment: .topLeading)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(achievement.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(isUnlocked ? .primary : Color.secondary)
+                        Text(achievement.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(achievement.progressLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(accent)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ShimmerProgressBar(
+                            progress: achievement.progress,
+                            tint: isUnlocked ? AppColor.brandBlue : .blue,
+                            animated: false
+                        )
+                        Text(
+                            isUnlocked
+                                ? "Unlocked. This is now part of your communication identity."
+                                : "Keep going. This one unlocks once the habit becomes repeatable."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .fill(rowBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .strokeBorder(borderColor, lineWidth: 1)
+        )
+    }
+}
+
+/// Inline Noum-character glyph used as the narrator anchor on the path screen.
+/// Composed from `waveform`-family SF Symbols at scale + opacity — no illustration,
+/// per the brand rule. Brand-blue tint signals the "you progressing" register.
+@available(iOS 17.0, macOS 12.0, *)
+private struct NoumPathCharacter: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            AppColor.brandBlue.opacity(0.18),
+                            AppColor.brandBlueLight.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 40, height: 40)
+
+            Image(systemName: "waveform")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(AppColor.brandBlue.opacity(0.92))
+                .symbolRenderingMode(.hierarchical)
+        }
+        .overlay(
+            Circle()
+                .strokeBorder(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityHidden(true)
     }
 }
 
@@ -614,13 +766,11 @@ struct PracticeJourneySnapshot {
             : Double(recentSessions.compactMap(\.score).reduce(0, +)) / Double(recentSessions.compactMap(\.score).count)
 
         let streak = currentStreak(from: sessions, calendar: calendar)
-        let consistency = min(1, Double(practicedDays) / Double(windowDays))
         let scoreQuality = min(1, averageScore / 100)
         let fillerQuality = max(0, 1 - (averageFillers / 8))
         let durationQuality = min(1, averageDuration / 45)
         let streakQuality = min(1, Double(streak) / 7)
         let quality = min(1, (scoreQuality * 0.30) + (fillerQuality * 0.30) + (durationQuality * 0.20) + (streakQuality * 0.20))
-        let streakMomentum = max(0, Double(streak - 1) / Double(windowDays))
 
         // Reveal progress: purely linear — each practiced day reveals 1/21 of the path.
         let revealProgress = min(1.0, Double(practicedDays) / Double(windowDays))

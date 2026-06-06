@@ -113,6 +113,10 @@ struct SocialProfileView: View {
         .sheet(isPresented: $showAddFriendManual) {
             AddFriendSheet(friends: friends, challenges: challenges)
         }
+        .task {
+            await challenges.refreshFromBackend()
+            await friends.refreshPeerStats()
+        }
     }
 
     // MARK: - Profile Header
@@ -249,6 +253,11 @@ struct SocialProfileView: View {
             Text("Challenge a friend to the same prompt. Both speak, then compare scores.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if hasOnlyLegacyFriends {
+                Text("Practice mode — opponent scores are simulated for friends without a linked account.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             let active = challenges.activeAsyncChallenges
             if active.isEmpty {
@@ -448,38 +457,16 @@ struct SocialProfileView: View {
             }
 
             if friends.friends.isEmpty {
-                VStack(spacing: 14) {
-                    Image(systemName: "person.2.slash")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.secondary.opacity(0.5))
-
-                    Text("No friends yet")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text("Invite fellow speakers to practice together and challenge each other.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-
-                    Button {
+                EmptyStateView(
+                    symbol: "person.2.wave.2",
+                    title: "Find your first speaking partner",
+                    body: "Invite a friend to share prompts and trade speak-offs side by side.",
+                    tint: AppColor.brandBlue,
+                    cta: EmptyStateView.CTA(label: "Invite a friend", icon: "paperplane.fill") {
                         showInviteSheet = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "paperplane.fill")
-                                .font(.caption)
-                            Text("Invite Friends")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.blue, in: Capsule())
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                )
+                .accessibilityIdentifier("emptyState.friends")
             } else {
                 ForEach(friends.friends.prefix(8)) { friend in
                     friendRow(friend)
@@ -829,8 +816,8 @@ struct SocialProfileView: View {
 
     private var contactsPickerView: some View {
         NavigationStack {
-            ContactsListView(onAdd: { name, phone in
-                friends.addFriend(name: name, phoneNumber: phone, method: .contacts)
+            ContactsListView(onAdd: { name in
+                friends.addFriend(name: name, method: .contacts)
                 challenges.recordSocialAction()
             })
             .toolbar {
@@ -859,15 +846,20 @@ struct SocialProfileView: View {
     private func handleScannedQR(_ code: String) {
         if code.hasPrefix("noum://friend/") {
             let friendID = String(code.dropFirst("noum://friend/".count))
-            friends.addFriend(name: "Speaker \(friendID.prefix(4))", method: .qrCode)
+            friends.addFriend(
+                name: "Speaker \(friendID.prefix(4))",
+                method: .qrCode,
+                accountID: friendID.isEmpty ? nil : friendID
+            )
             challenges.recordSocialAction()
+            Task { await friends.refreshPeerStats(force: true) }
         }
     }
 
     private func shareQRCode() {
         guard let image = QRCodeGenerator.generate(from: userQRString, size: 400) else { return }
         let activityVC = UIActivityViewController(
-            activityItems: [image, "Scan this QR code in Noum to add me as a speaking friend!"],
+            activityItems: [image, "Scan this QR code in Noum to add me as a speaking friend."],
             applicationActivities: nil
         )
         presentActivity(activityVC)
@@ -878,24 +870,23 @@ struct SocialProfileView: View {
     }
 
     private var currentStreak: Int {
-        let calendar = Calendar.current
-        let uniqueDays = Set(PracticeSessionStore.shared.sessions.map { calendar.startOfDay(for: $0.date) })
-        guard !uniqueDays.isEmpty else { return 0 }
+        PracticeSession.calculateStreak(from: PracticeSessionStore.shared.sessions)
+    }
 
-        var streak = 0
-        var cursor = calendar.startOfDay(for: Date())
-        while uniqueDays.contains(cursor) {
-            streak += 1
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previousDay
-        }
-        return streak
+    /// True when there's at least one friend and none of them carry an
+    /// `accountID` — i.e. every challenge with this user's friends is
+    /// going to use the local simulator. Used to surface honest copy
+    /// instead of pretending the network is live.
+    private var hasOnlyLegacyFriends: Bool {
+        let list = friends.friends
+        guard !list.isEmpty else { return false }
+        return list.allSatisfy { $0.accountID == nil }
     }
 
     private func shareInviteLink() {
-        let url = "https://noum.app/invite"
+        let url = "https://apps.apple.com/app/noum/id6740486498"
         let activityVC = UIActivityViewController(
-            activityItems: ["Join me on Noum — a speaking practice app that makes you a better communicator.", URL(string: url)!],
+            activityItems: ["Practice speaking with me on Noum — it's like a gym for your voice.", URL(string: url)!],
             applicationActivities: nil
         )
         presentActivity(activityVC)
@@ -959,6 +950,9 @@ struct AsyncChallengeDetailSheet: View {
                                 reaction: challenge.creatorReaction
                             )
                         }
+                        Text("Opponent score is simulated for practice")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
 
                         // Reaction buttons
                         VStack(spacing: 10) {
@@ -1060,9 +1054,10 @@ struct ChallengePickFriendSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var createdChallenge: AsyncChallenge?
     @State private var showPractice = false
+    @State private var speakOffNavPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $speakOffNavPath) {
             Group {
                 if let challenge = createdChallenge {
                     // Speak-off ready screen — user sees the prompt and starts
@@ -1073,7 +1068,7 @@ struct ChallengePickFriendSheet: View {
                             Image(systemName: "bolt.circle.fill")
                                 .font(.system(size: 48))
                                 .foregroundStyle(.teal)
-                            Text("Speak-off Created!")
+                            Text("Practice Speak-off created.")
                                 .font(.title2.weight(.bold))
                         }
 
@@ -1103,7 +1098,7 @@ struct ChallengePickFriendSheet: View {
                         Spacer()
 
                         Button {
-                            showPractice = true
+                            speakOffNavPath.append(AppDestination.timedPractice)
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "mic.fill")
@@ -1130,8 +1125,10 @@ struct ChallengePickFriendSheet: View {
                             Button("Done") { dismiss() }
                         }
                     }
-                    .navigationDestination(isPresented: $showPractice) {
-                        TimedPracticeView(goHome: { dismiss() })
+                    .navigationDestination(for: AppDestination.self) { destination in
+                        if case .timedPractice = destination {
+                            TimedPracticeView(navigationPath: $speakOffNavPath)
+                        }
                     }
                 } else {
                     List {
@@ -1227,7 +1224,7 @@ struct AddFriendSheet: View {
                             .foregroundStyle(.white.opacity(0.6))
                     } else {
                         Text(String(friendName.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(Typography.bigStat)
                             .foregroundStyle(.white)
                     }
                 }
@@ -1255,7 +1252,7 @@ struct AddFriendSheet: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        Text("Added!")
+                        Text("Added.")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.green)
                     }
@@ -1311,15 +1308,15 @@ struct AddFriendSheet: View {
 
 @available(iOS 17.0, *)
 private struct ContactsListView: View {
-    var onAdd: (String, String?) -> Void
+    var onAdd: (String) -> Void
 
-    @State private var contacts: [(name: String, phone: String?)] = []
+    @State private var contacts: [String] = []
     @State private var searchText = ""
     @State private var addedNames: Set<String> = []
 
-    var filteredContacts: [(name: String, phone: String?)] {
+    var filteredContacts: [String] {
         if searchText.isEmpty { return contacts }
-        return contacts.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return contacts.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
 
     var body: some View {
@@ -1335,27 +1332,20 @@ private struct ContactsListView: View {
                 .padding(.vertical, 40)
                 .listRowSeparator(.hidden)
             } else {
-                ForEach(filteredContacts, id: \.name) { contact in
+                ForEach(filteredContacts, id: \.self) { name in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(contact.name)
-                                .font(.subheadline.weight(.medium))
-                            if let phone = contact.phone {
-                                Text(phone)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text(name)
+                            .font(.subheadline.weight(.medium))
 
                         Spacer()
 
-                        if addedNames.contains(contact.name) {
+                        if addedNames.contains(name) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                         } else {
                             Button {
-                                onAdd(contact.name, contact.phone)
-                                addedNames.insert(contact.name)
+                                onAdd(name)
+                                addedNames.insert(name)
                             } label: {
                                 Text("Add")
                                     .font(.caption.weight(.semibold))
@@ -1378,18 +1368,17 @@ private struct ContactsListView: View {
 
     private func loadContacts() async {
         let store = CNContactStore()
-        let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
+        let keys = [CNContactGivenNameKey, CNContactFamilyNameKey] as [CNKeyDescriptor]
         let request = CNContactFetchRequest(keysToFetch: keys)
         request.sortOrder = .givenName
 
-        var results: [(name: String, phone: String?)] = []
+        var results: [String] = []
 
         do {
             try store.enumerateContacts(with: request) { contact, _ in
                 let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                let phone = contact.phoneNumbers.first?.value.stringValue
-                results.append((name: name, phone: phone))
+                results.append(name)
             }
         } catch {
             // Contact enumeration failed

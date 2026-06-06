@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Noum — Privacy Policy</title>
+<meta name="description" content="How Noum collects, uses, and protects your data.">
+<style>
+  :root {
+    --brand-blue: #2F6FED;
+    --bg: #F2F3F7;
+    --card: #FFFFFF;
+    --ink: #0E0F12;
+    --ink-secondary: #5C6068;
+    --ink-tertiary: #8B8F97;
+    --border: rgba(14, 15, 18, 0.08);
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  header {
+    margin: 24px 0 32px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    color: var(--brand-blue);
+    text-decoration: none;
+    letter-spacing: -0.01em;
+    font-size: 20px;
+  }
+  .brand-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--brand-blue);
+    display: inline-block;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    margin: 16px 0;
+  }
+  h1 {
+    font-size: 32px;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    letter-spacing: -0.015em;
+    font-weight: 700;
+  }
+  h2 {
+    font-size: 20px;
+    line-height: 1.2;
+    margin: 28px 0 12px;
+    font-weight: 700;
+  }
+  h3 {
+    font-size: 16px;
+    line-height: 1.3;
+    margin: 18px 0 8px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+  p, li {
+    color: var(--ink-secondary);
+    margin: 0 0 12px;
+  }
+  strong { color: var(--ink); }
+  ul, ol { padding-left: 22px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0 16px;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: rgba(47, 111, 237, 0.04); }
+  hr {
+    border: 0;
+    height: 1px;
+    background: var(--border);
+    margin: 24px 0;
+  }
+  a { color: var(--brand-blue); }
+  .muted {
+    color: var(--ink-tertiary);
+    font-size: 14px;
+  }
+  footer {
+    margin-top: 32px;
+    color: var(--ink-tertiary);
+    font-size: 13px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="brand" href="/" aria-label="Noum home">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span>Noum</span>
+    </a>
+  </header>
+
+  <div class="card">
+    <h1>Privacy Policy</h1>
+    <p class="muted"><strong>Last updated:</strong> April 14, 2026</p>
+    <p>Noum ("we", "us", "our") is a speaking practice app that helps you improve your communication skills through guided exercises, AI coaching, and conversation simulations. This policy explains what data we collect, why, who processes it, and how you can control it.</p>
+
+    <hr>
+
+    <h2>1. Data We Collect</h2>
+
+    <h3>Account Data</h3>
+    <ul>
+      <li><strong>Account identifier</strong> (Firebase UID or generated UUID) — to identify your account across sessions.</li>
+      <li><strong>Display name</strong> (from Apple or Google Sign-In, if provided) — for personalisation.</li>
+      <li><strong>Authentication provider</strong> (Apple, Google, or Guest) — to manage your sign-in method.</li>
+    </ul>
+    <p>We do not collect your email address, phone number, or password. Authentication is handled entirely by Apple Sign-In, Google Sign-In, or anonymous guest sessions through Firebase Authentication.</p>
+
+    <h3>Coaching Profile</h3>
+    <p>During onboarding, you may provide:</p>
+    <ul>
+      <li>Speaking context (e.g., "work", "interviews")</li>
+      <li>Primary goal, confidence level, biggest challenge</li>
+      <li>Speaking style preferences</li>
+      <li>Free-text fields: coaching brief, motivation, success vision</li>
+    </ul>
+    <p>This information is used to personalise your coaching experience and AI feedback.</p>
+
+    <h3>Speech Transcripts and Session Data</h3>
+    <p>When you use a practice mode, the app:</p>
+    <ul>
+      <li>Streams your audio to <strong>Amazon Web Services (AWS) Transcribe</strong> for real-time speech-to-text conversion</li>
+      <li>Stores the resulting text transcript, filler-word count, session duration, score, and practice mode on your device</li>
+      <li>Optionally sends the transcript to an AI provider for coaching feedback (only when you tap "Generate Coach Read")</li>
+    </ul>
+    <p>Audio is streamed in real time and is <strong>not stored</strong> on your device or our servers as audio files.</p>
+
+    <h3>AI Coaching Feedback</h3>
+    <p>When you request AI coaching analysis, your speech transcript (and optionally video frames for nonverbal feedback) is sent to one of the following AI providers:</p>
+    <ul>
+      <li><strong>Google Gemini</strong></li>
+      <li><strong>OpenAI</strong></li>
+    </ul>
+    <p>These providers process your transcript under their respective API data terms. Under their API terms, your data is <strong>not used to train their AI models</strong>.</p>
+
+    <h3>Video Recordings</h3>
+    <ul>
+      <li>Video is recorded and stored locally on your device.</li>
+      <li>You choose whether to save it to your Photos library or the app's documents folder.</li>
+      <li>Video frames may be sent to AI providers for nonverbal coaching feedback only when you explicitly request it.</li>
+      <li>We do not upload or store your video recordings on any server.</li>
+    </ul>
+
+    <h3>IM Conversation Data</h3>
+    <p>In conversation simulation mode, the app stores:</p>
+    <ul>
+      <li>All message turns (yours and the AI character's)</li>
+      <li>Conversation state and relationship profiles</li>
+      <li>Conversation evaluations</li>
+    </ul>
+    <p>This data is stored on your device and optionally synced to Firebase if backend sync is configured.</p>
+
+    <h3>Gamification Data</h3>
+    <ul>
+      <li>XP points, streaks, challenge progress, and speaking rank</li>
+      <li>Stored on your device and optionally synced to Firebase</li>
+    </ul>
+
+    <h3>Device Permissions</h3>
+    <ul>
+      <li><strong>Microphone</strong> — required for speech practice (core functionality)</li>
+      <li><strong>Camera</strong> — optional, for video recording during practice</li>
+      <li><strong>Contacts</strong> — optional, only if you choose to add friends from your contacts (only names are imported; phone numbers are not stored)</li>
+      <li><strong>Notifications</strong> — optional, for practice reminders</li>
+      <li><strong>Speech Recognition</strong> — for on-device speech processing</li>
+    </ul>
+
+    <hr>
+
+    <h2>2. How We Use Your Data</h2>
+    <table>
+      <thead><tr><th>Purpose</th><th>Data Used</th></tr></thead>
+      <tbody>
+        <tr><td>Real-time speech-to-text</td><td>Audio stream (sent to AWS Transcribe)</td></tr>
+        <tr><td>AI coaching feedback</td><td>Speech transcript, coaching profile, optionally video frames (sent to Google Gemini or OpenAI)</td></tr>
+        <tr><td>Personalised coaching</td><td>Coaching profile, session history</td></tr>
+        <tr><td>Progress tracking</td><td>Session scores, XP, streaks, challenge completion</td></tr>
+        <tr><td>Conversation simulation</td><td>IM conversation turns, relationship profiles</td></tr>
+        <tr><td>Practice reminders</td><td>Notification preferences, coaching context (not user-authored text)</td></tr>
+        <tr><td>Account management</td><td>Account ID, auth provider</td></tr>
+      </tbody>
+    </table>
+    <p>We do <strong>not</strong> use your data for advertising, user profiling for marketing purposes, or sale to third parties.</p>
+
+    <hr>
+
+    <h2>3. Third-Party Data Processors</h2>
+    <table>
+      <thead><tr><th>Service</th><th>Data Shared</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><strong>AWS Transcribe</strong> (Amazon)</td><td>Real-time audio stream</td><td>Speech-to-text transcription. Audio is not stored after processing.</td></tr>
+        <tr><td><strong>Google Gemini</strong> (Google)</td><td>Speech transcript, coaching profile, optionally video frames</td><td>AI coaching feedback. API data is not used for model training.</td></tr>
+        <tr><td><strong>OpenAI</strong></td><td>Speech transcript, coaching profile, optionally video frames</td><td>AI coaching feedback. API data is not used for model training.</td></tr>
+        <tr><td><strong>Google Cloud Text-to-Speech</strong></td><td>Text prompts for voice synthesis</td><td>AI character voices in conversation mode.</td></tr>
+        <tr><td><strong>Firebase</strong> (Google)</td><td>Account ID, display name, optionally synced profile/session data</td><td>Authentication and optional cloud sync.</td></tr>
+        <tr><td><strong>Open-Meteo</strong></td><td>Approximate location (via IP, not GPS)</td><td>Weather context for conversation topics. Public API, no authentication, no personal data sent.</td></tr>
+      </tbody>
+    </table>
+    <p>No data is shared with analytics providers, advertising networks, or data brokers.</p>
+
+    <hr>
+
+    <h2>4. Data Storage</h2>
+
+    <h3>On Your Device</h3>
+    <p>Most of your data is stored locally on your device using:</p>
+    <ul>
+      <li><strong>iOS Keychain</strong> — account credentials (encrypted by iOS)</li>
+      <li><strong>UserDefaults</strong> — coaching profile, session history, friend names, XP, settings</li>
+    </ul>
+
+    <h3>Cloud Storage (Optional)</h3>
+    <p>If Firebase is configured, the following may be synced:</p>
+    <ul>
+      <li>Coaching profile</li>
+      <li>Practice session history</li>
+      <li>XP and gamification data</li>
+      <li>IM relationship profiles</li>
+    </ul>
+    <p>Cloud-synced data is stored in Firebase Firestore and is associated with your account ID.</p>
+
+    <h3>Temporary Credentials</h3>
+    <p>The app obtains short-lived AWS credentials (valid for 15 minutes) from our backend to access speech-to-text services. These credentials are held in memory only and are not persisted to disk.</p>
+
+    <hr>
+
+    <h2>5. Data Retention</h2>
+    <ul>
+      <li><strong>On-device data</strong> is retained until you delete it (via session deletion, account deletion, or app uninstall).</li>
+      <li><strong>Firebase data</strong> is retained until you delete your account.</li>
+      <li><strong>AWS Transcribe</strong> does not retain audio after real-time processing.</li>
+      <li><strong>AI providers</strong> (Gemini, OpenAI) process data under their API terms and do not retain it for training.</li>
+    </ul>
+
+    <hr>
+
+    <h2>6. Your Rights and Controls</h2>
+
+    <h3>View Your Data</h3>
+    <p>Go to <strong>Settings → Your Data</strong> in the app to see a summary of all data stored on your device and which cloud services process your data.</p>
+
+    <h3>Export Your Data</h3>
+    <p>In <strong>Settings → Your Data → Export All My Data</strong>, you can export all locally-stored data as a JSON file.</p>
+
+    <h3>Delete Individual Sessions</h3>
+    <p>Long-press any session in your Session History to delete it.</p>
+
+    <h3>Delete Your Account</h3>
+    <p>Go to <strong>Settings → Delete Account</strong>. This will:</p>
+    <ul>
+      <li>Delete all your data from our backend and Firebase</li>
+      <li>Remove all per-account data from your device (coaching profile, sessions, XP, friends, AI settings)</li>
+      <li>Delete your Firebase Authentication account</li>
+      <li>Sign you out</li>
+    </ul>
+    <p>Account deletion is immediate and irreversible. We do not retain any personal data after account deletion.</p>
+
+    <h3>Notification Privacy</h3>
+    <p>Practice reminder notifications reference your coaching context (e.g., "Your conversation practice is waiting") but never display your personal text (goals, coaching brief, etc.) on the lock screen.</p>
+
+    <hr>
+
+    <h2>7. Children's Privacy</h2>
+    <p>Noum is not directed at children under 13. We do not knowingly collect personal information from children under 13. If you believe a child under 13 has provided us with personal data, please contact us and we will delete it.</p>
+
+    <hr>
+
+    <h2>8. Security</h2>
+    <ul>
+      <li>Authentication is handled by Apple and Google Sign-In via Firebase, using industry-standard OAuth flows.</li>
+      <li>AWS credentials are short-lived (15 minutes) and vended through a secure backend — no long-lived keys are stored in the app.</li>
+      <li>All network communication uses HTTPS/TLS.</li>
+      <li>On-device credentials are stored in the iOS Keychain (hardware-encrypted).</li>
+    </ul>
+
+    <hr>
+
+    <h2>9. Changes to This Policy</h2>
+    <p>We may update this privacy policy from time to time. We will update the "Last updated" date at the top when we make changes. Continued use of the app after changes constitutes acceptance of the updated policy.</p>
+
+    <hr>
+
+    <h2>10. Contact</h2>
+    <p>If you have questions about this privacy policy or your data, contact us at:</p>
+    <p><strong>Email:</strong> <a href="mailto:hello@noum.app">hello@noum.app</a></p>
+
+    <hr>
+
+    <p class="muted"><em>This privacy policy applies to the Noum iOS app.</em></p>
+  </div>
+
+  <footer>
+    &copy; 2026 Noum
+  </footer>
+</main>
+</body>
+</html>

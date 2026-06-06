@@ -5,6 +5,7 @@ import SwiftUI
 
 #if canImport(SwiftUI)
 @available(iOS 17.0, macOS 12.0, *)
+@available(*, deprecated, message: "Use ProfileView instead. Rank and achievements are now shown on the Profile tab.")
 struct SpeakingRankView: View {
     private let metricColumns = [
         GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)
@@ -127,15 +128,15 @@ struct SpeakingRankView: View {
                     Spacer()
                     Text(levelProgressLabel)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
                 }
 
-                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: .blue)
+                ShimmerProgressBar(progress: profile.progressTowardsNextLevel, tint: AppColor.brandBlue)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(profile.xp) XP total")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppColor.brandBlue)
                     Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
                         .font(.caption)
                         .foregroundStyle(.secondary)

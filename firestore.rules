@@ -1,0 +1,79 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Per-user private data ────────────────────────────────────────
+    match /users/{accountID}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == accountID;
+    }
+
+    // ─── Public profile (peer-readable subset) ─────────────────────────
+    match /profiles_public/{accountID} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == accountID
+                   && request.resource.data.accountID == accountID
+                   && request.resource.data.keys().hasOnly([
+                        'accountID', 'displayName',
+                        'rating', 'peakRating',
+                        'currentStreak', 'weeklyReps', 'weeklyDelta',
+                        'leagueTier', 'updatedAt'
+                      ])
+                   && request.resource.data.displayName.size() <= 60
+                   && request.resource.data.rating is int
+                   && request.resource.data.rating >= 100
+                   && request.resource.data.rating <= 1000;
+    }
+
+    // ─── League membership ────────────────────────────────────────────
+    // Bucket key shape: `{tier}_{ISO-year}-W{week}` e.g. `silver_2026-W19`.
+    match /leagues/{bucket}/members/{accountID} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == accountID
+                   && request.resource.data.accountID == accountID;
+    }
+
+    // ─── Async challenges (two-participant docs) ──────────────────────
+    match /challenges/{challengeID} {
+      allow read: if request.auth != null
+                  && resource != null
+                  && request.auth.uid in resource.data.participantIDs;
+
+      allow create: if request.auth != null
+                    && request.resource.data.creatorID == request.auth.uid
+                    && request.resource.data.participantIDs.hasAll([
+                         request.resource.data.creatorID,
+                         request.resource.data.opponentID
+                       ]);
+
+      allow update: if request.auth != null
+                    && resource != null
+                    && request.auth.uid in resource.data.participantIDs
+                    && updateOnlyOwnSlice();
+    }
+
+    function updateOnlyOwnSlice() {
+      let isCreator = request.auth.uid == resource.data.creatorID;
+      let opponentFields = [
+        'opponentScore', 'opponentDuration',
+        'opponentSummary', 'opponentReaction', 'opponentName'
+      ];
+      let creatorFields = [
+        'creatorScore', 'creatorDuration',
+        'creatorSummary', 'creatorReaction', 'creatorName'
+      ];
+      let allowedFields = isCreator ? creatorFields : opponentFields;
+      let immutableFields = ['id', 'prompt', 'createdAt', 'expiresAt',
+                             'creatorID', 'opponentID', 'participantIDs'];
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(allowedFields)
+        || request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(allowedFields.concat(immutableFields));
+    }
+  }
+}

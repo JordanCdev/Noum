@@ -1,0 +1,256 @@
+#if canImport(SwiftUI)
+import SwiftUI
+
+// MARK: - Prep Session View
+//
+// Landing surface for the M23 situational preparation flow. When the
+// user has an active BigMoment within 14 days, this view appears as
+// the entry point from the home `prepSessionCTA`. It frames the next
+// three reps as a rehearsal for the specific upcoming event.
+//
+// MVP behavior:
+//   - Coach-voice intro card that names the event + days remaining
+//   - 3-rep plan with rationale per step (Warm up → Pressure → Audience)
+//   - Per-step CTA that pushes the corresponding practice view
+//   - User navigates back to this landing surface after each rep
+//
+// Deferred (not in MVP):
+//   - Auto-chaining the 3 modes (each mode owns its own session
+//     lifecycle; chaining requires sheet-presented + completion
+//     observation that's worth its own follow-up pass)
+//   - Inter-rep "Rep N done — moving to next" coach copy
+//   - End-of-prep ready-signal summary card with green/amber/red rows
+//   - Session marking (`isPrepSession: true` on PracticeSession) so
+//     summaries can render with prep-specific framing
+//
+// Anti-goal compliance:
+//   - The view does NOT block on completing all 3 reps. The user can
+//     do any subset; partial completion is a valid prep session.
+//   - No hearts-and-lives, no streak shame, no fake confidence
+//     numbers. The intro frames the day's work as preparation —
+//     a snapshot of where you stand, not a pass/fail gate.
+
+@available(iOS 17.0, *)
+struct PrepSessionView: View {
+    @Binding var navigationPath: NavigationPath
+    @StateObject private var bigMomentStore = BigMomentStore.shared
+    @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var sessionStore = PracticeSessionStore.shared
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                content
+            }
+            .padding(.horizontal, Spacing.screenH)
+            .padding(.top, Spacing.lg)
+            .padding(.bottom, Spacing.lg)
+        }
+        .background(AppColor.screenBackground.ignoresSafeArea())
+        .navigationTitle("Prep")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("prepSession.screen")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let moment = bigMomentStore.activeMoment,
+           let days = bigMomentStore.daysUntil(moment),
+           days >= 0 {
+            let plan = PrepSessionPlanner.plan(
+                bigMoment: moment,
+                daysRemaining: days,
+                voice: coachingProfileStore.profile?.speakingStyleGoal
+            )
+            introCard(plan: plan, moment: moment, days: days)
+            stepsCard(plan: plan)
+            readinessCard(plan: plan, moment: moment)
+            footerNote(moment: moment)
+        } else {
+            emptyState
+        }
+    }
+
+    // MARK: - Sections
+
+    private func introCard(plan: PrepSessionPlan, moment: BigMoment, days: Int) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: moment.category.sfSymbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColor.brandBlue)
+                Text("PREP · \(days) day\(days == 1 ? "" : "s") OUT")
+                    .font(Typography.micro)
+                    .foregroundStyle(AppColor.brandBlue)
+                    .tracking(0.8)
+            }
+            Text(plan.introductionCopy)
+                .font(Typography.body)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppColor.brandBlue.opacity(0.10), AppColor.brandBlue.opacity(0.03)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(AppColor.brandBlue.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityIdentifier("prepSession.intro")
+    }
+
+    private func stepsCard(plan: PrepSessionPlan) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("YOUR PREP SEQUENCE")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+            ForEach(Array(plan.steps.enumerated()), id: \.offset) { index, step in
+                stepRow(index: index + 1, step: step)
+                if index < plan.steps.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+    }
+
+    private func stepRow(index: Int, step: PrepRepStep) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: 8) {
+                Text("\(index)")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(AppColor.brandBlue, in: Circle())
+                Text(step.displayLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            Text(step.rationale)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 30)
+            Button {
+                launch(step: step)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Begin")
+                        .font(.footnote.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(AppColor.brandBlue)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 30)
+            .accessibilityIdentifier("prepSession.step.\(index).begin")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func footerNote(moment: BigMoment) -> some View {
+        Text("Tap a step to start. You can come back here between reps; partial completion is a valid prep session.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, Spacing.xs)
+    }
+
+    /// F2 — "Where you stand": an honest snapshot of which rehearsal shapes the
+    /// user has run since setting this moment. A row per shape (covered =
+    /// filled check) + a calm line. Never a pass/fail gate — partial prep is
+    /// valid (matches the flow's anti-goal contract).
+    private func readinessCard(plan: PrepSessionPlan, moment: BigMoment) -> some View {
+        let readiness = PrepSessionPlanner.readiness(
+            plan: plan,
+            sessions: sessionStore.sessions,
+            momentCreatedAt: moment.createdAt
+        )
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("WHERE YOU STAND")
+                .font(Typography.micro)
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+            ForEach(plan.steps, id: \.mode) { step in
+                let done = readiness.coveredModes.contains(step.mode)
+                HStack(spacing: 8) {
+                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(done ? AppColor.positive : Color.secondary.opacity(0.5))
+                    Text(PrepSessionReadiness.shapeName(for: step.mode).capitalized)
+                        .font(.subheadline)
+                        .foregroundStyle(done ? .primary : .secondary)
+                    Spacer()
+                }
+            }
+            Text(readiness.line)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .accessibilityIdentifier("prepSession.readiness")
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("No upcoming moment set.")
+                .font(Typography.body.weight(.semibold))
+            Text("Set a Big Moment in Settings → Coaching Direction. Prep mode lights up when one is within 14 days.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.top, Spacing.lg)
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Launchers
+
+    /// Push the appropriate practice destination. We don't observe
+    /// completion in the MVP — the user navigates back to this view
+    /// after each rep finishes (SummaryView's Home button pops to
+    /// root; user re-enters prep via the home CTA if they want to
+    /// continue the sequence). A future pass can chain via sheet
+    /// presentation + completion handlers.
+    private func launch(step: PrepRepStep) {
+        switch step.mode {
+        case .timed:
+            navigationPath.append(AppDestination.timedPractice)
+        case .suddenDeath:
+            navigationPath.append(AppDestination.suddenDeathPractice)
+        case .ahCounter:
+            navigationPath.append(AppDestination.ahCounterPractice)
+        case .imConversation:
+            // No preferred scenario/tone — IM mode generates from its
+            // own catalog. The PrepSessionPlanner's IMScenarioConfig
+            // is metadata for a future deeper integration (seeding the
+            // IM scenario picker with category-specific personas); for
+            // MVP we land the user in standard IM mode.
+            navigationPath.append(AppDestination.imPractice(scenario: nil, tone: nil))
+        }
+    }
+}
+
+#endif

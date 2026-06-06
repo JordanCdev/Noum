@@ -1,0 +1,279 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Stat Tiles</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+:root{ --tint:#3378F5; }
+body{margin:0;padding:24px;background:var(--bg-screen);font-family:var(--font-rounded);color:var(--fg-primary);display:flex;flex-direction:column;gap:14px}
+.row{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+
+/* ──────── HERO TILES ──────── */
+.big{
+  position:relative;background:#fff;border-radius:18px;padding:14px;
+  border:1px solid rgba(15,23,42,.04);
+  box-shadow:0 1px 0 rgba(15,23,42,.03), 0 8px 22px -12px rgba(15,23,42,.14);
+  overflow:hidden;
+}
+.big__head{position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.big__hd-l{display:flex;align-items:center;gap:8px}
+.big__icon{width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--tint) 14%, #fff);color:var(--tint)}
+.big__label{font-family:var(--font-text);font-weight:700;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--fg-secondary)}
+.status{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-family:var(--font-text);font-weight:800;font-size:10px;letter-spacing:.4px;background:rgba(36,153,112,.14);color:#147A52}
+.status svg{width:9px;height:9px}
+
+.big__row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:8px}
+.big__num{font-family:var(--font-rounded);font-weight:800;font-size:30px;line-height:1;letter-spacing:-0.02em;color:var(--fg-primary);font-variant-numeric:tabular-nums}
+.big__unit{font-family:var(--font-text);font-weight:600;font-size:11px;color:var(--fg-secondary);margin-left:4px}
+.big__goal{text-align:right;font-family:var(--font-text);font-weight:700;font-size:11px;color:var(--fg-secondary);line-height:1.3}
+.big__goal b{display:block;color:var(--fg-primary);font-weight:800;font-size:13px;font-variant-numeric:tabular-nums}
+
+/* CHART — minimal: just the line + dot, with one faint goal reference */
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;height:auto}
+
+/* ──────── STORY TILES ──────── */
+.story{
+  position:relative;background:#fff;border-radius:18px;padding:14px;
+  border:1px solid rgba(15,23,42,.04);
+  box-shadow:0 1px 0 rgba(15,23,42,.03), 0 8px 22px -12px rgba(15,23,42,.14);
+  overflow:hidden;
+}
+.story::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(110% 100% at 0% 0%, color-mix(in srgb, var(--tint) 9%, transparent), transparent 55%)}
+.story__hd{position:relative;display:flex;align-items:center;gap:7px;margin-bottom:12px}
+.story__icon{width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--tint) 14%, #fff);color:var(--tint)}
+.story__label{font-family:var(--font-text);font-weight:700;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--fg-secondary)}
+
+/* STREAK */
+.streak{position:relative;display:flex;flex-direction:column;gap:14px}
+.streak__top{display:flex;align-items:baseline;gap:6px}
+.streak__num{font-family:var(--font-rounded);font-weight:800;font-size:42px;line-height:1;letter-spacing:-0.025em;color:var(--tint);font-variant-numeric:tabular-nums}
+.streak__unit{font-family:var(--font-text);font-weight:700;font-size:11px;color:var(--fg-secondary);text-transform:uppercase;letter-spacing:.4px}
+.streak__sub{font-family:var(--font-text);font-weight:600;font-size:11.5px;color:var(--fg-secondary);line-height:1.35}
+.streak__sub b{color:var(--tint)}
+.streak__row{display:flex;justify-content:space-between;gap:6px}
+.streak__cell{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px}
+.streak__dot{width:18px;height:18px;border-radius:6px;background:rgba(15,23,42,.07)}
+.streak__dot.on{background:var(--tint)}
+.streak__dot.today{background:var(--tint);box-shadow:0 0 0 3px color-mix(in srgb, var(--tint) 22%, transparent)}
+.streak__day{font-family:var(--font-text);font-weight:700;font-size:9.5px;color:var(--fg-secondary);letter-spacing:.4px}
+.streak__day.t{color:var(--tint)}
+
+/* CONFIDENCE GAUGE */
+.gauge{display:flex;align-items:center;gap:14px}
+.gauge__chart{position:relative;width:84px;height:84px;flex-shrink:0}
+.gauge__center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge__num{font-family:var(--font-rounded);font-weight:800;font-size:26px;line-height:1;letter-spacing:-0.02em;color:var(--fg-primary)}
+.gauge__sub{font-family:var(--font-text);font-weight:700;font-size:9px;color:var(--fg-secondary);letter-spacing:.4px;text-transform:uppercase;margin-top:2px}
+.gauge__body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.gauge__zone{font-family:var(--font-rounded);font-weight:800;font-size:14px;color:var(--tint);letter-spacing:-0.005em;line-height:1.15}
+.gauge__hint{font-family:var(--font-text);font-weight:600;font-size:11px;color:var(--fg-secondary);line-height:1.35}
+
+/* PERSONAL BEST */
+.pb{display:flex;flex-direction:column;gap:10px}
+.pb__band{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;width:fit-content;background:color-mix(in srgb, var(--tint) 14%, #fff);color:var(--tint);font-family:var(--font-text);font-weight:800;font-size:10px;letter-spacing:.6px;text-transform:uppercase}
+.pb__band svg{width:10px;height:10px}
+.pb__row{display:flex;align-items:baseline;gap:6px}
+.pb__num{font-family:var(--font-rounded);font-weight:800;font-size:42px;line-height:1;letter-spacing:-0.025em;color:var(--tint);font-variant-numeric:tabular-nums}
+.pb__of{font-family:var(--font-text);font-weight:700;font-size:13px;color:var(--fg-secondary)}
+.pb__sub{font-family:var(--font-text);font-weight:600;font-size:11.5px;color:var(--fg-secondary);line-height:1.35}
+.pb__sub b{color:var(--fg-primary);font-weight:800}
+.pb__bars{display:flex;align-items:flex-end;gap:3px;height:18px;margin-top:2px}
+.pb__bars span{flex:1;background:color-mix(in srgb, var(--tint) 25%, #fff);border-radius:2px}
+.pb__bars span.last{background:var(--tint)}
+
+/* tints */
+.t-blue{--tint:#3378F5}
+.t-orange{--tint:#F28C26}
+.t-green{--tint:#249970}
+.t-indigo{--tint:#526EF0}
+.t-purple{--tint:#8F47EB}
+</style>
+</head><body>
+
+<!-- HERO ROW — restraint: just line + goal reference, status pill in head -->
+<div class="row">
+
+  <!-- FILLER RATE -->
+  <div class="big t-green">
+    <div class="big__head">
+      <div class="big__hd-l">
+        <div class="big__icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8" fill="currentColor" fill-opacity=".18"/><path d="M14 7h7v7"/></svg></div>
+        <div class="big__label">Filler rate</div>
+      </div>
+      <span class="status">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L20 6.5"/></svg>
+        On track
+      </span>
+    </div>
+
+    <div class="big__row">
+      <div><span class="big__num">2.4</span><span class="big__unit">/min</span></div>
+      <div class="big__goal"><span>Goal</span><b>≤ 3 / min</b></div>
+    </div>
+
+    <div class="chart">
+      <svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg" aria-label="Filler rate trend with zone gradient">
+        <defs>
+          <!-- Vertical gradient: GREEN at bottom (good = low fillers), YELLOW mid, RED top -->
+          <linearGradient id="fr-zones" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0"    stop-color="#E04545" stop-opacity=".55"/>
+            <stop offset="0.30" stop-color="#F08A2B" stop-opacity=".55"/>
+            <stop offset="0.55" stop-color="#F2C72B" stop-opacity=".55"/>
+            <stop offset="0.80" stop-color="#3FB585" stop-opacity=".55"/>
+            <stop offset="1"    stop-color="#249970" stop-opacity=".60"/>
+          </linearGradient>
+        </defs>
+        <!-- background zone band -->
+        <rect x="0" y="0" width="200" height="60" rx="6" fill="url(#fr-zones)"/>
+        <!-- goal reference at filler=3 (y=30, range 0..6) -->
+        <line x1="0" y1="30" x2="200" y2="30" stroke="#fff" stroke-width="1.2" stroke-dasharray="3 4" opacity=".9"/>
+        <!-- 7-pt series ending below goal line -->
+        <path d="M0 7 L33 12 L66 19 L99 24 L132 30 L165 33 L200 36"
+              fill="none" stroke="#0F2D24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="200" cy="36" r="8" fill="#fff" fill-opacity=".5"/>
+        <circle cx="200" cy="36" r="3.8" fill="#fff" stroke="#0F2D24" stroke-width="2.4"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- WPM -->
+  <div class="big t-blue">
+    <div class="big__head">
+      <div class="big__hd-l">
+        <div class="big__icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2M7 8v8M11 4v16M15 7v10M19 10v4M21 12h-1"/></svg></div>
+        <div class="big__label">Words / min</div>
+      </div>
+      <span class="status">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L20 6.5"/></svg>
+        On pace
+      </span>
+    </div>
+
+    <div class="big__row">
+      <div><span class="big__num">148</span></div>
+      <div class="big__goal"><span>Sweet spot</span><b>130–160</b></div>
+    </div>
+
+    <div class="chart">
+      <svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg" aria-label="Words per minute trend with zone gradient">
+        <defs>
+          <!-- Vertical gradient: too-slow (red top), then orange/yellow, GREEN sweet spot in middle, then yellow/orange/red back at bottom (too fast).
+               y range maps WPM 100..180 onto 0..60 (top..bottom) where larger y = faster.
+               Anchor breakpoints: 100→40 (red), 115→y32 (orange), 130→y22.5 (sweet spot start),
+               160→15 (sweet spot end), 175→7 (orange/red).
+               Express as 0..1 of the 60-tall band: divide y by 60. -->
+          <linearGradient id="wpm-zones" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0"     stop-color="#E04545" stop-opacity=".60"/>
+            <stop offset="0.16"  stop-color="#F08A2B" stop-opacity=".55"/>
+            <stop offset="0.28"  stop-color="#F2C72B" stop-opacity=".55"/>
+            <stop offset="0.40"  stop-color="#3FB585" stop-opacity=".58"/>
+            <stop offset="0.65"  stop-color="#3FB585" stop-opacity=".58"/>
+            <stop offset="0.78"  stop-color="#F2C72B" stop-opacity=".55"/>
+            <stop offset="0.90"  stop-color="#F08A2B" stop-opacity=".55"/>
+            <stop offset="1"     stop-color="#E04545" stop-opacity=".60"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="200" height="60" rx="6" fill="url(#wpm-zones)"/>
+        <!-- sweet spot band borders 130 (y=22.5) and 160 (y=15) inverted? Wait: WPM higher should mean line goes up.
+             Use: y = 60 - ((val-100)/80)*60. 130→37.5 (uh-oh)... Let's recompute properly. -->
+        <!-- We'll re-derive: top of svg = high WPM (good speed), bottom = low. So y_for(val) = 60 * (180-val)/80.
+             100→60 (bottom), 115→48.75, 130→37.5, 145→26.25, 160→15, 175→3.75, 180→0.
+             Sweet spot 130–160 sits between y=37.5 and y=15. -->
+        <line x1="0" y1="15"   x2="200" y2="15"   stroke="#fff" stroke-width="1.2" stroke-dasharray="3 4" opacity=".9"/>
+        <line x1="0" y1="37.5" x2="200" y2="37.5" stroke="#fff" stroke-width="1.2" stroke-dasharray="3 4" opacity=".9"/>
+        <!-- Series: 118, 124, 122, 132, 138, 142, 148
+             y: 118→46.5, 124→42, 122→43.5, 132→36, 138→31.5, 142→28.5, 148→24 -->
+        <path d="M0 46.5 L33 42 L66 43.5 L99 36 L132 31.5 L165 28.5 L200 24"
+              fill="none" stroke="#0F2D24" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="200" cy="24" r="8" fill="#fff" fill-opacity=".5"/>
+        <circle cx="200" cy="24" r="3.8" fill="#fff" stroke="#0F2D24" stroke-width="2.4"/>
+      </svg>
+    </div>
+  </div>
+
+</div>
+
+<!-- STORY ROW (unchanged) -->
+<div class="row3">
+
+  <div class="story t-orange">
+    <div class="story__hd">
+      <div class="story__icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c0 4-4.5 5.5-4.5 11A4.5 4.5 0 0 0 12 18.5a4.5 4.5 0 0 0 4.5-4.5c0-2.7-1.7-3.5-1.7-6.5 0 1.7-2.8 1.7-2.8-4.5z" fill="currentColor" fill-opacity=".22"/></svg>
+      </div>
+      <div class="story__label">Day streak</div>
+    </div>
+    <div class="streak">
+      <div>
+        <div class="streak__top"><span class="streak__num">12</span><span class="streak__unit">days</span></div>
+        <div class="streak__sub" style="margin-top:4px">Just <b>2 more</b> to beat your record.</div>
+      </div>
+      <div class="streak__row">
+        <div class="streak__cell"><div class="streak__dot on"></div><div class="streak__day">M</div></div>
+        <div class="streak__cell"><div class="streak__dot on"></div><div class="streak__day">T</div></div>
+        <div class="streak__cell"><div class="streak__dot on"></div><div class="streak__day">W</div></div>
+        <div class="streak__cell"><div class="streak__dot on"></div><div class="streak__day">T</div></div>
+        <div class="streak__cell"><div class="streak__dot on"></div><div class="streak__day">F</div></div>
+        <div class="streak__cell"><div class="streak__dot today"></div><div class="streak__day t">S</div></div>
+        <div class="streak__cell"><div class="streak__dot"></div><div class="streak__day">S</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="story t-indigo">
+    <div class="story__hd">
+      <div class="story__icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7z" fill="currentColor" fill-opacity=".22"/></svg>
+      </div>
+      <div class="story__label">Confidence</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge__chart">
+        <svg width="84" height="84" viewBox="0 0 84 84" style="transform:rotate(-220deg)">
+          <circle cx="42" cy="42" r="34" fill="none" stroke="rgba(82,110,240,.14)" stroke-width="7" stroke-dasharray="148 213" stroke-linecap="round"/>
+          <circle cx="42" cy="42" r="34" fill="none" stroke="#526EF0" stroke-width="7" stroke-dasharray="105 213" stroke-linecap="round"/>
+        </svg>
+        <div class="gauge__center">
+          <div class="gauge__num">71</div>
+          <div class="gauge__sub">/ 100</div>
+        </div>
+      </div>
+      <div class="gauge__body">
+        <div class="gauge__zone">Steady &amp; clear</div>
+        <div class="gauge__hint">Based on tone, pacing &amp; pause control across this week's reps.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="story t-purple">
+    <div class="story__hd">
+      <div class="story__icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.5l2.6 5.3 5.9.85-4.25 4.15 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.65l5.9-.85z" fill="currentColor" fill-opacity=".22"/>
+        </svg>
+      </div>
+      <div class="story__label">Last session</div>
+    </div>
+    <div class="pb">
+      <div class="pb__band">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L20 6.5"/></svg>
+        New personal best
+      </div>
+      <div>
+        <div class="pb__row"><span class="pb__num">82</span><span class="pb__of">/ 100</span></div>
+        <div class="pb__sub" style="margin-top:4px">Cleanest opening this week — <b>+9 vs last</b>.</div>
+      </div>
+      <div class="pb__bars">
+        <span style="height:38%"></span>
+        <span style="height:52%"></span>
+        <span style="height:48%"></span>
+        <span style="height:63%"></span>
+        <span style="height:58%"></span>
+        <span style="height:72%"></span>
+        <span class="last" style="height:96%"></span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body></html>

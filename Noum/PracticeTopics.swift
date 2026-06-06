@@ -281,16 +281,134 @@ struct PracticeTopics {
             .flatMap { promptsByTheme[$0] ?? [] }
     }()
 
+    // MARK: - M12 — Per-locale curated pools
+    //
+    // Spanish (es-ES) and French (fr-FR) ship with smaller curated pools
+    // (around 20 prompts each across the same 8 themes). The English pool
+    // remains the canonical 200+. When the user switches practice language
+    // in Settings, `random()` reads from the matching dictionary; the
+    // shuffle-deck dedup is keyed per-locale so switching languages
+    // doesn't reset the user's progress through whichever pool they were
+    // working through.
+    //
+    // Curation note: prompts are translated by intent, not literally, so
+    // they read as native speech in each language.
+
+    /// Spanish (es-ES) curated pool. ~24 prompts spanning all themes.
+    static let promptsByThemeESES: [PromptTheme: [String]] = [
+        .general: [
+            "¿Cuál es la lección más importante que has aprendido de un fracaso?",
+            "Si pudieras cenar con cualquier persona de la historia, ¿quién y por qué?",
+            "¿Qué significa el éxito para ti?",
+            "Describe tu día ideal de principio a fin.",
+            "¿Cuál es el mejor consejo que te han dado?",
+            "¿Qué cualidad humana crees que está más infravalorada?"
+        ],
+        .workCareer: [
+            "¿Cómo presentarías tu trabajo a alguien que no es del sector?",
+            "¿Cuál es la decisión profesional más difícil que has tomado?",
+            "Si pudieras cambiar una cosa de tu rutina laboral, ¿cuál sería?"
+        ],
+        .personalStories: [
+            "Cuenta un momento que cambió tu manera de pensar.",
+            "Describe un viaje que te marcó."
+        ],
+        .leadership: [
+            "¿Qué hace que un líder se gane el respeto sin imponerlo?",
+            "Describe un momento en que tuviste que tomar una decisión impopular."
+        ],
+        .ethicsOpinions: [
+            "¿Hasta qué punto debe la honestidad pesar más que la diplomacia?",
+            "¿Cuándo está justificado romper una regla?",
+            "¿Qué responsabilidad tienen las redes sociales con el bienestar mental?"
+        ],
+        .funRandom: [
+            "Si tuvieras una hora extra cada día, ¿qué harías?",
+            "¿Qué superpoder elegirías y por qué?"
+        ],
+        .interviewPrep: [
+            "Háblame de un proyecto del que estés orgulloso.",
+            "¿Por qué quieres este puesto?",
+            "¿Cuál es tu mayor área de mejora?"
+        ],
+        .socialConfidence: [
+            "¿Cómo empiezas una conversación con alguien que acabas de conocer?",
+            "Describe tu manera de hablar cuando estás bajo presión."
+        ]
+    ]
+
+    /// French (fr-FR) curated pool. ~24 prompts spanning all themes.
+    static let promptsByThemeFRFR: [PromptTheme: [String]] = [
+        .general: [
+            "Quelle est la leçon la plus importante que tu as tirée d'un échec ?",
+            "Si tu pouvais dîner avec n'importe quelle personne de l'histoire, qui et pourquoi ?",
+            "Que signifie le succès pour toi ?",
+            "Décris ta journée idéale du matin au soir.",
+            "Quel est le meilleur conseil qu'on t'ait jamais donné ?",
+            "Quelle qualité humaine est selon toi la plus sous-estimée ?"
+        ],
+        .workCareer: [
+            "Comment présenterais-tu ton métier à quelqu'un qui n'est pas du secteur ?",
+            "Quelle est la décision professionnelle la plus difficile que tu as prise ?",
+            "Si tu pouvais changer une seule chose dans ta routine de travail, ce serait quoi ?"
+        ],
+        .personalStories: [
+            "Raconte un moment qui a changé ta manière de voir les choses.",
+            "Décris un voyage qui t'a marqué."
+        ],
+        .leadership: [
+            "Qu'est-ce qui fait qu'un leader gagne le respect sans l'imposer ?",
+            "Décris une situation où tu as dû prendre une décision impopulaire."
+        ],
+        .ethicsOpinions: [
+            "Jusqu'où l'honnêteté doit-elle l'emporter sur la diplomatie ?",
+            "Quand est-il justifié de transgresser une règle ?",
+            "Quelle responsabilité les réseaux sociaux ont-ils envers le bien-être mental ?"
+        ],
+        .funRandom: [
+            "Si tu avais une heure de plus chaque jour, qu'en ferais-tu ?",
+            "Quel super-pouvoir choisirais-tu et pourquoi ?"
+        ],
+        .interviewPrep: [
+            "Parle-moi d'un projet dont tu es fier.",
+            "Pourquoi veux-tu ce poste ?",
+            "Quel est ton plus grand axe d'amélioration ?"
+        ],
+        .socialConfidence: [
+            "Comment engages-tu une conversation avec quelqu'un que tu viens de rencontrer ?",
+            "Décris ta façon de parler quand tu es sous pression."
+        ]
+    ]
+
+    /// Resolve the prompt source for a locale.
+    static func promptSource(for locale: PracticeLocale) -> [PromptTheme: [String]] {
+        switch locale {
+        case .enUS: return promptsByTheme
+        case .esES: return promptsByThemeESES
+        case .frFR: return promptsByThemeFRFR
+        }
+    }
+
     // MARK: - Shuffle Deck (no repeats until exhausted)
 
     private static let seenKey = "PracticeTopics.seenPrompts"
 
-    /// Get a random prompt for a given theme (or all), avoiding repeats via shuffle deck
+    /// Get a random prompt for a given theme (or all), avoiding repeats via shuffle deck.
+    /// Reads `LocaleSettingsManager.shared.current` to pick the right per-locale pool;
+    /// the shuffle deck is keyed by both theme and locale so switching languages
+    /// doesn't reset progress through whichever pool the user was working through.
+    @MainActor
     static func random(theme: PromptTheme = .all) -> String {
-        let pool = prompts(for: theme)
-        guard !pool.isEmpty else { return "Talk about anything you like" }
+        let locale = LocaleSettingsManager.shared.current
+        return random(theme: theme, locale: locale)
+    }
 
-        var seen = loadSeen(for: theme)
+    /// Locale-explicit overload for callers that need it (tests, deterministic seeded paths).
+    static func random(theme: PromptTheme, locale: PracticeLocale) -> String {
+        let pool = prompts(for: theme, locale: locale)
+        guard !pool.isEmpty else { return fallbackPrompt(for: locale) }
+
+        var seen = loadSeen(for: theme, locale: locale)
 
         // Reset deck if exhausted
         if seen.count >= pool.count {
@@ -301,15 +419,33 @@ struct PracticeTopics {
         let pick = unseen.randomElement() ?? pool.randomElement()!
 
         seen.insert(pick)
-        saveSeen(seen, for: theme)
+        saveSeen(seen, for: theme, locale: locale)
 
         return pick
     }
 
-    /// Get prompts for a specific theme
+    /// Get prompts for a specific theme. Reads the active locale by default;
+    /// pass a locale explicitly when you need a specific pool (tests, sharing).
+    @MainActor
     static func prompts(for theme: PromptTheme) -> [String] {
-        if theme == .all { return allPrompts }
-        return promptsByTheme[theme] ?? []
+        prompts(for: theme, locale: LocaleSettingsManager.shared.current)
+    }
+
+    /// Locale-explicit overload.
+    static func prompts(for theme: PromptTheme, locale: PracticeLocale) -> [String] {
+        let source = promptSource(for: locale)
+        if theme == .all {
+            return PromptTheme.allCases.filter { $0 != .all }.flatMap { source[$0] ?? [] }
+        }
+        return source[theme] ?? []
+    }
+
+    private static func fallbackPrompt(for locale: PracticeLocale) -> String {
+        switch locale {
+        case .enUS: return "Talk about anything you like"
+        case .esES: return "Habla de cualquier tema que te apetezca"
+        case .frFR: return "Parle de ce que tu veux"
+        }
     }
 
     /// Return a stable random topic seeded by a given string (for shared challenges)
@@ -321,9 +457,12 @@ struct PracticeTopics {
         return allPrompts[index]
     }
 
-    /// Return a stable random topic seeded by a string for a specific theme
+    /// Return a stable random topic seeded by a string for a specific theme.
+    /// Always reads the canonical English pool — async-challenge participants
+    /// are typically on different devices/locales, but the shared challenge
+    /// must land on the same prompt to stay fair.
     static func seeded(by seed: String, theme: PromptTheme) -> String {
-        let pool = prompts(for: theme)
+        let pool = prompts(for: theme, locale: .enUS)
         guard !pool.isEmpty else { return seeded(by: seed) }
         var hasher = Hasher()
         hasher.combine(seed)
@@ -338,8 +477,20 @@ struct PracticeTopics {
         "\(seenKey).\(theme.rawValue)"
     }
 
+    private static func storageKey(for theme: PromptTheme, locale: PracticeLocale) -> String {
+        // Suffix the legacy theme-only key with the locale code so each
+        // pool tracks its own shuffle progress independently.
+        "\(seenKey).\(theme.rawValue).\(locale.rawValue)"
+    }
+
     private static func loadSeen(for theme: PromptTheme) -> Set<String> {
         let key = storageKey(for: theme)
+        let array = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return Set(array)
+    }
+
+    private static func loadSeen(for theme: PromptTheme, locale: PracticeLocale) -> Set<String> {
+        let key = storageKey(for: theme, locale: locale)
         let array = UserDefaults.standard.stringArray(forKey: key) ?? []
         return Set(array)
     }
@@ -347,5 +498,147 @@ struct PracticeTopics {
     private static func saveSeen(_ seen: Set<String>, for theme: PromptTheme) {
         let key = storageKey(for: theme)
         UserDefaults.standard.set(Array(seen), forKey: key)
+    }
+
+    private static func saveSeen(_ seen: Set<String>, for theme: PromptTheme, locale: PracticeLocale) {
+        let key = storageKey(for: theme, locale: locale)
+        UserDefaults.standard.set(Array(seen), forKey: key)
+    }
+
+    // MARK: - Goal-aware selection (M7)
+    //
+    // Higher-level orchestrator over `random()`. Honors:
+    //   • 14-day prompt-history dedup via PromptHistoryStore
+    //   • 70/30 mix between curated pool and AIPromptGeneratorService
+    //   • Goal-mapped theme bias when the caller hasn't pinned a theme
+    //   • Curated-pool fallback when AI fails or content filter rejects
+    //
+    // Synchronous overload returns immediately from the curated pool —
+    // existing call sites that don't have a profile/baseline keep working
+    // unchanged.
+    //
+    // Async overload `next(profile:baseline:theme:)` is the one new call
+    // sites should adopt — it does the AI hop with a budget and falls
+    // back to the pool gracefully.
+
+    /// Probability of attempting an AI-generated prompt when one would
+    /// otherwise come from the curated pool.
+    static let aiGenerationProbability = 0.30
+
+    /// Hard ceiling on AI prompt generation latency. If the API takes longer
+    /// than this, we fall back to the curated pool so the user never waits
+    /// noticeably for a prompt to appear after tapping Begin.
+    static let aiGenerationBudget: TimeInterval = 3.0
+
+    /// Async goal-aware prompt selector. Returns one prompt that:
+    ///   • is not in the user's last-14-day history (best-effort),
+    ///   • biased toward the user's coaching goal,
+    ///   • generated via `AIPromptGeneratorService` ~30% of the time when
+    ///     a provider is configured; falls through to the curated pool
+    ///     otherwise.
+    /// The returned prompt is recorded in history before return.
+    @MainActor
+    static func next(
+        profile: CoachingProfile?,
+        baseline: CommunicationBaseline?,
+        theme: PromptTheme = .all
+    ) async -> String {
+        let history = PromptHistoryStore.shared
+
+        // Try the AI generator on the 30% sampling, with a hard latency budget.
+        if let profile,
+           Double.random(in: 0..<1) < aiGenerationProbability {
+            let weakest = baseline.flatMap(weakestDimensionLabel(for:))
+            let recents = history.recentTexts(limit: 5)
+            if let generated = await Self.generateWithBudget(
+                profile: profile,
+                weakestDimension: weakest,
+                recentPromptTexts: recents
+            ), !history.wasRecentlySeen(generated) {
+                history.record(generated)
+                return generated
+            }
+        }
+
+        // Curated pool path. Reroll up to 5 times to dodge a recently-seen prompt.
+        let resolvedTheme = theme == .all ? (profile.map(themeBias(for:)) ?? .all) : theme
+        var pick = random(theme: resolvedTheme)
+        var attempts = 0
+        while history.wasRecentlySeen(pick) && attempts < 5 {
+            pick = random(theme: resolvedTheme)
+            attempts += 1
+        }
+        history.record(pick)
+        return pick
+    }
+
+    /// Run the AI generator under a strict time budget. Returns nil if either
+    /// the generator returns nil or the budget elapses first — caller falls
+    /// back to the pool in either case.
+    private static func generateWithBudget(
+        profile: CoachingProfile,
+        weakestDimension: String?,
+        recentPromptTexts: [String]
+    ) async -> String? {
+        await withTaskGroup(of: String?.self) { group in
+            group.addTask {
+                await AIPromptGeneratorService.shared.generate(
+                    profile: profile,
+                    weakestDimension: weakestDimension,
+                    recentPromptTexts: recentPromptTexts
+                )
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(aiGenerationBudget * 1_000_000_000))
+                return nil
+            }
+            // First completion wins. If it's the timeout, the AI task is left
+            // running but its result is dropped — URLSession will continue and
+            // be deallocated when its data is no longer awaited.
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// Map a coaching profile to a preferred theme for impromptu prompts.
+    /// Identical to `RecommendationBiasEngine.suggestedTheme(for:)` but
+    /// available statically here so practice views can call it without
+    /// the full blueprint pipeline.
+    static func themeBias(for profile: CoachingProfile) -> PromptTheme {
+        switch profile.primaryGoal {
+        case .moreConcise:
+            return profile.speakingContext == .interviews ? .interviewPrep : .workCareer
+        case .thinkFaster:
+            return profile.biggestChallenge == .freezing ? .general : .funRandom
+        case .reduceFillers:
+            return .all
+        case .calmerDelivery:
+            return profile.speakingContext == .social ? .socialConfidence : .ethicsOpinions
+        }
+    }
+
+    /// Map a baseline's weakest dimension to a short coaching label the
+    /// AI prompt can target. Used to make generated prompts actually
+    /// challenge what the user needs to practice.
+    static func weakestDimensionLabel(for baseline: CommunicationBaseline) -> String? {
+        var weakest: (label: String, value: Double)?
+        let candidates: [(String, BaselineStat)] = [
+            ("filler control",     baseline.fillerRate),
+            ("structured opening", baseline.openingStrength),
+            ("clear closing",      baseline.closingStrength),
+            ("answer depth",       baseline.answerDepth),
+            ("structure",          baseline.structureQuality),
+            ("clarity",            baseline.clarity)
+        ]
+        for (label, stat) in candidates {
+            guard stat.confidence != .insufficient else { continue }
+            // For fillerRate, higher = worse. For everything else, lower = worse.
+            let normalized = label == "filler control" ? -stat.value : stat.value
+            if weakest == nil || normalized < weakest!.value {
+                weakest = (label, normalized)
+            }
+        }
+        return weakest?.label
     }
 }

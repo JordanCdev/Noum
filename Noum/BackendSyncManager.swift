@@ -119,6 +119,84 @@ actor BackendSyncManager {
             return
         }
 #endif
+        // REST backend path: send a DELETE request to remove server-side data
+        guard let request = request(
+            path: "/v1/me",
+            method: "DELETE",
+            accountID: accountID,
+            providerRawValue: providerRawValue
+        ) else {
+            return
+        }
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    // MARK: - Peer (M2: Peer Pull v1)
+
+    /// Write the public-readable subset of the user's stats. Called whenever
+    /// a session changes rating, streak, or weekly reps.
+    func syncPublicProfile(_ snapshot: PublicProfileSnapshot) async {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            await syncFirebasePublicProfile(snapshot)
+            return
+        }
+#endif
+    }
+
+    /// Fetch a peer's public-readable snapshot. Returns nil if the peer
+    /// hasn't synced yet, the network failed, or the doc is missing.
+    func fetchPublicProfile(accountID: String) async -> PublicProfileSnapshot? {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            return await fetchFirebasePublicProfile(accountID: accountID)
+        }
+#endif
+        return nil
+    }
+
+    /// Write the user's league snapshot for the current tier+week bucket.
+    func syncLeagueMember(snapshot: PublicProfileSnapshot, bucket: String) async {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            await syncFirebaseLeagueMember(snapshot, bucket: bucket)
+            return
+        }
+#endif
+    }
+
+    /// Read the top members of a league bucket, ordered by rating descending.
+    /// Caller is responsible for clamping to a UI-friendly count.
+    func fetchLeagueMembers(bucket: String, limit: Int = 20) async -> [PublicProfileSnapshot] {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            return await fetchFirebaseLeagueMembers(bucket: bucket, limit: limit)
+        }
+#endif
+        return []
+    }
+
+    /// Write the user's own slice of an async challenge. The doc is shared
+    /// between two participants and writers are limited (by Firestore rules)
+    /// to setting only their own fields.
+    func syncAsyncChallenge(_ challenge: AsyncChallenge) async {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            await syncFirebaseAsyncChallenge(challenge)
+            return
+        }
+#endif
+    }
+
+    /// Fetch all async challenges where the given accountID is a participant.
+    /// Returns most-recent-first, capped server-side at 50.
+    func fetchAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
+#if canImport(FirebaseFirestore)
+        if firebaseIsConfigured {
+            return await fetchFirebaseAsyncChallenges(forParticipant: participantID)
+        }
+#endif
+        return []
     }
 
     private func send<Payload: Encodable>(
@@ -236,7 +314,7 @@ private extension BackendSyncManager {
                 data: data,
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func syncFirebaseXP(_ xp: Int, accountID: String, providerRawValue: String) async {
@@ -247,7 +325,7 @@ private extension BackendSyncManager {
                 data: ["xp": xp],
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func syncFirebaseSession(_ session: PracticeSession, accountID: String, providerRawValue: String) async {
@@ -259,7 +337,7 @@ private extension BackendSyncManager {
                 data: data,
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func syncFirebaseRecommendationState(
@@ -280,19 +358,70 @@ private extension BackendSyncManager {
                 ],
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func deleteFirebaseAccount(accountID: String) async {
         let userRef = userDocument(accountID: accountID)
         do {
-            let sessionDocs = try await getDocuments(userRef.collection("sessions").limit(to: 200))
-            try await deleteDocuments(sessionDocs.map(\.reference))
+            // Paginate session deletion to handle accounts with >200 sessions
+            let sessionsCollection = userRef.collection("sessions")
+            var hasMore = true
+            while hasMore {
+                let batch = try await getDocuments(sessionsCollection.limit(to: 200))
+                guard !batch.isEmpty else { break }
+                try await deleteDocuments(batch.map(\.reference))
+                hasMore = batch.count == 200
+            }
             try await deleteDocument(userRef.collection("profile").document("main"))
             try await deleteDocument(userRef.collection("progress").document("main"))
             try await deleteDocument(userRef.collection("recommendations").document("state"))
             try await deleteDocument(userRef)
-        } catch {}
+
+            // M2 peer surfaces. The public profile is the user's own doc.
+            // League membership across past buckets and challenges where they
+            // were a participant are pruned by best-effort delete: any doc
+            // missing a participant becomes the opponent's snapshot only and
+            // should be GC'd by a server-side cleanup job.
+            try await deleteDocument(
+                Firestore.firestore().collection("profiles_public").document(accountID)
+            )
+            await deleteParticipantSliceFromChallenges(accountID: accountID)
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    }
+
+    /// Strip the user's own slice (scores, summary, reaction) from any
+    /// shared challenge doc where they were a participant. We don't delete
+    /// the challenge entirely — the opponent's data is still theirs.
+    func deleteParticipantSliceFromChallenges(accountID: String) async {
+        do {
+            let documents = try await getDocuments(
+                Firestore.firestore().collection("challenges")
+                    .whereField("participantIDs", arrayContains: accountID)
+                    .limit(to: 200)
+            )
+            for document in documents {
+                let data = document.data()
+                let creatorIDString = data["creatorID"] as? String
+                let isCreator = creatorIDString == accountID
+                let nullifiedFields: [String: Any] = isCreator
+                    ? [
+                        "creatorScore": NSNull(),
+                        "creatorDuration": NSNull(),
+                        "creatorSummary": NSNull(),
+                        "creatorReaction": NSNull(),
+                        "creatorName": "Removed user"
+                    ]
+                    : [
+                        "opponentScore": NSNull(),
+                        "opponentDuration": NSNull(),
+                        "opponentSummary": NSNull(),
+                        "opponentReaction": NSNull(),
+                        "opponentName": "Removed user"
+                    ]
+                try await setDocument(document.reference, data: nullifiedFields, merge: true)
+            }
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func ensureFirebaseUserDocument(accountID: String, providerRawValue: String) async {
@@ -307,7 +436,7 @@ private extension BackendSyncManager {
                 ],
                 merge: true
             )
-        } catch {}
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
     }
 
     func userDocument(accountID: String) -> DocumentReference {
@@ -389,6 +518,89 @@ private extension BackendSyncManager {
     func deleteDocuments(_ references: [DocumentReference]) async throws {
         for reference in references {
             try await deleteDocument(reference)
+        }
+    }
+
+    // MARK: - Peer (M2: Peer Pull v1)
+
+    func syncFirebasePublicProfile(_ snapshot: PublicProfileSnapshot) async {
+        do {
+            let data = try encodeDocument(snapshot)
+            try await setDocument(
+                Firestore.firestore().collection("profiles_public").document(snapshot.accountID),
+                data: data,
+                merge: true
+            )
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    }
+
+    func fetchFirebasePublicProfile(accountID: String) async -> PublicProfileSnapshot? {
+        do {
+            let snapshot = try await getDocument(
+                Firestore.firestore().collection("profiles_public").document(accountID)
+            )
+            return try decodeDocument(PublicProfileSnapshot.self, from: snapshot?.data())
+        } catch {
+            return nil
+        }
+    }
+
+    func syncFirebaseLeagueMember(_ snapshot: PublicProfileSnapshot, bucket: String) async {
+        do {
+            let data = try encodeDocument(snapshot)
+            try await setDocument(
+                Firestore.firestore()
+                    .collection("leagues").document(bucket)
+                    .collection("members").document(snapshot.accountID),
+                data: data,
+                merge: true
+            )
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    }
+
+    func fetchFirebaseLeagueMembers(bucket: String, limit: Int) async -> [PublicProfileSnapshot] {
+        do {
+            let documents = try await getDocuments(
+                Firestore.firestore()
+                    .collection("leagues").document(bucket)
+                    .collection("members")
+                    .order(by: "rating", descending: true)
+                    .limit(to: limit)
+            )
+            return documents.compactMap { try? decodeDocument(PublicProfileSnapshot.self, from: $0.data()) }.compactMap { $0 }
+        } catch {
+            return []
+        }
+    }
+
+    func syncFirebaseAsyncChallenge(_ challenge: AsyncChallenge) async {
+        do {
+            var data = try encodeDocument(challenge)
+            // Index field so query-by-participant works without a composite index.
+            data["participantIDs"] = [challenge.creatorID.uuidString, challenge.opponentID.uuidString]
+            try await setDocument(
+                Firestore.firestore().collection("challenges").document(challenge.id.uuidString),
+                data: data,
+                merge: true
+            )
+        } catch { print("[BackendSync] Error: \(error.localizedDescription)") }
+    }
+
+    func fetchFirebaseAsyncChallenges(forParticipant participantID: String) async -> [AsyncChallenge] {
+        do {
+            let documents = try await getDocuments(
+                Firestore.firestore().collection("challenges")
+                    .whereField("participantIDs", arrayContains: participantID)
+                    .order(by: "createdAt", descending: true)
+                    .limit(to: 50)
+            )
+            return documents.compactMap { document -> AsyncChallenge? in
+                var raw = document.data()
+                raw.removeValue(forKey: "participantIDs")
+                return (try? decodeDocument(AsyncChallenge.self, from: raw)) ?? nil
+            }
+        } catch {
+            return []
         }
     }
 }

@@ -1,0 +1,263 @@
+import Foundation
+
+// MARK: - Pressure Follow-Up Service
+
+/// Generates intelligent NPC follow-up messages for Sudden Death pressure mode
+/// by calling the same Gemini API used by IM Mode.
+///
+/// Falls back to template-based follow-ups when AI is unavailable.
+@MainActor
+@available(iOS 17.0, macOS 12.0, *)
+final class PressureFollowUpService: PressureFollowUpProviding {
+    static let shared = PressureFollowUpService()
+    private init() {}
+
+    private let settings = AISettingsManager.shared
+
+    // MARK: - PressureFollowUpProviding
+
+    func generateFollowUp(
+        userTranscript: String,
+        previousPrompt: String,
+        round: Int,
+        profile: CoachingProfile?
+    ) async -> String {
+        // Guard: need an AI provider
+        guard let provider = settings.activeProvider,
+              let apiKey = resolveAPIKey(for: provider),
+              let endpoint = provider.endpoint else {
+            print("[PressureFollowUp] No AI provider available, using template")
+            return PressureFollowUpTemplates.random()
+        }
+
+        do {
+            let followUp = try await callGemini(
+                provider: provider,
+                apiKey: apiKey,
+                endpoint: endpoint,
+                userTranscript: userTranscript,
+                previousPrompt: previousPrompt,
+                round: round,
+                profile: profile
+            )
+            return followUp
+        } catch {
+            print("[PressureFollowUp] Gemini call failed: \(error.localizedDescription), using template")
+            return PressureFollowUpTemplates.random()
+        }
+    }
+
+    // MARK: - Gemini Call
+
+    private func callGemini(
+        provider: AIProvider,
+        apiKey: String,
+        endpoint: URL,
+        userTranscript: String,
+        previousPrompt: String,
+        round: Int,
+        profile: CoachingProfile?
+    ) async throws -> String {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8 // Fast timeout — this must not block the game feel
+
+        let systemPrompt = buildSystemPrompt(round: round, profile: profile)
+        let userPrompt = buildUserPrompt(
+            userTranscript: userTranscript,
+            previousPrompt: previousPrompt,
+            round: round
+        )
+
+        switch provider {
+        case .gemini:
+            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            let body = GeminiRequest(
+                systemInstruction: .init(parts: [.init(text: systemPrompt)]),
+                contents: [.init(parts: [.init(text: userPrompt)])],
+                generationConfig: .init(temperature: 0.8, responseMimeType: "application/json")
+            )
+            request.httpBody = try JSONEncoder().encode(body)
+
+        case .openAI:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            let body: [String: Any] = [
+                "model": provider.model,
+                "temperature": 0.8,
+                "max_tokens": 60,
+                "response_format": ["type": "json_object"],
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": userPrompt]
+                ]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        default:
+            throw FollowUpError.unsupportedProvider
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw FollowUpError.httpError
+        }
+
+        return try extractMessage(from: data, provider: provider)
+    }
+
+    // MARK: - Prompt Construction
+
+    private func buildSystemPrompt(round: Int, profile: CoachingProfile?) -> String {
+        var prompt = """
+        You are an NPC in a speaking pressure drill. Your job is to fire back a short, \
+        pointed follow-up that forces the speaker to think fast and respond immediately.
+
+        Rules:
+        - Reply with JSON only: { "followUp": "your message" }
+        - Your follow-up must be 5 to 15 words
+        - Be direct, specific, and conversational — like a sharp interviewer or debater
+        - Reference what the speaker actually said — don't ask generic questions
+        - Challenge their reasoning, ask for specifics, or push them to go deeper
+        - Never be mean, sarcastic, or insulting — be firm but fair
+        - Never break character or mention being AI
+        - One question or challenge per message
+        """
+
+        if round >= 5 {
+            prompt += "\n- This is round \(round). Be more pointed. Shorter. Faster. Maximum pressure."
+        }
+
+        if let profile {
+            let focus = profile.primaryGoal.title.lowercased()
+            prompt += "\n- The speaker's training focus is: \(focus). Probe that area."
+        }
+
+        return prompt
+    }
+
+    private func buildUserPrompt(userTranscript: String, previousPrompt: String, round: Int) -> String {
+        """
+        The previous prompt was: "\(previousPrompt)"
+
+        The speaker said: "\(userTranscript)"
+
+        Generate a follow-up that pushes them to elaborate, defend, or clarify what they just said. \
+        Be specific to their actual words. Round \(round) of an ongoing pressure drill.
+        """
+    }
+
+    // MARK: - Response Parsing
+
+    private func extractMessage(from data: Data, provider: AIProvider) throws -> String {
+        let jsonData: Data
+
+        switch provider {
+        case .gemini:
+            let completion = try JSONDecoder().decode(GeminiResponse.self, from: data)
+            guard let text = completion.candidates.first?.content.parts.compactMap(\.text).joined(),
+                  !text.isEmpty else {
+                throw FollowUpError.emptyResponse
+            }
+            guard let textData = normalizedJSONData(from: text) else {
+                throw FollowUpError.invalidJSON
+            }
+            jsonData = textData
+
+        case .openAI:
+            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = object["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String,
+                  let contentData = content.data(using: .utf8) else {
+                throw FollowUpError.invalidJSON
+            }
+            jsonData = contentData
+
+        default:
+            throw FollowUpError.unsupportedProvider
+        }
+
+        guard let parsed = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let followUp = parsed["followUp"] as? String,
+              !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FollowUpError.emptyResponse
+        }
+
+        // Enforce word limit
+        let words = followUp.split(separator: " ")
+        let limited = words.prefix(20).joined(separator: " ")
+        return limited
+    }
+
+    /// Handle markdown code fences and whitespace in JSON responses.
+    private func normalizedJSONData(from text: String) -> Data? {
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip markdown code fences
+        if cleaned.hasPrefix("```json") { cleaned = String(cleaned.dropFirst(7)) }
+        if cleaned.hasPrefix("```") { cleaned = String(cleaned.dropFirst(3)) }
+        if cleaned.hasSuffix("```") { cleaned = String(cleaned.dropLast(3)) }
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.data(using: .utf8)
+    }
+
+    // MARK: - API Key Resolution
+
+    private func resolveAPIKey(for provider: AIProvider) -> String? {
+        guard let keyName = provider.environmentKey else { return nil }
+        // Environment variable first
+        if let value = ProcessInfo.processInfo.environment[keyName], !value.isEmpty {
+            return value
+        }
+        // Then AIConfig.plist
+        return LocalConfigLoader.value(forKey: keyName, plistNamed: "AIConfig")
+    }
+
+    // MARK: - Gemini Request/Response Structs (mirrored from IM service)
+
+    private struct GeminiRequest: Codable {
+        struct Content: Codable {
+            let parts: [Part]
+        }
+        struct Part: Codable {
+            let text: String
+        }
+        struct GenerationConfig: Codable {
+            let temperature: Double
+            let responseMimeType: String
+        }
+
+        let systemInstruction: Content
+        let contents: [Content]
+        let generationConfig: GenerationConfig
+
+        enum CodingKeys: String, CodingKey {
+            case systemInstruction = "system_instruction"
+            case contents
+            case generationConfig
+        }
+    }
+
+    private struct GeminiResponse: Codable {
+        struct Candidate: Codable {
+            struct Content: Codable {
+                struct Part: Codable {
+                    let text: String?
+                }
+                let parts: [Part]
+            }
+            let content: Content
+        }
+        let candidates: [Candidate]
+    }
+
+    // MARK: - Errors
+
+    private enum FollowUpError: Error {
+        case unsupportedProvider
+        case httpError
+        case emptyResponse
+        case invalidJSON
+    }
+}
