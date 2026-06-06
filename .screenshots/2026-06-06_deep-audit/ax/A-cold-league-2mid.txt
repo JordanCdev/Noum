@@ -1,0 +1,64 @@
+Attributes: Application, 0x10564e2d0, pid: 61721, label: 'Noum'
+Element subtree:
+ →Application, 0x10564e2d0, pid: 61721, label: 'Noum'
+    Window (Main), 0x10564acb0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1056511f0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x105651310, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x105650f50, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x105651070, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x105651430, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x105651550, {{0.0, 62.0}, {402.0, 54.0}}, identifier: '_TtGC7SwiftUI32NavigationStackHosting'
+                  Button, 0x105651670, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                Other, 0x105651790, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1056518b0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x1056519d0, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x105651af0, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x105651c10, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'league.screen'
+                          Other, 0x105651d30, {{0.0, -15.0}, {402.0, 855.0}}
+                            Button, 0x105651e50, {{20.0, -3.0}, {362.0, 81.8}}, identifier: 'league.peakRatingWall.link', label: 'Your league, Speakers in your rating range, this week. Climbing rating moves you up a tier.'
+                              StaticText, 0x105651f70, {{20.0, -3.0}, {151.0, 33.7}}, label: 'Your league'
+                              Button, 0x105652090, {{289.0, 6.7}, {93.0, 26.3}}, identifier: 'league.peakRatingWall.link', label: 'See your peak rating wall'
+                                StaticText, 0x1056521b0, {{299.0, 12.5}, {60.3, 14.3}}, label: 'See peaks'
+                                Image, 0x1056522d0, {{365.3, 14.7}, {6.0, 10.0}}, identifier: 'chevron.right', label: 'Forward'
+                              StaticText, 0x1056523f0, {{20.0, 40.8}, {346.0, 38.0}}, label: 'Speakers in your rating range, this week. Climbing rating moves you up a tier.'
+                            StaticText, 0x105652510, {{96.0, 114.8}, {52.0, 24.0}}, label: 'Silver'
+                            Image, 0x105652630, {{51.7, 127.3}, {17.0, 23.0}}, identifier: 'rosette', label: 'rosette'
+                            StaticText, 0x105652750, {{322.0, 114.8}, {44.0, 26.3}}, label: '400'
+                            StaticText, 0x105652870, {{96.0, 142.8}, {109.3, 14.3}}, label: '+100 rating to Gold'
+                            StaticText, 0x105652990, {{319.3, 143.2}, {46.7, 13.3}}, label: 'RATING'
+                            Image, 0x105652ab0, {{37.3, 192.0}, {11.3, 10.3}}, identifier: 'calendar', label: 'Calendar'
+                            StaticText, 0x105652bd0, {{54.0, 190.3}, {39.3, 13.3}}, label: 'Reset'
+                            Image, 0x105652cf0, {{157.7, 188.3}, {9.7, 12.3}}, identifier: 'flame.fill', label: 'Flame'
+                            StaticText, 0x105652e10, {{172.4, 187.7}, {49.3, 13.3}}, label: 'Streak'
+                            Image, 0x105652f30, {{279.0, 189.0}, {12.3, 10.7}}, identifier: 'chart.line.uptrend.xyaxis', label: 'Chart Line'
+                            StaticText, 0x105653050, {{296.6, 187.7}, {68.3, 13.3}}, label: 'This week'
+                            StaticText, 0x105653170, {{36.0, 207.7}, {83.7, 12.7}}, label: 'Resets tomorrow'
+                            StaticText, 0x105653290, {{156.8, 205.5}, {13.3, 18.0}}, label: '—'
+                            StaticText, 0x1056533b0, {{277.6, 205.0}, {13.3, 18.0}}, label: '—'
+                            StaticText, 0x1056534d0, {{24.0, 259.5}, {68.3, 12.0}}, label: 'STANDINGS'
+                            StaticText, 0x1056535f0, {{40.0, 311.5}, {237.7, 18.0}}, label: 'Your league forms over the week.'
+                            StaticText, 0x105653710, {{40.0, 333.5}, {256.3, 30.3}}, label: 'Other silver-tier speakers will appear here as they practice.'
+                            Image, 0x105653830, {{37.0, 398.0}, {11.7, 11.7}}, identifier: 'info.circle', label: 'Info'
+                            StaticText, 0x105653950, {{55.7, 391.8}, {269.0, 24.0}}, label: 'SAMPLE STANDINGS · LIVE DATA APPEARS AS THE BUCKET FILLS'
+                            Image, 0x105653a70, {{37.0, 696.0}, {12.7, 12.7}}, identifier: 'questionmark.circle', label: 'questionmark.circle'
+                            StaticText, 0x105653b90, {{56.7, 695.0}, {141.7, 14.3}}, label: 'HOW LEAGUES WORK'
+                            StaticText, 0x105653cb0, {{36.0, 717.5}, {317.7, 46.3}}, label: 'You're matched with speakers in your rating range each ISO week. Climbing rating moves you up a tier; the leaderboard resets every Monday.'
+                          Other, 0x105653dd0, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x105653ef0, {{0.0, 0.0}, {402.0, 170.8}}
+                          Other, 0x105654010, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x105654130, {{0.0, 0.0}, {402.0, 170.8}}
+                              Image, 0x105654250, {{-120.0, -166.0}, {642.0, 332.0}}, identifier: 'AdditionalDimmingOverlay'
+                              Other, 0x105654370, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x105654490, {{0.0, 0.0}, {402.0, 170.8}}
+                              Other, 0x1056545b0, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x1056546d0, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x1056547f0, {{0.0, 0.0}, {402.0, 170.8}}
+                Other, 0x105654910, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x105654a30, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x10564e2d0, pid: 61721, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x107142670, pid: 61721, label: 'Noum'
+  }

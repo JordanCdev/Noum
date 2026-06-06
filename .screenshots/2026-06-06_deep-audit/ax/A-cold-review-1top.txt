@@ -1,0 +1,33 @@
+Attributes: Application, 0x10750b5a0, pid: 61563, label: 'Noum'
+Element subtree:
+ →Application, 0x10750b5a0, pid: 61563, label: 'Noum'
+    Window (Main), 0x11c912470, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x11ca10870, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x11ca11910, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x11ca110d0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x10750b850, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x107509800, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x10750ce90, {{0.0, 62.0}, {402.0, 54.0}}, identifier: '_TtGC7SwiftUI32NavigationStackHosting'
+                  Button, 0x10750cfb0, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                  Other, 0x10544ccc0, {{321.3, 66.0}, {60.7, 36.0}}, label: 'Done'
+                    Other, 0x10544d1d0, {{321.3, 66.0}, {60.7, 36.0}}
+                      Button, 0x105447e20, {{321.3, 66.0}, {60.7, 36.0}}, label: 'Done'
+                Other, 0x105765280, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x105758070, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x105760bd0, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x10722b570, {{0.0, 0.0}, {402.0, 874.0}}
+                        Image, 0x107135e30, {{180.3, 382.7}, {38.3, 34.7}}, identifier: 'history.screen', label: 'clock.arrow.circlepath'
+                        StaticText, 0x1071351b0, {{72.2, 453.8}, {257.7, 21.7}}, identifier: 'history.screen', label: 'Your first session is the hardest'
+                        StaticText, 0x1071355d0, {{68.0, 487.5}, {266.0, 41.0}}, identifier: 'history.screen', label: 'One short rep populates this view with score, pacing, and filler trends.'
+                        Button, 0x107134d90, {{125.3, 548.7}, {151.3, 45.3}}, identifier: 'history.screen', label: 'Start a rep'
+                          Image, 0x107132400, {{147.3, 563.0}, {11.7, 16.7}}, identifier: 'mic.fill', label: 'Microphone'
+                          StaticText, 0x10722afe0, {{169.0, 560.5}, {87.7, 21.7}}, label: 'Start a rep'
+                Other, 0x10722a9d0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10722bdd0, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x10750b5a0, pid: 61563, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x107029e80, pid: 61563, label: 'Noum'
+  }

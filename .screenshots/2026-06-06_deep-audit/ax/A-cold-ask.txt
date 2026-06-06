@@ -1,0 +1,51 @@
+Attributes: Application, 0x10565e3b0, pid: 61853, label: 'Noum'
+Element subtree:
+ →Application, 0x10565e3b0, pid: 61853, label: 'Noum'
+    Window (Main), 0x105660dd0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x105661190, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1056612b0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x105660ef0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x105661010, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1056613d0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                Other, 0x1056614f0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x105661610, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x105661730, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x105661850, {{0.0, 0.0}, {402.0, 874.0}}
+                        StaticText, 0x105661970, {{20.0, 78.0}, {362.0, 18.0}}, label: 'Live call with Noum'
+                          StaticText, 0x105661a90, {{36.0, 81.0}, {44.3, 12.0}}, label: 'COACH'
+                          StaticText, 0x105661bb0, {{315.3, 78.0}, {66.7, 18.0}}, label: 'with Noum'
+                        StaticText, 0x105661cd0, {{96.0, 124.8}, {210.0, 307.7}}, label: 'Noum — Tap Talk to begin'
+                          Image, 0x105661df0, {{96.0, 124.8}, {210.0, 210.0}}, identifier: 'waveform', label: 'Noum coach, calm'
+                          StaticText, 0x105661f10, {{173.0, 371.8}, {56.0, 24.0}}, label: 'Noum'
+                          StaticText, 0x105662030, {{143.5, 411.8}, {115.0, 20.7}}, label: 'Tap Talk to begin'
+                        StaticText, 0x105662150, {{19.5, 452.2}, {363.0, 252.7}}, identifier: 'askNoum.live.coachBrief', label: 'Coaching read. I need one clean rep to sharpen the read. Current work: Establish a baseline for your speaking goal.. Target: Speak naturally for one focused answer.. Next move: Run one rep, then I can name the pattern with evidence..'
+                          Image, 0x105662270, {{37.0, 469.7}, {12.7, 12.7}}, identifier: 'target', label: 'target'
+                          StaticText, 0x105662390, {{58.7, 469.8}, {96.7, 12.0}}, label: 'COACHING READ'
+                          StaticText, 0x1056624b0, {{36.0, 495.2}, {262.3, 43.3}}, label: 'I need one clean rep to sharpen the read.'
+                          StaticText, 0x1056625d0, {{36.0, 550.5}, {89.7, 12.0}}, label: 'CURRENT WORK'
+                          StaticText, 0x1056626f0, {{36.0, 564.5}, {264.7, 18.0}}, label: 'Establish a baseline for your speaking goal.'
+                          StaticText, 0x105662810, {{36.0, 594.5}, {43.0, 12.0}}, label: 'TARGET'
+                          StaticText, 0x105662930, {{36.0, 608.5}, {245.7, 18.0}}, label: 'Speak naturally for one focused answer.'
+                          StaticText, 0x105662a50, {{36.0, 638.5}, {65.3, 12.0}}, label: 'NEXT MOVE'
+                          StaticText, 0x105662b70, {{36.0, 652.5}, {252.7, 35.7}}, label: 'Run one rep, then I can name the pattern with evidence.'
+                        Button, 0x105662c90, {{67.0, 728.0}, {52.0, 76.0}}, label: 'Talk'
+                          Button, 0x105662db0, {{67.0, 728.0}, {52.0, 52.0}}, identifier: 'mic.fill', label: 'Microphone'
+                          StaticText, 0x105662ed0, {{80.7, 786.0}, {24.7, 18.0}}, label: 'Talk'
+                        Button, 0x105662ff0, {{139.0, 728.0}, {52.0, 76.0}}, label: 'Aloud'
+                          Button, 0x105663110, {{139.0, 728.0}, {52.0, 52.0}}, identifier: 'speaker.wave.2.fill', label: 'Volume High'
+                          StaticText, 0x105663230, {{147.0, 786.0}, {36.0, 18.0}}, label: 'Aloud'
+                        Button, 0x105663350, {{211.0, 728.0}, {52.0, 76.0}}, label: 'Type'
+                          Button, 0x105663470, {{211.0, 728.0}, {52.0, 52.0}}, identifier: 'keyboard', label: 'Keyboard'
+                          StaticText, 0x105663590, {{222.0, 786.0}, {30.0, 18.0}}, label: 'Type'
+                        Button, 0x1056636b0, {{283.0, 728.0}, {52.0, 76.0}}, label: 'Leave'
+                          Button, 0x1056637d0, {{283.0, 728.0}, {52.0, 52.0}}, identifier: 'xmark', label: 'Close'
+                          StaticText, 0x1056638f0, {{290.8, 786.0}, {36.3, 18.0}}, label: 'Leave'
+                Other, 0x105663a10, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x105663b30, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x10565e3b0, pid: 61853, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x107151920, pid: 61853, label: 'Noum'
+  }

@@ -1,0 +1,122 @@
+Attributes: Application, 0x11f96df80, pid: 57196, label: 'Noum'
+Element subtree:
+ →Application, 0x11f96df80, pid: 57196, label: 'Noum'
+    Window (Main), 0x10414ecc0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x104157850, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x104157430, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x10414e810, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x1041584b0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x104157010, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                Other, 0x104156bf0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1041567d0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x104149a50, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x104149630, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x104149210, {{0.0, 0.0}, {402.3, 874.0}}
+                          Other, 0x104148df0, {{0.0, 62.0}, {402.2, 1409.3}}
+                            Other, 0x1041489d0, {{20.2, 97.7}, {362.3, 341.3}}, identifier: 'home.coachCard'
+                              Image, 0x10414db30, {{145.2, 137.4}, {112.2, 112.2}}, identifier: 'waveform.badge.magnifyingglass', label: 'Noum coach, reading your session'
+                              StaticText, 0x10414a090, {{119.2, 273.0}, {164.3, 28.7}}, identifier: 'home.coachCard.title', label: 'Hold Platinum.'
+                              StaticText, 0x10414a1b0, {{59.7, 313.7}, {283.3, 41.0}}, identifier: 'home.coachCard.subtitle', label: 'One clean rep keeps the ladder moving — social catch-up tone.'
+                              Button, 0x1041588d0, {{40.2, 366.7}, {322.3, 52.3}}, identifier: 'home.coachCard.begin', label: 'Begin · IM'
+                            Other, 0x1041589f0, {{20.2, 455.0}, {362.3, 49.0}}
+                              Button, 0x104158b10, {{20.2, 465.3}, {110.7, 28.3}}, label: 'No streak yet.'
+                                Image, 0x104158c30, {{21.2, 472.3}, {11.3, 14.3}}, identifier: 'flame.fill', label: 'Flame'
+                                StaticText, 0x104158d50, {{20.2, 465.3}, {110.7, 28.3}}, label: 'No streak yet'
+                              Button, 0x104158e70, {{189.8, 455.0}, {98.0, 49.0}}, label: 'Word of the day: Brittle.'
+                                StaticText, 0x104158f90, {{189.8, 455.0}, {98.0, 49.0}}, label: 'Word of the day: Brittle'
+                                Image, 0x1041590b0, {{281.2, 474.7}, {6.0, 10.0}}, identifier: 'chevron.right', label: 'Forward'
+                              Button, 0x1041591d0, {{346.8, 464.3}, {35.7, 30.3}}, label: 'Soundscape Off.'
+                                Image, 0x1041592f0, {{350.5, 471.7}, {16.0, 16.0}}, identifier: 'speaker.slash', label: 'Mute'
+                                Image, 0x104159410, {{346.8, 464.3}, {35.7, 30.3}}, identifier: 'chevron.right', label: 'Forward'
+                            Other, 0x104159530, {{20.2, 520.0}, {362.3, 228.3}}, identifier: 'home.path', label: 'First lesson cleared. Mission 5 of 20. 1 more lesson crown from unlocked.'
+                              Button, 0x104159650, {{20.2, 520.0}, {362.3, 228.3}}, identifier: 'home.path.missionCounter-home.path.missionTitle-home.path.nextMilestone', label: 'Your journey, Chapter · Bronze, Mission 5 of 20, First lesson cleared, 1 more lesson crown from unlocked., Open the Path'
+                                StaticText, 0x104159880, {{40.2, 544.3}, {87.0, 12.0}}, label: 'YOUR JOURNEY'
+                                StaticText, 0x1041599a0, {{260.2, 540.0}, {102.3, 18.0}}, label: 'Chapter · Bronze'
+                                StaticText, 0x104159ac0, {{40.2, 570.0}, {103.0, 20.7}}, identifier: 'home.path.missionCounter', label: 'Mission 5 of 20'
+                                StaticText, 0x104159be0, {{40.2, 602.7}, {218.0, 28.7}}, identifier: 'home.path.missionTitle', label: 'First lesson cleared'
+                                StaticText, 0x104159d00, {{40.2, 643.3}, {244.3, 20.7}}, identifier: 'home.path.nextMilestone', label: '1 more lesson crown from unlocked.'
+                                StaticText, 0x104159e20, {{209.2, 696.0}, {113.0, 20.3}}, label: 'Open the Path'
+                                Image, 0x104159f40, {{330.2, 700.3}, {14.3, 12.0}}, identifier: 'arrow.right', label: 'Right'
+                            Button, 0x10415a060, {{19.7, 761.8}, {363.3, 221.0}}, identifier: 'home.askNoum', label: 'Ask Noum. What's your move this week?. Plan a pitch, get a verdict on this week, or ask why a number moved. I read your last 30 days first.. Open the thread.'
+                              Image, 0x10415a180, {{41.3, 783.5}, {93.7, 93.7}}, identifier: 'waveform', label: 'Noum coach, calm, settled in composure'
+                              StaticText, 0x104165ba0, {{152.2, 782.3}, {158.3, 12.0}}, label: 'ASK NOUM · AUTHORITATIVE'
+                              StaticText, 0x104165cc0, {{152.2, 800.3}, {172.7, 48.0}}, label: 'What's your move this week?'
+                              StaticText, 0x104165de0, {{152.2, 854.3}, {194.3, 82.0}}, label: 'Plan a pitch, get a verdict on this week, or ask why a number moved. I read your last 30 days first.'
+                              StaticText, 0x104165f00, {{152.2, 944.3}, {101.0, 18.0}}, label: 'Open the thread'
+                              Image, 0x104166020, {{260.5, 948.7}, {11.7, 9.7}}, identifier: 'arrow.right', label: 'Right'
+                            Other, 0x104166140, {{20.2, 996.3}, {362.3, 221.0}}, label: 'Daily challenges. 3 of 3 remaining. 1h 28m before midnight.'
+                              Image, 0x104166260, {{40.2, 1017.0}, {14.0, 14.0}}, identifier: 'waveform', label: 'Noum coach'
+                              StaticText, 0x104166380, {{62.2, 1018.0}, {38.0, 12.0}}, identifier: 'home.daily.eyebrow', label: 'Today'
+                              StaticText, 0x1041664a0, {{237.2, 1016.3}, {125.3, 15.3}}, identifier: 'home.daily.expiry', label: '1h 28m before midnight'
+                              StaticText, 0x1041665c0, {{40.2, 1037.7}, {322.3, 35.7}}, identifier: 'home.daily.coachline', label: 'Today's mission is still open — land a 14-word answer under 30 seconds with at most one filler.'
+                              Button, 0x1041666e0, {{40.2, 1085.3}, {322.3, 32.0}}, label: 'Land a 30-second answer. Finish a clean rep in under 30 seconds. Worth 25 XP.', Disabled
+                                Image, 0x104166800, {{50.8, 1093.0}, {10.7, 17.0}}, identifier: 'bolt.fill', label: 'Flash', Disabled
+                                StaticText, 0x104166920, {{84.2, 1091.0}, {181.3, 20.7}}, label: 'Land a 30-second answer', Disabled
+                                StaticText, 0x104166a40, {{329.8, 1095.3}, {32.7, 12.0}}, label: '+25 XP', Disabled
+                              Button, 0x104166b60, {{40.2, 1125.3}, {322.3, 32.0}}, label: 'Average a 1-second pause. Average a 1-second pause across the rep, mostly clean. Worth 35 XP.', Disabled
+                                Image, 0x104166c80, {{49.5, 1135.0}, {13.3, 12.7}}, identifier: 'speaker.wave.1.fill', label: 'Volume Low', Disabled
+                                StaticText, 0x104166da0, {{84.2, 1131.0}, {185.0, 20.7}}, label: 'Average a 1-second pause', Disabled
+                                StaticText, 0x104166ec0, {{329.8, 1135.3}, {32.7, 12.0}}, label: '+35 XP', Disabled
+                              Button, 0x104166fe0, {{40.2, 1165.3}, {322.3, 32.0}}, label: '70-second answer. Hold an answer 70 seconds with at most two fillers. Worth 35 XP.', Disabled
+                                Image, 0x104167100, {{51.8, 1174.7}, {8.7, 13.3}}, identifier: 'hourglass', label: 'Duration', Disabled
+                                StaticText, 0x104167220, {{84.2, 1171.0}, {131.3, 20.7}}, label: '70-second answer', Disabled
+                                StaticText, 0x104167340, {{329.8, 1175.3}, {32.7, 12.0}}, label: '+35 XP', Disabled
+                              Other, 0x104167460, {{20.2, 1213.3}, {362.3, 4.0}}
+                            Button, 0x104167580, {{20.2, 1231.3}, {362.3, 144.0}}, identifier: 'home.voiceMetricsCard', label: 'This week's voice metrics. Word variety: 91% unique words on your baseline.'
+                              StaticText, 0x1041676a0, {{40.2, 1251.3}, {60.3, 12.0}}, label: 'THIS WEEK'
+                              StaticText, 0x1041677c0, {{106.5, 1251.3}, {2.7, 12.0}}, label: '·'
+                              StaticText, 0x1041678e0, {{115.2, 1251.3}, {87.0, 12.0}}, label: 'VOICE METRICS'
+                              Image, 0x104167a00, {{40.2, 1279.3}, {36.0, 36.0}}, identifier: 'text.word.spacing', label: 'text.word.spacing'
+                              StaticText, 0x104167b20, {{88.2, 1279.3}, {96.0, 19.3}}, label: 'Word variety'
+                              StaticText, 0x104167c40, {{88.2, 1300.7}, {244.3, 20.7}}, label: '91% unique words on your baseline.'
+                              StaticText, 0x104167d60, {{268.5, 1337.3}, {76.7, 18.0}}, label: 'See full read'
+                              Image, 0x104167e80, {{350.5, 1342.0}, {10.7, 8.7}}, identifier: 'arrow.right', label: 'Right'
+                        Button, 0x104167fa0, {{54.0, 763.0}, {36.0, 55.0}}, identifier: 'nav.practice', label: 'Train'
+                          Image, 0x1041680c0, {{61.0, 774.3}, {22.3, 13.0}}, identifier: 'dumbbell.fill', label: 'dumbbell.fill'
+                          StaticText, 0x1041681e0, {{54.0, 806.0}, {36.0, 12.0}}, label: 'Train'
+                        Button, 0x104168300, {{135.5, 763.0}, {45.0, 55.0}}, identifier: 'nav.history', label: 'Review'
+                          Image, 0x104168420, {{148.3, 773.7}, {19.3, 15.0}}, identifier: 'book.fill', label: 'Bookmark'
+                          StaticText, 0x104168540, {{135.5, 806.0}, {45.0, 12.0}}, label: 'Review'
+                        Button, 0x104168660, {{219.5, 763.0}, {49.0, 55.0}}, identifier: 'nav.social', label: 'Profile'
+                          Image, 0x104168960, {{237.3, 774.0}, {13.3, 14.3}}, identifier: 'person.fill', label: 'person.fill'
+                          StaticText, 0x104168a80, {{219.5, 806.0}, {49.0, 12.0}}, label: 'Profile'
+                        Button, 0x104168ba0, {{300.7, 763.0}, {58.7, 55.0}}, identifier: 'nav.settings', label: 'Settings'
+                          Image, 0x104168cc0, {{321.7, 773.7}, {17.0, 14.7}}, identifier: 'slider.horizontal.3', label: 'Edit'
+                          StaticText, 0x104168de0, {{300.7, 806.0}, {58.7, 12.0}}, label: 'Settings'
+                Other, 0x104168f00, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x104169020, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x104169140, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x104169260, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x104169380, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x1041694a0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1041695c0, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x1041696e0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x104169800, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x104169920, {{0.0, 0.0}, {402.0, 874.0}}
+                      Button, 0x104169a40, {{20.0, 71.0}, {38.0, 38.0}}, identifier: 'chevron.left', label: 'Back'
+                      StaticText, 0x104169b60, {{36.0, 141.8}, {212.7, 18.0}}, label: 'Building your coaching profile'
+                      StaticText, 0x104169c80, {{36.0, 165.8}, {90.7, 14.3}}, label: '2 of 3 answered'
+                      StaticText, 0x104169da0, {{336.8, 157.3}, {10.3, 19.3}}, label: '2'
+                      StaticText, 0x104169ec0, {{38.0, 246.0}, {307.3, 67.3}}, label: 'Where do you want the most growth?'
+                      StaticText, 0x104169fe0, {{38.0, 317.3}, {262.3, 15.7}}, label: 'Pick the area you'd most like to strengthen.'
+                      ScrollView, 0x10416a100, {{38.0, 345.0}, {326.0, 403.0}}
+                        Other, 0x10416a220, {{38.0, 345.0}, {326.0, 277.3}}
+                          Button, 0x10415a3c0, {{37.0, 344.0}, {328.0, 76.7}}, identifier: 'coaching.option.fillerWords', label: 'I fall back on filler words, Sound more deliberate instead of hesitant.', Selected
+                            StaticText, 0x10415a4e0, {{52.0, 355.0}, {191.7, 20.3}}, label: 'I fall back on filler words'
+                            StaticText, 0x10415a600, {{52.0, 379.3}, {176.7, 30.3}}, label: 'Sound more deliberate instead of hesitant.'
+                            Image, 0x10415a720, {{330.7, 377.0}, {11.0, 10.7}}, identifier: 'checkmark', label: 'Selected', Selected
+                          Button, 0x10415a840, {{37.5, 427.2}, {327.0, 55.0}}, identifier: 'coaching.option.rambling', label: 'I lose structure and ramble'
+                          Button, 0x10415a960, {{37.5, 489.2}, {327.0, 63.3}}, identifier: 'coaching.option.freezing', label: 'I blank when I’m put on the spot'
+                          Button, 0x104160070, {{37.5, 559.5}, {327.0, 63.3}}, identifier: 'coaching.option.rushing', label: 'I speak too quickly under pressure'
+                      Button, 0x104160190, {{256.2, 759.5}, {108.3, 57.0}}, identifier: 'coaching.continue', label: 'Next'
+                        StaticText, 0x1041602b0, {{272.7, 779.0}, {33.3, 18.0}}, label: 'Next'
+                        Image, 0x1041603d0, {{324.0, 782.0}, {14.3, 12.0}}, identifier: 'arrow.right', label: 'Right'
+              Other, 0x1041604f0, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x104160610, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x11f96df80, pid: 57196, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x107834b50, pid: 57196, label: 'Noum'
+  }

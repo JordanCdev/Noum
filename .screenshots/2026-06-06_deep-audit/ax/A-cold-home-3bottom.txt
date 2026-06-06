@@ -1,0 +1,60 @@
+Attributes: Application, 0x105404810, pid: 61373, label: 'Noum'
+Element subtree:
+ →Application, 0x105404810, pid: 61373, label: 'Noum'
+    Window (Main), 0x105769d50, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1057657a0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x10576f1b0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x105738a90, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x105767750, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1057695d0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                Other, 0x1057534e0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10576e360, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x105766cb0, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x105770020, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x105768910, {{0.0, 0.0}, {402.3, 874.0}}
+                          Other, 0x10575ef60, {{0.0, 5.3}, {402.2, 729.7}}
+                            Other, 0x10576a660, {{20.2, 41.0}, {362.3, 321.0}}, identifier: 'home.coachCard'
+                              Image, 0x105708300, {{182.8, 115.1}, {45.0, 43.4}}, identifier: 'waveform.and.mic', label: 'Noum coach, listening to your rep'
+                              Image, 0x1057610d0, {{231.1, 126.2}, {22.2, 21.5}}, identifier: 'waveform.path', label: 'Noum coach, listening to your rep'
+                              Image, 0x105408ef0, {{230.3, 125.8}, {23.1, 22.5}}, identifier: 'waveform.path', label: 'Noum coach, listening to your rep'
+                              StaticText, 0x105631b20, {{145.7, 216.3}, {111.3, 28.7}}, identifier: 'home.coachCard.title', label: 'Welcome.'
+                              StaticText, 0x10562f100, {{76.0, 257.0}, {250.7, 20.7}}, identifier: 'home.coachCard.subtitle', label: 'One short rep sets your starting line.'
+                              Button, 0x105630400, {{40.2, 289.7}, {322.3, 52.3}}, identifier: 'home.coachCard.begin', label: 'Begin · First rep'
+                            Other, 0x10562b140, {{20.2, 378.0}, {362.3, 49.0}}
+                              Button, 0x105630820, {{20.2, 388.3}, {110.7, 28.3}}, label: 'No streak yet.'
+                                Image, 0x10562b980, {{21.2, 395.3}, {11.3, 14.3}}, identifier: 'flame.fill', label: 'Flame'
+                                StaticText, 0x1056320a0, {{20.2, 388.3}, {110.7, 28.3}}, label: 'No streak yet'
+                              Button, 0x1056321c0, {{173.8, 378.0}, {130.0, 49.0}}, label: 'Word of the day: Forthcoming.'
+                                StaticText, 0x1056322e0, {{173.8, 378.0}, {130.0, 49.0}}, label: 'Word of the day: Forthcoming'
+                                Image, 0x105632400, {{297.2, 397.7}, {6.0, 10.0}}, identifier: 'chevron.right', label: 'Forward'
+                              Button, 0x105632520, {{346.8, 387.3}, {35.7, 30.3}}, label: 'Soundscape Off.'
+                                Image, 0x105632640, {{350.5, 394.7}, {16.0, 16.0}}, identifier: 'speaker.slash', label: 'Mute'
+                                Image, 0x105632760, {{346.8, 387.3}, {35.7, 30.3}}, identifier: 'chevron.right', label: 'Forward'
+                            Button, 0x105632880, {{19.7, 442.5}, {363.3, 197.0}}, identifier: 'home.askNoum', label: 'Ask Noum. Talk to your coach.. Ask me anything about your speaking practice. I read your last 30 days before every reply.. Open the thread.'
+                              Image, 0x1056329a0, {{45.7, 468.5}, {85.0, 85.0}}, identifier: 'waveform', label: 'Noum coach, calm'
+                              StaticText, 0x105632ac0, {{152.2, 463.0}, {144.7, 12.0}}, label: 'ASK NOUM · YOUR COACH'
+                              StaticText, 0x105632be0, {{152.2, 481.0}, {175.7, 24.0}}, label: 'Talk to your coach.'
+                              StaticText, 0x105632d00, {{152.2, 511.0}, {194.3, 82.0}}, label: 'Ask me anything about your speaking practice. I read your last 30 days before every reply.'
+                              StaticText, 0x105632e20, {{152.2, 601.0}, {101.0, 18.0}}, label: 'Open the thread'
+                              Image, 0x105632f40, {{260.5, 605.0}, {11.7, 9.7}}, identifier: 'arrow.right', label: 'Right'
+                        Button, 0x105633060, {{54.0, 763.0}, {36.0, 55.0}}, identifier: 'nav.practice', label: 'Train'
+                          Image, 0x105633180, {{61.0, 774.3}, {22.3, 13.0}}, identifier: 'dumbbell.fill', label: 'dumbbell.fill'
+                          StaticText, 0x1056332a0, {{54.0, 806.0}, {36.0, 12.0}}, label: 'Train'
+                        Button, 0x1056333c0, {{135.5, 763.0}, {45.0, 55.0}}, identifier: 'nav.history', label: 'Review'
+                          Image, 0x1056334e0, {{148.3, 773.7}, {19.3, 15.0}}, identifier: 'book.fill', label: 'Bookmark'
+                          StaticText, 0x105633600, {{135.5, 806.0}, {45.0, 12.0}}, label: 'Review'
+                        Button, 0x105633720, {{219.5, 763.0}, {49.0, 55.0}}, identifier: 'nav.social', label: 'Profile'
+                          Image, 0x105633840, {{237.3, 774.0}, {13.3, 14.3}}, identifier: 'person.fill', label: 'person.fill'
+                          StaticText, 0x105633960, {{219.5, 806.0}, {49.0, 12.0}}, label: 'Profile'
+                        Button, 0x105633a80, {{300.7, 763.0}, {58.7, 55.0}}, identifier: 'nav.settings', label: 'Settings'
+                          Image, 0x105633ba0, {{321.7, 773.7}, {17.0, 14.7}}, identifier: 'slider.horizontal.3', label: 'Edit'
+                          StaticText, 0x105633cc0, {{300.7, 806.0}, {58.7, 12.0}}, label: 'Settings'
+                Other, 0x105633de0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x105633f00, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x105404810, pid: 61373, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x105758f20, pid: 61373, label: 'Noum'
+  }

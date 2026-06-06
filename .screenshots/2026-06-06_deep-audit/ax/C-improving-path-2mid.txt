@@ -1,0 +1,97 @@
+Attributes: Application, 0x11e37fa00, pid: 56956, label: 'Noum'
+Element subtree:
+ →Application, 0x11e37fa00, pid: 56956, label: 'Noum'
+    Window (Main), 0x11e37fe20, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x11e382080, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x11e3821a0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x11e381de0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x11e381f00, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x11e3822c0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x11e3823e0, {{0.0, 62.0}, {402.0, 54.0}}, identifier: '_TtGC7SwiftUI32NavigationStackHosting'
+                  Other, 0x11e382500, {{20.0, 66.0}, {65.0, 36.0}}, label: 'Back'
+                    Other, 0x11e382620, {{20.0, 66.0}, {65.0, 36.0}}
+                      Button, 0x11e382740, {{20.0, 66.0}, {65.0, 36.0}}, label: 'Back'
+                        Image, 0x11e382860, {{27.3, 75.0}, {10.3, 18.0}}, identifier: 'chevron.left', label: 'Back'
+                        StaticText, 0x11e382980, {{45.7, 73.7}, {33.3, 20.7}}, label: 'Back'
+                Other, 0x11e382aa0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11e382bc0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x11e382ce0, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x11e382e00, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x11e382f20, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'journey.screen'
+                          Other, 0x11e383040, {{0.0, -400.3}, {402.0, 1378.3}}
+                            StaticText, 0x11e383160, {{18.0, -392.3}, {175.0, 36.0}}, label: 'Your journey'
+                            StaticText, 0x11e383280, {{18.0, -350.3}, {351.3, 38.0}}, label: 'Built from the last 21 days of practice, consistency, and session quality.'
+                            StaticText, 0x11e3833a0, {{78.3, 11.5}, {49.7, 13.3}}, label: 'Revealed'
+                            StaticText, 0x11e3834c0, {{244.7, 11.5}, {35.7, 13.3}}, label: 'Streak'
+                            Image, 0x11e3835e0, {{51.7, 22.0}, {15.0, 14.0}}, identifier: 'map.fill', label: 'Show Map'
+                            StaticText, 0x11e383700, {{78.3, 26.9}, {95.0, 19.3}}, label: '0% revealed'
+                            Image, 0x11e383820, {{221.3, 21.3}, {12.0, 15.3}}, identifier: 'flame.fill', label: 'Flame'
+                            StaticText, 0x11e383940, {{244.7, 26.9}, {101.0, 19.3}}, label: 'No streak yet'
+                            StaticText, 0x11e383a60, {{102.0, 86.2}, {121.3, 14.3}}, label: 'WHAT THIS MEANS'
+                            StaticText, 0x11e383b80, {{102.0, 106.5}, {245.7, 38.0}}, label: 'You are still cutting the first line through the grass. Early reps matter because they prove the path can exist.'
+                            StaticText, 0x11e383ca0, {{102.0, 150.5}, {247.3, 38.0}}, label: 'Leave it untouched and the grass keeps covering the route you want to build.'
+                            StaticText, 0x11e383dc0, {{102.0, 196.5}, {221.0, 33.7}}, label: 'Complete today's rep to reveal the first section.'
+                            StaticText, 0x11e383ee0, {{50.0, 272.2}, {120.7, 14.3}}, label: 'ACTIVE CHALLENGE'
+                            StaticText, 0x11e384000, {{116.0, 296.5}, {121.3, 20.3}}, label: 'Hold the streak'
+                            StaticText, 0x11e384120, {{298.3, 302.5}, {43.7, 14.3}}, label: '+80 XP'
+                            Image, 0x11e384240, {{71.3, 313.7}, {13.7, 21.7}}, identifier: 'bolt.fill', label: 'Flash'
+                            StaticText, 0x11e384360, {{116.0, 320.9}, {100.7, 98.0}}, label: 'Come back tomorrow and keep the path open with one focused rep.'
+                            Image, 0x11e384480, {{268.7, 330.0}, {8.6, 8.6}}, identifier: 'sparkle', label: 'sparkle'
+                            Image, 0x11e3845a0, {{287.4, 330.4}, {7.8, 7.5}}, identifier: 'star.fill', label: 'Favorite'
+                            Image, 0x11e3846c0, {{304.9, 329.6}, {9.5, 9.5}}, identifier: 'sparkle', label: 'sparkle'
+                            Image, 0x11e3847e0, {{323.8, 330.2}, {8.3, 8.0}}, identifier: 'star.fill', label: 'Favorite'
+                            Image, 0x11e384900, {{341.5, 329.5}, {9.6, 9.6}}, identifier: 'sparkle', label: 'sparkle'
+                            StaticText, 0x11e384a20, {{50.0, 450.9}, {50.3, 14.3}}, label: '0/2 days'
+                            StaticText, 0x11e384b40, {{180.7, 450.9}, {171.3, 14.3}}, label: 'Consistency is still the unlock.'
+                            StaticText, 0x11e384c60, {{36.0, 497.2}, {133.3, 21.7}}, label: 'Skill milestones'
+                            StaticText, 0x11e384d80, {{322.0, 502.9}, {34.0, 14.3}}, label: '2 of 3'
+                            Button, 0x11e384ea0, {{36.0, 535.3}, {330.0, 68.0}}, label: 'Rhythm Builder, Practice three days in a row., 0/3 days'
+                              Image, 0x11e384fc0, {{76.0, 558.3}, {14.0, 17.7}}, identifier: 'flame.fill', label: 'Flame'
+                              StaticText, 0x11e3850e0, {{119.0, 547.2}, {109.7, 18.0}}, label: 'Rhythm Builder'
+                              StaticText, 0x11e385200, {{119.0, 567.2}, {159.3, 14.3}}, label: 'Practice three days in a row.'
+                              StaticText, 0x11e385320, {{303.3, 547.2}, {50.7, 14.3}}, label: '0/3 days'
+                              Image, 0x11e385440, {{341.7, 568.7}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                            Button, 0x11e3856b0, {{36.0, 613.3}, {330.0, 68.0}}, label: 'First Rep, You started the path., Unlocked', Selected
+                              Image, 0x11e3857d0, {{76.0, 637.3}, {14.7, 16.0}}, identifier: 'flag.fill', label: 'Flag'
+                              Image, 0x11e3858f0, {{89.0, 651.3}, {14.7, 14.7}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                              StaticText, 0x11e385a10, {{119.0, 625.2}, {63.3, 18.0}}, label: 'First Rep'
+                              StaticText, 0x11e385b30, {{119.0, 645.2}, {119.0, 14.3}}, label: 'You started the path.'
+                              StaticText, 0x11e385c50, {{298.7, 625.2}, {55.3, 14.3}}, label: 'Unlocked'
+                              Image, 0x11e385d70, {{341.7, 646.7}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                            Button, 0x11e385e90, {{36.0, 691.3}, {330.0, 74.3}}, label: 'Sharp Session, Land a session scored 8 or higher., Unlocked', Selected
+                              Image, 0x11e385fb0, {{75.3, 714.0}, {15.3, 18.3}}, identifier: 'sparkles', label: 'Sparkle'
+                              Image, 0x11e3860d0, {{89.0, 729.3}, {14.7, 14.7}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                              StaticText, 0x11e3861f0, {{119.0, 703.2}, {102.3, 18.0}}, label: 'Sharp Session'
+                              StaticText, 0x11e386310, {{119.0, 723.2}, {140.3, 30.3}}, label: 'Land a session scored 8 or higher.'
+                              StaticText, 0x11e386430, {{298.7, 703.2}, {55.3, 14.3}}, label: 'Unlocked'
+                              Image, 0x11e386550, {{341.7, 724.7}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                            StaticText, 0x11e386670, {{34.0, 811.5}, {132.3, 14.3}}, label: 'Debug: Simulate Days'
+                            StaticText, 0x11e386790, {{34.0, 835.9}, {75.7, 33.7}}, label: 'Day 0'
+                            StaticText, 0x11e3868b0, {{126.0, 837.9}, {73.7, 14.3}}, label: '0% revealed'
+                            StaticText, 0x11e3869d0, {{151.0, 854.2}, {48.7, 13.3}}, label: '0.0% raw'
+                            Slider, 0x11e386af0, {{34.0, 879.7}, {334.0, 31.0}}, value: 0
+                            Button, 0x11e386c10, {{44.0, 926.7}, {7.7, 13.3}}, label: '0'
+                            Button, 0x11e386d30, {{79.7, 926.7}, {6.0, 13.3}}, label: '1'
+                            Button, 0x11e386e50, {{113.7, 926.7}, {7.7, 13.3}}, label: '3'
+                            Button, 0x11e386f70, {{149.3, 926.7}, {7.0, 13.3}}, label: '7'
+                            Button, 0x11e387090, {{184.3, 926.7}, {13.3, 13.3}}, label: '14'
+                            Button, 0x11e3871b0, {{225.7, 926.7}, {13.0, 13.3}}, label: '21'
+                          Other, 0x11e3874d0, {{0.0, -0.0}, {402.0, 874.0}}
+                            Other, 0x11e3875f0, {{0.0, 0.0}, {402.0, 170.8}}
+                          Other, 0x11e387710, {{0.0, -0.0}, {402.0, 874.0}}
+                            Other, 0x11e387830, {{0.0, 0.0}, {402.0, 170.8}}
+                              Image, 0x11e387950, {{-120.0, -166.0}, {642.0, 332.0}}, identifier: 'AdditionalDimmingOverlay'
+                              Other, 0x11e387a70, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x11e387b90, {{0.0, 0.0}, {402.0, 170.8}}
+                              Other, 0x11e387cb0, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x11e387dd0, {{0.0, 0.0}, {402.0, 170.8}}
+                                Other, 0x11e387ef0, {{0.0, 0.0}, {402.0, 170.8}}
+                Other, 0x11e388010, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11e388130, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x11e37fa00, pid: 56956, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x11e232de0, pid: 56956, label: 'Noum'
+  }

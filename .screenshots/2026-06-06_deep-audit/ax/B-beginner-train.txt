@@ -1,0 +1,89 @@
+Attributes: Application, 0x1078d1910, pid: 56688, label: 'Noum'
+Element subtree:
+ →Application, 0x1078d1910, pid: 56688, label: 'Noum'
+    Window (Main), 0x1078b61a0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x1078c1690, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x1078c17b0, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x1078c1540, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x1078b85a0, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x1078c18d0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x1078c19f0, {{0.0, 62.0}, {402.0, 54.0}}, identifier: '_TtGC7SwiftUI32NavigationStackHosting'
+                  Button, 0x1078c1b10, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                Other, 0x1078c1c30, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1078c1d50, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x1078c1e70, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x1078c1f90, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x1078c20b0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'practiceModes.screen'
+                          Other, 0x1078c21d0, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x1078c22f0, {{0.0, 0.0}, {402.0, 170.8}}
+                          Other, 0x1078c2410, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x1078c2530, {{0.0, 116.0}, {402.0, 1360.7}}
+                            StaticText, 0x1078c2650, {{20.0, 128.0}, {311.3, 64.3}}, label: 'Pick your next rep, Each mode trains a different kind of pressure.'
+                              StaticText, 0x1078c2770, {{20.0, 128.0}, {265.3, 38.3}}, label: 'Pick your next rep'
+                              StaticText, 0x1078c2890, {{20.0, 174.3}, {311.3, 18.0}}, label: 'Each mode trains a different kind of pressure.'
+                            Button, 0x1078c29b0, {{332.0, 218.3}, {44.0, 44.0}}, identifier: 'practiceMode.timed.expandButton', label: 'Expand what this trains'
+                            Button, 0x1078c2ad0, {{20.0, 212.3}, {362.0, 128.3}}, identifier: 'practiceMode.timed', label: 'Timed Practice'
+                              Image, 0x1078c2bf0, {{40.0, 232.3}, {52.0, 52.0}}, identifier: 'clock.fill', label: 'Clock'
+                              StaticText, 0x1078c2d10, {{108.0, 232.3}, {122.3, 20.3}}, label: 'Timed Practice'
+                              Image, 0x1078c2e30, {{239.7, 233.3}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                              StaticText, 0x1078c2f50, {{116.0, 261.7}, {23.0, 12.0}}, label: 'Level 3, Steady'
+                              StaticText, 0x1078c3070, {{143.0, 261.7}, {34.7, 12.0}}, label: 'Level 3, Steady'
+                              StaticText, 0x1078c3190, {{108.0, 282.7}, {179.3, 38.0}}, label: 'Build a full answer with structure and a soft clock.'
+                              Image, 0x1078c32b0, {{340.3, 233.7}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x1078c33d0, {{332.0, 360.7}, {44.0, 44.0}}, identifier: 'practiceMode.suddenDeath.expandButton', label: 'Expand what this trains'
+                            Button, 0x1078c34f0, {{20.0, 354.7}, {362.0, 128.3}}, identifier: 'practiceMode.suddenDeath', label: 'Sudden Death'
+                              Image, 0x1078c3610, {{40.0, 374.7}, {52.0, 52.0}}, identifier: 'bolt.fill', label: 'Flash'
+                              StaticText, 0x1078c3730, {{108.0, 374.7}, {115.3, 20.3}}, label: 'Sudden Death'
+                              Image, 0x1078c3850, {{232.7, 375.7}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                              StaticText, 0x1078c3970, {{116.0, 404.0}, {22.7, 12.0}}, label: 'Level 2, Reactive'
+                              StaticText, 0x1078c3a90, {{142.7, 404.0}, {43.0, 12.0}}, label: 'Level 2, Reactive'
+                              StaticText, 0x1078c3bb0, {{108.0, 425.0}, {180.7, 38.0}}, label: 'Stay alive without a single filler word.'
+                              Image, 0x1078c3cd0, {{340.3, 376.0}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x1078c3df0, {{332.0, 503.0}, {44.0, 44.0}}, identifier: 'practiceMode.ahCounter.expandButton', label: 'Expand what this trains'
+                            Button, 0x1078c3f10, {{20.0, 497.0}, {362.0, 168.0}}, identifier: 'practiceMode.ahCounter', label: 'Ah-Counter, recommended', Selected
+                              Image, 0x1078c4030, {{40.0, 517.0}, {52.0, 52.0}}, identifier: 'waveform.and.mic', label: 'waveform.and.mic'
+                              StaticText, 0x1078c4150, {{108.0, 517.0}, {96.3, 20.3}}, label: 'Ah-Counter'
+                              Image, 0x1078c4270, {{213.7, 518.0}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                              StaticText, 0x1078c4390, {{108.0, 543.3}, {99.0, 19.3}}, label: 'Recommended'
+                              StaticText, 0x1078c44b0, {{108.0, 568.7}, {173.3, 38.0}}, label: 'Speak freely while Noum tracks fillers and pacing.'
+                              StaticText, 0x1078c45d0, {{108.0, 614.7}, {211.3, 30.3}}, label: 'Verbal clutter is still costing clarity, so awareness needs to happen live.'
+                              Image, 0x1078c46f0, {{340.3, 518.3}, {20.0, 20.0}}, identifier: 'checkmark.circle.fill', label: 'Selected', Selected
+                            Button, 0x1078c4810, {{332.0, 685.0}, {44.0, 44.0}}, identifier: 'practiceMode.imConversation.expandButton', label: 'Expand what this trains'
+                            Button, 0x1078c4930, {{20.0, 679.0}, {362.0, 128.3}}, identifier: 'practiceMode.imConversation', label: 'IM Mode'
+                              Image, 0x1078c4a50, {{40.0, 699.0}, {52.0, 52.0}}, identifier: 'message.badge.waveform.fill', label: 'message.badge.waveform.fill'
+                              StaticText, 0x1078c4b70, {{108.0, 699.0}, {69.7, 20.3}}, label: 'IM Mode'
+                              Image, 0x1078c4c90, {{187.0, 700.0}, {11.0, 6.7}}, identifier: 'chevron.down', label: 'Go Down'
+                              StaticText, 0x1078c4db0, {{116.0, 728.3}, {22.7, 12.0}}, label: 'Level 2, Acquaintance'
+                              StaticText, 0x1078c4ed0, {{142.7, 728.3}, {68.0, 12.0}}, label: 'Level 2, Acquaintance'
+                              StaticText, 0x1078c4ff0, {{108.0, 749.3}, {190.3, 38.0}}, label: 'Live conversation reps with tone and pressure control.'
+                              Image, 0x1078c5110, {{340.3, 700.3}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x1078c5230, {{20.0, 821.3}, {362.0, 124.3}}, identifier: 'practiceMode.cutTheCrutch', label: 'Cut the Crutch'
+                              Image, 0x1078c5350, {{40.0, 841.3}, {52.0, 52.0}}, identifier: 'scissors', label: 'Cut'
+                              StaticText, 0x1078c5470, {{108.0, 841.3}, {119.3, 20.3}}, label: 'Cut the Crutch'
+                              StaticText, 0x1078c5590, {{108.0, 867.7}, {212.0, 58.0}}, label: 'Avoid one specific word for 60 seconds. 3 hearts, no second chances.'
+                              Image, 0x1078c56b0, {{340.3, 842.7}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x1078c57d0, {{20.0, 959.7}, {362.0, 104.3}}, identifier: 'practiceMode.paceTraining', label: 'Pace Training'
+                              Image, 0x1078c58f0, {{40.0, 979.7}, {52.0, 52.0}}, identifier: 'metronome', label: 'Tempo'
+                              StaticText, 0x1078c5a10, {{108.0, 979.7}, {110.0, 20.3}}, label: 'Pace Training'
+                              StaticText, 0x1078c5b30, {{108.0, 1006.0}, {183.7, 38.0}}, label: 'Match the target speaking pace for 75 seconds.'
+                              Image, 0x1078c5c50, {{340.3, 981.0}, {20.0, 20.0}}, identifier: 'circle', label: 'circle'
+                            Button, 0x1078c5d70, {{20.0, 1078.0}, {362.0, 144.3}}, identifier: 'practiceMode.lessons', label: 'Lessons'
+                              Image, 0x1078c5e90, {{40.0, 1098.0}, {52.0, 52.0}}, identifier: 'books.vertical.fill', label: 'Bookshelf'
+                              StaticText, 0x1078c5fb0, {{108.0, 1098.0}, {67.0, 20.3}}, label: 'Lessons'
+                              StaticText, 0x1078c60d0, {{108.0, 1124.3}, {214.3, 78.0}}, label: 'Learn one technique at a time. Concept, then spot it, then say it. Earn crowns by repeat practice.'
+                              Image, 0x1078c61f0, {{353.0, 1099.3}, {8.0, 13.7}}, identifier: 'chevron.right', label: 'Forward'
+                            Button, 0x1078c6310, {{20.0, 1236.3}, {362.0, 144.3}}, identifier: 'practiceMode.speechProjects', label: 'Speech projects'
+                              Image, 0x1078c6430, {{40.0, 1256.3}, {52.0, 52.0}}, identifier: 'graduationcap.fill', label: 'Itunes U'
+                              StaticText, 0x1078c6550, {{108.0, 1256.3}, {132.0, 20.3}}, label: 'Speech projects'
+                              StaticText, 0x1078c6670, {{108.0, 1282.7}, {223.7, 78.0}}, label: 'Toastmasters-inspired prepared speeches with concrete objectives — Ice Breaker, Vocal Variety, Persuasive, Storytelling.'
+                              Image, 0x1078c68a0, {{353.0, 1257.7}, {8.0, 13.7}}, identifier: 'chevron.right', label: 'Forward'
+                        Button, 0x1078c69c0, {{0.0, 763.7}, {402.0, 76.3}}, identifier: 'practiceModes.start', label: 'Begin · Ah-Counter'
+                Other, 0x1078c6ae0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1078c6c00, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x1078d1910, pid: 56688, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x1044bf290, pid: 56688, label: 'Noum'
+  }

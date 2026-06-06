@@ -1,0 +1,145 @@
+Attributes: Application, 0x10750ba50, pid: 61514, label: 'Noum'
+Element subtree:
+ →Application, 0x10750ba50, pid: 61514, label: 'Noum'
+    Window (Main), 0x1070345e0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x107032ce0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x107033b70, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x107033070, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x107034260, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x107033f00, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'home.screen'
+                NavigationBar, 0x107032950, {{0.0, 62.0}, {402.0, 54.0}}, identifier: 'Profile'
+                  Button, 0x107038770, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Back'
+                  StaticText, 0x107038af0, {{175.0, 73.7}, {51.7, 20.7}}, label: 'Profile'
+                Other, 0x107031b70, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x107031150, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x107031810, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x1070314c0, {{0.0, 0.0}, {402.0, 874.0}}
+                        ScrollView, 0x107030df0, {{0.0, 0.0}, {402.3, 874.0}}, identifier: 'profile.screen'
+                          Other, 0x107036510, {{0.0, -927.0}, {402.2, 2599.7}}
+                            Image, 0x107036870, {{143.1, -883.5}, {116.0, 116.0}}, identifier: 'waveform', label: 'Noum coach, calm'
+                            StaticText, 0x107037d00, {{158.8, -750.0}, {84.7, 26.3}}, label: 'Speaker'
+                            StaticText, 0x107038070, {{135.0, -717.7}, {132.3, 18.0}}, label: 'Beginner Speaker I'
+                            StaticText, 0x107038410, {{40.0, -683.7}, {93.7, 14.3}}, label: 'Next: Speaker 2'
+                            StaticText, 0x1070379a0, {{342.3, -683.7}, {20.0, 14.3}}, label: '0%'
+                            StaticText, 0x1070372c0, {{40.0, -637.3}, {34.3, 18.0}}, label: '0 XP'
+                            StaticText, 0x107036f60, {{269.3, -634.3}, {93.0, 14.3}}, label: '1,000 to level up'
+                            Button, 0x107037630, {{20.2, -583.3}, {362.3, 42.0}}, identifier: 'profile.upgradeCTA', label: 'Upgrade to Pro'
+                              Image, 0x107036190, {{41.5, -568.7}, {16.0, 12.7}}, identifier: 'crown.fill', label: 'crown.fill'
+                              StaticText, 0x107036be0, {{66.7, -571.3}, {108.3, 18.0}}, label: 'Upgrade to Pro'
+                              Image, 0x107035ab0, {{355.2, -567.7}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x107035e10, {{20.2, -523.3}, {362.3, 178.7}}, identifier: 'profile.yourArcCard', label: 'Your arc. Day 1: Awakening. Today: Awakening. Next mission: First rep. Next chapter: Voice. Welcome. The arc starts on your first rep.'
+                              StaticText, 0x107030a90, {{40.0, -503.3}, {57.7, 12.0}}, label: 'YOUR ARC'
+                              Other, 0x107035750, {{69.2, -473.3}, {12.0, 12.0}}
+                              Other, 0x107034cf0, {{143.3, -474.9}, {15.1, 15.1}}
+                              Other, 0x1070353e0, {{228.8, -473.3}, {12.0, 12.0}}
+                              Other, 0x107034960, {{312.9, -473.3}, {11.9, 11.9}}
+                              StaticText, 0x107035060, {{80.2, -450.0}, {30.0, 12.0}}, label: 'Day 1'
+                              StaticText, 0x1070266d0, {{66.8, -436.0}, {56.7, 15.3}}, label: 'Awakening'
+                              StaticText, 0x1070256f0, {{132.3, -450.0}, {37.0, 12.0}}, label: 'Today'
+                              StaticText, 0x107025a40, {{122.4, -436.0}, {56.7, 15.3}}, label: 'Awakening'
+                              StaticText, 0x107026350, {{201.1, -449.2}, {67.3, 10.3}}, label: 'Next mission'
+                              StaticText, 0x107027130, {{213.4, -436.8}, {42.7, 15.3}}, label: 'First rep'
+                              StaticText, 0x107027fb0, {{273.7, -448.8}, {67.0, 9.7}}, label: 'Next chapter'
+                              StaticText, 0x107027c50, {{292.8, -437.2}, {28.7, 15.3}}, label: 'Voice'
+                              StaticText, 0x107028340, {{40.0, -385.3}, {281.3, 20.7}}, identifier: 'profile.yourArcCard.coachRead', label: 'Welcome. The arc starts on your first rep.'
+                            StaticText, 0x1070286a0, {{24.0, -318.7}, {82.0, 12.0}}, label: 'Progression'
+                            Other, 0x107028a30, {{20.2, -288.7}, {362.3, 363.7}}
+                              StaticText, 0x11ca08810, {{44.0, -260.7}, {159.3, 12.0}}, label: 'Personal best · this week'
+                              Image, 0x11ca092d0, {{275.4, -257.7}, {8.1, 8.1}}, identifier: 'sparkle', label: 'sparkle'
+                              Image, 0x11ca0a9f0, {{294.1, -257.4}, {7.4, 7.1}}, identifier: 'star.fill', label: 'Favorite'
+                              Image, 0x11ca0dab0, {{311.6, -258.3}, {9.2, 9.2}}, identifier: 'sparkle', label: 'sparkle'
+                              Image, 0x11ca0dbd0, {{330.1, -257.8}, {8.2, 7.9}}, identifier: 'star.fill', label: 'Favorite'
+                              Image, 0x11ca0dcf0, {{348.0, -258.5}, {9.7, 9.7}}, identifier: 'sparkle', label: 'sparkle'
+                              StaticText, 0x11ca0de10, {{44.0, -224.7}, {291.3, 33.7}}, label: 'Your highest rating yet.'
+                              StaticText, 0x11ca0df30, {{44.0, -183.0}, {287.3, 44.0}}, label: 'You're sitting right at this week's peak. Hold it through one more rep.'
+                              StaticText, 0x11ca0e050, {{60.0, -101.0}, {61.0, 38.7}}, label: '400'
+                              StaticText, 0x11ca0e170, {{60.0, -56.3}, {91.3, 18.0}}, label: 'Peak this week'
+                              StaticText, 0x11ca0e290, {{223.2, -101.0}, {40.7, 38.7}}, label: '+0'
+                              StaticText, 0x11ca0e3b0, {{223.2, -56.3}, {64.3, 18.0}}, label: 'vs all-time'
+                              Button, 0x10712fa30, {{44.2, -0.3}, {314.3, 47.3}}, label: 'See your peaks'
+                                StaticText, 0x11c90d890, {{136.2, 13.7}, {111.7, 19.3}}, label: 'See your peaks'
+                                Image, 0x11c90ef20, {{258.5, 17.3}, {7.0, 11.7}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x11c90f340, {{40.0, 113.0}, {134.0, 24.0}}, label: 'Achievements'
+                            StaticText, 0x11c90e060, {{323.3, 118.7}, {25.7, 18.0}}, label: '0/5'
+                            Image, 0x11c910860, {{355.5, 122.3}, {6.3, 10.7}}, identifier: 'chevron.right', label: 'Forward'
+                            Image, 0x11c910980, {{74.5, 166.3}, {11.0, 17.3}}, identifier: 'figure.walk', label: 'Walk'
+                            Image, 0x11c910aa0, {{154.8, 167.3}, {12.3, 15.7}}, identifier: 'flame', label: 'Flame'
+                            Image, 0x11c910bc0, {{233.2, 166.7}, {16.7, 16.7}}, identifier: 'checkmark.seal', label: 'Verified', Selected
+                            Image, 0x11c910ce0, {{313.8, 167.3}, {16.3, 15.7}}, identifier: 'star', label: 'Favorite'
+                            StaticText, 0x11c910e00, {{61.1, 204.0}, {38.3, 10.3}}, label: 'First Rep'
+                            StaticText, 0x11c910f20, {{128.0, 204.0}, {65.7, 10.3}}, label: 'Rhythm Builder'
+                            StaticText, 0x107223c50, {{219.8, 204.0}, {43.3, 10.3}}, label: 'Clean Run'
+                            StaticText, 0x1072279f0, {{291.5, 204.0}, {61.0, 10.3}}, label: 'Sharp Session'
+                            StaticText, 0x107223410, {{24.0, 260.3}, {63.0, 12.0}}, label: 'Coaching'
+                            StaticText, 0x107223830, {{40.0, 310.3}, {125.7, 12.0}}, label: 'COACHING DIRECTION'
+                            StaticText, 0x1072299b0, {{40.0, 334.3}, {295.0, 35.7}}, label: 'A few more sessions will turn this into a sharper read on how you speak under pressure.'
+                            Button, 0x107229ad0, {{20.2, 408.0}, {362.3, 116.7}}, identifier: 'profile.weeklyCheckIn.start', label: 'Start your weekly coach check-in'
+                              Image, 0x11f00acd0, {{39.8, 429.3}, {28.3, 22.7}}, identifier: 'bubble.left.and.text.bubble.right', label: 'bubble.left.and.text.bubble.right'
+                              StaticText, 0x105636c20, {{84.0, 428.0}, {122.3, 19.3}}, label: 'Weekly check-in'
+                              StaticText, 0x105637040, {{84.0, 451.3}, {232.0, 53.3}}, label: 'A few quick questions for your coach — what was hardest, where it showed up, and whether the drill is working.'
+                              Image, 0x105637ca0, {{355.2, 433.0}, {6.7, 11.7}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x105636800, {{40.0, 562.7}, {171.7, 24.0}}, label: 'Current Challenge'
+                            StaticText, 0x10563c2a0, {{94.0, 598.7}, {121.3, 20.3}}, label: 'Hold the streak'
+                            Image, 0x10563c3c0, {{54.8, 610.0}, {12.3, 19.3}}, identifier: 'bolt.fill', label: 'Flash'
+                            StaticText, 0x10563c4e0, {{94.0, 623.0}, {244.0, 38.0}}, label: 'Come back tomorrow and keep the path open with one focused rep.'
+                            StaticText, 0x10563c600, {{40.0, 697.0}, {50.3, 14.3}}, label: '0/2 days'
+                            StaticText, 0x10563c720, {{40.0, 717.3}, {43.7, 14.3}}, label: '+80 XP'
+                            StaticText, 0x10563c840, {{40.0, 743.7}, {171.3, 14.3}}, label: 'Consistency is still the unlock.'
+                            StaticText, 0x10563c960, {{24.0, 804.0}, {71.3, 12.0}}, label: 'Community'
+                            Button, 0x10563ca80, {{20.2, 834.0}, {362.3, 84.0}}, identifier: 'profile.league', label: 'Silver league, +100 rating to Gold, Resets tomorrow'
+                              Image, 0x10563cba0, {{54.5, 865.7}, {15.3, 20.7}}, identifier: 'rosette', label: 'rosette'
+                              StaticText, 0x10563ccc0, {{98.0, 854.0}, {94.3, 18.0}}, label: 'Silver league'
+                              StaticText, 0x10563cde0, {{98.0, 876.0}, {109.3, 14.3}}, label: '+100 rating to Gold'
+                              StaticText, 0x10563cf00, {{269.3, 854.0}, {93.0, 13.3}}, label: 'Resets tomorrow'
+                              Image, 0x10563d020, {{355.2, 870.3}, {6.7, 11.0}}, identifier: 'chevron.right', label: 'Forward'
+                            StaticText, 0x10563d140, {{40.0, 959.0}, {87.7, 20.3}}, label: 'Speak-offs'
+                            Button, 0x10563d260, {{262.8, 956.0}, {99.7, 26.3}}, label: 'Challenge'
+                              Image, 0x10563d380, {{276.2, 964.3}, {10.0, 10.0}}, identifier: 'plus', label: 'Add'
+                              StaticText, 0x10563d4a0, {{291.3, 962.0}, {59.0, 14.3}}, label: 'Challenge'
+                            StaticText, 0x10563d5c0, {{40.0, 996.3}, {322.3, 30.3}}, label: 'Challenge a friend to the same prompt. Both speak, then compare scores.'
+                            Image, 0x10563d6e0, {{175.2, 1063.0}, {55.7, 37.7}}, identifier: 'person.2.wave.2', label: 'person.2.wave.2'
+                            StaticText, 0x10563d800, {{127.2, 1117.0}, {148.0, 18.0}}, label: 'No active speak-offs'
+                            Button, 0x10563d920, {{111.2, 1149.0}, {180.3, 38.0}}, label: 'Start a Speak-off'
+                              Image, 0x10712f610, {{132.8, 1161.3}, {8.3, 13.7}}, identifier: 'bolt.fill', label: 'Flash'
+                              StaticText, 0x107131760, {{148.7, 1159.0}, {122.7, 18.0}}, label: 'Start a Speak-off'
+                            StaticText, 0x107131340, {{40.0, 1265.0}, {59.3, 20.3}}, label: 'Friends'
+                            Button, 0x107125ad0, {{322.2, 1268.0}, {40.3, 14.3}}, label: 'Add'
+                              Image, 0x10750c630, {{323.5, 1270.3}, {10.0, 10.0}}, identifier: 'plus', label: 'Add'
+                              StaticText, 0x10750c210, {{338.7, 1268.0}, {23.7, 14.3}}, label: 'Add'
+                            StaticText, 0x1054457d0, {{40.0, 1299.3}, {267.3, 14.3}}, label: 'No friends yet. Add a friend to start speak-offs.'
+                            StaticText, 0x11f00a8b0, {{40.0, 1371.7}, {107.0, 20.3}}, label: 'Invite Friends'
+                            StaticText, 0x11f00bfd0, {{40.0, 1404.0}, {246.3, 14.3}}, label: 'Share your invite link and practice together.'
+                            Button, 0x105634680, {{40.2, 1430.3}, {322.3, 42.0}}, label: 'Share Invite Link'
+                              Image, 0x10563da40, {{133.8, 1444.3}, {10.7, 14.3}}, identifier: 'square.and.arrow.up', label: 'Share'
+                              StaticText, 0x10563db60, {{151.7, 1442.3}, {118.3, 18.0}}, label: 'Share Invite Link'
+                            Image, 0x10563dc80, {{69.8, 1535.0}, {13.3, 18.7}}, identifier: 'mic.fill', label: 'Microphone'
+                            Image, 0x10563dda0, {{194.2, 1535.0}, {14.3, 18.7}}, identifier: 'flame.fill', label: 'Flame'
+                            Image, 0x10563dec0, {{314.2, 1536.0}, {24.3, 16.7}}, identifier: 'person.2.fill', label: 'person.2.fill'
+                            StaticText, 0x10563dfe0, {{69.7, 1570.3}, {13.3, 24.0}}, label: '0'
+                            StaticText, 0x10563e100, {{188.3, 1570.3}, {25.7, 24.0}}, label: '0d'
+                            StaticText, 0x105453a30, {{319.3, 1570.3}, {13.3, 24.0}}, label: '0'
+                            StaticText, 0x105450a80, {{51.2, 1602.3}, {50.3, 14.3}}, label: 'Sessions'
+                            StaticText, 0x10544efa0, {{182.8, 1602.3}, {36.7, 14.3}}, label: 'Streak'
+                            StaticText, 0x107407f00, {{304.9, 1602.3}, {42.0, 14.3}}, label: 'Friends'
+                          Other, 0x10563e220, {{0.0, 0.0}, {402.3, 874.0}}
+                            Other, 0x10563e340, {{0.0, 0.0}, {402.3, 170.8}}
+                          Other, 0x10563e460, {{0.0, 0.0}, {402.3, 874.0}}
+                            Other, 0x10563e580, {{0.0, 0.0}, {402.3, 170.8}}
+                              Image, 0x10563e6a0, {{-120.0, -166.0}, {642.3, 332.0}}, identifier: 'AdditionalDimmingOverlay'
+                              Other, 0x10563e7c0, {{0.0, 0.0}, {402.3, 106.0}}
+                              Other, 0x10563e8e0, {{0.0, 0.0}, {402.3, 170.8}}
+                                Other, 0x10563ea00, {{0.0, 0.0}, {402.3, 170.8}}
+                              Other, 0x10563eb20, {{0.0, 0.0}, {402.3, 170.8}}
+                                Other, 0x10563ec40, {{0.0, 0.0}, {402.3, 170.8}}
+                              Other, 0x10563ed60, {{0.0, 0.0}, {402.3, 170.8}}
+                                Other, 0x10563ee80, {{0.0, 0.0}, {402.3, 170.8}}
+                                Other, 0x107136240, {{0.0, 0.0}, {402.3, 170.8}}
+                Other, 0x10712fe50, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10712ff70, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x10750ba50, pid: 61514, label: 'Noum'
+Query chain:
+ →Find: Target Application 'com.jordancoaten.noum'
+  Output: {
+    Application, 0x107130090, pid: 61514, label: 'Noum'
+  }
