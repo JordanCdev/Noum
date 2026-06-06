@@ -409,9 +409,10 @@ final class ChallengesManager: ObservableObject {
         persistAsync()
         Task { await BackendSyncManager.shared.syncAsyncChallenge(updated) }
 
-        if !updated.bothHavePlayed && !isOpponentBackendAddressable(challenge: updated) {
-            simulateOpponentResponse(challengeID: challengeID)
-        }
+        // No opponent fabrication: when the opponent isn't backend-addressable
+        // yet, the challenge stays honestly pending until real Firestore data
+        // arrives via refreshFromBackend(). (Removed the simulated dice-roll
+        // that scored a real rep against Int.random — an honesty leak.)
     }
 
     /// Add a reaction to a completed challenge. Synced server-side.
@@ -438,37 +439,6 @@ final class ChallengesManager: ObservableObject {
         let theirLocalID = (challenge.creatorID == myID) ? challenge.opponentID : challenge.creatorID
         return FriendsManager.shared.friends.contains { friend in
             friend.id == theirLocalID && friend.accountID != nil
-        }
-    }
-
-    /// Local-MVP fallback. Drops in a plausible opponent score after a short
-    /// delay so the user gets a comparison instead of a stuck "Waiting" state.
-    /// Only invoked when the opponent isn't backend-addressable; real Firestore
-    /// data overwrites the simulated values via `refreshFromBackend()`.
-    private func simulateOpponentResponse(challengeID: UUID) {
-        guard let index = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
-        let isCreator = asyncChallenges[index].creatorID == currentUserID
-
-        Task {
-            try? await Task.sleep(for: .seconds(Double.random(in: 2...5)))
-            await MainActor.run {
-                guard let idx = asyncChallenges.firstIndex(where: { $0.id == challengeID }) else { return }
-                let simScore = Int.random(in: 45...92)
-                let simDuration = TimeInterval.random(in: 40...110)
-
-                if isCreator {
-                    asyncChallenges[idx].opponentScore = simScore
-                    asyncChallenges[idx].opponentDuration = simDuration
-                    asyncChallenges[idx].opponentSummary = "Solid impromptu response with good structure."
-                    asyncChallenges[idx].opponentReaction = AsyncChallenge.Reaction.allCases.randomElement()
-                } else {
-                    asyncChallenges[idx].creatorScore = simScore
-                    asyncChallenges[idx].creatorDuration = simDuration
-                    asyncChallenges[idx].creatorSummary = "Good pacing with clear opening and close."
-                    asyncChallenges[idx].creatorReaction = AsyncChallenge.Reaction.allCases.randomElement()
-                }
-                persistAsync()
-            }
         }
     }
 

@@ -293,15 +293,6 @@ struct PathJourneyView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(retentionSnapshot.activeChallenge.rewardLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.orange.opacity(0.12), in: Capsule())
-                    SparkleRibbon(tint: .orange, animated: false)
-                }
             }
 
             ShimmerProgressBar(progress: retentionSnapshot.activeChallenge.progress, tint: .blue, animated: false)
@@ -1687,9 +1678,11 @@ final class PathDaylightModel: NSObject, ObservableObject {
 
     func activate() {
 #if canImport(CoreLocation)
+        // Never prompt for location just to tint a cosmetic sky gradient — the
+        // fallback coordinate already drives a sensible day/night scene. Only
+        // refine the scene if the user has ALREADY granted location for another
+        // feature; a brand-new user landing on the Path sees no system prompt.
         switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
         case .authorizedAlways, .authorizedWhenInUse:
             manager.requestLocation()
         default:

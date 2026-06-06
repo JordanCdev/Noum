@@ -83,33 +83,33 @@ enum NotificationCopy {
             )
         case 1...2:
             return NotificationLine(
-                title: "\(streakDays)-day streak — keep it",
-                body: "A short rep before midnight protects the streak. \(freezeLine)"
+                title: "Today's rep is ready",
+                body: "A short rep keeps your \(streakDays)-day streak going. \(freezeLine)"
             )
         case 3...6:
             return NotificationLine(
-                title: "\(streakDays) days in a row at risk",
-                body: "Two minutes saves it. \(freezeLine)"
+                title: "Keep your \(streakDays)-day streak going",
+                body: "Two focused minutes adds today to the run. \(freezeLine)"
             )
         case 7...13:
             return NotificationLine(
-                title: "Your \(streakDays)-day streak ends tonight",
-                body: "Habits this old are worth two minutes. \(freezeLine)"
+                title: "\(streakDays) days of steady practice",
+                body: "A short rep adds today to your streak. \(freezeLine)"
             )
         case 14...29:
             return NotificationLine(
-                title: "\(streakDays) days, all on the line",
-                body: "Two weeks of work hangs on one short rep. \(freezeLine)"
+                title: "\(streakDays) days in — nice rhythm",
+                body: "Two minutes keeps the rhythm going. \(freezeLine)"
             )
         case 30...:
             return NotificationLine(
-                title: "Don't lose \(streakDays) days at the buzzer",
-                body: "A streak this long doesn't deserve a footnote. \(freezeLine)"
+                title: "\(streakDays) days of steady practice",
+                body: "One short rep continues the habit. \(freezeLine)"
             )
         default:
             return NotificationLine(
-                title: "Streak ends tonight",
-                body: "A short rep keeps it alive. \(freezeLine)"
+                title: "Today's rep is ready",
+                body: "A short rep keeps your rhythm going. \(freezeLine)"
             )
         }
     }

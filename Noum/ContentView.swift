@@ -1586,7 +1586,6 @@ struct ContentView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(accent)
-                    .symbolEffect(.pulse, options: .repeating.speed(0.6))
             }
             Text(title)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
