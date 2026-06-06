@@ -24614,6 +24614,221 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(fields.resolvedScenarioTitle == fields.scenarioTitle)
         #expect(fields.resolvedToneTitle == fields.toneTitle)
     }
+
+    // MARK: - Helper-level nil-progress / nil-resolved assertions on the round-46 thin-A fixtures (round 51)
+    //
+    // Round 51 closes the remaining leg of future move #29 from round
+    // 50's HANDOFF — "Helper-output assertion on the thin-A round-46
+    // leg." Round 49 covered the round-47 50%-alternating leg and the
+    // round-48 boundary-fixture legs (helper-level direction assertions
+    // on the three stalled fixtures). Round 50 covered the round-44/45
+    // non-stalled corners (helper-level direction + boundary-rate
+    // assertions on the recovering / slipping / crossing fixtures). The
+    // remaining leg is the THIN corner — the round-46 thin-A
+    // just-finished fixtures where scenario A has only 1 evaluated rep
+    // (the just-finished rep itself) and the helper's
+    // `IMHistorySummary.toneDrillProgress` 4-rep floor gates both
+    // `progress` and `resolved` to nil. The round-46 surface tests
+    // already assert the prompt + deterministic note never name the
+    // parallel scenario when the just-finished rep is thin in A, which is
+    // the user-facing contract; round 51 lifts the helper-output
+    // structural contract — `progress == nil && resolved == nil` —
+    // from the surface layer to the helper layer at all three round-46
+    // parallel-loud fixture shapes (slipping-B, recovering-B,
+    // prior-crossing-C), completing the two-layer regression net
+    // (surface + helper) on the fifth structural corner of the
+    // direction × locus matrix (recovering / slipping / crossing /
+    // stalled / thin). Pure test addition; no production code change;
+    // no engine state change; no schema bump; no migration; no new
+    // view inputs. The structural contracts were already true at round
+    // 14 (the `IMHistorySummary.toneDrillProgress` primitive's
+    // `outcomes.count >= 4` floor at line 552 of `IMHistorySummary.swift`)
+    // and at round 43 (the helper threads only the just-finished rep's
+    // scenario through `toneDrillProgress`, never the parallel
+    // scenario's history); round 51 locks the thin-A helper-boundary
+    // output at each round-46 fixture shape so a future regression
+    // that broke ONLY the 4-rep floor (e.g., shifted it to 3) or the
+    // scenario-filter in the helper (e.g., pulled the parallel
+    // scenario's outcomes into the window-split) is caught at the
+    // helper output, before either downstream surface gets a chance to
+    // silently swallow the change. The titles assertion is the
+    // round-43 anchoring contract carried through the thin corner —
+    // even when both progress and resolved are nil, the helper still
+    // derives `scenarioTitle` + `toneTitle` from the just-finished
+    // rep's `imConversationDetails.setup` (lines 385-386 of
+    // `PostRepCoachNoteService.swift`), so a future regression that
+    // accidentally nilled the titles alongside the progress trio would
+    // trip the round-51 title assertions independently of the nil-on-
+    // both assertions.
+    //
+    // The contract layered on top of rounds 49 + 50: round 51 makes
+    // the helper-boundary assertion across all FIVE structural corners
+    // of the matrix structurally complete in lockstep — recovering
+    // (round 50, fields.progress != nil + .recovering direction + 0.0/
+    // 0.5 rates), slipping (round 50, fields.progress != nil + .slipping
+    // direction + 1.0/0.0 rates), crossing (round 50, fields.progress
+    // != nil + .recovering direction + fields.resolved != nil), stalled
+    // (round 49, fields.progress != nil + .stalled direction at 50%-
+    // alternating + 0%-floor + 100%-ceiling), thin (round 51, fields.
+    // progress == nil + fields.resolved == nil + titles still
+    // anchored). The five corners together close the helper-boundary
+    // belt at every shape the post-rep coach note's IM tone-drill
+    // surface reads from.
+
+    @Test func helperReturnsNilProgressAndNilResolvedForRoundFortySixThinJustFinishedWithParallelSlippingFixture() {
+        // Thin-A just-finished + parallel-slipping-B — the round-46
+        // baseline thin-just-finished cross-surface contract
+        // (`userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelSlippingScenario`).
+        // Just-finished rep is the lone evaluated rep in scenario A
+        // (Networking, confident, on-brand "confident"); scenario B
+        // (Difficult Conversation, calm) carries a 4-rep below-bar
+        // slip — the loudest open trajectory and the recommendation
+        // engine's next prescription. The helper threads scenario A
+        // only through `toneDrillProgress` (1 rep → nil at the 4-rep
+        // floor) AND through `toneDrillCrossing` (1 rep → nil; needs
+        // disjoint windows). Both trio fields nil. The titles still
+        // anchor on the just-finished rep's scenario + tone — the
+        // round-43 anchoring contract holds even when the trajectory
+        // and SOLVED branches both gate off. A future regression that
+        // pulled scenario B's outcomes into scenario A's window-split
+        // (e.g., a scenario-filter inversion in the helper) would
+        // silently flip `progress` to non-nil with B's slipping shape
+        // while the surface trajectory clause kept rendering A's
+        // anchoring titles — the round-46 surface tests would still
+        // pass on the anchoring assertion, but the helper's progress
+        // trio would be wrong; round 51 catches that at the helper
+        // boundary.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let slippingB = slippingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", earliestDayOffset: -3
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: slippingB + [justFinished]
+        )
+        // Progress trio — nil because scenario A has only 1 evaluated
+        // rep (below the 4-rep floor in `toneDrillProgress`). A
+        // regression that pulled scenario B's 4 reps into the
+        // window-split would silently flip this to non-nil.
+        #expect(fields.progress == nil)
+        // SOLVED trio — nil because scenario A has only 1 rep (no
+        // earlier window to compare against in `toneDrillCrossing`).
+        // A regression that pulled scenario C's prior crossing into
+        // the resolved gate would silently flip this to non-nil.
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+        // Scenario + tone titles — STILL anchored on the just-finished
+        // rep's scenario even when both branches gate off. The
+        // round-43 anchoring contract: the helper derives titles from
+        // `details.setup.scenario` + `details.setup.targetTone`
+        // unconditionally when the just-finished rep is an IM rep with
+        // details (lines 385-386 of `PostRepCoachNoteService.swift`);
+        // the trajectory / SOLVED branches gate independently. A
+        // regression that nilled the titles alongside the progress
+        // trio would trip these assertions independently of the
+        // nil-on-both assertions above.
+        #expect(fields.scenarioTitle == "Networking")
+        #expect(fields.toneTitle == "Confident")
+    }
+
+    @Test func helperReturnsNilProgressAndNilResolvedForRoundFortySixThinJustFinishedWithParallelRecoveringFixture() {
+        // Thin-A just-finished + parallel-recovering-B — the round-46
+        // recovering-elsewhere cross-surface contract
+        // (`userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelRecoveringScenario`).
+        // Scenario B carries a 4-rep recovering trajectory (the
+        // "you're recovering elsewhere" pivot would be the loudest
+        // open positive thread the recommendation engine could
+        // surface). The helper threads scenario A only through both
+        // primitives, so B's recovery is invisible to the helper
+        // output — the trajectory trio stays nil even though scenario
+        // B has a recovering trajectory the round-50 helper-boundary
+        // test would classify as `.recovering` with 0.0/0.5 rates.
+        // Mirrors the round-50 recovering-A fixture's shape but
+        // shifted to scenario B with the same off-on rep pattern.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let recoveringB = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -7),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -6),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -5),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: -1)
+        ]
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: recoveringB + [justFinished]
+        )
+        // Progress trio — nil. Scenario A still has only 1 rep; B's
+        // recovering trajectory is invisible to A's helper read.
+        #expect(fields.progress == nil)
+        // SOLVED trio — nil. The same 1-rep floor blocks the
+        // resolved branch.
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+        // Titles still anchor on A even though B has the loudest
+        // recovering arc in the session set. The anchoring contract
+        // holds at the thin corner.
+        #expect(fields.scenarioTitle == "Networking")
+        #expect(fields.toneTitle == "Confident")
+    }
+
+    @Test func helperReturnsNilProgressAndNilResolvedForRoundFortySixThinJustFinishedWithParallelPriorCrossingFixture() {
+        // Thin-A just-finished + parallel-prior-crossing-C — the
+        // round-46 prior-crossing-elsewhere cross-surface contract
+        // (`userPromptAndDeterministicNoteThinJustFinishedNeverNameParallelPriorCrossing`).
+        // Scenario C (Work Update, professional) had a prior crossing
+        // rep at -20 days — the "you've done it before in another
+        // scenario, here's a fresh thin rep elsewhere — pivot to C's
+        // old win" cold-open is the loudest dramatic temptation the
+        // helper has to gate off. The helper threads scenario A only
+        // through `toneDrillCrossing`, so C's old win is invisible to
+        // the helper output. A future regression that pulled the
+        // global "any scenario's most recent crossing" into the
+        // resolved gate would silently flip `resolved` to non-nil
+        // with C's title, while the surface SOLVED clause kept
+        // rendering A's anchoring titles — the round-46 surface tests
+        // would still pass on the not-named assertion (the resolved
+        // title would shift to C but the prompt template's SOLVED
+        // clause reads from `imToneDrillResolvedScenarioTitle` which
+        // would also be C), so the surface tests' not-Work-Update
+        // assertion would catch it — but the helper boundary catches
+        // it earlier with one assertion at the source.
+        let justFinished = imSession(
+            scenario: .networking, targetTone: .confident,
+            actualTone: "confident", daysOffset: 0
+        )
+        let priorCrossingC = crossingScenarioSessions(
+            scenario: .workUpdate, targetTone: .professional,
+            offBrandTone: "vague", onBrandTone: "professional",
+            crossingRepId: UUID(), earliestDayOffset: -20
+        )
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: priorCrossingC + [justFinished]
+        )
+        // Progress trio — nil. The 4-rep floor in scenario A still
+        // gates this off even though scenario C has a complete
+        // 4-rep crossing trajectory in history.
+        #expect(fields.progress == nil)
+        // SOLVED trio — nil. The most coaching-tempting failure mode
+        // (the just-finished rep's scenario has no signal but
+        // another scenario has a prior win) is structurally
+        // impossible at the helper boundary; the resolved gate is
+        // scenario-filtered to A only.
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+        // Titles still anchor on A — Work Update / Professional
+        // (scenario C / its tone) never leaks into the helper
+        // output even though C is the only scenario in history
+        // with a complete crossing trajectory.
+        #expect(fields.scenarioTitle == "Networking")
+        #expect(fields.toneTitle == "Confident")
+    }
 }
 
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
