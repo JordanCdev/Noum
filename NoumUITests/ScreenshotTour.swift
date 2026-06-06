@@ -346,4 +346,154 @@ final class ScreenshotTour: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    // ============================================================
+    // DEEP AUDIT — multi-state capture for lead UX / QA / market review
+    // ============================================================
+
+    /// Captures every primary surface across FOUR user states (cold/empty,
+    /// beginner, improving-intermediate, plateaued-advanced) AND a full
+    /// accessibility-tree dump per screen. This is the corpus the overhaul
+    /// review fleets analyse: the SAME surface across the density gradient
+    /// from a brand-new user to a power user is where "too much text / no
+    /// value felt" is actually visible.
+    @MainActor
+    func testCaptureDeepAudit() throws {
+        captureState(profile: nil,                     prefix: "A-cold")
+        captureState(profile: "beginner",              prefix: "B-beginner")
+        captureState(profile: "improvingIntermediate", prefix: "C-improving")
+        captureState(profile: "plateauedAdvanced",     prefix: "D-plateaued")
+    }
+
+    /// True cold-start only. The no-seed launch reuses whatever the store
+    /// already holds, so a genuine first-run capture requires the app's
+    /// data to be cleared first (`simctl uninstall` before invoking this).
+    @MainActor
+    func testCaptureColdStart() throws {
+        captureState(profile: nil, prefix: "A-cold")
+    }
+
+    /// Walks onboarding stage by stage — every screen a first-time user sees
+    /// before they reach any value at all.
+    @MainActor
+    func testCaptureOnboardingFlow() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_ONBOARDING"]
+        app.launch()
+
+        guard app.buttons["coaching.start"].waitForExistence(timeout: 8) else {
+            attach(app, name: "O-00-onboarding-not-reached")
+            app.terminate()
+            return
+        }
+        deepAttach(app, name: "O-01-welcome")
+        app.buttons["coaching.start"].tap()
+        Thread.sleep(forTimeInterval: 0.8)
+        deepAttach(app, name: "O-02-context")
+        tapFirstOption(app); tapContinue(app)
+        deepAttach(app, name: "O-03-challenge")
+        tapFirstOption(app); tapContinue(app)
+        deepAttach(app, name: "O-04-style")
+        tapFirstOption(app); tapContinue(app)
+        // Final stage runs a ~12s processing animation before the CTA.
+        if app.buttons["coaching.startPracticing"].waitForExistence(timeout: 25) {
+            deepAttach(app, name: "O-05-summary")
+        }
+        app.terminate()
+    }
+
+    // MARK: - Deep-audit helpers
+
+    private struct AuditSurface {
+        let host: String?
+        let name: String
+        let scroll: Bool
+    }
+
+    @MainActor
+    private func captureState(profile: String?, prefix: String) {
+        let surfaces: [AuditSurface] = [
+            AuditSurface(host: nil,                 name: "home",      scroll: true),
+            AuditSurface(host: "noum://profile",   name: "profile",   scroll: true),
+            AuditSurface(host: "noum://review",    name: "review",    scroll: true),
+            AuditSurface(host: "noum://train",     name: "train",     scroll: false),
+            AuditSurface(host: "noum://league",    name: "league",    scroll: true),
+            AuditSurface(host: "noum://path",      name: "path",      scroll: true),
+            AuditSurface(host: "noum://ask",       name: "ask",       scroll: false),
+            AuditSurface(host: "noum://bigmoment", name: "bigmoment", scroll: true),
+            AuditSurface(host: "noum://settings",  name: "settings",  scroll: true),
+        ]
+        for s in surfaces {
+            let app = launchState(profile: profile, deepLink: s.host)
+            if s.scroll {
+                fullScrollCapture(app, base: "\(prefix)-\(s.name)")
+            } else {
+                deepAttach(app, name: "\(prefix)-\(s.name)")
+            }
+            app.terminate()
+        }
+    }
+
+    /// Cold-launch a chosen seed persona (or no seed → true empty first-run)
+    /// routed straight to a deep-link target.
+    @MainActor
+    private func launchState(profile: String?, deepLink: String?) -> XCUIApplication {
+        let app = XCUIApplication()
+        var launchArgs = ["UI_TESTING"]
+        if let profile {
+            launchArgs += ["UI_TESTING_SEED_FORCE", "UI_TESTING_SEED_PROFILE", profile]
+        }
+        if let deepLink {
+            launchArgs += ["-DeepLink", deepLink]
+        }
+        app.launchArguments += launchArgs
+        app.launch()
+        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1.0)
+        return app
+    }
+
+    @MainActor
+    private func fullScrollCapture(_ app: XCUIApplication, base: String) {
+        deepAttach(app, name: "\(base)-1top")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "\(base)-2mid")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "\(base)-3bottom")
+    }
+
+    @MainActor
+    private func tapFirstOption(_ app: XCUIApplication) {
+        let option = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'coaching.option.'"))
+            .element(boundBy: 0)
+        if option.waitForExistence(timeout: 5) {
+            option.tap()
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+    }
+
+    @MainActor
+    private func tapContinue(_ app: XCUIApplication) {
+        let cont = app.buttons["coaching.continue"]
+        if cont.waitForExistence(timeout: 5) {
+            cont.tap()
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+    }
+
+    /// Screenshot + full accessibility-tree dump (the structured truth the
+    /// QA / a11y fleet reads: labels, identifiers, hittable elements).
+    @MainActor
+    private func deepAttach(_ app: XCUIApplication, name: String) {
+        let shot = app.windows.firstMatch.screenshot()
+        let img = XCTAttachment(screenshot: shot)
+        img.name = name
+        img.lifetime = .keepAlways
+        add(img)
+        let ax = XCTAttachment(string: app.debugDescription)
+        ax.name = "\(name)__ax"
+        ax.lifetime = .keepAlways
+        add(ax)
+    }
 }

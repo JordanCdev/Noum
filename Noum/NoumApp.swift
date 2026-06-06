@@ -37,7 +37,20 @@ struct NoumApp: App {
             // binds to PracticeSessionStore so screenshot-tour UI tests open on
             // a populated state instead of the first-run empty card.
             if forceSeed || PracticeSessionStore.shared.sessions.isEmpty {
-                DevSeedData.injectProfile(.improvingIntermediate)
+                // Capture tooling can pick which dev persona to seed via
+                // `UI_TESTING_SEED_PROFILE <rawValue>` (the cold/empty
+                // first-run state is driven by simply omitting the seed
+                // args). Defaults to the improving-intermediate demo persona
+                // that ScreenshotTour has always used.
+                let seededProfile: SeedProfile = {
+                    if let i = args.firstIndex(of: "UI_TESTING_SEED_PROFILE"),
+                       i + 1 < args.count,
+                       let picked = SeedProfile(rawValue: args[i + 1]) {
+                        return picked
+                    }
+                    return .improvingIntermediate
+                }()
+                DevSeedData.injectProfile(seededProfile)
                 // Suppress overlay celebrations that fire from the seed's
                 // rating change (tier promotion) or persisted pending state
                 // (daily goal, path node, lesson) — they otherwise cover
