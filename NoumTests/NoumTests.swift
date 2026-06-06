@@ -29238,6 +29238,15 @@ struct AskNoumVoiceInputNoticeTests {
         #expect(AskNoumVoiceInput.notice(for: .localeUnsupported)?.contains("language") == true)
         #expect(AskNoumVoiceInput.notice(for: .temporarilyUnavailable)?.contains("try again") == true)
     }
+
+    @Test func onlyTransientFailuresKeepVoiceRetryable() {
+        guard #available(iOS 17.0, *) else { return }
+        #expect(AskNoumVoiceInput.reasonAllowsRetry(nil))
+        #expect(AskNoumVoiceInput.reasonAllowsRetry(.temporarilyUnavailable))
+        #expect(!AskNoumVoiceInput.reasonAllowsRetry(.permissionDenied))
+        #expect(!AskNoumVoiceInput.reasonAllowsRetry(.microphoneDenied))
+        #expect(!AskNoumVoiceInput.reasonAllowsRetry(.localeUnsupported))
+    }
 }
 
 // MARK: - Ask Noum mode-launch suggestion (A3)
@@ -29306,7 +29315,7 @@ struct AskNoumVoiceFirstDefaultTests {
         guard #available(iOS 17.0, *) else { return }
         #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: false) == "Tap to talk")
         #expect(AskNoumView.voiceFirstStatus(recording: true, processing: false, speaking: false, hasText: false).contains("Listening"))
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: true, speaking: false, hasText: false).contains("Thinking"))
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: true, speaking: false, hasText: false).contains("Sending"))
         #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: true, hasText: false).contains("speaking"))
         #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: true) == "Tap to send")
     }

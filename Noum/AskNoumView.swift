@@ -136,8 +136,9 @@ struct AskNoumView: View {
     /// tappable launch card that pushes the matching practice destination onto
     /// the shared stack (same routing Home/Summary use).
     @Binding var navigationPath: NavigationPath
-    /// When set, the chat header shows a "Live" pill that returns to the live
-    /// call (`LiveCoachCallView`). Nil for any standalone use.
+    /// When set, the chat options menu can start the live coach call. Kept out
+    /// of the visible header row so it reads as an action, not a false "live"
+    /// status.
     var onGoLive: (() -> Void)? = nil
     /// Typed deep links and test routes should land on the actual composer,
     /// while the main Ask Noum entry remains voice-first.
@@ -393,13 +394,20 @@ struct AskNoumView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            // Wire the voice-input transcript callback. Transcript lands
-            // in the draft text field so the user can review (and edit)
-            // before tapping Send. This makes tap-to-toggle feel like
-            // dictation, not auto-fire — user owns the send action.
+            // Wire the voice-input transcript callback. In voice-first mode a
+            // stopped recording is a submitted turn; in typed fallback it still
+            // behaves like dictation so the user can edit before sending.
             voiceInput.onFinalTranscript = { transcript in
-                draft = transcript
-                inputFocused = true
+                let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                if voiceFirstMode && !store.isAwaitingReply {
+                    draft = ""
+                    inputFocused = false
+                    send(trimmed)
+                } else {
+                    draft = trimmed
+                    inputFocused = true
+                }
             }
             // Pick up any cross-surface inject (e.g. Summary's "Talk to
             // your coach about this rep" bridge dropped a seed message
@@ -436,38 +444,7 @@ struct AskNoumView: View {
                     .textCase(.uppercase)
                     .tracking(0.8)
                 Spacer()
-                if let onGoLive {
-                    Button(action: onGoLive) {
-                        HStack(spacing: 5) {
-                            Circle().fill(AppColor.pro).frame(width: 6, height: 6)
-                            Text("Live").font(Typography.caption.weight(.semibold))
-                        }
-                        .foregroundStyle(AppColor.pro)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(AppColor.pro.opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Switch to live call")
-                }
-                voiceModeToggle
-                if !store.messages.isEmpty {
-                    Menu {
-                        Button(role: .destructive) {
-                            store.clearThread()
-                            // Drop any un-acted goal proposal so a wiped thread
-                            // doesn't carry a stale intent into the next turn.
-                            pendingGoalIntent = nil
-                        } label: {
-                            Label("Clear thread", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityLabel("Thread options")
-                }
+                threadOptionsMenu
             }
             HStack(spacing: isHeaderCompact ? Spacing.sm : Spacing.md) {
                 NoumCharacter(
@@ -504,42 +481,68 @@ struct AskNoumView: View {
         .background(AppColor.cardBackground.opacity(0.5))
     }
 
-    // MARK: - Voice-mode toggle (S5)
+    // MARK: - Thread options
     //
-    // A real, persisted, default-OFF control — never a dead toggle. It only
-    // renders when the TTS layer can actually produce audio
-    // (`speaker.canSpeakReplies`): with no cloud provider configured the
-    // affordance HIDES rather than offering a switch that silently no-ops,
-    // mirroring `AskNoumVoiceInput.isAvailable` discipline for the mic. When
-    // ON, freshly-landed coach replies are spoken (gated again on locale +
-    // real-reply at the speak site). Turning it OFF mid-speech stops the
-    // current clip immediately so the coach goes quiet the instant the user
-    // asks for text-only.
+    // One compact menu owns secondary chat actions. This keeps the coach header
+    // focused on presence ("Noum") instead of exposing implementation toggles:
+    // live-call launch, spoken-reply preference, and clear-thread all live here.
     @ViewBuilder
-    private var voiceModeToggle: some View {
-        if speaker.canSpeakReplies {
-            let isOn = voiceSettings.askNoumSpokenRepliesEnabled
-            Button {
-                CoachHaptic.selectionTap()
-                let newValue = !isOn
-                voiceSettings.askNoumSpokenRepliesEnabled = newValue
-                // Turning voice OFF should silence any reply still playing —
-                // the user just asked for text-only; honor it immediately.
-                if !newValue {
-                    speaker.stop()
+    private var threadOptionsMenu: some View {
+        if shouldShowThreadOptions {
+            Menu {
+                if let onGoLive {
+                    Button(action: onGoLive) {
+                        Label("Start coach call", systemImage: "phone.waveform")
+                    }
+                }
+                if speaker.canSpeakReplies {
+                    Button {
+                        toggleSpokenReplies()
+                    } label: {
+                        Label(
+                            voiceSettings.askNoumSpokenRepliesEnabled
+                            ? "Spoken replies on"
+                            : "Spoken replies off",
+                            systemImage: voiceSettings.askNoumSpokenRepliesEnabled
+                            ? "speaker.wave.2.fill"
+                            : "speaker.slash.fill"
+                        )
+                    }
+                }
+                if !store.messages.isEmpty {
+                    Button(role: .destructive) {
+                        store.clearThread()
+                        // Drop any un-acted goal proposal so a wiped thread
+                        // doesn't carry a stale intent into the next turn.
+                        pendingGoalIntent = nil
+                    } label: {
+                        Label("Clear thread", systemImage: "trash")
+                    }
                 }
             } label: {
-                Image(systemName: isOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                Image(systemName: "ellipsis.circle")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isOn ? AppColor.brandBlue : .secondary)
-                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-                    .frame(width: 28, height: 28)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
             }
-            .accessibilityLabel(isOn ? "Spoken replies on" : "Spoken replies off")
-            .accessibilityHint(isOn
-                               ? "Double-tap to switch the coach to text only"
-                               : "Double-tap to let the coach speak replies aloud")
-            .accessibilityIdentifier("askNoum.voiceModeToggle")
+            .accessibilityLabel("Chat options")
+            .accessibilityIdentifier("askNoum.threadOptions")
+        }
+    }
+
+    private var shouldShowThreadOptions: Bool {
+        onGoLive != nil || speaker.canSpeakReplies || !store.messages.isEmpty
+    }
+
+    private func toggleSpokenReplies() {
+        CoachHaptic.selectionTap()
+        let newValue = !voiceSettings.askNoumSpokenRepliesEnabled
+        voiceSettings.askNoumSpokenRepliesEnabled = newValue
+        // Turning voice OFF should silence any reply still playing — the user
+        // just asked for text-only; honor it immediately.
+        if !newValue {
+            speaker.stop()
         }
     }
 
@@ -1707,7 +1710,7 @@ struct AskNoumView: View {
             micNoticeRow
 
             // The captured/spoken words, shown prominently. Live partial while
-            // recording; the landed transcript (in `draft`) once captured.
+            // recording; typed fallback still uses `draft` for review/edit.
             if !voiceInput.partialTranscript.isEmpty {
                 Text(voiceInput.partialTranscript)
                     .font(Typography.body)
@@ -1789,7 +1792,7 @@ struct AskNoumView: View {
     /// without the private `InputControlMode`.
     static func voiceFirstStatus(recording: Bool, processing: Bool, speaking: Bool, hasText: Bool) -> String {
         if recording { return "Listening \u{2014} tap to send" }
-        if processing { return "Thinking\u{2026}" }
+        if processing { return "Sending\u{2026}" }
         if speaking { return "Coach is speaking \u{2014} tap to talk" }
         if hasText { return "Tap to send" }
         return "Tap to talk"
@@ -2126,15 +2129,11 @@ struct AskNoumView: View {
     // MARK: - Send + scroll
 
     private func trySend() {
-        // If recording is active, stop-and-send: the transcript will land
-        // in `draft` via `onFinalTranscript`, then we forward it.
+        // If recording is active, finalise it. Voice-first mode dispatches from
+        // `onFinalTranscript`; typed fallback receives the transcript as draft
+        // for review/edit before the next Send tap.
         if voiceInput.state == .recording {
             voiceInput.stopAndSend()
-            // Transcript arrival is async (recognizer callback); the user
-            // will see the draft populate then can tap Send a second time,
-            // OR we wait for the transcript here. Since `onFinalTranscript`
-            // sets `draft`, the next user-tap of Send picks it up naturally.
-            // This keeps the code path simple without racing the recognizer.
             return
         }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)

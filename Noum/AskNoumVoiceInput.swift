@@ -130,11 +130,14 @@ final class AskNoumVoiceInput: ObservableObject {
     /// True when the mic button should be rendered at all. Reads the
     /// underlying recognizer availability + authorisation cache; the
     /// first press still asks for permission live, but if either has
-    /// already been denied we hide rather than dead-toggle.
+    /// already been denied we hide rather than dead-toggle. A transient
+    /// recognizer failure stays retryable: the user should be able to tap
+    /// again after the notice instead of losing the mic affordance.
     var isAvailable: Bool {
-        guard unavailableReason == nil else { return false }
         #if canImport(Speech)
-        return recognizer != nil
+        guard recognizer != nil else { return false }
+        guard Self.reasonAllowsRetry(unavailableReason) else { return false }
+        return true
         #else
         return false
         #endif
@@ -161,6 +164,13 @@ final class AskNoumVoiceInput: ObservableObject {
         }
     }
 
+    /// Transient unavailability is a retry state, not a hard "voice is gone"
+    /// state. Permission/locale failures hide the mic because another tap
+    /// cannot fix them inside the app.
+    nonisolated static func reasonAllowsRetry(_ reason: UnavailableReason?) -> Bool {
+        reason == nil || reason == .temporarilyUnavailable
+    }
+
     // MARK: - Tap-to-toggle lifecycle
 
     /// Primary entry point: tap once to start recording, tap again to stop
@@ -171,6 +181,7 @@ final class AskNoumVoiceInput: ObservableObject {
         switch state {
         case .idle:
             Task { @MainActor in
+                clearTransientUnavailableIfNeeded()
                 await requestPermissionsIfNeeded()
                 guard unavailableReason == nil else { return }
                 startRecognition()
@@ -225,6 +236,7 @@ final class AskNoumVoiceInput: ObservableObject {
     func beginPress() {
         guard state == .idle else { return }
         Task { @MainActor in
+            clearTransientUnavailableIfNeeded()
             await requestPermissionsIfNeeded()
             guard unavailableReason == nil else { return }
             startRecognition()
@@ -313,6 +325,12 @@ final class AskNoumVoiceInput: ObservableObject {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            unavailableReason = .temporarilyUnavailable
+            request = nil
+            resetToIdle()
+            return
+        }
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
@@ -322,11 +340,13 @@ final class AskNoumVoiceInput: ObservableObject {
         } catch {
             unavailableReason = .temporarilyUnavailable
             inputNode.removeTap(onBus: 0)
+            resetToIdle()
             return
         }
         audioEngine = engine
 
         partialTranscript = ""
+        unavailableReason = nil
         state = .recording
 
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
@@ -339,9 +359,11 @@ final class AskNoumVoiceInput: ObservableObject {
                         self.resetToIdle()
                     }
                 }
-                if error != nil {
-                    // Don't surface as unavailable — a transient error
-                    // shouldn't permanently hide the mic. Just reset.
+                if error != nil, self.state != .idle {
+                    // Surface transient recognizer failures so the mic never
+                    // appears to do nothing. The retry gate keeps the mic
+                    // visible for another tap.
+                    self.unavailableReason = .temporarilyUnavailable
                     self.resetToIdle()
                 }
             }
@@ -380,6 +402,12 @@ final class AskNoumVoiceInput: ObservableObject {
         maxDurationTimer?.cancel()
         maxDurationTimer = nil
         state = .idle
+    }
+
+    private func clearTransientUnavailableIfNeeded() {
+        if unavailableReason == .temporarilyUnavailable {
+            unavailableReason = nil
+        }
     }
 
     /// Deliver the final transcript if it clears the minimum-length
