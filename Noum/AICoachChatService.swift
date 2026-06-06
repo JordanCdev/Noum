@@ -73,6 +73,72 @@ enum ChatOutcome {
     case failure(ChatFailure)
 }
 
+/// Obvious ways a live Ask-Noum reply can fail the professional-coach contract.
+/// This is intentionally conservative: it catches drafts that are plainly too
+/// long, robotic, defensive, menu-shaped, or asking for bare clarification. It
+/// does not try to score nuance or truth; that still belongs to the model and
+/// the structured context.
+enum CoachChatReplyQualityIssue: Equatable {
+    case tooLong
+    case roboticPhrase(String)
+    case bareClarification
+    case defensiveProductLanguage
+    case menuInsteadOfDecision
+    case missedTrustRepair
+    case missingPrescribedAction
+    case unanchoredCoaching
+    case overclaimsEvidence
+
+    var repairInstruction: String {
+        switch self {
+        case .tooLong:
+            return "The draft is too long for text-mode coaching. Rewrite it as 1-2 short sentences."
+        case .roboticPhrase(let phrase):
+            return "The draft uses robotic/template language: \(phrase). Rewrite it in a senior human coach register."
+        case .bareClarification:
+            return "The draft asks for clarification without doing coaching work. Infer the likely intent and give one useful move."
+        case .defensiveProductLanguage:
+            return "The draft defends the product or model. Do not defend; repair trust and return to the coaching work."
+        case .menuInsteadOfDecision:
+            return "The draft offers a broad menu or asks the user to choose again. Pick one recommendation and prescribe it."
+        case .missedTrustRepair:
+            return "The user challenged the coaching quality. Repair trust first, name the friction briefly, and show the changed coaching move."
+        case .missingPrescribedAction:
+            return "The draft does not prescribe a concrete next move. Give one action the user can take in the next rep or review."
+        case .unanchoredCoaching:
+            return "The draft is not anchored in an observable fact, recent user message, case-file target, or honest data gap. Add one grounded anchor."
+        case .overclaimsEvidence:
+            return "The draft overclaims from limited evidence or labels the user. Reframe as a tentative coaching hypothesis the user can confirm or reject."
+        }
+    }
+}
+
+/// Rubric misses used by the local professional-coach gate. This is not a
+/// claim that the app is calibrated against a human coach; it is the
+/// version-controlled substrate for catching obvious non-coach replies before
+/// they ship to the user.
+enum CoachChatProfessionalRubricMiss: String, Equatable {
+    case overlong
+    case roboticRegister
+    case missedTrustRepair
+    case missingObservableAnchor
+    case missingPrescribedAction
+    case overclaimsEvidence
+    case menuInsteadOfDecision
+}
+
+/// Pure, inspectable scoring result for one Ask-Noum reply. Kept outside the
+/// actor so tests can evaluate candidate replies without touching provider
+/// plumbing, stores, or network state.
+struct CoachChatProfessionalRubricResult: Equatable {
+    let score: Int
+    let misses: [CoachChatProfessionalRubricMiss]
+
+    var passesSeniorCoachFloor: Bool {
+        score >= 8 && misses.isEmpty
+    }
+}
+
 /// Decode-free, transient context the deterministic chat fallback reads to
 /// ground its reply. Assembled at the call site (`AskNoumView.runReply`) from
 /// owners already in scope — the user's chosen voice, the most-recent timed
@@ -184,31 +250,36 @@ actor AICoachChatService {
 
         // Trim replay to the cap, keeping the most recent turns.
         let trimmed = Array(history.suffix(Self.maxReplayMessages))
+        let latestUserTurn = trimmed.last(where: { $0.role == .user })?.text
 
         do {
             let body = requestBody(for: provider, system: composedSystem, messages: trimmed)
-            var request = URLRequest(url: endpoint)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.timeoutInterval = 18
-            switch provider {
-            case .openAI, .deepSeek:
-                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            case .gemini:
-                request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
-            case .none:
-                return .failure(.noProvider)
-            }
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            guard let data = try await providerResponseData(
+                provider: provider,
+                endpoint: endpoint,
+                key: key,
+                body: body
+            ) else {
                 // Transport reached the server but it refused — treat as a
                 // network failure and answer deterministically (a coach who
                 // can't reach their notes still gives a useful read).
                 return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
             }
             if let text = extractText(from: data, provider: provider) {
+                if let issue = Self.replyQualityIssue(in: text, latestUserTurn: latestUserTurn) {
+                    if let repaired = await repairLowQualityReply(
+                        issue: issue,
+                        draft: text,
+                        provider: provider,
+                        endpoint: endpoint,
+                        key: key,
+                        system: composedSystem,
+                        messages: trimmed
+                    ) {
+                        return .reply(repaired)
+                    }
+                    return .deterministicReply(Self.deterministicReply(failure: .empty, context: fallback))
+                }
                 return .reply(text)
             }
             // The model WAS reached but returned nothing parseable / was
@@ -220,6 +291,294 @@ actor AICoachChatService {
             // deterministically instead of dead-ending the user.
             return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
         }
+    }
+
+    // MARK: - Live reply quality gate
+
+    /// Conservative post-generation gate for live Ask-Noum replies. A draft
+    /// that trips this is not "a little imperfect"; it is the kind of response
+    /// that makes the coach feel like a generic AI wrapper.
+    nonisolated static func replyQualityIssue(in text: String) -> CoachChatReplyQualityIssue? {
+        replyQualityIssue(in: text, latestUserTurn: nil)
+    }
+
+    /// Turn-aware variant of the live reply gate. The no-context gate catches
+    /// obvious global failures; this layer catches replies that are plausible
+    /// in isolation but wrong for the user's actual turn.
+    nonisolated static func replyQualityIssue(
+        in text: String,
+        latestUserTurn: String?
+    ) -> CoachChatReplyQualityIssue? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let lower = trimmed.lowercased()
+        if trimmed.count > 700 || sentenceCount(in: trimmed) > 4 {
+            return .tooLong
+        }
+
+        if let phrase = roboticPhrases.first(where: { lower.contains($0) }) {
+            return .roboticPhrase(phrase)
+        }
+
+        if (lower.contains("can you clarify") || lower.contains("could you clarify")
+            || lower.contains("please clarify") || lower.contains("what do you mean"))
+            && wordCount(in: lower) <= 18 {
+            return .bareClarification
+        }
+
+        if lower.contains("the app is designed")
+            || lower.contains("the system is designed")
+            || lower.contains("as an ai")
+            || lower.contains("i am just")
+            || lower.contains("i'm just") {
+            return .defensiveProductLanguage
+        }
+
+        if lower.contains("which direction would you prefer")
+            || lower.contains("what is your priority")
+            || (lower.contains("we can ") && lower.contains(" or ") && lower.contains("?")) {
+            return .menuInsteadOfDecision
+        }
+
+        let rubric = professionalCoachRubric(reply: trimmed, latestUserTurn: latestUserTurn)
+        if rubric.misses.contains(.missedTrustRepair) {
+            return .missedTrustRepair
+        }
+        if rubric.misses.contains(.overclaimsEvidence) {
+            return .overclaimsEvidence
+        }
+        if rubric.misses.contains(.missingPrescribedAction),
+           turnExpectsPrescribedAction(latestUserTurn) || rubric.score <= 6 {
+            return .missingPrescribedAction
+        }
+        if rubric.misses.contains(.missingObservableAnchor),
+           turnExpectsCoaching(latestUserTurn) || rubric.score <= 6 {
+            return .unanchoredCoaching
+        }
+
+        return nil
+    }
+
+    /// Score a reply against the minimum shape a senior communications coach
+    /// would normally provide in text mode: brief, attuned, evidence-aware,
+    /// specific, action-oriented, and humble about thin data. It is deliberately
+    /// conservative and lexical; nuanced calibration still needs a future
+    /// expert-eval fixture set, but this catches the generic-AI failure mode
+    /// reliably enough to protect the live chat surface.
+    nonisolated static func professionalCoachRubric(
+        reply: String,
+        latestUserTurn: String? = nil
+    ) -> CoachChatProfessionalRubricResult {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return CoachChatProfessionalRubricResult(score: 0, misses: [
+                .missingObservableAnchor,
+                .missingPrescribedAction
+            ])
+        }
+
+        let lower = trimmed.lowercased()
+        let latestLower = latestUserTurn?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        var score = 10
+        var misses: [CoachChatProfessionalRubricMiss] = []
+
+        func apply(_ miss: CoachChatProfessionalRubricMiss, penalty: Int) {
+            if !misses.contains(miss) {
+                misses.append(miss)
+                score -= penalty
+            }
+        }
+
+        if trimmed.count > 420 || sentenceCount(in: trimmed) > 3 {
+            apply(.overlong, penalty: 2)
+        }
+
+        if roboticPhrases.contains(where: { lower.contains($0) })
+            || defensiveProductPhrases.contains(where: { lower.contains($0) }) {
+            apply(.roboticRegister, penalty: 2)
+        }
+
+        if replyOffersMenu(lower) {
+            apply(.menuInsteadOfDecision, penalty: 2)
+        }
+
+        if isCritiqueTurn(latestLower), !replyRepairsTrust(lower) {
+            apply(.missedTrustRepair, penalty: 3)
+        }
+
+        if turnExpectsCoaching(latestUserTurn), !replyHasObservableAnchor(lower) {
+            apply(.missingObservableAnchor, penalty: 2)
+        }
+
+        if turnExpectsPrescribedAction(latestUserTurn), !replyPrescribesAction(lower) {
+            apply(.missingPrescribedAction, penalty: 2)
+        }
+
+        if replyOverclaimsEvidence(lower) {
+            apply(.overclaimsEvidence, penalty: 3)
+        }
+
+        return CoachChatProfessionalRubricResult(
+            score: max(0, min(10, score)),
+            misses: misses
+        )
+    }
+
+    private nonisolated static let roboticPhrases = [
+        "based on your data",
+        "the key insight is",
+        "concrete next move",
+        "this indicates",
+        "as an ai",
+        "as your ai",
+        "optimize your",
+        "utilize"
+    ]
+
+    private nonisolated static let defensiveProductPhrases = [
+        "the app is designed",
+        "the system is designed",
+        "i am just",
+        "i'm just"
+    ]
+
+    private nonisolated static func containsAny(_ value: String, _ needles: [String]) -> Bool {
+        needles.contains { value.contains($0) }
+    }
+
+    private nonisolated static func isCritiqueTurn(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "robotic", "generic", "not ideal", "not a fan", "no where near",
+            "nowhere near", "annoy", "frustrat", "sucks", "poop",
+            "not human", "doesn't feel", "does not feel", "too much writing",
+            "hardcoded", "low eq", "not high eq"
+        ])
+    }
+
+    private nonisolated static func turnExpectsCoaching(_ latestUserTurn: String?) -> Bool {
+        guard let latestUserTurn else { return true }
+        let lower = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !lower.isEmpty else { return true }
+        if lower.count <= 4 && containsAny(lower, ["hi", "hey", "yo"]) { return false }
+        return true
+    }
+
+    private nonisolated static func turnExpectsPrescribedAction(_ latestUserTurn: String?) -> Bool {
+        guard let latestUserTurn else { return true }
+        let lower = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lower.count <= 4 && containsAny(lower, ["hi", "hey", "yo"]) { return false }
+        return containsAny(lower, [
+            "what next", "next move", "what should", "continue", "implement",
+            "develop", "work on", "focus", "how do i", "help me", "coach me",
+            "practice", "prepare", "fix", "improve", "replace", "go for",
+            "make a bigger stride"
+        ]) || isCritiqueTurn(lower)
+    }
+
+    private nonisolated static func replyRepairsTrust(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "fair", "you're right", "you are right", "good call", "useful push",
+            "that read", "that felt", "the friction", "too generic", "too robotic",
+            "i'll be", "i will be", "i'll keep", "i will keep", "i'll change",
+            "i will change"
+        ])
+    }
+
+    private nonisolated static func replyHasObservableAnchor(_ lower: String) -> Bool {
+        if lower.rangeOfCharacter(from: .decimalDigits) != nil { return true }
+        return containsAny(lower, [
+            "last rep", "recent rep", "next rep", "session", "transcript",
+            "filler", "pace", "pause", "score", "wpm", "word choice",
+            "you said", "you asked", "i heard", "what i notice", "pattern",
+            "case", "hypothesis", "target", "success measure", "not enough data",
+            "i don't have", "i do not have", "i can't see", "from what you wrote",
+            "your message", "your words", "the friction"
+        ])
+    }
+
+    private nonisolated static func replyPrescribesAction(_ lower: String) -> Bool {
+        containsAny(lower, [
+            "next rep", "try ", "practice", "run ", "hold ", "record",
+            "answer", "send", "say ", "use ", "repeat", "do one", "focus",
+            "start", "ask ", "replace", "keep the ", "keep this ", "cut ",
+            "pause before", "one drill", "one rep", "review"
+        ])
+    }
+
+    private nonisolated static func replyOverclaimsEvidence(_ lower: String) -> Bool {
+        if containsAny(lower, [
+            "this proves", "the data proves", "definitely means",
+            "always do this", "you lack conviction", "you are weak"
+        ]) {
+            return true
+        }
+        let sensitiveLabels = ["evasive", "timid", "detached", "defensive", "insecure"]
+        if containsAny(lower, sensitiveLabels),
+           containsAny(lower, ["clearly", "obviously", "you are ", "you’re "]) {
+            return true
+        }
+        return false
+    }
+
+    private nonisolated static func replyOffersMenu(_ lower: String) -> Bool {
+        lower.contains("which direction would you prefer")
+            || lower.contains("what is your priority")
+            || (lower.contains("we can ") && lower.contains(" or ") && lower.contains("?"))
+    }
+
+    private nonisolated static func sentenceCount(in text: String) -> Int {
+        let endings = CharacterSet(charactersIn: ".!?")
+        let count = text.unicodeScalars.reduce(0) { partial, scalar in
+            partial + (endings.contains(scalar) ? 1 : 0)
+        }
+        return max(count, text.isEmpty ? 0 : 1)
+    }
+
+    private nonisolated static func wordCount(in text: String) -> Int {
+        text.split { !$0.isLetter && !$0.isNumber }.count
+    }
+
+    private func repairLowQualityReply(
+        issue: CoachChatReplyQualityIssue,
+        draft: String,
+        provider: AIProvider,
+        endpoint: URL,
+        key: String,
+        system: String,
+        messages: [CoachMessage]
+    ) async -> String? {
+        let repairSystem = """
+        \(system)
+
+        QUALITY REWRITE PASS
+        The previous draft failed the Ask Noum professional-coach gate.
+        Failure: \(issue.repairInstruction)
+
+        Draft to replace:
+        \(draft)
+
+        Rewrite from scratch. Requirements:
+        - 1-2 short sentences.
+        - No headers, bullets, or numbered lists.
+        - No broad menu. Pick one coaching move.
+        - If the user showed frustration, do not defend the app.
+        - Sound like a senior communications coach, not an assistant explaining itself.
+        """
+
+        let body = requestBody(for: provider, system: repairSystem, messages: messages)
+        guard
+            let data = try? await providerResponseData(
+                provider: provider,
+                endpoint: endpoint,
+                key: key,
+                body: body
+            ),
+            let text = extractText(from: data, provider: provider),
+            Self.replyQualityIssue(in: text, latestUserTurn: messages.last(where: { $0.role == .user })?.text) == nil
+        else { return nil }
+
+        return text
     }
 
     // MARK: - Deterministic offline fallback
@@ -415,6 +774,34 @@ actor AICoachChatService {
     }
 
     // MARK: - Request body construction
+
+    private func providerResponseData(
+        provider: AIProvider,
+        endpoint: URL,
+        key: String,
+        body: [String: Any]
+    ) async throws -> Data? {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 18
+        switch provider {
+        case .openAI, .deepSeek:
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .gemini:
+            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        case .none:
+            return nil
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            return nil
+        }
+        return data
+    }
 
     private func requestBody(
         for provider: AIProvider,

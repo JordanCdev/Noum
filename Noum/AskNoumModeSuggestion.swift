@@ -20,7 +20,10 @@ enum AskNoumModeSuggestion {
         let t = reply.lowercased()
 
         // Explicit mode / drill names — highest confidence.
-        if t.contains("ah-counter") || t.contains("ah counter") || t.contains("filler") {
+        if t.contains("ah-counter") || t.contains("ah counter")
+            || t.contains("filler drill") || t.contains("filler round")
+            || t.contains("filler-word drill") || t.contains("filler word drill")
+            || t.contains("filler-count drill") || t.contains("filler count drill") {
             return .ahCounterPractice
         }
         if t.contains("sudden death") {

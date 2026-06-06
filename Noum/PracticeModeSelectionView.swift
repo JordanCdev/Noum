@@ -273,21 +273,14 @@ struct PracticeModeSelectionView: View {
                     modeIcon(option)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
+                        let snapshot = masteryStore.snapshot(for: option.mode)
+                        HStack(alignment: .top, spacing: 8) {
                             Text(option.title)
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(.primary)
-
-                            if isRecommended {
-                                recommendedPill(tint: option.tint)
-                            }
-
-                            Spacer(minLength: 0)
-
-                            let snapshot = masteryStore.snapshot(for: option.mode)
-                            if snapshot.sessionsLogged > 0 {
-                                ModeMasteryBadge(snapshot: snapshot)
-                            }
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.9)
+                                .fixedSize(horizontal: false, vertical: true)
 
                             // Visual-only chevron — the actual tap target
                             // is the transparent overlay button below.
@@ -299,6 +292,22 @@ struct PracticeModeSelectionView: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.tertiary)
                                 .accessibilityHidden(true)
+                        }
+
+                        if isRecommended || snapshot.sessionsLogged > 0 {
+                            HStack(spacing: 6) {
+                                if isRecommended {
+                                    recommendedPill(tint: option.tint)
+                                }
+
+                                if snapshot.sessionsLogged > 0 {
+                                    ModeMasteryBadge(snapshot: snapshot)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
                         Text(option.subtitle)
@@ -569,6 +578,8 @@ struct PracticeModeSelectionView: View {
         Text("Recommended")
             .font(.caption2.weight(.bold))
             .foregroundStyle(tint)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(tint.opacity(0.12), in: Capsule())

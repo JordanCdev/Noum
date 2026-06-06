@@ -139,25 +139,31 @@ struct ContentView: View {
 
                     VStack(spacing: Spacing.cardGap) {
                         if sessionStore.sessions.isEmpty {
-                            // Empty-state — unified with the populated home.
-                            // `HomeCoachCard` is now the brand-new user's
-                            // first impression, carrying the same Pro-purple
-                            // alive treatment (drifting wash, glass material,
-                            // emanation ray) the returning user sees. The
-                            // card's no-signal branch reads `.listening`
-                            // mood + profile-aware copy + "Begin · First rep"
-                            // CTA, so the first impression matches the
-                            // returning impression instead of being a
-                            // simpler flat header.
-                            HomeCoachCard(
-                                navigationPath: $navigationPath,
-                                scrollOffset: homeScrollOffset
-                            ).cardEntrance(0)
+                            // Empty-state — use the same coach-first floor as
+                            // the signal-gated populated home. First screen:
+                            // coach presence, quiet status, Ask Noum access.
+                            // Daily/progression surfaces unlock after signal
+                            // instead of reading like a habit dashboard before
+                            // the user has completed a rep.
+                            let gate = homeCardGate
+                            if gate.coachCard {
+                                HomeCoachCard(
+                                    navigationPath: $navigationPath,
+                                    scrollOffset: homeScrollOffset
+                                ).cardEntrance(0)
+                            }
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
                             }
-                            DailyGoalCard(manager: dailyGoal).cardEntrance(1)
-                            secondaryDiscoveryCard.cardEntrance(2)
+                            if gate.utilityStrip {
+                                HomeUtilityStrip(navigationPath: $navigationPath).cardEntrance(1)
+                            }
+                            if gate.askNoumPromo {
+                                askNoumPromoCard.cardEntrance(2)
+                            }
+                            if showAllHomeCards {
+                                secondaryDiscoveryCard.cardEntrance(3)
+                            }
                         } else {
                             // Populated home — editorial pass (M14).
                             //

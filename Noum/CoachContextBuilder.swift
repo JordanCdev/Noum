@@ -504,6 +504,17 @@ enum CoachContextBuilder {
             lines.append("LIVE COACHING FRAME (this turn only)")
             lines.append(contentsOf: liveFrame)
         }
+        let turnContract = professionalTurnContractLines(
+            latestUserTurn: latestUserTurn,
+            previousCoachReply: previousCoachReply,
+            profile: profile,
+            coachMemory: coachMemory
+        )
+        if !turnContract.isEmpty {
+            lines.append("")
+            lines.append("PROFESSIONAL TURN CONTRACT (how this reply earns trust)")
+            lines.append(contentsOf: turnContract)
+        }
 
         // COACHING READINESS (F5) — claim-scaling. Always present so the coach
         // never asserts more certainty than the accumulated evidence supports,
@@ -1114,6 +1125,59 @@ enum CoachContextBuilder {
 
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
+    }
+
+    // MARK: - Professional turn contract
+
+    /// A tighter per-turn standard layered on top of the system prompt. The
+    /// system prompt defines the coach's identity; this defines the job of the
+    /// next reply. It is deliberately non-persistent: a senior coach adapts the
+    /// turn shape without changing the durable case file.
+    static func professionalTurnContractLines(
+        latestUserTurn: String?,
+        previousCoachReply: String?,
+        profile: CoachingProfile?,
+        coachMemory: CoachMemory?
+    ) -> [String] {
+        guard let latestUserTurn else { return [] }
+        let trimmed = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let lower = trimmed.lowercased()
+        let normalized = normalizedTurn(trimmed)
+        var lines: [String] = [
+            "- Reply shape: 1-3 short sentences. No headers, bullets, or numbered lists unless the user explicitly asks for a list.",
+            "- Coaching standard: one attuned human read, one observable fact or honest data gap, one prescribed action. No broad menu."
+        ]
+
+        if containsAny(lower, [
+            "robotic", "generic", "not ideal", "not a fan", "no where near",
+            "nowhere near", "annoy", "frustrat", "sucks", "poop",
+            "not human", "doesn't feel", "does not feel", "too much writing",
+            "hardcoded"
+        ]) {
+            lines.append("- Must do this turn: repair trust first. Name the specific friction, say how the coaching response will change, then give one useful action.")
+        } else if isChoiceOrCommitmentTurn(normalized, previousCoachReply: previousCoachReply) {
+            lines.append("- Must do this turn: treat the user's choice as a decision. Do not ask them to choose again.")
+        } else if containsAny(lower, [
+            "what next", "next move", "what should i do", "where should",
+            "what do i work", "focus on", "continue", "implement it",
+            "make a bigger stride", "go for", "do the next"
+        ]) {
+            lines.append("- Must do this turn: choose the highest-leverage next action for them. Explain the reason in one clause, then prescribe the rep or review.")
+        } else if isLowSignalGreeting(normalized) {
+            lines.append("- Must do this turn: resume the active coaching thread rather than greeting back with a menu.")
+        } else {
+            lines.append("- Must do this turn: answer the user's actual ask first. Bring in the case file only when it sharpens the answer.")
+        }
+
+        if coachMemory?.caseFile != nil {
+            lines.append("- Active-case rule: stay with the current case unless the user clearly redirects.")
+        } else if profile == nil {
+            lines.append("- Cold-start rule: ask one discovery question tied to their speaking goal before making a strong read.")
+        }
+
+        return lines
     }
 
     // MARK: - Emotional signal detection (EQ workflow)
@@ -4061,7 +4125,132 @@ enum CoachContextBuilder {
             return answerChoices
         }
         let topic = detectFollowUpTopic(in: trimmed)
+        if topic == .generic,
+           let turnAware = turnAwareFallbackFollowUps(
+               lastUserTurn: lastUserTurn,
+               previousCoachReply: previousCoachReply,
+               voice: voice
+           ) {
+            return turnAware
+        }
         return followUpChips(for: topic, voice: voice)
+    }
+
+    /// Last-turn aware fallback for the deterministic chip path. The AI chip
+    /// path already receives the current turn; this keeps the no-provider /
+    /// locale-blocked path from dropping back to broad evergreen prompts when
+    /// the user's latest turn carries an obvious conversational job.
+    private static func turnAwareFallbackFollowUps(
+        lastUserTurn: String?,
+        previousCoachReply: String?,
+        voice: SpeakingStyleGoal?
+    ) -> [String]? {
+        guard let lastUserTurn else { return nil }
+        let trimmed = lastUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let lower = trimmed.lowercased()
+        let normalized = normalizedTurn(trimmed)
+
+        if containsAny(lower, [
+            "robotic", "generic", "not ideal", "not a fan", "no where near",
+            "nowhere near", "annoy", "frustrat", "sucks", "poop",
+            "not human", "doesn't feel", "does not feel", "too much writing",
+            "hardcoded"
+        ]) {
+            return repairFollowUps(voice: voice)
+        }
+
+        if containsAny(lower, [
+            "what next", "next move", "what should i do", "where should",
+            "what do i work", "focus on", "continue", "implement it",
+            "make a bigger stride", "go for", "do the next"
+        ]) {
+            return directionFollowUps(voice: voice)
+        }
+
+        if isLowSignalGreeting(normalized) {
+            return greetingFollowUps(previousCoachReply: previousCoachReply, voice: voice)
+        }
+
+        return nil
+    }
+
+    private static func repairFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .executive:
+            return ["Rewrite the coaching move", "Use my last rep", "Set the priority"]
+        case .concise:
+            return ["Show the sharper version", "Use my last rep", "Pick one priority"]
+        case .warm:
+            return ["Make it feel more human", "Use my last rep", "Pick one helpful move"]
+        case .authoritative:
+            return ["Give me the sharper read", "Use my last rep", "Pick the real priority"]
+        case .persuasive:
+            return ["Show the better reasoning", "Use my last rep", "Pick the strongest move"]
+        case .storytelling:
+            return ["Make the read feel alive", "Use my last rep", "Find the turning point"]
+        case .none:
+            return ["Make it more human", "Use my last rep", "Pick one priority"]
+        }
+    }
+
+    private static func directionFollowUps(voice: SpeakingStyleGoal?) -> [String] {
+        switch voice {
+        case .executive:
+            return ["Give me the drill", "Define the success metric", "Use my last rep"]
+        case .concise:
+            return ["Give me the drill", "Success target?", "Use my last rep"]
+        case .authoritative:
+            return ["Prescribe the drill", "Name the standard", "Use my last rep"]
+        case .warm:
+            return ["Give me one drill", "What should feel different?", "Use my last rep"]
+        case .persuasive:
+            return ["Pick the strongest drill", "Show the reasoning", "Use my last rep"]
+        case .storytelling:
+            return ["Pick the next scene", "Name the turning point", "Use my last rep"]
+        case .none:
+            return ["Give me the drill", "What should improve first?", "Use my last rep"]
+        }
+    }
+
+    private static func greetingFollowUps(
+        previousCoachReply: String?,
+        voice: SpeakingStyleGoal?
+    ) -> [String] {
+        let previous = previousCoachReply?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let lower = previous.lowercased()
+
+        var chips: [String] = []
+        if let quoted = quotedFocusLabel(in: previous) {
+            chips.append("Resume \(quoted)")
+        } else if let voice {
+            chips.append("Resume \(voice.title)")
+        }
+
+        if lower.contains("last rep") || lower.contains("recent rep") || lower.contains("score") {
+            chips.append("Review my last rep")
+        }
+        if lower.contains("plan") || lower.contains("7 days") || lower.contains("seven days") || lower.contains("week") {
+            chips.append("Resume the plan")
+        }
+        if lower.contains("filler") || lower.contains("\"um") || lower.contains("\"uh") {
+            chips.append("Check filler pattern")
+        }
+
+        chips.append("Set today's target")
+        chips.append("Pick the next rep")
+
+        var seen = Set<String>()
+        let unique = chips.filter { chip in
+            let key = chip.lowercased()
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
+
+        return Array(unique.prefix(3))
     }
 
     /// Choice-question chips are different from normal follow-ups: if the
@@ -4074,21 +4263,7 @@ enum CoachContextBuilder {
         lastUserTurn: String?,
         voice: SpeakingStyleGoal?
     ) -> [String]? {
-        let lowerReply = reply.lowercased()
-        let isChoiceQuestion =
-            lowerReply.contains("which direction would you prefer")
-            || lowerReply.contains("what is your priority")
-            || lowerReply.contains("what's your priority")
-            || lowerReply.contains("what would you like to focus")
-            || lowerReply.contains("which should we focus")
-            || lowerReply.contains("where should we focus")
-            || (lowerReply.contains(" or ")
-                && (lowerReply.contains("we can ")
-                    || lowerReply.contains("we could ")
-                    || lowerReply.contains("would you prefer")
-                    || lowerReply.contains("priority today")
-                    || lowerReply.contains("choose")))
-        guard isChoiceQuestion else { return nil }
+        guard replyLooksLikeChoiceQuestion(reply) else { return nil }
 
         let context = [reply, previousCoachReply, lastUserTurn]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -4144,6 +4319,22 @@ enum CoachContextBuilder {
         default:
             return ["Stay with this focus", "Choose another focus", "Compare both"]
         }
+    }
+
+    private static func replyLooksLikeChoiceQuestion(_ reply: String) -> Bool {
+        let lowerReply = reply.lowercased()
+        return lowerReply.contains("which direction would you prefer")
+            || lowerReply.contains("what is your priority")
+            || lowerReply.contains("what's your priority")
+            || lowerReply.contains("what would you like to focus")
+            || lowerReply.contains("which should we focus")
+            || lowerReply.contains("where should we focus")
+            || (lowerReply.contains(" or ")
+                && (lowerReply.contains("we can ")
+                    || lowerReply.contains("we could ")
+                    || lowerReply.contains("would you prefer")
+                    || lowerReply.contains("priority today")
+                    || lowerReply.contains("choose")))
     }
 
     private static func quotedFocusLabel(in text: String) -> String? {
@@ -4471,7 +4662,12 @@ enum CoachContextBuilder {
                 return nil
             }
             guard let raw = extractAIChipsText(from: data, provider: provider) else { return nil }
-            return parseAndFilterChips(raw, count: count)
+            return parseAndFilterChips(
+                raw,
+                count: count,
+                lastUserTurn: trimmedTurn,
+                lastCoachReply: trimmedReply
+            )
         } catch {
             return nil
         }
@@ -4597,6 +4793,26 @@ enum CoachContextBuilder {
         return Array(lines.prefix(count))
     }
 
+    /// Turn-aware sibling for AI follow-up chip generation. The generic parser
+    /// enforces brand shape; this layer enforces usefulness in the actual
+    /// moment so a valid-but-generic batch cannot override stronger
+    /// deterministic chips after a choice, critique, greeting, or "what next"
+    /// turn.
+    static func parseAndFilterChips(
+        _ raw: String,
+        count: Int,
+        lastUserTurn: String?,
+        lastCoachReply: String?
+    ) -> [String]? {
+        guard let chips = parseAndFilterChips(raw, count: count) else { return nil }
+        guard chipBatchMatchesTurn(
+            chips,
+            lastUserTurn: lastUserTurn,
+            lastCoachReply: lastCoachReply
+        ) else { return nil }
+        return chips
+    }
+
     /// Per-chip brand-voice filter. Mirrors the everywhere-else rules:
     /// no exclamations, no emoji, no "Let's", no leading directives, no
     /// runaway-length copy. Anything that fails is dropped — the caller
@@ -4624,6 +4840,99 @@ enum CoachContextBuilder {
         ]
         if leadingDirectives.contains(where: { lower.hasPrefix($0) }) { return false }
         return true
+    }
+
+    private static func chipBatchMatchesTurn(
+        _ chips: [String],
+        lastUserTurn: String?,
+        lastCoachReply: String?
+    ) -> Bool {
+        let lowerChips = chips.map { chipNormalizedForContext($0) }
+        let turn = lastUserTurn?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let lowerTurn = chipNormalizedForContext(turn)
+        let reply = lastCoachReply?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if replyLooksLikeChoiceQuestion(reply) {
+            return chipBatchAnswersChoice(lowerChips)
+        }
+
+        if containsAny(lowerTurn, [
+            "robotic", "generic", "not ideal", "not a fan", "no where near",
+            "nowhere near", "annoy", "frustrat", "sucks", "poop",
+            "not human", "doesn't feel", "does not feel", "too much writing",
+            "hardcoded"
+        ]) {
+            return chipBatchRepairsTrust(lowerChips)
+        }
+
+        if containsAny(lowerTurn, [
+            "what next", "next move", "what should i do", "where should",
+            "what do i work", "focus on", "continue", "implement it",
+            "make a bigger stride", "go for", "do the next"
+        ]) {
+            return chipBatchGivesDirection(lowerChips)
+        }
+
+        if isLowSignalGreeting(normalizedTurn(turn)) {
+            return !lowerChips.allSatisfy(chipIsGenericMeta)
+        }
+
+        return true
+    }
+
+    private static func chipNormalizedForContext(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func chipIsGenericMeta(_ lowerChip: String) -> Bool {
+        containsAny(lowerChip, [
+            "next move",
+            "what am i missing",
+            "where's the leverage",
+            "what's next",
+            "what now",
+            "what should i do",
+            "how do i improve",
+            "keep going",
+            "more detail"
+        ])
+    }
+
+    private static func chipBatchAnswersChoice(_ lowerChips: [String]) -> Bool {
+        guard !lowerChips.contains(where: chipIsGenericMeta) else { return false }
+        return lowerChips.contains { chip in
+            containsAny(chip, [
+                "work on", "stay with", "fix ", "improve ", "tune ",
+                "tighten ", "compare", "filler", "pace", "pause",
+                "delivery", "structure", "engaging", "concise", "warm",
+                "authoritative", "executive", "persuasive", "story"
+            ])
+        }
+    }
+
+    private static func chipBatchRepairsTrust(_ lowerChips: [String]) -> Bool {
+        guard !lowerChips.contains(where: chipIsGenericMeta) else { return false }
+        return lowerChips.contains { chip in
+            containsAny(chip, [
+                "human", "sharper", "better", "rewrite", "last rep",
+                "priority", "friction", "specific", "grounded", "real"
+            ])
+        }
+    }
+
+    private static func chipBatchGivesDirection(_ lowerChips: [String]) -> Bool {
+        guard !lowerChips.contains(where: chipIsGenericMeta) else { return false }
+        return lowerChips.contains { chip in
+            containsAny(chip, [
+                "drill", "success", "target", "last rep", "next rep",
+                "priority", "standard", "practice", "pick", "prescribe"
+            ])
+        }
     }
 
     // MARK: - Provider plumbing (shared with AICoachChatService /
