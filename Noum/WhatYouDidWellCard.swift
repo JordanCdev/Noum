@@ -34,6 +34,11 @@ struct WhatYouDidWellCard: View {
     /// renders next to the headline. Nil for sessions where no intent
     /// was declared — the chip silently doesn't render.
     var intentFocus: CoachingPriority? = nil
+    /// Iteration 1 (overhaul): the transcript-verified proof moment for this
+    /// rep — the user's own strongest line, shown INLINE (no tap) as the lead
+    /// win. Nil when no quote verifies against the transcript (never
+    /// fabricated); sourced from ProofMomentService via SummaryView.
+    var proof: ProofMoment? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedBulletIDs: Set<String> = []
@@ -161,15 +166,24 @@ struct WhatYouDidWellCard: View {
     }
 
     var body: some View {
-        let items = bullets
-        if items.isEmpty {
+        let proofPresent = proof != nil
+        // A transcript-verified proof quote leads the card as the strongest
+        // "value felt" evidence (the user's own words); when present we drop
+        // the eloquence quote bullet so two quote blocks never stack.
+        let items = proofPresent ? bullets.filter { !$0.id.hasPrefix("eloquence") } : bullets
+        if items.isEmpty && !proofPresent {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 header
-                VStack(spacing: 10) {
-                    ForEach(items) { bullet in
-                        bulletRow(bullet)
+                if let proof {
+                    proofRow(proof)
+                }
+                if !items.isEmpty {
+                    VStack(spacing: 10) {
+                        ForEach(items) { bullet in
+                            bulletRow(bullet)
+                        }
                     }
                 }
             }
@@ -196,6 +210,49 @@ struct WhatYouDidWellCard: View {
                 .textCase(.uppercase)
                 .tracking(0.8)
         }
+    }
+
+    /// The transcript-verified proof moment, shown inline (no tap) as the
+    /// lead win — the user's own words. The quote is guaranteed verbatim in
+    /// the transcript (ProofMomentService verifies it; a miss returns nil so
+    /// this never renders a fabricated line — the honesty contract).
+    @ViewBuilder
+    private func proofRow(_ proof: ProofMoment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "quote.opening")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .frame(width: 18, alignment: .center)
+                    .padding(.top, 2)
+                Text(proof.claim)
+                    .font(Typography.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("\u{201C}\(proof.quote)\u{201D}")
+                .font(Typography.body.italic())
+                .foregroundStyle(AppColor.brandBlue.opacity(0.92))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(AppColor.innerSurface, in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+                .padding(.leading, 28)
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.caption2.weight(.bold))
+                Text(proof.technique)
+                    .font(Typography.micro.weight(.semibold))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+            }
+            .foregroundStyle(AppColor.brandBlue)
+            .padding(.leading, 28)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.whatYouDidWell.proof")
     }
 
     @ViewBuilder

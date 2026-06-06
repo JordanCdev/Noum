@@ -726,7 +726,8 @@ struct SummaryView: View {
                                 eloquenceFindings: eloquenceFindings,
                                 aiFeedback: aiFeedback,
                                 isMinimalEffort: isMinimalEffort,
-                                intentFocus: sessionStore.sessions.first?.intentFocus
+                                intentFocus: sessionStore.sessions.first?.intentFocus,
+                                proof: personalBestProof
                             )
                             WhatToImproveCard(
                                 coachNote: coachNote,
@@ -750,9 +751,11 @@ struct SummaryView: View {
                                 },
                                 onStartDrill: onStartDrill
                             )
-                            SessionReflectionInlineCard(
-                                sessionID: sessionStore.sessions.first?.id
-                            )
+                            // Reflection pulled out of the comprehension flow:
+                            // deferred reflection lives in the Details drawer
+                            // (DeferredCaptureInlineCard) so "how did that feel?"
+                            // never competes with the score / read / win / fix
+                            // on first paint. (Iteration 1)
                             if let revisedChange = freshRevisedReadChange {
                                 RevisedReadCard(
                                     change: revisedChange,
@@ -826,6 +829,10 @@ struct SummaryView: View {
         .navigationBarBackButtonHidden(true)
         .disableSwipeBack()
         .onAppear(perform: setup)
+        // Iteration 1: load the transcript-verified proof moment on every
+        // summary (not just the personal-best celebration) so the WIN card
+        // can lead with the user's own strongest line. Nil on a miss.
+        .task { await loadPersonalBestProof() }
         .sheet(isPresented: $showVideoPlayback) {
             if let recordingURL {
                 VideoPlaybackView(url: recordingURL)
