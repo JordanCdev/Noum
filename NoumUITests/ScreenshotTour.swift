@@ -373,6 +373,25 @@ final class ScreenshotTour: XCTestCase {
         captureState(profile: nil, prefix: "A-cold")
     }
 
+    /// Renders the post-rep Summary via the DEBUG `noum://summary` force-hook
+    /// (seeded session) and scrolls it, so the redesigned one-screen verdict
+    /// — incl. the WIN card's transcript-verified proof row — can be verified
+    /// without completing a live audio rep.
+    @MainActor
+    func testCaptureSummary() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_SEED_FORCE", "-DeepLink", "noum://summary"]
+        app.launch()
+        _ = app.otherElements["home.screen"].waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 2.5) // deep-link routes Home -> Summary
+        deepAttach(app, name: "S-summary-1top")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "S-summary-2mid")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 0.5)
+        deepAttach(app, name: "S-summary-3bottom")
+        app.terminate()
+    }
+
     /// Walks onboarding stage by stage — every screen a first-time user sees
     /// before they reach any value at all.
     @MainActor

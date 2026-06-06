@@ -1924,6 +1924,50 @@ struct ContentView: View {
             // is idempotent — re-scanning the same URL is a no-op.
             FriendsManager.shared.acceptInvite(from: url)
             navigationPath.append(AppDestination.socialProfile)
+#if DEBUG
+        case "summary":
+            // Test-only: render the post-rep Summary for the most-recent
+            // seeded session so the redesigned summary can be screenshotted
+            // without completing a live (audio) rep. Minimal Entry — the coach
+            // read, proof moment, and celebration are computed by SummaryView.
+            guard let session = PracticeSessionStore.shared.sessions
+                .sorted(by: { $0.date > $1.date }).first else { return }
+            let summaryID = UUID()
+            SummaryDataStore.shared.store(
+                SummaryDataStore.Entry(
+                    transcript: AttributedString(session.transcript),
+                    fillerCount: session.fillerWordCount,
+                    duration: session.duration,
+                    score: session.score,
+                    progressSegments: 0,
+                    xpEarned: 0,
+                    committedFinalization: nil,
+                    suddenDeathGamePoints: nil,
+                    suddenDeathMultiplierLabels: [],
+                    suddenDeathTotalWords: nil,
+                    showDuration: true,
+                    practiceTitle: "Impromptu Practice",
+                    feedbackOverride: nil,
+                    headlineOverride: nil,
+                    scoreBreakdown: [],
+                    insights: [],
+                    recentSessions: PracticeSessionStore.shared.sessions,
+                    imConversationDetails: nil,
+                    explicitMode: .timed,
+                    recordingURL: nil,
+                    sessionPrompt: nil,
+                    sessionTheme: nil,
+                    feedbackCategories: [],
+                    strongMoments: [],
+                    weakMoments: [],
+                    durationAssessment: .onTarget,
+                    targetRange: (min: 45, target: 60, max: 90),
+                    onStartDrill: nil
+                ),
+                for: summaryID
+            )
+            navigationPath.append(AppDestination.summary(SummaryPayload(id: summaryID, mode: .timed)))
+#endif
         default:
             // Unrecognised — no-op rather than crash.
             break
