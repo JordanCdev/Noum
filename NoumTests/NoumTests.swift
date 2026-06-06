@@ -24358,6 +24358,262 @@ struct PostRepCoachNoteUserPromptAnchoringTests {
         #expect(fields.scenarioTitle == "Networking")
         #expect(fields.toneTitle == "Confident")
     }
+
+    // MARK: - Helper-level direction assertions on the round-44/45 recovering / slipping / crossing fixtures (round 50)
+    //
+    // Round 50 closes future move #33 from round 49's HANDOFF — the
+    // symmetric companion to round 49's helper-boundary belt on the
+    // stalled fixtures. Round 49 pinned the helper's stalled-boundary
+    // contract at the helper output (`MomentumComputer.imToneDrillNoteFields(
+    // forJustFinished:in:)`) for the three rate-extreme stalled fixtures
+    // (50%-alternating, 0%-all-off, 100%-all-on). The non-stalled corners
+    // of the 2x2 direction × locus matrix — recovering (round 44
+    // baseline), slipping (round 45 parallel-B leg), and crossing
+    // (round 45 SOLVED baseline) — are still uncovered at the helper
+    // boundary. The round-44/45 cross-surface tests assert the prompt +
+    // deterministic note name the just-finished scenario (recovering /
+    // crossing) and don't name the parallel scenario (slipping-elsewhere
+    // / prior-crossing-elsewhere), which is the user-facing contract,
+    // but a future regression that broke ONLY the helper's direction
+    // classification or boundary arithmetic — say a threshold drift, a
+    // window-split off-by-one, or a sort-by-date inversion — could trip
+    // the round-44/45 surface tests through one path while silently
+    // shifting the helper output through another, before the next round's
+    // surface test discovers the drift. Round 50 lifts the
+    // direction-classification + boundary-rate contract from the surface
+    // layer to the helper layer for the three non-stalled corners of the
+    // matrix, so the two-layer regression net (surface + helper) is
+    // structurally complete on all four corners (recovering / slipping /
+    // crossing / stalled). Pure test addition; no production code
+    // change; no engine state change; no schema bump; no migration; no
+    // new view inputs. The structural contracts were already true at
+    // rounds 12/14 (the `IMHistorySummary.toneDrillProgress` primitive's
+    // recovering/slipping gates via `delta >= toneDrillProgressThreshold`
+    // / `delta <= -toneDrillProgressThreshold`) and at round 43 (the
+    // helper threads only the just-finished rep's scenario through
+    // `toneDrillProgress` and `toneDrillCrossing`); round 50 locks the
+    // recovering / slipping / crossing helper-boundary outputs at each
+    // fixture shape so a future regression on the helper-then-surface
+    // wire is caught at the helper output, before either downstream
+    // surface gets a chance to silently swallow the change. Each test
+    // builds the fixture inline using the same shape the round-44/45
+    // surface tests use, drives it through the helper, and asserts the
+    // direction classification, the exact `earlierRate` / `recentRate`
+    // boundary values, `windowSize == 2` (the `min(3, 4 / 2)` two-window
+    // bound the helper computes), the SOLVED-gate companion — `resolved
+    // == nil` for the trajectory-only fixtures (recovering at 0.5
+    // recentRate fails the hold-rate arm; slipping at 1.0 earlierRate
+    // fails the earlier-below-bar arm) and `resolved != nil` for the
+    // crossing fixture (both arms pass + the just-finished rep IS the
+    // crossing rep) — and the round-43 scenario+tone anchoring titles
+    // derived from the just-finished rep's `imConversationDetails`.
+
+    @Test func helperReturnsRecoveringDirectionForRoundFortyFourRecoveringFixture() {
+        // Recovering-A own-scenario — the round-44 baseline trajectory
+        // fixture (also reused inline at round 45 for the SOLVED
+        // cross-surface baseline). Actual tones in scenario A
+        // (Difficult Conversation, calm): `["tense", "rushed", "tense",
+        // "calm"]` → outcomes (by date oldest → newest)
+        // `[false, false, false, true]`; earlier prefix `[false, false]`
+        // = 0% match; recent suffix `[false, true]` = 50% match; delta =
+        // 0.5 → recovering (well above the 0.15
+        // `toneDrillProgressThreshold`). The recentRate (0.5) sits
+        // BELOW the `toneDrillResolvedHoldRate` (0.6), so the SOLVED
+        // turnaround predicate gates off on the hold-rate arm — the
+        // climb is real (delta=0.5) but not yet "held" — and the
+        // resolved trio stays nil. A future regression that drifted the
+        // hold-rate boundary downward (e.g., to 0.5) would silently let
+        // this fixture read as SOLVED on the helper boundary while the
+        // surface SOLVED template still required the full crossing
+        // shape; round 50 pins the helper-level invariant at the
+        // recovering corner of the matrix.
+        let recoveringA = [
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -3),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "rushed", daysOffset: -2),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "tense",  daysOffset: -1),
+            imSession(scenario: .difficultConversation, targetTone: .calm, actualTone: "calm",   daysOffset: 0)
+        ]
+        let justFinished = recoveringA.last!
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: recoveringA
+        )
+        // Direction — the recovering gate the round-44 surface tests
+        // depend on, asserted at the helper boundary so a threshold
+        // drift is caught here independently of the prompt template.
+        #expect(fields.progress?.direction == .recovering)
+        // Rate boundaries — exact 0.0 / 0.5 on the two windows. A
+        // regression that shifted the window-split arithmetic (e.g.,
+        // earlier prefix extended to 3 reps so it picks up an extra
+        // off-brand) would change these values even if the direction
+        // still read as recovering.
+        #expect(fields.progress?.earlierRate == 0.0)
+        #expect(fields.progress?.recentRate == 0.5)
+        // Window size — `min(3, 4 / 2) = 2` two-window bound.
+        #expect(fields.progress?.windowSize == 2)
+        // SOLVED gate — recent-hold arm gates off (recentRate (0.5)
+        // NOT >= holdRate (0.6)). The resolved trio stays nil; the
+        // recovering trajectory is real but not yet a "held" win.
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+        // Scenario + tone titles — derived from the just-finished rep's
+        // scenario, NOT a global "loudest scenario" read. The round-43
+        // anchoring contract, asserted again at the helper boundary for
+        // the recovering fixture.
+        #expect(fields.scenarioTitle == "Difficult Conversation")
+        #expect(fields.toneTitle == "Calm")
+    }
+
+    @Test func helperReturnsSlippingDirectionForRoundFortyFiveSlippingFixture() {
+        // Slipping-B own-scenario — the round-45 inline slipping
+        // fixture (`slippingB` in
+        // `userPromptAndDeterministicNoteSolvedBranchHoldsWhenParallelScenarioIsRecentlySlipping`
+        // and the round-46/47 thin/stalled-A + parallel-slipping-B
+        // tests reuse this exact shape via the suite-level
+        // `slippingScenarioSessions` helper — note the helper produces
+        // an all-off-brand 4-rep set which reads as stalled at the 0%
+        // floor; the true slipping shape needs a window-split shift
+        // and is built inline here). Actual tones in scenario B
+        // (Networking, confident): `["confident", "confident",
+        // "shaky", "shaky"]` → outcomes `[true, true, false, false]`;
+        // earlier prefix `[true, true]` = 100% match; recent suffix
+        // `[false, false]` = 0% match; delta = -1.0 ≤ -0.15 →
+        // slipping. The SOLVED-gate arm that gates off here is the
+        // earlier-below-bar arm: earlierRate (1.0) NOT below
+        // matchRateThreshold (0.4) — there was no gap to start with,
+        // so the turnaround predicate has no turnaround to claim. A
+        // future regression that flipped the threshold sign (e.g.,
+        // `delta <= toneDrillProgressThreshold` instead of `delta <=
+        // -toneDrillProgressThreshold`) would silently classify this
+        // fixture as recovering or stalled on the helper boundary
+        // while the surface trajectory template kept rendering the
+        // anchoring titles correctly; round 50 pins the helper-level
+        // invariant at the slipping corner of the matrix.
+        let slippingB = [
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -3),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "confident", daysOffset: -2),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: -1),
+            imSession(scenario: .networking, targetTone: .confident, actualTone: "shaky",     daysOffset: 0)
+        ]
+        let justFinished = slippingB.last!
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: slippingB
+        )
+        // Direction — the slipping gate, asserted at the helper
+        // boundary.
+        #expect(fields.progress?.direction == .slipping)
+        // Rate boundaries — exact 1.0 / 0.0 on the two windows. The
+        // mirror of the recovering fixture's 0.0 / 0.5 rates, at the
+        // opposite trajectory direction.
+        #expect(fields.progress?.earlierRate == 1.0)
+        #expect(fields.progress?.recentRate == 0.0)
+        // Window size — `min(3, 4 / 2) = 2`.
+        #expect(fields.progress?.windowSize == 2)
+        // SOLVED gate — earlier-below-bar arm gates off (earlierRate
+        // (1.0) NOT below matchRateThreshold (0.4)). The resolved trio
+        // stays nil.
+        #expect(fields.resolved == nil)
+        #expect(fields.resolvedScenarioTitle == nil)
+        #expect(fields.resolvedToneTitle == nil)
+        // Scenario + tone titles — anchored on the just-finished rep
+        // even at the slipping corner where the per-rep read is "you
+        // were on-brand and you're losing it now". The titles are
+        // never derived from a "loudest scenario" read.
+        #expect(fields.scenarioTitle == "Networking")
+        #expect(fields.toneTitle == "Confident")
+    }
+
+    @Test func helperReturnsResolvedAndRecoveringWithBoundaryRatesForRoundFortyFiveCrossingFixture() {
+        // Crossing-A own-scenario — the round-45 baseline crossing
+        // fixture (built via the suite's `crossingScenarioSessions`
+        // helper). Actual tones in scenario A (Difficult Conversation,
+        // calm): `["tense", "tense", "calm", "calm"]` (the 4th rep is
+        // the crossing rep, marked with `crossingId` via the helper's
+        // `id:` parameter) → outcomes `[false, false, true, true]`;
+        // earlier prefix `[false, false]` = 0% match; recent suffix
+        // `[true, true]` = 100% match; delta = 1.0 → recovering. The
+        // SOLVED gate passes both arms: earlierRate (0.0) < threshold
+        // (0.4) AND recentRate (1.0) >= holdRate (0.6) AND overallRate
+        // (0.5) >= matchRateThreshold (0.4) AND the just-finished rep
+        // IS the crossing rep (resolved-with-this-rep is non-nil,
+        // resolved-without-this-rep is nil because the 3-rep history
+        // sits below the 4-rep floor of `toneDrillProgress`). The
+        // helper threads scenario A through `toneDrillCrossing` →
+        // resolved trio populated → both surfaces' SOLVED clauses can
+        // fire. Round 43 already pinned `.resolved != nil` and the
+        // resolved title equality on this fixture
+        // (`helperPopulatesResolvedTrioOnCrossingRep` +
+        // `helperResolvedTrioAnchorsOnJustFinishedRepScenarioTitle`);
+        // round 50 extends the helper-boundary contract to the
+        // direction classification AND the boundary rate values on
+        // both the progress side AND the resolved side, mirroring the
+        // round-49 pattern at the crossing corner of the matrix. A
+        // future regression that broke ONLY the resolved object's
+        // rate copying (e.g., wiring `recentRate: progress.earlierRate`
+        // by mistake) would still produce a non-nil resolved with the
+        // right titles, so the round-43 + round-45 tests would still
+        // pass — but the resolved object's rate values would be wrong;
+        // round 50 catches that at the helper boundary.
+        let crossingId = UUID()
+        let crossingA = crossingScenarioSessions(
+            scenario: .difficultConversation, targetTone: .calm,
+            offBrandTone: "tense", onBrandTone: "calm",
+            crossingRepId: crossingId, earliestDayOffset: -3
+        )
+        let justFinished = crossingA.last!
+        // Defensive belt — the suite helper's `crossingRepId` argument
+        // wires the just-finished rep's id to `crossingId`; a future
+        // refactor of the helper that flipped the wiring would silently
+        // change which rep `toneDrillCrossing` evaluates against.
+        #expect(justFinished.id == crossingId)
+        let fields = MomentumComputer.imToneDrillNoteFields(
+            forJustFinished: justFinished, in: crossingA
+        )
+        // Direction — the recovering gate fires on the crossing fixture
+        // too (the resolved branch and the trajectory branch are
+        // structurally independent gates on `imToneDrillProgress` and
+        // `imToneDrillResolved`; both can be non-nil for the same
+        // just-finished rep, and the surface templates render the
+        // SOLVED clause OUTRANKING the trajectory clause — locked by
+        // `PostRepCoachNoteToneResolvedTests` — so the surface stays
+        // single-voice while the helper carries both reads).
+        #expect(fields.progress?.direction == .recovering)
+        // Progress-side rate boundaries — exact 0.0 / 1.0 on the two
+        // windows. The mirror of the recovering fixture's 0.0 / 0.5
+        // rates, but at the ceiling on the recent window — the
+        // crossing fixture is the recovering corner taken all the way
+        // to the SOLVED gate.
+        #expect(fields.progress?.earlierRate == 0.0)
+        #expect(fields.progress?.recentRate == 1.0)
+        #expect(fields.progress?.windowSize == 2)
+        // SOLVED-side: resolved trio populated. The round-43
+        // `helperPopulatesResolvedTrioOnCrossingRep` test already
+        // asserts the non-nil resolved + title equality; round 50
+        // extends to the resolved object's rate boundaries — proves
+        // the helper copies `progress.earlierRate` / `progress.recentRate`
+        // into the resolved object verbatim (the `IMHistorySummary.toneDrillResolved`
+        // primitive's wiring), so a future regression that broke ONLY
+        // the rate copying — without breaking the non-nil gate or the
+        // titles — is caught at the helper boundary.
+        #expect(fields.resolved != nil)
+        #expect(fields.resolved?.earlierRate == 0.0)
+        #expect(fields.resolved?.recentRate == 1.0)
+        #expect(fields.resolved?.scenario == .difficultConversation)
+        #expect(fields.resolved?.targetTone == .calm)
+        #expect(fields.resolvedScenarioTitle == "Difficult Conversation")
+        #expect(fields.resolvedToneTitle == "Calm")
+        // Scenario + tone titles on the progress side — anchored on
+        // the just-finished rep, the round-43 contract carried through
+        // the SOLVED branch.
+        #expect(fields.scenarioTitle == "Difficult Conversation")
+        #expect(fields.toneTitle == "Calm")
+        // Title equality across progress + resolved sides — both
+        // anchored on the just-finished rep's scenario, the round-43
+        // `helperResolvedTrioAnchorsOnJustFinishedRepScenarioTitle`
+        // contract pinned again at the rate-boundary fixture.
+        #expect(fields.resolvedScenarioTitle == fields.scenarioTitle)
+        #expect(fields.resolvedToneTitle == fields.toneTitle)
+    }
 }
 
 // MARK: - Tone-drill SOLVED win threaded into the post-rep coach note
