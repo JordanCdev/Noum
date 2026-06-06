@@ -108,6 +108,16 @@ enum CoachContextBuilder {
            senior human coach: "The pattern I'd watch is..." or "This looks \
            like a wobble, not a verdict..." then cite one fact and give the \
            next move.
+        8. When the LIVE COACHING FRAME carries an "Emotional signal" line, \
+           treat it as the turn's emotional temperature — a hypothesis, not \
+           a fact. Lead with the "Emotional register" guidance for THIS \
+           turn before moving to evidence and next moves. When a "Sustained \
+           pattern" line is present, the signal has persisted across turns — \
+           name the pattern briefly ("this has been the thread for a few \
+           turns") and adjust posture: more space for frustration/doubt, \
+           stronger celebration for wins, lighter load for fatigue. Use \
+           plain language for emotions — never clinical labels, never "I \
+           detect", never "your emotional state is".
 
         Intelligence floor (this is what separates you from a generic \
         chatbot — every reply must clear it):
@@ -194,7 +204,10 @@ enum CoachContextBuilder {
            move for THIS turn. It is not memory and it does not override the \
            evidence rules; it tells you whether the user needs a direct \
            recommendation, a repair for friction, a preference honored, or a \
-           concise case-thread continuation.
+           concise case-thread continuation. The emotional signal and register \
+           lines, when present, are hypothesis-grade reads from the user's \
+           words — use them to choose your opening register (acknowledge \
+           before advise), not as facts about the user's inner state.
 
         When the user asks "why did my score change" or any data-question, \
         you cite the actual delta + the dimension that moved it (not \
@@ -361,7 +374,12 @@ enum CoachContextBuilder {
         // model what coaching move THIS turn needs (repair, direct next move,
         // honoring a choice, greeting continuation) without adding new state.
         latestUserTurn: String? = nil,
-        previousCoachReply: String? = nil
+        previousCoachReply: String? = nil,
+        // EQ — recent user turns (newest-first) for sustained emotional
+        // pattern detection. The arc detector scans these for repeated
+        // signals across turns (e.g. frustration persisting over 3 turns).
+        // Defaults to empty so existing callers compile unchanged.
+        recentUserTurns: [String] = []
     ) -> String {
         var lines: [String] = []
         lines.append("=== USER CONTEXT (read carefully) ===")
@@ -478,7 +496,8 @@ enum CoachContextBuilder {
             latestUserTurn: latestUserTurn,
             previousCoachReply: previousCoachReply,
             profile: profile,
-            coachMemory: coachMemory
+            coachMemory: coachMemory,
+            recentUserTurns: recentUserTurns
         )
         if !liveFrame.isEmpty {
             lines.append("")
@@ -1020,7 +1039,8 @@ enum CoachContextBuilder {
         latestUserTurn: String?,
         previousCoachReply: String?,
         profile: CoachingProfile?,
-        coachMemory: CoachMemory?
+        coachMemory: CoachMemory?,
+        recentUserTurns: [String] = []
     ) -> [String] {
         guard let latestUserTurn else { return [] }
         let trimmed = latestUserTurn.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1030,6 +1050,7 @@ enum CoachContextBuilder {
         let normalized = normalizedTurn(trimmed)
         var lines: [String] = []
 
+        // === INTENT DETECTION (unchanged) ===
         if containsAny(lower, [
             "robotic", "generic", "not ideal", "not a fan", "no where near",
             "nowhere near", "annoy", "frustrat", "sucks", "poop",
@@ -1056,6 +1077,21 @@ enum CoachContextBuilder {
             lines.append("- Coaching move: answer the user's actual ask first, then connect it to the active case only if it genuinely helps.")
         }
 
+        // === EMOTIONAL SIGNAL DETECTION (additive to intent) ===
+        let emotionalSignals = detectEmotionalSignals(lower)
+        let voice = profile?.speakingStyleGoal
+
+        if let primary = emotionalSignals.first {
+            let move = emotionalCoachingMove(for: primary, voice: voice)
+            lines.append("- Emotional signal (hypothesis, not diagnosis): \(primary.contextLabel).")
+            lines.append("- Emotional register: \(move)")
+        }
+
+        // === CONVERSATION ARC (sustained emotional pattern) ===
+        if let arc = detectArcPattern(recentUserTurns: recentUserTurns) {
+            lines.append("- Sustained pattern: \(arc.signal.contextLabel) across \(arc.turnCount) of the last 4 turns. This is not a one-off — adjust the coaching posture accordingly.")
+        }
+
         if coachMemory?.caseFile != nil {
             lines.append("- Case discipline: prefer the active case file before creating a new focus; if the user rejects it, ask one anchoring question before changing course.")
         }
@@ -1078,6 +1114,388 @@ enum CoachContextBuilder {
 
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool {
         needles.contains { value.contains($0) }
+    }
+
+    // MARK: - Emotional signal detection (EQ workflow)
+    //
+    // A human coach reads emotional temperature before choosing a coaching
+    // move. The system prompt's attunement floor tells the model to do this,
+    // but without structured signals the model has to infer everything from
+    // raw text — and often defaults to "coaching advice" even when the user
+    // needs acknowledgment first. These pure-function helpers detect
+    // emotional signals from keyword patterns and produce voice-specific
+    // coaching-move guidance so the LIVE COACHING FRAME can pass a
+    // structured emotional read alongside the intent read.
+    //
+    // Design rules:
+    //   • Pure functions — no async, no singletons, no I/O.
+    //   • Emotional reads are HYPOTHESES, never diagnoses. The copy
+    //     carries the hedge ("signal suggests"), and the system prompt
+    //     backstop tells the model to use plain language, not clinical
+    //     labels.
+    //   • Multiple signals can co-occur (frustration + self-doubt).
+    //     Only the primary (first detected) gets a coaching-move line
+    //     to keep the context bounded.
+    //   • Voice-specific coaching moves follow the established
+    //     `coachPersonality(for:)` switch pattern.
+
+    /// Detected emotional signal from the user's turn. These are keyword-
+    /// based hypotheses, never diagnoses. The model uses them to choose a
+    /// coaching register, not to label the user.
+    private enum EmotionalSignal: String, CaseIterable {
+        case frustration
+        case selfDoubt
+        case vulnerability
+        case fatigue
+        case celebrationSeeking
+        case breakthrough
+        case resistance
+        case comparison
+        case overwhelm
+        case curiosity
+
+        /// Plain-language label for the context line — never clinical.
+        var contextLabel: String {
+            switch self {
+            case .frustration:       return "frustration"
+            case .selfDoubt:         return "self-doubt"
+            case .vulnerability:     return "vulnerability"
+            case .fatigue:           return "fatigue or burnout"
+            case .celebrationSeeking: return "celebration or pride"
+            case .breakthrough:      return "breakthrough or insight"
+            case .resistance:        return "resistance or avoidance"
+            case .comparison:        return "comparison with others"
+            case .overwhelm:         return "overwhelm"
+            case .curiosity:         return "curiosity"
+            }
+        }
+    }
+
+    /// Detect emotional signals from the user's turn text. Returns an array
+    /// because multiple signals can co-occur (e.g. frustration + self-doubt).
+    /// Empty array = no emotional signal detected = normal coaching turn.
+    private static func detectEmotionalSignals(_ lower: String) -> [EmotionalSignal] {
+        var signals: [EmotionalSignal] = []
+
+        if containsAny(lower, [
+            "i can't", "i cant", "this isn't working", "this isnt working",
+            "not working", "ugh", "stuck", "failing", "keep messing up",
+            "same mistake", "what's the point", "whats the point",
+            "going nowhere", "no progress", "getting worse",
+            "i keep", "argh", "damn"
+        ]) {
+            signals.append(.frustration)
+        }
+
+        if containsAny(lower, [
+            "i suck", "i'm not good", "im not good", "not good enough",
+            "not getting better", "never going to", "hopeless",
+            "can't do this", "cant do this", "waste of time",
+            "not cut out", "will i ever", "am i even",
+            "i'm bad", "im bad", "terrible at"
+        ]) {
+            signals.append(.selfDoubt)
+        }
+
+        if containsAny(lower, [
+            "scared", "nervous", "afraid", "terrified", "anxious",
+            "panic", "dread", "i freeze", "my voice shakes",
+            "embarrass", "ashamed", "vulnerable", "hard to admit",
+            "freaking out", "butterflies"
+        ]) {
+            signals.append(.vulnerability)
+        }
+
+        if containsAny(lower, [
+            "tired of", "burnt out", "burned out", "burnout",
+            "exhausted", "over it", "need a break",
+            "too much practice", "sick of", "done with this",
+            "losing motivation", "not feeling it", "drained",
+            "low energy"
+        ]) {
+            signals.append(.fatigue)
+        }
+
+        if containsAny(lower, [
+            "nailed it", "crushed it", "best one yet", "finally did",
+            "i'm proud", "im proud", "personal best",
+            "killed it", "so much better", "huge improvement",
+            "my best", "felt amazing", "felt great", "smashed it",
+            "proud of"
+        ]) {
+            signals.append(.celebrationSeeking)
+        }
+
+        if containsAny(lower, [
+            "just realized", "it clicked", "i see it now", "aha",
+            "that makes sense", "i get it now", "light bulb",
+            "finally understand", "it all connects",
+            "something shifted", "penny dropped"
+        ]) {
+            signals.append(.breakthrough)
+        }
+
+        if containsAny(lower, [
+            "do i have to", "don't want to", "dont want to",
+            "can we do something else", "not in the mood",
+            "maybe tomorrow", "rather not", "seems pointless",
+            "does this even", "skip this", "can i skip",
+            "not today", "pass on"
+        ]) {
+            signals.append(.resistance)
+        }
+
+        if containsAny(lower, [
+            "my colleague", "everyone else", "natural speaker",
+            "born with it", "they make it look", "compared to",
+            "why can't i", "why cant i", "other people",
+            "some people just", "natural talent",
+            "comes easy to them", "wish i could be like"
+        ]) {
+            signals.append(.comparison)
+        }
+
+        if containsAny(lower, [
+            "too much", "overwhelm", "where do i start",
+            "where do i even start", "drowning", "so many things",
+            "everything at once", "can't keep up", "cant keep up",
+            "information overload", "don't know where to begin",
+            "dont know where to begin", "all over the place"
+        ]) {
+            signals.append(.overwhelm)
+        }
+
+        if containsAny(lower, [
+            "how does", "why do i", "i wonder", "tell me about",
+            "curious about", "interested in", "what happens if",
+            "teach me", "i want to understand", "how come",
+            "what's the science", "whats the science"
+        ]) {
+            signals.append(.curiosity)
+        }
+
+        return signals
+    }
+
+    /// Voice-specific coaching move for a detected emotional signal. Each
+    /// voice handles the same emotion differently — the warm coach sits with
+    /// doubt, the executive coach reframes it, the concise coach names it
+    /// and moves. Follows the established `coachPersonality(for:)` switch
+    /// pattern.
+    private static func emotionalCoachingMove(
+        for signal: EmotionalSignal,
+        voice: SpeakingStyleGoal?
+    ) -> String {
+        switch signal {
+        case .frustration:
+            switch voice {
+            case .warm:
+                return "Sit with the frustration briefly — name what is hard without fixing it immediately. Then offer one small, doable move."
+            case .authoritative:
+                return "Name the frustration once, plainly. Then give the verdict: what specifically to change on the next rep."
+            case .concise:
+                return "Acknowledge in one clause. Then prescribe one move."
+            case .executive:
+                return "Name the friction, give the top-line fix. No preamble."
+            case .persuasive:
+                return "Validate the frustration with evidence — show what the data says is actually moving, then redirect."
+            case .storytelling:
+                return "Name the hard part of the arc they are in. Show where this chapter goes."
+            case nil:
+                return "Acknowledge the frustration briefly, then offer one concrete next step."
+            }
+
+        case .selfDoubt:
+            switch voice {
+            case .warm:
+                return "Do not rush past doubt. Reflect back what you heard. Then cite one concrete piece of evidence of growth — a specific rep, a number that moved."
+            case .authoritative:
+                return "Counter doubt with evidence. Quote one specific number or rep that contradicts the doubting claim. Be factual, not cheerful."
+            case .concise:
+                return "One fact that contradicts the doubt. No reassurance speech."
+            case .executive:
+                return "Top-line evidence against the doubt. One data point, then the next action."
+            case .persuasive:
+                return "Build the counter-case: premise (doubt is normal at this stage), evidence (here is what moved), recommendation (do this next)."
+            case .storytelling:
+                return "Quote their own words from a strong rep. Show the distance between then and now."
+            case nil:
+                return "Cite one specific piece of evidence that counters the doubt, then give a concrete next step."
+            }
+
+        case .vulnerability:
+            switch voice {
+            case .warm:
+                return "Honor the vulnerability. Do not immediately coach. Acknowledge what they shared, then ask one gentle question about what they need."
+            case .authoritative:
+                return "Name what they shared with respect. Brief acknowledgement, no therapy language. Then give the grounded perspective and one move."
+            case .concise:
+                return "Brief, respectful acknowledgement. Then one focused move that meets them where they are."
+            case .executive:
+                return "Acknowledge the disclosure with composure. Reframe toward preparation — what they can control."
+            case .persuasive:
+                return "Validate the feeling with a normalizing frame, then build the case for the next step."
+            case .storytelling:
+                return "Honor the moment of honesty. Frame it as part of the arc — this is what growth looks like from inside."
+            case nil:
+                return "Acknowledge the vulnerability briefly and with respect, then offer one supportive next move."
+            }
+
+        case .fatigue:
+            switch voice {
+            case .warm:
+                return "Do not push harder. Validate the fatigue. Suggest a lighter rep or a pause. Ask what would make practice feel sustainable."
+            case .authoritative:
+                return "Name the fatigue as real. Prescribe a lighter session shape or a strategic rest. Do not lecture about consistency."
+            case .concise:
+                return "Fatigue is data. Prescribe rest or a lighter shape. One sentence."
+            case .executive:
+                return "Recommend: lighter load or strategic pause. Not everything requires pushing through."
+            case .persuasive:
+                return "Make the case for pacing. Rest is part of the training cycle, not a failure."
+            case .storytelling:
+                return "Frame the rest as part of the story. The pause between chapters matters."
+            case nil:
+                return "Acknowledge the fatigue. Suggest a lighter approach or rest without judgment."
+            }
+
+        case .celebrationSeeking:
+            switch voice {
+            case .warm:
+                return "Celebrate genuinely. Name the specific win — quote a number or a moment. Stay in the celebration before moving to what is next."
+            case .authoritative:
+                return "Affirm the result with one specific citation. Then name what to build on — the celebration IS the next-move setup."
+            case .concise:
+                return "Name the win. One fact. Then the carry-forward."
+            case .executive:
+                return "Top-line: earned result. Cite the evidence. Then recommend the build."
+            case .persuasive:
+                return "Build the case for why the win matters — connect it to the pattern, not just the moment."
+            case .storytelling:
+                return "Mark the milestone in the arc. Quote their actual improvement. Frame what comes next as the next chapter."
+            case nil:
+                return "Recognize the win with one specific citation before moving to the next step."
+            }
+
+        case .breakthrough:
+            switch voice {
+            case .warm:
+                return "Sit with the insight. Reflect it back. Ask what shifted. Then connect it to the work ahead."
+            case .authoritative:
+                return "Confirm the insight with evidence. Name what it unlocks for the next phase."
+            case .concise:
+                return "Good read. Name what it unlocks. One next move."
+            case .executive:
+                return "Confirmed. Here is what that insight means for the plan."
+            case .persuasive:
+                return "Connect the insight to the broader case. Show how it changes the evidence picture."
+            case .storytelling:
+                return "This is the turn in the story. Name what they saw. Connect it to what comes next."
+            case nil:
+                return "Confirm the insight, connect it to evidence, and name one next step it enables."
+            }
+
+        case .resistance:
+            switch voice {
+            case .warm:
+                return "Do not force. Name the resistance without judgment. Ask what would make the work feel worth doing right now."
+            case .authoritative:
+                return "Name the avoidance pattern directly but without shaming. Give one reason the prescribed work matters, then let them choose."
+            case .concise:
+                return "Name it. Offer one alternative. Their call."
+            case .executive:
+                return "Flag the pattern. Recommend one adjusted action. Decision is theirs."
+            case .persuasive:
+                return "Build the case for why this particular work matters now. If the case does not land, offer an alternative."
+            case .storytelling:
+                return "Name the chapter they are avoiding. Show what is on the other side."
+            case nil:
+                return "Acknowledge the resistance without judgment. Offer one adjusted alternative."
+            }
+
+        case .comparison:
+            switch voice {
+            case .warm:
+                return "Normalize the comparison impulse. Redirect to their own trajectory — what has shifted since they started."
+            case .authoritative:
+                return "Natural speakers are not the benchmark — deliberate practice is. Cite their own trajectory."
+            case .concise:
+                return "Their trajectory, not the comparison. One data point from their reps."
+            case .executive:
+                return "Reframe: benchmark is their own prior self, not someone else. Cite the delta."
+            case .persuasive:
+                return "Build the counter-case: natural talent is less predictive than deliberate practice. Cite their own evidence."
+            case .storytelling:
+                return "Every strong speaker has a version of this chapter. Tell their version — where they started, where they are."
+            case nil:
+                return "Redirect from comparison to their own trajectory. Cite one specific improvement."
+            }
+
+        case .overwhelm:
+            switch voice {
+            case .warm:
+                return "Slow down. Name that it feels like a lot. Pick ONE thing and make it small. Ask which one thing feels most important right now."
+            case .authoritative:
+                return "Cut the list to one. Name the single highest-leverage move and shelve the rest."
+            case .concise:
+                return "One thing. Not three. Name it."
+            case .executive:
+                return "Prioritize: one action item. Park the rest."
+            case .persuasive:
+                return "Narrow the case to one premise. The rest is noise right now."
+            case .storytelling:
+                return "Zoom in. One scene, not the whole act. Name the smallest version of the next move."
+            case nil:
+                return "Reduce to one action. Name it specifically and shelve the rest."
+            }
+
+        case .curiosity:
+            switch voice {
+            case .warm:
+                return "Match their curiosity. Answer the question with genuine detail, then connect it to their practice."
+            case .authoritative:
+                return "Answer directly, with the relevant evidence. Then name how it applies to their case."
+            case .concise:
+                return "Answer. Connect to their data. One next move."
+            case .executive:
+                return "Brief, substantive answer. Then the application to their case."
+            case .persuasive:
+                return "Build the explanation with evidence. Then show how it applies to their specific situation."
+            case .storytelling:
+                return "Tell the answer as a story they can see themselves inside of."
+            case nil:
+                return "Answer the question with substance, then connect it to their practice."
+            }
+        }
+    }
+
+    /// Scan recent user turns for a sustained emotional pattern. Returns a
+    /// summary only when the same signal appears in 2+ of the last 4 turns —
+    /// a single-turn signal is already handled by the per-turn detector. This
+    /// is a HYPOTHESIS from keyword frequency, never a diagnosis.
+    private static func detectArcPattern(
+        recentUserTurns: [String]
+    ) -> (signal: EmotionalSignal, turnCount: Int)? {
+        guard recentUserTurns.count >= 2 else { return nil }
+
+        let window = recentUserTurns.suffix(4)
+        var signalCounts: [EmotionalSignal: Int] = [:]
+
+        for turn in window {
+            let lower = turn.lowercased()
+            let signals = detectEmotionalSignals(lower)
+            for signal in signals {
+                signalCounts[signal, default: 0] += 1
+            }
+        }
+
+        // Only surface a pattern when 2+ turns carry the same signal
+        guard let (signal, count) = signalCounts.max(by: { $0.value < $1.value }),
+              count >= 2 else {
+            return nil
+        }
+
+        return (signal, count)
     }
 
     private static func isLowSignalGreeting(_ normalized: String) -> Bool {

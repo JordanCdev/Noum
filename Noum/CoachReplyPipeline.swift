@@ -40,6 +40,13 @@ enum CoachReplyPipeline {
         let previousCoachReply = latestUserIndex.flatMap { index in
             history[..<index].last { $0.role == .coach }?.text
         }
+        // EQ — recent user turns for sustained emotional pattern detection.
+        // Newest-first, capped at 6 so the arc detector can scan a meaningful
+        // window without unbounded history reads.
+        let recentUserTurns = history
+            .filter { $0.role == .user }
+            .suffix(6)
+            .map { $0.text }
 
         let context = CoachContextBuilder.userContext(
             profile: profileStore.profile,
@@ -63,7 +70,8 @@ enum CoachReplyPipeline {
             pendingGoalIntent: pendingGoalIntent,
             recentCheckIns: CoachCheckInStore.shared.recentForContext(limit: 2),
             latestUserTurn: latestUserTurn,
-            previousCoachReply: previousCoachReply
+            previousCoachReply: previousCoachReply,
+            recentUserTurns: recentUserTurns
         )
 
         // Deterministic-fallback context — assembled in the same main-actor
