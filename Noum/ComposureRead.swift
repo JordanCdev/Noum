@@ -78,12 +78,6 @@ enum ComposureReadEngine {
         hedgingPerMinute: Double?
     ) -> ComposureRead? {
         var scores: [Double] = []
-        var inputs = ComposureRead.Inputs(
-            vocalEnergyContributed: false,
-            pitchContributed: false,
-            pauseQualityContributed: false,
-            hedgingContributed: false
-        )
 
         // Channel 1 — vocal energy steadiness (M26).
         // Direct 0-1; higher = steadier.

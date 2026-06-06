@@ -32,7 +32,7 @@ import AVFoundation
 //   • `NSSpeechRecognitionUsageDescription` already lives in Info.plist.
 //   • `NSMicrophoneUsageDescription` already lives in Info.plist.
 //   • First press triggers both `SFSpeechRecognizer.requestAuthorization`
-//     and `AVAudioSession.requestRecordPermission` in sequence; the user
+//     and `AVAudioApplication.requestRecordPermission` in sequence; the user
 //     either grants both and we proceed, or we surface a typed-mode
 //     fallback prompt via the `unavailableReason` published property.
 //
@@ -284,14 +284,14 @@ final class AskNoumVoiceInput: ObservableObject {
         // `.spokenAudio` keeps voice-optimised processing; `.defaultToSpeaker`
         // routes the coach's voice out loud; `.duckOthers` quiets the soundscape.
         do {
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP, .duckOthers])
             try session.setActive(true, options: [])
         } catch {
             unavailableReason = .temporarilyUnavailable
             return
         }
         let micStatus = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            session.requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { granted in
                 cont.resume(returning: granted)
             }
         }

@@ -430,6 +430,8 @@ actor AICoachChatService {
         "the key insight is",
         "concrete next move",
         "this indicates",
+        "recent reps show",
+        "scores are down",
         "as an ai",
         "as your ai",
         "optimize your",

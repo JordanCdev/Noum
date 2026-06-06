@@ -433,51 +433,38 @@ struct AskNoumView: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(spacing: Spacing.sm) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(Typography.micro.weight(.bold))
-                    .foregroundStyle(AppColor.pro)
-                Text(headerEyebrow)
-                    .font(Typography.micro.weight(.bold))
-                    .foregroundStyle(AppColor.pro.opacity(0.85))
-                    .textCase(.uppercase)
-                    .tracking(0.8)
-                Spacer()
-                threadOptionsMenu
-            }
-            HStack(spacing: isHeaderCompact ? Spacing.sm : Spacing.md) {
-                NoumCharacter(
-                    // Living-coach-presence: the orb REACTS to the thread via
-                    // `orbMood` — `.thinking` while composing/writing a reply,
-                    // `.coaching` (warmer, leaning-in) once a conversation
-                    // exists, a gentle `.calm` greeting before the first
-                    // message. It shrinks on scroll but never disappears, so the
-                    // coach stays a present, reacting embodiment even compact.
-                    mood: orbMood,
-                    tint: AppColor.pro,
-                    size: isHeaderCompact ? 34 : 60,
-                    stage: characterStage
-                )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Noum")
-                        // Hardcoded 22pt swapped for the shared type scale:
-                        // cardTitle (20) at rest, headline (18) when compact.
-                        .font(isHeaderCompact ? Typography.headline : Typography.cardTitle)
-                    if !isHeaderCompact {
-                        Text(headerSubtitle)
-                            .font(Typography.body)
-                            .foregroundStyle(.secondary)
-                            .transition(.opacity)
-                    }
+        HStack(spacing: isHeaderCompact ? Spacing.sm : Spacing.md) {
+            NoumCharacter(
+                // Living-coach-presence: the orb REACTS to the thread via
+                // `orbMood` — `.thinking` while composing/writing a reply,
+                // `.coaching` (warmer, leaning-in) once a conversation
+                // exists, a gentle `.calm` greeting before the first
+                // message. It shrinks on scroll but never disappears, so the
+                // coach stays a present, reacting embodiment even compact.
+                mood: orbMood,
+                tint: AppColor.pro,
+                size: isHeaderCompact ? 34 : 56,
+                stage: characterStage
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Noum")
+                    // Hardcoded 22pt swapped for the shared type scale:
+                    // cardTitle (20) at rest, headline (18) when compact.
+                    .font(isHeaderCompact ? Typography.headline : Typography.cardTitle)
+                if !isHeaderCompact {
+                    Text(headerSubtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
                 }
-                Spacer()
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isHeaderCompact)
+            Spacer(minLength: Spacing.sm)
+            threadOptionsMenu
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isHeaderCompact)
         .padding(.horizontal, Spacing.lg)
-        .padding(.top, Spacing.sm)
-        .padding(.bottom, Spacing.md)
+        .padding(.top, Spacing.xs)
+        .padding(.bottom, Spacing.sm)
         .background(AppColor.cardBackground.opacity(0.5))
     }
 
@@ -544,13 +531,6 @@ struct AskNoumView: View {
         if !newValue {
             speaker.stop()
         }
-    }
-
-    private var headerEyebrow: String {
-        if let voice = voice {
-            return "Ask Noum \u{00B7} \(voice.title)"
-        }
-        return "Ask Noum"
     }
 
     private var headerSubtitle: String {
@@ -1701,101 +1681,105 @@ struct AskNoumView: View {
 
     /// The prominent talk surface. Reuses the EXACT control logic the text bar
     /// uses (`inputControlMode` + `performInputAction`) — only the presentation
-    /// changes: a large centered talk button, the spoken words shown big, and
-    /// text demoted to a small opt-in. The record → transcript → send flow is
+    /// changes: a compact talk control, the spoken words shown inline, and
+    /// text demoted to a keyboard icon. The record → transcript → send flow is
     /// identical, so this can't drift from the text path.
     private var voiceFirstBar: some View {
         let mode = inputControlMode
-        return VStack(spacing: Spacing.sm) {
+        return VStack(spacing: 0) {
             micNoticeRow
 
-            // The captured/spoken words, shown prominently. Live partial while
-            // recording; typed fallback still uses `draft` for review/edit.
-            if !voiceInput.partialTranscript.isEmpty {
-                Text(voiceInput.partialTranscript)
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(.horizontal, Spacing.lg)
-                    .transition(.opacity)
-            } else if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(draft)
-                    .font(Typography.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(.horizontal, Spacing.lg)
-            }
-
-            Button {
-                performInputAction(for: mode)
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(inputControlFill(for: mode))
-                        .frame(width: 72, height: 72)
-                    if mode == .recording {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                Button {
+                    performInputAction(for: mode)
+                } label: {
+                    ZStack {
                         Circle()
-                            .stroke(AppColor.brandBlue.opacity(0.35), lineWidth: 3)
-                            .frame(width: 84, height: 84)
-                            .transition(.opacity)
+                            .fill(inputControlFill(for: mode))
+                            .frame(width: 52, height: 52)
+                        if mode == .recording {
+                            Circle()
+                                .stroke(AppColor.brandBlue.opacity(0.32), lineWidth: 2)
+                                .frame(width: 60, height: 60)
+                                .transition(.opacity)
+                        }
+                        Image(systemName: inputControlGlyph(for: mode))
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                            .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                            .symbolEffect(.pulse, options: .repeating, isActive: mode == .processing && !reduceMotion)
                     }
-                    Image(systemName: inputControlGlyph(for: mode))
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(.white)
-                        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-                        .symbolEffect(.pulse, options: .repeating, isActive: mode == .processing && !reduceMotion)
                 }
-            }
-            .disabled(inputControlDisabled(for: mode))
-            .opacity((store.isAwaitingReply && mode != .speaking) ? 0.45 : 1.0)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: mode)
-            .accessibilityIdentifier("askNoum.voiceFirst.talk")
-            .accessibilityLabel(inputControlAccessibilityLabel(for: mode))
+                .disabled(inputControlDisabled(for: mode))
+                .opacity((store.isAwaitingReply && mode != .speaking) ? 0.45 : 1.0)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: mode)
+                .accessibilityIdentifier("askNoum.voiceFirst.talk")
+                .accessibilityLabel(inputControlAccessibilityLabel(for: mode))
 
-            Text(Self.voiceFirstStatus(
-                recording: voiceInput.state == .recording,
-                processing: voiceInput.state == .processing,
-                speaking: mode == .speaking,
-                hasText: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ))
-            .font(Typography.caption)
-            .foregroundStyle(.secondary)
-            .animation(nil, value: mode)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.voiceFirstStatus(
+                        recording: voiceInput.state == .recording,
+                        processing: voiceInput.state == .processing,
+                        speaking: mode == .speaking,
+                        hasText: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ))
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .animation(nil, value: mode)
 
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                    voiceFirstMode = false
+                    Text(voiceFirstPreviewText)
+                        .font(Typography.caption)
+                        .foregroundStyle(voiceFirstPreviewIsPlaceholder ? .tertiary : .secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
                 }
-                inputFocused = true
-            } label: {
-                HStack(spacing: 4) {
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        voiceFirstMode = false
+                    }
+                    inputFocused = true
+                } label: {
                     Image(systemName: "keyboard")
-                    Text("Type instead")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppColor.pro)
+                        .frame(width: 40, height: 40)
+                        .background(AppColor.pro.opacity(0.08), in: Circle())
                 }
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(AppColor.pro)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("askNoum.voiceFirst.typeInstead")
+                .accessibilityLabel("Type a message")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("askNoum.voiceFirst.typeInstead")
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.top, Spacing.sm)
-        .padding(.bottom, Spacing.md)
-        .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: voiceInput.state == .recording)
+    }
+
+    private var voiceFirstPreviewText: String {
+        let partial = voiceInput.partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !partial.isEmpty { return partial }
+        let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedDraft.isEmpty { return trimmedDraft }
+        return "Ask by voice"
+    }
+
+    private var voiceFirstPreviewIsPlaceholder: Bool {
+        voiceInput.partialTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Status line under the talk button. Pure + static so it's testable
     /// without the private `InputControlMode`.
     static func voiceFirstStatus(recording: Bool, processing: Bool, speaking: Bool, hasText: Bool) -> String {
-        if recording { return "Listening \u{2014} tap to send" }
-        if processing { return "Sending\u{2026}" }
-        if speaking { return "Coach is speaking \u{2014} tap to talk" }
-        if hasText { return "Tap to send" }
-        return "Tap to talk"
+        if recording { return "Listening" }
+        if processing { return "Sending..." }
+        if speaking { return "Coach speaking" }
+        if hasText { return "Ready to send" }
+        return "Ready"
     }
 
     /// Shared tap action for BOTH the compact text-bar control and the
@@ -2095,11 +2079,7 @@ struct AskNoumView: View {
     }
 
     private var textFieldPlaceholder: String {
-        if voiceInput.isAvailable {
-            // A5 voice-first: lead with talking; typing is the fallback.
-            return "Tap the mic to talk \u{2014} or type\u{2026}"
-        }
-        return "Message Noum\u{2026}"
+        "Message Noum..."
     }
 
     /// State-specific accessibility label for the voice modes of the

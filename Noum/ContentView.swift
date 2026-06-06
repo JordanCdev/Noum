@@ -96,6 +96,7 @@ struct ContentView: View {
     @State private var showBigMomentIntake: Bool = false
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
     private let isOnboardingUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_ONBOARDING")
+    private let launchedWithDeepLink = ProcessInfo.processInfo.arguments.contains("-DeepLink")
     private let aiHomeRecommendationService: AIHomeRecommendationServicing = AIHomeRecommendationService()
 
     private struct PracticeSuggestion {
@@ -507,8 +508,13 @@ struct ContentView: View {
         .onChange(of: coachingProfileStore.profile) { old, new in
             // Fire BigMoment intake once after a brand-new profile is saved
             // (old == nil, new != nil). Skip if a moment is already set or
-            // if the intake is already showing.
+            // if the intake is already showing. Do not steal focus from a
+            // direct route like Ask Noum; the intake is a home-root prompt.
             if old == nil, new != nil,
+               !launchedWithDeepLink,
+               !deepLinkRouter.hasReceivedRouteThisLaunch,
+               navigationPath.isEmpty,
+               deepLinkRouter.pending == nil,
                BigMomentStore.shared.activeMoment == nil,
                !showBigMomentIntake {
                 showBigMomentIntake = true
@@ -1880,25 +1886,20 @@ struct ContentView: View {
                   LessonsCatalog.lesson(id: lessonID) != nil else { return }
             navigationPath.append(AppDestination.lesson(id: lessonID))
         case "practice", "train":
-            navigationPath = NavigationPath()
-            navigationPath.append(AppDestination.practiceSelection)
+            replaceNavigationPath(with: .practiceSelection)
         case "review", "history":
-            navigationPath = NavigationPath()
-            navigationPath.append(AppDestination.sessionHistory)
+            replaceNavigationPath(with: .sessionHistory)
         case "profile", "social":
-            navigationPath = NavigationPath()
-            navigationPath.append(AppDestination.socialProfile)
+            replaceNavigationPath(with: .socialProfile)
         case "settings":
-            navigationPath = NavigationPath()
-            navigationPath.append(AppDestination.settings)
+            replaceNavigationPath(with: .settings)
         case "home":
-            navigationPath = NavigationPath()
+            replaceNavigationPath()
         case "league":
             navigationPath.append(AppDestination.league)
         case "path":
             navigationPath.append(AppDestination.pathJourney)
         case "ask", "asknoum":
-            navigationPath = NavigationPath()
             let pathMode = path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
             let queryMode = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?
@@ -1906,13 +1907,12 @@ struct ContentView: View {
                 .value?
                 .lowercased()
             if pathMode == "type" || pathMode == "chat" || queryMode == "type" || queryMode == "chat" {
-                navigationPath.append(AppDestination.askNoumTyped)
+                replaceNavigationPath(with: .askNoumTyped)
             } else {
-                navigationPath.append(AppDestination.askNoum)
+                replaceNavigationPath(with: .askNoum)
             }
         case "asktype", "askchat":
-            navigationPath = NavigationPath()
-            navigationPath.append(AppDestination.askNoumTyped)
+            replaceNavigationPath(with: .askNoumTyped)
         case "growth", "library":
             navigationPath.append(AppDestination.growthLibrary)
         case "lessons":
@@ -1929,6 +1929,18 @@ struct ContentView: View {
             // Unrecognised — no-op rather than crash.
             break
         }
+    }
+
+    /// Replace the stack in a single state write. Several deep-link routes used
+    /// to clear the path and then append in the same frame, which can trigger
+    /// SwiftUI's `NavigationRequestObserver tried to update multiple times per
+    /// frame` warning.
+    private func replaceNavigationPath(with destinations: AppDestination...) {
+        var path = NavigationPath()
+        for destination in destinations {
+            path.append(destination)
+        }
+        navigationPath = path
     }
 
     /// The node that was just newly-unlocked, if any. Drives the path

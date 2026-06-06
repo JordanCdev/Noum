@@ -94,6 +94,18 @@ final class VideoRecordingLifecycleTests: XCTestCase {
     }
 }
 
+// MARK: - Firebase bootstrap
+
+@Suite("FirebaseBootstrap")
+struct FirebaseBootstrapTests {
+    @Test func optionalServicesStartOnlyWhenConfigExistsAndCoreConfigured() {
+        #expect(!FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: false, configured: false))
+        #expect(!FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: false, configured: true))
+        #expect(!FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: true, configured: false))
+        #expect(FirebaseBootstrap.shouldStartOptionalServices(configurationPresent: true, configured: true))
+    }
+}
+
 // MARK: - Filler Detection Confidence Tests
 
 struct FillerDetectionTests {
@@ -3125,7 +3137,7 @@ struct DistanceFromGoalTests {
     }
 
     @Test func insufficientDataReturnsHalf() {
-        var b = CommunicationBaseline.empty
+        let b = CommunicationBaseline.empty
         // .empty has .insufficient confidence on all stats
         for goal in CoachingPriority.allCases {
             let d = b.distanceFromGoal(goal)
@@ -7096,7 +7108,8 @@ struct CoachContextBuilderTests {
         )
         #expect(normalized.contains("text chat defaults to 1-3 short sentences"))
         #expect(normalized.contains("Voice read-aloud should be tighter still"))
-        #expect(normalized.contains("recent reps show a decline"))
+        #expect(normalized.contains("report-style wording about scores being down"))
+        #expect(!normalized.contains("recent reps show a decline"))
         #expect(normalized.contains("The pattern I'd watch is"))
     }
 
@@ -8277,8 +8290,8 @@ struct AskNoumStoreTests {
         store.completeCoachTurn(id: ids1.coachID, outcome: .reply("First reply."))
         let ids2 = store.appendUserTurn("Second.")
         store.completeCoachTurn(id: ids2.coachID, outcome: .failure(.network)) // → system notice
-        let ids3 = store.appendUserTurn("Third.")
-        // ids3.coachID is still pending — should NOT be in replay.
+        _ = store.appendUserTurn("Third.")
+        // The third coach row is still pending — it should NOT be in replay.
 
         let replay = store.replayForModel
         // 3 user turns + 1 coach reply = 4. The system notice + the
@@ -14940,11 +14953,6 @@ struct CoachMemoryStoreTests {
 struct BigMomentCountdownCopyTests {
 
     private func subtitleFor(title: String, days: Int, category: BigMomentCategory = .presentation) -> String? {
-        let moment = BigMoment(
-            title: title,
-            date: Calendar.current.date(byAdding: .day, value: days, to: Date()),
-            category: category
-        )
         // Replicate HomeCoachCard.bigMomentCountdownCopy logic directly.
         guard days >= 0 && days <= 30 else { return nil }
         let label = title.count <= 40 ? title : category.displayName
@@ -15552,6 +15560,7 @@ struct ForwardPlanRendererTests {
         let plan = makeForwardPlan()
         let voices: [SpeakingStyleGoal?] = [.authoritative, .warm, .concise, .persuasive, .executive, .storytelling, nil]
         var lastClose: String? = nil
+        var sawVariation = false
         for voice in voices {
             let msg = ForwardPlanRenderer.coachMessage(for: plan, voice: voice, bigMoment: nil)
             // The closing line is the final paragraph; capture it.
@@ -15564,10 +15573,11 @@ struct ForwardPlanRendererTests {
             // — checking each voice's exact copy would over-pin the
             // catalogue.
             if let last = lastClose, last != close {
-                #expect(true) // at least one voice diverges from the last
+                sawVariation = true
             }
             lastClose = close
         }
+        #expect(sawVariation, "At least one voice should diverge from the previous closing line.")
     }
 
     @Test func rendererCarriesNoExclamationMarks() {
@@ -15714,9 +15724,7 @@ struct CoachingPlanCardVisibilityTests {
         let state = CoachingPlanCardVisibility.resolve(
             plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: momentID
         )
-        if case .live = state {
-            #expect(true)
-        } else {
+        if case .live = state {} else {
             #expect(Bool(false), "Expected .live state when IDs match")
         }
     }
@@ -15726,9 +15734,7 @@ struct CoachingPlanCardVisibilityTests {
         let state = CoachingPlanCardVisibility.resolve(
             plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: nil
         )
-        if case .live = state {
-            #expect(true)
-        } else {
+        if case .live = state {} else {
             #expect(Bool(false))
         }
     }
@@ -15740,9 +15746,7 @@ struct CoachingPlanCardVisibilityTests {
         let state = CoachingPlanCardVisibility.resolve(
             plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: newID
         )
-        if case .stale = state {
-            #expect(true)
-        } else {
+        if case .stale = state {} else {
             #expect(Bool(false))
         }
     }
@@ -15752,9 +15756,7 @@ struct CoachingPlanCardVisibilityTests {
         let state = CoachingPlanCardVisibility.resolve(
             plan: plan, profile: minimalProfile(), sessions: [], activeBigMomentID: nil
         )
-        if case .stale = state {
-            #expect(true)
-        } else {
+        if case .stale = state {} else {
             #expect(Bool(false))
         }
     }
@@ -19195,6 +19197,13 @@ struct AICoachChatReplyQualityGateTests {
             in: "Based on your data, the key insight is that you should optimize your opening."
         )
         #expect(issue == .roboticPhrase("based on your data"))
+    }
+
+    @Test func rejectsReportStyleDeclinePhrase() {
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Recent reps show a decline in scores, so target fillers next."
+        )
+        #expect(issue == .roboticPhrase("recent reps show"))
     }
 
     @Test func rejectsBareClarification() {
@@ -29313,11 +29322,11 @@ struct AskNoumVoiceFirstDefaultTests {
 
     @Test func voiceFirstStatusReadsLikeAConversation() {
         guard #available(iOS 17.0, *) else { return }
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: false) == "Tap to talk")
-        #expect(AskNoumView.voiceFirstStatus(recording: true, processing: false, speaking: false, hasText: false).contains("Listening"))
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: true, speaking: false, hasText: false).contains("Sending"))
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: true, hasText: false).contains("speaking"))
-        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: true) == "Tap to send")
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: false) == "Ready")
+        #expect(AskNoumView.voiceFirstStatus(recording: true, processing: false, speaking: false, hasText: false) == "Listening")
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: true, speaking: false, hasText: false) == "Sending...")
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: true, hasText: false) == "Coach speaking")
+        #expect(AskNoumView.voiceFirstStatus(recording: false, processing: false, speaking: false, hasText: true) == "Ready to send")
     }
 }
 
@@ -32143,7 +32152,7 @@ struct RebuildVerdictContextTests {
 
     // MARK: - Fixtures
 
-    private static let rebuiltHypothesis =
+    nonisolated private static let rebuiltHypothesis =
         "Pace appears to be the highest-leverage focus across recent reps."
 
     private static func pushbackChange(
@@ -32711,7 +32720,7 @@ struct CaseAnchoredAmplificationTests {
 
     // MARK: - Fixtures
 
-    private static let rebuiltHypothesis =
+    nonisolated private static let rebuiltHypothesis =
         "Pace appears to be the highest-leverage focus across recent reps."
 
     private static func pushbackChange(
@@ -33378,7 +33387,7 @@ struct InterventionUnderRepeatedPushbackTests {
 
     // MARK: - Fixtures
 
-    private static let rebuiltHypothesis =
+    nonisolated private static let rebuiltHypothesis =
         "Pace appears to be the highest-leverage focus across recent reps."
 
     private static func pushbackChange(
@@ -34178,7 +34187,7 @@ struct CaseAnchoredContinuationTests {
 
     // MARK: - Fixtures
 
-    private static let rebuiltHypothesis =
+    nonisolated private static let rebuiltHypothesis =
         "Pace appears to be the highest-leverage focus across recent reps."
 
     private static func pushbackChange(
@@ -34994,7 +35003,7 @@ struct InterventionUnderPushbackContinuationTests {
 
     // MARK: - Fixtures
 
-    private static let rebuiltHypothesis =
+    nonisolated private static let rebuiltHypothesis =
         "Pace appears to be the highest-leverage focus across recent reps."
 
     private static func pushbackChange(
@@ -35853,7 +35862,7 @@ struct SecondCyclePushbackContextTests {
 
     // MARK: - Fixtures
 
-    private static let rebuiltHypothesis =
+    nonisolated private static let rebuiltHypothesis =
         "Filler reduction may be the highest-leverage focus across recent reps."
 
     private static func firstCyclePushback(

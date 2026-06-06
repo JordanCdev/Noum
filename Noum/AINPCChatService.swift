@@ -3,6 +3,9 @@ import Combine
 #if canImport(FirebaseRemoteConfig)
 import FirebaseRemoteConfig
 #endif
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
 #if canImport(FirebaseAuth)
 import FirebaseAuth
 #endif
@@ -37,7 +40,8 @@ public final class AINPCChatService: ObservableObject {
     @Published public private(set) var streamedText: String = ""
 
     private var streamURL: URL? {
-        #if canImport(FirebaseRemoteConfig)
+        #if canImport(FirebaseRemoteConfig) && canImport(FirebaseCore)
+        guard FirebaseApp.app() != nil else { return nil }
         if let s = RemoteConfig.remoteConfig()["ai_stream_url"].stringValue, !s.isEmpty {
             return URL(string: s)
         }
@@ -309,6 +313,12 @@ public final class AINPCChatService: ObservableObject {
     #if canImport(FirebaseAuth)
     private func currentIDToken() async throws -> String {
         try await withCheckedThrowingContinuation { cont in
+            #if canImport(FirebaseCore)
+            guard FirebaseApp.app() != nil else {
+                cont.resume(throwing: NSError(domain: "AINPCChatService", code: 503, userInfo: [NSLocalizedDescriptionKey: "Firebase is not configured"]))
+                return
+            }
+            #endif
             guard let user = Auth.auth().currentUser else {
                 cont.resume(throwing: NSError(domain: "AINPCChatService", code: 401, userInfo: [NSLocalizedDescriptionKey: "No signed-in user"]))
                 return

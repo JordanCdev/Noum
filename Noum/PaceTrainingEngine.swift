@@ -120,9 +120,9 @@ final class PaceTrainingEngine: ObservableObject {
 
     // MARK: Configuration
 
-    static let defaultTargetWPM: Double = 130
-    static let zoneWidth: Double = 20
-    static let drillDuration: TimeInterval = 75
+    nonisolated static let defaultTargetWPM: Double = 130
+    nonisolated static let zoneWidth: Double = 20
+    nonisolated static let drillDuration: TimeInterval = 75
 
     // MARK: Published State
 

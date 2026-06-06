@@ -246,13 +246,13 @@ class SpeechRecognizerViewModel: ObservableObject {
         pitchAnalyzer = nil
 
         do {
-            // .allowBluetooth lets AirPods serve as both mic and speaker.
+            // .allowBluetoothHFP lets AirPods serve as both mic and speaker.
             // Must be set before AVAudioEngine inspects inputNode so the simulator
             // returns a valid (non-zero-channel) input format.
             try AVAudioSession.sharedInstance().setCategory(
                 .playAndRecord,
                 mode: .default,
-                options: [.defaultToSpeaker, .allowBluetooth]
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {

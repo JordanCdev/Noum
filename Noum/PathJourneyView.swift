@@ -766,13 +766,11 @@ struct PracticeJourneySnapshot {
             : Double(recentSessions.compactMap(\.score).reduce(0, +)) / Double(recentSessions.compactMap(\.score).count)
 
         let streak = currentStreak(from: sessions, calendar: calendar)
-        let consistency = min(1, Double(practicedDays) / Double(windowDays))
         let scoreQuality = min(1, averageScore / 100)
         let fillerQuality = max(0, 1 - (averageFillers / 8))
         let durationQuality = min(1, averageDuration / 45)
         let streakQuality = min(1, Double(streak) / 7)
         let quality = min(1, (scoreQuality * 0.30) + (fillerQuality * 0.30) + (durationQuality * 0.20) + (streakQuality * 0.20))
-        let streakMomentum = max(0, Double(streak - 1) / Double(windowDays))
 
         // Reveal progress: purely linear — each practiced day reveals 1/21 of the path.
         let revealProgress = min(1.0, Double(practicedDays) / Double(windowDays))

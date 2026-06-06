@@ -182,7 +182,14 @@ struct NoumApp: App {
 @MainActor
 final class DeepLinkRouter: ObservableObject {
     static let shared = DeepLinkRouter()
-    @Published var pending: URL?
+    @Published private(set) var hasReceivedRouteThisLaunch = false
+    @Published var pending: URL? {
+        didSet {
+            if pending != nil {
+                hasReceivedRouteThisLaunch = true
+            }
+        }
+    }
     private init() {}
 }
 #endif
