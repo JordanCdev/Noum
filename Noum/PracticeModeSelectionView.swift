@@ -65,6 +65,24 @@ struct PracticeModePrescriptionCopy {
     static func escapeLabel() -> String {
         "Pick another"
     }
+
+    static func prescriptionLine(focus: String?, target: String?) -> String? {
+        let cleanTarget = target?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanFocus = focus?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetValue = cleanTarget.flatMap { $0.isEmpty ? nil : $0 }
+        let focusValue = cleanFocus.flatMap { $0.isEmpty ? nil : $0 }
+
+        switch (targetValue, focusValue) {
+        case let (target?, focus?) where target.localizedCaseInsensitiveCompare(focus) != .orderedSame:
+            return "Target \(target) \u{00B7} Focus \(focus)"
+        case let (target?, _):
+            return "Target \(target)"
+        case let (nil, focus?):
+            return "Focus \(focus)"
+        case (nil, nil):
+            return nil
+        }
+    }
 }
 
 struct PracticeModeAvailability: Equatable {
@@ -282,7 +300,7 @@ struct PracticeModeSelectionView: View {
         let option = recommendedOption
         let reason = cachedRecommendedReason ?? option.recommendedReason
         let snapshot = masteryStore.snapshot(for: option.mode)
-        return VStack(alignment: .leading, spacing: Spacing.md) {
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: Spacing.md) {
                 modeIcon(option)
 
@@ -306,8 +324,9 @@ struct PracticeModeSelectionView: View {
             }
 
             Text(reason)
-                .font(Typography.body)
+                .font(.subheadline)
                 .foregroundStyle(.primary)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
 
             recommendedSuccessMarker(tint: option.tint)
@@ -340,64 +359,40 @@ struct PracticeModeSelectionView: View {
             .accessibilityIdentifier("practiceModes.recommendedHero.pickAnother")
             .accessibilityHint("Shows the other practice modes.")
         }
-        .padding(Spacing.lg)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(modeCardBackground(option, isRecommended: true, isSelected: true))
-        .shadow(color: option.tint.opacity(0.16), radius: 22, y: 10)
+        .shadow(color: option.tint.opacity(0.10), radius: 16, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("practiceModes.recommendedHero")
     }
 
     private func recommendedSuccessMarker(tint: Color) -> some View {
-        let focus = cachedRecommendedFocus?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let target = cachedRecommendedTarget?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(alignment: .leading, spacing: 8) {
-            if let target, !target.isEmpty {
-                markerPill(
-                    systemImage: "target",
-                    label: "Target",
-                    value: target,
-                    tint: tint
-                )
-            }
-            if let focus, !focus.isEmpty, focus != target {
-                markerPill(
-                    systemImage: "viewfinder",
-                    label: "Focus",
-                    value: focus,
-                    tint: tint.opacity(0.82)
-                )
+        Group {
+            if let line = PracticeModePrescriptionCopy.prescriptionLine(
+                focus: cachedRecommendedFocus,
+                target: cachedRecommendedTarget
+            ) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "target")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(tint)
+                        .accessibilityHidden(true)
+
+                    Text(line)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(line)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func markerPill(
-        systemImage: String,
-        label: String,
-        value: String,
-        tint: Color
-    ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
-
-            Text("\(label):")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(tint)
-
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, Spacing.sm)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.10), in: Capsule())
-        .accessibilityElement(children: .combine)
     }
 
     private var otherWaysSection: some View {

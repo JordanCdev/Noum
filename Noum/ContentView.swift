@@ -232,16 +232,9 @@ struct ContentView: View {
 
     private struct PracticeSuggestion {
         let title: String
-        let detail: String
         let focus: String
         let target: String
         let mode: PracticeMode
-        let recommendedTone: IMTargetTone?
-        let recommendedScenario: IMConversationScenario?
-        let benefit: String
-        let tint: Color
-        var suggestedTimedDifficulty: TimedPracticeDifficulty? = nil
-        var suggestedTheme: PromptTheme = .all
     }
 
     private var homeAccessibilityIsSuppressed: Bool {
@@ -303,19 +296,12 @@ struct ContentView: View {
                             //  3. AIWeeklyInsightCard — only after three
                             //     current-week reps.
                             //
-                            // Removed and where the surface still lives:
-                            //  • DailyGoalCard / DailyChallengeTile —
-                            //    attendance work stays in League and
-                            //    notifications, not Home.
-                            //  • streakCard — already in the hero chip.
-                            //  • nextLessonCard — reachable via Path /
-                            //    Review.
-                            //  • progressCard — rank/level is identity,
-                            //    lives on Profile.
-                            //  • suggestedPracticeCard — duplicated the
-                            //    quickStartCard's primary intent.
-                            //  • VoiceMetricsCard — raw diagnostics live on
-                            //    Profile/History, not the coach-led Home.
+                            // Retired Home dashboard surfaces stay out of
+                            // the tree. Attendance, rank/level, lessons,
+                            // raw diagnostics and alternate practice entry
+                            // points now live in their owned routes instead
+                            // of competing with the coach-led Home.
+                            //
                             // Premium personal-best anchor — M14 demotion:
                             // this is no longer the always-on top card
                             // whenever there happens to be a current-week
@@ -358,10 +344,9 @@ struct ContentView: View {
                             // Reversible for developer inspection via
                             // `practice.showAllHomeCards`.
                             let gate = homeCardGate
-                            // M14 redesign: HomeCoachCard replaces the old
-                            // heroCard + quickStartCard pair. One composed
-                            // hero with NoumCharacter present, the coach's
-                            // recommendation as primary copy, and a single
+                            // M14 redesign: HomeCoachCard is the single
+                            // composed hero with NoumCharacter present, the
+                            // coach's recommendation as primary copy, and a single
                             // Begin CTA. The recommendation pipeline
                             // (RecommendationBiasEngine + CoachingPlanner)
                             // feeds it directly — no new coaching logic.
@@ -1048,196 +1033,33 @@ struct ContentView: View {
         }
     }
 
-    private var primarySuggestion: PracticeSuggestion {
-        let sessions = sessionStore.sessions
-        let plan = CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile)
-        let bias = recommendationBiasBlueprint
-
-        guard let latest = sessions.first else {
-            return PracticeSuggestion(
-                title: "Start with a clean baseline rep",
-                detail: "Timed rep to establish your baseline.",
-                focus: "Baseline",
-                target: "Clean rep",
-                mode: .timed,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "Best for establishing a clean baseline.",
-                tint: .blue
-            )
-        }
-
-        if bias.source == .caseIntervention {
-            return suggestion(
-                from: bias,
-                title: "Continue the current intervention",
-                detail: bias.whyNow
-            )
-        }
-
-        let recent = Array(sessions.prefix(5))
-        let averageFillers = Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
-        let averagePace = Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
-        let averageDuration = recent.map(\.duration).reduce(0, +) / Double(recent.count)
-        let timedSnapshot = modeSnapshot(for: .timed, sessions: recent)
-        let suddenDeathSnapshot = modeSnapshot(for: .suddenDeath, sessions: recent)
-        let ahCounterSnapshot = modeSnapshot(for: .ahCounter, sessions: recent)
-        let targetFillers = max(0, Int(floor(min(averageFillers, Double(latest.fillerWordCount)) - 1)))
-        let strongControl = averageFillers <= 1.5 && latest.fillerWordCount <= 1 && averageDuration >= 30
-        let rushedDelivery = averagePace >= 155 || latest.wordsPerMinute >= 165
-        let shortAnswers = averageDuration < 25 || latest.duration < 25
-        let fillerPressure = averageFillers >= 4 || latest.fillerWordCount >= 5
-
-        if strongControl {
-            let mode: PracticeMode = suddenDeathSnapshot.count > 0 ? .suddenDeath : .timed
-            return PracticeSuggestion(
-                title: mode == .suddenDeath ? "Step up into pressure" : "Push a sharper timed rep",
-                detail: mode == .suddenDeath
-                    ? "Your filler control is strong enough to push into a harder mode."
-                    : "Your control is steady. Push for a cleaner, firmer timed answer.",
-                focus: "Pressure",
-                target: mode == .suddenDeath ? "Zero fillers" : "35s+",
-                mode: mode,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == mode })?.benefit ?? "",
-                tint: AppColor.tint(for: mode)
-            )
-        }
-
-        if fillerPressure {
-            return PracticeSuggestion(
-                title: "Clean up the next opening",
-                detail: "Too many fillers usually means the pressure is too high right now.",
-                focus: "Cleaner opening",
-                target: "\(targetFillers) fillers or less",
-                mode: timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .timed : .ahCounter,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == (timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .timed : .ahCounter) })?.benefit ?? "",
-                tint: timedSnapshot.averageScore >= ahCounterSnapshot.averageScore ? .blue : .green
-            )
-        }
-
-        if rushedDelivery {
-            return PracticeSuggestion(
-                title: "Slow the pace without losing control",
-                detail: "The message is getting rushed, so the next rep should train calmer spacing.",
-                focus: "Pacing",
-                target: "<150 WPM",
-                mode: .ahCounter,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .ahCounter })?.benefit ?? "",
-                tint: .green
-            )
-        }
-
-        if shortAnswers {
-            return PracticeSuggestion(
-                title: "Extend the next answer",
-                detail: "Your answers are ending too early to build real speaking stamina.",
-                focus: "Longer answer",
-                target: "30s+",
-                mode: .timed,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "",
-                tint: .blue
-            )
-        }
-
-        if let plan, plan.strongestMode == .suddenDeath, suddenDeathSnapshot.averageFillers <= 2.0 {
-            return PracticeSuggestion(
-                title: "Lean into the pressure rep",
-                detail: "Recent sudden-death runs suggest you can handle more pressure.",
-                focus: "Pressure",
-                target: "Zero fillers",
-                mode: .suddenDeath,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .suddenDeath })?.benefit ?? "",
-                tint: .orange
-            )
-        }
-
-        if timedSnapshot.count >= 3 && timedSnapshot.averageFillers <= 2.5 && timedSnapshot.averageDuration >= 30 {
-            return PracticeSuggestion(
-                title: "Graduate to a harder rep",
-                detail: "Your timed sessions are stable enough to turn the pressure up.",
-                focus: "Pressure",
-                target: "Zero fillers",
-                mode: .suddenDeath,
-                recommendedTone: nil,
-                recommendedScenario: nil,
-                benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .suddenDeath })?.benefit ?? "",
-                tint: .orange
-            )
-        }
-
-        return PracticeSuggestion(
-            title: bias.recommendedMode == .imConversation ? "Train the live interaction" : (plan?.strongestMode == .ahCounter ? "Keep the delivery composed" : "Keep the streak deliberate"),
-            detail: plan?.encouragement ?? bias.whyNow,
-            focus: bias.focus,
-            target: bias.target,
-            mode: bias.recommendedMode,
-            recommendedTone: bias.recommendedTone,
-            recommendedScenario: bias.recommendedScenario,
-            benefit: bias.modeBenefit,
-            tint: AppColor.tint(for: bias.recommendedMode),
-            suggestedTimedDifficulty: bias.suggestedTimedDifficulty,
-            suggestedTheme: bias.suggestedTheme
-        )
-    }
-
     private var effectiveSuggestion: PracticeSuggestion {
         let bias = recommendationBiasBlueprint
         if bias.source == .caseIntervention {
             return normalizedSuggestion(
                 suggestion(
                     from: bias,
-                    title: "Continue the current intervention",
-                    detail: bias.whyNow
+                    title: "Continue the current intervention"
                 )
             )
         }
 
         guard let aiRecommendation,
               let mode = PracticeMode(rawValue: aiRecommendation.recommendedMode) else {
-            return normalizedSuggestion(primarySuggestion)
+            return normalizedSuggestion(
+                suggestion(
+                    from: bias,
+                    title: defaultSuggestionTitle(for: bias)
+                )
+            )
         }
 
         return normalizedSuggestion(PracticeSuggestion(
             title: aiRecommendation.title,
-            detail: aiRecommendation.detail,
             focus: aiRecommendation.focus,
             target: aiRecommendation.target,
-            mode: mode,
-            recommendedTone: aiRecommendation.recommendedTone.flatMap(IMTargetTone.init(rawValue:)) ?? bias.recommendedTone,
-            recommendedScenario: aiRecommendation.recommendedScenario.flatMap(IMConversationScenario.init(rawValue:)) ?? bias.recommendedScenario,
-            benefit: aiRecommendation.modeBenefit.isEmpty ? bias.modeBenefit : aiRecommendation.modeBenefit,
-            tint: AppColor.tint(for: mode)
+            mode: mode
         ))
-    }
-
-    private var sessionsThisWeek: Int {
-        let calendar = Calendar.current
-        let now = Date()
-        return sessionStore.sessions.filter { calendar.isDate($0.date, equalTo: now, toGranularity: .weekOfYear) }.count
-    }
-
-    private var averageFillersText: String {
-        guard !sessionStore.sessions.isEmpty else { return "0.0" }
-        let recent = Array(sessionStore.sessions.prefix(5))
-        let average = Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
-        return String(format: "%.1f", average)
-    }
-
-    private var averagePaceText: String {
-        guard !sessionStore.sessions.isEmpty else { return "--" }
-        let recent = Array(sessionStore.sessions.prefix(5))
-        let average = Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
-        return "\(Int(average.rounded())) WPM"
     }
 
     private var recommendationBiasContext: RecommendationBiasContext {
@@ -1258,38 +1080,26 @@ struct ContentView: View {
 
     private func suggestion(
         from bias: RecommendationBiasBlueprint,
-        title: String? = nil,
-        detail: String? = nil
+        title: String? = nil
     ) -> PracticeSuggestion {
         PracticeSuggestion(
             title: title ?? (bias.recommendedMode == .imConversation ? "Train the live interaction" : "Keep the streak deliberate"),
-            detail: detail ?? bias.whyNow,
             focus: bias.focus,
             target: bias.target,
-            mode: bias.recommendedMode,
-            recommendedTone: bias.recommendedTone,
-            recommendedScenario: bias.recommendedScenario,
-            benefit: bias.modeBenefit,
-            tint: AppColor.tint(for: bias.recommendedMode),
-            suggestedTimedDifficulty: bias.suggestedTimedDifficulty,
-            suggestedTheme: bias.suggestedTheme
+            mode: bias.recommendedMode
         )
     }
 
-    private var primaryTargetText: String {
-        effectiveSuggestion.target
-    }
-
-    private var primaryActionLabel: String {
-        switch effectiveSuggestion.mode {
+    private func defaultSuggestionTitle(for bias: RecommendationBiasBlueprint) -> String {
+        switch bias.recommendedMode {
         case .timed:
-            return "Start"
+            return "Build the next clean rep"
         case .suddenDeath:
-            return "Begin"
+            return "Test the pressure"
         case .ahCounter:
-            return "Start"
+            return "Steady the next rep"
         case .imConversation:
-            return "Begin"
+            return "Train the live interaction"
         }
     }
 
@@ -1410,53 +1220,6 @@ struct ContentView: View {
     private var pendingPathCelebration: PathNode? {
         guard let id = pathProgress.pendingCelebrationNodeID else { return nil }
         return PathNodeRegistry.all.first(where: { $0.0.id == id })?.0
-    }
-
-    private var retentionSnapshot: RetentionLoopSnapshot {
-        RetentionLoopEngine.snapshot(
-            sessions: sessionStore.sessions,
-            profile: coachingProfileStore.profile
-        )
-    }
-
-    private var recommendedPracticeSummary: String {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        guard let latest = recent.first else {
-            return "This is the best next rep to establish a useful speaking baseline."
-        }
-
-        let averageFillers = Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
-        let averageDuration = recent.map(\.duration).reduce(0, +) / Double(recent.count)
-        let averagePace = Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
-        let timedSnapshot = modeSnapshot(for: .timed, sessions: recent)
-        let suddenDeathSnapshot = modeSnapshot(for: .suddenDeath, sessions: recent)
-        let ahCounterSnapshot = modeSnapshot(for: .ahCounter, sessions: recent)
-
-        switch effectiveSuggestion.mode {
-        case .timed:
-            if averageDuration < 25 || latest.duration < 25 {
-                return "Recent answers have been short, so timed reps should help you finish thoughts more completely."
-            }
-            if timedSnapshot.count > 0 && timedSnapshot.averageScore >= max(suddenDeathSnapshot.averageScore, ahCounterSnapshot.averageScore) {
-                return "Your strongest recent sessions have come in timed mode, so this rep builds on what is already working."
-            }
-            return "Your recent history suggests you need more structure, and timed reps are the clearest place to build it."
-        case .suddenDeath:
-            if suddenDeathSnapshot.count > 0 && suddenDeathSnapshot.averageFillers <= 2 {
-                return "Your recent pressure reps have held up well, so this is the right time to push the difficulty higher."
-            }
-            return "Your recent sessions look steadier, so a pressure rep is the next useful test of control."
-        case .ahCounter:
-            if averagePace >= 155 || latest.wordsPerMinute >= 165 {
-                return "Recent sessions have been rushed, so this rep should help you slow down and create more space."
-            }
-            if averageFillers >= 4 || latest.fillerWordCount >= 5 {
-                return "Recent sessions show filler pressure, so this rep should help you clean up the opening."
-            }
-            return "Your recent history points to pacing and filler control as the next thing to tighten."
-        case .imConversation:
-            return "Recent sessions suggest the next gain is applying your delivery in a more realistic live conversation."
-        }
     }
 
     private var recommendationCacheKey: String {
@@ -1593,62 +1356,6 @@ struct ContentView: View {
         return Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: latest.date), to: Calendar.current.startOfDay(for: Date())).day ?? 0
     }
 
-    private func modeSnapshot(for mode: PracticeMode, sessions: [PracticeSession]) -> ModeSnapshot {
-        let matching = sessions.filter { $0.mode == mode }
-        guard !matching.isEmpty else {
-            return ModeSnapshot(
-                mode: mode,
-                count: 0,
-                averageFillers: .greatestFiniteMagnitude,
-                averageDuration: 0,
-                averagePace: 0,
-                averageScore: 0
-            )
-        }
-
-        let averageFillers = Double(matching.map(\.fillerWordCount).reduce(0, +)) / Double(matching.count)
-        let averageDuration = matching.map(\.duration).reduce(0, +) / Double(matching.count)
-        let averagePace = Double(matching.map(\.wordsPerMinute).reduce(0, +)) / Double(matching.count)
-        let scored = matching.compactMap(\.score)
-        let averageScore = scored.isEmpty ? 0 : Double(scored.reduce(0, +)) / Double(scored.count)
-
-        return ModeSnapshot(
-            mode: mode,
-            count: matching.count,
-            averageFillers: averageFillers,
-            averageDuration: averageDuration,
-            averagePace: averagePace,
-            averageScore: averageScore
-        )
-    }
-
-    private func practiceAppDestination(for suggestion: PracticeSuggestion) -> AppDestination {
-        if suggestion.mode == .timed {
-            // Seed the theme picker with the goal-biased suggestion so the first
-            // topic the user sees is matched to their coaching goal. User can still
-            // change it inside the practice view.
-            if suggestion.suggestedTheme != .all {
-                UserDefaults.standard.set(
-                    suggestion.suggestedTheme.rawValue,
-                    forKey: "timedPractice.selectedTheme"
-                )
-            }
-        }
-        // Round 17: destination mapping collapsed into
-        // `SummaryLookingAheadRouter` so this surface, `HomeCoachCard`,
-        // and the post-rep "Looking ahead" launch share one tested
-        // mode-to-destination switch (incl. the IM-unavailable fallback
-        // to Timed). Theme caching above stays here — it's the
-        // suggestion-specific side effect, not part of the destination
-        // contract.
-        return SummaryLookingAheadRouter.destination(
-            for: suggestion.mode,
-            scenario: suggestion.recommendedScenario,
-            tone: suggestion.recommendedTone,
-            imAvailable: IMModeAvailability.isAvailable
-        )
-    }
-
     private func normalizedSuggestion(_ suggestion: PracticeSuggestion) -> PracticeSuggestion {
         guard suggestion.mode == .imConversation, !IMModeAvailability.isAvailable else {
             return suggestion
@@ -1656,34 +1363,11 @@ struct ContentView: View {
 
         return PracticeSuggestion(
             title: "Keep the next rep deliberate",
-            detail: "Conversation mode is offline right now, so train the same control in a live speaking drill.",
             focus: "Consistency",
             target: "Clean rep",
-            mode: .timed,
-            recommendedTone: nil,
-            recommendedScenario: nil,
-            benefit: RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })?.benefit ?? "",
-            tint: .blue
+            mode: .timed
         )
     }
-
-    private func suggestionSubtitle(for suggestion: PracticeSuggestion) -> String {
-        guard suggestion.mode == .imConversation,
-              let scenario = suggestion.recommendedScenario,
-              let tone = suggestion.recommendedTone else {
-            return "Mode: \(suggestion.mode.displayLabel)"
-        }
-        return "Mode: \(suggestion.mode.displayLabel) • \(scenario.title) • \(tone.title)"
-    }
-
-    // Rank helpers forwarded from ProfileManager extension (PracticeSupport.swift)
-    private var levelProgressLabel: String { profile.levelProgressLabel }
-    private var rankSymbol: String { profile.rankSymbol }
-    private var rankTint: Color { profile.rankTint }
-    private var rankDescriptor: String { profile.rankDescriptor }
-    private var rankTitle: String { profile.rankTitle }
-    private var nextRankTitle: String { profile.nextRankTitle }
-
 }
 
 /// Press-feedback style for Home's shortcut dock. Reduced-motion users keep

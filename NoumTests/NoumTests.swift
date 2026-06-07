@@ -9878,6 +9878,23 @@ struct PracticeModePrescriptionCopyTests {
         #expect(PracticeModePrescriptionCopy.escapeLabel() == "Pick another")
     }
 
+    @Test func prescriptionLineCollapsesTargetAndFocusIntoOneRead() {
+        let line = PracticeModePrescriptionCopy.prescriptionLine(
+            focus: "Longer answer",
+            target: "30s+"
+        )
+
+        #expect(line == "Target 30s+ \u{00B7} Focus Longer answer")
+    }
+
+    @Test func prescriptionLineSuppressesEmptyOrDuplicateSignals() {
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: nil) == nil)
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "  ", target: "\n") == nil)
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: nil) == "Focus Longer answer")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: nil, target: "30s+") == "Target 30s+")
+        #expect(PracticeModePrescriptionCopy.prescriptionLine(focus: "Longer answer", target: "longer answer") == "Target longer answer")
+    }
+
     @Test func prescriptionCopyAvoidsUrgencyAndFanfare() {
         let copy = [
             PracticeModePrescriptionCopy.heroEyebrow,
@@ -22422,6 +22439,33 @@ struct IMHistoryExportTests {
 }
 
 struct SessionHistoryRowPreviewTests {
+
+    @Test func reviewSurfaceShowsNothingWithoutSignals() {
+        let surface = SessionHistoryReviewSurface.visibleSurface(
+            hasRecentRepReviews: false,
+            hasTargetedPractice: false
+        )
+
+        #expect(surface == .none)
+    }
+
+    @Test func reviewSurfaceFallsBackToTargetedPractice() {
+        let surface = SessionHistoryReviewSurface.visibleSurface(
+            hasRecentRepReviews: false,
+            hasTargetedPractice: true
+        )
+
+        #expect(surface == .targetedPractice)
+    }
+
+    @Test func reviewSurfacePrioritizesSpecificRepsOverBroadTargets() {
+        let surface = SessionHistoryReviewSurface.visibleSurface(
+            hasRecentRepReviews: true,
+            hasTargetedPractice: true
+        )
+
+        #expect(surface == .recentReps)
+    }
 
     @Test func transcriptOnlyFallbackDoesNotExposeRawTranscript() {
         let session = PracticeSession(

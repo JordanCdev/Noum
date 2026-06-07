@@ -70,6 +70,25 @@ struct SessionHistoryDetailPresentation: Equatable {
     }
 }
 
+enum SessionHistoryReviewSurface: Equatable {
+    case none
+    case recentReps
+    case targetedPractice
+
+    static func visibleSurface(
+        hasRecentRepReviews: Bool,
+        hasTargetedPractice: Bool
+    ) -> SessionHistoryReviewSurface {
+        if hasRecentRepReviews {
+            return .recentReps
+        }
+        if hasTargetedPractice {
+            return .targetedPractice
+        }
+        return .none
+    }
+}
+
 struct SessionHistoryView: View {
 
     @StateObject private var sessionStore = PracticeSessionStore.shared
@@ -102,6 +121,14 @@ struct SessionHistoryView: View {
     private var filteredSessions: [PracticeSession] {
         guard let filter = selectedModeFilter else { return sessions }
         return sessions.filter { $0.mode == filter }
+    }
+
+    private var leadSessions: [PracticeSession] {
+        Array(filteredSessions.prefix(3))
+    }
+
+    private var remainingSessions: [PracticeSession] {
+        Array(filteredSessions.dropFirst(3))
     }
 
     private var totalSessions: Int { sessions.count }
@@ -140,12 +167,14 @@ struct SessionHistoryView: View {
         }
     }
 
-    private var hasReviewSignals: Bool {
-        MistakeReplayCard.hasReviewRows(in: sessions)
-        || WeakAreasCard.hasTargets(
-            baseline: baselineStore.baseline,
-            topClutchWords: clutchWordStore.topClutchWords,
-            rating: ratingStore.rating
+    private var reviewSurface: SessionHistoryReviewSurface {
+        SessionHistoryReviewSurface.visibleSurface(
+            hasRecentRepReviews: MistakeReplayCard.hasReviewRows(in: sessions),
+            hasTargetedPractice: WeakAreasCard.hasTargets(
+                baseline: baselineStore.baseline,
+                topClutchWords: clutchWordStore.topClutchWords,
+                rating: ratingStore.rating
+            )
         )
     }
 
@@ -178,9 +207,6 @@ struct SessionHistoryView: View {
 
                         // --- Session List ---
                         sessionListSection
-
-                        reviewSignalsSection
-                            .padding(.top, 12)
 
                         historyOverviewSection
                             .padding(.top, 4)
@@ -253,7 +279,10 @@ struct SessionHistoryView: View {
 
     @ViewBuilder
     private var reviewSignalsSection: some View {
-        if hasReviewSignals {
+        switch reviewSurface {
+        case .none:
+            EmptyView()
+        case .recentReps:
             VStack(alignment: .leading, spacing: Spacing.md) {
                 Text("Worth a replay")
                     .font(Typography.micro)
@@ -266,6 +295,17 @@ struct SessionHistoryView: View {
                     navigationPath.append(destination)
                 }
                 .padding(.horizontal, Spacing.screenH)
+            }
+            .padding(.bottom, 20)
+
+        case .targetedPractice:
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text("Worth a replay")
+                    .font(Typography.micro)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .padding(.horizontal, Spacing.screenH)
 
                 WeakAreasCard(sessionStore: sessionStore) { target in
                     navigationPath.append(target.destination)
@@ -352,31 +392,42 @@ struct SessionHistoryView: View {
             emptyFilterState
                 .padding(.horizontal, Spacing.screenH)
         } else {
-            ForEach(filteredSessions) { session in
-                NavigationLink {
-                    SessionHistoryDetailView(
-                        session: session,
-                        insights: CoachingPlanner.sessionInsights(
-                            for: session,
-                            comparedTo: sessions,
-                            profile: coachingProfileStore.profile
-                        )
+            sessionRows(leadSessions)
+
+            reviewSignalsSection
+                .padding(.top, 4)
+
+            if !remainingSessions.isEmpty {
+                sessionRows(remainingSessions)
+            }
+        }
+    }
+
+    private func sessionRows(_ rows: [PracticeSession]) -> some View {
+        ForEach(rows) { session in
+            NavigationLink {
+                SessionHistoryDetailView(
+                    session: session,
+                    insights: CoachingPlanner.sessionInsights(
+                        for: session,
+                        comparedTo: sessions,
+                        profile: coachingProfileStore.profile
                     )
+                )
+            } label: {
+                sessionRow(session)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("history.row.\(session.id.uuidString)")
+            .contextMenu {
+                Button(role: .destructive) {
+                    sessionToDelete = session
                 } label: {
-                    sessionRow(session)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("history.row.\(session.id.uuidString)")
-                .contextMenu {
-                    Button(role: .destructive) {
-                        sessionToDelete = session
-                    } label: {
-                        Label("Delete Session", systemImage: "trash")
-                    }
+                    Label("Delete Session", systemImage: "trash")
                 }
             }
-            .padding(.horizontal, Spacing.screenH)
         }
+        .padding(.horizontal, Spacing.screenH)
     }
 
     private var summaryStrip: some View {
