@@ -54,7 +54,7 @@ struct LeagueView: View {
 
             Text(ratingStore.rating.hasRatedEvidence
                  ? "Speakers in your rating range, this week. Climbing rating moves you up a tier."
-                 : "One rated pressure rep creates a fair weekly placement.")
+                 : "One rated rep creates a fair weekly placement.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -337,7 +337,7 @@ struct LeagueView: View {
             }
             Text(ratingStore.rating.hasRatedEvidence
                  ? "You're matched with speakers in your rating range each ISO week. Climbing rating moves you up a tier; the leaderboard resets every Monday."
-                 : "League placement starts after your first rated pressure rep, so the comparison is based on real speaking evidence.")
+                 : "League placement starts after your first rated rep, so the comparison is based on real speaking evidence.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

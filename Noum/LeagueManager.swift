@@ -96,7 +96,7 @@ enum LeaguePlacementPresentation {
 
     static func subtitle(tier: LeagueTier, rating: SpeakingRating) -> String {
         guard rating.hasRatedEvidence else {
-            return "One rated pressure rep places you into a weekly bucket."
+            return "One rated rep places you into a weekly bucket."
         }
         if let next = tier.nextTier {
             let toNext = max(0, next.ratingFloor - rating.overall)
@@ -107,7 +107,7 @@ enum LeaguePlacementPresentation {
 
     static func fullScreenSubtitle(tier: LeagueTier, rating: SpeakingRating) -> String {
         guard rating.hasRatedEvidence else {
-            return "Run one rated pressure rep first. Then your weekly league forms from real rating evidence."
+            return "Run one rated rep first. Then your weekly league forms from real rating evidence."
         }
         if let next = tier.nextTier {
             let toNext = max(0, next.ratingFloor - rating.overall)
@@ -221,8 +221,9 @@ final class LeagueManager: ObservableObject {
     /// user's rating changes or a new ISO week starts. Detects upward
     /// tier crossings and queues a promotion celebration.
     func recomputeTierAndBucket() {
-        let newTier = LeagueTier.tier(for: RatingStore.shared.rating.overall)
-        let newBucket = Self.bucketKey(for: newTier, on: Date())
+        let rating = RatingStore.shared.rating
+        let newTier = LeagueTier.tier(for: rating.overall)
+        let newBucket = Self.bucketKey(for: newTier, rating: rating, on: Date())
         let bucketChanged = newBucket != bucketKey
 
         // First-ever launch: stamp the user's current tier without
@@ -232,7 +233,7 @@ final class LeagueManager: ObservableObject {
         if !UserDefaults.standard.bool(forKey: lastSeenTierInitializedKey) {
             persistLastSeenTier(newTier)
             UserDefaults.standard.set(true, forKey: lastSeenTierInitializedKey)
-        } else {
+        } else if rating.hasRatedEvidence {
             // Detect promotion: only fire on upward crossings, never on
             // demotion (downward changes happen quietly so we don't
             // shame a user whose rating dipped).
@@ -240,6 +241,12 @@ final class LeagueManager: ObservableObject {
             if newTier.ratingFloor > lastSeen.ratingFloor {
                 queuePromotion(from: lastSeen, to: newTier)
             }
+            persistLastSeenTier(newTier)
+        } else {
+            // The visible UI says placement is pending, so the state owner
+            // must also avoid silently treating the default 400 as an earned
+            // weekly bucket. Keep the last-seen tier stamped for future
+            // promotion comparisons, but do not join or fetch a bucket yet.
             persistLastSeenTier(newTier)
         }
 
@@ -407,13 +414,18 @@ final class LeagueManager: ObservableObject {
             .sink { [weak self] _ in self?.recomputeTierAndBucket() }
     }
 
-    static func bucketKey(for tier: LeagueTier, on date: Date) -> String {
+    nonisolated static func bucketKey(for tier: LeagueTier, on date: Date) -> String {
         var calendar = Calendar(identifier: .iso8601)
         calendar.firstWeekday = 2
         let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         let week = String(format: "W%02d", comps.weekOfYear ?? 0)
         let year = comps.yearForWeekOfYear ?? 0
         return "\(tier.rawValue)_\(year)-\(week)"
+    }
+
+    nonisolated static func bucketKey(for tier: LeagueTier, rating: SpeakingRating, on date: Date) -> String {
+        guard rating.hasRatedEvidence else { return "" }
+        return bucketKey(for: tier, on: date)
     }
 
     /// ISO-week-of-year key used to scope the weekly daily-challenge

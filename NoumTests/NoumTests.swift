@@ -6727,11 +6727,21 @@ struct BelievableProgressZeroDataTests {
         let fullSubtitle = LeaguePlacementPresentation.fullScreenSubtitle(tier: .silver, rating: .initial)
 
         #expect(title == "League placement pending")
-        #expect(subtitle.contains("One rated pressure rep"))
-        #expect(fullSubtitle.contains("Run one rated pressure rep"))
+        #expect(subtitle.contains("One rated rep"))
+        #expect(fullSubtitle.contains("Run one rated rep"))
         #expect(!title.contains("Silver"))
         #expect(!subtitle.contains("Gold"))
         #expect(LeaguePlacementPresentation.ratingValue(for: .initial) == "—")
+    }
+
+    @Test func leagueBucketStaysEmptyBeforeRatedEvidence() {
+        let key = LeagueManager.bucketKey(
+            for: .silver,
+            rating: .initial,
+            on: Date(timeIntervalSince1970: 1_780_000_000)
+        )
+
+        #expect(key.isEmpty)
     }
 
     @Test func leagueCopyUsesTierAfterRatedEvidence() {
@@ -6749,6 +6759,11 @@ struct BelievableProgressZeroDataTests {
         #expect(title.contains(tier.title))
         #expect(subtitle.contains("rating"))
         #expect(LeaguePlacementPresentation.ratingValue(for: rated) == "\(rated.overall)")
+        #expect(!LeagueManager.bucketKey(
+            for: tier,
+            rating: rated,
+            on: Date(timeIntervalSince1970: 1_780_000_000)
+        ).isEmpty)
     }
 
     @Test func friendLeaderboardSelfRowDoesNotInventDefaultRating() {

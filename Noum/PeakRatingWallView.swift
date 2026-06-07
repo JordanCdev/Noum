@@ -87,7 +87,7 @@ struct PeakRatingWallView: View {
             Text("No peak rating yet")
                 .font(Typography.cardTitle)
                 .foregroundStyle(.primary)
-            Text("One rated pressure rep sets the first mark. After that, this wall shows your best this week, your best ever, and your league comparison.")
+            Text("One rated rep sets the first mark. After that, this wall shows your best this week, your best ever, and your league comparison.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

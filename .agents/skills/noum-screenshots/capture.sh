@@ -39,7 +39,7 @@ mkdir -p "$FOLDER"
 
 for tab in home train review profile settings; do
   xcrun simctl launch --terminate-running-process booted com.jordancoaten.noum \
-    -DeepLink "noum://${tab}" > /dev/null 2>&1 || true
+    UI_TESTING -DeepLink "noum://${tab}" > /dev/null 2>&1 || true
   sleep 3
   xcrun simctl io booted screenshot "$FOLDER/01_${tab}_top.png" > /dev/null 2>&1 || true
 done
