@@ -392,3 +392,70 @@ AGENTS.md asks final responses to include:
 
 Be explicit when tests/build/screenshots were not run.
 
+---
+
+## Update — Claude session (2026-06-07, continuing after Codex)
+
+Verified Codex's 179-file change **clean-builds** (BUILD SUCCEEDED, no errors) on the
+iPhone 17 simulator / Xcode 26.3, and the app launches + runs. The `SocialProfileView`
+deletion is safe because Codex extracted its live symbols into `SocialFriendSheets.swift`
+(that deletion broke the build in an earlier Claude session before the extraction).
+Home / Profile / Practice picker look strong (one coach hero / collapsed Profile /
+"Your next rep" Coach-Pick picker).
+
+### Done + committed this session (branch `ux-overhaul`)
+- **Reward ownership (Priority 1)** — `SummaryView` celebration now gates on a real
+  `SessionFinalizer` crossing via `SummaryView.shouldShowCelebration(hasMilestoneCrossing:score:xpEarned:)`,
+  NOT `score>=7 || xp>=100`. `SessionFinalizer.detectMilestone` emits nothing on rep 1
+  (count milestones start at 10, streak at 3, no PB on rep 1), so first-rep + score/XP
+  are excluded by construction. `RewardOwnershipTests` (passing) pins it. (commit `2b42a16`)
+- **First-run → prescribed rep (Priority 2)** — `CoachingOnboardingView` first-run
+  completion sets `DeepLinkRouter.shared.pending = noum://train` before `dismiss()`, so a
+  new user lands on the picker's Coach Pick, not a cold Home. Settings-edit still just
+  saves. ⚠️ Runtime landing is **logically** verified (the `noum://train`→picker route is
+  proven) but NOT screenshot-verified: the `UI_TESTING_ONBOARDING` harness binds the
+  onboarding cover's `isPresented` to a constant `true`, so it re-presents on dismiss.
+  Verify via the real first-run path (no profile, non-UI_TESTING). (commit `2b42a16`)
+- **Notification loss-aversion (Priority 6, partial)** — `NotificationCopy.dailyReminder`
+  no longer says "Hold your N-day streak" / "your streak is yours to keep"; now
+  invite-framed ("Keep your N-day streak going" / "N days of steady practice").
+  (commit `b2b4cb3`). `streakWarning` was already neutralized in the prior session.
+
+### Still remaining (priority order)
+- **Proof/verdict safety (Priority 3)** — `PostRepVerdictCard` has a card-level a11y id
+  (`summary.postRepVerdict`) but its CTA buttons need stable identifiers; add integrated
+  proof **fail-path** tests (rejected AI quote / no transcript / short transcript →
+  deterministic fallback, never fabricate a "you said…").
+- **Pressure language (Priority 4)** — ~15 user-facing "Sudden Death" literals remain
+  (PathNode, PathProgressManager, WeakAreasCard, GoalJourneyEngine, SummaryView share line
+  ~2169, SuddenDeathHistoryExport, SuddenDeathDifficultyRunsView, DerivedReadsTrend,
+  ForwardPlanService). Rename to "Pressure Drill" (matches `suddenDeath.displayLabel`);
+  keep the enum `.suddenDeath`. ⚠️ The **uncommitted** `Noum/Resources/Localizable.xcstrings`
+  (−194/+93) is likely Codex's in-flight rename — REVIEW before committing (confirm es/fr
+  weren't dropped) or revert; the app builds with it.
+- **Profile disclosure (Priority 5)** — default Profile is clean; the disclosure is the
+  junk drawer. Cut the rating redundancy (`YourArcCard` + `PeakRatingWallCard` +
+  `ProgressionChartsCard` all retell the rating — keep one) and demote ModeMastery /
+  achievements / league / social / speak-offs. (`ProfileView.swift`: disclosure `:437`,
+  progression cards `:523-526`, `leaguePanel :541`, social/speak-off/friends `:1750-1996`.)
+- **Reduced-motion a11y (Priority 6)** — gate animations in CoachingOnboardingView,
+  `SummaryCards.HeroScoreCard`, ProfileView numeric transitions, PracticeModeSelectionView
+  selection, SessionHistoryView disclosure.
+- **Ask Noum structured reply (Iteration 6)** — still prose `ChatOutcome.reply(String)`.
+  Make it read→evidence→move; route every quote through `ProofMomentService`'s
+  verify-in-transcript guard with a TESTED fail path; structure only the post-rep summary
+  if the chat path can't guarantee the guard. Highest trust-risk — do last, feature-flagged.
+
+### Verification tooling + discipline (use these)
+- **Binary mtime is the real build gate.** `xcodebuild` can exit 0 without relinking
+  (incremental no-op) AND without recompiling files that depend on deleted symbols — a
+  false green. Always confirm `stat -f %m .../Noum.app/Noum` advanced before installing;
+  clean-build risky/deletion changes. Build host must be macOS + Xcode 26.3.
+- **Force-render the post-rep Summary on the sim** via the DEBUG `noum://summary` deep
+  link (`ContentView.consumeDeepLink`, renders from the most-recent seeded session). It
+  re-finalizes the session, so a celebration chain fires — tap through
+  **Session Complete → "View Summary" → "Continue"** to reach the verdict body. See
+  `ScreenshotTour.testCaptureSummary`. Multi-state capture: `UI_TESTING_SEED_PROFILE
+  <beginner|improvingIntermediate|plateauedAdvanced|pressureVulnerable|fillerFree>`.
+- `simctl erase` (not uninstall) for a true cold-start; app-group data survives uninstall.
+
