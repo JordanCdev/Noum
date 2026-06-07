@@ -49,12 +49,12 @@ enum NotificationCopy {
             )
         case 3...6:
             return NotificationLine(
-                title: "Hold your \(streakDays)-day streak",
-                body: "You're \(7 - streakDays) day\(7 - streakDays == 1 ? "" : "s") from a full week. One short rep keeps it going."
+                title: "Keep your \(streakDays)-day streak going",
+                body: "You're \(7 - streakDays) day\(7 - streakDays == 1 ? "" : "s") from a full week — one short rep adds today."
             )
         case 7...:
             return NotificationLine(
-                title: "Your \(streakDays)-day streak is yours to keep",
+                title: "\(streakDays) days of steady practice",
                 body: "Habits this old are worth one more rep today."
             )
         default:
