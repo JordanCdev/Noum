@@ -85,7 +85,10 @@ struct PracticeModeSelectionView: View {
     @StateObject private var hapticsSettings = HapticsSettings.shared
     @StateObject private var masteryStore = ModeMasteryStore.shared
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
+    @StateObject private var recommendationLearningStore = RecommendationLearningStore.shared
     @State private var cachedRecommendedMode: PracticeMode?
+    @State private var cachedRecommendedFocus: String?
+    @State private var cachedRecommendedTarget: String?
     /// Dynamic per-user "why this mode" line produced by the
     /// `RecommendationBiasEngine`. Falls back to the static
     /// `ModeOption.recommendedReason` when nil (cold start, no
@@ -307,15 +310,13 @@ struct PracticeModeSelectionView: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(option.subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            recommendedSuccessMarker(tint: option.tint)
 
             PrimaryCTA(PracticeModePrescriptionCopy.beginLabel(for: option.title), tint: option.tint) {
                 selectedMode = option.mode
                 crutchSelected = false
                 paceSelected = false
+                recommendationLearningStore.markTapped(mode: option.mode)
                 navigationPath.append(appDestination(for: option.mode))
             }
             .accessibilityIdentifier("practiceModes.recommendedHero.begin")
@@ -345,6 +346,58 @@ struct PracticeModeSelectionView: View {
         .shadow(color: option.tint.opacity(0.16), radius: 22, y: 10)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("practiceModes.recommendedHero")
+    }
+
+    private func recommendedSuccessMarker(tint: Color) -> some View {
+        let focus = cachedRecommendedFocus?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = cachedRecommendedTarget?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VStack(alignment: .leading, spacing: 8) {
+            if let target, !target.isEmpty {
+                markerPill(
+                    systemImage: "target",
+                    label: "Target",
+                    value: target,
+                    tint: tint
+                )
+            }
+            if let focus, !focus.isEmpty, focus != target {
+                markerPill(
+                    systemImage: "viewfinder",
+                    label: "Focus",
+                    value: focus,
+                    tint: tint.opacity(0.82)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func markerPill(
+        systemImage: String,
+        label: String,
+        value: String,
+        tint: Color
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+
+            Text("\(label):")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.10), in: Capsule())
+        .accessibilityElement(children: .combine)
     }
 
     private var otherWaysSection: some View {
@@ -1077,46 +1130,19 @@ struct PracticeModeSelectionView: View {
     // MARK: - Recommendation Engine
 
     private func computeRecommendation() {
-        let plan = CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
-        let identity = PracticeEvaluator.speakingIdentity(
-            for: sessionStore.sessions.first?.transcript ?? "",
-            profile: coachingProfileStore.profile
-        )
-        let blueprint = RecommendationBiasEngine.blueprint(
+        let context = RecommendationBiasContextBuilder.context(
             profile: coachingProfileStore.profile,
-            input: AIHomeRecommendationInput(
-                recentSessionSummary: recentSessionSummary,
-                averageFillers: averageFillers,
-                averageDuration: averageDuration,
-                averageWordsPerMinute: averagePace,
-                fillerTrendDelta: 0,
-                durationTrendDelta: 0,
-                paceTrendDelta: 0,
-                averageWordCount: averageWordCount,
-                strongestMode: plan?.strongestMode,
-                currentIdentity: identity.identity,
-                currentIdentityEvidence: identity.evidence,
-                styleAlignmentScore: 0,
-                sessionStreak: sessionStreak,
-                daysSinceLastSession: daysSinceLastSession,
-                preferredModeBias: "",
-                preferredToneBias: "",
-                preferredScenarioBias: "",
-                modeBenefitBias: ""
-            ),
-            plan: plan,
-            // Same honest, self-clearing tone-drill signal Home reads:
-            // when one IM scenario reliably misses its committed tone
-            // (≥3 evaluated reps, sub-40% hit rate) the engine prescribes
-            // re-running that exact scenario + tone. Availability-guarded
-            // so an offline IM mode falls back to the normal bias instead
-            // of recommending a mode that would just re-route to Timed.
-            imToneSignal: IMModeAvailability.isAvailable
-                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
-                : nil,
-            coachMemory: coachMemoryStore.currentMemory
+            sessions: sessionStore.sessions,
+            sessionStreak: sessionStreak,
+            daysSinceLastSession: daysSinceLastSession,
+            coachMemory: coachMemoryStore.currentMemory,
+            imAvailable: IMModeAvailability.isAvailable,
+            summaryStyle: .compact
         )
+        let blueprint = visibleBlueprint(from: context.blueprint)
         cachedRecommendedMode = blueprint.recommendedMode
+        cachedRecommendedFocus = blueprint.focus
+        cachedRecommendedTarget = blueprint.target
         cachedRecommendedScenario = blueprint.recommendedScenario
         cachedRecommendedTone = blueprint.recommendedTone
         // Prefer `whyNow` (the situational hook) over `whyMode` (the
@@ -1125,6 +1151,60 @@ struct PracticeModeSelectionView: View {
         let dynamic = [blueprint.whyNow, blueprint.whyMode]
             .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         cachedRecommendedReason = dynamic
+        recordRecommendationShown(blueprint)
+    }
+
+    private func visibleBlueprint(from blueprint: RecommendationBiasBlueprint) -> RecommendationBiasBlueprint {
+        let canShowMode = options.contains { $0.mode == blueprint.recommendedMode }
+        let isUnlocked = PracticeModeAvailability.isUnlocked(blueprint.recommendedMode, rating: ratingStore.rating)
+        guard canShowMode, isUnlocked else {
+            let timedBenefit = RecommendationBiasEngine.playbook.first(where: { $0.mode == .timed })
+            return RecommendationBiasBlueprint(
+                recommendedMode: .timed,
+                recommendedTone: nil,
+                recommendedScenario: nil,
+                focus: "Baseline control",
+                target: "One rated rep",
+                modeBenefit: timedBenefit?.benefit ?? "Builds a clean, rated speaking baseline.",
+                whyMode: timedBenefit?.bestFor ?? "Timed Practice gives Noum the cleanest rated evidence.",
+                whyNow: canShowMode
+                    ? PracticeModePrescriptionCopy.pressureLockedHint
+                    : "Start with a spoken rep while that practice mode is unavailable.",
+                suggestedTimedDifficulty: nil,
+                suggestedTheme: blueprint.suggestedTheme,
+                source: blueprint.source
+            )
+        }
+        return blueprint
+    }
+
+    private func recordRecommendationShown(_ blueprint: RecommendationBiasBlueprint) {
+        recommendationLearningStore.recordShown(
+            fingerprint: recommendationFingerprint(for: blueprint),
+            title: recommendedOption.title,
+            focus: blueprint.focus,
+            target: blueprint.target,
+            mode: blueprint.recommendedMode,
+            isAIBacked: false
+        )
+    }
+
+    private func recommendationFingerprint(for blueprint: RecommendationBiasBlueprint) -> String {
+        let recent = sessionStore.sessions.prefix(5).map { session in
+            "\(session.id.uuidString)-\(session.mode.rawValue)-\(session.fillerWordCount)-\(Int(session.duration))-\(session.score ?? 0)"
+        }.joined(separator: "|")
+        let profileKey = coachingProfileStore.profile.map {
+            "\($0.primaryGoal.rawValue)-\($0.biggestChallenge.rawValue)-\($0.desiredOutcome.rawValue)-\($0.speakingStyleGoal.rawValue)"
+        } ?? "no-profile"
+        return [
+            "modePickerRecommendation",
+            profileKey,
+            blueprint.source.trackingLabel,
+            blueprint.recommendedMode.rawValue,
+            blueprint.focus,
+            blueprint.target,
+            recent
+        ].joined(separator: ".")
     }
 
     private func appDestination(for mode: PracticeMode) -> AppDestination {
@@ -1149,38 +1229,6 @@ struct PracticeModeSelectionView: View {
     }
 
     // MARK: - Recent-session signals (feed RecommendationBiasEngine)
-
-    private var recentSessionSummary: String {
-        let recent = sessionStore.sessions.prefix(4)
-        guard !recent.isEmpty else { return "No recent sessions yet." }
-        return recent.map { session in
-            return "\(session.mode.displayLabel): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
-        }.joined(separator: " • ")
-    }
-
-    private var averageFillers: Double {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        guard !recent.isEmpty else { return 0 }
-        return Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count)
-    }
-
-    private var averageDuration: Double {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        guard !recent.isEmpty else { return 0 }
-        return recent.map(\.duration).reduce(0, +) / Double(recent.count)
-    }
-
-    private var averagePace: Double {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        guard !recent.isEmpty else { return 0 }
-        return Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count)
-    }
-
-    private var averageWordCount: Double {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        guard !recent.isEmpty else { return 0 }
-        return Double(recent.map(\.wordCount).reduce(0, +)) / Double(recent.count)
-    }
 
     private var sessionStreak: Int {
         let calendar = Calendar.current

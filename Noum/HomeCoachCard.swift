@@ -780,53 +780,17 @@ struct HomeCoachCard: View {
     }
 
     // MARK: - Recommendation blueprint
-    //
-    // Mirrors the same construction `ContentView.recommendationBiasBlueprint`
-    // uses today, so the coach card and any other recommendation surface
-    // read the same playbook. When ContentView's helper is hoisted to a
-    // shared computed source, this can collapse to a single call.
 
     private var recommendationBlueprint: RecommendationBiasBlueprint {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        let previous = Array(sessionStore.sessions.dropFirst(5).prefix(5))
-        let identity = PracticeEvaluator.speakingIdentity(
-            for: recent.first?.transcript ?? "",
-            profile: coachingProfileStore.profile
-        )
-        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
-            transcript: recent.first?.transcript ?? "",
-            recentSessions: recent,
-            profile: coachingProfileStore.profile
-        )
-        let input = AIHomeRecommendationInput(
-            recentSessionSummary: "",
-            averageFillers: recent.isEmpty ? 0 : Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count),
-            averageDuration: recent.isEmpty ? 0 : recent.map(\.duration).reduce(0, +) / Double(recent.count),
-            averageWordsPerMinute: recent.isEmpty ? 0 : Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count),
-            fillerTrendDelta: trendDelta(current: recent.map { Double($0.fillerWordCount) }, previous: previous.map { Double($0.fillerWordCount) }),
-            durationTrendDelta: trendDelta(current: recent.map(\.duration), previous: previous.map(\.duration)),
-            paceTrendDelta: trendDelta(current: recent.map { Double($0.wordsPerMinute) }, previous: previous.map { Double($0.wordsPerMinute) }),
-            averageWordCount: recent.isEmpty ? 0 : Double(recent.map(\.wordCount).reduce(0, +)) / Double(recent.count),
-            strongestMode: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode,
-            currentIdentity: identity.identity,
-            currentIdentityEvidence: identity.evidence,
-            styleAlignmentScore: styleTrend.currentAlignment,
+        RecommendationBiasContextBuilder.context(
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
             sessionStreak: sessionStreak,
             daysSinceLastSession: daysSinceLastSession,
-            preferredModeBias: "",
-            preferredToneBias: "",
-            preferredScenarioBias: "",
-            modeBenefitBias: ""
-        )
-        return RecommendationBiasEngine.blueprint(
-            profile: coachingProfileStore.profile,
-            input: input,
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
-            imToneSignal: IMModeAvailability.isAvailable
-                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
-                : nil,
-            coachMemory: coachMemoryStore.currentMemory
-        )
+            coachMemory: coachMemoryStore.currentMemory,
+            imAvailable: IMModeAvailability.isAvailable,
+            summaryStyle: .compact
+        ).blueprint
     }
 
     // MARK: - Momentum helpers (inline, pure)
@@ -872,12 +836,6 @@ struct HomeCoachCard: View {
         return Calendar.current.dateComponents([.day], from: latest.date, to: Date()).day ?? 0
     }
 
-    private func trendDelta(current: [Double], previous: [Double]) -> Double {
-        guard !current.isEmpty, !previous.isEmpty else { return 0 }
-        let currentAvg = current.reduce(0, +) / Double(current.count)
-        let previousAvg = previous.reduce(0, +) / Double(previous.count)
-        return currentAvg - previousAvg
-    }
 }
 
 #if DEBUG

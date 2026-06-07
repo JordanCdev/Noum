@@ -125,7 +125,6 @@ struct FirstRepCelebration: View {
             loadTask?.cancel()
             loadTask = nil
         }
-        .accessibilityIdentifier("firstRep.celebration")
         .sheet(isPresented: $showShareSheet) {
             FirstRepShareSheet(session: session)
         }

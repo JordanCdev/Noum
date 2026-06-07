@@ -1157,9 +1157,9 @@ struct ContentView: View {
         )
     }
 
-    /// Path Journey preview — supporting status/action row. The Coach Card
-    /// is the only Home hero; this row keeps the progression loop visible
-    /// without adding another glowing card.
+    /// Path Journey preview — compact supporting status/action row. The
+    /// Coach Card is the only Home hero; this keeps the progression route
+    /// visible without turning Home back into a dashboard.
     /// Tier-adaptive tint for the journey card. Falls back to brand blue
     /// when the path is cleared (no current node).
     private var journeyTint: Color {
@@ -1169,7 +1169,6 @@ struct ContentView: View {
     private var journeyPreviewCard: some View {
         let status = pathProgress.currentNode
         let cleared = status == nil
-        let chapterTitle = status?.node.tier.title ?? "Mastery"
         let missionLine = journeyMissionLine(for: status)
         let titleLine = status?.node.title ?? "Path cleared"
         let gatingLine = journeyGatingLine(for: status)
@@ -1178,64 +1177,47 @@ struct ContentView: View {
         } label: {
             HStack(alignment: .center, spacing: Spacing.md) {
                 Image(systemName: cleared ? "checkmark.seal.fill" : "map.fill")
-                    .font(.headline.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(journeyTint)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 32, height: 32)
                     .background(journeyTint.opacity(0.10), in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                        Text("Your journey")
+                        Text("Path")
                             .microLabel(journeyTint)
-                        Text("Chapter \u{00B7} \(chapterTitle)")
-                            .font(Typography.caption)
+                        Text(missionLine)
+                            .font(Typography.captionSmall)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .accessibilityIdentifier("home.path.missionCounter")
                     }
-
-                    Text(missionLine)
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("home.path.missionCounter")
 
                     Text(titleLine)
-                        .font(Typography.headline)
+                        .font(Typography.caption.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("home.path.missionTitle")
-
-                    Text(gatingLine)
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("home.path.nextMilestone")
-
-                    if let status, status.progress > 0 && !status.isComplete {
-                        ProgressView(value: status.progress)
-                            .progressViewStyle(.linear)
-                            .tint(journeyTint)
-                            .padding(.top, Spacing.xxs)
-                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
-                    .font(.subheadline.weight(.bold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(journeyTint)
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.md)
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         }
         .buttonStyle(.pressable)
-        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .background(AppColor.cardBackground.opacity(0.82), in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
-                .stroke(journeyTint.opacity(0.16), lineWidth: 1)
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(journeyTint.opacity(0.10), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.path")
@@ -1350,7 +1332,7 @@ struct ContentView: View {
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 10)
-        .accessibilityIdentifier("home.shortcutDock")
+        .accessibilityElement(children: .contain)
     }
 
     private func suggestionLink(
@@ -1670,47 +1652,20 @@ struct ContentView: View {
         return "\(Int(average.rounded())) WPM"
     }
 
-    private var recommendationBiasBlueprint: RecommendationBiasBlueprint {
-        let recent = Array(sessionStore.sessions.prefix(5))
-        let previous = Array(sessionStore.sessions.dropFirst(5).prefix(5))
-        let identity = PracticeEvaluator.speakingIdentity(
-            for: recent.first?.transcript ?? "",
-            profile: coachingProfileStore.profile
-        )
-        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
-            transcript: recent.first?.transcript ?? "",
-            recentSessions: recent,
-            profile: coachingProfileStore.profile
-        )
-        let input = AIHomeRecommendationInput(
-            recentSessionSummary: recentSessionSummary(from: recent),
-            averageFillers: recent.isEmpty ? 0 : Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count),
-            averageDuration: recent.isEmpty ? 0 : recent.map(\.duration).reduce(0, +) / Double(recent.count),
-            averageWordsPerMinute: recent.isEmpty ? 0 : Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count),
-            fillerTrendDelta: trendDelta(current: recent.map { Double($0.fillerWordCount) }, previous: previous.map { Double($0.fillerWordCount) }),
-            durationTrendDelta: trendDelta(current: recent.map(\.duration), previous: previous.map(\.duration)),
-            paceTrendDelta: trendDelta(current: recent.map { Double($0.wordsPerMinute) }, previous: previous.map { Double($0.wordsPerMinute) }),
-            averageWordCount: recent.isEmpty ? 0 : Double(recent.map(\.wordCount).reduce(0, +)) / Double(recent.count),
-            strongestMode: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode,
-            currentIdentity: identity.identity,
-            currentIdentityEvidence: identity.evidence,
-            styleAlignmentScore: styleTrend.currentAlignment,
+    private var recommendationBiasContext: RecommendationBiasContext {
+        RecommendationBiasContextBuilder.context(
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
             sessionStreak: sessionStreak,
             daysSinceLastSession: daysSinceLastSession,
-            preferredModeBias: "",
-            preferredToneBias: "",
-            preferredScenarioBias: "",
-            modeBenefitBias: ""
+            coachMemory: coachMemoryStore.currentMemory,
+            imAvailable: IMModeAvailability.isAvailable,
+            summaryStyle: .detailed
         )
-        return RecommendationBiasEngine.blueprint(
-            profile: coachingProfileStore.profile,
-            input: input,
-            plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile),
-            imToneSignal: IMModeAvailability.isAvailable
-                ? IMHistorySummary.toneDrillSignal(from: sessionStore.sessions)
-                : nil,
-            coachMemory: coachMemoryStore.currentMemory
-        )
+    }
+
+    private var recommendationBiasBlueprint: RecommendationBiasBlueprint {
+        recommendationBiasContext.blueprint
     }
 
     private func suggestion(
@@ -1974,7 +1929,10 @@ struct ContentView: View {
     }
 
     private func refreshHomeRecommendation() async {
-        if recommendationBiasBlueprint.source == .caseIntervention {
+        let context = recommendationBiasContext
+        let bias = context.blueprint
+
+        if bias.source == .caseIntervention {
             aiRecommendation = nil
             return
         }
@@ -1990,67 +1948,30 @@ struct ContentView: View {
             return
         }
 
-        let recent = Array(sessionStore.sessions.prefix(5))
-        let previous = Array(sessionStore.sessions.dropFirst(5).prefix(5))
-        let identity = PracticeEvaluator.speakingIdentity(
-            for: recent.first?.transcript ?? "",
-            profile: coachingProfileStore.profile
-        )
-        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
-            transcript: recent.first?.transcript ?? "",
-            recentSessions: recent,
-            profile: coachingProfileStore.profile
-        )
-        let input = AIHomeRecommendationInput(
-            recentSessionSummary: recentSessionSummary(from: recent),
-            averageFillers: Double(recent.map(\.fillerWordCount).reduce(0, +)) / Double(recent.count),
-            averageDuration: recent.map(\.duration).reduce(0, +) / Double(recent.count),
-            averageWordsPerMinute: Double(recent.map(\.wordsPerMinute).reduce(0, +)) / Double(recent.count),
-            fillerTrendDelta: trendDelta(
-                current: recent.map { Double($0.fillerWordCount) },
-                previous: previous.map { Double($0.fillerWordCount) }
-            ),
-            durationTrendDelta: trendDelta(
-                current: recent.map(\.duration),
-                previous: previous.map(\.duration)
-            ),
-            paceTrendDelta: trendDelta(
-                current: recent.map { Double($0.wordsPerMinute) },
-                previous: previous.map { Double($0.wordsPerMinute) }
-            ),
-            averageWordCount: Double(recent.map(\.wordCount).reduce(0, +)) / Double(recent.count),
-            strongestMode: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)?.strongestMode,
-            currentIdentity: identity.identity,
-            currentIdentityEvidence: identity.evidence,
-            styleAlignmentScore: styleTrend.currentAlignment,
+        let input = RecommendationBiasContextBuilder.input(
+            profile: coachingProfileStore.profile,
+            sessions: sessionStore.sessions,
+            plan: context.plan,
             sessionStreak: sessionStreak,
             daysSinceLastSession: daysSinceLastSession,
-            preferredModeBias: recommendationBiasBlueprint.recommendedMode.rawValue,
-            preferredToneBias: recommendationBiasBlueprint.recommendedTone?.rawValue ?? "",
-            preferredScenarioBias: recommendationBiasBlueprint.recommendedScenario?.rawValue ?? "",
-            modeBenefitBias: recommendationBiasBlueprint.modeBenefit
+            summaryStyle: .detailed,
+            preferredModeBias: bias.recommendedMode.rawValue,
+            preferredToneBias: bias.recommendedTone?.rawValue ?? "",
+            preferredScenarioBias: bias.recommendedScenario?.rawValue ?? "",
+            modeBenefitBias: bias.modeBenefit
         )
 
         do {
             let recommendation = try await aiHomeRecommendationService.generateHomeRecommendation(
                 input: input,
                 profile: coachingProfileStore.profile,
-                plan: CoachingPlanner.plan(for: sessionStore.sessions, profile: coachingProfileStore.profile)
+                plan: context.plan
             )
             aiRecommendation = recommendation
             cacheRecommendation(recommendation, for: recommendationCacheKey)
         } catch {
             aiRecommendation = nil
         }
-    }
-
-    private func recentSessionSummary(from sessions: [PracticeSession]) -> String {
-        sessions.enumerated().map { index, session in
-            let scoreText = session.score.map(String.init) ?? "n/a"
-            let pace = PracticeEvaluator.paceSnapshot(forTranscript: session.transcript, duration: session.duration)
-            let identity = PracticeEvaluator.speakingIdentity(for: session.transcript, profile: coachingProfileStore.profile)
-            return "Session \(index + 1): mode=\(session.mode.rawValue), fillers=\(session.fillerWordCount), duration=\(Int(session.duration))s, words=\(session.wordCount), wpm=\(session.wordsPerMinute), paceLabel=\(pace.label), score=\(scoreText), headline=\(session.headline ?? "none"), identity=\(identity.identity)"
-        }.joined(separator: "\n")
     }
 
     private func loadCachedRecommendation(for key: String) -> AIHomeRecommendation? {
@@ -2069,14 +1990,6 @@ struct ContentView: View {
     private var shownRecommendationFingerprint: String {
         let suggestion = effectiveSuggestion
         return "\(recommendationCacheKey).\(suggestion.mode.rawValue).\(suggestion.title).\(suggestion.focus).\(suggestion.target)"
-    }
-
-    private func trendDelta(current: [Double], previous: [Double]) -> Double {
-        guard !current.isEmpty else { return 0 }
-        let currentAverage = current.reduce(0, +) / Double(current.count)
-        guard !previous.isEmpty else { return 0 }
-        let previousAverage = previous.reduce(0, +) / Double(previous.count)
-        return currentAverage - previousAverage
     }
 
     /// Single source of truth for the user-visible streak count: the

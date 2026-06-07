@@ -3704,8 +3704,15 @@ struct DailyChallengeKindTests {
         wpm: Int? = nil,
         pause: PauseMetrics? = nil
     ) -> PracticeSession {
+        let resolvedTranscript: String
+        if let wpm {
+            let wordCount = max(1, Int((Double(wpm) * duration / 60).rounded()))
+            resolvedTranscript = (0..<wordCount).map { "word\($0)" }.joined(separator: " ")
+        } else {
+            resolvedTranscript = transcript
+        }
         var s = PracticeSession(
-            transcript: transcript,
+            transcript: resolvedTranscript,
             fillerWordCount: fillerWordCount,
             duration: duration,
             date: Date()
@@ -3757,6 +3764,32 @@ struct DailyChallengeKindTests {
         #expect(DailyChallengeKind.multiplePauses.isSatisfied(by: pass) == true)
         #expect(DailyChallengeKind.multiplePauses.isSatisfied(by: failFill) == false)
         #expect(DailyChallengeKind.multiplePauses.isSatisfied(by: failCount) == false)
+    }
+
+    @Test func paceChallengesUseSharedConversationalBand() {
+        let minWPM = ConversationalPaceBand.minDisplayWPM
+        let maxWPM = ConversationalPaceBand.maxDisplayWPM
+
+        let lowerEdge = session(fillerWordCount: 2, duration: 60, wpm: minWPM)
+        let upperEdge = session(fillerWordCount: 2, duration: 60, wpm: maxWPM)
+        let tooSlow = session(fillerWordCount: 1, duration: 60, wpm: minWPM - 1)
+        let tooFast = session(fillerWordCount: 1, duration: 60, wpm: maxWPM + 1)
+
+        #expect(DailyChallengeKind.crispDelivery.isSatisfied(by: lowerEdge) == true)
+        #expect(DailyChallengeKind.crispDelivery.isSatisfied(by: upperEdge) == true)
+        #expect(DailyChallengeKind.crispDelivery.isSatisfied(by: tooSlow) == false)
+        #expect(DailyChallengeKind.crispDelivery.isSatisfied(by: tooFast) == false)
+
+        #expect(DailyChallengeKind.measuredPace.isSatisfied(by: lowerEdge) == true)
+        #expect(DailyChallengeKind.measuredPace.isSatisfied(by: upperEdge) == true)
+        #expect(DailyChallengeKind.measuredPace.isSatisfied(by: tooSlow) == false)
+        #expect(DailyChallengeKind.measuredPace.isSatisfied(by: tooFast) == false)
+
+        let steadyUpperEdge = session(fillerWordCount: 3, duration: 60, wpm: maxWPM)
+        #expect(DailyChallengeKind.steadyPace.isSatisfied(by: lowerEdge) == true)
+        #expect(DailyChallengeKind.steadyPace.isSatisfied(by: steadyUpperEdge) == true)
+        #expect(DailyChallengeKind.steadyPace.isSatisfied(by: tooSlow) == false)
+        #expect(DailyChallengeKind.steadyPace.isSatisfied(by: tooFast) == false)
     }
 
     @Test func everyKindHasNonEmptyDisplayCopy() {
@@ -6796,13 +6829,32 @@ struct ProfileCollapseContractTests {
         #expect(plan.ratingSurfaceCount == 1)
     }
 
-    @Test func profileDisclosureKeepsOneRatingTrajectoryAndDemotesOptionalSystems() {
+    @Test func profileDisclosureStaysCoachEvidenceNotDashboard() {
         let plan = ProfileEvidenceDetailPlan.valueFirst
 
+        #expect(plan.surfaces == [
+            .ratingTrajectory,
+            .insightsBanked,
+            .pressureHistoryShare,
+            .coachingDirection,
+            .caseReview,
+            .deliveryProfile,
+            .speechPatterns
+        ])
         #expect(plan.ratingStorySurfaceCount == 1)
-        #expect(!plan.surfaces.contains(.achievements) || plan.surfaces.last == .achievements)
-        #expect(plan.optionalSystemSurfaceCount == 3)
-        #expect(!plan.surfaces.contains { [.league, .communityPractice, .achievements].contains($0) && plan.surfaces.firstIndex(of: $0)! < plan.surfaces.firstIndex(of: .coachingDirection)! })
+        #expect(plan.optionalSystemSurfaceCount == 0)
+        for dashboardSurface in [
+            ProfileEvidenceDetailSurface.rankProgress,
+            .weeklyCheckIn,
+            .skillProgress,
+            .activeChallenge,
+            .feedbackInbox,
+            .league,
+            .communityPractice,
+            .achievements
+        ] {
+            #expect(!plan.surfaces.contains(dashboardSurface))
+        }
     }
 
     @Test func identityHeroDoesNotExposeProgressCurrency() {
@@ -6881,6 +6933,123 @@ struct ProfileCollapseContractTests {
         #expect(content.proofClaim == "You gave the listener a clean frame.")
         #expect(content.proofQuote == "we will focus on three priorities")
     }
+
+    @Test func transferStatusPendingOutcomeBeatsActivePrep() {
+        let pending = BigMoment(
+            title: "Client renewal",
+            date: Calendar.current.date(byAdding: .day, value: -1, to: Date()),
+            category: .conversation
+        )
+        let active = BigMoment(
+            title: "Board update",
+            date: Calendar.current.date(byAdding: .day, value: 3, to: Date()),
+            category: .presentation
+        )
+
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: active,
+            pendingOutcomeMoment: pending,
+            recentOutcome: nil,
+            sessions: [],
+            voice: .executive
+        )
+
+        #expect(status?.kind == .pendingOutcome)
+        #expect(status?.title.contains("Client renewal") == true)
+        #expect(status?.actionTitle == "Check in")
+        #expect(status?.destination == nil)
+    }
+
+    @Test func transferStatusActivePrepCarriesReadinessAndDestination() {
+        let createdAt = Date(timeIntervalSinceNow: -3600)
+        let moment = BigMoment(
+            title: "Hiring panel",
+            date: Calendar.current.date(byAdding: .day, value: 1, to: Date()),
+            category: .interview,
+            createdAt: createdAt
+        )
+        var session = PracticeSession(
+            transcript: "The main reason is that I can lead the rollout.",
+            fillerWordCount: 0,
+            duration: 60,
+            date: Date()
+        )
+        session.mode = .timed
+
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: moment,
+            pendingOutcomeMoment: nil,
+            recentOutcome: nil,
+            sessions: [session],
+            voice: .executive
+        )
+
+        #expect(status?.kind == .activePrep)
+        #expect(status?.title.contains("tomorrow") == true)
+        #expect(status?.detail.contains("1 of 3") == true)
+        #expect(status?.actionTitle == "Prep now")
+        #expect(status?.destination == .prepSession)
+    }
+
+    @Test func transferStatusPastActiveMomentBecomesCheckIn() {
+        let moment = BigMoment(
+            title: "Board update",
+            date: Calendar.current.date(byAdding: .day, value: -1, to: Date()),
+            category: .presentation
+        )
+
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: moment,
+            pendingOutcomeMoment: nil,
+            recentOutcome: nil,
+            sessions: [],
+            voice: .executive
+        )
+
+        #expect(status?.kind == .pendingOutcome)
+        #expect(status?.title == "How did Board update land?")
+        #expect(status?.detail.localizedCaseInsensitiveContains("passed") == true)
+        #expect(status?.actionTitle == "Check in")
+        #expect(status?.destination == nil)
+        #expect(status?.title.localizedCaseInsensitiveContains("in -") == false)
+    }
+
+    @Test func transferStatusRecentOutcomeAvoidsCausalClaims() {
+        let report = BigMomentOutcomeReport(
+            moment: BigMoment(title: "Leadership review", category: .review),
+            outcome: .mixed,
+            audienceResponse: .unclear,
+            drillTransfer: .partly
+        )
+
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: nil,
+            pendingOutcomeMoment: nil,
+            recentOutcome: report,
+            sessions: [],
+            voice: .executive
+        )
+
+        #expect(status?.kind == .recentOutcome)
+        #expect(status?.detail.localizedCaseInsensitiveContains("you reported") == true)
+        #expect(status?.detail.localizedCaseInsensitiveContains("partly") == true)
+        for banned in ["caused", "proved", "worked because"] {
+            #expect(status?.detail.localizedCaseInsensitiveContains(banned) == false)
+        }
+        #expect(status?.actionTitle == nil)
+    }
+
+    @Test func transferStatusRendersNothingWithoutTransferEvidence() {
+        let status = ProfileTransferStatusContent.make(
+            activeMoment: nil,
+            pendingOutcomeMoment: nil,
+            recentOutcome: nil,
+            sessions: [],
+            voice: nil
+        )
+
+        #expect(status == nil)
+    }
 }
 
 struct RevampPathLivePresentationTests {
@@ -6951,6 +7120,55 @@ struct RevampPathLivePresentationTests {
         #expect(presentation.progressLabel == "100% complete")
         #expect(presentation.homeGoalShortLabel == "Cleared")
         #expect(presentation.summaryLine.contains("All 20 missions"))
+    }
+
+    @Test func rushingChallengeUsesSharedConversationalPaceBand() {
+        let minWPM = ConversationalPaceBand.minDisplayWPM
+        let maxWPM = ConversationalPaceBand.maxDisplayWPM
+        let snapshot = RetentionLoopEngine.snapshot(
+            sessions: [
+                paceSession(wpm: minWPM, score: 7, daysAgo: 0),
+                paceSession(wpm: maxWPM, score: 7, daysAgo: 1),
+                paceSession(wpm: minWPM - 1, score: 9, daysAgo: 0),
+                paceSession(wpm: maxWPM + 1, score: 9, daysAgo: 1)
+            ],
+            profile: rushingProfile()
+        )
+
+        #expect(snapshot.activeChallenge.title == "Controlled pace")
+        #expect(snapshot.activeChallenge.summary.contains("conversational"))
+        #expect(snapshot.activeChallenge.progress == 1)
+        #expect(snapshot.activeChallenge.progressLabel == "2/2 controlled reps")
+    }
+
+    private func paceSession(wpm: Int, score: Int, daysAgo: Int) -> PracticeSession {
+        let duration: TimeInterval = 60
+        let wordCount = max(1, Int((Double(wpm) * duration / 60).rounded()))
+        let transcript = (0..<wordCount).map { "word\($0)" }.joined(separator: " ")
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        var session = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: 0,
+            duration: duration,
+            date: date
+        )
+        session.score = score
+        return session
+    }
+
+    private func rushingProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .calmerDelivery,
+            confidenceLevel: .rebuilding,
+            biggestChallenge: .rushing,
+            desiredOutcome: .composed,
+            speakingStyleGoal: .executive,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
     }
 }
 
@@ -9698,6 +9916,108 @@ struct PracticeModePrescriptionCopyTests {
     }
 }
 
+struct RecommendationBiasContextBuilderTests {
+
+    @Test func sharedContextKeepsHomeCoachAndPickerRecommendationsInLockstep() {
+        let profile = sampleProfile()
+        let sessions = [
+            session(mode: .timed, fillers: 2, duration: 60, score: 7, transcript: "Here is the point and the next step for the team."),
+            session(mode: .ahCounter, fillers: 5, duration: 45, score: 5, transcript: "Um I think maybe the update is basically still moving."),
+            session(mode: .timed, fillers: 1, duration: 70, score: 8, transcript: "The decision is clear and the reason is simple.")
+        ]
+
+        let home = RecommendationBiasContextBuilder.context(
+            profile: profile,
+            sessions: sessions,
+            sessionStreak: 2,
+            daysSinceLastSession: 0,
+            coachMemory: nil,
+            imAvailable: false,
+            summaryStyle: .detailed
+        )
+        let picker = RecommendationBiasContextBuilder.context(
+            profile: profile,
+            sessions: sessions,
+            sessionStreak: 2,
+            daysSinceLastSession: 0,
+            coachMemory: nil,
+            imAvailable: false,
+            summaryStyle: .compact
+        )
+
+        #expect(home.blueprint.recommendedMode == picker.blueprint.recommendedMode)
+        #expect(home.blueprint.focus == picker.blueprint.focus)
+        #expect(home.blueprint.target == picker.blueprint.target)
+        #expect(home.blueprint.suggestedTimedDifficulty == picker.blueprint.suggestedTimedDifficulty)
+        #expect(home.input.recentSessionSummary.contains("Session 1"))
+        #expect(picker.input.recentSessionSummary.contains(PracticeMode.timed.displayLabel))
+    }
+
+    @Test func aiPromptBiasesCanReuseTheDeterministicBlueprint() {
+        let profile = sampleProfile()
+        let sessions = [
+            session(mode: .timed, fillers: 0, duration: 65, score: 8, transcript: "The priority is clear and the outcome is measurable.")
+        ]
+        let context = RecommendationBiasContextBuilder.context(
+            profile: profile,
+            sessions: sessions,
+            sessionStreak: 1,
+            daysSinceLastSession: 0,
+            coachMemory: nil,
+            imAvailable: false
+        )
+
+        let aiInput = RecommendationBiasContextBuilder.input(
+            profile: profile,
+            sessions: sessions,
+            plan: context.plan,
+            sessionStreak: 1,
+            daysSinceLastSession: 0,
+            preferredModeBias: context.blueprint.recommendedMode.rawValue,
+            preferredToneBias: context.blueprint.recommendedTone?.rawValue ?? "",
+            preferredScenarioBias: context.blueprint.recommendedScenario?.rawValue ?? "",
+            modeBenefitBias: context.blueprint.modeBenefit
+        )
+
+        #expect(aiInput.preferredModeBias == context.blueprint.recommendedMode.rawValue)
+        #expect(aiInput.modeBenefitBias == context.blueprint.modeBenefit)
+        #expect(aiInput.strongestMode == context.plan?.strongestMode)
+    }
+
+    private func sampleProfile() -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: .work,
+            primaryGoal: .moreConcise,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: .rambling,
+            desiredOutcome: .concise,
+            speakingStyleGoal: .executive,
+            styleReference: "",
+            coachingBrief: "",
+            motivationWhyNow: "",
+            successVision: ""
+        )
+    }
+
+    private func session(
+        mode: PracticeMode,
+        fillers: Int,
+        duration: TimeInterval,
+        score: Int?,
+        transcript: String
+    ) -> PracticeSession {
+        var session = PracticeSession(
+            transcript: transcript,
+            fillerWordCount: fillers,
+            duration: duration,
+            date: Date()
+        )
+        session.mode = mode
+        session.score = score
+        return session
+    }
+}
+
 struct FirstRunFrictionContractTests {
 
     @Test func onboardingProfileRevealIsImmediateNotFakeProcessing() {
@@ -9899,6 +10219,26 @@ struct HomeSignalGateTests {
             now: now
         )
         #expect(count == 2)
+    }
+
+    @Test func journeySupportingRowStaysSignalGated() {
+        let afterOneRepWithGoal = HomeSignalGate.evaluate(
+            sessionCount: 1,
+            sessionsThisWeekCount: 1,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false
+        )
+        #expect(afterOneRepWithGoal.journey)
+
+        let coldWithGoal = HomeSignalGate.evaluate(
+            sessionCount: 0,
+            sessionsThisWeekCount: 0,
+            hasUnlockedPathNode: false,
+            hasCoachingProfile: true,
+            showAllOverride: false
+        )
+        #expect(!coldWithGoal.journey, "Path must stay off the first screen until the user has one real rep.")
     }
 }
 

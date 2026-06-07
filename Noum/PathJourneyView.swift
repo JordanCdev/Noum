@@ -608,11 +608,11 @@ enum RetentionLoopEngine {
             )
         case .rushing:
             let qualifying = sessions.filter {
-                ($0.score ?? 0) >= 7 && (105...145).contains($0.wordsPerMinute)
+                ($0.score ?? 0) >= 7 && ConversationalPaceBand.contains($0.wordsPerMinute)
             }.count
             return PracticeChallengeStatus(
                 title: "Controlled pace",
-                summary: "Finish two solid reps in the calmer pacing zone.",
+                summary: "Finish two solid reps in the conversational pacing zone.",
                 progress: min(Double(qualifying), 2) / 2,
                 progressLabel: "\(qualifying)/2 controlled reps"
             )

@@ -2243,6 +2243,18 @@ struct TimedPracticeView: View {
         // we resolve the prompt + warm up TTS.
         SoundscapeEngine.shared.startPreferredMode()
 
+#if DEBUG
+        if usesInjectedFirstValueLoop {
+            question = "Brief the team on a customer handoff risk."
+            if ttsEngine.delegate == nil { configureTTSDelegate() }
+            phase = .speaking
+            elapsedSeconds = 0
+            isStopping = false
+            completeInjectedFirstValueLoopRep()
+            return
+        }
+#endif
+
         // Resolve the prompt asynchronously — gives PracticeTopics.next() a
         // budget to attempt an AI-generated prompt without blocking. Falls
         // back to the curated pool on timeout/failure (≤ 3s).
@@ -2369,6 +2381,7 @@ struct TimedPracticeView: View {
     private func completeInjectedFirstValueLoopRep() {
         guard usesInjectedFirstValueLoop, !isStopping else { return }
 
+        SoundscapeEngine.shared.stop()
         isStopping = true
         speakingTask?.cancel()
         speakingTask = nil

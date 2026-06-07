@@ -59,13 +59,75 @@ final class NoumUITests: XCTestCase {
     }
 
     @MainActor
+    func testProfileEvidenceDisclosureStaysCoachEvidenceOnly() throws {
+        let app = launchSeededAt("noum://profile")
+        XCTAssertTrue(app.descendants(matching: .any)["profile.screen"].waitForExistence(timeout: 10))
+
+        let toggle = app.descendants(matching: .any)["profile.evidenceHub.toggle"]
+        let toggleLabel = app.staticTexts["Show supporting evidence"]
+        for _ in 0..<10 where !toggle.exists && !toggleLabel.exists {
+            app.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(
+            toggle.waitForExistence(timeout: 3) || toggleLabel.waitForExistence(timeout: 3),
+            "Profile evidence toggle should exist"
+        )
+        if toggle.exists {
+            scrollUntilHittable(toggle, in: app, attempts: 3)
+            toggle.tap()
+        } else {
+            toggleLabel.tap()
+        }
+
+        XCTAssertTrue(
+            app.buttons["Hide supporting evidence"].waitForExistence(timeout: 5)
+                || app.staticTexts["Hide supporting evidence"].waitForExistence(timeout: 2),
+            "Profile evidence disclosure should expand"
+        )
+
+        let coachingDirection = app.descendants(matching: .any)["profile.evidence.coachingDirection"]
+        let coachingDirectionTitle = app.staticTexts["Coaching Direction"]
+        let coachingDirectionUppercaseTitle = app.staticTexts["COACHING DIRECTION"]
+        for _ in 0..<8 where !coachingDirection.exists
+            && !coachingDirectionTitle.exists
+            && !coachingDirectionUppercaseTitle.exists {
+            app.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(
+            coachingDirection.exists || coachingDirectionTitle.exists || coachingDirectionUppercaseTitle.exists,
+            "Expanded evidence should keep the coach direction card"
+        )
+
+        let hiddenDashboardSurfaces = [
+            "profile.evidence.rankProgress",
+            "profile.evidence.skillProgress",
+            "profile.evidence.activeChallenge",
+            "profile.evidence.feedbackInbox",
+            "profile.league",
+            "profile.community.challenge",
+            "profile.achievements.summary"
+        ]
+        for _ in 0..<8 {
+            for identifier in hiddenDashboardSurfaces {
+                XCTAssertFalse(
+                    app.descendants(matching: .any)[identifier].exists,
+                    "\(identifier) should stay out of the Profile evidence disclosure"
+                )
+            }
+            XCTAssertFalse(app.staticTexts["Optional systems"].exists)
+            app.swipeUp(velocity: .slow)
+        }
+
+        app.terminate()
+    }
+
+    @MainActor
     func testPracticeModesOpenAvailableScreens() throws {
         assertPracticeModeLaunches(modeIdentifier: "practiceMode.timed", screenIdentifier: "timedPractice.screen")
         assertPracticeModeLaunches(modeIdentifier: "practiceMode.suddenDeath", screenIdentifier: "suddenDeath.screen")
         assertPracticeModeLaunches(modeIdentifier: "practiceMode.ahCounter", screenIdentifier: "ahCounter.screen")
 
-        let imApp = launchApp()
-        openPracticeModes(in: imApp)
+        let imApp = launchSeededAt("noum://practice")
 
         let imButton = imApp.buttons["practiceMode.imConversation"]
         if imButton.waitForExistence(timeout: 2) {
@@ -163,6 +225,16 @@ final class NoumUITests: XCTestCase {
             firstRepContinue.tap()
         }
 
+        let viewSummary = app.buttons["postSessionProgression.viewSummary"]
+        if viewSummary.waitForExistence(timeout: 12) {
+            viewSummary.tap()
+        } else {
+            let fallbackViewSummary = app.buttons["View Summary"]
+            if fallbackViewSummary.waitForExistence(timeout: 2) {
+                fallbackViewSummary.tap()
+            }
+        }
+
         XCTAssertTrue(
             verdict.waitForExistence(timeout: 20),
             "A first-run user should reach the post-rep coach verdict from onboarding without microphone audio in the UI test harness."
@@ -214,10 +286,25 @@ final class NoumUITests: XCTestCase {
 
     @MainActor
     private func assertPracticeModeLaunches(modeIdentifier: String, screenIdentifier: String) {
-        let app = launchApp()
-        openPracticeModes(in: app)
+        let app = launchSeededAt("noum://practice")
+
+        if launchRecommendedHeroIfMatching(modeIdentifier: modeIdentifier, screenIdentifier: screenIdentifier, in: app) {
+            app.terminate()
+            return
+        }
 
         let modeButton = app.buttons[modeIdentifier]
+        if !modeButton.waitForExistence(timeout: 2) {
+            let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
+            if pickAnother.waitForExistence(timeout: 5) {
+                pickAnother.tap()
+            } else {
+                let otherWays = app.buttons["practiceModes.otherWays"]
+                if otherWays.waitForExistence(timeout: 2) {
+                    otherWays.tap()
+                }
+            }
+        }
         XCTAssertTrue(modeButton.waitForExistence(timeout: 5))
         modeButton.tap()
 
@@ -238,6 +325,40 @@ final class NoumUITests: XCTestCase {
         // so the test doesn't false-fail on element type drift.
         let destination = app.descendants(matching: .any)[screenIdentifier]
         XCTAssertTrue(destination.waitForExistence(timeout: 20))
+        app.terminate()
+    }
+
+    @MainActor
+    private func launchRecommendedHeroIfMatching(
+        modeIdentifier: String,
+        screenIdentifier: String,
+        in app: XCUIApplication
+    ) -> Bool {
+        guard let expectedTitle = practiceModeTitle(for: modeIdentifier) else { return false }
+        let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
+        guard recommendedBegin.waitForExistence(timeout: 3),
+              recommendedBegin.label.contains(expectedTitle) else {
+            return false
+        }
+        recommendedBegin.tap()
+        let destination = app.descendants(matching: .any)[screenIdentifier]
+        XCTAssertTrue(destination.waitForExistence(timeout: 20))
+        return true
+    }
+
+    private func practiceModeTitle(for identifier: String) -> String? {
+        switch identifier {
+        case "practiceMode.timed":
+            return "Timed Practice"
+        case "practiceMode.suddenDeath":
+            return "Pressure Drill"
+        case "practiceMode.ahCounter":
+            return "Ah-Counter"
+        case "practiceMode.imConversation":
+            return "IM Conversation"
+        default:
+            return nil
+        }
     }
 
     @MainActor
@@ -275,6 +396,7 @@ final class NoumUITests: XCTestCase {
     private func openPracticeModes(in app: XCUIApplication) {
         XCTAssertTrue(app.buttons["nav.practice"].waitForExistence(timeout: 5))
         app.buttons["nav.practice"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 8))
     }
 
     /// Scrolls the home until the target becomes hittable, then stops. Bails

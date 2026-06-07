@@ -669,6 +669,7 @@ struct PostSessionProgressionView: View {
                             )
                     }
                     .buttonStyle(.pressable)
+                    .accessibilityIdentifier("postSessionProgression.viewSummary")
                     .opacity(showButton ? 1 : 0)
                     .offset(y: showButton ? 0 : 30)
                     .padding(.horizontal, 32)

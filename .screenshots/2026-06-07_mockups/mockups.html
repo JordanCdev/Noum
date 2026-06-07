@@ -1,0 +1,146 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:'Figtree';src:url('fonts/Figtree-VariableFont_wght.ttf') format('truetype-variations');font-weight:300 900;}
+@font-face{font-family:'Manrope';src:url('fonts/Manrope-VariableFont_wght.ttf') format('truetype-variations');font-weight:200 800;}
+:root{
+ --screen:#F2F2F7;--card:#FFF;--inner:#F6F7FA;--ink:#212633;--ink2:#697382;--ink3:#8A93A3;
+ --bl:#3378F5;--bll:#42A1FF;--bd:#2F6BE0;--pro:#8F47EB;--im:#526EF0;--pos:#199966;--cau:#D4851A;--gold:#C58A2E;
+ --rounded:'Figtree',-apple-system,system-ui,sans-serif;--text:'Manrope',-apple-system,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased;font-family:var(--text)}
+body{background:radial-gradient(1200px 800px at 50% -10%, #EEF2FF 0%, #E7E9F2 60%, #DFE2EC 100%);padding:56px 40px;display:flex;gap:48px;align-items:flex-start;justify-content:center}
+.col{display:flex;flex-direction:column;align-items:center;gap:18px}
+.lab{font:700 13px/1 var(--rounded);letter-spacing:.6px;color:#4A5060;text-transform:uppercase}
+.lab b{color:var(--bl)}
+.device{width:393px;height:852px;border-radius:48px;overflow:hidden;position:relative;
+ background:linear-gradient(170deg,#F7F7FF 0%,#EDF2FF 100%);
+ box-shadow:0 40px 90px rgba(33,38,51,.22), 0 0 0 9px #0d1322, 0 0 0 10px #2a3142;}
+.pad{position:absolute;inset:0;padding:58px 16px 16px}
+.statusbar{position:absolute;top:20px;left:28px;right:28px;display:flex;justify-content:space-between;font:700 14px/1 var(--rounded);color:var(--ink)}
+.card{background:var(--card);border-radius:24px;padding:18px;box-shadow:0 8px 24px rgba(33,38,51,.05);margin-bottom:13px}
+.card.xl{border-radius:28px}
+.micro{display:flex;align-items:center;gap:7px;font:700 11px/1 var(--text);letter-spacing:1px;text-transform:uppercase}
+.dot{width:7px;height:7px;border-radius:50%}
+.nav{display:flex;align-items:center;justify-content:space-between;height:34px;margin-bottom:14px}
+.back{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center;font:700 20px/1 var(--rounded);color:var(--ink);box-shadow:0 2px 8px rgba(33,38,51,.06)}
+.navt{font:700 11px/1 var(--text);letter-spacing:1.4px;color:var(--ink3)}
+.done{font:600 15px/1 var(--text);color:var(--bl)}
+.hero{text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 22px;box-shadow:0 14px 34px rgba(51,120,245,.10)}
+.ring{width:122px;height:122px;border-radius:50%;background:conic-gradient(from -90deg,var(--bll) 0deg,var(--bd) 252deg,#E7EAF2 252deg);display:grid;place-items:center;position:relative;margin-bottom:6px;filter:drop-shadow(0 6px 16px rgba(51,120,245,.18))}
+.ring::before{content:"";position:absolute;inset:12px;background:#fff;border-radius:50%}
+.ring .rc{position:relative;text-align:center}
+.ring .num{font:800 50px/1 var(--rounded);color:var(--ink);letter-spacing:-1px}
+.ring .den{font:700 9px/1 var(--text);letter-spacing:1px;color:var(--ink2);margin-top:5px}
+.h1{font:700 24px/1.15 var(--rounded);color:var(--ink)}
+.sub{font:500 14px/1.42 var(--text);color:var(--ink2);max-width:300px}
+.chips{display:flex;gap:8px;margin-top:12px;width:100%;justify-content:center}
+.chip{flex:1;background:var(--inner);border-radius:14px;padding:11px 6px;text-align:center}
+.chip .v{font:700 18px/1 var(--rounded)}
+.chip .l{font:600 10px/1 var(--text);letter-spacing:.4px;color:var(--ink2);margin-top:4px}
+.body{font:500 15px/1.46 var(--text);color:var(--ink);margin-top:9px}
+.quote{display:flex;gap:11px;background:#F1F7F4;border-radius:14px;padding:13px 14px;margin-top:11px;align-items:stretch}
+.quote .bar{width:3px;border-radius:2px;background:var(--pos);flex:none}
+.quote .q{font:500 14px/1.43 var(--text);color:#1F8A5E}
+.move{font:600 13px/1.4 var(--text);margin-top:11px}
+.cta{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:999px;background:linear-gradient(180deg,var(--bll),var(--bl));color:#fff;font:700 17px/1 var(--rounded);margin-top:13px;box-shadow:0 8px 18px rgba(51,120,245,.30)}
+.cta .tri{font-size:12px}
+.greet{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.greet h{font:700 22px/1 var(--rounded);color:var(--ink)}
+.pill{padding:5px 11px;border-radius:999px;font:700 11px/1 var(--text);background:rgba(51,120,245,.12);color:var(--bl)}
+.wave{width:64px;height:64px;border-radius:50%;background:rgba(51,120,245,.12);display:flex;align-items:center;justify-content:center;gap:4px;flex:none}
+.wave i{width:5px;border-radius:3px;background:var(--bl)}
+.wave i:nth-child(1),.wave i:nth-child(5){height:18px}
+.wave i:nth-child(2),.wave i:nth-child(4){height:34px}
+.wave i:nth-child(3){height:52px}
+.coach{text-align:center;display:flex;flex-direction:column;align-items:center;gap:11px;padding:24px;background:linear-gradient(180deg,#fff,#F3F8FF);box-shadow:0 16px 36px rgba(51,120,245,.12)}
+.vchip{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;background:rgba(51,120,245,.10);font:600 12px/1 var(--text);color:var(--bl)}
+.vchip .d{width:6px;height:6px;border-radius:50%;background:var(--bl)}
+.lrow{display:flex;align-items:center;gap:13px;background:#fff;border-radius:20px;padding:14px 16px;box-shadow:0 6px 16px rgba(33,38,51,.04);margin-bottom:13px}
+.wave.sm{width:40px;height:40px;gap:2.5px}
+.wave.sm i{width:3.2px}.wave.sm i:nth-child(1),.wave.sm i:nth-child(5){height:11px}.wave.sm i:nth-child(2),.wave.sm i:nth-child(4){height:21px}.wave.sm i:nth-child(3){height:31px}
+.lrow .lc{flex:1}
+.lrow .t{font:700 15px/1.2 var(--rounded);color:var(--ink)}
+.lrow .s{font:500 12px/1.3 var(--text);color:var(--ink2);margin-top:2px}
+.chev{font:700 18px/1 var(--rounded);color:#B6BECC}
+.jhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.jhead .l{font:700 11px/1 var(--text);letter-spacing:1.2px;color:var(--ink3)}
+.jhead .r{font:700 12px/1 var(--text);color:var(--gold)}
+.pbar{height:8px;border-radius:999px;background:#E7EAF2;margin:11px 0;overflow:hidden}
+.pbar i{display:block;height:100%;width:25%;border-radius:999px;background:linear-gradient(90deg,var(--bll),var(--bl))}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:84px;background:rgba(255,255,255,.97);box-shadow:0 -3px 14px rgba(33,38,51,.06);display:flex;padding:12px 0 24px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px}
+.tab .ic{width:22px;height:22px;border-radius:50%;background:rgba(154,162,177,.12)}
+.tab .n{font:600 10px/1 var(--rounded);letter-spacing:.4px;color:#9AA2B1;text-transform:uppercase}
+.tab.on .ic{background:rgba(51,120,245,.18)}.tab.on .n{color:var(--bl)}
+.idrow{display:flex;align-items:center;gap:14px}
+.idrow .n{font:700 22px/1 var(--rounded);color:var(--ink)}
+.idrow .v{font:500 13px/1 var(--text);color:var(--ink2);margin-top:4px}
+.idrow .lc{flex:1}
+.rrow{display:flex;align-items:center;gap:10px;margin-top:8px}
+.rating{font:800 46px/1 var(--rounded);color:var(--ink);letter-spacing:-1px}
+.pill.pos{background:rgba(25,153,102,.12);color:var(--pos)}
+.trend{display:flex;align-items:flex-end;gap:6px;height:42px;margin-left:auto}
+.trend i{width:10px;border-radius:5px;background:rgba(51,120,245,.30)}
+.trend i.on{background:var(--bl)}
+</style></head><body>
+
+<div class="col"><div class="lab">Post-rep verdict · <b>elevated</b></div>
+<div class="device"><div class="statusbar"><span>9:41</span><span>5G  100%</span></div><div class="pad">
+ <div class="nav"><div class="back">‹</div><div class="navt">REP COMPLETE</div><div class="done">Done</div></div>
+ <div class="card xl hero">
+   <div class="ring"><div class="rc"><div class="num">7</div><div class="den">OUT OF 10</div></div></div>
+   <div class="h1">Good control</div>
+   <div class="sub">Clean and composed — one filler across a full 50-second answer.</div>
+   <div class="chips">
+     <div class="chip"><div class="v" style="color:var(--pos)">1</div><div class="l">FILLERS</div></div>
+     <div class="chip"><div class="v">50s</div><div class="l">DURATION</div></div>
+     <div class="chip"><div class="v" style="color:var(--bl)">138</div><div class="l">PACE</div></div>
+   </div>
+ </div>
+ <div class="card"><div class="micro" style="color:var(--bl)"><span class="dot" style="background:var(--bl)"></span>THE READ</div>
+   <div class="body">The repeated “Yeah” early on broke a clean streak. We can explore how that hesitation felt while you searched for the next line.</div></div>
+ <div class="card" style="border:1px solid rgba(25,153,102,.16)"><div class="micro" style="color:var(--pos)"><span class="dot" style="background:var(--pos)"></span>WIN</div>
+   <div class="body" style="font-weight:600;font-size:15px">Sharing a personal insight makes your message relatable and easy to trust.</div>
+   <div class="quote"><div class="bar"></div><div class="q">“In my experience, the best conversations happen when both parties feel heard.”</div></div></div>
+ <div class="card" style="border:1px solid rgba(212,133,26,.18)"><div class="micro" style="color:var(--cau)"><span class="dot" style="background:var(--cau)"></span>FIX FIRST</div>
+   <div class="body">Your answer stayed surface-level. One idea developed with a specific example beats three shallow points.</div>
+   <div class="move" style="color:#B5730F">Next move · develop one idea fully before moving on.</div>
+   <div class="cta"><span class="tri">▶</span>Start 45s drill</div></div>
+</div></div></div>
+
+<div class="col"><div class="lab">Home · <b>one coach, one move</b></div>
+<div class="device"><div class="statusbar"><span>9:41</span><span>5G  100%</span></div><div class="pad">
+ <div class="greet"><h>Hello, Jordan</h><div class="pill">Day 63</div></div>
+ <div class="card xl coach">
+   <div class="wave"><i></i><i></i><i></i><i></i><i></i></div>
+   <div class="micro" style="color:var(--ink3);justify-content:center">YOUR COACH</div>
+   <div class="h1" style="font-size:26px">Stay with the case.</div>
+   <div class="sub">Prescribed in your case file — one focused rep moves it forward.</div>
+   <div class="vchip"><span class="d"></span>Toward your concise voice</div>
+   <div class="cta" style="width:100%"><span class="tri">▶</span>Begin · Timed</div>
+ </div>
+ <div class="lrow"><div class="wave sm"><i></i><i></i><i></i><i></i><i></i></div><div class="lc"><div class="t">Ask Noum</div><div class="s">Your coach — reads your last 30 reps</div></div><div class="chev">›</div></div>
+ <div class="card"><div class="jhead"><div class="l">YOUR JOURNEY</div><div class="r">Chapter · Bronze</div></div>
+   <div class="h1" style="font-size:16px">Mission 5 of 20 — first lesson cleared</div>
+   <div class="pbar"><i></i></div>
+   <div class="s" style="font:500 12px/1.3 var(--text);color:var(--ink2)">1 more lesson crown to unlock the next node.</div></div>
+ <div class="tabbar"><div class="tab on"><div class="ic"></div><div class="n">Train</div></div><div class="tab"><div class="ic"></div><div class="n">Review</div></div><div class="tab"><div class="ic"></div><div class="n">Profile</div></div><div class="tab"><div class="ic"></div><div class="n">Settings</div></div></div>
+</div></div></div>
+
+<div class="col"><div class="lab">Profile · <b>believable progress</b></div>
+<div class="device"><div class="statusbar"><span>9:41</span><span>5G  100%</span></div><div class="pad">
+ <div class="card"><div class="idrow"><div class="wave"><i></i><i></i><i></i><i></i><i></i></div><div class="lc"><div class="n">Jordan</div><div class="v">Concise &amp; sharp voice</div></div><div class="pill">Speaker II</div></div></div>
+ <div class="card xl coach" style="text-align:left;align-items:stretch;background:linear-gradient(180deg,#fff,#F3F8FF)">
+   <div class="micro" style="color:var(--bl)"><span class="dot" style="background:var(--bl)"></span>SPEAKING RATING</div>
+   <div class="rrow"><div class="rating">612</div><div class="pill pos">+3 this week</div>
+     <div class="trend"><i style="height:18px"></i><i style="height:24px"></i><i style="height:20px"></i><i style="height:30px"></i><i style="height:26px"></i><i class="on" style="height:36px"></i><i class="on" style="height:42px"></i></div></div>
+   <div class="sub" style="text-align:left;margin-top:4px">Holding above where you started — your best week yet.</div>
+ </div>
+ <div class="card" style="border:1px solid rgba(82,110,240,.16)"><div class="micro" style="color:var(--im)"><span class="dot" style="background:var(--im)"></span>YOUR COACH</div>
+   <div class="body">Pace is your highest-leverage focus right now — you rush the middle when the idea is good.</div>
+   <div class="move" style="color:#3D55D6">Next move · one deliberate pause before each new point.</div></div>
+ <div class="lrow"><div class="wave sm" style="background:rgba(25,153,102,.12)"><i style="background:var(--pos)"></i><i style="background:var(--pos)"></i><i style="background:var(--pos)"></i><i style="background:var(--pos)"></i><i style="background:var(--pos)"></i></div><div class="lc"><div class="t">Growth library</div><div class="s">11 proof moments — replay your best lines</div></div><div class="chev">›</div></div>
+ <div class="lrow"><div class="wave sm" style="background:rgba(105,115,130,.12)"><i style="background:var(--ink2)"></i><i style="background:var(--ink2)"></i><i style="background:var(--ink2)"></i><i style="background:var(--ink2)"></i><i style="background:var(--ink2)"></i></div><div class="lc"><div class="t">History</div><div class="s">45 reps · trends over the last 30 days</div></div><div class="chev">›</div></div>
+ <div class="tabbar"><div class="tab"><div class="ic"></div><div class="n">Train</div></div><div class="tab"><div class="ic"></div><div class="n">Review</div></div><div class="tab on"><div class="ic"></div><div class="n">Profile</div></div><div class="tab"><div class="ic"></div><div class="n">Settings</div></div></div>
+</div></div></div>
+
+</body></html>

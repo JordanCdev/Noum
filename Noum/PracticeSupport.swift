@@ -8327,6 +8327,15 @@ enum RecommendationBlueprintSource: Equatable {
     case goalBias
     case imToneDrill
     case caseIntervention
+
+    var trackingLabel: String {
+        switch self {
+        case .coldStart: return "coldStart"
+        case .goalBias: return "goalBias"
+        case .imToneDrill: return "imToneDrill"
+        case .caseIntervention: return "caseIntervention"
+        }
+    }
 }
 
 struct RecommendationBiasBlueprint {
@@ -8371,6 +8380,162 @@ struct RecommendationBiasBlueprint {
         self.suggestedTimedDifficulty = suggestedTimedDifficulty
         self.suggestedTheme = suggestedTheme
         self.source = source
+    }
+}
+
+enum RecommendationSessionSummaryStyle {
+    case detailed
+    case compact
+    case empty
+}
+
+struct RecommendationBiasContext {
+    let input: AIHomeRecommendationInput
+    let plan: CoachingPlan?
+    let imToneSignal: IMToneDrillSignal?
+    let blueprint: RecommendationBiasBlueprint
+}
+
+enum RecommendationBiasContextBuilder {
+    static func context(
+        profile: CoachingProfile?,
+        sessions: [PracticeSession],
+        sessionStreak: Int,
+        daysSinceLastSession: Int,
+        coachMemory: CoachMemory?,
+        imAvailable: Bool,
+        summaryStyle: RecommendationSessionSummaryStyle = .detailed,
+        preferredModeBias: String = "",
+        preferredToneBias: String = "",
+        preferredScenarioBias: String = "",
+        modeBenefitBias: String = ""
+    ) -> RecommendationBiasContext {
+        let plan = CoachingPlanner.plan(for: sessions, profile: profile)
+        let input = input(
+            profile: profile,
+            sessions: sessions,
+            plan: plan,
+            sessionStreak: sessionStreak,
+            daysSinceLastSession: daysSinceLastSession,
+            summaryStyle: summaryStyle,
+            preferredModeBias: preferredModeBias,
+            preferredToneBias: preferredToneBias,
+            preferredScenarioBias: preferredScenarioBias,
+            modeBenefitBias: modeBenefitBias
+        )
+        let imToneSignal = imAvailable ? IMHistorySummary.toneDrillSignal(from: sessions) : nil
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile,
+            input: input,
+            plan: plan,
+            imToneSignal: imToneSignal,
+            coachMemory: coachMemory
+        )
+        return RecommendationBiasContext(
+            input: input,
+            plan: plan,
+            imToneSignal: imToneSignal,
+            blueprint: blueprint
+        )
+    }
+
+    static func input(
+        profile: CoachingProfile?,
+        sessions: [PracticeSession],
+        plan: CoachingPlan?,
+        sessionStreak: Int,
+        daysSinceLastSession: Int,
+        summaryStyle: RecommendationSessionSummaryStyle = .detailed,
+        preferredModeBias: String = "",
+        preferredToneBias: String = "",
+        preferredScenarioBias: String = "",
+        modeBenefitBias: String = ""
+    ) -> AIHomeRecommendationInput {
+        let recent = Array(sessions.prefix(5))
+        let previous = Array(sessions.dropFirst(5).prefix(5))
+        let identity = PracticeEvaluator.speakingIdentity(
+            for: recent.first?.transcript ?? "",
+            profile: profile
+        )
+        let styleTrend = PracticeEvaluator.styleTrendSnapshot(
+            transcript: recent.first?.transcript ?? "",
+            recentSessions: recent,
+            profile: profile
+        )
+
+        return AIHomeRecommendationInput(
+            recentSessionSummary: recentSessionSummary(
+                from: recent,
+                profile: profile,
+                style: summaryStyle
+            ),
+            averageFillers: average(recent.map { Double($0.fillerWordCount) }),
+            averageDuration: average(recent.map(\.duration)),
+            averageWordsPerMinute: average(recent.map { Double($0.wordsPerMinute) }),
+            fillerTrendDelta: trendDelta(
+                current: recent.map { Double($0.fillerWordCount) },
+                previous: previous.map { Double($0.fillerWordCount) }
+            ),
+            durationTrendDelta: trendDelta(
+                current: recent.map(\.duration),
+                previous: previous.map(\.duration)
+            ),
+            paceTrendDelta: trendDelta(
+                current: recent.map { Double($0.wordsPerMinute) },
+                previous: previous.map { Double($0.wordsPerMinute) }
+            ),
+            averageWordCount: average(recent.map { Double($0.wordCount) }),
+            strongestMode: plan?.strongestMode,
+            currentIdentity: identity.identity,
+            currentIdentityEvidence: identity.evidence,
+            styleAlignmentScore: styleTrend.currentAlignment,
+            sessionStreak: sessionStreak,
+            daysSinceLastSession: daysSinceLastSession,
+            preferredModeBias: preferredModeBias,
+            preferredToneBias: preferredToneBias,
+            preferredScenarioBias: preferredScenarioBias,
+            modeBenefitBias: modeBenefitBias
+        )
+    }
+
+    private static func recentSessionSummary(
+        from sessions: [PracticeSession],
+        profile: CoachingProfile?,
+        style: RecommendationSessionSummaryStyle
+    ) -> String {
+        guard !sessions.isEmpty else { return "No recent sessions yet." }
+
+        switch style {
+        case .empty:
+            return ""
+        case .compact:
+            return sessions.map { session in
+                "\(session.mode.displayLabel): \(session.fillerWordCount) fillers, \(Int(session.duration))s"
+            }.joined(separator: " • ")
+        case .detailed:
+            return sessions.enumerated().map { index, session in
+                let scoreText = session.score.map(String.init) ?? "n/a"
+                let pace = PracticeEvaluator.paceSnapshot(
+                    forTranscript: session.transcript,
+                    duration: session.duration
+                )
+                let identity = PracticeEvaluator.speakingIdentity(
+                    for: session.transcript,
+                    profile: profile
+                )
+                return "Session \(index + 1): mode=\(session.mode.rawValue), fillers=\(session.fillerWordCount), duration=\(Int(session.duration))s, words=\(session.wordCount), wpm=\(session.wordsPerMinute), paceLabel=\(pace.label), score=\(scoreText), headline=\(session.headline ?? "none"), identity=\(identity.identity)"
+            }.joined(separator: "\n")
+        }
+    }
+
+    private static func average(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func trendDelta(current: [Double], previous: [Double]) -> Double {
+        guard !current.isEmpty, !previous.isEmpty else { return 0 }
+        return average(current) - average(previous)
     }
 }
 

@@ -221,7 +221,7 @@ enum DailyChallengeKind: String, CaseIterable, Codable {
         case .cleanSuddenDeath:
             return session.mode == .suddenDeath && session.fillerWordCount == 0
         case .crispDelivery:
-            return (130...155).contains(session.wordsPerMinute) && session.fillerWordCount <= 2
+            return ConversationalPaceBand.contains(session.wordsPerMinute) && session.fillerWordCount <= 2
         case .highScoreSession:
             return (session.score ?? 0) >= 8
         case .multiplePauses:
@@ -256,9 +256,9 @@ enum DailyChallengeKind: String, CaseIterable, Codable {
                    (session.pauseMetrics?.filledRatio ?? 1) < 0.3 &&
                    (session.pauseMetrics?.count ?? 0) >= 2
         case .steadyPace:
-            return (120...170).contains(session.wordsPerMinute) && session.fillerWordCount <= 3
+            return ConversationalPaceBand.contains(session.wordsPerMinute) && session.fillerWordCount <= 3
         case .measuredPace:
-            return (110...135).contains(session.wordsPerMinute) && session.fillerWordCount <= 2
+            return ConversationalPaceBand.contains(session.wordsPerMinute) && session.fillerWordCount <= 2
         case .wordRich:
             return session.wordCount >= 60 && (session.score ?? 0) >= 7
         case .sustainedSeventy:

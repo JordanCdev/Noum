@@ -64,21 +64,13 @@ struct ProfileEvidenceDetailPlan: Equatable {
 
     static let valueFirst = ProfileEvidenceDetailPlan(
         surfaces: [
-            .rankProgress,
             .ratingTrajectory,
             .insightsBanked,
             .pressureHistoryShare,
             .coachingDirection,
-            .weeklyCheckIn,
             .caseReview,
             .deliveryProfile,
-            .speechPatterns,
-            .skillProgress,
-            .activeChallenge,
-            .feedbackInbox,
-            .league,
-            .communityPractice,
-            .achievements
+            .speechPatterns
         ]
     )
 
@@ -164,6 +156,110 @@ struct ProfileCoachReadContent: Equatable {
     }
 }
 
+enum ProfileTransferStatusKind: Equatable {
+    case pendingOutcome
+    case activePrep
+    case recentOutcome
+}
+
+struct ProfileTransferStatusContent: Equatable {
+    let kind: ProfileTransferStatusKind
+    let eyebrow: String
+    let title: String
+    let detail: String
+    let actionTitle: String?
+    let destination: AppDestination?
+    let moment: BigMoment?
+
+    static func make(
+        activeMoment: BigMoment?,
+        pendingOutcomeMoment: BigMoment?,
+        recentOutcome: BigMomentOutcomeReport?,
+        sessions: [PracticeSession],
+        voice: SpeakingStyleGoal?
+    ) -> ProfileTransferStatusContent? {
+        if let pendingOutcomeMoment {
+            return pendingOutcomeContent(
+                for: pendingOutcomeMoment,
+                detail: "Your coach can learn from the room only after you report what happened."
+            )
+        }
+
+        if let activeMoment {
+            let days = BigMomentStore.daysUntil(activeMoment)
+            if let days, days < 0 {
+                return pendingOutcomeContent(
+                    for: activeMoment,
+                    detail: "This moment has passed. Check in so your coach can adapt the next rep."
+                )
+            }
+
+            let daysText: String
+            if let days {
+                if days == 0 {
+                    daysText = "today"
+                } else if days == 1 {
+                    daysText = "tomorrow"
+                } else {
+                    daysText = "in \(days) days"
+                }
+            } else {
+                daysText = "scheduled"
+            }
+            let clampedDays = max(days ?? 7, 0)
+            let plan = PrepSessionPlanner.plan(
+                bigMoment: activeMoment,
+                daysRemaining: clampedDays,
+                voice: voice
+            )
+            let readiness = PrepSessionPlanner.readiness(
+                plan: plan,
+                sessions: sessions,
+                momentCreatedAt: activeMoment.createdAt
+            )
+            return ProfileTransferStatusContent(
+                kind: .activePrep,
+                eyebrow: "Real-world prep",
+                title: "\(activeMoment.title) \(daysText)",
+                detail: readiness.line,
+                actionTitle: "Prep now",
+                destination: .prepSession,
+                moment: activeMoment
+            )
+        }
+
+        if let recentOutcome {
+            let transfer = recentOutcome.drillTransfer.map { " Prep: \($0.chipLabel.lowercased())." } ?? ""
+            return ProfileTransferStatusContent(
+                kind: .recentOutcome,
+                eyebrow: "Last transfer read",
+                title: recentOutcome.momentTitle,
+                detail: "You reported \(recentOutcome.outcome.chipLabel.lowercased()); room read: \(recentOutcome.audienceResponse.chipLabel.lowercased()).\(transfer)",
+                actionTitle: nil,
+                destination: nil,
+                moment: nil
+            )
+        }
+
+        return nil
+    }
+
+    private static func pendingOutcomeContent(
+        for moment: BigMoment,
+        detail: String
+    ) -> ProfileTransferStatusContent {
+        ProfileTransferStatusContent(
+            kind: .pendingOutcome,
+            eyebrow: "Transfer check-in",
+            title: "How did \(moment.title) land?",
+            detail: detail,
+            actionTitle: "Check in",
+            destination: nil,
+            moment: moment
+        )
+    }
+}
+
 @available(iOS 17.0, *)
 struct ProfileView: View {
     @StateObject private var profile = ProfileManager.shared
@@ -193,6 +289,7 @@ struct ProfileView: View {
     @State private var showAddFriendManual = false
     @State private var selectedAsyncChallenge: AsyncChallenge?
     @State private var showChallengePickFriend = false
+    @State private var profileOutcomeMoment: BigMoment?
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -345,6 +442,7 @@ struct ProfileView: View {
             .padding(.bottom, 40)
         }
         .task {
+            bigMomentStore.archiveExpiredIfNeeded()
             await challenges.refreshFromBackend()
             await friends.refreshPeerStats()
         }
@@ -360,6 +458,11 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("profile.screen")
         .sheet(isPresented: $showPaywall) { PaywallView() }
+        .sheet(item: $profileOutcomeMoment) { moment in
+            BigMomentOutcomeInlineCard(moment: moment)
+                .padding()
+                .presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $showChallengePickFriend) {
             ChallengePickFriendSheet(friends: friends, challenges: challenges)
         }
@@ -382,6 +485,13 @@ struct ProfileView: View {
             plan: CoachingPlanner.plan(for: sessions, profile: coachingProfileStore.profile),
             memory: coachMemoryStore.currentMemory,
             proof: proofStore.recent(limit: 1).first
+        )
+        let transferStatus = ProfileTransferStatusContent.make(
+            activeMoment: bigMomentStore.activeMoment,
+            pendingOutcomeMoment: bigMomentStore.pendingOutcomeCheckInMoment,
+            recentOutcome: bigMomentStore.recentOutcomeReports(limit: 1).first,
+            sessions: sessions,
+            voice: coachingProfileStore.profile?.speakingStyleGoal
         )
 
         return VStack(alignment: .leading, spacing: 12) {
@@ -443,6 +553,12 @@ struct ProfileView: View {
                 )
             }
 
+            if let transferStatus {
+                Divider()
+                    .padding(.vertical, 2)
+                profileTransferStatusRow(transferStatus)
+            }
+
             if coachingProfileStore.profile != nil {
                 askNoumProfileLink
             }
@@ -456,6 +572,75 @@ struct ProfileView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.coachRead")
+    }
+
+    private func profileTransferStatusRow(_ status: ProfileTransferStatusContent) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: transferStatusIcon(for: status.kind))
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(AppColor.brandBlue)
+                .padding(.top, 3)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(status.eyebrow)
+                    .font(Typography.micro.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.7)
+                Text(status.title)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(status.detail)
+                    .font(Typography.captionSmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            transferStatusAction(status)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("profile.transferStatus")
+    }
+
+    @ViewBuilder
+    private func transferStatusAction(_ status: ProfileTransferStatusContent) -> some View {
+        if let destination = status.destination,
+           let actionTitle = status.actionTitle {
+            NavigationLink(value: destination) {
+                Text(actionTitle)
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+            }
+            .accessibilityIdentifier("profile.transferStatus.prep")
+        } else if let moment = status.moment,
+                  let actionTitle = status.actionTitle {
+            Button {
+                profileOutcomeMoment = moment
+            } label: {
+                Text(actionTitle)
+                    .font(Typography.captionSmall.weight(.bold))
+                    .foregroundStyle(AppColor.brandBlue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(AppColor.brandBlue.opacity(0.10), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile.transferStatus.checkIn")
+        }
+    }
+
+    private func transferStatusIcon(for kind: ProfileTransferStatusKind) -> String {
+        switch kind {
+        case .pendingOutcome: return "arrow.uturn.left.circle.fill"
+        case .activePrep: return "flag.checkered.circle.fill"
+        case .recentOutcome: return "checkmark.seal.fill"
+        }
     }
 
     private var profileEvidenceHub: some View {
@@ -495,6 +680,9 @@ struct ProfileView: View {
                 profileEvidenceToggleLabel
             }
             .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(showProfileEvidence ? "Hide supporting evidence" : "Show supporting evidence")
+            .accessibilityHint("Shows or hides supporting profile evidence.")
             .accessibilityIdentifier("profile.evidenceHub.toggle")
 
             if showProfileEvidence {
@@ -604,6 +792,7 @@ struct ProfileView: View {
             }
             if plan.surfaces.contains(.ratingTrajectory) {
                 ProgressionChartsCard(sessionStore: sessionStore)
+                    .accessibilityIdentifier("profile.evidence.ratingTrajectory")
             }
             if plan.surfaces.contains(.insightsBanked) {
                 insightsBankedChip
@@ -638,17 +827,22 @@ struct ProfileView: View {
                 feedbackInboxCard
             }
 
-            clusterHeader("Optional systems")
-            if plan.surfaces.contains(.league) {
-                leaguePanel
-            }
-            if plan.surfaces.contains(.communityPractice) {
-                communityPracticeRow
-            }
-            if plan.surfaces.contains(.achievements) {
-                achievementsSummaryRow
+            let optionalSurfaces: [ProfileEvidenceDetailSurface] = [.league, .communityPractice, .achievements]
+            if plan.surfaces.contains(where: { optionalSurfaces.contains($0) }) {
+                clusterHeader("Optional systems")
+                if plan.surfaces.contains(.league) {
+                    leaguePanel
+                }
+                if plan.surfaces.contains(.communityPractice) {
+                    communityPracticeRow
+                }
+                if plan.surfaces.contains(.achievements) {
+                    achievementsSummaryRow
+                }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile.evidenceDetails")
     }
 
     // MARK: - Identity Header
@@ -802,6 +996,7 @@ struct ProfileView: View {
         }
         .padding(20)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .accessibilityIdentifier("profile.evidence.rankProgress")
     }
 
     // MARK: - Speaking Rating
@@ -1392,6 +1587,7 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .accessibilityIdentifier("profile.evidence.coachingDirection")
     }
 
     /// Compact read-only surface for the coaching case file — the
@@ -1418,6 +1614,7 @@ struct ProfileView: View {
                     coachMemoryStore.noteHypothesisAcknowledgement(confidence)
                 }
             )
+            .accessibilityIdentifier("profile.evidence.caseReview")
         }
     }
 
@@ -1429,6 +1626,7 @@ struct ProfileView: View {
     private var deliveryProfileCard: some View {
         if let profile = coachMemoryStore.currentMemory?.deliveryProfile {
             DeliveryProfileCard(profile: profile)
+                .accessibilityIdentifier("profile.evidence.deliveryProfile")
         }
     }
 
@@ -1563,6 +1761,7 @@ struct ProfileView: View {
         }
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .accessibilityIdentifier("profile.evidence.activeChallenge")
     }
 
     // MARK: - Achievements (Compact Preview)
@@ -1812,6 +2011,7 @@ struct ProfileView: View {
                 }
                 .padding(Spacing.lg)
                 .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+                .accessibilityIdentifier("profile.evidence.speechPatterns")
             }
         }
     }
@@ -1841,6 +2041,7 @@ struct ProfileView: View {
                 trends: trends,
                 drillHistory: DrillHistoryStore.shared.entries
             )
+            .accessibilityIdentifier("profile.evidence.skillProgress")
         }
     }
 
@@ -1878,6 +2079,7 @@ struct ProfileView: View {
                 }
                 .padding(Spacing.lg)
                 .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+                .accessibilityIdentifier("profile.evidence.feedbackInbox")
             }
         }
         .sheet(item: $selectedFeedbackRequest) { request in

@@ -1,61 +1,84 @@
-# Run: 2026-06-07 · branch:ux-overhaul · HEAD d96186d · UX value continuation verification note
+# Run: 2026-06-07 · branch:ux-overhaul · UX value continuation verification note
 
 ## Mode
-off
+
+`off`
 
 Screenshot capture was intentionally skipped because both repo screenshot mode files currently read `off`:
 
 - `.agents/skills/noum-screenshots/.mode`
 - `.claude/skills/noum-screenshots/.mode`
 
-The local machine is Darwin and CoreSimulator was reachable with escalation. iPhone 17 (iOS 26.4) was booted:
-`BD2DE1AB-DAC7-4538-A5AD-BECC4D603C0E`.
+The local machine is Darwin and CoreSimulator was reachable with escalation. A booted
+`iPhone 17` simulator was available, but no PNG sweep was captured because the mode files
+explicitly disable it.
 
-## Changes shipped this run
+## Changes verified or extended in this continuation
 
-- `Noum/PostRepVerdictCard.swift` — stable accessibility identifiers and VoiceOver hints for the post-rep verdict root and drill/retry CTAs.
-- `Noum/Resources/Localizable.xcstrings` plus pressure-mode call sites — user-facing "Sudden Death" renamed to "Pressure Drill" while preserving internal `.suddenDeath` persistence/API names.
-- `ProfileView.swift` — expanded evidence disclosure now uses a tested value-first plan: one rating trajectory, coach evidence next, optional/community/achievement systems demoted.
-- `Noum/CoachingOnboardingView.swift`, `Noum/SummaryCards.swift`, `ProfileView.swift`, `Noum/PracticeModeSelectionView.swift`, `Noum/SessionHistoryView.swift` — reduced-motion gates added to the named animation hotspots.
-- `Noum/AICoachChatService.swift`, `Noum/CoachContextBuilder.swift`, `Noum/CoachReplyPipeline.swift`, `Noum/AskNoumStore.swift` — Ask Noum structured-reply prompt flag added, with tested quote guard for "you said..." claims.
-- `Noum/NoumApp.swift`, `Noum/FirstRunOnboardingManager.swift`, `NoumUITests/NoumUITests.swift` — `UI_TESTING_REAL_FIRST_RUN` now verifies the real app-level onboarding cover dismisses into the Train picker.
-- `Noum/PracticeModeSelectionView.swift`, `Noum/CutTheCrutchEngine.swift`, `NoumTests/NoumTests.swift` — Cut the Crutch picker copy is test-locked against hearts/lives/no-second-chances framing.
-- `docs/UX_VALUE_OVERHAUL_HANDOFF_2026-06-07.md` — continuation state updated for Claude/Codex handover.
+- `Noum/TimedPracticeView.swift`, `NoumUITests/NoumUITests.swift` — deterministic
+  `UI_TESTING_FIRST_VALUE_LOOP` now pushes first-run onboarding through a timed rep and into
+  the first verdict with an injected transcript/evaluation.
+- `Noum/SessionFinalizer.swift`, `Noum/FirstRepCelebration.swift`, `NoumTests/NoumTests.swift`
+  — first rep is no longer treated as a milestone crossing.
+- `Noum/PracticeSupport.swift`, `Noum/ContentView.swift`, `Noum/HomeCoachCard.swift`,
+  `Noum/PracticeModeSelectionView.swift` — Home, AI prompt bias, and picker Coach Pick use
+  shared recommendation context; picker records recommendation shown/tapped telemetry.
+- `Noum/PaceTrainingEngine.swift`, `Noum/DailyChallenge.swift`, `Noum/PathJourneyView.swift`
+  — conversational pace now uses the same 110-150 WPM band across challenge/path logic.
+- `ProfileView.swift` — collapsed Profile coach read now surfaces one real-world transfer
+  status row; stale active moments that have passed degrade to check-in rather than prep.
+- `ProfileView.swift` — expanded Profile evidence is now coach/proof evidence only, cutting
+  rank currency, weekly admin, skill/challenge/inbox panels, league, community, and
+  achievements from that drawer. The disclosure toggle now has an explicit accessibility
+  label/hint, retained evidence cards have `profile.evidence.*` identifiers, and the UI
+  regression `testProfileEvidenceDisclosureStaysCoachEvidenceOnly` passed.
+- `Noum/ContentView.swift` — Home Path entry is now a compact supporting row instead of a
+  multi-line secondary hero.
+- `Noum/ContentView.swift`, `NoumUITests/NoumUITests.swift` — Home shortcut dock no longer
+  swallows child accessibility identifiers; picker UI test understands Coach Pick +
+  "Pick another".
+- `docs/UX_VALUE_OVERHAUL_HANDOFF_2026-06-07.md` — continuation state updated for the next
+  Claude/Codex handover.
+
+Earlier continuation items still stand: post-rep verdict CTA identifiers, user-facing
+"Pressure Drill" rename, Profile disclosure reduction, reduced-motion gates, Ask Noum
+structured-reply flag/quote guard, and Cut the Crutch anti-goal copy lock.
+
+## Regressions checked
+
+- `RewardOwnershipTests`, `PostRepVerdictContentTests`, `PracticeModePrescriptionCopyTests`.
+- `DailyChallengeKindTests`, `RevampPathLivePresentationTests`, `PaceTrainingEngineTests`.
+- `RecommendationBiasContextBuilderTests`, `PracticeModePrescriptionCopyTests`.
+- `ProfileCollapseContractTests`, `BigMomentTransferStoreTests`,
+  `BigMomentTransferEnrichmentTests`, `PrepSessionReadinessTests`.
+- Latest `ProfileCollapseContractTests` rerun:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.07_20-46-32-+0100.xcresult`.
+- `NoumUITests/testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript`.
+- `NoumUITests/testOnboardingFlowSmoke`.
+- `NoumUITests/testPracticeModesOpenAvailableScreens`.
+- `NoumUITests/testHomeScreenAndPrimaryNavigation`.
+- `NoumUITests/testProfileEvidenceDisclosureStaysCoachEvidenceOnly`
+  (`DerivedData/Noum/Logs/Test/Test-Noum-2026.06.07_20-44-20-+0100.xcresult`).
+- `git diff --check`.
 
 ## Screenshots
 
 No PNG screenshots captured in this run because screenshot mode is `off`.
 
-## VISION gap
+## Remaining visual verification
 
-This continuation strengthens coaching trust and UX value by reducing duplicate Profile evidence, renaming a punishment-coded pressure mode, respecting reduced-motion settings, and preventing unverified quoted-user-speech claims in Ask Noum.
+- Cold first-run onboarding -> Practice picker -> first timed verdict.
+- Practice picker Coach Pick hero + "Pick another" disclosure.
+- Summary verdict with proof quote, fix-first drill CTA, retry CTA, and Pro upsell below value.
+- Home top with coach hero plus compact Path row, across cold/beginner/returning states.
+- Collapsed Profile coach read with transfer status.
+- Profile expanded coach/proof evidence disclosure.
+- Ask Noum empty/live state with weak-evidence copy.
+- Dynamic Type, VoiceOver, and reduced-motion passes.
 
-The remaining VISION gap is not another surface: it is proof. The app still needs a local screenshot sweep and simulator walkthrough to confirm the value hierarchy feels premium on-device across the four high-value screens.
+## For next local run
 
-## Next steps to reach desired state
-
-1. Turn screenshot mode to `light` or `detailed`, then capture Home, Train, Review, Profile, Settings.
-2. Add focused extra captures for Profile expanded details, Summary verdict, Ask Noum empty/live states, and the Practice picker Coach Pick.
-3. Visually capture the real first-run onboarding completion path now that `UI_TESTING_REAL_FIRST_RUN` verifies the route outside `UI_TESTING_ONBOARDING`.
-4. Decide whether `.derived-data-log-0CA5RPJ1` should be restored/ignored before commit.
-
-## Regressions checked
-
-- Focused unit tests were already run after implementation and passed for post-rep verdict content, Profile collapse contracts, practice-mode prescription copy, Ask Noum reply quality gates, and CoachContextBuilder prompt shape.
-- `NoumUITests/NoumUITests/testOnboardingFlowSmoke` passed with `UI_TESTING_REAL_FIRST_RUN`, proving onboarding completion lands on `practiceModes.screen`.
-- `git diff --check` passed.
-- `Noum/Resources/Localizable.xcstrings` parsed as valid JSON via Ruby.
-- CoreSimulator availability was checked with escalation; no screenshots captured due mode.
-
-## Surfaces needing visual verification
-
-- Summary verdict with proof quote, fix-first CTA, retry CTAs, Pro upsell after value.
-- Profile top + expanded supporting-evidence disclosure.
-- Practice picker Coach Pick and mode literacy rows.
-- Ask Noum empty state and a seeded/live coach reply.
-- Visual first-run route capture from onboarding completion into Train.
-
-## For next run
-
-- **If cloud:** continue logic/tests only; do not claim visual verification.
-- **If local:** set screenshot mode to `light` or `detailed`, run the screenshot skill, and inspect the screens above before calling the app ready.
+Set screenshot mode to `light` or `detailed`, run the screenshot skill, and inspect the
+screens above before calling the app visually ready. Do not treat this folder as visual
+approval; it is a trace explaining why screenshots are absent and what still needs image
+review.

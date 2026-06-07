@@ -28,8 +28,11 @@ closed by the original handoff list.
   hearts/lives framing · real first-run route verified outside the pinned onboarding harness.
 - **Roadmap status:** Iteration 1 complete. Iteration 2 mostly complete. Iteration 3
   partially complete (route verified; true "ask → speak → first read within ~60s" still
-  needs end-to-end product proof). Iterations 4 and 5 are not complete. Iterations 6 and
-  7 are partial. Do not confuse "handoff list closed" with "app done."
+  needs end-to-end product proof). Iteration 5 has advanced again: Home, AI prompt bias,
+  picker Coach Pick, fallback visibility, and picker telemetry now share one deterministic
+  recommendation context. Iteration 7 has advanced again: Profile now surfaces real-world
+  transfer state inside the collapsed coach read. Iterations 4, 5, 6, and 7 are still not
+  complete. Do not confuse "handoff list closed" with "app done."
 - **Remaining:** screenshot/visual sweep on simulator and the broader product-readiness
   pass beyond this handoff's priority list.
 
@@ -134,9 +137,8 @@ subtraction + hierarchy + making value felt, not new features.
    **"Pressure Drill"** across the identified surfaces while preserving `.suddenDeath`
    enum/persistence names. `Localizable.xcstrings` was reconciled and validated as JSON.
 3. **Profile disclosure cut (Priority 5).** Expanded Profile details now follow a tested
-   `ProfileEvidenceDetailPlan`: one rating trajectory, coach evidence next, optional systems
-   demoted. The old full social/speak-off sections no longer dominate the disclosure; compact
-   rows preserve community and achievement access.
+   `ProfileEvidenceDetailPlan`: one rating trajectory and coach evidence only. The old
+   dashboard/system layer no longer renders inside the evidence disclosure.
 4. **Reduced-motion gates (Priority 6).** `CoachingOnboardingView`, `SummaryCards.HeroScoreCard`,
    `ProfileView` numeric/disclosure transitions, `PracticeModeSelectionView`, and
    `SessionHistoryView` now skip springs/pulse/bounce where `accessibilityReduceMotion` is on.
@@ -150,6 +152,37 @@ subtraction + hierarchy + making value felt, not new features.
    `PracticeModePrescriptionCopy` and has a test proving it says "slips" rather than
    hearts/lives/no-second-chances framing. Internal engine names still use `heartsRemaining`
    for compatibility; the user-facing register is locked.
+7. **Recommendation prescription coherence (Iteration 5 continuation).** Home coach,
+   AI prompt bias, and the Practice picker now build from a shared
+   `RecommendationBiasContext`. The picker records shown/tapped telemetry through
+   `RecommendationLearningStore`, hides unavailable recommended modes behind a deterministic
+   Timed fallback, and replaces static hero copy with the actual target + focus markers.
+8. **Conversational pace coherence (Iteration 5 continuation).** Daily challenges and live
+   presentation/rushing path state now use the shared `ConversationalPaceBand` rather than
+   mismatched WPM thresholds.
+9. **Transfer loop surfacing (Iteration 7 continuation).** Collapsed Profile coach read now
+   includes one compact transfer status row for pending real-world outcomes, active prep, or
+   recent outcomes, reusing `BigMomentStore` instead of inventing a parallel transfer system.
+   A stale active moment that has already passed now degrades to a check-in row instead of
+   stale prep copy.
+10. **First-run value-loop UI proof.** `TimedPracticeView` has a deterministic
+    `UI_TESTING_FIRST_VALUE_LOOP` path that injects a short transcript/evaluation/finalization
+    and pushes the user through to the first verdict. The UI test verifies onboarding can
+    reach that first read without relying on the old pinned onboarding harness.
+11. **Navigation/picker regression fix.** The Home shortcut dock no longer swallows child
+    accessibility identifiers, and the Practice picker UI test now understands the redesigned
+    Coach Pick hero + "Pick another" disclosure instead of assuming every mode tile is visible
+    on first paint.
+12. **Home hierarchy subtraction (Iteration 4 continuation).** The Path/Journey entry remains
+    signal-gated and reachable, but it is now a compact supporting row instead of a multi-line
+    secondary hero directly beneath the coach.
+13. **Profile evidence subtraction (Iteration 7 continuation).** The expanded Profile evidence
+    drawer now excludes rank currency, weekly admin, skill/challenge/inbox panels, league,
+    community, and achievements. It stays focused on rating trajectory, proof archive/share
+    affordances, and coach evidence. The disclosure toggle now has an explicit accessibility
+    label/hint, retained coach-evidence cards have stable `profile.evidence.*` identifiers,
+    and `NoumUITests/testProfileEvidenceDisclosureStaysCoachEvidenceOnly` locks the expanded
+    drawer against dashboard creep.
 
 ## 5a. Remaining work
 
@@ -158,9 +191,45 @@ subtraction + hierarchy + making value felt, not new features.
    Codex checked this on 2026-06-07: the local simulator is available, but both screenshot
    mode files are currently `off`, so no PNGs were captured. A minimal verification note lives
    at `.screenshots/2026-06-07_codex-ux-continuation/HANDOFF.md`.
-2. **Full readiness iteration.** This pass closes the handoff's implementation list; it does not
-   prove the app is "done." Continue with a full product QA/market-readiness evaluation after
-   screenshots and simulator walkthroughs.
+2. **Iteration 4 Home readiness.** Home is better, but it still needs a ruthless value audit:
+   one next move, one proof-backed coach read, no low-confidence progress furniture, and no
+   secondary surface stealing attention before the first meaningful rep.
+3. **Iteration 5 curriculum spine.** Recommendation coherence is improved, but the broader
+   curriculum still needs to feel like a sequenced coach plan rather than a mode picker with a
+   good default.
+4. **Iteration 6 Ask Noum answer quality.** Structured reply shape and quote guard are in
+   place, but Ask still needs simulator review across empty, post-rep, and weak-evidence states.
+5. **Iteration 7 Profile proof.** Transfer status is now visible, but Profile still needs full
+   visual review for text density, Dynamic Type, VoiceOver, empty states, and whether hidden
+   evidence surfaces are still too many.
+6. **Full readiness iteration.** This pass closes more of the handoff's implementation list; it
+   does not prove the app is "done." Continue with full product QA/market-readiness evaluation
+   after screenshots and simulator walkthroughs.
+
+### 5b. Continuation verification log
+
+- `RewardOwnershipTests`, `PostRepVerdictContentTests`, and
+  `PracticeModePrescriptionCopyTests` passed after first-rep celebration honesty changes.
+- `DailyChallengeKindTests`, `RevampPathLivePresentationTests`, and
+  `PaceTrainingEngineTests` passed after the shared pace-band change.
+- `RecommendationBiasContextBuilderTests` and `PracticeModePrescriptionCopyTests` passed
+  after shared recommendation context and picker telemetry changes.
+- `ProfileCollapseContractTests`, `BigMomentTransferStoreTests`,
+  `BigMomentTransferEnrichmentTests`, and `PrepSessionReadinessTests` passed after Profile
+  transfer status surfacing. `ProfileCollapseContractTests` passed again after stale active
+  moments were made to degrade to transfer check-in, and again after the Profile evidence
+  drawer was reduced to coach/proof evidence only. Latest Profile contract result:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.07_20-46-32-+0100.xcresult`.
+- `HomeSignalGateTests` and `HomeSignalGateEdgeTests` passed after the Home Path/Journey row
+  was compacted.
+- `NoumUITests/testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript`,
+  `NoumUITests/testOnboardingFlowSmoke`, `NoumUITests/testPracticeModesOpenAvailableScreens`,
+  `NoumUITests/testHomeScreenAndPrimaryNavigation`, and
+  `NoumUITests/testProfileEvidenceDisclosureStaysCoachEvidenceOnly` passed on the booted
+  iPhone 17 simulator after rerunning `xcodebuild test` with sandbox escalation. Latest
+  Profile evidence UI result:
+  `DerivedData/Noum/Logs/Test/Test-Noum-2026.06.07_20-44-20-+0100.xcresult`.
+- `git diff --check` passed.
 
 ---
 
