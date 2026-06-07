@@ -38,7 +38,7 @@ struct ProfileView: View {
     @StateObject private var coachMemoryStore = CoachMemoryStore.shared
     @StateObject private var coachCheckInStore = CoachCheckInStore.shared
 
-    @State private var showAchievementsPage = false
+    @State private var showAchievementsTree = false
     @State private var showPaywall = false
     @State private var showAddFriendManual = false
     @State private var showScanner = false
@@ -252,7 +252,7 @@ struct ProfileView: View {
         .sheet(item: $selectedAsyncChallenge) { challenge in
             AsyncChallengeDetailSheet(challenge: challenge, challenges: challenges)
         }
-        .navigationDestination(isPresented: $showAchievementsPage) {
+        .navigationDestination(isPresented: $showAchievementsTree) {
             AchievementsTreeView()
         }
     }
@@ -820,7 +820,7 @@ struct ProfileView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(league.tier.title) league")
+                    Text(LeaguePlacementPresentation.title(tier: league.tier, rating: ratingStore.rating))
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.primary)
                     Text(leagueSubtitle)
@@ -854,13 +854,12 @@ struct ProfileView: View {
     }
 
     private var leagueSubtitle: String {
-        if let toNext = league.ratingToNextTier, let next = league.tier.nextTier {
-            return "+\(toNext) rating to \(next.title)"
-        }
-        return "Top tier — defend your rating to stay."
+        LeaguePlacementPresentation.subtitle(tier: league.tier, rating: ratingStore.rating)
     }
 
-    private var leagueTierTint: Color { league.tier.tint }
+    private var leagueTierTint: Color {
+        ratingStore.rating.hasRatedEvidence ? league.tier.tint : AppColor.brandBlue
+    }
 
     // MARK: - Coaching Direction
 
@@ -1136,9 +1135,6 @@ struct ProfileView: View {
                 Text(retentionSnapshot.activeChallenge.progressLabel)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
-                Text(retentionSnapshot.activeChallenge.rewardLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
             }
 
             Text(retentionSnapshot.motivationLine)
@@ -1224,7 +1220,7 @@ struct ProfileView: View {
         .padding(Spacing.lg)
         .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture { showAchievementsPage = true }
+        .onTapGesture { showAchievementsTree = true }
     }
 
     /// Up to 4 preview tiers: most recent unlocks first, then easiest locked ones to fill to 4.

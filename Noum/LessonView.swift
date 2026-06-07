@@ -18,6 +18,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct LessonView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var lessonStore = LessonStore.shared
     @StateObject private var profileManager = ProfileManager.shared
     /// Real speech capture for the Apply step. Lessons don't write to the
@@ -431,7 +432,7 @@ struct LessonView: View {
                 Image(systemName: "waveform.and.mic")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(AppColor.brandBlue)
-                    .symbolEffect(.pulse, options: .repeating.speed(0.9))
+                    .symbolEffect(.pulse, options: .repeating.speed(0.9), isActive: !reduceMotion)
                 Text("Listening")
                     .font(Typography.caption.weight(.bold))
                     .foregroundStyle(AppColor.brandBlue)

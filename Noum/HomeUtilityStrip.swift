@@ -134,16 +134,16 @@ struct HomeUtilityStrip: View {
     }
 
     /// Coach-voice fact. "12 day streak". No exclamation, no celebration
-    /// word. When the streak is 0 we render "No streak yet" rather than
-    /// "0 day streak" — the latter reads like punishment.
+    /// word. When the streak is 0 we render a forward prompt instead of
+    /// a negative empty state.
     private var streakLabel: String {
         let n = streak.currentStreak
-        return n > 0 ? "\(n) day streak" : "No streak yet"
+        return n > 0 ? "\(n) day streak" : "Start today"
     }
 
     private var streakAccessibilityLabel: String {
         let n = streak.currentStreak
-        return n > 0 ? "\(n) day streak." : "No streak yet."
+        return n > 0 ? "\(n) day streak." : "Start today."
     }
 
     // MARK: - Word of the day

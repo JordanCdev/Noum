@@ -38,11 +38,15 @@ struct PeakRatingWallView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                    header
-                    bestInWeekSection
-                    bestEverSection
-                    if !bucketPeaks.isEmpty {
-                        bestInFriendsSection
+                    if ratingStore.rating.hasRatedEvidence {
+                        header
+                        bestInWeekSection
+                        bestEverSection
+                        if !bucketPeaks.isEmpty {
+                            bestInFriendsSection
+                        }
+                    } else {
+                        unratedEmptyState
                     }
                     Spacer(minLength: Spacing.lg)
                 }
@@ -72,6 +76,25 @@ struct PeakRatingWallView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var unratedEmptyState: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(AppColor.brandBlue)
+            Text("No peak rating yet")
+                .font(Typography.cardTitle)
+                .foregroundStyle(.primary)
+            Text("One rated pressure rep sets the first mark. After that, this wall shows your best this week, your best ever, and your league comparison.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -368,6 +391,7 @@ struct PeakRatingWallView: View {
     private func loadBucket() async {
         guard !hasLoadedBucket else { return }
         hasLoadedBucket = true
+        guard ratingStore.rating.hasRatedEvidence else { return }
         bucketPeaks = await league.peakRatingsInBucket(limit: 5)
     }
 

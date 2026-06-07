@@ -91,7 +91,7 @@ struct PracticeModeSelectionView: View {
 
     private struct CrutchOption {
         let title: String = "Cut the Crutch"
-        let subtitle: String = "Avoid one specific word for 60 seconds. 3 hearts, no second chances."
+        let subtitle: String = "Avoid one specific word for 60 seconds. Three slips ends the rep."
         let systemImage: String = "scissors"
         var tint: Color { AppColor.modeCrutch }
     }
@@ -976,8 +976,8 @@ struct PracticeModeSelectionView: View {
         .accessibilityHint("Begins a \(title) rep.")
         // Background tightened from a 0.02 → 0.72 white gradient to a
         // solid screen-bg fade — the earlier opacity stop left content
-        // bleeding through (Cut the Crutch's "60 seconds. 3 hearts, no
-        // second chances." was visible under the CTA at rest scroll).
+        // bleeding through (Cut the Crutch's setup copy was visible under
+        // the CTA at rest scroll).
         // Gradient still fades in softly at the top edge so the CTA
         // doesn't read as a hard cut-line.
         .background(

@@ -36,6 +36,36 @@ struct NoumTests {
 
 }
 
+@Suite("NotificationCopy Evening Nudge")
+struct NotificationCopyEveningNudgeTests {
+    @Test func eveningNudgeAvoidsPressureFramingAcrossStreakBands() {
+        let lines = [0, 1, 3, 7, 14, 30].flatMap { streak in
+            [
+                NotificationCopy.streakWarning(streakDays: streak, freezesAvailable: 0),
+                NotificationCopy.streakWarning(streakDays: streak, freezesAvailable: 1)
+            ]
+        }
+        let bannedFragments = [
+            "at risk",
+            "break",
+            "lose",
+            "lost",
+            "deadline",
+            "buzzer",
+            "only a rep",
+            "hurry",
+            "last chance"
+        ]
+
+        for line in lines {
+            let combined = "\(line.title) \(line.body)".lowercased()
+            for fragment in bannedFragments {
+                #expect(!combined.contains(fragment))
+            }
+        }
+    }
+}
+
 final class VideoRecordingLifecycleTests: XCTestCase {
     func testStartingNewRecordingClearsPreviousResultAndError() {
         let firstURL = URL(fileURLWithPath: "/tmp/first.mov")
@@ -2546,7 +2576,8 @@ struct PressureSessionResultTests {
             personalBest: 0
         )
         #expect(result.score <= 3, "Immediate timeout should score low. Got: \(result.score)")
-        #expect(result.resultLabel == "Time Broke You", "Got: \(result.resultLabel)")
+        #expect(result.resultLabel == "Clock Ran Out", "Got: \(result.resultLabel)")
+        #expect(result.resultIcon == "clock.badge.exclamationmark")
     }
 
     @Test func fillerFailureAfterSurvivalGetsRecoveryLabel() {
@@ -2620,7 +2651,7 @@ struct PressureSessionResultTests {
     }
 
     @Test func resultLabelCoversAllExpectedValues() {
-        let labels = ["Fast and Clear", "Beat the Clock", "Held Under Pressure", "Strong Recovery", "Filler Spike", "Rushed Start", "Time Broke You"]
+        let labels = ["Fast and Clear", "Beat the Clock", "Held Under Pressure", "Strong Recovery", "Filler Spike", "Rushed Start", "Clock Ran Out"]
         // Verify the icon/tint lookup doesn't crash for a baseline result
         let result = PressureSessionResult(
             roundsSurvived: 0,
@@ -2632,6 +2663,7 @@ struct PressureSessionResultTests {
         #expect(!result.resultIcon.isEmpty)
         #expect(!result.resultLabel.isEmpty)
         #expect(labels.count == 7, "Should have 7 distinct result labels")
+        #expect(!labels.joined(separator: " ").lowercased().contains("broke"))
     }
 
     @Test func scoreRangeIsClamped() {
@@ -2654,6 +2686,89 @@ struct PressureSessionResultTests {
             personalBest: 8
         )
         #expect(high.score >= 1 && high.score <= 10, "Score should be 1-10. Got: \(high.score)")
+    }
+}
+
+struct RecommendationBiasCopyContractTests {
+
+    @Test func goalBiasedRationaleAvoidsThirdPersonLeakAcrossModes() {
+        let cases: [(profile: CoachingProfile, mode: PracticeMode)] = [
+            (profile(.reduceFillers, .fillerWords, .work), .ahCounter),
+            (profile(.moreConcise, .rambling, .presentations), .timed),
+            (profile(.thinkFaster, .freezing, .interviews), .suddenDeath),
+            (profile(.calmerDelivery, .rushing, .social), .imConversation)
+        ]
+
+        for item in cases {
+            let blueprint = RecommendationBiasEngine.blueprint(
+                profile: item.profile,
+                input: input(),
+                plan: nil
+            )
+            let rationale = "\(blueprint.whyMode) \(blueprint.whyNow)"
+
+            #expect(blueprint.recommendedMode == item.mode)
+            #expect(!rationale.contains("The user"))
+            #expect(!rationale.contains("the user"))
+            #expect(!rationale.contains("Their "))
+            #expect(!rationale.contains("They need"))
+            #expect(!rationale.contains("signed up"))
+        }
+    }
+
+    @Test func staleRhythmRationaleSpeaksDirectlyToUser() {
+        let blueprint = RecommendationBiasEngine.blueprint(
+            profile: profile(.moreConcise, .rambling, .work),
+            input: input(daysSinceLastSession: 4),
+            plan: nil
+        )
+
+        #expect(blueprint.whyNow.contains("You've been away from the rhythm"))
+        #expect(blueprint.whyNow.contains("you chose"))
+        #expect(!blueprint.whyNow.contains("The user"))
+    }
+
+    private func profile(
+        _ priority: CoachingPriority,
+        _ challenge: SpeakingChallenge,
+        _ context: SpeakingContext
+    ) -> CoachingProfile {
+        CoachingProfile(
+            speakingContext: context,
+            primaryGoal: priority,
+            confidenceLevel: .inconsistent,
+            biggestChallenge: challenge,
+            desiredOutcome: priority == .thinkFaster ? .spontaneous : .concise,
+            speakingStyleGoal: .concise,
+            styleReference: "weekly update",
+            coachingBrief: "I want to sound clear under pressure.",
+            motivationWhyNow: "A real conversation is coming up.",
+            successVision: "I answer cleanly.",
+            chosenStyleGoal: .concise
+        )
+    }
+
+    private func input(daysSinceLastSession: Int = 0) -> AIHomeRecommendationInput {
+        AIHomeRecommendationInput(
+            recentSessionSummary: "",
+            averageFillers: 2,
+            averageDuration: 35,
+            averageWordsPerMinute: 140,
+            fillerTrendDelta: 0,
+            durationTrendDelta: 0,
+            paceTrendDelta: 0,
+            averageWordCount: 80,
+            strongestMode: nil,
+            currentIdentity: "",
+            currentIdentityEvidence: "",
+            styleAlignmentScore: 0.5,
+            sessionStreak: 2,
+            daysSinceLastSession: daysSinceLastSession,
+            preferredModeBias: "",
+            preferredToneBias: "",
+            preferredScenarioBias: "",
+            modeBenefitBias: ""
+        )
     }
 }
 
@@ -6507,6 +6622,168 @@ struct PeakGlowGatingTests {
 
         #expect(!store.pendingPeakGlow,
                 "Downward peak must never raise glow — no punish-shame on regression.")
+    }
+
+    @Test func initialRatingSilencesPeakGlow() {
+        let store = RatingStore.shared
+        store.replaceForDebug(.initial)
+        store.markPeakGlowConsumed()
+
+        store.notePeakReachedForGlow()
+
+        #expect(!store.pendingPeakGlow,
+                "The default 400 starting line must not trigger a personal-best glow.")
+    }
+}
+
+struct BelievableProgressZeroDataTests {
+
+    @Test func initialRatingHasNoRatedEvidence() {
+        #expect(!SpeakingRating.initial.hasRatedEvidence)
+        #expect(!PeakRatingWallCard.shouldRender(for: .initial))
+    }
+
+    @Test func ratedSessionCreatesRatedEvidence() {
+        let rated = RatingEngine.processRatedSession(
+            rating: .initial,
+            sessionScore: 8,
+            sessionId: UUID(),
+            pressureLevel: .elevated
+        )
+
+        #expect(rated.hasRatedEvidence)
+        #expect(PeakRatingWallCard.shouldRender(for: rated))
+    }
+
+    @Test func leagueCopyDoesNotAssignTierBeforeRatedEvidence() {
+        let title = LeaguePlacementPresentation.title(tier: .silver, rating: .initial)
+        let subtitle = LeaguePlacementPresentation.subtitle(tier: .silver, rating: .initial)
+        let fullSubtitle = LeaguePlacementPresentation.fullScreenSubtitle(tier: .silver, rating: .initial)
+
+        #expect(title == "League placement pending")
+        #expect(subtitle.contains("One rated pressure rep"))
+        #expect(fullSubtitle.contains("Run one rated pressure rep"))
+        #expect(!title.contains("Silver"))
+        #expect(!subtitle.contains("Gold"))
+        #expect(LeaguePlacementPresentation.ratingValue(for: .initial) == "—")
+    }
+
+    @Test func leagueCopyUsesTierAfterRatedEvidence() {
+        let rated = RatingEngine.processRatedSession(
+            rating: .initial,
+            sessionScore: 8,
+            sessionId: UUID(),
+            pressureLevel: .elevated
+        )
+
+        let tier = LeagueTier.tier(for: rated.overall)
+        let title = LeaguePlacementPresentation.title(tier: tier, rating: rated)
+        let subtitle = LeaguePlacementPresentation.subtitle(tier: tier, rating: rated)
+
+        #expect(title.contains(tier.title))
+        #expect(subtitle.contains("rating"))
+        #expect(LeaguePlacementPresentation.ratingValue(for: rated) == "\(rated.overall)")
+    }
+}
+
+struct RevampPathLivePresentationTests {
+
+    @Test func pathProgressComesFromNodeLedgerNotCalendarWindow() {
+        let presentation = PathJourneyPresentation.make(
+            completedCount: 5,
+            currentProgress: 0.5,
+            totalCount: 20,
+            currentTitle: "Hold pressure",
+            currentDetail: "Sustain clarity in a pressure rep.",
+            currentGatingPhrase: "Two reps from unlocked.",
+            currentStreak: 4,
+            sessionCount: 12
+        )
+
+        #expect(abs(presentation.revealProgress - 0.275) < 0.0001)
+        #expect(presentation.progressLabel == "27% complete")
+        #expect(presentation.summaryLine == "5 of 20 missions unlocked from real practice signals.")
+        #expect(presentation.explanationLine == "Mission 6: Hold pressure")
+        #expect(presentation.nextMilestoneLabel == "Two reps from unlocked.")
+        #expect(presentation.homeGoalLine.contains("Mission 6 of 20"))
+        #expect(!presentation.summaryLine.contains("21 days"))
+    }
+
+    @Test func coldPathPresentationDoesNotClaimHiddenCalendarProgress() {
+        let presentation = PathJourneyPresentation.make(
+            completedCount: 0,
+            currentProgress: 0,
+            totalCount: 20,
+            currentTitle: "First clean rep",
+            currentDetail: "Complete one real rep.",
+            currentGatingPhrase: "One rep from unlocked.",
+            currentStreak: 0,
+            sessionCount: 0
+        )
+
+        let copy = [
+            presentation.previewLine,
+            presentation.summaryLine,
+            presentation.explanationLine,
+            presentation.nextMilestoneLabel,
+            presentation.consequenceLine,
+            presentation.homeGoalLine
+        ].joined(separator: " ")
+
+        #expect(presentation.progressLabel == "0% complete")
+        #expect(presentation.currentStreak == 0)
+        #expect(copy.contains("one real rep") || copy.contains("One rep"))
+        #expect(!copy.localizedCaseInsensitiveContains("grass"))
+        #expect(!copy.localizedCaseInsensitiveContains("calendar"))
+        #expect(!copy.contains("21 days"))
+    }
+
+    @Test func completedPathReadsAsComplete() {
+        let presentation = PathJourneyPresentation.make(
+            completedCount: 20,
+            currentProgress: 0,
+            totalCount: 20,
+            currentTitle: nil,
+            currentDetail: nil,
+            currentGatingPhrase: nil,
+            currentStreak: 9,
+            sessionCount: 40
+        )
+
+        #expect(presentation.revealProgress == 1)
+        #expect(presentation.progressLabel == "100% complete")
+        #expect(presentation.homeGoalShortLabel == "Cleared")
+        #expect(presentation.summaryLine.contains("All 20 missions"))
+    }
+}
+
+struct HomeAskNoumEvidenceCopyTests {
+
+    @Test func coldCopyAsksForOneRepInsteadOfClaimingHistory() {
+        let line = HomeAskNoumEvidenceCopy.line(sessionCount: 0)
+
+        #expect(line.contains("one rep"))
+        #expect(!line.localizedCaseInsensitiveContains("30 days"))
+        #expect(!line.localizedCaseInsensitiveContains("baseline"))
+        #expect(!line.localizedCaseInsensitiveContains("recent reps"))
+    }
+
+    @Test func thinEvidenceCopyScalesCertainty() {
+        let one = HomeAskNoumEvidenceCopy.line(sessionCount: 1)
+        let two = HomeAskNoumEvidenceCopy.line(sessionCount: 2)
+
+        #expect(one.contains("one rep"))
+        #expect(one.contains("light"))
+        #expect(two.contains("two reps"))
+        #expect(two.contains("without overcalling"))
+        #expect(!"\(one) \(two)".localizedCaseInsensitiveContains("30 days"))
+    }
+
+    @Test func establishedCopyStillAvoidsFalseThirtyDayClaim() {
+        let line = HomeAskNoumEvidenceCopy.line(sessionCount: 8)
+
+        #expect(line.contains("recent reps"))
+        #expect(!line.localizedCaseInsensitiveContains("30 days"))
     }
 }
 

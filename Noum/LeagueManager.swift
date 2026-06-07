@@ -85,6 +85,42 @@ enum LeagueTier: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum LeaguePlacementPresentation {
+    static func title(tier: LeagueTier, rating: SpeakingRating) -> String {
+        rating.hasRatedEvidence ? "\(tier.title) league" : "League placement pending"
+    }
+
+    static func tierTitle(tier: LeagueTier, rating: SpeakingRating) -> String {
+        rating.hasRatedEvidence ? tier.title : "Placement pending"
+    }
+
+    static func subtitle(tier: LeagueTier, rating: SpeakingRating) -> String {
+        guard rating.hasRatedEvidence else {
+            return "One rated pressure rep places you into a weekly bucket."
+        }
+        if let next = tier.nextTier {
+            let toNext = max(0, next.ratingFloor - rating.overall)
+            return "+\(toNext) rating to \(next.title)"
+        }
+        return "Top tier — defend your rating to stay."
+    }
+
+    static func fullScreenSubtitle(tier: LeagueTier, rating: SpeakingRating) -> String {
+        guard rating.hasRatedEvidence else {
+            return "Run one rated pressure rep first. Then your weekly league forms from real rating evidence."
+        }
+        if let next = tier.nextTier {
+            let toNext = max(0, next.ratingFloor - rating.overall)
+            return "+\(toNext) rating to \(next.title)"
+        }
+        return "Top tier — defend your rating to stay here."
+    }
+
+    static func ratingValue(for rating: SpeakingRating) -> String {
+        rating.hasRatedEvidence ? "\(rating.overall)" : "—"
+    }
+}
+
 // MARK: - Tier Promotion
 
 /// Captures a tier-up event so the home screen can celebrate it on next
@@ -473,7 +509,7 @@ enum PublicProfileBuilder {
             currentStreak: streak,
             weeklyReps: weeklyReps,
             weeklyDelta: rating.weeklyDelta,
-            leagueTier: tier.rawValue,
+            leagueTier: rating.hasRatedEvidence ? tier.rawValue : nil,
             updatedAt: Date()
         )
     }

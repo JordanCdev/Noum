@@ -679,17 +679,17 @@ struct SettingsView: View {
 
             Divider()
 
-            // Streak warning
+            // Evening rhythm nudge
             SettingsToggleRow(
-                title: "Streak warning",
-                subtitle: "An evening nudge when your streak is at risk. Quiet on days you've already practiced.",
+                title: "Evening practice nudge",
+                subtitle: "A quiet reminder when you have a streak and haven't practiced today.",
                 isOn: Binding(
                     get: { notificationManager.streakWarningEnabled },
                     set: { newValue in
                         Task { await notificationManager.setStreakWarningEnabled(newValue) }
                     }
                 ),
-                accessibilityHint: "Reminds you when your streak might break."
+                accessibilityHint: "Sends an optional evening reminder for a short practice rep."
             )
 
             Divider()

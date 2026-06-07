@@ -56,6 +56,21 @@ private enum HourBucket: Int {
     }
 }
 
+enum HomeAskNoumEvidenceCopy {
+    static func line(sessionCount: Int) -> String {
+        switch sessionCount {
+        case ..<1:
+            return "Give me one rep and I'll name the first lever worth training."
+        case 1:
+            return "I have one rep, so I'll keep the read light and concrete."
+        case 2:
+            return "I have two reps, so I'll compare carefully without overcalling a pattern."
+        default:
+            return "I read your recent reps first, then keep the answer focused."
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 12.0, *)
 struct ContentView: View {
     @StateObject private var authManager = AuthManager.shared
@@ -209,7 +224,7 @@ struct ContentView: View {
                             // honest — it only shows when something just
                             // happened. The full peak list still lives on
                             // Profile via `PeakRatingWallCard`.
-                            if ratingStore.pendingPeakGlow {
+                            if ratingStore.pendingPeakGlow && ratingStore.rating.hasRatedEvidence {
                                 personalBestHeroCard
                                     .cardEntrance(0)
                                     .transition(.opacity)
@@ -1255,22 +1270,29 @@ struct ContentView: View {
     }
 
     private func askNoumPromoBody(for voice: SpeakingStyleGoal?) -> String {
+        let evidenceLine = askNoumEvidenceLine(sessionCount: sessionStore.sessions.count)
         switch voice {
         case .authoritative:
-            return "Plan a pitch, get a verdict on this week, or ask why a number moved. I read your last 30 days first."
+            return "Plan a pitch, get a verdict on this week, or ask why a number moved. \(evidenceLine)"
         case .warm:
             return "Bring me a real conversation you're prepping. I'll help you find the moves that read as warmer."
         case .concise:
-            return "Short questions, short answers. I have your baseline."
+            return "Short questions, short answers. \(evidenceLine)"
         case .persuasive:
             return "Tell me what you're trying to convince someone of. I'll work backward to the move."
         case .executive:
             return "Top-line first. Got a read-out on the calendar? I'll prep you."
         case .storytelling:
-            return "Three reps ago you couldn't hold a pause. Tell me what's next."
+            return sessionStore.sessions.count >= 3
+                ? "I can use the pattern from your last few reps. Tell me what's next."
+                : "Give me a few reps and I'll help turn them into a clearer story."
         case .none:
-            return "Ask me anything about your speaking practice. I read your last 30 days before every reply."
+            return "Ask me anything about your speaking practice. \(evidenceLine)"
         }
+    }
+
+    private func askNoumEvidenceLine(sessionCount: Int) -> String {
+        HomeAskNoumEvidenceCopy.line(sessionCount: sessionCount)
     }
 
     /// Hero card background for the Ask Noum promo. Brand-purple
@@ -1410,6 +1432,7 @@ struct ContentView: View {
         // because the two surfaces would point at different work.
         let ratingGated: Set<String> = ["rating_500", "rating_700"]
         guard ratingGated.contains(node.id) else { return nil }
+        guard ratingStore.rating.hasRatedEvidence else { return nil }
 
         let tier = league.tier
         guard let nextTier = tier.nextTier else { return nil }
@@ -2309,9 +2332,9 @@ struct ContentView: View {
 
 }
 
-/// Press-feedback style for bottom-nav tabs — tint pulse behind the
-/// label + 0.97 scale + slight opacity on press. Reduced-motion users
-/// keep the tint+opacity but skip the scale.
+/// Press-feedback style for bottom-nav tabs — tint behind the label +
+/// 0.97 scale + slight opacity on press. Reduced-motion users keep the
+/// state change but skip the animated transition and scale.
 private struct NavTabButtonStyle: ButtonStyle {
     let accent: Color
     let reduceMotion: Bool
@@ -2324,7 +2347,7 @@ private struct NavTabButtonStyle: ButtonStyle {
             )
             .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? 0.97 : 1.0))
             .opacity(configuration.isPressed ? 0.92 : 1.0)
-            .animation(.snappySpring, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .snappySpring, value: configuration.isPressed)
     }
 }
 #endif

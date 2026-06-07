@@ -8555,7 +8555,7 @@ enum RecommendationBiasEngine {
             focus: focus,
             target: target,
             modeBenefit: benefit.benefit,
-            whyMode: benefit.bestFor + " This lines up with the user's north star.",
+            whyMode: benefit.bestFor + " This lines up with your north star.",
             whyNow: whyNow,
             suggestedTimedDifficulty: difficulty,
             suggestedTheme: theme,
@@ -8821,18 +8821,18 @@ enum RecommendationBiasEngine {
 
     private static func whyNow(for mode: PracticeMode, profile: CoachingProfile, input: AIHomeRecommendationInput) -> String {
         if input.daysSinceLastSession > 2 {
-            return "The user has drifted off rhythm, so the next drill should reconnect them to the exact communication goal they signed up with."
+            return "You've been away from the rhythm, so this drill reconnects the next rep to the communication goal you chose."
         }
 
         switch mode {
         case .timed:
-            return "Their recent reps still need stronger structure before pressure gets layered on."
+            return "Your recent reps still need stronger structure before pressure gets layered on."
         case .suddenDeath:
-            return "They need a cleaner reaction under pressure, not more time to polish the answer."
+            return "You need a cleaner reaction under pressure, not more time to polish the answer."
         case .ahCounter:
             return "Verbal clutter is still costing clarity, so awareness needs to happen live."
         case .imConversation:
-            return "Their goal depends on sounding right with another person, not just speaking cleanly in isolation."
+            return "Your goal depends on sounding right with another person, not just speaking cleanly in isolation."
         }
     }
 

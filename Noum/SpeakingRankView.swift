@@ -196,9 +196,6 @@ struct SpeakingRankView: View {
                 Text(retentionSnapshot.activeChallenge.progressLabel)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
-                Text(retentionSnapshot.activeChallenge.rewardLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.blue)
             }
 
             Text(retentionSnapshot.motivationLine)

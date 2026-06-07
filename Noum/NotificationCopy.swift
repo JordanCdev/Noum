@@ -65,14 +65,15 @@ enum NotificationCopy {
         }
     }
 
-    // MARK: - Streak warning (loss-aversion)
+    // MARK: - Evening practice nudge
 
-    /// Fired late evening only when the user has a real streak to lose.
-    /// Phrased as a deadline, with a stronger frame as the streak gets longer.
+    /// Fired late evening only when the user has an established rhythm and
+    /// has not practiced today. Copy stays neutral: no countdown and no
+    /// last-chance pressure.
     static func streakWarning(streakDays: Int, freezesAvailable: Int) -> NotificationLine {
         let freezeLine = freezesAvailable > 0
-            ? "Or your weekly freeze covers a single miss."
-            : "No freeze left this week — only a rep saves it."
+            ? "Your weekly freeze can cover one quiet day."
+            : "Two minutes is enough when you want to keep the rhythm active."
 
         switch streakDays {
         case 0:
@@ -83,23 +84,23 @@ enum NotificationCopy {
             )
         case 1...2:
             return NotificationLine(
-                title: "Today's rep is ready",
-                body: "A short rep keeps your \(streakDays)-day streak going. \(freezeLine)"
+                title: "Evening practice nudge",
+                body: "You've started a speaking rhythm. One short rep adds today. \(freezeLine)"
             )
         case 3...6:
             return NotificationLine(
-                title: "Keep your \(streakDays)-day streak going",
-                body: "Two focused minutes adds today to the run. \(freezeLine)"
+                title: "\(streakDays) days of steady practice",
+                body: "One focused rep adds today to the rhythm. \(freezeLine)"
             )
         case 7...13:
             return NotificationLine(
                 title: "\(streakDays) days of steady practice",
-                body: "A short rep adds today to your streak. \(freezeLine)"
+                body: "Your habit is established. A short rep keeps it active. \(freezeLine)"
             )
         case 14...29:
             return NotificationLine(
                 title: "\(streakDays) days in — nice rhythm",
-                body: "Two minutes keeps the rhythm going. \(freezeLine)"
+                body: "A focused rep today keeps the practice line connected. \(freezeLine)"
             )
         case 30...:
             return NotificationLine(
@@ -108,8 +109,8 @@ enum NotificationCopy {
             )
         default:
             return NotificationLine(
-                title: "Today's rep is ready",
-                body: "A short rep keeps your rhythm going. \(freezeLine)"
+                title: "Evening practice nudge",
+                body: "A short rep keeps your rhythm active. \(freezeLine)"
             )
         }
     }
@@ -119,8 +120,8 @@ enum NotificationCopy {
     // Fired at 8:30 PM local when at least one of today's three daily
     // challenges is still unclaimed. Tone is informational — naming
     // what's open, never threatening loss. Anti-goal-aligned with the
-    // "we never punish-shame a miss" rule from VISION. No "Don't lose
-    // your streak", no "Hurry", no exclamation marks.
+    // "we never punish-shame a miss" rule from VISION: no loss-framed
+    // streak copy, no urgency language, no exclamation marks.
     //
     // Schedule guard: caller MUST check `unclaimedCount > 0` before
     // arming. Firing this with zero unclaimed would be a lie — the

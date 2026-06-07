@@ -170,8 +170,8 @@ struct NoumApp: App {
     }
 
     /// Routes an incoming `noum://` URL to the right surface.
-    /// - `noum://friend/<accountID>` — friend invite (handled inside
-    ///   SocialProfileView's QR scanner; we surface the app to that tab).
+    /// - `noum://friend/<accountID>` — friend invite (handled from the
+    ///   profile/social route).
     /// - `noum://lesson/<id>` — open a specific lesson.
     /// - `noum://practice` — open the practice picker.
     /// Falls through to the default screen if the URL is unrecognised.

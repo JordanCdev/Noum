@@ -139,7 +139,7 @@ struct CutTheCrutchView: View {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Cut the Crutch")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                Text("Speak for 60 seconds without using one specific word. 3 hearts. Each use chips one. Survive without dropping all three for a clean cut.")
+                Text("Speak for 60 seconds without using one specific word. Each use counts as a slip; three slips ends the rep.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -317,7 +317,7 @@ struct CutTheCrutchView: View {
                 )
                 .accessibilityHidden(true)
 
-                heartsRow
+                slipAllowanceRow
                 Spacer()
                 Text(timeRemainingLabel)
                     .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
@@ -334,17 +334,17 @@ struct CutTheCrutchView: View {
         .background(.regularMaterial)
     }
 
-    private var heartsRow: some View {
+    private var slipAllowanceRow: some View {
         HStack(spacing: 6) {
             ForEach(0..<engine.config.initialHearts, id: \.self) { index in
-                Image(systemName: index < engine.heartsRemaining ? "heart.fill" : "heart.slash")
+                Image(systemName: index < engine.heartsRemaining ? "shield.fill" : "xmark.circle.fill")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(index < engine.heartsRemaining ? tint : Color.secondary.opacity(0.35))
                     .accessibilityHidden(true)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(engine.heartsRemaining) of \(engine.config.initialHearts) hearts remaining")
+        .accessibilityLabel("\(engine.heartsRemaining) of \(engine.config.initialHearts) slips remaining")
     }
 
     private var promptStrip: some View {
@@ -505,7 +505,7 @@ struct CutTheCrutchView: View {
             return "60 seconds, zero uses of \u{201C}\(result.avoidedWord)\u{201D}. That's the rep."
         }
         if result.cleanCut {
-            return "You held the line — \(result.violations.count) slip\(result.violations.count == 1 ? "" : "s") but you finished with hearts to spare."
+            return "You held the line — \(result.violations.count) slip\(result.violations.count == 1 ? "" : "s"), and the rep stayed alive."
         }
         let secs = Int(result.survivedDuration.rounded())
         return "\(result.violations.count) use\(result.violations.count == 1 ? "" : "s") of \u{201C}\(result.avoidedWord)\u{201D} in \(secs) seconds. Try again — the next rep is the one that lands."
@@ -514,7 +514,7 @@ struct CutTheCrutchView: View {
     private func resultStats(_ result: CutTheCrutchResult) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.sm) {
-                StatCard(title: "Hearts left", value: "\(result.heartsRemaining)/\(engine.config.initialHearts)", tint: tint)
+                StatCard(title: "Slips left", value: "\(result.heartsRemaining)/\(engine.config.initialHearts)", tint: tint)
                 StatCard(title: "Survived", value: survivedLabel(result), tint: AppColor.brandBlue)
             }
             HStack(spacing: Spacing.sm) {

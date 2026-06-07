@@ -8,7 +8,7 @@ import Foundation
 //  - the **widget extension** can render the lock-screen surface without
 //    a full app launch,
 //  - **notification copy** can pull the user's actual numbers when it
-//    fires (loss-aversion phrasing that names the real streak count),
+//    fires (neutral evening rhythm copy that names the real streak count),
 //  - **Live Activity** has a stable read source for "session in progress".
 //
 // Pure value type — no @Published, no actor. Read by writing the whole
@@ -80,4 +80,3 @@ struct SharedNoumState: Codable, Equatable {
         defaults.set(data, forKey: storageKey)
     }
 }
-

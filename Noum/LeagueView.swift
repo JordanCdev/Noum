@@ -51,7 +51,9 @@ struct LeagueView: View {
                 seePeaksLink
             }
 
-            Text("Speakers in your rating range, this week. Climbing rating moves you up a tier.")
+            Text(ratingStore.rating.hasRatedEvidence
+                 ? "Speakers in your rating range, this week. Climbing rating moves you up a tier."
+                 : "One rated pressure rep creates a fair weekly placement.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -95,7 +97,7 @@ struct LeagueView: View {
                         .foregroundStyle(tierTint)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(league.tier.title)
+                    Text(LeaguePlacementPresentation.tierTitle(tier: league.tier, rating: ratingStore.rating))
                         .font(Typography.cardTitle)
                         .foregroundStyle(.primary)
                     Text(tierSubtitle)
@@ -105,10 +107,10 @@ struct LeagueView: View {
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(ratingStore.rating.overall)")
+                    Text(LeaguePlacementPresentation.ratingValue(for: ratingStore.rating))
                         .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(AppColor.brandBlue)
-                    Text("Rating")
+                    Text(ratingStore.rating.hasRatedEvidence ? "Rating" : "Not rated")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.tertiary)
                         .textCase(.uppercase)
@@ -128,12 +130,8 @@ struct LeagueView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Tier wash — Gold should feel golden, Silver silver, etc. The
-        // tier card was a flat white rectangle; the user is BY definition
-        // a tier-holder when this screen renders, so the card should
-        // carry that tier's identity. Radial wash from the badge anchor
-        // (top-left) blends into white; faint tinted border + soft
-        // tinted shadow add elevation in the same hue.
+        // Tier wash — earned placements carry their tier tint; unrated
+        // users get the neutral brand-blue diagnostic register.
         .background(tierCardBackground)
         .shadow(color: tierTint.opacity(0.14), radius: 14, x: 0, y: 6)
     }
@@ -176,10 +174,7 @@ struct LeagueView: View {
     }
 
     private var tierSubtitle: String {
-        if let toNext = league.ratingToNextTier, let next = league.tier.nextTier {
-            return "+\(toNext) rating to \(next.title)"
-        }
-        return "Top tier — defend your rating to stay here."
+        LeaguePlacementPresentation.fullScreenSubtitle(tier: league.tier, rating: ratingStore.rating)
     }
 
     private var streakValue: String {
@@ -209,9 +204,10 @@ struct LeagueView: View {
             }
 
             VStack(spacing: 0) {
-                if league.members.isEmpty {
+                if !ratingStore.rating.hasRatedEvidence {
+                    placementPendingMembersRow
+                } else if league.members.isEmpty {
                     emptyMembersRow
-                    seededPeerStandings
                 } else {
                     ForEach(Array(league.members.enumerated()), id: \.element.id) { index, member in
                         memberRow(rank: index + 1, member: member, isYou: member.accountID == authManager.currentAccountID)
@@ -293,118 +289,27 @@ struct LeagueView: View {
         .accessibilityLabel(memberAccessibilityLabel(rank: rank, member: member, isYou: isYou))
     }
 
-    /// Seeded "ghost" rows shown when the league has only the user. These
-    /// are not real users — they're plausible neighbours rendered with a
-    /// disclosure that reads "Sample standings — your league fills as
-    /// other speakers practise this week." Honest empty state without
-    /// feeling barren.
-    private var seededPeerStandings: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "info.circle")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.tertiary)
-                Text("Sample standings · live data appears as the bucket fills")
-                    .font(Typography.micro)
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                Spacer()
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-
-            ForEach(Array(seededPeers.enumerated()), id: \.element.id) { index, peer in
-                seededPeerRow(rank: index + 2, peer: peer) // start at rank 2 — user is rank 1
-                if index < seededPeers.count - 1 {
-                    Divider().padding(.leading, 56)
-                }
-            }
-        }
-    }
-
-    /// Hand-tuned ghost peers within the user's tier. Rating range
-    /// matches the current tier so the user can see "what I'd see when
-    /// the bucket fills" without us inventing an unrealistic peer set.
-    private struct SeededPeer: Identifiable {
-        let id: String
-        let initials: String
-        let rating: Int
-        let streak: Int
-        let weeklyReps: Int
-    }
-
-    private var seededPeers: [SeededPeer] {
-        let floor = league.tier.ratingFloor
-        let ceiling = min(1000, league.tier.ratingCeiling)
-        let mid = (floor + ceiling) / 2
-        // Place ghosts symmetrically around the user's likely rating so
-        // the visualisation reads honest. Ratings + streaks + reps are
-        // tuned to feel real but the IDs make it clear they're samples.
-        return [
-            .init(id: "sample-1", initials: "AM", rating: mid + 30, streak: 6, weeklyReps: 5),
-            .init(id: "sample-2", initials: "TR", rating: mid + 10, streak: 4, weeklyReps: 4),
-            .init(id: "sample-3", initials: "JB", rating: mid - 20, streak: 9, weeklyReps: 3),
-            .init(id: "sample-4", initials: "KL", rating: max(floor + 10, mid - 60), streak: 2, weeklyReps: 2)
-        ]
-    }
-
-    private func seededPeerRow(rank: Int, peer: SeededPeer) -> some View {
-        HStack(spacing: Spacing.sm) {
-            Text("\(rank)")
-                .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(.tertiary)
-                .frame(width: 24, alignment: .center)
-
-            ZStack {
-                Circle()
-                    .fill(Color.secondary.opacity(0.10))
-                    .frame(width: 36, height: 36)
-                Text(peer.initials)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Sample peer")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                Text("\(peer.weeklyReps) rep\(peer.weeklyReps == 1 ? "" : "s") this week")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer(minLength: Spacing.xs)
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(peer.rating)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                if peer.streak > 0 {
-                    HStack(spacing: 3) {
-                        Image(systemName: "flame.fill")
-                            .font(.caption2.weight(.bold))
-                        Text("\(peer.streak)")
-                            .font(.caption2.weight(.bold).monospacedDigit())
-                    }
-                    .foregroundStyle(Color.orange.opacity(0.55))
-                }
-            }
-        }
-        .frame(minHeight: 56)
-        .padding(.horizontal, Spacing.md)
-        .opacity(0.7)
-        .accessibilityHidden(true) // sample copy isn't useful to VoiceOver
-    }
-
     private var emptyMembersRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Your league forms over the week.")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
             Text("Other \(league.tier.title.lowercased())-tier speakers will appear here as they practice.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+    }
+
+    private var placementPendingMembersRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Placement starts after one rated rep.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("Noum will place you in a weekly bucket only after there is rating evidence to compare.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -426,7 +331,9 @@ struct LeagueView: View {
                     .textCase(.uppercase)
                     .tracking(0.6)
             }
-            Text("You're matched with speakers in your rating range each ISO week. Climbing rating moves you up a tier; the leaderboard resets every Monday.")
+            Text(ratingStore.rating.hasRatedEvidence
+                 ? "You're matched with speakers in your rating range each ISO week. Climbing rating moves you up a tier; the leaderboard resets every Monday."
+                 : "League placement starts after your first rated pressure rep, so the comparison is based on real speaking evidence.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -438,7 +345,9 @@ struct LeagueView: View {
 
     // MARK: - Helpers
 
-    private var tierTint: Color { league.tier.tint }
+    private var tierTint: Color {
+        ratingStore.rating.hasRatedEvidence ? league.tier.tint : AppColor.brandBlue
+    }
 
     private func rankTint(_ rank: Int) -> Color {
         switch rank {
@@ -469,6 +378,7 @@ struct LeagueView: View {
     // MARK: - Sync
 
     private func pushSelfAndRefresh(force: Bool) async {
+        guard ratingStore.rating.hasRatedEvidence else { return }
         guard let accountID = authManager.currentAccountID else {
             await league.refreshMembers(force: force)
             return

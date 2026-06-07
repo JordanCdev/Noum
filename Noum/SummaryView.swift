@@ -2154,12 +2154,10 @@ struct SummaryView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
                 Spacer()
-                HStack(spacing: 6) {
-                    SparkleRibbon(tint: .orange)
-                    Text(retentionSnapshot.activeChallenge.rewardLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.brandBlue)
-                }
+                Text(retentionSnapshot.motivationLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
             }
         }
         .padding(16)

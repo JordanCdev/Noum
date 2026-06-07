@@ -289,7 +289,7 @@ struct PressureSessionResult: Equatable {
             return "Beat the Clock"
         case .timeoutBeforeStart:
             if roundsSurvived >= 2 { return "Held Under Pressure" }
-            return "Time Broke You"
+            return "Clock Ran Out"
         case .fillerOverload:
             if roundsSurvived >= 2 { return "Strong Recovery" }
             return "Filler Spike"
@@ -306,7 +306,7 @@ struct PressureSessionResult: Equatable {
         case "Strong Recovery": return "arrow.up.heart.fill"
         case "Filler Spike": return "waveform.badge.exclamationmark"
         case "Rushed Start": return "hare.fill"
-        case "Time Broke You": return "clock.badge.exclamationmark"
+        case "Clock Ran Out": return "clock.badge.exclamationmark"
         default: return "questionmark.circle"
         }
     }
@@ -319,7 +319,7 @@ struct PressureSessionResult: Equatable {
         case "Strong Recovery": return .teal
         case "Filler Spike": return .red
         case "Rushed Start": return Color(red: 0.80, green: 0.50, blue: 0.10)
-        case "Time Broke You": return .red
+        case "Clock Ran Out": return .orange
         default: return .secondary
         }
     }

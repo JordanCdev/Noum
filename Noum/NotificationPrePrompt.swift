@@ -126,7 +126,7 @@ struct NotificationPrePromptSheet: View {
                     .foregroundStyle(AppColor.brandBlue)
                     .padding(.bottom, Spacing.xs)
 
-                Text("We'll only nudge you when your streak is at risk")
+                Text("Noum can nudge you at useful moments")
                     .font(Typography.cardTitle)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -136,7 +136,7 @@ struct NotificationPrePromptSheet: View {
                 bullet(
                     icon: "flame.fill",
                     tint: AppColor.modeSuddenDeath,
-                    text: "Heads-up before midnight if you're about to break your streak."
+                    text: "A quiet evening reminder when you have rhythm and haven't practiced yet."
                 )
                 bullet(
                     icon: "chart.line.uptrend.xyaxis",

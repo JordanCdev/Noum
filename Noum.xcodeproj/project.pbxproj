@@ -31,7 +31,6 @@
 		175693632FA7E6880092625D /* Claude.MD in Resources */ = {isa = PBXBuildFile; fileRef = 175693622FA7E6810092625D /* Claude.MD */; };
 		1774FCEE2F842BD900A6D313 /* VideoRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */; };
 		1774FCF02F849A3000A6D313 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1774FCEF2F849A3000A6D313 /* DesignSystem.swift */; };
-		17A4658F2F93F0CC003BE025 /* AchievementsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A4658E2F93F0CC003BE025 /* AchievementsPage.swift */; };
 		17A465912F94267A003BE025 /* BeatTheBrakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465902F94267A003BE025 /* BeatTheBrakeView.swift */; };
 		17A465932F9426B4003BE025 /* LandThePauseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465922F9426B4003BE025 /* LandThePauseView.swift */; };
 		17A465952F9426EF003BE025 /* PREPStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A465942F9426EF003BE025 /* PREPStackView.swift */; };
@@ -121,7 +120,6 @@
 		175693622FA7E6810092625D /* Claude.MD */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Claude.MD; sourceTree = "<group>"; };
 		1774FCED2F842BD900A6D313 /* VideoRecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRecordingManager.swift; sourceTree = "<group>"; };
 		1774FCEF2F849A3000A6D313 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
-		17A4658E2F93F0CC003BE025 /* AchievementsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementsPage.swift; sourceTree = "<group>"; };
 		17A465902F94267A003BE025 /* BeatTheBrakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeatTheBrakeView.swift; sourceTree = "<group>"; };
 		17A465922F9426B4003BE025 /* LandThePauseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandThePauseView.swift; sourceTree = "<group>"; };
 		17A465942F9426EF003BE025 /* PREPStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PREPStackView.swift; sourceTree = "<group>"; };
@@ -296,7 +294,6 @@
 				1707DBC32F8F0456001B0638 /* AWSTranscribeProvider.swift */,
 				1707DBC52F8F046D001B0638 /* DeepgramProvider.swift */,
 				1707DBC72F8F0488001B0638 /* GoogleSpeechProvider.swift */,
-				17A4658E2F93F0CC003BE025 /* AchievementsPage.swift */,
 				17A465902F94267A003BE025 /* BeatTheBrakeView.swift */,
 				17A465922F9426B4003BE025 /* LandThePauseView.swift */,
 				17A465942F9426EF003BE025 /* PREPStackView.swift */,
@@ -622,7 +619,6 @@
 				1707DBC22F8F0446001B0638 /* TranscriptionProvider.swift in Sources */,
 				1707DBC82F8F0488001B0638 /* GoogleSpeechProvider.swift in Sources */,
 				1707DBBA2F8EF1BC001B0638 /* RewardEngine.swift in Sources */,
-				17A4658F2F93F0CC003BE025 /* AchievementsPage.swift in Sources */,
 				17A465952F9426EF003BE025 /* PREPStackView.swift in Sources */,
 				17A465932F9426B4003BE025 /* LandThePauseView.swift in Sources */,
 				1774FCF02F849A3000A6D313 /* DesignSystem.swift in Sources */,

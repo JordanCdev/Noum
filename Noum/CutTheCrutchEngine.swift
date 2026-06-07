@@ -10,7 +10,7 @@ import SwiftUI
 struct CutTheCrutchConfig: Equatable {
     /// Total seconds the user has to survive on the prompt.
     let survivalDuration: TimeInterval
-    /// Number of hearts the user starts with.
+    /// Number of allowed slips the user starts with.
     let initialHearts: Int
     /// Composure setback applied on each violation (0.0–1.0).
     let composurePenalty: Double
@@ -31,7 +31,7 @@ enum CutTheCrutchPhase: Equatable {
     /// 3 / 2 / 1 / GO before recording starts.
     case countdown(Int)
     case go
-    /// Live: transcript flowing, hearts and composure mutating.
+    /// Live: transcript flowing, allowed slips and composure mutating.
     case active
     /// Round complete with a result.
     case ended(CutTheCrutchResult)
@@ -66,7 +66,7 @@ struct CutTheCrutchResult: Equatable {
     }
 
     var verdictIcon: String {
-        cleanCut ? "scissors" : "heart.slash.fill"
+        cleanCut ? "scissors" : "xmark.circle.fill"
     }
 
     /// Score 1–10 for parity with other modes.
@@ -83,8 +83,8 @@ struct CutTheCrutchResult: Equatable {
         let base = 30
         let survivalXP = Int((survivedDuration / 60.0) * 40.0)
         let cleanBonus = cleanCut ? 50 : 0
-        let heartBonus = heartsRemaining * 10
-        return max(10, base + survivalXP + cleanBonus + heartBonus)
+        let slipBonus = heartsRemaining * 10
+        return max(10, base + survivalXP + cleanBonus + slipBonus)
     }
 }
 
@@ -93,12 +93,12 @@ struct CutTheCrutchResult: Equatable {
 /// Drives a single Cut the Crutch round. Observable for SwiftUI binding.
 ///
 /// Design principles:
-/// - **Loss-framed hearts** + **gain-framed composure bar** running side by side. Both update
+/// - **Slip allowance** + **gain-framed composure bar** running side by side. Both update
 ///   live and the user can see push/pull at any moment.
-/// - **Composure fills passively** as you survive. Each violation chips both a heart and a
+/// - **Composure fills passively** as you survive. Each violation spends one slip and a
 ///   chunk of composure. There is no "fill the bar by waiting" — survival without violation
 ///   is the work.
-/// - **No auto-ramp.** Round shape is fixed (60s, 3 hearts) so the drill is comparable across
+/// - **No auto-ramp.** Round shape is fixed (60s, 3 slips) so the drill is comparable across
 ///   sessions and the variable is which word you're avoiding.
 /// - **Word detection runs on transcript deltas** — we hold a `lastSeenCount` and only flag
 ///   new occurrences, so a single utterance is never double-counted.

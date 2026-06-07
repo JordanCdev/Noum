@@ -12,18 +12,31 @@ struct PathJourneyView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    @StateObject private var pathProgress = PathProgressManager.shared
+    @StateObject private var streakManager = StreakFreezeManager.shared
     @StateObject private var daylightModel = PathDaylightModel()
     @State private var selectedAchievementID: String?
+#if DEBUG
     @State private var debugDayOverride: Double = -1
 
     private var isDebugActive: Bool { debugDayOverride >= 0 }
+#endif
 
     private var snapshot: PracticeJourneySnapshot {
         let base = PracticeJourneySnapshot.make(from: sessionStore.sessions)
+        let livePath = PathJourneyPresentation.make(
+            statuses: pathProgress.statuses,
+            currentStreak: streakManager.currentStreak,
+            sessionCount: sessionStore.sessions.count,
+            currentGatingPhrase: pathProgress.currentNodeGatingPhrase
+        )
+        let live = base.applyingPathPresentation(livePath)
+#if DEBUG
         if isDebugActive {
-            return base.withSimulatedDays(Int(debugDayOverride))
+            return live.withSimulatedReveal(Int(debugDayOverride))
         }
-        return base
+#endif
+        return live
     }
 
     private var retentionSnapshot: RetentionLoopSnapshot {
@@ -67,7 +80,7 @@ struct PathJourneyView: View {
                             .shadow(color: AppColor.brandBlue.opacity(0.10), radius: 14, y: 8)
 
                             HStack(spacing: 10) {
-                                journeyPill(title: "Revealed", value: snapshot.progressLabel, icon: "map.fill", accent: .green)
+                                journeyPill(title: "Path", value: snapshot.progressLabel, icon: "map.fill", accent: .green)
                                 journeyPill(title: "Streak", value: snapshot.streakLabel, icon: "flame.fill", accent: .orange)
                             }
 
@@ -80,9 +93,11 @@ struct PathJourneyView: View {
                         .background(journeyHeroBackground)
 
                         // MARK: - Debug day slider (developer only)
+#if DEBUG
                         if AuthManager.shared.isDeveloper {
                             debugSliderCard
                         }
+#endif
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
@@ -109,10 +124,11 @@ struct PathJourneyView: View {
         }
     }
 
+#if DEBUG
     private var debugSliderCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Debug: Simulate Days")
+                Text("Debug: Simulate Path Reveal")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.orange)
                 Spacer()
@@ -128,7 +144,7 @@ struct PathJourneyView: View {
             }
 
             HStack(spacing: 12) {
-                Text("Day \(isDebugActive ? Int(debugDayOverride) : snapshot.practicedDays)")
+                Text("\(isDebugActive ? Int(debugDayOverride) : Int(snapshot.revealProgress * 21))")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .frame(width: 80, alignment: .leading)
@@ -184,6 +200,7 @@ struct PathJourneyView: View {
                 .stroke(Color.orange.opacity(0.2), lineWidth: 1)
         )
     }
+#endif
 
     private func journeyPill(title: String, value: String, icon: String, accent: Color) -> some View {
         HStack(spacing: 10) {
@@ -492,7 +509,6 @@ struct PracticeChallengeStatus {
     let summary: String
     let progress: Double
     let progressLabel: String
-    let rewardLabel: String
 }
 
 struct PracticeAchievementStatus: Identifiable {
@@ -557,8 +573,7 @@ enum RetentionLoopEngine {
                 title: "Hold the streak",
                 summary: "Come back tomorrow and keep the path open with one focused rep.",
                 progress: progress,
-                progressLabel: "\(currentStreak)/2 days",
-                rewardLabel: "+80 XP"
+                progressLabel: "\(currentStreak)/2 days"
             )
         }
 
@@ -569,8 +584,7 @@ enum RetentionLoopEngine {
                 title: "Clean delivery",
                 summary: "Complete two recent reps with two fillers or fewer.",
                 progress: min(Double(qualifying), 2) / 2,
-                progressLabel: "\(qualifying)/2 clean reps",
-                rewardLabel: "+120 XP"
+                progressLabel: "\(qualifying)/2 clean reps"
             )
         case .rambling:
             let qualifying = sessions.filter {
@@ -580,8 +594,7 @@ enum RetentionLoopEngine {
                 title: "Land the point",
                 summary: "Finish two strong reps that stay structured instead of drifting.",
                 progress: min(Double(qualifying), 2) / 2,
-                progressLabel: "\(qualifying)/2 structured reps",
-                rewardLabel: "+120 XP"
+                progressLabel: "\(qualifying)/2 structured reps"
             )
         case .freezing:
             let qualifying = sessions.filter {
@@ -591,8 +604,7 @@ enum RetentionLoopEngine {
                 title: "Fast response reps",
                 summary: "Hit two quick-answer sessions without freezing or collapsing the reply.",
                 progress: min(Double(qualifying), 2) / 2,
-                progressLabel: "\(qualifying)/2 pressure reps",
-                rewardLabel: "+120 XP"
+                progressLabel: "\(qualifying)/2 pressure reps"
             )
         case .rushing:
             let qualifying = sessions.filter {
@@ -602,8 +614,7 @@ enum RetentionLoopEngine {
                 title: "Controlled pace",
                 summary: "Finish two solid reps in the calmer pacing zone.",
                 progress: min(Double(qualifying), 2) / 2,
-                progressLabel: "\(qualifying)/2 controlled reps",
-                rewardLabel: "+120 XP"
+                progressLabel: "\(qualifying)/2 controlled reps"
             )
         case .none:
             let qualifying = allSessions.filter { ($0.score ?? 0) >= 7 }.prefix(3).count
@@ -611,8 +622,7 @@ enum RetentionLoopEngine {
                 title: "Sharp sessions",
                 summary: "Build three solid sessions to set your baseline.",
                 progress: min(Double(qualifying), 3) / 3,
-                progressLabel: "\(qualifying)/3 strong sessions",
-                rewardLabel: "+140 XP"
+                progressLabel: "\(qualifying)/3 strong sessions"
             )
         }
     }
@@ -710,8 +720,10 @@ struct PracticeJourneySnapshot {
     let homeGoalLine: String
     let homeGoalShortLabel: String
 
-    /// Returns a copy with `revealProgress` and labels overridden to simulate a specific day count.
-    func withSimulatedDays(_ days: Int) -> PracticeJourneySnapshot {
+    /// Returns a copy with visual reveal progress overridden for DEBUG-only
+    /// inspection. Copy still reads from the live path presentation so the
+    /// simulator tool cannot become a second product truth source.
+    func withSimulatedReveal(_ days: Int) -> PracticeJourneySnapshot {
         let windowDays = 21
         let clamped = max(0, min(windowDays, days))
         let progress = Double(clamped) / Double(windowDays)
@@ -721,7 +733,7 @@ struct PracticeJourneySnapshot {
             streak: clamped,
             revealProgress: progress,
             quality: quality,
-            progressLabel: "\(pct)% revealed",
+            progressLabel: "\(pct)% preview",
             previewLine: previewLine,
             summaryLine: summaryLine,
             explanationLine: explanationLine,
@@ -729,6 +741,23 @@ struct PracticeJourneySnapshot {
             consequenceLine: consequenceLine,
             homeGoalLine: homeGoalLine,
             homeGoalShortLabel: homeGoalShortLabel
+        )
+    }
+
+    func applyingPathPresentation(_ presentation: PathJourneyPresentation) -> PracticeJourneySnapshot {
+        PracticeJourneySnapshot(
+            practicedDays: practicedDays,
+            streak: presentation.currentStreak,
+            revealProgress: presentation.revealProgress,
+            quality: quality,
+            progressLabel: presentation.progressLabel,
+            previewLine: presentation.previewLine,
+            summaryLine: presentation.summaryLine,
+            explanationLine: presentation.explanationLine,
+            nextMilestoneLabel: presentation.nextMilestoneLabel,
+            consequenceLine: presentation.consequenceLine,
+            homeGoalLine: presentation.homeGoalLine,
+            homeGoalShortLabel: presentation.homeGoalShortLabel
         )
     }
 
@@ -844,7 +873,7 @@ struct PracticeJourneySnapshot {
     }
 
     var streakLabel: String {
-        streak > 0 ? "\(streak) day\(streak == 1 ? "" : "s")" : "No streak yet"
+        streak > 0 ? "\(streak) day\(streak == 1 ? "" : "s")" : "Start today"
     }
 
     private static func currentStreak(from sessions: [PracticeSession], calendar: Calendar) -> Int {
@@ -859,6 +888,138 @@ struct PracticeJourneySnapshot {
             cursor = previousDay
         }
         return streak
+    }
+}
+
+struct PathJourneyPresentation: Equatable {
+    let revealProgress: Double
+    let currentStreak: Int
+    let progressLabel: String
+    let previewLine: String
+    let summaryLine: String
+    let explanationLine: String
+    let nextMilestoneLabel: String
+    let consequenceLine: String
+    let homeGoalLine: String
+    let homeGoalShortLabel: String
+
+    static func make(
+        statuses: [PathNodeStatus],
+        currentStreak: Int,
+        sessionCount: Int,
+        currentGatingPhrase: String?
+    ) -> PathJourneyPresentation {
+        let totalCount = statuses.count
+        let completedCount = statuses.filter(\.isComplete).count
+        let current = statuses.first(where: { !$0.isComplete })
+        return make(
+            completedCount: completedCount,
+            currentProgress: current?.progress,
+            totalCount: totalCount,
+            currentTitle: current?.node.title,
+            currentDetail: current?.node.detail,
+            currentGatingPhrase: currentGatingPhrase,
+            currentStreak: currentStreak,
+            sessionCount: sessionCount
+        )
+    }
+
+    static func make(
+        completedCount rawCompletedCount: Int,
+        currentProgress rawCurrentProgress: Double?,
+        totalCount rawTotalCount: Int,
+        currentTitle: String?,
+        currentDetail: String?,
+        currentGatingPhrase: String?,
+        currentStreak: Int,
+        sessionCount: Int
+    ) -> PathJourneyPresentation {
+        let totalCount = max(0, rawTotalCount)
+        let completedCount = min(max(0, rawCompletedCount), totalCount)
+        let hasPath = totalCount > 0
+        let isComplete = hasPath && completedCount >= totalCount
+        let currentProgress = isComplete
+            ? 0
+            : min(1, max(0, rawCurrentProgress ?? 0))
+        let revealProgress = progress(
+            completedCount: completedCount,
+            currentProgress: currentProgress,
+            totalCount: totalCount
+        )
+        let pct = Int((revealProgress * 100).rounded(.down))
+
+        if !hasPath {
+            return PathJourneyPresentation(
+                revealProgress: 0,
+                currentStreak: max(0, currentStreak),
+                progressLabel: "Path pending",
+                previewLine: "One short rep gives Noum a real signal to build from.",
+                summaryLine: "Path progress unlocks from real practice signals, not calendar decoration.",
+                explanationLine: "Start with one rep.",
+                nextMilestoneLabel: "Noum will name the first mission after there is something to read.",
+                consequenceLine: "No progress is claimed before you speak.",
+                homeGoalLine: "Start the path with one rep today.",
+                homeGoalShortLabel: "Begin"
+            )
+        }
+
+        if isComplete {
+            return PathJourneyPresentation(
+                revealProgress: 1,
+                currentStreak: max(0, currentStreak),
+                progressLabel: "100% complete",
+                previewLine: "The current path is clear. Keep training to make the gains durable.",
+                summaryLine: "All \(totalCount) missions unlocked from real practice signals.",
+                explanationLine: "Current path complete.",
+                nextMilestoneLabel: "Keep training to strengthen the habits behind the unlocks.",
+                consequenceLine: "The coach will keep looking for the next high-leverage pattern.",
+                homeGoalLine: "All \(totalCount) missions unlocked. Keep the route strong.",
+                homeGoalShortLabel: "Cleared"
+            )
+        }
+
+        let missionNumber = min(totalCount, completedCount + 1)
+        let title = currentTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = currentDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let gating = currentGatingPhrase?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let readableTitle = title?.isEmpty == false ? title! : "Next mission"
+        let readableDetail = detail?.isEmpty == false
+            ? detail!
+            : "Complete a rep to give this node a stronger signal."
+        let readableGate = gating?.isEmpty == false
+            ? gating!
+            : "Keep training to move this mission forward."
+
+        let previewLine: String
+        if sessionCount <= 0 {
+            previewLine = "The path starts after one real rep. No mission is claimed before you speak."
+        } else if completedCount == 0 {
+            previewLine = "Your first mission is live. Noum is reading real reps now."
+        } else {
+            previewLine = "\(completedCount) mission\(completedCount == 1 ? "" : "s") unlocked. The next one is based on your latest signals."
+        }
+
+        return PathJourneyPresentation(
+            revealProgress: revealProgress,
+            currentStreak: max(0, currentStreak),
+            progressLabel: "\(pct)% complete",
+            previewLine: previewLine,
+            summaryLine: "\(completedCount) of \(totalCount) missions unlocked from real practice signals.",
+            explanationLine: "Mission \(missionNumber): \(readableTitle)",
+            nextMilestoneLabel: readableGate,
+            consequenceLine: readableDetail,
+            homeGoalLine: "Mission \(missionNumber) of \(totalCount): \(readableTitle). \(readableGate)",
+            homeGoalShortLabel: "\(pct)%"
+        )
+    }
+
+    static func progress(completedCount rawCompletedCount: Int, currentProgress rawCurrentProgress: Double, totalCount rawTotalCount: Int) -> Double {
+        let totalCount = max(0, rawTotalCount)
+        guard totalCount > 0 else { return 0 }
+        let completedCount = min(max(0, rawCompletedCount), totalCount)
+        guard completedCount < totalCount else { return 1 }
+        let currentProgress = min(1, max(0, rawCurrentProgress))
+        return min(1, max(0, (Double(completedCount) + currentProgress) / Double(totalCount)))
     }
 }
 

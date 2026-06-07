@@ -13,6 +13,7 @@ import SwiftUI
 @available(iOS 17.0, macOS 12.0, *)
 struct SoundscapePickerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var engine = SoundscapeEngine.shared
     @StateObject private var premium = PremiumManager.shared
     @State private var selectedMode: SoundscapeMode = SoundscapeSettings.savedMode
@@ -85,7 +86,7 @@ struct SoundscapePickerView: View {
                     Image(systemName: mode.symbolName)
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(tint(for: mode))
-                        .symbolEffect(.pulse, options: .repeating, isActive: isPlaying)
+                        .symbolEffect(.pulse, options: .repeating, isActive: isPlaying && !reduceMotion)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {

@@ -34,9 +34,9 @@ final class NotificationManager: ObservableObject {
         didSet { persistAndReschedule(key: dailyReminderMinuteKey, value: dailyReminderMinute) }
     }
 
-    /// Streak warning fires daily at 8 PM if enabled. Re-armed each day; the
-    /// schedule is conditional on streak being non-zero so brand-new users
-    /// don't get a misleading warning.
+    /// Evening practice nudge fires daily at 8 PM if enabled. Re-armed each
+    /// day; the schedule is conditional on streak being non-zero so brand-new
+    /// users don't get a misleading reminder.
     @Published var streakWarningEnabled: Bool {
         didSet { persistAndReschedule(key: streakWarningEnabledKey, value: streakWarningEnabled) }
     }
@@ -67,8 +67,8 @@ final class NotificationManager: ObservableObject {
     private let bigMomentT1Identifier = "noum.bigmoment.t1"
 
     /// Fixed 8:30 PM local fire time for the daily-challenge expiry warning.
-    /// Set 30 minutes after the streak warning's 8 PM so the two surfaces
-    /// never stack — a user with both enabled gets the streak ping first,
+    /// Set 30 minutes after the evening practice nudge's 8 PM so the two
+    /// surfaces never stack — a user with both enabled gets the rhythm ping first,
     /// then this one only if challenges are still open. Kept as a constant
     /// because the brief calls for a single nightly nudge, not a
     /// user-configurable time.
@@ -214,17 +214,16 @@ final class NotificationManager: ObservableObject {
 
     private func scheduleStreakWarning() async {
 #if canImport(UserNotifications)
-        // Streak warning is loss-aversion *only* when the user actually has
-        // a streak to lose. New users at streak 0 should not see "your
-        // streak ends in 3 hours" — the warning's whole power comes from
-        // the fact that you have something to defend.
+        // Evening rhythm nudges are useful only after the user has actually
+        // practiced before. New users at streak 0 get the ordinary daily
+        // reminder, never a fake "you have a streak" message.
         let snapshot = SharedNoumState.read()
         guard snapshot.currentStreak > 0 else {
             // Quietly skip — when the user builds a streak, the next
             // refresh re-arms this with real numbers.
             return
         }
-        // Skip if they've already practiced today (no streak to lose).
+        // Skip if they've already practiced today.
         guard snapshot.repsToday == 0 else { return }
 
         let content = UNMutableNotificationContent()
@@ -235,12 +234,9 @@ final class NotificationManager: ObservableObject {
         content.title = copy.title
         content.body = copy.body
         content.sound = .default
-        // Badge with streak count so the lock-screen icon carries the
-        // weight even before the user reads the notification.
-        content.badge = NSNumber(value: snapshot.currentStreak)
 
-        // 8 PM local — late enough to feel "you're running out of time",
-        // early enough to actually do something about it.
+        // 8 PM local — late enough to be useful, calm enough to avoid
+        // countdown or loss-framed pressure.
         var components = DateComponents()
         components.hour = 20
         components.minute = 0

@@ -96,6 +96,12 @@ struct SpeakingRating: Codable, Equatable {
             .reduce(0) { $0 + $1.delta }
     }
 
+    /// True once the user has at least one real rated result. The default
+    /// 400 rating is a starting line, not an earned peak/tier.
+    var hasRatedEvidence: Bool {
+        totalRatedSessions > 0 || !ratingHistory.isEmpty
+    }
+
     /// True when `weekPeakRating` was set in the current ISO week.
     /// Caller can use this to decide whether to surface the value as a
     /// "this week" stat or to treat it as stale.
@@ -441,6 +447,7 @@ final class RatingStore: ObservableObject {
     /// Safe to call unconditionally — the strictly-greater guard means a
     /// flat or downward swing is a silent no-op.
     func notePeakReachedForGlow() {
+        guard rating.hasRatedEvidence else { return }
         let lastShown = loadLastShownPeak()
         guard rating.weekPeakRating > lastShown else { return }
         pendingPeakGlow = true

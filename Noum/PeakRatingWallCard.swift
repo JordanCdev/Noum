@@ -20,16 +20,23 @@ struct PeakRatingWallCard: View {
     @StateObject private var ratingStore = RatingStore.shared
     @StateObject private var friendsManager = FriendsManager.shared
 
+    @ViewBuilder
     var body: some View {
         // When a peak landed this week, surface the premium purple hero (the
         // canonical Figma "personal best" anchor). Otherwise fall back to the
         // calm three-row list — peaks are honest, so a non-current week
         // doesn't get the celebration treatment.
-        if ratingStore.rating.isWeekPeakCurrent {
-            premiumHero
-        } else {
-            calmList
+        if Self.shouldRender(for: ratingStore.rating) {
+            if ratingStore.rating.isWeekPeakCurrent {
+                premiumHero
+            } else {
+                calmList
+            }
         }
+    }
+
+    static func shouldRender(for rating: SpeakingRating) -> Bool {
+        rating.hasRatedEvidence
     }
 
     private var premiumHero: some View {
