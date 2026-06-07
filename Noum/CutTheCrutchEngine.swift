@@ -213,7 +213,7 @@ final class CutTheCrutchEngine: ObservableObject {
     // MARK: Transcript Bridge
 
     /// Called by the view whenever the transcript changes. Counts new occurrences
-    /// of the avoided word and emits violations + heart loss.
+    /// of the avoided word and emits violations + slip allowance changes.
     func ingestTranscript(_ transcript: String) {
         guard case .active = phase else { return }
         let total = Self.countOccurrences(of: avoidedWord, in: transcript)

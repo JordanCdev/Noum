@@ -4,8 +4,11 @@ _Updated 2026-06-07 (after a Claude verification+fix session that followed Codex
 Self-contained: assume no memory of prior sessions. Read top-to-bottom before editing.
 Supersedes the earlier version of this file (recoverable via git history)._
 
-Branch: **`ux-overhaul`** (off `main`). Status: **clean-builds + runs**; the four
-value screens are clean; the post-rep verdict is verified on-device. ~4 work items remain.
+Branch: **`ux-overhaul`** (off `main`). Status: **focused tests passing after Codex
+continuation**; the post-rep verdict was verified on-device in the Claude session, and
+the real first-run onboarding → Train route is now verified by UI test. The remaining
+gap is visual/runtime screenshot review plus the larger roadmap work that was never
+closed by the original handoff list.
 
 ---
 
@@ -18,9 +21,17 @@ value screens are clean; the post-rep verdict is verified on-device. ~4 work ite
   routes into the prescribed rep, daily-reminder loss-aversion removed, and the **post-rep
   verdict renders correctly** (score → 2-sentence read → WIN with inline verified quote →
   FIX + drill CTA → Pro upsell after value).
-- **Remaining (priority order):** proof/verdict CTA a11y ids · "Sudden Death"→"Pressure
-  Drill" literal rename + reconcile the dirty `Localizable.xcstrings` · Profile *disclosure*
-  redundancy cut · reduced-motion gates · **Ask Noum structured reply** (biggest/riskiest).
+- **Codex continuation completed:** proof/verdict CTA a11y ids · "Sudden Death"→
+  "Pressure Drill" user-facing rename + `Localizable.xcstrings` JSON reconciliation ·
+  Profile disclosure redundancy cut · reduced-motion gates on named hotspots · Ask Noum
+  structured-reply prompt flag + quote guard · Cut the Crutch picker copy locked against
+  hearts/lives framing · real first-run route verified outside the pinned onboarding harness.
+- **Roadmap status:** Iteration 1 complete. Iteration 2 mostly complete. Iteration 3
+  partially complete (route verified; true "ask → speak → first read within ~60s" still
+  needs end-to-end product proof). Iterations 4 and 5 are not complete. Iterations 6 and
+  7 are partial. Do not confuse "handoff list closed" with "app done."
+- **Remaining:** screenshot/visual sweep on simulator and the broader product-readiness
+  pass beyond this handoff's priority list.
 
 ---
 
@@ -96,12 +107,11 @@ subtraction + hierarchy + making value felt, not new features.
   `NoumTests/RewardOwnershipTests` passing.
 - **First-run → prescribed rep (Priority 2):** `CoachingOnboardingView` first-run completion
   sets `DeepLinkRouter.shared.pending = noum://train` before `dismiss()` → new user lands on
-  the picker's Coach Pick, not a cold Home (Settings-edit still just saves). ⚠️ Runtime
-  landing is **logically** verified (the noum://train→picker route is proven) but NOT
-  screenshot-verified: the `UI_TESTING_ONBOARDING` harness binds the onboarding cover's
-  `isPresented` to a constant `true`, so it re-presents on dismiss. Verify via the real
-  first-run path (no profile, non-UI_TESTING) — e.g. add a test-only flag that drives the
-  NoumApp first-run cover.
+  the picker's Coach Pick, not a cold Home (Settings-edit still just saves). Codex added
+  `UI_TESTING_REAL_FIRST_RUN`, which opts UI tests back into the real `NoumApp` app-level
+  first-run cover instead of the pinned `UI_TESTING_ONBOARDING` harness. Verified by
+  `NoumUITests/NoumUITests/testOnboardingFlowSmoke`, which now completes onboarding and
+  asserts `practiceModes.screen` appears.
 - **Notification loss-aversion (Priority 6, partial):** `NotificationCopy.dailyReminder` no
   longer says "Hold your N-day streak"/"yours to keep" — now invite-framed. `streakWarning`
   was neutralized in the prior session.
@@ -115,38 +125,42 @@ subtraction + hierarchy + making value felt, not new features.
 
 ---
 
-## 5. Remaining work (priority order, with pointers)
+## 5. Codex continuation work completed
 
-1. **Proof/verdict CTA a11y ids (Priority 3).** `PostRepVerdictCard` has a card id
-   (`summary.postRepVerdict`) but its CTAs (Home/Retry/New/Share, the drill button) need
-   stable identifiers for UI tests. (The proof fail-path itself is already unit-tested.)
-2. **Pressure language (Priority 4).** ~15 user-facing "Sudden Death" literals remain —
-   `PathNode.swift` (203/205/206/315/316/318), `PathProgressManager.swift:288`,
-   `SuddenDeathDifficultyRunsView.swift` (75/101), `ForwardPlanService.swift:193`,
-   `SummaryView.swift:2169` (share), `WeakAreasCard.swift` (55/140), `GoalJourneyEngine.swift`
-   (227/243), `SuddenDeathHistoryExport.swift` (41-63), `DerivedReadsTrend.swift:316`.
-   Rename to "Pressure Drill" (matches `PracticeMode.suddenDeath.displayLabel`); keep the
-   enum `.suddenDeath` and persistence. Reword the awkward "Under pressure (Sudden Death)"
-   and "Pressure round. Sudden Death…" by hand. **Reconcile the dirty `Localizable.xcstrings`
-   in the same pass** (most of these literals are NOT localized struct params, so renaming
-   is safe; untranslated keys fall back to English, which is current behaviour).
-3. **Profile disclosure cut (Priority 5).** Default Profile is clean; the *disclosure* is the
-   junk drawer. In `ProfileView.swift`: cut the rating redundancy — `YourArcCard` +
-   `PeakRatingWallCard` + `ProgressionChartsCard` (lines ~523-525) all retell the rating;
-   keep ONE trajectory. Demote `ModeMasteryCard` (~526), achievements, and the
-   league/social/speak-off sections (~1750-1996). Keep: one rating trajectory, one coach
-   read/next move, growth library/review, the transfer loop. Don't add a "simple mode" toggle.
-4. **Reduced-motion gates (Priority 6).** Gate animations in `CoachingOnboardingView`,
-   `SummaryCards.HeroScoreCard`, `ProfileView` numeric transitions,
-   `PracticeModeSelectionView` selection, `SessionHistoryView` disclosure. Pattern used
-   elsewhere: `@Environment(\.accessibilityReduceMotion)` then skip the spring/particles
-   (keep haptic + sound).
-5. **Ask Noum structured reply (biggest value, highest risk — do LAST, feature-flagged).**
-   Still prose `ChatOutcome.reply(String)`. Make substantive turns read **read → evidence →
-   move**; route every quoted "you said…" through `ProofMomentService`'s verify-in-transcript
-   guard with a **tested fail path**; if the chat path can't guarantee the guard, structure
-   only the post-rep summary. Don't force structure on greetings. Live call: cut the 4-field
-   "COACHING READ" brief → one focus line / "Tap Talk".
+1. **Proof/verdict CTA a11y ids (Priority 3).** `PostRepVerdictCard` now exposes stable
+   identifiers for the root and drill/retry CTA buttons, with VoiceOver hints on the drill
+   actions.
+2. **Pressure language (Priority 4).** User-facing "Sudden Death" copy was renamed to
+   **"Pressure Drill"** across the identified surfaces while preserving `.suddenDeath`
+   enum/persistence names. `Localizable.xcstrings` was reconciled and validated as JSON.
+3. **Profile disclosure cut (Priority 5).** Expanded Profile details now follow a tested
+   `ProfileEvidenceDetailPlan`: one rating trajectory, coach evidence next, optional systems
+   demoted. The old full social/speak-off sections no longer dominate the disclosure; compact
+   rows preserve community and achievement access.
+4. **Reduced-motion gates (Priority 6).** `CoachingOnboardingView`, `SummaryCards.HeroScoreCard`,
+   `ProfileView` numeric/disclosure transitions, `PracticeModeSelectionView`, and
+   `SessionHistoryView` now skip springs/pulse/bounce where `accessibilityReduceMotion` is on.
+5. **Ask Noum structured reply (Priority 6/7, high risk).** The chat remains `String`-based,
+   but the system prompt now has a defaults-backed structured-shape flag
+   (`askNoum.structuredReplyShape.enabled`, default on) for **read -> evidence -> next move**.
+   A tested `CoachChatQuoteGuardContext` rejects live replies that use quoted "you said..."
+   language unless the quote appears in a known transcript, a verified proof quote, or the
+   latest user turn. Repair passes must clear the same guard.
+6. **Anti-goal copy guard.** Cut the Crutch picker copy now lives on
+   `PracticeModePrescriptionCopy` and has a test proving it says "slips" rather than
+   hearts/lives/no-second-chances framing. Internal engine names still use `heartsRemaining`
+   for compatibility; the user-facing register is locked.
+
+## 5a. Remaining work
+
+1. **Visual/runtime verification.** Run the screenshot sweep after this continuation and inspect
+   Profile expanded details, Practice picker, Summary verdict, and Ask Noum empty/live states.
+   Codex checked this on 2026-06-07: the local simulator is available, but both screenshot
+   mode files are currently `off`, so no PNGs were captured. A minimal verification note lives
+   at `.screenshots/2026-06-07_codex-ux-continuation/HANDOFF.md`.
+2. **Full readiness iteration.** This pass closes the handoff's implementation list; it does not
+   prove the app is "done." Continue with a full product QA/market-readiness evaluation after
+   screenshots and simulator walkthroughs.
 
 ---
 

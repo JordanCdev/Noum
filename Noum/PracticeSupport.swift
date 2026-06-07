@@ -8025,9 +8025,9 @@ enum CoachingPlanner {
         if let profile {
             switch (profile.primaryGoal, profile.speakingStyleGoal) {
             case (_, .authoritative):
-                suggestedDrill = "Use Sudden Death and Medium Timed Practice to strengthen firmer openings, cleaner pauses, and more decisive language."
+                suggestedDrill = "Use Pressure Drill and Medium Timed Practice to strengthen firmer openings, cleaner pauses, and more decisive language."
             case (_, .executive):
-                suggestedDrill = "Use Medium Timed Practice and Sudden Death to rehearse steadier pacing, shorter openings, and boardroom-style control."
+                suggestedDrill = "Use Medium Timed Practice and Pressure Drill to rehearse steadier pacing, shorter openings, and boardroom-style control."
             case (_, .storytelling):
                 suggestedDrill = "Use Easy Timed Practice to build fuller examples, then bring that colour into harder prompts."
             case (.reduceFillers, _):
@@ -8044,7 +8044,7 @@ enum CoachingPlanner {
         } else if averageDuration < 20 {
             suggestedDrill = "Timed Practice on Easy will help you develop fuller answers."
         } else if strongestMode == .suddenDeath {
-            suggestedDrill = "Sudden Death is working well for you. Use it to keep the pressure high."
+            suggestedDrill = "Pressure Drill is working well for you. Use it to keep the pressure high."
         } else {
             suggestedDrill = "Mix Timed Practice with Ah-Counter so you can balance structure and awareness."
         }

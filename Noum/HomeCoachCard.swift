@@ -632,7 +632,7 @@ struct HomeCoachCard: View {
     private func modeMicroLabel(for mode: PracticeMode) -> String {
         switch mode {
         case .timed:          return "TIMED"
-        case .suddenDeath:    return "SUDDEN DEATH"
+        case .suddenDeath:    return "PRESSURE DRILL"
         case .ahCounter:      return "AH-COUNTER"
         case .imConversation: return "IM"
         }

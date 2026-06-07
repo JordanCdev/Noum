@@ -18,8 +18,10 @@ struct NoumApp: App {
     @StateObject private var firstRunOnboarding = FirstRunOnboardingManager.shared
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var localeSettings = LocaleSettingsManager.shared
+    @State private var uiTestingFirstRunCoverDismissed = false
     @Environment(\.scenePhase) private var scenePhase
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING")
+    private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
 
     init() {
         FirebaseBootstrap.configure()
@@ -75,6 +77,14 @@ struct NoumApp: App {
                 NotificationPrePromptManager.shared.pendingPrompt = true
             }
         }
+        // Lets UI tests exercise the real app-level first-run cover while
+        // preserving the normal `UI_TESTING` bypass used by seeded tours.
+        if args.contains("UI_TESTING_REAL_FIRST_RUN") {
+            PracticeSessionStore.shared.endSession()
+            ProfileManager.shared.replaceFromRemote(0)
+            CoachingProfileStore.shared.replaceForDebug(nil)
+            FirstRunOnboardingManager.shared.resetForDebug()
+        }
         // `-DeepLink noum://<host>` launch arg lets the noum-screenshots
         // skill drive tab nav via `simctl launch --terminate-running-process`
         // without triggering iOS's "Open in Noum?" confirmation that blocks
@@ -97,16 +107,7 @@ struct NoumApp: App {
 
     @ViewBuilder
     private var rootView: some View {
-        ContentView()
-            .fullScreenCover(
-                isPresented: firstRunOnboardingPresented,
-                onDismiss: {
-                    markFirstRunCompletedIfProfileExists()
-                }
-            ) {
-                CoachingOnboardingView()
-                    .interactiveDismissDisabled(true)
-            }
+        rootContent
         .preferredColorScheme(.light)
         // M3 typography redesign: default body text uses Manrope. Views can
         // override with the Figtree-backed `Typography.headline` /
@@ -145,20 +146,51 @@ struct NoumApp: App {
         }
     }
 
+    @ViewBuilder
+    private var rootContent: some View {
+        if isRealFirstRunUITesting && !uiTestingFirstRunCoverDismissed {
+            // UI-test-only proof path. Rendering onboarding as the temporary
+            // root avoids a presentation race where child Home sheets can win
+            // before the app-level first-run cover appears on reused sims.
+            CoachingOnboardingView {
+                uiTestingFirstRunCoverDismissed = true
+                markFirstRunCompletedIfProfileExists()
+            }
+            .interactiveDismissDisabled(true)
+        } else {
+            ContentView()
+                .fullScreenCover(
+                    isPresented: firstRunOnboardingPresented,
+                    onDismiss: {
+                        markFirstRunCompletedIfProfileExists()
+                    }
+                ) {
+                    CoachingOnboardingView()
+                        .interactiveDismissDisabled(true)
+                }
+        }
+    }
+
     /// Drives the first-run coaching intake. UI testing bypasses it so the
-    /// screenshot-tour suite is not blocked; `UI_TESTING_ONBOARDING` still
-    /// opens the same view from `ContentView`.
+    /// screenshot-tour suite is not blocked. `UI_TESTING_REAL_FIRST_RUN`
+    /// opts back into the real app-level cover so the dismiss → Train route
+    /// can be verified without the older pinned `UI_TESTING_ONBOARDING`
+    /// harness.
     private var firstRunOnboardingPresented: Binding<Bool> {
         Binding(
             get: {
-                FirstRunOnboardingGate.shouldPresent(
+                if isRealFirstRunUITesting {
+                    return !uiTestingFirstRunCoverDismissed
+                }
+                return FirstRunOnboardingGate.shouldPresent(
                     hasCompletedFirstRun: firstRunOnboarding.hasSeen,
                     hasCoachingProfile: coachingProfileStore.profile != nil,
-                    isUITesting: isUITesting
+                    isUITesting: isUITesting && !isRealFirstRunUITesting
                 )
             },
             set: { newValue in
                 if newValue == false {
+                    uiTestingFirstRunCoverDismissed = true
                     markFirstRunCompletedIfProfileExists()
                 }
             }

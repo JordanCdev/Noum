@@ -88,6 +88,7 @@ enum CoachChatReplyQualityIssue: Equatable {
     case missingPrescribedAction
     case unanchoredCoaching
     case overclaimsEvidence
+    case unverifiedQuotedUserSpeech
 
     var repairInstruction: String {
         switch self {
@@ -109,6 +110,8 @@ enum CoachChatReplyQualityIssue: Equatable {
             return "The draft is not anchored in an observable fact, recent user message, case-file target, or honest data gap. Add one grounded anchor."
         case .overclaimsEvidence:
             return "The draft overclaims from limited evidence or labels the user. Reframe as a tentative coaching hypothesis the user can confirm or reject."
+        case .unverifiedQuotedUserSpeech:
+            return "The draft quotes user speech that is not verified against a transcript or the latest user turn. Remove the quote and cite a metric, pattern, or honest data gap instead."
         }
     }
 }
@@ -136,6 +139,30 @@ struct CoachChatProfessionalRubricResult: Equatable {
 
     var passesSeniorCoachFloor: Bool {
         score >= 8 && misses.isEmpty
+    }
+}
+
+/// Transcript sources the live chat may quote from. Ask Noum is still a prose
+/// chat surface, but any "you said ..." quote must be backed by an exact slice
+/// of a known transcript, a verified proof quote, or the user's latest turn.
+/// Pure and transient — no persistence, no new chat schema.
+struct CoachChatQuoteGuardContext: Equatable {
+    let sourceTexts: [String]
+
+    init(
+        transcripts: [String?] = [],
+        verifiedProofQuotes: [String] = [],
+        latestUserTurn: String? = nil
+    ) {
+        self.sourceTexts = (transcripts + verifiedProofQuotes.map { Optional($0) } + [latestUserTurn])
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    func verifies(_ quote: String) -> Bool {
+        sourceTexts.contains { source in
+            ProofMomentService.transcriptContains(quote, in: source)
+        }
     }
 }
 
@@ -173,6 +200,10 @@ struct ChatFallbackContext: Equatable {
     /// The case file's next coaching question, already phrased. Used to
     /// advance the case when there is no recent rep to read.
     var nextQuestion: String?
+    /// Quotes that have already passed the proof-moment guard elsewhere.
+    /// The live chat may quote these back; anything else needs to appear in a
+    /// transcript or the user's latest turn.
+    var verifiedProofQuotes: [String]
 
     init(
         voice: SpeakingStyleGoal? = nil,
@@ -183,7 +214,8 @@ struct ChatFallbackContext: Equatable {
         hypothesis: String? = nil,
         observableTarget: String? = nil,
         successMeasure: String? = nil,
-        nextQuestion: String? = nil
+        nextQuestion: String? = nil,
+        verifiedProofQuotes: [String] = []
     ) {
         self.voice = voice
         self.recentTimedTranscript = recentTimedTranscript
@@ -194,6 +226,7 @@ struct ChatFallbackContext: Equatable {
         self.observableTarget = observableTarget
         self.successMeasure = successMeasure
         self.nextQuestion = nextQuestion
+        self.verifiedProofQuotes = verifiedProofQuotes
     }
 }
 
@@ -251,6 +284,11 @@ actor AICoachChatService {
         // Trim replay to the cap, keeping the most recent turns.
         let trimmed = Array(history.suffix(Self.maxReplayMessages))
         let latestUserTurn = trimmed.last(where: { $0.role == .user })?.text
+        let quoteGuard = CoachChatQuoteGuardContext(
+            transcripts: [fallback.recentTimedTranscript],
+            verifiedProofQuotes: fallback.verifiedProofQuotes,
+            latestUserTurn: latestUserTurn
+        )
 
         do {
             let body = requestBody(for: provider, system: composedSystem, messages: trimmed)
@@ -266,7 +304,11 @@ actor AICoachChatService {
                 return .deterministicReply(Self.deterministicReply(failure: .network, context: fallback))
             }
             if let text = extractText(from: data, provider: provider) {
-                if let issue = Self.replyQualityIssue(in: text, latestUserTurn: latestUserTurn) {
+                if let issue = Self.replyQualityIssue(
+                    in: text,
+                    latestUserTurn: latestUserTurn,
+                    quoteGuard: quoteGuard
+                ) {
                     if let repaired = await repairLowQualityReply(
                         issue: issue,
                         draft: text,
@@ -274,7 +316,8 @@ actor AICoachChatService {
                         endpoint: endpoint,
                         key: key,
                         system: composedSystem,
-                        messages: trimmed
+                        messages: trimmed,
+                        quoteGuard: quoteGuard
                     ) {
                         return .reply(repaired)
                     }
@@ -307,12 +350,18 @@ actor AICoachChatService {
     /// in isolation but wrong for the user's actual turn.
     nonisolated static func replyQualityIssue(
         in text: String,
-        latestUserTurn: String?
+        latestUserTurn: String?,
+        quoteGuard: CoachChatQuoteGuardContext? = nil
     ) -> CoachChatReplyQualityIssue? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         let lower = trimmed.lowercased()
+        if let quoteGuard,
+           Self.containsUnverifiedQuotedUserSpeech(in: trimmed, quoteGuard: quoteGuard) {
+            return .unverifiedQuotedUserSpeech
+        }
+
         if lower.hasPrefix("understood.")
             || lower.hasPrefix("understood,")
             || lower.hasPrefix("understood ") {
@@ -545,6 +594,46 @@ actor AICoachChatService {
         return false
     }
 
+    nonisolated static func containsUnverifiedQuotedUserSpeech(
+        in text: String,
+        quoteGuard: CoachChatQuoteGuardContext
+    ) -> Bool {
+        let lower = text.lowercased()
+        guard containsAny(lower, [
+            "you said", "you used", "your words", "your phrase",
+            "you put it", "your line", "you opened with"
+        ]) else { return false }
+
+        return quotedFragments(in: text).contains { quote in
+            !quoteGuard.verifies(quote)
+        }
+    }
+
+    nonisolated static func quotedFragments(in text: String) -> [String] {
+        let patterns = [
+            "\"([^\"]{3,180})\"",
+            "'([^']{3,180})'",
+            "\u{201C}([^\u{201D}]{3,180})\u{201D}",
+            "\u{2018}([^\u{2019}]{3,180})\u{2019}"
+        ]
+        let nsText = text as NSString
+        var fragments: [String] = []
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let matches = regex.matches(
+                in: text,
+                range: NSRange(location: 0, length: nsText.length)
+            )
+            fragments.append(contentsOf: matches.compactMap { match in
+                guard match.numberOfRanges > 1 else { return nil }
+                let raw = nsText.substring(with: match.range(at: 1))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return raw.isEmpty ? nil : raw
+            })
+        }
+        return fragments
+    }
+
     private nonisolated static func replyOffersMenu(_ lower: String) -> Bool {
         lower.contains("which direction would you prefer")
             || lower.contains("what is your priority")
@@ -570,7 +659,8 @@ actor AICoachChatService {
         endpoint: URL,
         key: String,
         system: String,
-        messages: [CoachMessage]
+        messages: [CoachMessage],
+        quoteGuard: CoachChatQuoteGuardContext?
     ) async -> String? {
         let repairSystem = """
         \(system)
@@ -599,7 +689,11 @@ actor AICoachChatService {
                 body: body
             ),
             let text = extractText(from: data, provider: provider),
-            Self.replyQualityIssue(in: text, latestUserTurn: messages.last(where: { $0.role == .user })?.text) == nil
+            Self.replyQualityIssue(
+                in: text,
+                latestUserTurn: messages.last(where: { $0.role == .user })?.text,
+                quoteGuard: quoteGuard
+            ) == nil
         else { return nil }
 
         return text

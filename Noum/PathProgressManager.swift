@@ -285,7 +285,7 @@ enum GatingPhrase {
             if peak >= target { return readyLine }
             return "+\(target - peak) rating from unlocked."
         case .pressureSurvived(let rounds):
-            return "Survive into round \(rounds) of a Sudden Death rep to unlock."
+            return "Survive into round \(rounds) of a Pressure Drill rep to unlock."
         case .modeMasteryLevel(let mode, let level):
             let current = input.modeMastery[mode]?.level ?? 1
             if current >= level { return readyLine }
@@ -353,7 +353,7 @@ enum GatingPhrase {
     private static func modeName(_ mode: PracticeMode) -> String {
         switch mode {
         case .timed:          return "Timed"
-        case .suddenDeath:    return "Sudden Death"
+        case .suddenDeath:    return "Pressure Drill"
         case .ahCounter:      return "Ah-Counter"
         case .imConversation: return "IM Mode"
         }

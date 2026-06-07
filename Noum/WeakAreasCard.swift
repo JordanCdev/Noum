@@ -52,7 +52,7 @@ struct WeakAreasCard: View {
             case .opening:       return "Open Timed mode"
             case .structure:     return "Run Rule of Three lesson"
             case .pace:          return "Open Ah-Counter"
-            case .pressure:      return "Open Sudden Death"
+            case .pressure:      return "Open Pressure Drill"
             }
         }
 
@@ -137,7 +137,7 @@ struct WeakAreasCard: View {
         if ratingStore.rating.weeklyDelta < -10 {
             out.append(WeakRow(
                 title: "Pressure caught you this week",
-                detail: "Rating dipped \(ratingStore.rating.weeklyDelta) points. A calmer Sudden Death rep is the better next target.",
+                detail: "Rating dipped \(ratingStore.rating.weeklyDelta) points. A calmer Pressure Drill rep is the better next target.",
                 target: .pressure
             ))
         }

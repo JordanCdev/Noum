@@ -468,7 +468,7 @@ struct SummaryView: View {
             let label: String
             switch session.mode {
             case .timed: label = "Timed"
-            case .suddenDeath: label = "Sudden Death"
+            case .suddenDeath: label = "Pressure Drill"
             case .ahCounter: label = "Ah-Counter"
             case .imConversation: label = "IM"
             }
@@ -2166,7 +2166,7 @@ struct SummaryView: View {
         .confirmationDialog("Share Session", isPresented: $showShareMenu) {
             ShareLink(
                 item: shareImage,
-                preview: SharePreview(isSuddenDeathSummary ? "My Sudden Death Run" : "My Noum Score", image: shareImage)
+                preview: SharePreview(isSuddenDeathSummary ? "My Pressure Drill Run" : "My Noum Score", image: shareImage)
             ) {
                 Label(isSuddenDeathSummary ? "Share Run Card" : "Share Achievement Card", systemImage: "photo.fill")
             }

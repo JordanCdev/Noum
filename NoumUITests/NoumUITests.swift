@@ -86,10 +86,98 @@ final class NoumUITests: XCTestCase {
     @MainActor
     func testOnboardingFlowSmoke() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["UI_TESTING", "UI_TESTING_ONBOARDING"]
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN"]
         app.launch()
 
-        XCTAssertTrue(app.buttons["coaching.start"].waitForExistence(timeout: 5))
+        try completeCoachingOnboarding(in: app)
+
+        // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
+        // before the redesign). This test opts into the real app-level
+        // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
+        // so dismissing the cover must route into the Train picker.
+        let finishButton = app.buttons["coaching.startPracticing"]
+        XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
+        XCTAssertTrue(finishButton.isEnabled)
+        finishButton.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 10),
+            "First-run completion should land on the prescribed-rep picker, not a cold Home."
+        )
+    }
+
+    @MainActor
+    func testFirstRunValueLoopReachesFirstVerdictWithInjectedTranscript() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["UI_TESTING", "UI_TESTING_REAL_FIRST_RUN", "UI_TESTING_FIRST_VALUE_LOOP"]
+        app.launch()
+
+        try completeCoachingOnboarding(in: app)
+
+        let finishButton = app.buttons["coaching.startPracticing"]
+        XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
+        finishButton.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["practiceModes.screen"].waitForExistence(timeout: 10))
+
+        let timedMode = app.buttons["practiceMode.timed"]
+        if !timedMode.waitForExistence(timeout: 2) {
+            let pickAnother = app.buttons["practiceModes.recommendedHero.pickAnother"]
+            if pickAnother.waitForExistence(timeout: 5) {
+                pickAnother.tap()
+            }
+        }
+
+        if timedMode.waitForExistence(timeout: 8) {
+            timedMode.tap()
+
+            let selectedPredicate = NSPredicate(format: "isSelected == true")
+            let selectedExpectation = expectation(for: selectedPredicate, evaluatedWith: timedMode)
+            wait(for: [selectedExpectation], timeout: 5)
+
+            XCTAssertTrue(app.buttons["practiceModes.start"].waitForExistence(timeout: 5))
+            app.buttons["practiceModes.start"].tap()
+        } else {
+            let recommendedBegin = app.buttons["practiceModes.recommendedHero.begin"]
+            XCTAssertTrue(
+                recommendedBegin.waitForExistence(timeout: 5) && recommendedBegin.label.contains("Timed"),
+                "Timed Practice should be selectable from the collapsed picker, or be the recommended hero."
+            )
+            recommendedBegin.tap()
+        }
+
+        let begin = app.buttons["timedPractice.begin"]
+        XCTAssertTrue(begin.waitForExistence(timeout: 10))
+        begin.tap()
+
+        let verdict = app.descendants(matching: .any)["summary.postRepVerdict"]
+        if !verdict.waitForExistence(timeout: 2) {
+            let startNow = app.buttons["timedPractice.startNow"]
+            if startNow.waitForExistence(timeout: 4) {
+                startNow.tap()
+            }
+        }
+
+        let firstRepContinue = app.buttons["firstRep.celebration.continue"]
+        if firstRepContinue.waitForExistence(timeout: 12) {
+            firstRepContinue.tap()
+        }
+
+        XCTAssertTrue(
+            verdict.waitForExistence(timeout: 20),
+            "A first-run user should reach the post-rep coach verdict from onboarding without microphone audio in the UI test harness."
+        )
+        XCTAssertTrue(
+            app.buttons["summary.postRepVerdict.startMiniDrill"].exists
+            || app.buttons["summary.postRepVerdict.fullRetry"].exists
+            || app.buttons["summary.postRepVerdict.startFullRetry"].exists,
+            "The first verdict should include a concrete next action, not just explanatory text."
+        )
+    }
+
+    @MainActor
+    private func completeCoachingOnboarding(in app: XCUIApplication) throws {
+        XCTAssertTrue(app.buttons["coaching.start"].waitForExistence(timeout: 15))
         app.buttons["coaching.start"].tap()
 
         // Post-M14 onboarding is three single-choice stages (context →
@@ -107,14 +195,12 @@ final class NoumUITests: XCTestCase {
         app.buttons["coaching.continue"].tap()
 
         // Final stage CTA: `coaching.startPracticing` (was `coaching.save`
-        // before the redesign). The summary screen runs a ~12s processing
-        // animation before revealing the profile card and its CTA, so the
-        // wait window has to clear that animation budget plus a little
-        // headroom for simulator latency.
+        // before the redesign). This test opts into the real app-level
+        // first-run cover, not the pinned `UI_TESTING_ONBOARDING` harness,
+        // so dismissing the cover must route into the Train picker.
         let finishButton = app.buttons["coaching.startPracticing"]
         XCTAssertTrue(finishButton.waitForExistence(timeout: 25))
         XCTAssertTrue(finishButton.isEnabled)
-        finishButton.tap()
     }
 
     @MainActor

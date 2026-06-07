@@ -41,6 +41,56 @@ struct ProfileDefaultSurfacePlan: Equatable {
     }
 }
 
+enum ProfileEvidenceDetailSurface: String, Equatable {
+    case rankProgress
+    case ratingTrajectory
+    case insightsBanked
+    case pressureHistoryShare
+    case coachingDirection
+    case weeklyCheckIn
+    case caseReview
+    case deliveryProfile
+    case speechPatterns
+    case skillProgress
+    case activeChallenge
+    case feedbackInbox
+    case league
+    case communityPractice
+    case achievements
+}
+
+struct ProfileEvidenceDetailPlan: Equatable {
+    let surfaces: [ProfileEvidenceDetailSurface]
+
+    static let valueFirst = ProfileEvidenceDetailPlan(
+        surfaces: [
+            .rankProgress,
+            .ratingTrajectory,
+            .insightsBanked,
+            .pressureHistoryShare,
+            .coachingDirection,
+            .weeklyCheckIn,
+            .caseReview,
+            .deliveryProfile,
+            .speechPatterns,
+            .skillProgress,
+            .activeChallenge,
+            .feedbackInbox,
+            .league,
+            .communityPractice,
+            .achievements
+        ]
+    )
+
+    var ratingStorySurfaceCount: Int {
+        surfaces.filter { $0 == .ratingTrajectory }.count
+    }
+
+    var optionalSystemSurfaceCount: Int {
+        surfaces.filter { [.league, .communityPractice, .achievements].contains($0) }.count
+    }
+}
+
 struct ProfileIdentityPresentation: Equatable {
     let subtitle: String
     let exposesProgressCurrency: Bool
@@ -144,6 +194,7 @@ struct ProfileView: View {
     @State private var selectedAsyncChallenge: AsyncChallenge?
     @State private var showChallengePickFriend = false
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let metricColumns = [
         GridItem(.adaptive(minimum: 110), spacing: 10, alignment: .top)
@@ -264,6 +315,10 @@ struct ProfileView: View {
 
     private var defaultSurfacePlan: ProfileDefaultSurfacePlan {
         ProfileDefaultSurfacePlan.make(hasProgressEvidence: hasProgressEvidence)
+    }
+
+    private var evidenceDetailPlan: ProfileEvidenceDetailPlan {
+        .valueFirst
     }
 
     var body: some View {
@@ -434,34 +489,60 @@ struct ProfileView: View {
                 )
             }
 
-            DisclosureGroup(isExpanded: $showProfileEvidence) {
+            Button {
+                toggleProfileEvidence()
+            } label: {
+                profileEvidenceToggleLabel
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile.evidenceHub.toggle")
+
+            if showProfileEvidence {
                 profileEvidenceDetails
                     .padding(.top, Spacing.sm)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(AppColor.brandBlue)
-                    Text("Show stats and community")
-                        .font(Typography.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Text("Optional")
-                        .font(Typography.micro.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, 12)
-                .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
-                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                )
+                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
-            .tint(AppColor.brandBlue)
         }
         .accessibilityIdentifier("profile.evidenceHub")
+    }
+
+    private var profileEvidenceToggleLabel: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(AppColor.brandBlue)
+            Text(showProfileEvidence ? "Hide supporting evidence" : "Show supporting evidence")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+            Text("Optional")
+                .font(Typography.micro.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Image(systemName: "chevron.down")
+                .font(Typography.captionSmall.weight(.bold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(showProfileEvidence ? 180 : 0))
+                .animation(reduceMotion ? nil : .standardSpring, value: showProfileEvidence)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 12)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+    }
+
+    private func toggleProfileEvidence() {
+        if reduceMotion {
+            showProfileEvidence.toggle()
+        } else {
+            withAnimation(.standardSpring) {
+                showProfileEvidence.toggle()
+            }
+        }
     }
 
     private func profileEvidenceLink(
@@ -515,32 +596,58 @@ struct ProfileView: View {
     }
 
     private var profileEvidenceDetails: some View {
-        VStack(spacing: Spacing.cardGap) {
+        let plan = evidenceDetailPlan
+        return VStack(spacing: Spacing.cardGap) {
             clusterHeader("Progression details")
-            rankPanel
-            peakRatingWallLink
-            insightsBankedChip
-            YourArcCard()
-            PeakRatingWallCard()
-            ProgressionChartsCard(sessionStore: sessionStore)
-            ModeMasteryCard()
-            suddenDeathHistoryShareRow
-            achievementsPanel
+            if plan.surfaces.contains(.rankProgress) {
+                rankPanel
+            }
+            if plan.surfaces.contains(.ratingTrajectory) {
+                ProgressionChartsCard(sessionStore: sessionStore)
+            }
+            if plan.surfaces.contains(.insightsBanked) {
+                insightsBankedChip
+            }
+            if plan.surfaces.contains(.pressureHistoryShare) {
+                suddenDeathHistoryShareRow
+            }
 
             clusterHeader("Coaching evidence")
-            coachingDirectionCard
-            weeklyCheckInCard
-            caseReviewCard
-            deliveryProfileCard
-            speechPatternsCard
-            skillProgressPanel
-            activeChallengePanel
-            feedbackInboxCard
+            if plan.surfaces.contains(.coachingDirection) {
+                coachingDirectionCard
+            }
+            if plan.surfaces.contains(.weeklyCheckIn) {
+                weeklyCheckInCard
+            }
+            if plan.surfaces.contains(.caseReview) {
+                caseReviewCard
+            }
+            if plan.surfaces.contains(.deliveryProfile) {
+                deliveryProfileCard
+            }
+            if plan.surfaces.contains(.speechPatterns) {
+                speechPatternsCard
+            }
+            if plan.surfaces.contains(.skillProgress) {
+                skillProgressPanel
+            }
+            if plan.surfaces.contains(.activeChallenge) {
+                activeChallengePanel
+            }
+            if plan.surfaces.contains(.feedbackInbox) {
+                feedbackInboxCard
+            }
 
-            clusterHeader("Community")
-            leaguePanel
-            socialSection
-            statsRow
+            clusterHeader("Optional systems")
+            if plan.surfaces.contains(.league) {
+                leaguePanel
+            }
+            if plan.surfaces.contains(.communityPractice) {
+                communityPracticeRow
+            }
+            if plan.surfaces.contains(.achievements) {
+                achievementsSummaryRow
+            }
         }
     }
 
@@ -685,8 +792,8 @@ struct ProfileView: View {
                     Text("\(profile.xp) XP total")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(AppColor.brandBlue)
-                        .contentTransition(.numericText())
-                        .animation(.standardSpring, value: profile.xp)
+                        .contentTransition(reduceMotion ? .identity : .numericText())
+                        .animation(reduceMotion ? nil : .standardSpring, value: profile.xp)
                     Text("\(ProfileManager.xpNeededToNextLevel(forXP: profile.xp)) XP to level up")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -725,8 +832,8 @@ struct ProfileView: View {
                             Text("\(rating.overall)")
                                 .font(Typography.figtreeNumeric(size: 44, relativeTo: .largeTitle))
                                 .foregroundStyle(AppColor.brandBlue)
-                                .contentTransition(.numericText())
-                                .animation(.standardSpring, value: rating.overall)
+                                .contentTransition(reduceMotion ? .identity : .numericText())
+                                .animation(reduceMotion ? nil : .standardSpring, value: rating.overall)
                             if rating.weeklyDelta != 0 {
                                 Text(rating.weeklyDelta > 0 ? "+\(rating.weeklyDelta) this week" : "\(rating.weeklyDelta) this week")
                                     .font(.caption.weight(.semibold))
@@ -915,10 +1022,10 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Sudden Death history share
+    // MARK: - Pressure Drill history share
     //
     // Quiet ShareLink row in the Progression cluster. Surfaces the
-    // user's full Sudden Death track record as a plain-text snapshot
+    // user's full Pressure Drill track record as a plain-text snapshot
     // they can paste anywhere — Notes, Messages, an email thread.
     // Mirrors the SD Result-screen share affordance so the same
     // helper (`SuddenDeathHistoryExport.formatPlainText(runs:)`)
@@ -926,7 +1033,7 @@ struct ProfileView: View {
     // post-rep or post-hoc.
     //
     // Self-hides when there are no SD runs yet (cold start), so a
-    // user who hasn't touched Sudden Death sees nothing — the row
+    // user who hasn't touched Pressure Drill sees nothing — the row
     // appears the moment they have something to share.
     //
     // Restraint: this is a single quiet row, not a card. The
@@ -955,7 +1062,7 @@ struct ProfileView: View {
                             in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous)
                         )
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Share Sudden Death history")
+                        Text("Share Pressure Drill history")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                         Text("\(runLabel) · cross-difficulty plain-text")
@@ -981,8 +1088,8 @@ struct ProfileView: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Share Sudden Death history — \(runLabel)")
-            .accessibilityHint("Opens a share sheet with a plain-text snapshot of your full Sudden Death track record.")
+            .accessibilityLabel("Share Pressure Drill history — \(runLabel)")
+            .accessibilityHint("Opens a share sheet with a plain-text snapshot of your full Pressure Drill track record.")
             .accessibilityIdentifier("profile.suddenDeath.historyShare")
         }
     }
@@ -1120,6 +1227,75 @@ struct ProfileView: View {
 
     private var leagueTierTint: Color {
         ratingStore.rating.hasRatedEvidence ? league.tier.tint : AppColor.brandBlue
+    }
+
+    private var communityPracticeRow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "person.2.wave.2.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.teal)
+                    .frame(width: 36, height: 36)
+                    .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Community practice")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(communityPracticeSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    presentSpeakOffPickerIfAvailable()
+                } label: {
+                    Label("Challenge", systemImage: "bolt.fill")
+                        .font(Typography.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .disabled(!canStartSpeakOff)
+                .opacity(canStartSpeakOff ? 1 : 0.45)
+                .buttonStyle(.bordered)
+                .tint(.teal)
+                .accessibilityIdentifier("profile.community.challenge")
+
+                Button {
+                    showAddFriendManual = true
+                } label: {
+                    Label("Add friend", systemImage: "plus")
+                        .font(Typography.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(AppColor.brandBlue)
+                .accessibilityIdentifier("profile.community.addFriend")
+            }
+        }
+        .padding(Spacing.lg)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    private var communityPracticeSubtitle: String {
+        if canStartSpeakOff {
+            return "\(linkedSpeakOffFriends.count) linked friend\(linkedSpeakOffFriends.count == 1 ? "" : "s") ready for scored reps."
+        }
+        if friends.friends.isEmpty {
+            return "Add a friend when you want scored practice with someone else."
+        }
+        return SpeakOffConnectionCopy.unlinkedFriendsNotice
     }
 
     // MARK: - Coaching Direction
@@ -1390,6 +1566,62 @@ struct ProfileView: View {
     }
 
     // MARK: - Achievements (Compact Preview)
+
+    private var achievementsSummaryRow: some View {
+        let allStatuses = retentionSnapshot.achievements
+        let unlockedCount = unlockedAchievements.count
+        let totalCount = allStatuses.count
+
+        return Button {
+            showAchievementsTree = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "seal.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(AppColor.pro)
+                    .frame(width: 36, height: 36)
+                    .background(AppColor.pro.opacity(0.12), in: RoundedRectangle(cornerRadius: CornerRadius.small, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Achievements")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(achievementsSummarySubtitle(unlocked: unlockedCount, total: totalCount))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(totalCount == 0 ? "Pending" : "\(unlockedCount)/\(totalCount)")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(Spacing.lg)
+            .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profile.achievements.summary")
+    }
+
+    private func achievementsSummarySubtitle(unlocked: Int, total: Int) -> String {
+        if total == 0 {
+            return "Complete a rep before badges enter the profile."
+        }
+        if unlocked == 0 {
+            return "Badges stay secondary to real speaking progress."
+        }
+        return "Optional badge archive. Your coaching read stays first."
+    }
 
     private var achievementsPanel: some View {
         let allStatuses = retentionSnapshot.achievements

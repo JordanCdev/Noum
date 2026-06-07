@@ -70,6 +70,16 @@ final class FirstRunOnboardingManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: seenKey)
     }
 
+    #if DEBUG
+    /// UI-test reset for the real first-run path. Keeps the normal
+    /// `UI_TESTING` bypass intact unless a test explicitly opts into the
+    /// production app-level onboarding cover.
+    func resetForDebug() {
+        hasSeen = false
+        UserDefaults.standard.removeObject(forKey: seenKey)
+    }
+    #endif
+
     // MARK: - Internals
 
     private func load() {

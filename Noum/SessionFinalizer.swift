@@ -477,17 +477,6 @@ enum SessionFinalizer {
             )
         }
 
-        // 6. First session ever
-        if sessions.count == 1 {
-            return MilestoneEvent(
-                icon: "sparkles",
-                tint: .blue,
-                title: "First rep on the books.",
-                subtitle: "Your speaking journey starts here.",
-                detail: "The app learns your patterns over time — it gets smarter the more you use it."
-            )
-        }
-
         return nil
     }
 }

@@ -17,6 +17,7 @@ struct HeroScoreCard: View {
     let effectiveDuration: TimeInterval
     let durationAssessment: DurationAssessment
     let celebrationVisible: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Optional IM tone-drill SOLVED ribbon. When non-nil, the card
     /// renders a quiet mode-tinted capsule between the score ring and the
@@ -93,8 +94,8 @@ struct HeroScoreCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .scaleEffect(celebrationVisible ? 1.06 : 1.0)
-            .animation(.bouncySpring, value: celebrationVisible)
+            .scaleEffect(!reduceMotion && celebrationVisible ? 1.06 : 1.0)
+            .animation(reduceMotion ? nil : .bouncySpring, value: celebrationVisible)
 
             // SOLVED ribbon (renders only when wired). Visual register
             // stays deliberately restrained — quiet mode-tinted capsule
@@ -188,7 +189,7 @@ struct SuddenDeathReviewCard: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("SUDDEN DEATH REVIEW")
+            Text("PRESSURE DRILL REVIEW")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(.secondary)
                 .tracking(1.4)

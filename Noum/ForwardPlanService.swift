@@ -179,7 +179,7 @@ actor ForwardPlanService {
         )
     }
 
-    /// Week 3 — pressure escalation. Sudden Death by default; for
+    /// Week 3 — pressure escalation. Pressure Drill by default; for
     /// users whose Week 1 focus was already filler-reduction, keep the
     /// mode varied so the program doesn't read as three weeks of the
     /// same thing.
@@ -190,7 +190,7 @@ actor ForwardPlanService {
         let focus = priority(for: skill)
         let mode: PracticeMode = .suddenDeath
         let target = max(2, sessionTarget(weeklyReps: input.weeklyReps, base: 3) - 1)
-        let rationale = "Pressure round. Sudden Death rewards composure — one filler ends the rep, so each rep is a real test of what you've drilled."
+        let rationale = "Pressure Drill rewards composure — one filler ends the rep, so each rep is a clear test of what you've drilled."
         return PlanWeek(
             weekIndex: 3,
             focus: focus,

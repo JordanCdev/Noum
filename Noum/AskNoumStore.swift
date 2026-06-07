@@ -405,7 +405,7 @@ final class AskNoumStore: ObservableObject {
     nonisolated static func shouldCleanLegacyCoachMessage(_ text: String) -> Bool {
         guard let issue = AICoachChatService.replyQualityIssue(in: text) else { return false }
         switch issue {
-        case .roboticPhrase, .bareClarification, .defensiveProductLanguage, .menuInsteadOfDecision:
+        case .roboticPhrase, .bareClarification, .defensiveProductLanguage, .menuInsteadOfDecision, .unverifiedQuotedUserSpeech:
             return true
         case .tooLong, .missedTrustRepair, .missingPrescribedAction, .unanchoredCoaching, .overclaimsEvidence:
             return false

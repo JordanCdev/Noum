@@ -55,6 +55,8 @@ struct PracticeModePrescriptionCopy {
     static let heroEyebrow = "Coach pick"
     static let alternateSectionTitle = "Other ways to practice"
     static let pressureLockedHint = "Run one rated rep before Pressure Drill."
+    static let cutTheCrutchTitle = "Cut the Crutch"
+    static let cutTheCrutchSubtitle = "Avoid one specific word for 60 seconds. Three slips ends the rep."
 
     static func beginLabel(for title: String) -> String {
         "Begin \u{00B7} \(title)"
@@ -113,8 +115,8 @@ struct PracticeModeSelectionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct CrutchOption {
-        let title: String = "Cut the Crutch"
-        let subtitle: String = "Avoid one specific word for 60 seconds. Three slips ends the rep."
+        let title: String = PracticeModePrescriptionCopy.cutTheCrutchTitle
+        let subtitle: String = PracticeModePrescriptionCopy.cutTheCrutchSubtitle
         let systemImage: String = "scissors"
         var tint: Color { AppColor.modeCrutch }
     }
@@ -705,12 +707,15 @@ struct PracticeModeSelectionView: View {
         }
     }
 
-    /// Reduce-motion shapes the expand/collapse feel. Spring under
-    /// normal motion; a short linear fade when the user has opted into
-    /// the reduced-motion accessibility setting.
+    /// Reduce-motion opts out of the picker spring entirely. The state
+    /// change still lands immediately; haptics remain owned by callers.
     private func animateMode(_ changes: () -> Void) {
-        withAnimation(reduceMotion ? .linear(duration: 0.15) : .snappySpring) {
+        if reduceMotion {
             changes()
+        } else {
+            withAnimation(.snappySpring) {
+                changes()
+            }
         }
     }
 
@@ -805,7 +810,7 @@ struct PracticeModeSelectionView: View {
 
         return VStack(spacing: 0) {
             Button {
-                withAnimation(.snappySpring) {
+                animateMode {
                     crutchSelected = true
                     paceSelected = false
                 }
@@ -920,7 +925,7 @@ struct PracticeModeSelectionView: View {
 
         return VStack(spacing: 0) {
             Button {
-                withAnimation(.snappySpring) {
+                animateMode {
                     paceSelected = true
                     crutchSelected = false
                 }

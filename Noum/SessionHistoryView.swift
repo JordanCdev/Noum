@@ -39,7 +39,7 @@ struct SessionHistoryRowPreview: Equatable {
     private static func modeLabel(for mode: PracticeMode) -> String {
         switch mode {
         case .timed: return "Timed"
-        case .suddenDeath: return "Sudden Death"
+        case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
         case .imConversation: return "IM Mode"
         }
@@ -628,7 +628,7 @@ struct SessionHistoryView: View {
     private func modeLabel(for mode: PracticeMode) -> String {
         switch mode {
         case .timed: return "Timed"
-        case .suddenDeath: return "Sudden Death"
+        case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
         case .imConversation: return "IM Mode"
         }
@@ -722,6 +722,7 @@ struct SessionHistoryDetailView: View {
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
     @StateObject private var sessionStore = PracticeSessionStore.shared
     @State private var showsFullReview = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var imSessionStreak: Int {
         guard let scenario = session.imConversationDetails?.setup.scenario else { return 0 }
@@ -872,8 +873,12 @@ struct SessionHistoryDetailView: View {
 
     private var fullReviewToggle: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            if reduceMotion {
                 showsFullReview.toggle()
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showsFullReview.toggle()
+                }
             }
         } label: {
             HStack {
@@ -1123,7 +1128,7 @@ struct SessionHistoryDetailView: View {
     private var modeLabel: String {
         switch session.mode {
         case .timed: return "Timed"
-        case .suddenDeath: return "Sudden Death"
+        case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
         case .imConversation: return "IM Mode"
         }

@@ -81,7 +81,7 @@ struct SuddenDeathHistoryBreakdownCard: View {
                 Image(systemName: "bolt.fill")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(accent)
-                Text("Sudden Death history")
+                Text("Pressure Drill history")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Spacer()

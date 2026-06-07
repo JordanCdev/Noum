@@ -127,6 +127,14 @@ struct PostRepVerdictCard: View {
     var onStartMiniDrill: (DrillRecommendationV2) -> Void
     var onStartDrill: ((DrillRecommendation) -> Void)?
 
+    enum AccessibilityID {
+        static let root = "summary.postRepVerdict"
+        static let startMiniDrill = "summary.postRepVerdict.startMiniDrill"
+        static let startFullRetry = "summary.postRepVerdict.startFullRetry"
+        static let fullRetry = "summary.postRepVerdict.fullRetry"
+        static let secondaryMiniDrill = "summary.postRepVerdict.secondaryMiniDrill"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
@@ -169,7 +177,7 @@ struct PostRepVerdictCard: View {
         )
         .shadow(color: AppColor.pro.opacity(0.06), radius: 10, y: 3)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("summary.postRepVerdict")
+        .accessibilityIdentifier(AccessibilityID.root)
         .accessibilityLabel("Coach verdict for this rep")
     }
 
@@ -329,6 +337,8 @@ struct PostRepVerdictCard: View {
                     ctaLabel("Start 45s drill", systemImage: "bolt.fill", tint: drill.tint)
                 }
                 .buttonStyle(.pressable)
+                .accessibilityIdentifier(AccessibilityID.startMiniDrill)
+                .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
 
                 if let onStartDrill {
                     Button {
@@ -340,6 +350,8 @@ struct PostRepVerdictCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityID.fullRetry)
+                    .accessibilityHint("Starts a full retry of the recommended practice.")
                 }
             } else if let onStartDrill {
                 Button {
@@ -348,6 +360,8 @@ struct PostRepVerdictCard: View {
                     ctaLabel("Start full retry", systemImage: "arrow.clockwise", tint: drill.tint)
                 }
                 .buttonStyle(.pressable)
+                .accessibilityIdentifier(AccessibilityID.startFullRetry)
+                .accessibilityHint("Starts a full retry of the recommended practice.")
 
                 Button {
                     onStartMiniDrill(drill)
@@ -358,6 +372,8 @@ struct PostRepVerdictCard: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.secondaryMiniDrill)
+                .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
             } else {
                 Button {
                     onStartMiniDrill(drill)
@@ -365,6 +381,8 @@ struct PostRepVerdictCard: View {
                     ctaLabel("Start 45s drill", systemImage: "bolt.fill", tint: drill.tint)
                 }
                 .buttonStyle(.pressable)
+                .accessibilityIdentifier(AccessibilityID.startMiniDrill)
+                .accessibilityHint("Starts the short drill Noum prescribed from this rep.")
             }
         }
     }

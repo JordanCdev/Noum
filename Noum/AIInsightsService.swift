@@ -477,7 +477,7 @@ actor AIInsightsService {
         } else if input.weeklyDelta > 5 {
             headline = "Strong upward week"
             body = "Your rating moved up notably and the reps came in steady. Pace and structure are doing the work."
-            action = "Push one harder rep — Sudden Death or a longer Timed answer."
+            action = "Push one harder rep — Pressure Drill or a longer Timed answer."
         } else if input.weeklyDelta < -5 {
             headline = "Pressure caught you"
             body = "Rating slipped this week. Most likely cause is fillers under pressure. The fix is calmer pacing, not more reps."

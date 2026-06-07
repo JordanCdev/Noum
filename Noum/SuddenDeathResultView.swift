@@ -64,7 +64,7 @@ struct SuddenDeathResultView: View {
     private var shareText: String {
         let pts = result.gamePoints
         let mults = result.multiplierLabels
-        var text = "Tier \(tierReached) · \(pts.formatted()) pts on Noum Sudden Death."
+        var text = "Tier \(tierReached) · \(pts.formatted()) pts on Noum Pressure Drill."
         if !mults.isEmpty {
             text += " Multipliers: \(mults.joined(separator: ", "))."
         }

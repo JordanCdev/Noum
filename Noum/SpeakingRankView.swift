@@ -362,7 +362,7 @@ struct SpeakingRankView: View {
     private func label(for mode: PracticeMode) -> String {
         switch mode {
         case .timed: return "Timed"
-        case .suddenDeath: return "Sudden Death"
+        case .suddenDeath: return "Pressure Drill"
         case .ahCounter: return "Ah-Counter"
         case .imConversation: return "IM Mode"
         }

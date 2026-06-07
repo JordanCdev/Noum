@@ -29,13 +29,36 @@ enum CoachContextBuilder {
 
     // MARK: - System prompt (voice-specific)
 
+    static let structuredAskNoumReplyDefaultsKey = "askNoum.structuredReplyShape.enabled"
+
+    static func structuredAskNoumReplyShapeEnabled(defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: structuredAskNoumReplyDefaultsKey) != nil else {
+            return true
+        }
+        return defaults.bool(forKey: structuredAskNoumReplyDefaultsKey)
+    }
+
     /// Top-level system prompt for the AI coach. Combines a fixed
     /// brand-voice frame with the user's chosen speaking style goal,
     /// producing a coach personality that matches *their* voice — not
     /// a generic "AI assistant" register.
-    static func systemPrompt(for profile: CoachingProfile?) -> String {
+    static func systemPrompt(
+        for profile: CoachingProfile?,
+        structuredReplyShapeEnabled: Bool = CoachContextBuilder.structuredAskNoumReplyShapeEnabled()
+    ) -> String {
         let voice = profile?.speakingStyleGoal
         let personality = voice.map { coachPersonality(for: $0) } ?? defaultCoachPersonality
+        let structuredReplyRule = structuredReplyShapeEnabled ? """
+        - Structured Ask Noum reply shape is enabled for substantive coaching \
+        turns: make the reply read in this order — read -> evidence -> next \
+        move. Keep it as natural prose, not visible section labels. Greetings, \
+        off-topic noise, explicit list/plan requests, and pure preference \
+        turns may break the shape.
+        - Evidence rule: if you quote something the user said, only quote \
+        text from VERIFIED PROOFS, an exact transcript slice in the context, \
+        or the user's latest turn. If you cannot verify the quote, cite a \
+        metric, pattern, or honest data gap instead.
+        """ : ""
 
         return """
         You are Noum — the user's personal speaking coach inside an iOS app.
@@ -56,6 +79,7 @@ enum CoachContextBuilder {
         the user asks a follow-up. Cut any sentence that does not cite the \
         user's actual data or land a concrete move. No headers. No bullet \
         lists unless the user explicitly asks for one.
+        \(structuredReplyRule)
         - Read the person, not just the words. When the user's message is \
         short, partial, ambiguous, or garbled — including imperfect voice \
         transcription (a stray "What do", a cut-off thought) — you NEVER reply \

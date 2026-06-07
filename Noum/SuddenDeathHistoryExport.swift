@@ -38,10 +38,10 @@ enum SuddenDeathHistoryExport {
             .filter { $0.difficulty == difficulty }
             .sorted { $0.completedAt > $1.completedAt }
         guard !filtered.isEmpty else {
-            return "Noum · Sudden Death · \(difficulty.title)\nNo runs at this difficulty yet."
+            return "Noum · Pressure Drill · \(difficulty.title)\nNo runs at this difficulty yet."
         }
         var lines: [String] = []
-        lines.append("Noum · Sudden Death · \(difficulty.title)")
+        lines.append("Noum · Pressure Drill · \(difficulty.title)")
         lines.append("\(filtered.count) run\(filtered.count == 1 ? "" : "s") · best \(maxRounds(filtered)) round\(maxRounds(filtered) == 1 ? "" : "s")")
         lines.append("")
         lines.append(headerRow())
@@ -56,11 +56,11 @@ enum SuddenDeathHistoryExport {
     /// Result-screen share affordance.
     static func formatPlainText(runs: [SuddenDeathRunRecord]) -> String {
         guard !runs.isEmpty else {
-            return "Noum · Sudden Death history\nNo runs yet."
+            return "Noum · Pressure Drill history\nNo runs yet."
         }
         let sorted = runs.sorted { $0.completedAt > $1.completedAt }
         var lines: [String] = []
-        lines.append("Noum · Sudden Death history")
+        lines.append("Noum · Pressure Drill history")
         lines.append("\(sorted.count) run\(sorted.count == 1 ? "" : "s") · best \(maxRounds(sorted)) tiers")
         lines.append("")
         lines.append(headerRow())

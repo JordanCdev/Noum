@@ -39,7 +39,9 @@ enum OnboardingCompletionTiming {
 @available(iOS 17.0, macOS 12.0, *)
 struct CoachingOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var coachingProfileStore = CoachingProfileStore.shared
+    var onComplete: (() -> Void)? = nil
 
     @State private var screen: OnboardingScreen = .intro
     @State private var speakingContext: SpeakingContext = .work
@@ -60,6 +62,7 @@ struct CoachingOnboardingView: View {
     @FocusState private var focusedField: InputField?
     @FocusState private var overlayEditorFocused: Bool
     @Namespace private var headerNamespace
+    private let isRealFirstRunUITesting = ProcessInfo.processInfo.arguments.contains("UI_TESTING_REAL_FIRST_RUN")
 
     private enum InputField: Hashable {
         case goal
@@ -216,7 +219,7 @@ struct CoachingOnboardingView: View {
                 progressPills(activeCount: 0)
 
                 Button {
-                    withAnimation(.standardSpring) {
+                    animate(.standardSpring) {
                         screen = .question(.context)
                     }
                 } label: {
@@ -231,10 +234,7 @@ struct CoachingOnboardingView: View {
                                 .fill(Color.white.opacity(0.16))
                                 .frame(width: 44, height: 44)
 
-                            Image(systemName: "arrow.right")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.white)
-                                .symbolEffect(.bounce, value: progressStep)
+                            advancingArrowImage(font: .headline.weight(.bold))
                         }
                     }
                     .foregroundStyle(.white)
@@ -350,10 +350,7 @@ struct CoachingOnboardingView: View {
                                 .fill(Color.white.opacity(0.16))
                                 .frame(width: 34, height: 34)
 
-                            Image(systemName: "arrow.right")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.white)
-                                .symbolEffect(.bounce, value: progressStep)
+                            advancingArrowImage(font: .subheadline.weight(.bold))
                         }
                     }
                     .foregroundStyle(.white)
@@ -556,7 +553,6 @@ struct CoachingOnboardingView: View {
                     .opacity(0.3)
 
                 Button {
-                    saveProfile()
                     if !isEditingExistingProfile {
                         // First-run: don't drop the brand-new user on a cold Home.
                         // Route straight to their prescribed first rep (the picker
@@ -564,6 +560,8 @@ struct CoachingOnboardingView: View {
                         // felt value before Home. (Editing from Settings just saves.)
                         DeepLinkRouter.shared.pending = URL(string: "noum://train")
                     }
+                    saveProfile()
+                    onComplete?()
                     dismiss()
                 } label: {
                     HStack(spacing: Spacing.sm) {
@@ -654,7 +652,7 @@ struct CoachingOnboardingView: View {
     private func startCompletionReveal() {
         guard !showProfileCard else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + OnboardingCompletionTiming.profileRevealDelay) {
-            withAnimation(.standardSpring) {
+            animate(.standardSpring) {
                 showProfileCard = true
             }
         }
@@ -674,7 +672,7 @@ struct CoachingOnboardingView: View {
                 let detail = optionDetail(for: option)
 
                 Button {
-                    withAnimation(.snappySpring) {
+                    animate(.snappySpring) {
                         onSelect(option)
                     }
                 } label: {
@@ -756,7 +754,7 @@ struct CoachingOnboardingView: View {
 
             Button {
                 editorOverlayText = text.wrappedValue
-                withAnimation(.standardSpring) {
+                animate(.standardSpring) {
                     editorOverlayField = field
                 }
             } label: {
@@ -900,7 +898,7 @@ struct CoachingOnboardingView: View {
     private func commitOverlayText(to binding: Binding<String>) {
         binding.wrappedValue = editorOverlayText
         overlayEditorFocused = false
-        withAnimation(.snappySpring) {
+        animate(.snappySpring) {
             editorOverlayField = nil
         }
     }
@@ -961,6 +959,18 @@ struct CoachingOnboardingView: View {
         }
     }
 
+    @ViewBuilder
+    private func advancingArrowImage(font: Font) -> some View {
+        let image = Image(systemName: "arrow.right")
+            .font(font)
+            .foregroundStyle(.white)
+        if reduceMotion {
+            image
+        } else {
+            image.symbolEffect(.bounce, value: progressStep)
+        }
+    }
+
     private func helperText(for stage: OnboardingStage) -> String? {
         // Multi-choice stages don't need helper text.
         nil
@@ -984,11 +994,11 @@ struct CoachingOnboardingView: View {
         focusedField = nil
 
         if let next = OnboardingStage(rawValue: stage.rawValue + 1) {
-            withAnimation(.standardSpring) {
+            animate(.standardSpring) {
                 screen = .question(next)
             }
         } else {
-            withAnimation(.standardSpring) {
+            animate(.standardSpring) {
                 screen = .summary
             }
         }
@@ -1002,16 +1012,24 @@ struct CoachingOnboardingView: View {
             dismiss()
         case let .question(stage):
             if let previous = OnboardingStage(rawValue: stage.rawValue - 1) {
-                withAnimation(.standardSpring) {
+                animate(.standardSpring) {
                     screen = .question(previous)
                 }
             } else {
-                withAnimation(.standardSpring) {
+                animate(.standardSpring) {
                     screen = .intro
                 }
             }
         case .summary:
             break
+        }
+    }
+
+    private func animate(_ animation: Animation, _ updates: @escaping () -> Void) {
+        if reduceMotion {
+            updates()
+        } else {
+            withAnimation(animation, updates)
         }
     }
 
@@ -1050,6 +1068,7 @@ struct CoachingOnboardingView: View {
     }
 
     private func loadExistingProfile() {
+        guard !isRealFirstRunUITesting else { return }
         guard let profile = coachingProfileStore.profile else { return }
         isEditingExistingProfile = true
         speakingContext = profile.speakingContext

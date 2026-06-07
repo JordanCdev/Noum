@@ -475,7 +475,7 @@ enum NextActionEngine {
                 // switch modality instead of repeating a not-moving pressure mode.
                 return imSwitch
             }
-            return .pressureExposure(.suddenDeath, reason: "Your filler control is strong — test it under sudden death pressure.")
+            return .pressureExposure(.suddenDeath, reason: "Your filler control is strong — test it in Pressure Drill.")
         }
 
         // If the session was in timed mode, suggest IM mode
@@ -501,5 +501,4 @@ enum NextActionEngine {
         return nil
     }
 }
-
 

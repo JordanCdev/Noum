@@ -6796,6 +6796,15 @@ struct ProfileCollapseContractTests {
         #expect(plan.ratingSurfaceCount == 1)
     }
 
+    @Test func profileDisclosureKeepsOneRatingTrajectoryAndDemotesOptionalSystems() {
+        let plan = ProfileEvidenceDetailPlan.valueFirst
+
+        #expect(plan.ratingStorySurfaceCount == 1)
+        #expect(!plan.surfaces.contains(.achievements) || plan.surfaces.last == .achievements)
+        #expect(plan.optionalSystemSurfaceCount == 3)
+        #expect(!plan.surfaces.contains { [.league, .communityPractice, .achievements].contains($0) && plan.surfaces.firstIndex(of: $0)! < plan.surfaces.firstIndex(of: .coachingDirection)! })
+    }
+
     @Test func identityHeroDoesNotExposeProgressCurrency() {
         let identity = ProfileIdentityPresentation.make(profile: nil)
 
@@ -7594,6 +7603,26 @@ struct CoachContextBuilderTests {
         #expect(prompt.contains("fake intimacy"))
         #expect(prompt.contains("human read -> evidence -> next move"))
         #expect(prompt.contains("one question only if it advances the case"))
+    }
+
+    @Test func systemPromptIncludesFeatureFlaggedStructuredReplyShape() {
+        let prompt = CoachContextBuilder.systemPrompt(for: nil)
+
+        #expect(prompt.contains("Structured Ask Noum reply shape is enabled"))
+        #expect(prompt.contains("read -> evidence -> next move"))
+        #expect(prompt.contains("not visible section labels"))
+        #expect(prompt.contains("VERIFIED PROOFS"))
+        #expect(prompt.contains("If you cannot verify the quote"))
+    }
+
+    @Test func systemPromptCanDisableStructuredReplyShape() {
+        let prompt = CoachContextBuilder.systemPrompt(
+            for: nil,
+            structuredReplyShapeEnabled: false
+        )
+
+        #expect(!prompt.contains("Structured Ask Noum reply shape is enabled"))
+        #expect(!prompt.contains("VERIFIED PROOFS"))
     }
 
     @Test func systemPromptRejectsRoboticTemplateLanguage() {
@@ -8753,11 +8782,11 @@ struct AskNoumStoreTests {
     @Test func completeCoachTurnHydratesPlaceholder() {
         let store = freshStore()
         let ids = store.appendUserTurn("Plan my week.")
-        store.completeCoachTurn(id: ids.coachID, outcome: .reply("Do 3 reps of Sudden Death."))
+        store.completeCoachTurn(id: ids.coachID, outcome: .reply("Do 3 reps of Pressure Drill."))
         #expect(store.messages.count == 2)
         #expect(store.messages[1].role == .coach)
         #expect(store.messages[1].isPending == false)
-        #expect(store.messages[1].text == "Do 3 reps of Sudden Death.")
+        #expect(store.messages[1].text == "Do 3 reps of Pressure Drill.")
         #expect(!store.isAwaitingReply)
     }
 
@@ -9635,6 +9664,22 @@ struct PracticeModePrescriptionCopyTests {
     @Test func pressureModeDisplayNameAvoidsPunitiveFraming() {
         #expect(PracticeMode.suddenDeath.displayLabel == "Pressure Drill")
         #expect(!PracticeMode.suddenDeath.displayLabel.localizedCaseInsensitiveContains("death"))
+    }
+
+    @Test func supplementalDrillCopyAvoidsHeartsAndLivesFraming() {
+        let copy = [
+            PracticeModePrescriptionCopy.cutTheCrutchTitle,
+            PracticeModePrescriptionCopy.cutTheCrutchSubtitle
+        ].joined(separator: " ")
+
+        let banned = ["heart", "hearts", "life", "lives", "no second chances"]
+        for word in banned {
+            #expect(!copy.localizedCaseInsensitiveContains(word),
+                    "Supplemental drill copy should not contain \(word)")
+        }
+
+        #expect(copy.localizedCaseInsensitiveContains("slip"),
+                "Cut the Crutch should frame the allowance as slips, not hearts/lives.")
     }
 
     @Test func pressureModeRequiresRatedEvidenceInPicker() {
@@ -18709,7 +18754,7 @@ struct CoachReadParityTests {
         #expect(!summaries.contains { $0.contains("9 filler") })
         // Shape: "Mode | score X/10 | N fillers", singular for 1.
         #expect(summaries[0] == "Timed | score 8/10 | 1 filler")
-        #expect(summaries[1] == "Sudden Death | score 7/10 | 2 fillers")
+        #expect(summaries[1] == "Pressure Drill | score 7/10 | 2 fillers")
         #expect(summaries[2] == "Timed | score n/a | 3 fillers")
     }
 
@@ -20048,7 +20093,7 @@ struct S5SpokenModeShouldSpeakTests {
     /// reply → speak. This is the ONLY combination that returns true.
     @Test func speaksRealReplyWhenEnabledAndLocaleSupported() {
         #expect(AskNoumSpokenMode.shouldSpeak(
-            outcome: .reply("Do three reps of Sudden Death."),
+            outcome: .reply("Do three reps of Pressure Drill."),
             spokenRepliesEnabled: true,
             localeSupportsAI: true
         ))
@@ -20431,7 +20476,7 @@ struct AICoachChatReplyQualityGateTests {
     }
 
     @Test func expandedPlanTurnAllowsLongerShape() {
-        let reply = "Day one, run one baseline rep and mark the rushed sentence. Day two, repeat the same prompt and hold a beat before sentence two. Day three, make the final line the ask. Day four, review the transcript for hedging. Day five, test it under Sudden Death."
+        let reply = "Day one, run one baseline rep and mark the rushed sentence. Day two, repeat the same prompt and hold a beat before sentence two. Day three, make the final line the ask. Day four, review the transcript for hedging. Day five, test it under Pressure Drill."
         #expect(AICoachChatService.replyQualityIssue(in: reply, latestUserTurn: "Give me a 7-day plan.") == nil)
     }
 
@@ -20475,6 +20520,48 @@ struct AICoachChatReplyQualityGateTests {
             latestUserTurn: "Why did that answer land badly?"
         )
         #expect(issue == .overclaimsEvidence)
+    }
+
+    @Test func quoteGuardRejectsUnverifiedYouSaidQuote() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["We launched the product on Tuesday and handled the deadline well."],
+            latestUserTurn: "How did that answer land?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You said \"revenue is up twenty percent\", but the move is simpler: next rep, lead with the point.",
+            latestUserTurn: "How did that answer land?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == .unverifiedQuotedUserSpeech)
+    }
+
+    @Test func quoteGuardAllowsExactTranscriptQuote() {
+        let guardContext = CoachChatQuoteGuardContext(
+            transcripts: ["I want to let the silence work before I close."],
+            latestUserTurn: "How did that answer land?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "You said \"let the silence work\", and that is the useful signal. Next rep, hold the pause before your close.",
+            latestUserTurn: "How did that answer land?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == nil)
+    }
+
+    @Test func quoteGuardAllowsVerifiedProofQuote() {
+        let guardContext = CoachChatQuoteGuardContext(
+            verifiedProofQuotes: ["we focused on three priorities"],
+            latestUserTurn: "What should I keep?"
+        )
+        let issue = AICoachChatService.replyQualityIssue(
+            in: "Your words were \"we focused on three priorities\", so keep that clean frame. Next rep, close with the same structure.",
+            latestUserTurn: "What should I keep?",
+            quoteGuard: guardContext
+        )
+
+        #expect(issue == nil)
     }
 }
 
@@ -38679,5 +38766,48 @@ struct RewardOwnershipTests {
         guard #available(iOS 17.0, *) else { return }
         #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: true, score: 0, xpEarned: 0) == true)
         #expect(SummaryView.shouldShowCelebration(hasMilestoneCrossing: true, score: 3, xpEarned: 5) == true)
+    }
+
+    @Test @MainActor func firstRepIsNotTreatedAsAMilestoneCrossing() {
+        guard #available(iOS 17.0, *) else { return }
+
+        let sessionStore = PracticeSessionStore.shared
+        let profile = ProfileManager.shared
+        let sessionSnapshot = sessionStore.sessions
+        let xpSnapshot = profile.xp
+        defer {
+            sessionStore.replaceFromRemote(sessionSnapshot)
+            profile.replaceFromRemote(xpSnapshot)
+        }
+
+        var firstRep = makePracticeSession(date: Date(), fillerCount: 1, duration: 45)
+        firstRep.score = 7
+        sessionStore.replaceFromRemote([firstRep])
+        profile.replaceFromRemote(0)
+
+        let result = SessionFinalizer.finalize(
+            xpEarned: 35,
+            scoreValue: 7,
+            effectiveFillerCount: firstRep.fillerWordCount,
+            effectiveDuration: firstRep.duration,
+            transcriptWordCount: firstRep.wordCount,
+            scoreBreakdown: [],
+            currentMode: firstRep.mode,
+            sessionPrompt: nil,
+            latestSessionID: firstRep.id,
+            recentSessions: [firstRep],
+            imConversationDetails: nil,
+            practiceTitle: "Timed Practice",
+            derivedInsightsFirst: nil,
+            pressureLevel: .standard,
+            transcript: firstRep.transcript
+        )
+
+        #expect(result.milestone == nil)
+        #expect(SummaryView.shouldShowCelebration(
+            hasMilestoneCrossing: result.milestone != nil,
+            score: 7,
+            xpEarned: 35
+        ) == false)
     }
 }

@@ -384,12 +384,10 @@ struct ContentView: View {
                             if let moment = bigMomentStore.pendingOutcomeCheckInMoment {
                                 BigMomentOutcomeInlineCard(moment: moment).cardEntrance(1)
                             }
-                            // Path Journey — promoted to slot 3 as a second
-                            // hero. The Path is the gameplay loop; "next
-                            // move" framing belongs near the Coach Card, not
-                            // at the bottom of the stack under the weekly
-                            // digest. Rewritten with mission framing
-                            // (Chapter <tier> · Mission X of N · node title).
+                            // Path Journey — a quiet supporting row. The
+                            // Coach Card owns Home's hero register; Path
+                            // stays nearby as the next progression cue
+                            // without becoming a competing second hero.
                             if gate.journey {
                                 journeyPreviewCard.cardEntrance(2)
                             }
@@ -1159,27 +1157,9 @@ struct ContentView: View {
         )
     }
 
-    /// Path Journey card — M14 promotion. The Path is the gameplay loop;
-    /// the previous small tile at the bottom of Home buried it. This is the
-    /// second hero on populated home, sized between Coach Card and the
-    /// utility cards, framed as a mission with explicit chapter + position.
-    ///
-    /// Layout:
-    ///   • Header row — "YOUR JOURNEY" micro-label + Chapter <tier>.
-    ///   • Mission counter — "Mission X of N" in body weight.
-    ///   • Node title — 24pt rounded bold, the headline the user reads.
-    ///   • Gating line — 1-2 lines of coach copy, the *concrete* distance
-    ///     ("One rep from unlocked", "+88 rating to Platinum") sourced from
-    ///     `PathProgressManager.currentNodeGatingPhrase`. Never shames a
-    ///     regression — only renders forward distance.
-    ///   • Progress bar (if 0 < progress < 1) — brand-blue tinted.
-    ///   • CTA — "Open the Path →" capsule in brand-blue gradient.
-    ///
-    /// The whole card is a single button to the path destination; there's
-    /// no node-level deep link because the destination *is* the next move
-    /// surface. Brand-blue ambient wash + soft elevation give the card the
-    /// "second hero" register, distinct from the Coach Card's Pro-purple
-    /// without competing with it (blue = journey, purple = coach voice).
+    /// Path Journey preview — supporting status/action row. The Coach Card
+    /// is the only Home hero; this row keeps the progression loop visible
+    /// without adding another glowing card.
     /// Tier-adaptive tint for the journey card. Falls back to brand blue
     /// when the path is cleared (no current node).
     private var journeyTint: Color {
@@ -1196,79 +1176,67 @@ struct ContentView: View {
         return Button {
             navigationPath.append(AppDestination.pathJourney)
         } label: {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                // Header — micro-label on the left, chapter on the right.
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Your journey")
-                        .microLabel(journeyTint)
-                    Spacer(minLength: Spacing.xs)
-                    Text("Chapter \u{00B7} \(chapterTitle)")
+            HStack(alignment: .center, spacing: Spacing.md) {
+                Image(systemName: cleared ? "checkmark.seal.fill" : "map.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(journeyTint)
+                    .frame(width: 40, height: 40)
+                    .background(journeyTint.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                        Text("Your journey")
+                            .microLabel(journeyTint)
+                        Text("Chapter \u{00B7} \(chapterTitle)")
+                            .font(Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Text(missionLine)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .accessibilityIdentifier("home.path.missionCounter")
+
+                    Text(titleLine)
+                        .font(Typography.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.path.missionTitle")
+
+                    Text(gatingLine)
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.path.nextMilestone")
+
+                    if let status, status.progress > 0 && !status.isComplete {
+                        ProgressView(value: status.progress)
+                            .progressViewStyle(.linear)
+                            .tint(journeyTint)
+                            .padding(.top, Spacing.xxs)
+                    }
                 }
 
-                // Mission position — small, body-weight, never headline.
-                Text(missionLine)
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("home.path.missionCounter")
-
-                // Big rounded title — the node, but framed as a mission.
-                Text(titleLine)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("home.path.missionTitle")
-
-                // Gating line — concrete distance, coach voice.
-                Text(gatingLine)
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("home.path.nextMilestone")
-
-                if let status, status.progress > 0 && !status.isComplete {
-                    ProgressView(value: status.progress)
-                        .progressViewStyle(.linear)
-                        .tint(journeyTint)
-                        .padding(.top, Spacing.xxs)
-                }
-
-                // CTA row — single coach-voice action. The whole card
-                // routes to the same destination, but the explicit capsule
-                // anchors the user's eye and reads as a button.
-                HStack(spacing: 6) {
-                    Spacer()
-                    Text(cleared ? "Hold the path" : "Open the Path")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Image(systemName: "arrow.right")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .frame(maxWidth: .infinity)
-                .background(
-                    journeyTint.gradient,
-                    in: Capsule(style: .continuous)
-                )
-                .padding(.top, Spacing.xs)
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(journeyTint)
+                    .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, Spacing.lg)
-            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+            .padding(Spacing.md)
+            .contentShape(RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
         }
         .buttonStyle(.pressable)
-        .background(journeyHeroBackground)
-        // Soft brand-blue elevation — mirrors the Coach Card's Pro-purple
-        // shadow at the same intensity so the two heroes carry consistent
-        // depth on the home canvas.
-        .shadow(color: journeyTint.opacity(0.16), radius: 20, x: 0, y: 9)
+        .background(AppColor.cardBackground, in: RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large, style: .continuous)
+                .stroke(journeyTint.opacity(0.16), lineWidth: 1)
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.path")
         .accessibilityLabel(Text("\(titleLine). \(missionLine). \(gatingLine)"))
@@ -1283,70 +1251,6 @@ struct ContentView: View {
         }
         let position = status.node.order + 1
         return "Mission \(position) of \(total)"
-    }
-
-    /// Hero card background — brand-blue ambient wash + frosted glass +
-    /// hairline border. Mirrors the layered pattern used by HomeCoachCard
-    /// (radial wash → material → border) in the blue register so the two
-    /// heroes read as a matched pair rather than two different chrome
-    /// languages. Reduce-motion users see a static wash; the motion-on
-    /// path drifts the radial center across a slow 8s sine for the same
-    /// "alive" feel the Coach Card carries, slightly slower so the two
-    /// don't pulse in lockstep on the same screen.
-    @ViewBuilder
-    private var journeyHeroBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-        let tint = journeyTint
-        ZStack {
-            shape.fill(AppColor.cardBackground)
-
-            if reduceMotion {
-                shape.fill(
-                    RadialGradient(
-                        colors: [
-                            tint.opacity(0.45),
-                            tint.opacity(0.28),
-                            tint.opacity(0.04),
-                            Color.clear
-                        ],
-                        center: UnitPoint(x: 0.2, y: 0.0),
-                        startRadius: 0,
-                        endRadius: 320
-                    )
-                )
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                    let t = context.date.timeIntervalSinceReferenceDate
-                    // 8s drift — slightly slower than the Coach Card's 7s
-                    // so the two heroes breathe on different cadences.
-                    let phase = (sin(t * (2 * .pi / 8.0)) + 1) / 2
-                    let centerX = 0.15 + 0.30 * phase
-                    let centerY = 0.0 + 0.12 * phase
-                    shape.fill(
-                        RadialGradient(
-                            colors: [
-                                tint.opacity(0.45),
-                                tint.opacity(0.28),
-                                tint.opacity(0.04),
-                                Color.clear
-                            ],
-                            center: UnitPoint(x: centerX, y: centerY),
-                            startRadius: 0,
-                            endRadius: 320
-                        )
-                    )
-                }
-            }
-
-            // Frosted-glass overlay — same alpha as the Coach Card so the
-            // wash reads through but the surface still reads as a card.
-            shape.fill(.regularMaterial)
-                .opacity(0.30)
-
-            // Hairline border in tier tint so the silhouette stays crisp
-            // against the home canvas.
-            shape.strokeBorder(tint.opacity(0.38), lineWidth: 1)
-        }
     }
 
     /// Coach-voice secondary line for the journey preview card.

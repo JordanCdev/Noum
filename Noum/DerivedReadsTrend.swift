@@ -313,7 +313,7 @@ struct DeliveryProfile: Codable, Equatable {
         let pMean = pressure.reduce(0, +) / Double(pressure.count)
         let cMean = calm.reduce(0, +) / Double(calm.count)
         guard cMean - pMean >= pressureGapThreshold else { return nil }
-        return "Under pressure (Sudden Death) your delivery reads lower than in calmer reps — composure and confidence markers dip when the clock is on."
+        return "Under Pressure Drill conditions your delivery reads lower than in calmer reps — composure and confidence markers dip when the clock is on."
     }
 }
 

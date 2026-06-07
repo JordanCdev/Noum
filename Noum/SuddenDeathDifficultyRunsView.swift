@@ -72,7 +72,7 @@ struct SuddenDeathDifficultyRunsView: View {
                 }
             }
         }
-        .navigationTitle("Sudden Death · \(difficulty.title)")
+        .navigationTitle("Pressure Drill · \(difficulty.title)")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("history.suddenDeath.difficultyDetail")
         .toolbar {
@@ -98,7 +98,7 @@ struct SuddenDeathDifficultyRunsView: View {
             Text("No \(difficulty.title) runs yet")
                 .font(.headline)
                 .foregroundStyle(.primary)
-            Text("Finish a Sudden Death rep at this difficulty to start a track record.")
+            Text("Finish a Pressure Drill rep at this difficulty to start a track record.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

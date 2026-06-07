@@ -612,6 +612,12 @@ struct TimedPracticeView: View {
         nonmutating set { selectedThemeRaw = newValue.rawValue }
     }
 
+#if DEBUG
+    private var usesInjectedFirstValueLoop: Bool {
+        ProcessInfo.processInfo.arguments.contains("UI_TESTING_FIRST_VALUE_LOOP")
+    }
+#endif
+
     // TTS — persistent synthesizer + delegate, premium voice for warm, coach-like delivery
     private let ttsEngine = AVSpeechSynthesizer()
     private let ttsDelegate = TTSDelegate()
@@ -723,7 +729,6 @@ struct TimedPracticeView: View {
         } message: {
             Text("Your current session will be lost.")
         }
-        .accessibilityIdentifier("timedPractice.screen")
         .sheet(isPresented: $showIntentPrompt) {
             // M21: declared focus prompt. Sheet is shown at most once per
             // visit to the setup phase. Dismissing without selecting drops
@@ -937,6 +942,7 @@ struct TimedPracticeView: View {
             }
             .padding(.horizontal, 20)
         }
+        .accessibilityIdentifier("timedPractice.screen")
     }
 
     @available(iOS 17.0, *)
@@ -2139,6 +2145,7 @@ struct TimedPracticeView: View {
             .foregroundStyle(.white)
             .shadow(color: selectedMode.badgeColor.opacity(0.3), radius: 12, y: 4)
             .buttonStyle(.pressable)
+            .accessibilityIdentifier("timedPractice.begin")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -2161,6 +2168,7 @@ struct TimedPracticeView: View {
             .background(Color.white, in: Capsule())
             .foregroundStyle(Color(red: 0.06, green: 0.06, blue: 0.12))
             .buttonStyle(.pressable)
+            .accessibilityIdentifier("timedPractice.startNow")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -2202,6 +2210,7 @@ struct TimedPracticeView: View {
                     .buttonStyle(.pressable)
                     .disabled(isStopping)
                     .opacity(isStopping ? 0.5 : 1)
+                    .accessibilityIdentifier("timedPractice.end")
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
@@ -2310,6 +2319,18 @@ struct TimedPracticeView: View {
         isStopping = false
         lastMilestoneState = .neutral
         milestoneScale = 1.0
+
+#if DEBUG
+        if usesInjectedFirstValueLoop {
+            speakingTask?.cancel()
+            speakingTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(650))
+                completeInjectedFirstValueLoopRep()
+            }
+            return
+        }
+#endif
+
         speechVM.sessionPrompt = question
         speechVM.prepareSession(mode: .timed)
         speechVM.startRecording()
@@ -2343,6 +2364,118 @@ struct TimedPracticeView: View {
             }
         }
     }
+
+#if DEBUG
+    private func completeInjectedFirstValueLoopRep() {
+        guard usesInjectedFirstValueLoop, !isStopping else { return }
+
+        isStopping = true
+        speakingTask?.cancel()
+        speakingTask = nil
+        elapsedSeconds = 46
+        currentTimingState = ImpromptuTimingState.state(forElapsedSeconds: elapsedSeconds)
+
+        let transcript = """
+        I would start by naming the decision clearly. The team needs one owner for the customer handoff, then a weekly check on risk. I would tell the client what changed, what stays on track, and exactly when they will hear from us again.
+        """
+        let duration: TimeInterval = 46
+        let fillerCount = FillerWordDetector.count(in: transcript)
+        let result = PracticeEvaluator.evaluateTimedPractice(
+            transcript: transcript,
+            fillerCount: fillerCount,
+            duration: duration,
+            difficulty: practiceSettings.timedDifficulty,
+            recentSessions: sessionStore.sessions,
+            profile: coachingProfileStore.profile,
+            question: question.isEmpty ? nil : question
+        )
+        evaluation = result
+
+        let pressureOn = practiceSettings.pressureModeEnabled
+        let pressure = BaselineEngine.classifyPressure(
+            mode: .timed,
+            isPressureModeOn: pressureOn,
+            streakDays: PracticeSession.calculateStreak(from: sessionStore.sessions)
+        )
+        let finalized = PracticeSessionFinalizer.finalize(
+            store: sessionStore,
+            draft: PracticeSessionDraft(
+                transcript: transcript,
+                fillerWordCount: fillerCount,
+                duration: duration,
+                date: Date(),
+                mode: .timed,
+                transcriptConfidence: 0.98,
+                transcriptionProvider: "ui-testing",
+                pressureLevel: pressure,
+                isRated: pressureOn
+            ),
+            annotation: PracticeSessionAnnotation(
+                score: result.score,
+                xpEarned: result.xpEarned,
+                headline: result.headline,
+                insights: result.insights,
+                coachSummary: result.feedback,
+                prompt: question,
+                theme: selectedTheme
+            )
+        )
+        RecommendationLearningStore.shared.recordOutcome(
+            for: finalized,
+            previousSessions: Array(sessionStore.sessions.dropFirst())
+        )
+        pushInjectedSummary(
+            transcript: transcript,
+            fillerCount: fillerCount,
+            duration: duration,
+            result: result
+        )
+    }
+
+    private func pushInjectedSummary(
+        transcript: String,
+        fillerCount: Int,
+        duration: TimeInterval,
+        result: PracticeEvaluation
+    ) {
+        let payloadId = UUID()
+        let entry = SummaryDataStore.Entry(
+            transcript: AttributedString(transcript),
+            fillerCount: fillerCount,
+            duration: duration,
+            score: result.score,
+            progressSegments: progressSegments,
+            xpEarned: result.xpEarned,
+            committedFinalization: nil,
+            suddenDeathGamePoints: nil,
+            suddenDeathMultiplierLabels: [],
+            suddenDeathTotalWords: nil,
+            showDuration: false,
+            practiceTitle: "Impromptu Practice",
+            feedbackOverride: result.feedback,
+            headlineOverride: result.headline,
+            scoreBreakdown: result.segments,
+            insights: result.insights,
+            recentSessions: sessionStore.sessions,
+            imConversationDetails: nil,
+            explicitMode: .timed,
+            recordingURL: nil,
+            sessionPrompt: question,
+            sessionTheme: selectedTheme,
+            feedbackCategories: result.categories,
+            strongMoments: result.strongMoments,
+            weakMoments: result.weakMoments,
+            durationAssessment: result.durationAssessment,
+            targetRange: result.targetRange,
+            onStartDrill: { [self] drill in
+                activeDrill = drill
+                restartSession()
+            }
+        )
+        SummaryDataStore.shared.store(entry, for: payloadId)
+        navigationPath.append(AppDestination.summary(SummaryPayload(id: payloadId, mode: .timed)))
+    }
+#endif
 
     private func stopSession() {
         guard !isStopping else { return }

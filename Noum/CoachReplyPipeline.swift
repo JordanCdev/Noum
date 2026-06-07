@@ -26,7 +26,10 @@ enum CoachReplyPipeline {
         pendingGoalIntent: CoachContextBuilder.GoalIntent? = nil
     ) async -> ChatOutcome {
         let profileStore = CoachingProfileStore.shared
-        let systemPrompt = CoachContextBuilder.systemPrompt(for: profileStore.profile)
+        let systemPrompt = CoachContextBuilder.systemPrompt(
+            for: profileStore.profile,
+            structuredReplyShapeEnabled: CoachContextBuilder.structuredAskNoumReplyShapeEnabled()
+        )
 
         // Trend analysis at call time — cheap pure work over the snapshot store.
         let snapshots = SkillTrendStore.shared.snapshots
@@ -34,6 +37,7 @@ enum CoachReplyPipeline {
 
         let sessionStore = PracticeSessionStore.shared
         let coachMemoryStore = CoachMemoryStore.shared
+        let recentProofs = ProofMomentStore.shared.recent(limit: 3)
         let history = AskNoumStore.shared.replayForModel
         let latestUserIndex = history.lastIndex { $0.role == .user }
         let latestUserTurn = latestUserIndex.map { history[$0].text }
@@ -56,7 +60,7 @@ enum CoachReplyPipeline {
             currentStreak: StreakFreezeManager.shared.currentStreak,
             pathStatus: PathProgressManager.shared.currentNode,
             pathGatingPhrase: PathProgressManager.shared.currentNodeGatingPhrase,
-            recentProofs: ProofMomentStore.shared.recent(limit: 3),
+            recentProofs: recentProofs,
             bigMoment: BigMomentStore.shared.activeMoment,
             recentMomentOutcomes: BigMomentStore.shared.recentOutcomeReports(limit: 2),
             forwardPlan: ForwardPlanStore.shared.activePlan,
@@ -92,7 +96,8 @@ enum CoachReplyPipeline {
             hypothesis: fallbackCaseFile?.hypothesis,
             observableTarget: fallbackCaseFile?.observableTarget,
             successMeasure: fallbackCaseFile?.successMeasure,
-            nextQuestion: fallbackCaseFile?.nextQuestion
+            nextQuestion: fallbackCaseFile?.nextQuestion,
+            verifiedProofQuotes: recentProofs.map(\.proof.quote)
         )
 
         let outcome = await AICoachChatService.shared.reply(
